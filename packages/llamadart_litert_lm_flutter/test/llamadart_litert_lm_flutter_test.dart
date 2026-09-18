@@ -29,10 +29,17 @@ void main() {
       manifest,
       contains(
         'name: "LiteRtLm", condition: '
-        '.when(platforms: [.iOS])',
+        '.when(platforms: [.iOS, .macOS])',
       ),
     );
-    expect(manifest, isNot(contains('name: "CLiteRTLMMac"')));
+    expect(
+      manifest,
+      contains('name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])'),
+    );
+    expect(
+      manifest,
+      contains('name: "CLiteRTLM", condition: .when(platforms: [.iOS])'),
+    );
     expect(
       manifest,
       contains(

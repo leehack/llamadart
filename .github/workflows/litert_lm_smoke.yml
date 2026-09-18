@@ -11,6 +11,8 @@ on:
       - "lib/src/backends/native/**"
       - "lib/src/hook/**"
       - "pubspec.*"
+      - "tool/litert_lm_chat_features_smoke.dart"
+      - "tool/audio_chat_smoke_support.dart"
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
   pull_request:
@@ -22,6 +24,8 @@ on:
       - "lib/src/backends/native/**"
       - "lib/src/hook/**"
       - "pubspec.*"
+      - "tool/litert_lm_chat_features_smoke.dart"
+      - "tool/audio_chat_smoke_support.dart"
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
 
@@ -149,7 +153,7 @@ jobs:
           mv "$tmp_path" "$model_path"
           echo "Downloaded $model_path ($(wc -c < "$model_path") bytes)"
 
-      - name: Run LiteRT-LM engine smoke
+      - name: Run LiteRT-LM engine and chat smoke
         if: steps.download-model.outcome == 'success'
         shell: bash
         env:
@@ -166,9 +170,10 @@ jobs:
             "What is 2+2? Answer only with the number." \
             16 \
             1024
+          dart run tool/litert_lm_chat_features_smoke.dart "$LITERT_LM_MODEL_PATH" cpu
 
-      - name: Note skipped LiteRT-LM engine smoke
+      - name: Note skipped LiteRT-LM model smokes
         if: steps.download-model.outcome != 'success'
         shell: bash
         run: |
-          echo "::warning::Skipped LiteRT-LM engine smoke because the external model download failed. The library/native-asset smoke already passed."
+          echo "::warning::Skipped LiteRT-LM engine/chat smokes because the external model download failed. The library/native-asset smoke already passed."

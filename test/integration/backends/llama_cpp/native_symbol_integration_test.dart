@@ -138,6 +138,7 @@ typedef _MtmdHelperBitmapInitFromBufNative =
       ffi.Pointer<ffi.UnsignedChar>,
       ffi.Size,
       ffi.Bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromBufDart =
     mtmd_helper_bitmap_wrapper Function(
@@ -145,6 +146,7 @@ typedef _MtmdHelperBitmapInitFromBufDart =
       ffi.Pointer<ffi.UnsignedChar>,
       int,
       bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdBitmapFreeNative = ffi.Void Function(ffi.Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(ffi.Pointer<mtmd_bitmap>);
@@ -402,6 +404,7 @@ String _sourceBracedDeclaration(String source, String marker) {
 void _expectBitmapHelperDecodesTransparentPng(
   _MtmdHelperBitmapInitFromBufDart helper,
   _MtmdBitmapFreeDart bitmapFree,
+  mtmd_helper_init_opt Function() defaultOptions,
 ) {
   final data = malloc<ffi.UnsignedChar>(_transparentPngBytes.length);
   ffi.Pointer<mtmd_bitmap> bitmap = ffi.nullptr;
@@ -416,6 +419,7 @@ void _expectBitmapHelperDecodesTransparentPng(
       data,
       _transparentPngBytes.length,
       false,
+      defaultOptions(),
     );
     bitmap = result.bitmap;
 
@@ -450,6 +454,19 @@ void main() {
         llama_model_default_params().load_mode,
         llama_load_mode.LLAMA_LOAD_MODE_AUTO,
       );
+    });
+
+    test('v0.4.0 by-value defaults match regenerated model layout', () {
+      final params = llama_model_default_params();
+      expect(params.lazy_mode, llama_lazy_mode.LLAMA_LAZY_MODE_AUTO);
+      expect(params.main_gpu, 0);
+      expect(params.vocab_only, isFalse);
+      expect(
+        llama_model_quantize_default_params().max_buf_size,
+        8 * 1024 * 1024 * 1024,
+      );
+      expect(LLAMA_SESSION_VERSION, 10);
+      expect(LLAMA_STATE_SEQ_VERSION, 3);
     });
 
     test('Verify speculative symbols are declared in generated bindings', () {
@@ -792,6 +809,7 @@ void main() {
       expect(fileNative, contains('Pointer<mtmd_context>,'));
       expect(fileNative, contains('Pointer<Char>,'));
       expect(fileNative, contains('Bool,'));
+      expect(fileNative, contains('mtmd_helper_init_opt,'));
       expect(fileNative, isNot(contains('Pointer<mtmd_bitmap> Function(')));
 
       final fileDart = _sourceSection(
@@ -803,6 +821,7 @@ void main() {
       expect(fileDart, contains('Pointer<mtmd_context>,'));
       expect(fileDart, contains('Pointer<Char>,'));
       expect(fileDart, contains('bool,'));
+      expect(fileDart, contains('mtmd_helper_init_opt,'));
 
       final bufNative = _sourceSection(
         serviceSource,
@@ -814,6 +833,7 @@ void main() {
       expect(bufNative, contains('Pointer<UnsignedChar>,'));
       expect(bufNative, contains('Size,'));
       expect(bufNative, contains('Bool,'));
+      expect(bufNative, contains('mtmd_helper_init_opt,'));
       expect(bufNative, isNot(contains('Pointer<mtmd_bitmap> Function(')));
 
       final bufDart = _sourceSection(
@@ -826,20 +846,54 @@ void main() {
       expect(bufDart, contains('Pointer<UnsignedChar>,'));
       expect(bufDart, contains('int,'));
       expect(bufDart, contains('bool,'));
+      expect(bufDart, contains('mtmd_helper_init_opt,'));
 
-      expect(
+      // Bind each assertion to its production function: deleting/bypassing one
+      // call must fail even when the other helper still passes defaults.
+      final fileBody = _sourceSection(
         serviceSource,
+        '  Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromFile(',
+        '  Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromBuf(',
+      ).replaceAll(RegExp(r'\s+'), '');
+      final bufBody = _sourceSection(
+        serviceSource,
+        '  Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromBuf(',
+        '  Pointer<mtmd_bitmap> _mtmdBitmapInitFromAudio(',
+      ).replaceAll(RegExp(r'\s+'), '');
+      expect(
+        fileBody,
         contains(
-          'mtmd_helper_bitmap_init_from_file(ctx, pathPtr, false).bitmap',
+          'returnmtmd_helper_bitmap_init_from_file(ctx,pathPtr,false,mtmd_helper_init_opt_default(),).bitmap;',
         ),
       );
       expect(
-        serviceSource,
+        fileBody,
         contains(
-          'mtmd_helper_bitmap_init_from_buf(ctx, data, size, false)'
-          '.bitmap',
+          'returnfallback.helperBitmapInitFromFile(ctx,pathPtr,false,fallback.helperInitOptDefault(),).bitmap;',
         ),
       );
+      expect(
+        bufBody,
+        contains(
+          'returnmtmd_helper_bitmap_init_from_buf(ctx,data,size,false,mtmd_helper_init_opt_default(),).bitmap;',
+        ),
+      );
+      expect(
+        bufBody,
+        contains(
+          'returnfallback.helperBitmapInitFromBuf(ctx,data,size,false,fallback.helperInitOptDefault(),).bitmap;',
+        ),
+      );
+      final fallback = serviceSource
+          .substring(serviceSource.indexOf('class _MtmdApi {'))
+          .replaceAll(RegExp(r'\s+'), '');
+      expect(
+        fallback,
+        contains(
+          "helperInitOptDefault:library.lookupFunction<_MtmdHelperInitOptDefaultNative,_MtmdHelperInitOptDefaultDart>('mtmd_helper_init_opt_default')",
+        ),
+      );
+      expect(fallback, contains('catch(_){returnnull;}'));
     });
 
     test('Verify mtmd bitmap helper ABI is callable', () {
@@ -849,9 +903,16 @@ void main() {
           fail('Expected a split mtmd fallback library for this platform.');
         }
         _expectBitmapHelperDecodesTransparentPng(
-          (ctx, data, len, placeholder) =>
-              mtmd_helper_bitmap_init_from_buf(ctx, data, len, placeholder),
+          (ctx, data, len, placeholder, options) =>
+              mtmd_helper_bitmap_init_from_buf(
+                ctx,
+                data,
+                len,
+                placeholder,
+                options,
+              ),
           (bitmap) => mtmd_bitmap_free(bitmap),
+          mtmd_helper_init_opt_default,
         );
         return;
       }
@@ -866,7 +927,16 @@ void main() {
           .lookupFunction<_MtmdBitmapFreeNative, _MtmdBitmapFreeDart>(
             'mtmd_bitmap_free',
           );
-      _expectBitmapHelperDecodesTransparentPng(helper, bitmapFree);
+      final defaultOptions = library
+          .lookupFunction<
+            mtmd_helper_init_opt Function(),
+            mtmd_helper_init_opt Function()
+          >('mtmd_helper_init_opt_default');
+      _expectBitmapHelperDecodesTransparentPng(
+        helper,
+        bitmapFree,
+        defaultOptions,
+      );
     });
 
     test('Verify b10514 mtmd symbols are resolvable', () {

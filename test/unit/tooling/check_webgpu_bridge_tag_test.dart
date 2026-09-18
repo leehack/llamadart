@@ -50,9 +50,9 @@ Directory _fakeRuntimeRepo({
         : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
               '`hook/build.dart`\n',
     'website/docs/platforms/webgpu-bridge.md': parityWording
-        ? '- `v0.1.39+` bridge assets embed llama.cpp `$bridgeTag`, matching '
+        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, matching '
               'the native runtime\n'
-        : '- `v0.1.39+` bridge assets embed llama.cpp `$bridgeTag`, which now '
+        : '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, which now '
               'trails the\n',
   };
   for (final entry in entries.entries) {
@@ -67,8 +67,8 @@ const String _approvedManifestJson = '''
 {
   "artifacts": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "f2875193104f9be50a3cdbce2b6b8691354576f2d6ba1bbbb3637eaedd22b507",
-      "size_bytes": 5495
+      "sha256": "be584430457c76cf991c39ebfd19f771424f86f6304899840bf9e50f1b32cafc",
+      "size_bytes": 6330
     },
     "llama_webgpu_bridge.js": {
       "sha256": "a704115fe87d3defff4a02c5a2b1d1bf0ab3bc1f00de3f40ed2c9b2d5983fd73",
@@ -79,25 +79,25 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "d282a57d2de9cd3835ecc999374bcc9ef00d6df32da0f47744ea672977c86f32",
-      "size_bytes": 113962
+      "sha256": "67bade52aad19471ee96a7180db691e1f6b4e87d4254adaa3e5d9a31f6206ed1",
+      "size_bytes": 113847
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "b1419854bab331278deb513b5cbadb98be364ad5f4b515690dee58edb38cc41e",
-      "size_bytes": 8542117
+      "sha256": "f643e79520ac97bc150db6806735b9b73a98b07eb1b2fa4146bb773944315c71",
+      "size_bytes": 8918014
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "451ed2bfc99fc33e0de6b09eb96f03914a194c91bcd0bda968048c2d5efa7e2d",
-      "size_bytes": 131045
+      "sha256": "6575880ad6a631b6a8f9aaaebb9a5c3f1cc2910f59700ce529d3de6077276337",
+      "size_bytes": 130764
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "64e8046a6d18e570e50be84665f4a5022a457f70bc53c728298827b4c52bc072",
-      "size_bytes": 8760585
+      "sha256": "aaf399050af09af0c44b55ecf9d665e8f6e18df6f6deada3feab07677ddd7233",
+      "size_bytes": 9145549
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.39",
-  "bridge_commit": "79b6ef31e394dd2de92a456b7c249f9da377c720",
+  "bridge_assets_tag": "v0.1.44",
+  "bridge_commit": "89178be67c3c84300bc1b129182bd5bc5a8e21fc",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -128,8 +128,8 @@ const String _approvedManifestJson = '''
   "emscripten_version": "6.0.8",
   "files": {
     "llama_webgpu_bridge.d.ts": {
-      "sha256": "f2875193104f9be50a3cdbce2b6b8691354576f2d6ba1bbbb3637eaedd22b507",
-      "size_bytes": 5495
+      "sha256": "be584430457c76cf991c39ebfd19f771424f86f6304899840bf9e50f1b32cafc",
+      "size_bytes": 6330
     },
     "llama_webgpu_bridge.js": {
       "sha256": "a704115fe87d3defff4a02c5a2b1d1bf0ab3bc1f00de3f40ed2c9b2d5983fd73",
@@ -140,51 +140,53 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "d282a57d2de9cd3835ecc999374bcc9ef00d6df32da0f47744ea672977c86f32",
-      "size_bytes": 113962
+      "sha256": "67bade52aad19471ee96a7180db691e1f6b4e87d4254adaa3e5d9a31f6206ed1",
+      "size_bytes": 113847
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "b1419854bab331278deb513b5cbadb98be364ad5f4b515690dee58edb38cc41e",
-      "size_bytes": 8542117
+      "sha256": "f643e79520ac97bc150db6806735b9b73a98b07eb1b2fa4146bb773944315c71",
+      "size_bytes": 8918014
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "451ed2bfc99fc33e0de6b09eb96f03914a194c91bcd0bda968048c2d5efa7e2d",
-      "size_bytes": 131045
+      "sha256": "6575880ad6a631b6a8f9aaaebb9a5c3f1cc2910f59700ce529d3de6077276337",
+      "size_bytes": 130764
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "64e8046a6d18e570e50be84665f4a5022a457f70bc53c728298827b4c52bc072",
-      "size_bytes": 8760585
+      "sha256": "aaf399050af09af0c44b55ecf9d665e8f6e18df6f6deada3feab07677ddd7233",
+      "size_bytes": 9145549
     }
   },
-  "github_run_id": "33032131594",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/33032131594",
-  "llama_cpp_commit": "bb4caa7540188872173c44d161602d9271386413",
-  "llama_cpp_tag": "v0.2.0",
-  "native_commit": "e5c240e34b525da953ed98dc743516eef78cb738",
-  "native_manifest_sha256": "2e5d29d7f98f0d71e75d3fa63b7c55f3b2a7933247cc34ea2b1c5e053d142452",
-  "native_release_tag": "v0.2.0-1",
+  "github_run_id": "35075283754",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/35075283754",
+  "llama_cpp_commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
+  "llama_cpp_tag": "v0.4.1",
+  "native_commit": "a4ee6b9fa71127d6cdf625e26d82ca5ab7b1d102",
+  "native_manifest_sha256": "d8dc86fcb55e566ee04aa9ed235716bd0e7a48cdaecb17822c098b074ec33d3e",
+  "native_release_tag": "v0.4.1",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "kanban:t_7f112b91:web-v0.1.39",
+  "orchestrator_correlation_id": "auto-stable-v0.4.1-d8dc86fcb55e566e-build-89178be67c3c8430",
   "qualification_gates": {
     "multimodal": "passed",
-    "speech_to_text": "required-local-attestation",
+    "speech_to_text": "required-automated-qualification",
     "state_persistence": "passed",
-    "text_to_speech": "required-local-attestation"
+    "text_to_speech": "required-automated-qualification"
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.39",
+  "release_tag": "v0.1.44",
   "schema_version": 2,
-  "source_commit": "79b6ef31e394dd2de92a456b7c249f9da377c720",
+  "source_commit": "89178be67c3c84300bc1b129182bd5bc5a8e21fc",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
+    "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
     "real_device_intelligibility": "unproven",
     "real_device_playback": "unproven",
-    "speaker_reference_fidelity": "unproven"
+    "speaker_reference_fidelity": "unproven",
+    "wasm32_text_to_speech": "unsupported"
   },
-  "upstream_commit": "bb4caa7540188872173c44d161602d9271386413",
+  "upstream_commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
   "upstream_repository": "ggml-org/llama.cpp",
-  "upstream_tag": "v0.2.0"
+  "upstream_tag": "v0.4.1"
 }
 ''';
 
@@ -194,11 +196,11 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.39',
-    expectedLlamaCppTag: 'v0.2.0',
-    expectedLlamaCppCommit: 'bb4caa7540188872173c44d161602d9271386413',
-    expectedBridgeCommit: '79b6ef31e394dd2de92a456b7c249f9da377c720',
-    expectedNativeReleaseTag: 'v0.2.0-1',
+    expectedTag: 'v0.1.44',
+    expectedLlamaCppTag: bridgeLlamaCppTag,
+    expectedLlamaCppCommit: bridgeLlamaCppCommit,
+    expectedBridgeCommit: bridgeSourceCommit,
+    expectedNativeReleaseTag: bridgeNativeReleaseTag,
     expectedManifestSha256:
         expectedManifestSha256 ?? sha256.convert(bytes).toString(),
     fetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
@@ -253,7 +255,7 @@ void main() {
         'website/docs/changelog/recent-releases.md',
       ]) {
         final current = _currentReleaseNotes(path);
-        expect(current, contains('`v0.1.39`'), reason: path);
+        expect(current, contains('`v0.1.44`'), reason: path);
         expect(current, contains(bridgeManifestSha256), reason: path);
         expect(
           current,
@@ -270,7 +272,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const _litertLmReleaseTag = 'v0.16.0-native.2';"),
+        contains("const _litertLmReleaseTag = 'v0.17.0-5';"),
       );
     },
   );
@@ -362,6 +364,67 @@ void main() {
         isEmpty,
       );
     });
+
+    test(
+      'unrelated Unreleased notes retain the exact current released pin',
+      () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          file.writeAsStringSync(
+            '## Unreleased\n\n* Fix Apple dependency scanning.\n\n'
+            'WebGPU bridge assets are unchanged.\n\n${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), isEmpty);
+        expect(findCurrentReleaseNotesDrift(root, 'v8.8.8'), isNotEmpty);
+      },
+    );
+
+    test('pin-free Unreleased cannot borrow another historical version', () {
+      final root = releaseNotesRepo('1.0.0');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        file.writeAsStringSync(
+          '## Unreleased\n\n* Apple fix.\n${file.readAsStringSync()}',
+        );
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      for (final pin in releaseNotesPins) {
+        File(
+          '${root.path}/${pin.path}',
+        ).writeAsStringSync('## Unreleased\n\n* Apple fix.\n');
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+    });
+
+    for (final claim in [
+      'Aligned default WebGPU bridge assets to `v0.0.1`.',
+      'Moved WebGPU bridge assets to an invalid tag.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Moved WebGPU bridge assets to malformed.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Aligned default WebGPU bridge assets to `v9.9.9`.',
+    ]) {
+      test('Unreleased claim cannot hide behind released history: $claim', () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          final currentClaim = pin.path == 'CHANGELOG.md'
+              ? claim
+                    .replaceAll(
+                      'Aligned default WebGPU',
+                      'Aligned the default WebGPU',
+                    )
+                    .replaceAll('\n- ', '\n* ')
+              : claim;
+          final bullet = pin.path == 'CHANGELOG.md' ? '*' : '-';
+          file.writeAsStringSync(
+            '## Unreleased\n\n$bullet $currentClaim\n\n'
+            '${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      });
+    }
 
     test('a heading naming another version is reported', () {
       expect(
@@ -596,29 +659,6 @@ void main() {
       );
     });
 
-    test('normalizes native wrapper rebuild tags to upstream family', () {
-      expect(normalizeNativeLlamaCppTag('v0.2.0-1'), 'v0.2.0');
-      expect(normalizeNativeLlamaCppTag('v0.2.0'), 'v0.2.0');
-      expect(normalizeNativeLlamaCppTag('v1.2.3-45'), 'v1.2.3');
-      expect(normalizeNativeLlamaCppTag('b10514-1'), 'b10514');
-      expect(normalizeNativeLlamaCppTag('b10514-llamadart.1'), 'b10514');
-      expect(normalizeNativeLlamaCppTag('b10514'), 'b10514');
-    });
-
-    test('rejects malformed native tags during normalization', () {
-      expect(normalizeNativeLlamaCppTag('v0.2.0-0'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-beta'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-custom'), isNull);
-      expect(normalizeNativeLlamaCppTag('v00.2.0-1'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-01'), isNull);
-      expect(normalizeNativeLlamaCppTag('b0123'), isNull);
-      expect(normalizeNativeLlamaCppTag('b10514-0'), isNull);
-      expect(normalizeNativeLlamaCppTag('b10514-llamadart.0'), isNull);
-      expect(normalizeNativeLlamaCppTag('v1.2'), isNull);
-      expect(normalizeNativeLlamaCppTag('invalid-tag'), isNull);
-      expect(normalizeNativeLlamaCppTag(''), isNull);
-    });
-
     test('a malformed native wrapper tag is reported', () {
       final root = _fakeRuntimeRepo(
         bridgeTag: 'v0.2.0',
@@ -683,12 +723,12 @@ void main() {
 
     test('parity prose is accepted for matching upstream tags', () {
       final root = _fakeRuntimeRepo(
-        bridgeTag: 'v0.2.0',
-        nativeTag: 'v0.2.0-1',
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: bridgeNativeReleaseTag,
         parityWording: true,
       );
 
-      expect(findBridgeRuntimeDrift(root, 'v0.2.0'), isEmpty);
+      expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), isEmpty);
     });
 
     test('a doc naming a different bridge build is reported', () {
@@ -768,17 +808,14 @@ void main() {
         // bridgeNativeReleaseTag is a constant, so drive the mismatch from the
         // other side: a tree whose bridge and native pins agree on a family the
         // checked-in anchor does not belong to.
-        final root = _fakeRuntimeRepo(
-          bridgeTag: 'v0.3.0',
-          nativeTag: 'v0.3.0-1',
-        );
+        final root = _fakeRuntimeRepo(bridgeTag: 'v0.5.0', nativeTag: 'v0.5.0');
 
         expect(
-          findBridgeRuntimeDrift(root, 'v0.3.0'),
+          findBridgeRuntimeDrift(root, 'v0.5.0'),
           contains(
             contains(
               'bridgeNativeReleaseTag $bridgeNativeReleaseTag does not belong to '
-              'the recorded upstream llama.cpp release v0.3.0',
+              'the recorded upstream llama.cpp release v0.5.0',
             ),
           ),
         );
@@ -792,8 +829,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '377534035');
-      expect(bridgeAssetsTagCommit, 'd14d46a63deeee7a8f8a017e394b74ee112f4dba');
+      expect(bridgeAssetsReleaseId, '389783936');
+      expect(bridgeAssetsTagCommit, 'fdafd9f8cbdb9bf99c359536595eff9a23095379');
     });
 
     test('accepts equivalent CRLF documentation passages', () {

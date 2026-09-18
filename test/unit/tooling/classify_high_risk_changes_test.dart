@@ -77,6 +77,7 @@ void main() {
         'doc/pr_branch_writer_inventory.md',
         'doc/high_risk_pre_merge_readiness.md',
         'tool/testing/high_risk_readiness.dart',
+        'tool/testing/release_metadata_readiness.dart',
         'tool/testing/high_risk_readiness_evidence.schema.json',
         'test/unit/tooling/high_risk_readiness_test.dart',
       ]);
@@ -99,6 +100,15 @@ void main() {
       expect(
         formatHighRiskAssessment(assessment),
         'Classification: standard\n',
+      );
+    });
+
+    test('release metadata validator alone remains regression-policy risk', () {
+      expect(
+        assessHighRiskFiles([
+          'tool/testing/release_metadata_readiness.dart',
+        ]).surfaces,
+        {HighRiskSurface.regressionPolicy},
       );
     });
 

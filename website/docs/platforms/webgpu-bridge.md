@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.39`, with local vendored assets
-identified as `v0.1.39-local-v0.2.0`.
+The example currently pins bridge assets to `v0.1.44`, with local vendored assets
+identified as `v0.1.44-local-v0.4.1`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.39 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.44 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -193,13 +193,21 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   1.48 GB pair requires memory64 in the browser.
 - `v0.1.34+` bridge assets retry a failed worker WebGPU TTS synthesis once in a
   CPU main-thread runtime using the already cached model and projector. This
-  recovery is slower than healthy WebGPU synthesis and does not loop.
-- `v0.1.39+` bridge assets embed llama.cpp `v0.2.0`, matching the native runtime
-  (`v0.2.0-1`, both built from upstream `v0.2.0@bb4caa7540188872173c44d161602d9271386413`)
-  even though wrapper release tags differ. Pinned artifact provenance: release
-  `377534035`, tag commit `d14d46a63deeee7a8f8a017e394b74ee112f4dba`, bridge
-  source `79b6ef31e394dd2de92a456b7c249f9da377c720`, manifest SHA-256
-  `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`. The
+  recovery is slower than healthy WebGPU synthesis and does not loop. Certain
+  worker timeouts instead preserve GPU offload on the main-thread retry; see
+  [TTS recovery limits](../guides/text-to-speech.md#known-limits).
+- Published release qualification covers CPU/WASM state persistence, multimodal
+  input, ASR, and TTS. It does not establish hardware WebGPU acceleration,
+  physical playback, intelligibility, or speaker-reference fidelity. wasm32 TTS
+  remains unsupported; use memory64.
+- `v0.1.39+` remains the compatibility floor for bridge asset capabilities.
+- The pinned `v0.1.44` bridge assets embed llama.cpp `v0.4.1`, matching the native runtime
+  (`v0.4.1`, both built from upstream `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
+  even though the bridge asset tag `v0.1.44` differs from the native runtime tag
+  `v0.4.1`. Pinned artifact provenance: release `389783936`, tag commit
+  `fdafd9f8cbdb9bf99c359536595eff9a23095379`, bridge source
+  `89178be67c3c84300bc1b129182bd5bc5a8e21fc`, manifest SHA-256
+  `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`. The
   bridge assets provision an explicit 1 MiB stack for both wasm32 and memory64,
   preventing graph-parameter growth from overflowing Emscripten's 64 KiB
   default during memory64 Qwen3-ASR context construction.
@@ -333,7 +341,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.39';
+  window.__llamadartBridgeAssetsTag = 'v0.1.44';
   // Custom assets stay speech-disabled unless the host has validated them:
   // window.__llamadartBridgeSpeechToTextSupported = true;
   // Prefer local runtime even off localhost:

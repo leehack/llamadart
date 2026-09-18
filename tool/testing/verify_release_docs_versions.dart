@@ -1,6 +1,9 @@
 #!/usr/bin/env dart
 
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:llamadart/src/hook/native_bundle_config.dart';
 
 // Keep these maps in sync when adding companion packages or moving the current
 // installation docs. Historical website/versioned_docs pages are intentionally
@@ -376,10 +379,52 @@ final RegExp _dependencyLine = RegExp(
 );
 final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
-final RegExp _nativeReleaseTag = RegExp(
-  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
-);
+
+/// Selects the documented install pair without confusing a prepared companion
+/// with the companion shipped for the core version. Release preparation always
+/// requires the exact checkout versions instead.
+Map<String, String> installDocVersions(
+  Directory repoRoot,
+  Map<String, String> checkoutVersions,
+  List<String> errors, {
+  required bool releasePrep,
+}) {
+  final result = Map<String, String>.of(checkoutVersions);
+  if (releasePrep) return result;
+  final coreVersion = checkoutVersions['llamadart'];
+  final coreSections = _changelogSections(repoRoot, 'CHANGELOG.md', errors);
+  final coreNotes = coreSections?[coreVersion];
+  if (coreNotes == null) {
+    errors.add('CHANGELOG.md has no section for install core $coreVersion.');
+    return result;
+  }
+  final recordedCompanion = RegExp(
+    r'Apple companion `([0-9]+\.[0-9]+\.[0-9]+)`',
+  ).firstMatch(coreNotes)?.group(1);
+  // Most patch releases do not prepare a different companion. An explicit
+  // release pairing may override the checkout only after native-pin agreement.
+  if (recordedCompanion == null) return result;
+  final companion = companionSwiftPins.first;
+  final nativeTag = companion.changelogTag.firstMatch(coreNotes)?.group(1);
+  final companionSections = _changelogSections(
+    repoRoot,
+    companion.changelogPath,
+    errors,
+  );
+  final companionNotes = companionSections?[recordedCompanion];
+  final companionTag = companionNotes == null
+      ? null
+      : companion.changelogTag.firstMatch(companionNotes)?.group(1);
+  if (nativeTag == null || companionTag != nativeTag) {
+    errors.add(
+      'Install core $coreVersion and companion $recordedCompanion '
+      'must record the same native runtime pin in their changelogs.',
+    );
+    return result;
+  }
+  result[companion.package] = recordedCompanion;
+  return result;
+}
 
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
@@ -404,12 +449,18 @@ void main(List<String> arguments) {
     }
   }
 
+  final docVersions = installDocVersions(
+    Directory.current,
+    versions,
+    errors,
+    releasePrep: releasePrep,
+  );
   if (errors.isEmpty) {
     for (final entry in _currentDocDependencies.entries) {
       _checkCurrentDoc(
         path: entry.key,
         expectedPackages: entry.value,
-        versions: versions,
+        versions: docVersions,
         errors: errors,
       );
     }
@@ -424,6 +475,7 @@ void main(List<String> arguments) {
         }
       }
     }
+    checkNativeTagGrammarDocContracts(Directory.current, errors);
     pending = checkCompanionSwiftPins(Directory.current, errors);
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));
@@ -441,8 +493,8 @@ void main(List<String> arguments) {
 
   stdout.writeln(
     'Release docs versions verified: '
-    '${versions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
-    'llamadart-native $nativePin.',
+    '${docVersions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
+    'checkout llamadart-native $nativePin.',
   );
   for (final bump in pending) {
     stdout.writeln('Pending companion bump: $bump');
@@ -472,7 +524,7 @@ String? _checkCurrentNativePins(List<String> errors) {
       continue;
     }
     final pin = match.group(1)!;
-    if (!_nativeReleaseTag.hasMatch(pin)) {
+    if (!isValidNativeReleaseTag(pin)) {
       errors.add(
         '${entry.key} uses unsupported native tag $pin; expected stable '
         'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
@@ -567,7 +619,7 @@ void _checkCurrentDoc({
     if (documentedVersion != expectedVersion) {
       errors.add(
         '$path:${index + 1} documents $package ^$documentedVersion, '
-        'but ${packagePubspecPath(package)} is $expectedVersion.',
+        'but the install-version contract requires $expectedVersion.',
       );
     }
   }
@@ -598,3 +650,95 @@ List<String>? _readLines(String path, List<String> errors) {
 }
 
 String packagePubspecPath(String package) => _packagePubspecs[package]!;
+
+/// Checks the workflow input and prose that restate the native release tag
+/// grammar against `documentation_contract` in the shared grammar fixture, so
+/// a grammar change cannot land without the docs that describe it.
+void checkNativeTagGrammarDocContracts(
+  Directory repoRoot,
+  List<String> errors,
+) {
+  const fixturePath = 'tool/native/fixtures/native_release_tag_grammar.json';
+  final fixture = _readFromRoot(repoRoot, fixturePath, errors);
+  if (fixture == null) return;
+
+  final Map<String, dynamic> workflow;
+  final String workflowPath;
+  final String workflowInput;
+  final String workflowRequiredText;
+  final Map<String, List<String>> docs;
+  try {
+    final contract =
+        (jsonDecode(fixture) as Map<String, dynamic>)['documentation_contract']
+            as Map<String, dynamic>;
+    workflow = contract['workflow'] as Map<String, dynamic>;
+    workflowPath = workflow['path'] as String;
+    workflowInput = workflow['input'] as String;
+    workflowRequiredText = workflow['required_text'] as String;
+    docs = <String, List<String>>{
+      for (final entry in (contract['docs'] as Map<String, dynamic>).entries)
+        entry.key: (entry.value as List<dynamic>).cast<String>().toList(
+          growable: false,
+        ),
+    };
+  } on Object catch (error) {
+    errors.add('$fixturePath has no usable documentation_contract: $error.');
+    return;
+  }
+
+  final workflowText = _readFromRoot(repoRoot, workflowPath, errors);
+  if (workflowText != null) {
+    final normalizedWorkflow = workflowText.replaceAll('\r\n', '\n');
+    // Only the 8-space body lines of the input may satisfy the contract, so a
+    // matching description under a different input cannot stand in for it.
+    final scopedDescription = RegExp(
+      '^ {6}${RegExp.escape(workflowInput)}:\$\n'
+      '(?: {8}.*\$\n)*?'
+      ' {8}${RegExp.escape(workflowRequiredText)}\$\n',
+      multiLine: true,
+    );
+    if (!scopedDescription.hasMatch(normalizedWorkflow)) {
+      errors.add(
+        '$workflowPath $workflowInput input description does not match the '
+        'canonical native tag grammar contract.',
+      );
+    }
+  }
+
+  final whitespace = RegExp(r'\s+');
+  for (final entry in docs.entries) {
+    final text = _readFromRoot(repoRoot, entry.key, errors);
+    if (text == null) continue;
+    final normalized = text.replaceAll(whitespace, ' ');
+    for (final requirement in entry.value) {
+      if (!normalized.contains(requirement.replaceAll(whitespace, ' '))) {
+        errors.add(
+          '${entry.key} is missing native release tag contract requirement: '
+          '"$requirement".',
+        );
+      }
+    }
+  }
+}
+
+String? _readFromRoot(
+  Directory repoRoot,
+  String relativePath,
+  List<String> errors,
+) {
+  final file = File('${repoRoot.path}/$relativePath');
+  if (!file.existsSync()) {
+    errors.add('$relativePath does not exist.');
+    return null;
+  }
+
+  try {
+    return file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    errors.add('Could not read $relativePath: ${error.message}.');
+    return null;
+  } on FormatException catch (error) {
+    errors.add('$relativePath is not valid UTF-8 text: ${error.message}.');
+    return null;
+  }
+}

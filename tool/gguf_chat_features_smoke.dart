@@ -266,6 +266,26 @@ Future<void> main(List<String> args) async {
             maxTokens: 120,
           )
         : null;
+    final multimodalBytes = mmprojPath != null && imagePath != null
+        ? await _runScenario(
+            engine: engine,
+            name: 'multimodalBytes',
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [
+                  const LlamaTextContent(
+                    'Describe this image in one short sentence.',
+                  ),
+                  LlamaImageContent(bytes: await File(imagePath).readAsBytes()),
+                ],
+              ),
+            ],
+            tools: const [],
+            enableThinking: false,
+            maxTokens: 120,
+          )
+        : null;
     _verifyNoThinking(noThinking);
     _verifyThinkingSeparation(thinking);
     _verifyNoThinking(toolCallNoThinking);
@@ -280,6 +300,10 @@ Future<void> main(List<String> args) async {
       _verifyHasOutput(multimodal);
       _verifyNoThinking(multimodal);
     }
+    if (multimodalBytes != null) {
+      _verifyHasOutput(multimodalBytes);
+      _verifyNoThinking(multimodalBytes);
+    }
     final result = {
       'backendName': backendName,
       'requestedBackend': backend.name,
@@ -291,6 +315,7 @@ Future<void> main(List<String> args) async {
       'toolCallWithThinkingBudget': toolCallWithThinkingBudget.toJson(),
       'toolCallWithZeroThinkingBudget': toolCallWithZeroThinkingBudget.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
+      if (multimodalBytes != null) 'multimodalBytes': multimodalBytes.toJson(),
     };
     print('RESULT gguf_chat_features ${jsonEncode(result)}');
   } finally {

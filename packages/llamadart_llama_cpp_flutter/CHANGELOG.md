@@ -1,3 +1,15 @@
+## 0.0.19
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.4.1`.
+
+## 0.0.18
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.4.0`.
+
+## 0.0.17
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.3.0`.
+
 ## 0.0.16
 
 * Updated Apple SwiftPM native pin to the immutable

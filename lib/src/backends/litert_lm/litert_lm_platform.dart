@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:io';
 
 /// CPU backend selector accepted by the native LiteRT-LM runtime.
@@ -18,13 +19,15 @@ List<String> liteRtLmAvailableNativeBackendsForCurrentPlatform() {
       liteRtLmNpuBackend,
     ];
   }
-  if (Platform.isIOS || Platform.isMacOS) {
+  if (liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
     return const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend];
   }
   return const <String>[liteRtLmCpuBackend];
 }
 
 /// Returns the native LiteRT-LM backend used for automatic selection.
+///
+/// Linux and Windows retain CPU defaults; GPU execution requires explicit selection.
 String liteRtLmDefaultNativeBackendForCurrentPlatform() {
   if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
     return liteRtLmGpuBackend;
@@ -34,7 +37,17 @@ String liteRtLmDefaultNativeBackendForCurrentPlatform() {
 
 /// Returns whether the current native LiteRT-LM target exposes a GPU backend.
 bool liteRtLmNativeGpuSupportedOnCurrentPlatform() {
-  return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+  return Platform.isAndroid ||
+      Platform.isIOS ||
+      Platform.isMacOS ||
+      liteRtLmDesktopGpuSupportedForAbi(Abi.current());
+}
+
+/// Returns whether a Linux or Windows ABI has qualified GPU runtime support.
+///
+/// ARM64 desktop targets remain unavailable until separately qualified.
+bool liteRtLmDesktopGpuSupportedForAbi(Abi abi) {
+  return abi == Abi.linuxX64 || abi == Abi.windowsX64;
 }
 
 /// Normalizes an optional direct LiteRT-LM native backend override.

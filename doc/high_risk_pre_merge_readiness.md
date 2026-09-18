@@ -43,7 +43,7 @@ The contract fails closed against:
 3. duplicate JSON keys, unknown fields, wrong scalar/container types, and
    caller-declared decisions;
 4. caller-forged changed-file lists;
-5. deleted, renamed-old, unchanged, absolute, traversal, wildcard, non-test, or
+5. deleted, renamed-old, unauthorized unchanged, absolute, traversal, wildcard, non-test, or
    phantom evidence paths;
 6. boolean-only structured-output attestations without named production tests;
 7. PR-authored workflow or evidence execution;
@@ -93,7 +93,55 @@ source and destination paths are both classified. Every cited test must:
 
 This intentionally rejects unchanged tests as issue-specific proof. Existing
 coverage can still inform a human audit, but it cannot satisfy the changed
-production-test evidence field.
+production-test evidence field except through the bounded release route below.
+
+### Core-patch release metadata evidence
+
+A release-only PR remains **high-risk / artifactConsumer**. It can additionally
+declare the `release-metadata-verification` matrix row, with this exact command
+and a `pass` result (never `notApplicable`):
+
+```bash
+dart run tool/testing/verify_release_docs_versions.dart --release-prep && dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart
+```
+
+For this route, `affected_test_paths` must name exactly that existing test.
+The independent audit and both matrix rows remain required and are bound to
+the exact head and base. This records an existing release regression suite,
+not a fabricated newly changed test. The evaluator does not execute candidate
+scripts and cannot authenticate a claimed test run; the independent reviewer
+must inspect the exact-head command/log evidence.
+
+Eligibility comes from literal Git blobs and the complete rename-aware diff,
+not a `metadata_only` flag or a caller-provided inventory:
+
+- `pubspec.yaml` changes only its canonical stable version to the next patch;
+  every other byte, including dependencies, SDK, hooks and overrides, is fixed.
+- Both current changelogs and the four maintained installation README/docs
+  pages are modified. Historical numbered changelog sections, runtime identity
+  identities, frontmatter and already-prepared companion constraints remain
+  unchanged; current core snippets name the new patch. Mutable release prose
+  must be inactive Markdown with no MDX expressions/imports/exports or HTML
+  outside inert code examples. Executable `mdx-code-block` fences are rejected.
+  Historical changelog tails are excluded from that syntax check only after
+  proving byte equality. Narrative prose still needs independent review.
+- The generated `example/chat_app/pubspec.lock` must change only the
+  matching local `llamadart` version. Path, source, inventory, hashes, SDK and
+  all other bytes remain identical. Pub must generate the lock normally.
+- All changed paths are existing non-executable regular files; additions,
+  deletions, copies, renames and mode changes are excluded.
+- The existing release verifier and named regression test are unchanged
+  regular blobs at both revisions.
+
+The exact allowlist lives in `tool/testing/release_metadata_readiness.dart`.
+Companion version changes, runtime pins, generated bindings, hooks, SwiftPM,
+workflows, security/review policy, other docs/MDX and production changes cannot
+use this exception. Broader release changes use the ordinary changed-test
+contract instead of expanding this route implicitly.
+
+An internally consistent release evaluation still returns
+`unverifiedPrerequisites` (exit 2), never operational readiness. External
+authentication/publication/ruleset boundaries below are unchanged.
 
 ### Independent audit
 

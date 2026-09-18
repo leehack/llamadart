@@ -165,6 +165,7 @@ bool _isRegressionPolicy(String path) {
       path == 'tool/testing/test_matrix.dart' ||
       path == 'tool/testing/classify_high_risk_changes.dart' ||
       path == 'tool/testing/high_risk_readiness.dart' ||
+      path == 'tool/testing/release_metadata_readiness.dart' ||
       path == 'tool/testing/high_risk_readiness_evidence.schema.json' ||
       path == 'test/unit/tooling/test_matrix_test.dart' ||
       path == 'test/unit/tooling/classify_high_risk_changes_test.dart' ||

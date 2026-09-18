@@ -615,26 +615,22 @@ void main() {
     }
   });
 
-  test('build hook rejects unsupported native tag forms', () async {
-    for (final invalidTag in const [
-      '../bad',
-      'v1.2',
-      'v01.2.3',
-      'b00',
-      'b0000',
-      'b0001',
-      'b0001-1',
-      'b0001-llamadart.1',
-      'b1-01',
-      'b1-llamadart.01',
-      'b10514-custom',
-      'b10514-0',
-      'v0.2.0-0',
-      'v0.2.0-llamadart.1',
-      'v0.2.0-custom.1',
-      r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
-      r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
-    ]) {
+  test('build hook rejects the shared negative tag corpus', () async {
+    final fixture =
+        jsonDecode(
+              await File(
+                'tool/native/fixtures/native_release_tag_grammar.json',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
+    final invalidTags = <String>[
+      for (final rawCase in fixture['negative_cases'] as List<dynamic>)
+        (rawCase as Map<String, dynamic>)['tag'] as String,
+      for (final rawCase in fixture['reserved_inputs'] as List<dynamic>)
+        if (!(rawCase['dart_build_hook'] as bool)) rawCase['value'] as String,
+    ];
+
+    for (final invalidTag in invalidTags) {
       final userDefines = PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
           defines: {'llamadart_native_tag': invalidTag},
@@ -650,13 +646,8 @@ void main() {
           userDefines: userDefines,
           check: (input, output) {},
         ),
-        throwsA(
-          isA<FormatException>().having(
-            (error) => error.message,
-            'message for $invalidTag',
-            contains('stable vMAJOR.MINOR.PATCH tag'),
-          ),
-        ),
+        throwsA(isA<FormatException>()),
+        reason: invalidTag,
       );
     }
   });

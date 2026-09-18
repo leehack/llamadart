@@ -1712,17 +1712,31 @@ Future<List<T>> collectSpeechEvents<T>(Stream<T> events) {
 }
 
 /// Always runs [cleanup] and preserves a failure from [body] over cleanup.
+///
+/// When [markCleanupPhase] is provided, it runs only after [body] succeeds and
+/// before cleanup starts, so a body failure keeps its authoritative phase.
 Future<void> runWithSpeechCleanup({
   required Future<void> Function() body,
   required Future<void> Function() cleanup,
+  void Function()? markCleanupPhase,
 }) async {
   Object? firstError;
   StackTrace? firstStackTrace;
+  var bodySucceeded = false;
   try {
     await body();
+    bodySucceeded = true;
   } catch (error, stackTrace) {
     firstError = error;
     firstStackTrace = stackTrace;
+  }
+  if (bodySucceeded) {
+    try {
+      markCleanupPhase?.call();
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
   }
   try {
     await cleanup();
@@ -2275,6 +2289,78 @@ String? speechRowFailureMarker(Object error) {
   return null;
 }
 
+/// Stable, content-free phases for the strict llama.cpp Qwen3-ASR row.
+enum PhysicalIosQwen3AsrPhase {
+  setup('setup'),
+  fileTranscript('file_transcript'),
+  cancellation('cancellation'),
+  microphoneStart('microphone_start'),
+  microphoneCapture('microphone_capture'),
+  microphoneTranscript('microphone_transcript'),
+  reload('reload'),
+  teardown('teardown');
+
+  const PhysicalIosQwen3AsrPhase(this.marker);
+
+  /// Stable value emitted in physical-device result records and phase markers.
+  final String marker;
+}
+
+/// Content-free diagnostics for the strict Qwen3-ASR row.
+///
+/// Only validated SHA-256 values contribute identifiers; malformed setup
+/// metadata must neither leak into logs nor replace the original failure.
+class Qwen3AsrDiagnostics {
+  Qwen3AsrDiagnostics(Map<String, String> digests)
+    : digestIdentifiers = Map<String, String>.unmodifiable({
+        for (final key in const ['model', 'mmproj', 'fixture'])
+          if (RegExp(r'^[a-fA-F0-9]{64}$').hasMatch(digests[key] ?? ''))
+            key: digests[key]!.substring(0, 8).toLowerCase(),
+      });
+
+  final Map<String, String> digestIdentifiers;
+  PhysicalIosQwen3AsrPhase phase = PhysicalIosQwen3AsrPhase.setup;
+}
+
+/// Runs one row, preserving its failure and recording sanitized diagnostics.
+Future<void> recordSpeechRow({
+  required String id,
+  required List<SpeechE2ERowResult> results,
+  required Future<SpeechE2ERowResult> Function(Stopwatch elapsed) body,
+  Qwen3AsrDiagnostics? diagnostics,
+}) async {
+  final stopwatch = Stopwatch()..start();
+  try {
+    if (diagnostics != null && id != 'llama_cpp_qwen3_asr') {
+      throw ArgumentError('Qwen3-ASR diagnostics require the Qwen3-ASR row.');
+    }
+    final result = await body(stopwatch);
+    if (result.id != id) {
+      throw StateError('Speech row body returned a mismatched row id.');
+    }
+    results.add(result);
+  } catch (error) {
+    final phase = diagnostics?.phase;
+    results.add(
+      SpeechE2ERowResult(
+        id: id,
+        status: classifySpeechRowFailure(error),
+        backend: unresolvedSpeechBackendForRow(id),
+        duration: stopwatch.elapsed,
+        digestIdentifiers: diagnostics?.digestIdentifiers ?? const {},
+        assertionSummary: phase == null
+            ? ''
+            : 'Failed during ${phase.marker}: ${safeSpeechErrorDiagnostic(error)}',
+        phase: phase,
+        error: error,
+        actionMarker: speechRowFailureMarker(error),
+      ),
+    );
+  } finally {
+    stopwatch.stop();
+  }
+}
+
 /// A recorded row result with machine-readable serialization.
 class SpeechE2ERowResult {
   final String id;
@@ -2286,6 +2372,9 @@ class SpeechE2ERowResult {
   final Object? error;
   final String? actionMarker;
 
+  /// Optional content-free phase evidence for the strict Qwen3-ASR row.
+  final PhysicalIosQwen3AsrPhase? phase;
+
   SpeechE2ERowResult({
     required this.id,
     required this.status,
@@ -2295,6 +2384,7 @@ class SpeechE2ERowResult {
     this.assertionSummary = '',
     this.error,
     this.actionMarker,
+    this.phase,
   });
 
   /// Emits one JSON record so backend labels and errors containing spaces or
@@ -2302,6 +2392,7 @@ class SpeechE2ERowResult {
   String toResultLine() {
     final rawError = this.error;
     final error = rawError == null ? null : safeSpeechErrorDiagnostic(rawError);
+    final phase = this.phase?.marker;
     final record = <String, Object?>{
       'id': id,
       'status': status.name.toUpperCase(),
@@ -2309,6 +2400,7 @@ class SpeechE2ERowResult {
       'elapsedMs': duration.inMilliseconds,
       'digests': digestIdentifiers,
       'assertions': sanitizeSpeechDiagnostic(assertionSummary, maxLength: 400),
+      'phase': ?phase,
       'error': ?error,
       'action': ?actionMarker,
     };

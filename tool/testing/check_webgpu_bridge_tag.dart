@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_bundle_config.dart';
 
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
@@ -93,9 +94,32 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'doc/webgpu_bridge.md',
+    RegExp(
+      r'^even though the bridge asset tag `(v\d+\.\d+\.\d+)` differs from the '
+      r'native runtime tag$',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
       r'^The example currently pins bridge assets to `(v\d+\.\d+\.\d+)`,',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/platforms/webgpu-bridge.md',
+    RegExp(
+      r'^  even though the bridge asset tag `(v\d+\.\d+\.\d+)` differs from the '
+      r'native runtime tag$',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/platforms/webgpu-bridge.md',
+    RegExp(
+      r'^- The pinned `(v\d+\.\d+\.\d+)` bridge assets embed llama\.cpp ',
       multiLine: true,
     ),
   ),
@@ -189,19 +213,32 @@ String readRootPackageVersion(Directory repoRoot) {
   return matches.single.group(1)!;
 }
 
-/// The body of the top `## ` section of [contents] when it is the current one.
+/// The current bridge-pin announcement section of [contents].
 ///
 /// Ordinary development leaves the top section headed `## Unreleased`; a
 /// release-prep change promotes that same section to `## $releaseVersion`.
-/// Returns null for any other heading, so a gate reading this never mistakes a
-/// frozen historical section for the current release notes.
+/// Pin-free Unreleased notes use only the immediately following exact current
+/// release. A recognizable (even malformed) pin bullet prevents fallback.
 String? currentReleaseNotesSection(String contents, String releaseVersion) {
   final match = _topReleaseNotesSection.firstMatch(contents);
   if (match == null) return null;
   final heading = match.namedGroup('heading');
   if (heading != 'Unreleased' && heading != releaseVersion) return null;
-  return match.namedGroup('body');
+  final body = match.namedGroup('body')!;
+  if (heading != 'Unreleased' || _bridgePinBullet.hasMatch(body)) return body;
+  final released = _topReleaseNotesSection.firstMatch(
+    contents.substring(match.end),
+  );
+  if (released?.namedGroup('heading') != releaseVersion) return null;
+  return released!.namedGroup('body');
 }
+
+// Ambiguous/reworded pin bullets must fail the exact canonical claim check,
+// not silently borrow a historical value. Ordinary prose is not a pin site.
+final RegExp _bridgePinBullet = RegExp(
+  r'^[*-]\s+[^\n]*(?:WebGPU bridge assets|default WebGPU)[^\n]*$',
+  multiLine: true,
+);
 
 /// Reads the tag every pin must quote.
 ///
@@ -304,6 +341,13 @@ List<String> findCurrentReleaseNotesDrift(
       continue;
     }
     final matches = pin.pattern.allMatches(section).toList();
+    if (matches.length == 1 &&
+        _bridgePinBullet.allMatches(section).length != 1) {
+      problems.add(
+        '${pin.path}: ambiguous or malformed additional bridge pin bullet',
+      );
+      continue;
+    }
     if (matches.length != 1) {
       problems.add(
         '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines in '
@@ -322,13 +366,13 @@ List<String> findCurrentReleaseNotesDrift(
 }
 
 /// The llama.cpp upstream release tag embedded in the pinned bridge assets.
-const String bridgeLlamaCppTag = 'v0.2.0';
+const String bridgeLlamaCppTag = 'v0.4.1';
 
 /// The exact upstream llama.cpp commit embedded in the pinned bridge assets.
-const String bridgeLlamaCppCommit = 'bb4caa7540188872173c44d161602d9271386413';
+const String bridgeLlamaCppCommit = 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4';
 
 /// The exact bridge source commit used to build the pinned bridge assets.
-const String bridgeSourceCommit = '79b6ef31e394dd2de92a456b7c249f9da377c720';
+const String bridgeSourceCommit = '89178be67c3c84300bc1b129182bd5bc5a8e21fc';
 
 /// Canonical repository identities recorded in the approved manifest.
 const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
@@ -337,62 +381,22 @@ const String bridgeUpstreamRepository = 'ggml-org/llama.cpp';
 const String bridgeNativeRepository = 'leehack/llamadart-native';
 
 /// The native release tag the pinned bridge assets were qualified against.
-const String bridgeNativeReleaseTag = 'v0.2.0-1';
+const String bridgeNativeReleaseTag = 'v0.4.1';
 
 /// The asset repository release that published the pinned bridge assets.
-const String bridgeAssetsReleaseId = '377534035';
+const String bridgeAssetsReleaseId = '389783936';
 
 /// The asset repository commit the pinned bridge asset tag points at.
-const String bridgeAssetsTagCommit = 'd14d46a63deeee7a8f8a017e394b74ee112f4dba';
+const String bridgeAssetsTagCommit = 'fdafd9f8cbdb9bf99c359536595eff9a23095379';
 
 /// SHA-256 hash of the exact approved published manifest.json.
 const String bridgeManifestSha256 =
-    'b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf';
+    '8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9';
 
 /// Where the native runtime's llama.cpp build is pinned.
 const String nativeLlamaCppTagPath = 'hook/build.dart';
 
 final RegExp _nativeLlamaCppTag = RegExp(r"const _llamaCppTag = '([^']+)';");
-
-final RegExp _stableNativeTag = RegExp(
-  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$',
-);
-final RegExp _stableWrapperTag = RegExp(
-  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-([1-9]\d*)$',
-);
-final RegExp _legacyNativeTag = RegExp(r'^b(0|[1-9]\d*)$');
-final RegExp _nightlyWrapperTag = RegExp(r'^b(0|[1-9]\d*)-([1-9]\d*)$');
-final RegExp _legacyWrapperTag = RegExp(
-  r'^b(0|[1-9]\d*)-llamadart\.([1-9]\d*)$',
-);
-
-/// Normalizes a native release tag (e.g., `v0.2.0-1` or `b10514-1`) to its
-/// upstream llama.cpp release family (e.g., `v0.2.0` or `b10514`).
-///
-/// Returns null if the tag is malformed or not a recognized native release tag.
-String? normalizeNativeLlamaCppTag(String nativeTag) {
-  final stableWrapperMatch = _stableWrapperTag.firstMatch(nativeTag);
-  if (stableWrapperMatch != null) {
-    return 'v${stableWrapperMatch.group(1)}.${stableWrapperMatch.group(2)}.${stableWrapperMatch.group(3)}';
-  }
-  final stableMatch = _stableNativeTag.firstMatch(nativeTag);
-  if (stableMatch != null) {
-    return nativeTag;
-  }
-  final nightlyWrapperMatch = _nightlyWrapperTag.firstMatch(nativeTag);
-  if (nightlyWrapperMatch != null) {
-    return 'b${nightlyWrapperMatch.group(1)}';
-  }
-  final legacyWrapperMatch = _legacyWrapperTag.firstMatch(nativeTag);
-  if (legacyWrapperMatch != null) {
-    return 'b${legacyWrapperMatch.group(1)}';
-  }
-  final legacyMatch = _legacyNativeTag.firstMatch(nativeTag);
-  if (legacyMatch != null) {
-    return nativeTag;
-  }
-  return null;
-}
 
 /// Every site that names the llama.cpp build the bridge assets embed.
 ///
@@ -419,7 +423,7 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- `v\d+\.\d+\.\d+\+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime$',
+      r'^- The pinned `v\d+\.\d+\.\d+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime$',
       multiLine: true,
     ),
   ),
@@ -437,9 +441,11 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     RegExp(
       r'^\(`(?<nativeReleaseTag>[^`]+)`, both built from upstream llama\.cpp '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
-      r'even though wrapper release tags differ\. Provenance for this immutable consumer\r?\n'
-      r'artifact: release `(?<releaseId>\d+)`, tag commit\r?\n'
-      r'`(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
+      r'even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
+      r'native runtime tag\r?\n'
+      r'`v\d+\.\d+\.\d+`\. Provenance for this immutable consumer artifact: '
+      r'release `(?<releaseId>\d+)`,\r?\n'
+      r'tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
       r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\r?\n'
       r'`(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
@@ -450,9 +456,12 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     RegExp(
       r'^  \(`(?<nativeReleaseTag>[^`]+)`, both built from upstream '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
-      r'  even though wrapper release tags differ\. Pinned artifact provenance: release\r?\n'
-      r'  `(?<releaseId>\d+)`, tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge\r?\n'
-      r'  source `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
+      r'  even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
+      r'native runtime tag\r?\n'
+      r'  `v\d+\.\d+\.\d+`\. Pinned artifact provenance: release '
+      r'`(?<releaseId>\d+)`, tag commit\r?\n'
+      r'  `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
+      r'  `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
       r'  `(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
     ),

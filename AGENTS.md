@@ -212,6 +212,14 @@ flow in ownership order:
 
 ## Native And Web Asset Sync
 
+Apple llama.cpp process lookup requires the resolved companion's package
+identity and SwiftPM pin to match the core native pin. Preserve this guard and
+its metadata cache dependencies when changing sync or hook behavior; declared
+version constraints and core native overrides are not ABI evidence. Unverified
+local companion `Artifacts` overrides must fail closed.
+Changes to the companion SwiftPM implementation require reviewing/updating the
+hook's normalized manifest template contract; tag/checksum-only syncs do not.
+
 Prefer the repository workflow for native version and binding updates:
 `.github/workflows/sync_native_bindings.yml`.
 
@@ -326,6 +334,10 @@ require issue-specific positive and negative tests that fail if the relevant
 branch is deleted, bypassed, or miswired.
 Record zero known PR-caused P1 regressions and zero unresolved review threads
 in the PR's high-risk block and evidence payload.
+For core-patch release metadata only, use the bounded
+`release-metadata-verification` evidence route described in
+`doc/high_risk_pre_merge_readiness.md`. It checks exact Git blobs and existing
+release tests; do not fabricate changed tests or reclassify the PR as standard.
 
 Structured-output changes must cover compiled grammar acceptance and rejection,
 schema-directed scalar and container reconstruction, partial-streaming

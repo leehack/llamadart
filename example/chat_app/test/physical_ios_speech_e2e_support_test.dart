@@ -200,6 +200,175 @@ void main() {
     });
   });
 
+  group('Strict Qwen3-ASR harness wiring', () {
+    test('keeps phase evidence on the selected strict row only', () {
+      final source = File(
+        'integration_test/physical_ios_speech_e2e_test.dart',
+      ).readAsStringSync();
+      final row1Start = source.indexOf('// ROW 1: llama.cpp Qwen3-ASR');
+      final row2Start = source.indexOf(
+        '// ROW 2: LiteRT-LM dedicated streaming ASR',
+      );
+      expect(row1Start, greaterThanOrEqualTo(0));
+      expect(row2Start, greaterThan(row1Start));
+
+      final row1 = source.substring(row1Start, row2Start);
+      final laterRows = source.substring(row2Start);
+      expect(
+        row1,
+        contains("if (selectedRowIds.contains('llama_cpp_qwen3_asr'))"),
+      );
+      expect(row1, contains('await recordSpeechRow('));
+      expect(row1, contains('diagnostics: diagnostics,'));
+      expect(laterRows, isNot(contains('PhysicalIosQwen3AsrPhase.')));
+      expect(laterRows, isNot(contains('_recordQwen3AsrRow(')));
+
+      for (final phase in PhysicalIosQwen3AsrPhase.values.skip(1)) {
+        expect(row1, contains('PhysicalIosQwen3AsrPhase.${phase.name}'));
+      }
+      expect(RegExp(r'runWithSpeechCleanup\(').allMatches(row1), hasLength(4));
+      expect(RegExp(r'markCleanupPhase:').allMatches(row1), hasLength(7));
+      expect(RegExp(r'_transcribeExact\(').allMatches(row1), hasLength(3));
+      expect(row1, contains('gpuLayers == null || gpuLayers != 0'));
+      expect(row1, contains('requireStillActiveBeforeCancellation('));
+      expect(row1, contains('validatePcm16Wav('));
+      expect(
+        row1,
+        contains('expectedTranscript: config.micExpectedTranscript'),
+      );
+    });
+  });
+
+  group('Row diagnostic recording', () {
+    for (final phase in PhysicalIosQwen3AsrPhase.values) {
+      test('records ${phase.marker} without exposing original error', () async {
+        final diagnostics = Qwen3AsrDiagnostics({'model': 'A' * 64});
+        final results = <SpeechE2ERowResult>[];
+        final error = StateError('secret transcript /private/model.gguf');
+        await recordSpeechRow(
+          id: 'llama_cpp_qwen3_asr',
+          results: results,
+          diagnostics: diagnostics,
+          body: (_) async {
+            diagnostics.phase = phase;
+            throw error;
+          },
+        );
+        expect(results, hasLength(1));
+        expect(results.single.error, same(error));
+        final record = _decodeResultLine(results.single.toResultLine());
+        expect(record['phase'], phase.marker);
+        expect(record['status'], 'FAIL');
+        expect(record['digests'], {'model': 'aaaaaaaa'});
+        expect(record['assertions'], contains('Failed during ${phase.marker}'));
+        expect(results.single.toResultLine(), isNot(contains('secret')));
+        expect(results.single.toResultLine(), isNot(contains('/private/')));
+      });
+    }
+
+    test('malformed setup digests do not mask the original failure', () async {
+      final diagnostics = Qwen3AsrDiagnostics({
+        'model': '',
+        'mmproj': 'https://user:secret@example.test/model',
+        'fixture': 'a' * 63,
+        'untrusted-label': 'b' * 64,
+      });
+      final error = StateError('setup failure');
+      final results = <SpeechE2ERowResult>[];
+      await recordSpeechRow(
+        id: 'llama_cpp_qwen3_asr',
+        results: results,
+        diagnostics: diagnostics,
+        body: (_) async => throw error,
+      );
+      expect(results.single.error, same(error));
+      expect(results.single.digestIdentifiers, isEmpty);
+      expect(results.single.phase, PhysicalIosQwen3AsrPhase.setup);
+    });
+
+    test(
+      'nested cleanup preserves primary phase and runs every cleanup',
+      () async {
+        final diagnostics = Qwen3AsrDiagnostics({});
+        final results = <SpeechE2ERowResult>[];
+        final primary = StateError('transcript mismatch');
+        final cleanup = <String>[];
+        await recordSpeechRow(
+          id: 'llama_cpp_qwen3_asr',
+          results: results,
+          diagnostics: diagnostics,
+          body: (_) async {
+            diagnostics.phase = PhysicalIosQwen3AsrPhase.fileTranscript;
+            await runWithSpeechCleanup(
+              body: () => runWithSpeechCleanup(
+                body: () async => throw primary,
+                cleanup: () async {
+                  cleanup.add('task');
+                  throw StateError('task cleanup');
+                },
+                markCleanupPhase: () =>
+                    diagnostics.phase = PhysicalIosQwen3AsrPhase.teardown,
+              ),
+              cleanup: () async => cleanup.add('engine'),
+              markCleanupPhase: () =>
+                  diagnostics.phase = PhysicalIosQwen3AsrPhase.teardown,
+            );
+            throw StateError('unreachable');
+          },
+        );
+        expect(cleanup, ['task', 'engine']);
+        expect(results.single.error, same(primary));
+        expect(results.single.phase, PhysicalIosQwen3AsrPhase.fileTranscript);
+      },
+    );
+
+    test(
+      'other rows retain their existing success and failure shape',
+      () async {
+        final results = <SpeechE2ERowResult>[];
+        final pass = SpeechE2ERowResult(
+          id: 'litert_lm_streaming_asr',
+          status: SpeechE2ERowStatus.pass,
+          backend: 'test backend',
+          duration: Duration.zero,
+        );
+        await recordSpeechRow(
+          id: pass.id,
+          results: results,
+          body: (_) async => pass,
+        );
+        await recordSpeechRow(
+          id: pass.id,
+          results: results,
+          body: (_) async => throw StateError('failure'),
+        );
+        expect(results.first, same(pass));
+        expect(results.last.status, SpeechE2ERowStatus.fail);
+        expect(
+          _decodeResultLine(results.last.toResultLine()).containsKey('phase'),
+          isFalse,
+        );
+        expect(results.last.assertionSummary, isEmpty);
+      },
+    );
+
+    test('mismatched result remains a recorded failure', () async {
+      final results = <SpeechE2ERowResult>[];
+      await recordSpeechRow(
+        id: 'llama_cpp_qwen3_asr',
+        results: results,
+        body: (_) async => SpeechE2ERowResult(
+          id: 'wrong',
+          status: SpeechE2ERowStatus.pass,
+          backend: 'test',
+          duration: Duration.zero,
+        ),
+      );
+      expect(results.single.status, SpeechE2ERowStatus.fail);
+      expect(results.single.id, 'llama_cpp_qwen3_asr');
+    });
+  });
+
   group('PhysicalIosSpeechConfig', () {
     test('parses valid full configuration successfully', () {
       final config = PhysicalIosSpeechConfig.fromMap(_validEnv());
@@ -1401,6 +1570,59 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test('cleanup phase never replaces a primary body failure phase', () async {
+      var phase = PhysicalIosQwen3AsrPhase.microphoneTranscript;
+      var cleanupRan = false;
+
+      await expectLater(
+        runWithSpeechCleanup(
+          body: () async => throw StateError('primary failure'),
+          cleanup: () async {
+            cleanupRan = true;
+            throw StateError('cleanup failure');
+          },
+          markCleanupPhase: () => phase = PhysicalIosQwen3AsrPhase.teardown,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            'primary failure',
+          ),
+        ),
+      );
+      expect(cleanupRan, isTrue);
+      expect(phase, PhysicalIosQwen3AsrPhase.microphoneTranscript);
+    });
+
+    test('attributes a cleanup-only failure to teardown', () async {
+      var phase = PhysicalIosQwen3AsrPhase.reload;
+
+      await expectLater(
+        runWithSpeechCleanup(
+          body: () async {},
+          cleanup: () async => throw StateError('cleanup failure'),
+          markCleanupPhase: () => phase = PhysicalIosQwen3AsrPhase.teardown,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(phase, PhysicalIosQwen3AsrPhase.teardown);
+    });
+
+    test('a phase-marker failure cannot skip cleanup', () async {
+      var cleanupRan = false;
+
+      await expectLater(
+        runWithSpeechCleanup(
+          body: () async {},
+          cleanup: () async => cleanupRan = true,
+          markCleanupPhase: () => throw StateError('marker failure'),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(cleanupRan, isTrue);
+    });
   });
 
   group('Streaming SHA-256 Verification', () {
@@ -1991,6 +2213,7 @@ void main() {
         decoded['assertions'],
         equals('verified caps, transcribed fixture, verified mic'),
       );
+      expect(decoded.containsKey('phase'), isFalse);
       expect(decoded.containsKey('error'), isFalse);
       expect(decoded.containsKey('action'), isFalse);
     });
@@ -2021,6 +2244,63 @@ void main() {
       expect(line, isNot(contains('/private/path')));
       expect(line, isNot(contains('access')));
       expect(decoded['action'], equals(microphonePermissionActionMarker));
+    });
+
+    test(
+      'serializes sanitized Qwen3-ASR phase, digests, and one error fingerprint',
+      () {
+        final error = StateError('private transcript and /private/model.gguf');
+        final diagnostic = safeSpeechErrorDiagnostic(error);
+        final row = SpeechE2ERowResult(
+          id: 'llama_cpp_qwen3_asr',
+          status: SpeechE2ERowStatus.fail,
+          backend: 'llama.cpp CPU',
+          duration: const Duration(milliseconds: 15832),
+          digestIdentifiers: {
+            'model': 'bca25981',
+            'mmproj': '41a342b5',
+            'fixture': '312ba074',
+          },
+          assertionSummary: 'Failed during microphone_transcript: $diagnostic',
+          phase: PhysicalIosQwen3AsrPhase.microphoneTranscript,
+          error: error,
+        );
+
+        final decoded = _decodeResultLine(row.toResultLine());
+        expect(decoded['id'], equals('llama_cpp_qwen3_asr'));
+        expect(decoded['status'], equals('FAIL'));
+        expect(decoded['backend'], equals('llama.cpp CPU'));
+        expect(decoded['elapsedMs'], equals(15832));
+        expect(
+          decoded['digests'],
+          equals({
+            'model': 'bca25981',
+            'mmproj': '41a342b5',
+            'fixture': '312ba074',
+          }),
+        );
+        expect(decoded['assertions'], endsWith(diagnostic));
+        expect(decoded['phase'], equals('microphone_transcript'));
+        expect(decoded['error'], equals(diagnostic));
+        expect(row.toResultLine(), isNot(contains('private')));
+        expect(row.toResultLine(), isNot(contains('/private/model.gguf')));
+      },
+    );
+
+    test('Qwen3-ASR phases are stable and content-free', () {
+      expect(
+        PhysicalIosQwen3AsrPhase.values.map((phase) => phase.marker),
+        equals(<String>[
+          'setup',
+          'file_transcript',
+          'cancellation',
+          'microphone_start',
+          'microphone_capture',
+          'microphone_transcript',
+          'reload',
+          'teardown',
+        ]),
+      );
     });
 
     test('validates strict summary counts on expected 3 PASS, 1 UNSUPPORTED', () {
