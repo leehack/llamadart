@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout immutable trusted workflow revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
