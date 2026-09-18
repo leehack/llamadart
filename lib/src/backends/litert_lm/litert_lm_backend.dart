@@ -110,6 +110,7 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     await _cancelActiveGeneration();
     if (_sendPort == null) {
       _isReady = false;
@@ -138,6 +139,7 @@ class LiteRtLmBackend
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     await _cancelActiveGeneration();
     if (_sendPort == null) {
       return;

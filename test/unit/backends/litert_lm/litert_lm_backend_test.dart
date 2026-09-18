@@ -397,6 +397,14 @@ void main() {
             backend.dispose(),
             throwsA(isA<LlamaStateException>()),
           );
+          await expectLater(
+            backend.contextFree(1),
+            throwsA(isA<LlamaStateException>()),
+          );
+          await expectLater(
+            backend.modelFree(1),
+            throwsA(isA<LlamaStateException>()),
+          );
           // A late reply cannot revive the terminated request or backend.
           request.sendPort.send(LiteRtLmTokenizeResponse([42]));
           if (operation != 'dispose') {
