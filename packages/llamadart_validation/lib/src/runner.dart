@@ -289,6 +289,7 @@ class ValidationRunner {
   bool _poisoned = false;
   bool _settled = true;
   String? _operationPhase;
+  Map<String, dynamic>? _partialCaseEvidence;
 
   /// Request cancellation from the UI or host without marking success.
   void cancel() {
@@ -349,6 +350,7 @@ class ValidationRunner {
         });
         final watch = Stopwatch()..start();
         _operationPhase = id;
+        _partialCaseEvidence = null;
         try {
           _settled = false;
           final pending = _runCase(
@@ -368,6 +370,7 @@ class ValidationRunner {
           engine.cancel();
           await _record(id, 'ERROR', {
             'reason': 'case_timeout',
+            ...?_partialCaseEvidence,
             'timeout_ms': caseTimeout.inMilliseconds,
             'operation_phase': _operationPhase,
             'elapsed_ms': watch.elapsedMicroseconds / 1000,
@@ -375,6 +378,7 @@ class ValidationRunner {
         } catch (error) {
           await _record(id, 'ERROR', {
             'reason': 'runtime_exception',
+            ...?_partialCaseEvidence,
             'operation_phase': _operationPhase,
             'error_type': error.runtimeType.toString(),
             'message': redactDiagnostic('$error'),
@@ -613,12 +617,14 @@ class ValidationRunner {
       );
     }
     final trials = <Map<String, dynamic>>[];
+    _partialCaseEvidence = {'trials': trials};
     var passed = true;
     for (final mode in [
       ToolChoice.auto,
       ToolChoice.required,
       ToolChoice.none,
     ]) {
+      _operationPhase = 'tools.${mode.name}.generate';
       final output = await _checked(
         () => engine.generate(
           fixture['prompt'] as String,
@@ -670,6 +676,13 @@ class ValidationRunner {
                     canonicalJson(decoded) ==
                         canonicalJson(fixture['expected_arguments']));
       passed = passed && modePassed;
+      final trial = <String, dynamic>{
+        ...output,
+        'mode_passed': modePassed,
+        'reconstructed_name': name.toString(),
+        'reconstructed_arguments': decoded,
+      };
+      trials.add(trial);
       Map<String, dynamic>? followup;
       if (mode != ToolChoice.none && modePassed) {
         final response = await tool.invoke(
@@ -677,6 +690,7 @@ class ValidationRunner {
         );
         final prompt =
             'What is the temperature_celsius from the tool result? Reply with only the number.';
+        _operationPhase = 'tools.${mode.name}.tool_result_followup';
         final answer = await _checked(
           () => engine.generate(
             prompt,
@@ -726,14 +740,9 @@ class ValidationRunner {
             answer['completion_order_valid'] == true;
         followup = answer;
       }
-      trials.add({
-        ...output,
-        'tool_result_followup': ?followup,
-        'mode_passed': modePassed,
-        'reconstructed_name': name.toString(),
-        'reconstructed_arguments': decoded,
-      });
+      if (followup != null) trial['tool_result_followup'] = followup;
     }
+    _operationPhase = 'tools.recovery';
     final recovery = await _short();
     return {
       'trials': trials,

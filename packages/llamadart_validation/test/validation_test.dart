@@ -106,6 +106,10 @@ class FakeEngine implements ValidationEngine {
     ToolChoice? toolChoice,
   }) async {
     generated++;
+    if (featureFault == 'tool_followup_error' &&
+        prompt.contains('temperature_celsius from the tool result')) {
+      throw StateError('synthetic tool followup failure');
+    }
     if (tools != null) toolsSeen = true;
     if (!ready && !ignoresReadiness) throw LlamaContextException('Not loaded');
     final adjusted = streamBatchTokens != null || streamBatchBytes != null;
@@ -259,6 +263,24 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  test(
+    'tool followup errors retain successful call evidence and phase',
+    () async {
+      final result = await run(
+        FakeEngine()..featureFault = 'tool_followup_error',
+        selected: profile(release: true),
+      );
+      final record = result.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C07.tools',
+      );
+      expect(record['status'], 'ERROR');
+      expect(record['operation_phase'], 'tools.auto.tool_result_followup');
+      expect((record['trials'] as List).single['mode_passed'], true);
+      expect((record['trials'] as List).single['tool_choice'], 'auto');
+      expect(result.report.qualified, false);
+    },
+  );
+
   test('native control cannot execute public release feature cases', () async {
     final data =
         jsonDecode(
