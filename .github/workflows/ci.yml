@@ -348,6 +348,92 @@ jobs:
             example/chat_app/build/web/webgpu_bridge/sha256sums.txt
           if-no-files-found: ignore
 
+  artifact-contract:
+    name: Web Diagnostics Artifact Contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare diagnostic fixtures and verify production upload contract
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/ci.yml').read_text()
+          production = workflow.split('      - name: Upload Web contract diagnostics\n', 1)[1].split('\n  artifact-contract:', 1)[0]
+          assert 'if: $' + '{{ failure() }}' in production
+          assert 'uses: actions/upload-artifact@v7' in production
+          assert 'name: web-chat-contract-diagnostics' in production
+          assert 'if-no-files-found: ignore' in production
+          assert 'archive: false' not in production
+          paths = [
+              'llamadart-build.json',
+              'webgpu_bridge/manifest.json',
+              'webgpu_bridge/sha256sums.txt',
+          ]
+          for relative in paths:
+              path = Path('example/chat_app/build/web') / relative
+              assert str(path) in production
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text('diagnostic fixture: ' + relative + '\n')
+          PYTHON
+
+      - name: Upload diagnostic fixture archive
+        id: fixture-upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-chat-contract-fixture
+          path: |
+            example/chat_app/build/web/llamadart-build.json
+            example/chat_app/build/web/webgpu_bridge/manifest.json
+            example/chat_app/build/web/webgpu_bridge/sha256sums.txt
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Download named diagnostic archive
+        uses: actions/download-artifact@v5
+        with:
+          name: web-chat-contract-fixture
+          path: downloaded-diagnostics
+
+      - name: Verify archive paths and exact contents
+        env:
+          ARTIFACT_ID: ${{ steps.fixture-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.fixture-upload.outputs.artifact-digest }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import re
+          from pathlib import Path
+
+          assert os.environ['ARTIFACT_ID'].isdigit()
+          assert re.fullmatch(r'[0-9a-f]{64}', os.environ['ARTIFACT_DIGEST'])
+          root = Path('downloaded-diagnostics')
+          expected = {'llamadart-build.json', 'webgpu_bridge/manifest.json', 'webgpu_bridge/sha256sums.txt'}
+          actual = {p.relative_to(root).as_posix() for p in root.rglob('*') if p.is_file()}
+          assert actual == expected, (actual, expected)
+          for relative in expected:
+              assert (root / relative).read_text() == 'diagnostic fixture: ' + relative + '\n'
+          PYTHON
+
+      - name: Missing diagnostics do not mask the original failure
+        id: missing-upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-chat-contract-missing-fixture
+          path: absent-diagnostics/*.json
+          if-no-files-found: ignore
+          retention-days: 1
+
+      - name: Verify missing diagnostics created no artifact
+        env:
+          ARTIFACT_ID: ${{ steps.missing-upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.missing-upload.outputs.artifact-digest }}
+        run: test -z "$ARTIFACT_ID" && test -z "$ARTIFACT_DIGEST"
+
   test-linux-web:
     name: Test Linux & Web (with Coverage)
     runs-on: ubuntu-latest
