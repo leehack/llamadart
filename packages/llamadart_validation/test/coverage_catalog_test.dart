@@ -85,33 +85,62 @@ void main() {
     }
   });
 
-  test(
-    'CLI filters real coverage rows and rejects unknown selectors',
-    () async {
-      final command = ['../../tool/testing/validation.dart', 'coverage'];
-      final result = await Process.run(Platform.resolvedExecutable, [
-        ...command,
-        '--platform',
-        'android-arm64',
-        '--backend',
-        'npu',
-      ]);
-      expect(result.exitCode, 0, reason: '${result.stderr}');
-      final rows = (jsonDecode(result.stdout as String) as Map)['rows'] as List;
-      expect(rows, isNotEmpty);
-      expect(
-        rows.every(
-          (dynamic row) =>
-              row['backend'] == 'npu' && row['platform'] == 'android-arm64',
-        ),
-        isTrue,
-      );
-      final bad = await Process.run(Platform.resolvedExecutable, [
-        ...command,
-        '--backend',
-        'nonexistent',
-      ]);
-      expect(bad.exitCode, isNot(0));
-    },
-  );
+  test('CLI filters real coverage rows and rejects unknown selectors', () async {
+    // CI prepares only this private package. The root CLI must use its
+    // explicit package configuration, not depend on a prepared root checkout.
+      final isolated = Directory.systemTemp.createTempSync('coverage-cli-');
+      addTearDown(() => isolated.deleteSync(recursive: true));
+      Directory('${isolated.path}/tool/testing').createSync(recursive: true);
+    File(
+      '../../tool/testing/validation.dart',
+    ).copySync('${isolated.path}/tool/testing/validation.dart');
+    Directory('${isolated.path}/tool/testing/validation').createSync();
+    for (final source in Directory(
+      '../../tool/testing/validation',
+    ).listSync().whereType<File>()) {
+      if (source.path.endsWith('.dart')) {
+        source.copySync(
+          '${isolated.path}/tool/testing/validation/${source.uri.pathSegments.last}',
+        );
+      }
+    }
+    final library = Directory(
+      '${isolated.path}/packages/llamadart_validation/lib/src',
+    )..createSync(recursive: true);
+    for (final name in [
+      'runtime_environment.dart',
+      'runtime_environment_io.dart',
+      'runtime_environment_stub.dart',
+    ]) {
+      File('lib/src/$name').copySync('${library.path}/$name');
+    }
+    final command = [
+      '--packages=${File('.dart_tool/package_config.json').absolute.path}',
+      '${isolated.path}/tool/testing/validation.dart',
+      'coverage',
+    ];
+    final result = await Process.run(Platform.resolvedExecutable, [
+      ...command,
+      '--platform',
+      'android-arm64',
+      '--backend',
+      'npu',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    final rows = (jsonDecode(result.stdout as String) as Map)['rows'] as List;
+    expect(rows, isNotEmpty);
+    expect(
+      rows.every(
+        (dynamic row) =>
+            row['backend'] == 'npu' && row['platform'] == 'android-arm64',
+      ),
+      isTrue,
+    );
+    final bad = await Process.run(Platform.resolvedExecutable, [
+      ...command,
+      '--backend',
+      'nonexistent',
+    ]);
+    expect(bad.exitCode, isNot(0));
+  });
 }
