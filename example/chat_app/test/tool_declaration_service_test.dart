@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart_chat_example/services/host_tool_service.dart';
 import 'package:llamadart_chat_example/services/tool_declaration_service.dart';
 
 void main() {
@@ -12,7 +13,8 @@ void main() {
     });
 
     test('parses OpenAI function-style declarations', () {
-      final tools = service.parseDefinitions('''
+      final tools = service.parseDefinitions(
+        '''
 [
   {
     "type": "function",
@@ -29,7 +31,10 @@ void main() {
     }
   }
 ]
-''', handler: (ToolParams _) async => 'ok');
+''',
+        handlerFor: (String _) =>
+            (ToolParams _) async => 'ok',
+      );
 
       expect(tools, hasLength(1));
       final tool = tools.first;
@@ -43,7 +48,11 @@ void main() {
 
     test('returns readable parser errors', () {
       expect(
-        () => service.parseDefinitions('not-json', handler: (_) async => null),
+        () => service.parseDefinitions(
+          'not-json',
+          handlerFor: (String _) =>
+              (ToolParams _) async => null,
+        ),
         throwsFormatException,
       );
 
@@ -58,6 +67,108 @@ void main() {
         fallback: 'invalid',
       );
       expect(fallback, 'invalid');
+    });
+
+    test('rejects duplicate declaration names after normalization', () {
+      expect(
+        () => service.parseDefinitions(
+          '[{"name":"getWeather"},{"name":" getWeather "}]',
+          handlerFor: (String _) =>
+              (ToolParams _) async => null,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('duplicates the name'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects required properties absent from their schema', () {
+      expect(
+        () => service.parseDefinitions(
+          '''
+[
+  {
+    "name": "getWeather",
+    "parameters": {
+      "type": "object",
+      "properties": {"city": {"type": "string"}},
+      "required": ["missing"]
+    }
+  }
+]
+''',
+          handlerFor: (String _) =>
+              (ToolParams _) async => null,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('required list contains undeclared properties'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects required properties when properties is absent', () {
+      expect(
+        () => service.parseDefinitions(
+          '''
+[
+  {
+    "name": "getWeather",
+    "parameters": {
+      "type": "object",
+      "required": ["city"]
+    }
+  }
+]
+''',
+          handlerFor: (String _) =>
+              (ToolParams _) async => null,
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('required list contains undeclared properties'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('HostToolService', () {
+    const host = HostToolService();
+
+    test('returns a deterministic clearly simulated weather result', () async {
+      final first =
+          await host.getWeather(
+                ToolParams(<String, dynamic>{'city': 'Montréal'}),
+              )
+              as Map<String, Object?>;
+      final second =
+          await host.getWeather(
+                ToolParams(<String, dynamic>{'city': 'Montréal'}),
+              )
+              as Map<String, Object?>;
+
+      expect(second, first);
+      expect(first['simulated'], isTrue);
+      expect(first['source'], contains('not live weather data'));
+    });
+
+    test('arbitrary declaration names resolve to an explicit error', () async {
+      final result =
+          await host.handlerFor('launchRocket')(ToolParams(<String, dynamic>{}))
+              as Map<String, Object?>;
+
+      expect(result['error'], 'unsupported_tool');
+      expect(result['message'], contains('nothing was executed'));
     });
   });
 }

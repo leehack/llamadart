@@ -108,7 +108,10 @@ Future<void> showToolDeclarationsDialog(
                       ],
                     ),
                     Text(
-                      'Enter the function declarations the model can call.',
+                      'Enter the function declarations the model can call. '
+                      'Only the built-in getWeather demo runs locally, and it '
+                      'returns simulated data; any other declared name returns '
+                      'an error result to the model.',
                       style: TextStyle(
                         color: colorScheme.onSurfaceVariant,
                         fontSize: 13,

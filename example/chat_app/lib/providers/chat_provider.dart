@@ -20,6 +20,7 @@ import '../services/chat_service.dart';
 import '../services/chat_generation_service.dart';
 import '../services/chat_session_service.dart';
 import '../services/conversation_state_service.dart';
+import '../services/host_tool_service.dart';
 import '../services/runtime_profile_service.dart';
 import '../services/settings_service.dart';
 import '../services/model_service_base.dart' as model_service;
@@ -146,6 +147,7 @@ class ChatProvider extends ChangeNotifier {
   final LiveSpeechTranscriptionService _liveSpeechTranscriptionService;
   final AssistantOutputService _assistantOutputService;
   final ToolDeclarationService _toolDeclarationService;
+  final HostToolService _hostToolService;
   final bool _enableWebModelPrefetch;
 
   final List<ChatMessage> _messages = [];
@@ -160,7 +162,8 @@ class ChatProvider extends ChangeNotifier {
   // Chat session for stateful conversation
   ChatSession? _session;
 
-  // Tool declarations supplied by the user (schema only; no local execution).
+  // Tool declarations supplied by the user, bound to the built-in host
+  // implementations that are allowed to execute locally.
   List<ToolDefinition> _declaredTools = const <ToolDefinition>[];
   String? _toolDeclarationsError;
 
@@ -600,6 +603,7 @@ class ChatProvider extends ChangeNotifier {
     LiveSpeechTranscriptionService? liveSpeechTranscriptionService,
     AssistantOutputService? assistantOutputService,
     ToolDeclarationService? toolDeclarationService,
+    HostToolService? hostToolService,
     ChatSettings? initialSettings,
     bool? enableWebModelPrefetch,
   }) : _chatService = chatService ?? ChatService(),
@@ -622,6 +626,7 @@ class ChatProvider extends ChangeNotifier {
            assistantOutputService ?? const AssistantOutputService(),
        _toolDeclarationService =
            toolDeclarationService ?? const ToolDeclarationService(),
+       _hostToolService = hostToolService ?? const HostToolService(),
        _enableWebModelPrefetch = enableWebModelPrefetch ?? kIsWeb,
        _settings = initialSettings ?? const ChatSettings() {
     _createInitialConversation();
@@ -820,7 +825,7 @@ class ChatProvider extends ChangeNotifier {
     try {
       _declaredTools = _toolDeclarationService.parseDefinitions(
         raw,
-        handler: _declarationOnlyToolHandler,
+        handlerFor: _hostToolService.handlerFor,
       );
       _toolDeclarationsError = null;
     } catch (error) {
@@ -830,10 +835,6 @@ class ChatProvider extends ChangeNotifier {
         fallback: 'Tool declarations are invalid.',
       );
     }
-  }
-
-  static Future<Object?> _declarationOnlyToolHandler(ToolParams _) async {
-    return 'Tool execution is disabled in this chat app.';
   }
 
   Future<void> _init() async {
@@ -2017,6 +2018,8 @@ class ChatProvider extends ChangeNotifier {
     String text, {
     required _GenerationContext context,
     List<LlamaContentPart>? parts,
+    bool allowToolExecution = true,
+    List<ToolDefinition>? turnTools,
   }) async {
     if (!_generationContextMatches(context)) {
       _releaseGeneration(context);
@@ -2032,11 +2035,13 @@ class ChatProvider extends ChangeNotifier {
       decodeElapsedMs: 0,
     );
     _lastFirstTokenLatencyMs = null;
-    final toolsForTurn = _toolsForTurn();
+    final toolsForTurn = turnTools ?? _toolsForTurn();
     var appliedGeneratedTokenDeltas = 0;
     var hasMediaPartsInTurn = false;
     var hasAudioPartsInTurn = false;
     var isCpuMultimodalTurn = false;
+    var pendingToolCalls = const <LlamaToolCallContent>[];
+    var accountingApplied = false;
 
     try {
       if (!_generationContextMatches(context)) {
@@ -2201,9 +2206,6 @@ class ChatProvider extends ChangeNotifier {
           }
           if (toolCalls.isNotEmpty) {
             messageParts.addAll(toolCalls);
-            if (finalText.isEmpty) {
-              finalText = toolCalls.map((call) => call.rawJson).join('\n');
-            }
           } else if (finalText.isNotEmpty) {
             messageParts.add(LlamaTextContent(finalText));
           }
@@ -2230,8 +2232,31 @@ class ChatProvider extends ChangeNotifier {
           if (_messages.isNotEmpty && !_messages.last.isUser) {
             _messages.last.tokenCount = tokenCount;
           }
+          if (allowToolExecution &&
+              toolsForTurn != null &&
+              toolCalls.isNotEmpty) {
+            pendingToolCalls = toolCalls;
+          }
         }
       }
+
+      if (pendingToolCalls.isNotEmpty) {
+        // Close out this leg's accounting before the tool result and the
+        // continuation leg change which message is current.
+        await _applyGenerationAccounting(
+          context: context,
+          generationResult: generationResult,
+          appliedGeneratedTokenDeltas: appliedGeneratedTokenDeltas,
+        );
+        accountingApplied = true;
+        await _runToolCallContinuation(
+          context: context,
+          toolCalls: pendingToolCalls,
+          declaredTools: toolsForTurn!,
+        );
+        return;
+      }
+
       _removeEmptyAssistantPlaceholder();
     } catch (e) {
       if (!_generationContextMatches(context)) {
@@ -2312,75 +2337,210 @@ class ChatProvider extends ChangeNotifier {
       } else {
         _messages.add(
           ChatMessage(
-            text: 'Error: ${_formatDisplayError(e)}',
+            text:
+                'Generation failed before a usable response was produced. '
+                'Reload the model and retry; if it continues, check backend diagnostics.',
             isUser: false,
             isInfo: true,
           ),
         );
       }
     } finally {
-      if (_generationContextMatches(context)) {
-        final generatedTokens = generationResult.generatedTokens;
-        final elapsedMs = generationResult.elapsedMs;
-        final decodeElapsedMs = generationResult.decodeElapsedMs;
-
-        BackendPerfContextData? performance;
-        try {
-          performance = await _chatService.engine.getPerformanceContext();
-        } catch (_) {
-          performance = null;
-        }
-
-        if (_generationContextMatches(context)) {
-          final nativeEvalTokens = performance?.evalTokens;
-          final nativeEvalMs = performance?.evalMs;
-          _lastNativePromptEvalMs = performance?.promptEvalMs.round();
-          _lastNativeEvalMs = performance?.evalMs.round();
-          _lastNativeSampleMs = performance?.sampleMs.round();
-          _lastNativePromptEvalTokens = performance?.promptEvalTokens;
-          _lastNativeEvalTokens = nativeEvalTokens;
-          _lastNativeReusedGraphs = performance?.reusedGraphs;
-
-          final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
-          if (_messages.isNotEmpty &&
-              !_messages.last.isUser &&
-              !_messages.last.isInfo) {
-            _messages.last.generatedTokenCount = effectiveGeneratedTokens;
-          }
-          if (nativeEvalTokens != null &&
-              nativeEvalTokens != appliedGeneratedTokenDeltas) {
-            _currentTokens = math.max(
-              0,
-              _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
-            );
-          }
-
-          if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
-            _lastTokensPerSecond =
-                effectiveGeneratedTokens / (elapsedMs / 1000);
-          } else {
-            _lastTokensPerSecond = null;
-          }
-
-          final effectiveDecodeElapsedMs =
-              nativeEvalMs != null && nativeEvalMs > 0
-              ? nativeEvalMs
-              : decodeElapsedMs.toDouble();
-          if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
-            _lastDecodeTokensPerSecond =
-                effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
-          } else {
-            _lastDecodeTokensPerSecond = null;
-          }
-
-          if (generationResult.firstTokenLatencyMs != null ||
-              generationResult.fullResponse.isNotEmpty ||
-              generationResult.fullThinking.isNotEmpty) {
-            _lastGenerationLatencyMs = elapsedMs;
-          }
-        }
+      if (!accountingApplied) {
+        await _applyGenerationAccounting(
+          context: context,
+          generationResult: generationResult,
+          appliedGeneratedTokenDeltas: appliedGeneratedTokenDeltas,
+        );
       }
       _releaseGeneration(context);
+    }
+  }
+
+  Future<void> _applyGenerationAccounting({
+    required _GenerationContext context,
+    required GenerationStreamResult generationResult,
+    required int appliedGeneratedTokenDeltas,
+  }) async {
+    if (!_generationContextMatches(context)) {
+      return;
+    }
+
+    final generatedTokens = generationResult.generatedTokens;
+    final elapsedMs = generationResult.elapsedMs;
+    final decodeElapsedMs = generationResult.decodeElapsedMs;
+
+    BackendPerfContextData? performance;
+    try {
+      performance = await _chatService.engine.getPerformanceContext();
+    } catch (_) {
+      performance = null;
+    }
+
+    if (!_generationContextMatches(context)) {
+      return;
+    }
+
+    final nativeEvalTokens = performance?.evalTokens;
+    final nativeEvalMs = performance?.evalMs;
+    _lastNativePromptEvalMs = performance?.promptEvalMs.round();
+    _lastNativeEvalMs = performance?.evalMs.round();
+    _lastNativeSampleMs = performance?.sampleMs.round();
+    _lastNativePromptEvalTokens = performance?.promptEvalTokens;
+    _lastNativeEvalTokens = nativeEvalTokens;
+    _lastNativeReusedGraphs = performance?.reusedGraphs;
+
+    final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+    if (_messages.isNotEmpty &&
+        !_messages.last.isUser &&
+        !_messages.last.isInfo) {
+      _messages.last.generatedTokenCount = effectiveGeneratedTokens;
+    }
+    if (nativeEvalTokens != null &&
+        nativeEvalTokens != appliedGeneratedTokenDeltas) {
+      _currentTokens = math.max(
+        0,
+        _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
+      );
+    }
+
+    if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
+      _lastTokensPerSecond = effectiveGeneratedTokens / (elapsedMs / 1000);
+    } else {
+      _lastTokensPerSecond = null;
+    }
+
+    final effectiveDecodeElapsedMs = nativeEvalMs != null && nativeEvalMs > 0
+        ? nativeEvalMs
+        : decodeElapsedMs.toDouble();
+    if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
+      _lastDecodeTokensPerSecond =
+          effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
+    } else {
+      _lastDecodeTokensPerSecond = null;
+    }
+
+    if (generationResult.firstTokenLatencyMs != null ||
+        generationResult.fullResponse.isNotEmpty ||
+        generationResult.fullThinking.isNotEmpty) {
+      _lastGenerationLatencyMs = elapsedMs;
+    }
+  }
+
+  /// Executes the parsed [toolCalls], records their results, and runs the
+  /// single follow-up model turn that produces the final assistant answer.
+  Future<void> _runToolCallContinuation({
+    required _GenerationContext context,
+    required List<LlamaToolCallContent> toolCalls,
+    required List<ToolDefinition> declaredTools,
+  }) async {
+    if (!_generationContextMatches(context)) {
+      return;
+    }
+
+    // The session reports when even the active turn could not be compacted
+    // into the context window. Executing a model-proposed side effect from a
+    // request that did not fit would act on an unreliable prompt.
+    if (!context.session.lastRequestFitContext) {
+      _addInfoMessage(
+        'The requested tool was not executed because this turn no longer fits '
+        'the context window. Increase Context size or clear earlier turns.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    final results = <LlamaToolResultContent>[];
+    for (final call in toolCalls) {
+      final result = await _executeDeclaredToolCall(call, declaredTools);
+      if (!_generationContextMatches(context)) {
+        return;
+      }
+      results.add(result);
+    }
+
+    final lastIndex = _messages.length - 1;
+    if (lastIndex >= 0 &&
+        (_messages[lastIndex].parts
+                ?.whereType<LlamaToolCallContent>()
+                .isNotEmpty ??
+            false)) {
+      final toolCallMessage = _messages[lastIndex];
+      _messages[lastIndex] = toolCallMessage.copyWith(
+        parts: <LlamaContentPart>[...?toolCallMessage.parts, ...results],
+      );
+    }
+
+    _messages.add(
+      ChatMessage(
+        text: '',
+        isUser: false,
+        role: LlamaChatRole.tool,
+        parts: List<LlamaContentPart>.from(results),
+      ),
+    );
+    context.session.addMessage(
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: List<LlamaContentPart>.from(results),
+      ),
+    );
+    _syncActiveConversationSnapshot();
+    notifyListeners();
+
+    await _yieldUiFrame();
+    if (!_generationContextMatches(context)) {
+      return;
+    }
+
+    await _generateResponse(
+      '',
+      context: context,
+      allowToolExecution: false,
+      turnTools: declaredTools,
+    );
+
+    final history = context.session.history;
+    if (_generationIdentityMatches(context) &&
+        history.isNotEmpty &&
+        history.last.role == LlamaChatRole.assistant &&
+        history.last.parts.isEmpty) {
+      _restoreSessionFromMessages();
+    }
+  }
+
+  Future<LlamaToolResultContent> _executeDeclaredToolCall(
+    LlamaToolCallContent call,
+    List<ToolDefinition> declaredTools,
+  ) async {
+    ToolDefinition? declared;
+    for (final tool in declaredTools) {
+      if (tool.name == call.name) {
+        declared = tool;
+        break;
+      }
+    }
+
+    if (declared == null) {
+      return LlamaToolResultContent(
+        id: call.id,
+        name: call.name,
+        result: _hostToolService.unsupportedToolResult(call.name),
+      );
+    }
+
+    try {
+      return LlamaToolResultContent(
+        id: call.id,
+        name: call.name,
+        result: await declared.invoke(call.arguments),
+      );
+    } catch (_) {
+      return LlamaToolResultContent(
+        id: call.id,
+        name: call.name,
+        result: _hostToolService.failedToolResult(call.name),
+      );
     }
   }
 
@@ -4095,7 +4255,7 @@ class ChatProvider extends ChangeNotifier {
     try {
       final parsed = _toolDeclarationService.parseDefinitions(
         normalized,
-        handler: _declarationOnlyToolHandler,
+        handlerFor: _hostToolService.handlerFor,
       );
       _declaredTools = parsed;
       _toolDeclarationsError = null;

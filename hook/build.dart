@@ -1,6 +1,6 @@
 import 'dart:async'
     show Completer, StreamSubscription, Timer, TimeoutException, unawaited;
-import 'dart:convert' show utf8;
+import 'dart:convert' show jsonDecode, utf8;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -10,14 +10,20 @@ import 'package:hooks/hooks.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
+import 'package:yaml/yaml.dart';
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b10545';
+const _llamaCppTag = 'v0.4.1';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
 const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
+// Bind the maintained SwiftPM code, not just a tag declaration that arbitrary
+// Swift could ignore. Only the release tag/checksum and CRLF are normalized.
+// Changes to the companion manifest implementation require contract review.
+const _appleCompanionManifestTemplateSha256 =
+    '6f047f32a768fb3afd2eb4b0488768b591f254fe94e2bb472c5d70b34ff52a86';
 const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
@@ -26,10 +32,11 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
-const _litertLmVersion = '0.16.0-native.2';
+const _litertLmReleaseTag = 'v0.17.0-5';
+const _litertLmVersion = '0.17.0-5';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
-    'v$_litertLmVersion';
+    '$_litertLmReleaseTag';
 const _litertLmCacheDir = 'litert_lm';
 const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
@@ -51,7 +58,7 @@ final _litertLmBundles = Map.unmodifiable({
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: '1803d6c4ffebd78cb50c261e78fed411158d644e373255589eba762534e19008',
+    sha256: '744bfa2c0b2977d509d288f7634354337987270df7ab52b3d5e445f71b872a78',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -65,7 +72,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'android-x64',
-    sha256: 'dd9477c53d0b4d76c79cb104bc8ba6fe18d2ebdd5350db0fba4f25427fe6bccf',
+    sha256: '98740d3024bf9d923aea13014037a0c24d98bee7578d70b1f69a2301a18fb329',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -79,25 +86,29 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: '550386b165d408dc900f4958f51627fcb59b55e2f485416bb9eecc78b12d0032',
+    sha256: '6abd1fcedb06c77baa98c1c234418870b79cda9db8126ecf7052012329df0e6a',
     requiredLibraries: {
-      'LiteRtLm',
       'CLiteRTLM',
       'GemmaModelConstraintProvider',
+      'LiteRtLm',
+      'LiteRtMetalAccelerator',
+      'LiteRtTopKMetalSampler',
     },
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: 'ec02c2246d04ce6e003b2c2dac1b68678a5b9e0eda387731516e0de12544e898',
+    sha256: '6f4723de008020c92d953199eea5cb9a2a91270f56cc85e006cf8adb90408969',
     requiredLibraries: {
-      'LiteRtLm',
       'CLiteRTLM',
       'GemmaModelConstraintProvider',
+      'LiteRtLm',
+      'LiteRtMetalAccelerator',
+      'LiteRtTopKMetalSampler',
     },
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: 'd93c380b1fc63f568279e68ad596dcca3234b6885b2e953a10e2f6d4244d956c',
+    sha256: '56760ac7d4678b9cada5041b7a2ee327183d41861a64152dead8338a2392f8cd',
     requiredLibraries: {
       'libCLiteRTLM_mac.dylib',
       'libGemmaModelConstraintProvider.dylib',
@@ -112,12 +123,12 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'macos-x64',
-    sha256: '7991715cae696143cc20b2d5983abc31bdc6121ed6a7040dbb139a837bda9e0a',
+    sha256: 'cc3d8536f723d78286a166734cf1fd5ebb1e3b60de81cc8de214c07a6f0b4ccf',
     requiredLibraries: {'libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'},
   ),
   _LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '7eda924bdf4a1a800e73f9029c1e4a2686cb36ee6a31e9190e46ec5d6345e0e2',
+    sha256: 'cdb680c61c08259151a2ccff693a4509e8aa5c19b93c5b66f8d12820ae62dae9',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -129,7 +140,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: 'fd3a845f15b6ae3e158cea6668c2b61902ab5d7c89d8784d5d0f3a017e52096d',
+    sha256: 'cd5089297392c12bf1f8a57172304e36f70a935330175e329418487558d43b18',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -141,7 +152,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: 'd7e997b12f6c39e4bac0cb878d824e05f1b4bae21768a407b150c14cb998f13f',
+    sha256: 'bb31d2a9f4c94a9de8df3f04439bfc4c5483446b34c2ec0188c1e63d2e3794ea',
     requiredLibraries: {
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
@@ -157,10 +168,6 @@ const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
 final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
-final _nativeTagPattern = RegExp(
-  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
-);
 final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
 
 class _NativeBundleConfig {
@@ -198,7 +205,7 @@ class _LiteRtLmBundleSpec {
   });
 
   String get archiveName =>
-      'litert-lm-native-runtime-$bundle-v$_litertLmVersion.tar.gz';
+      'litert-lm-native-runtime-$bundle-$_litertLmReleaseTag.tar.gz';
 
   String get directoryName {
     final separator = bundle.indexOf('-');
@@ -257,6 +264,7 @@ void main(List<String> args) async {
     final appleSpmRuntimes = _flutterAppleCompanionRuntimes(
       input: input,
       code: code,
+      output: output,
       log: log,
     );
     var selectedRuntimes =
@@ -376,6 +384,7 @@ void main(List<String> args) async {
         final emittedFileNames = _emittedFileNamesForLibrary(
           spec: spec,
           library: library,
+          nativeConfig: nativeConfig,
         );
 
         for (final emittedFileName in emittedFileNames) {
@@ -522,6 +531,7 @@ bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 List<String>? _flutterAppleCompanionRuntimes({
   required BuildInput input,
   required CodeConfig code,
+  required BuildOutputBuilder output,
   required Logger log,
 }) {
   if (!_isAppleTarget(code.targetOS)) {
@@ -553,6 +563,7 @@ List<String>? _flutterAppleCompanionRuntimes({
   }
 
   final pubspecSource = pubspec.readAsStringSync();
+  output.dependencies.add(pubspec.uri);
   final isFlutter = _pubspecDeclaresFlutter(pubspecSource);
   if (!isFlutter) {
     log.info(
@@ -565,6 +576,7 @@ List<String>? _flutterAppleCompanionRuntimes({
   final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
+    _validateAppleLlamaCompanion(consumerRoot, output);
     runtimes.add(nativeRuntimeLlamaCpp);
   }
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
@@ -579,6 +591,127 @@ List<String>? _flutterAppleCompanionRuntimes({
     return null;
   }
   return runtimes;
+}
+
+void _validateAppleLlamaCompanion(
+  Directory consumerRoot,
+  BuildOutputBuilder output,
+) {
+  Never reject(String reason) => throw StateError(
+    'Incompatible Apple llama.cpp companion: $reason '
+    'Resolve $_llamaCppFlutterPackageName with a Package.swift pin matching '
+    '$_nativeRepoSlug@$_llamaCppTag and rerun flutter pub get. '
+    'Upgrade the core and companion together to a matching released pair; '
+    'native tag/path overrides do not replace SPM frameworks. '
+    'No in-process native asset was emitted.',
+  );
+
+  try {
+    var directory = consumerRoot;
+    File? configuration;
+    while (true) {
+      final candidate = File(
+        path.join(directory.path, _dartToolDir, 'package_config.json'),
+      );
+      if (candidate.existsSync()) {
+        configuration = candidate;
+        break;
+      }
+      final parent = directory.parent;
+      if (_sameDirectory(parent, directory)) break;
+      directory = parent;
+    }
+    if (configuration == null) {
+      reject('Resolved package configuration missing.');
+    }
+    output.dependencies.add(configuration.uri);
+    final config = jsonDecode(configuration.readAsStringSync());
+    if (config is! Map ||
+        config['configVersion'] != 2 ||
+        config['packages'] is! List) {
+      reject('Resolved package configuration is malformed.');
+    }
+    final entries = config['packages'] as List;
+    if (entries.any((entry) => entry is! Map)) {
+      reject('Resolved package configuration contains malformed entries.');
+    }
+    final companions = entries
+        .where((entry) => (entry as Map)['name'] == _llamaCppFlutterPackageName)
+        .toList();
+    if (companions.length != 1) {
+      reject('Expected exactly one resolved llama.cpp companion.');
+    }
+    final root = (companions.single as Map)['rootUri'];
+    if (root is! String || root.isEmpty) reject('Companion root URI missing.');
+    final uri = configuration.uri.resolve(root);
+    if (uri.scheme != 'file' || uri.hasQuery || uri.hasFragment) {
+      reject('Companion root must be a local package directory.');
+    }
+    final companionRoot = Directory.fromUri(uri);
+    final pubspec = File(path.join(companionRoot.path, 'pubspec.yaml'));
+    final manifest = File(
+      path.join(
+        companionRoot.path,
+        'darwin',
+        _llamaCppFlutterPackageName,
+        'Package.swift',
+      ),
+    );
+    output.dependencies.addAll([pubspec.uri, manifest.uri]);
+    if (!pubspec.existsSync() || !manifest.existsSync()) {
+      reject('Resolved companion package metadata is missing.');
+    }
+    final metadata = loadYaml(pubspec.readAsStringSync());
+    if (metadata is! Map ||
+        metadata['name'] != _llamaCppFlutterPackageName ||
+        metadata['version'] is! String ||
+        !RegExp(
+          r'^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$',
+        ).hasMatch(metadata['version'] as String)) {
+      reject('Resolved companion identity is malformed.');
+    }
+    final source = manifest.readAsStringSync();
+    final pins = RegExp(
+      r'^let llamaCppTag = "([^"\r\n]+)"\s*$',
+      multiLine: true,
+    ).allMatches(source).toList();
+    if (pins.length != 1 || pins.single.group(1) != _llamaCppTag) {
+      reject(
+        'Resolved companion ${metadata['version']} does not uniquely pin '
+        'the required native runtime $_llamaCppTag.',
+      );
+    }
+    final normalizedSource = source.replaceAll('\r\n', '\n');
+    final checksum = RegExp(r'checksum: "[0-9a-f]{64}"');
+    final template = normalizedSource
+        .replaceFirst(
+          RegExp(r'^let llamaCppTag = "[^"\r\n]+"$', multiLine: true),
+          'let llamaCppTag = "PIN"',
+        )
+        .replaceFirst(checksum, 'checksum: "CHECKSUM"');
+    if (checksum.allMatches(normalizedSource).length != 1 ||
+        sha256.convert(utf8.encode(template)).toString() !=
+            _appleCompanionManifestTemplateSha256) {
+      reject('Companion SwiftPM target does not use the supported native pin.');
+    }
+    final artifacts = Directory(path.join(manifest.parent.path, 'Artifacts'));
+    // The supported manifest can prefer local binaries over its remote pin.
+    // Such binaries have no verified ABI contract and must not inherit trust
+    // from the tag string. Track the existing parent: directory dependencies
+    // hash child names, so adding/removing Artifacts invalidates a cached
+    // success without making Flutter enumerate a nonexistent directory.
+    output.dependencies.add(manifest.parent.uri);
+    if (artifacts.existsSync()) {
+      reject(
+        'Local Artifacts overrides cannot establish framework ABI '
+        'compatibility; remove them and use the pinned framework.',
+      );
+    }
+  } on FileSystemException {
+    reject('Unable to read resolved companion metadata.');
+  } on FormatException {
+    reject('Resolved companion metadata is malformed.');
+  }
 }
 
 Directory? _consumerPackageRoot(BuildInput input) {
@@ -654,49 +787,29 @@ bool _sameDirectory(Directory a, Directory b) {
 }
 
 bool _pubspecDeclaresFlutter(String source) {
-  final lines = source.split('\n');
-  for (final rawLine in lines) {
-    final line = rawLine.split('#').first;
-    if (RegExp(r'^\s*sdk\s*:\s*flutter\s*$').hasMatch(line)) {
-      return true;
-    }
-  }
-  return false;
+  final pubspec = _readConsumerPubspec(source);
+  if (pubspec is! Map) return false;
+  final dependencies = pubspec['dependencies'];
+  if (dependencies is! Map) return false;
+  final flutter = dependencies['flutter'];
+  return flutter is Map && flutter['sdk'] == 'flutter';
 }
 
 Set<String> _pubspecDependencyNames(String source) {
-  final dependencies = <String>{};
-  String? section;
-  int? dependencyIndent;
-  for (final rawLine in source.split('\n')) {
-    final line = rawLine.split('#').first;
-    if (line.trim().isEmpty) {
-      continue;
-    }
+  final pubspec = _readConsumerPubspec(source);
+  if (pubspec is! Map || pubspec['dependencies'] is! Map) return {};
+  return (pubspec['dependencies'] as Map).keys.whereType<String>().toSet();
+}
 
-    final topLevel = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:').firstMatch(line);
-    if (topLevel != null) {
-      section = topLevel.group(1);
-      dependencyIndent = null;
-      continue;
-    }
-
-    if (section != 'dependencies') {
-      continue;
-    }
-
-    final dependency = RegExp(
-      r'^(\s+)([A-Za-z_][A-Za-z0-9_]*)\s*:',
-    ).firstMatch(line);
-    if (dependency != null) {
-      final indent = dependency.group(1)!.length;
-      dependencyIndent ??= indent;
-      if (indent == dependencyIndent) {
-        dependencies.add(dependency.group(2)!);
-      }
-    }
+Object? _readConsumerPubspec(String source) {
+  try {
+    return loadYaml(source);
+  } on FormatException {
+    throw StateError(
+      'Cannot validate Apple runtime selection: malformed '
+      'consumer pubspec. Fix pubspec.yaml and rerun flutter pub get.',
+    );
   }
-  return dependencies;
 }
 
 Future<void> _emitLiteRtLmAssets({
@@ -1135,14 +1248,14 @@ String _resolveNativeTag(Object? rawUserConfig) {
     );
   }
 
-  final tag = rawUserConfig.trim();
+  final tag = rawUserConfig;
   if (tag.isEmpty) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must not be '
       'empty.',
     );
   }
-  if (!_nativeTagPattern.hasMatch(tag)) {
+  if (!isValidNativeReleaseTag(tag)) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
       'stable vMAJOR.MINOR.PATCH tag, stable wrapper rebuild '
@@ -1649,6 +1762,7 @@ List<String> _collectDynamicLibraryPaths(
 List<String> _emittedFileNamesForLibrary({
   required NativeBundleSpec spec,
   required NativeLibraryDescriptor library,
+  required _NativeBundleConfig nativeConfig,
 }) {
   final fileNames = <String>[library.fileName];
 
@@ -1660,10 +1774,11 @@ List<String> _emittedFileNamesForLibrary({
     if (lowered.endsWith('.so') && !lowered.endsWith('.so.0')) {
       fileNames.add('${library.fileName}.0');
     }
-    // llamadart-native b10545 still publishes mtmd with the literal ELF SONAME
-    // `libmtmd.so.SOVERSION`. Keep the immutable release consumable until the
-    // owning native artifact corrects that SONAME.
-    if (lowered == 'libmtmd.so') {
+    // Historical b-tag artifacts and the original v0.2.0 artifact can encode
+    // mtmd's literal placeholder as their ELF SONAME. v0.2.0-1 corrected it.
+    final needsMtmdSoversionAlias =
+        nativeConfig.tag.startsWith('b') || nativeConfig.tag == 'v0.2.0';
+    if (lowered == 'libmtmd.so' && needsMtmdSoversionAlias) {
       fileNames.add('${library.fileName}.SOVERSION');
     }
   }
@@ -2075,6 +2190,22 @@ final class _RuntimeBundleDownloadHttpException implements Exception {
   String toString() => 'Failed to download $url ($statusCode).';
 }
 
+/// Extracts a native bundle archive through the hardened build-hook path.
+///
+/// This is intended for hook tests that need to assert extraction behaviour;
+/// production code should use the build hook entrypoint.
+Future<void> extractArchiveForTesting({
+  required String archivePath,
+  required String outputDirectory,
+  required Logger log,
+}) {
+  return _extractArchive(
+    archivePath: archivePath,
+    outputDirectory: outputDirectory,
+    log: log,
+  );
+}
+
 Future<void> _extractArchive({
   required String archivePath,
   required String outputDirectory,
@@ -2091,7 +2222,18 @@ Future<void> _extractArchive({
     throw Exception('Failed to decode native bundle archive: $archivePath');
   }
 
-  for (final file in archive.files) {
+  // An archive may repeat a normalized path (GNU tar emits `./`-prefixed names)
+  // and may even switch its kind between repeats, so the whole archive is
+  // scanned for traversal and deduplicated before anything touches the disk.
+  // Only the last entry for a path decides whether it lands as a directory, a
+  // regular file, or a materialized link alias.
+  final entriesByArchivePath = <String, ArchiveFile>{};
+  final targetPathsByArchivePath = <String, String>{};
+  final winningEntryIndexes = <String, int>{};
+  final archiveRelativePaths = <String>[];
+
+  for (var index = 0; index < archive.files.length; index++) {
+    final file = archive.files[index];
     final relativePath = path.normalize(file.name);
     final targetPath = path.normalize(path.join(outputRoot, relativePath));
     final isInRoot =
@@ -2103,13 +2245,153 @@ Future<void> _extractArchive({
       );
     }
 
-    if (file.isDirectory) {
-      await Directory(targetPath).create(recursive: true);
+    // `./` directory entries are normal in GNU tar output, but a regular file
+    // or symlink named `.` would make extraction delete the output root and
+    // replace it with a file, so it is rejected before anything touches disk.
+    if (targetPath == outputRoot && !file.isDirectory) {
+      throw Exception(
+        'Archive root replacement entry blocked for $archivePath: ${file.name}',
+      );
+    }
+
+    final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
+    entriesByArchivePath[archiveRelativePath] = file;
+    targetPathsByArchivePath[archiveRelativePath] = targetPath;
+    winningEntryIndexes[archiveRelativePath] = index;
+    archiveRelativePaths.add(archiveRelativePath);
+  }
+
+  // Symbolic links are materialized after the extraction loop so link targets
+  // that appear later in the archive still resolve.
+  final symbolicLinkPaths = <String>[];
+
+  for (var index = 0; index < archive.files.length; index++) {
+    final archiveRelativePath = archiveRelativePaths[index];
+    if (winningEntryIndexes[archiveRelativePath] != index) {
       continue;
     }
 
-    final bytes = file.content as List<int>;
-    await Directory(path.dirname(targetPath)).create(recursive: true);
-    await File(targetPath).writeAsBytes(bytes);
+    final file = archive.files[index];
+    final targetPath = targetPathsByArchivePath[archiveRelativePath]!;
+
+    if (file.isDirectory) {
+      await _createExtractionDirectory(targetPath);
+      continue;
+    }
+
+    if (file.isSymbolicLink) {
+      symbolicLinkPaths.add(archiveRelativePath);
+      continue;
+    }
+
+    await _writeExtractionFile(targetPath, file.content as List<int>);
   }
+
+  for (final linkPath in symbolicLinkPaths) {
+    final resolved = _resolveArchiveSymlink(
+      archivePath: archivePath,
+      linkPath: linkPath,
+      entriesByArchivePath: entriesByArchivePath,
+    );
+
+    final linkFilePath = targetPathsByArchivePath[linkPath]!;
+
+    // Archive symlinks are materialized as regular files holding the resolved
+    // target's bytes rather than as OS symlinks: Windows refuses symlink
+    // creation without developer mode or elevation, and bundled native assets
+    // are copied around by downstream tooling that would not carry a link.
+    await _writeExtractionFile(
+      linkFilePath,
+      resolved.entry.content as List<int>,
+    );
+    log.fine(
+      'Materialized archive symlink $linkPath as a copy of ${resolved.path}.',
+    );
+  }
+}
+
+/// Creates [targetPath] as a directory, replacing a file left by an earlier
+/// entry for the same normalized path.
+Future<void> _createExtractionDirectory(String targetPath) async {
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.file ||
+      existingType == FileSystemEntityType.link) {
+    await File(targetPath).delete();
+  }
+  await Directory(targetPath).create(recursive: true);
+}
+
+/// Writes [bytes] to [targetPath], replacing a directory left by an earlier
+/// entry for the same normalized path.
+Future<void> _writeExtractionFile(String targetPath, List<int> bytes) async {
+  await Directory(path.dirname(targetPath)).create(recursive: true);
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.directory) {
+    await Directory(targetPath).delete(recursive: true);
+  }
+  await File(targetPath).writeAsBytes(bytes);
+}
+
+typedef _ResolvedArchiveEntry = ({String path, ArchiveFile entry});
+
+/// Follows an archive-internal symlink chain to the regular file it points at.
+///
+/// Throws when the chain escapes the archive root, cycles, dangles, or lands on
+/// a directory, so a malicious or truncated bundle cannot write outside the
+/// extraction root or leave unloadable placeholder libraries behind.
+_ResolvedArchiveEntry _resolveArchiveSymlink({
+  required String archivePath,
+  required String linkPath,
+  required Map<String, ArchiveFile> entriesByArchivePath,
+}) {
+  final visited = <String>{};
+  var currentPath = linkPath;
+  var current = entriesByArchivePath[currentPath]!;
+
+  while (current.isSymbolicLink) {
+    if (!visited.add(currentPath)) {
+      throw Exception(
+        'Archive symlink cycle blocked for $archivePath: $linkPath',
+      );
+    }
+
+    final target = current.symbolicLink!;
+    final resolvedPath = path.posix.normalize(
+      path.posix.join(path.posix.dirname(currentPath), target),
+    );
+    if (path.posix.isAbsolute(target) ||
+        path.isAbsolute(target) ||
+        resolvedPath == '..' ||
+        resolvedPath.startsWith('../')) {
+      throw Exception(
+        'Archive symlink traversal blocked for $archivePath: '
+        '$linkPath -> $target',
+      );
+    }
+
+    final next = entriesByArchivePath[resolvedPath];
+    if (next == null) {
+      throw Exception(
+        'Archive symlink target missing in $archivePath: $linkPath -> $target',
+      );
+    }
+
+    if (next.isDirectory) {
+      throw Exception(
+        'Archive symlink target is a directory in $archivePath: '
+        '$linkPath -> $target',
+      );
+    }
+
+    currentPath = resolvedPath;
+    current = next;
+  }
+
+  return (path: currentPath, entry: current);
 }

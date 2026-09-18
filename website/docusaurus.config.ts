@@ -154,6 +154,10 @@ const config: Config = {
       },
       items: [
         {
+          type: 'docsVersionDropdown',
+          position: 'left'
+        },
+        {
           type: 'docSidebar',
           sidebarId: 'docsSidebar',
           position: 'left',

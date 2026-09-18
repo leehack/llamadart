@@ -6,10 +6,177 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('sync CLI preserves generated macOS GPU completeness checks', () async {
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest.test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  test(
+    'stable rebuild entry is explicit and retains rollback guards',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import parse_args, validate_litert_lm_transition, ReleaseError
+sys.argv = ['sync', '--allow-litert-stable-rebuild-entry']
+args = parse_args()
+assert args.allow_litert_stable_rebuild_entry
+validate_litert_lm_transition('v0.16.0-native.2', 'v0.17.0-1',
+    allow_stable_rebuild_entry=args.allow_litert_stable_rebuild_entry)
+for current, target, enabled in [
+    ('v0.16.0-native.2', 'v0.17.0-1', False),
+    ('v0.17.0-1', 'v0.16.0-3', True),
+    ('v0.17.0-1', 'v0.17.0-3', True),
+]:
+    try:
+        validate_litert_lm_transition(current, target, allow_stable_rebuild_entry=enabled)
+    except ReleaseError:
+        continue
+    raise AssertionError((current, target, enabled))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
+
+  test(
+    'schema-2 sync retains the iOS provider alongside the macOS shim',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+from pathlib import Path
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import prepare_litert_lm_package_swift
+fixtures = Path('tool/native/fixtures')
+manifest = json.loads((fixtures / 'litert_lm_schema2_owner_manifest.json').read_text())
+release = json.loads((fixtures / 'litert_lm_schema2_owner_release.json').read_text())
+provider = 'GemmaModelConstraintProvider'
+tag = manifest['release']['tag']
+for platform in manifest['platforms']:
+    if platform['platform'] == 'ios':
+        platform['artifactPaths'].append(f"bin/ios/{platform['arch']}/{provider}.framework/{provider}")
+release['assets'].append({'name': f'litert-lm-native-apple-{provider}-xcframework-{tag}.zip',
+                          'digest': 'sha256:' + 'a' * 64})
+source = Path('packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift').read_text()
+print(prepare_litert_lm_package_swift(source, release=release, manifest=manifest, resolved_tag=tag))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final generated = result.stdout as String;
+      expect(
+        generated,
+        contains(
+          '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS]))',
+        ),
+      );
+      expect(
+        generated,
+        contains(
+          '.target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))',
+        ),
+      );
+      expect(generated, contains('checksum: "${'a' * 64}"'));
+      expect(
+        RegExp('name: "GemmaModelConstraintProvider"').allMatches(generated),
+        hasLength(2),
+      );
+    },
+  );
+
+  test(
+    'iOS framework metadata does not become a required runtime library',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import litert_schema2_bundle_required_libraries
+paths = [
+    'bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM',
+    'bin/ios/arm64/CLiteRTLM.framework/Info.plist',
+    'bin/ios/arm64/LiteRtLm.framework/LiteRtLm',
+    'bin/ios/arm64/LiteRtLm.framework/Info.plist',
+    'bin/ios/arm64/libLiteRtLm.dylib',
+]
+manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'ios-arm64': ['CLiteRTLM', 'LiteRtLm'],
+      });
+    },
+  );
+
+  test(
+    'iOS inventory still rejects duplicate binaries and unsafe metadata paths',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+runtime = 'bin/ios/arm64/LiteRtLm.framework/LiteRtLm'
+for extra in (runtime, 'bin/ios/arm64/Other.framework/LiteRtLm',
+              'bin/ios/arm64/../Other.framework/Info.plist'):
+    manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64',
+                              'artifactPaths': [runtime, extra]}]}
+    try:
+        litert_schema2_bundle_required_libraries(manifest)
+    except ReleaseError:
+        continue
+    raise AssertionError('Unsafe inventory was accepted: ' + extra)
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    },
+  );
+  test(
+    'Windows import archives never become loadable runtime dependencies',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+paths = ['bin/windows/x64/LiteRtLm.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.lib']
+manifest = {'platforms': [{'platform': 'windows', 'arch': 'x64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+manifest['platforms'][0]['artifactPaths'] = paths[::2]
+try:
+    litert_schema2_bundle_required_libraries(manifest)
+except ReleaseError:
+    pass
+else:
+    raise AssertionError('Orphan import archive was accepted')
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'windows-x64': ['LiteRtLm.dll', 'libGemmaModelConstraintProvider.dll'],
+      });
+    },
+  );
+
   test('updates hook native release pins from release metadata', () async {
     final root = await Directory.systemTemp.createTemp(
       'sync_native_release_pins_',
@@ -22,14 +189,19 @@ void main() {
 
     await File(path.join(root.path, 'hook', 'build.dart')).writeAsString('''
 const _llamaCppTag = 'b9998';
+const _litertLmReleaseTag = 'v1.0.0';
 const _litertLmVersion = '1.0.0';
 
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
-  _LiteRtLmBundleSpec(
-    'linux-x64',
-    sha256: '${_hex('0')}',
-    requiredLibraries: {'libLiteRtLm.so'},
-  ),
+  _LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('android-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('ios-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('ios-arm64-sim', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('linux-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('linux-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('macos-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('macos-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('windows-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
 ];
 ''');
     final litertRuntimeDart = File(
@@ -44,13 +216,59 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     );
     await litertRuntimeDart.parent.create(recursive: true);
     await litertRuntimeDart.writeAsString('''
+import 'dart:ffi';
+
+const _litertLmReleaseTag = 'v1.0.0';
 const _litertLmVersion = '1.0.0';
+
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-macos-arm64'],
+    Abi.macosX64 => const <String>['legacy-macos-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.linuxArm64 => const <String>['legacy-linux-arm64'],
+    Abi.linuxX64 => const <String>['legacy-linux-x64'],
+    Abi.windowsX64 => const <String>['legacy-windows-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64.framework/legacy-arm64'],
+    Abi.macosX64 => const <String>['legacy-x64.framework/legacy-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64-spm'],
+    Abi.macosX64 => const <String>['legacy-x64-spm'],
+    _ => const <String>[],
+  };
+}
 ''');
     final macosPrepareScript = File(
       path.join(root.path, 'tool', 'macos_litert_lm_prepare_app.sh'),
     );
     await macosPrepareScript.parent.create(recursive: true);
     await macosPrepareScript.writeAsString('''
+required_libraries() {
+  printf '%s\\n' "legacy-macos"
+}
+
+required_native_spm_files() {
+  printf '%s\\n' "legacy-spm"
+}
+
 paths=(
   ".dart_tool/llamadart/litert_lm/1.0.0/macos_arm64"
   ".dart_tool/llamadart/litert_lm/1.0.0/macos/arm64"
@@ -136,17 +354,69 @@ paths=(
       path.join(root.path, 'hook', 'build.dart'),
     ).readAsString();
     expect(hook, contains("const _llamaCppTag = '$llamaTag';"));
+    expect(hook, contains("const _litertLmReleaseTag = '$litertTag';"));
     expect(hook, contains("const _litertLmVersion = '9.9.9';"));
     expect(hook, contains("sha256: '$litertRuntimeChecksum'"));
-    final litertRuntimeDartText = await litertRuntimeDart.readAsString();
+    expect(hook, isNot(contains("requiredLibraries: {'runtime'}")));
+    expect(hook, contains("'libLiteRtLm.so'"));
+    expect(hook, contains("'libwebgpu_dawn.so'"));
+    final litertRuntimeDartText = (await litertRuntimeDart.readAsString())
+        .replaceAll('\r\n', '\n');
+    expect(
+      litertRuntimeDartText,
+      contains("const _litertLmReleaseTag = '$litertTag';"),
+    );
     expect(
       litertRuntimeDartText,
       contains("const _litertLmVersion = '9.9.9';"),
     );
-    final macosPrepareText = await macosPrepareScript.readAsString();
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "      'libLiteRtLm.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
+    final macosPrepareText = (await macosPrepareScript.readAsString())
+        .replaceAll('\r\n', '\n');
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
     expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
+    expect(
+      macosPrepareText,
+      contains('"libCLiteRTLM_mac.dylib" \\\n        "libLiteRtLm.dylib"'),
+    );
+    expect(
+      macosPrepareText,
+      contains(
+        '"LiteRtLm.framework/Versions/A/LiteRtLm" \\\n        "libCLiteRTLM_mac.dylib"',
+      ),
+    );
+    expect(macosPrepareText, isNot(contains('legacy-macos')));
+    expect(macosPrepareText, isNot(contains('legacy-spm')));
 
     final llamaSwift = await File(
       path.join(
@@ -763,9 +1033,11 @@ paths=(
       'Bash header sync': await File(
         'tool/native/sync_native_headers_and_bindings.sh',
       ).readAsString(),
-      'Dart build hook': await File('hook/build.dart').readAsString(),
-      'release-doc verifier': await File(
-        'tool/testing/verify_release_docs_versions.dart',
+      'Dart native release tag': await File(
+        'lib/src/hook/native_release_tag.dart',
+      ).readAsString(),
+      'Tag grammar fixture': await File(
+        'tool/native/fixtures/native_release_tag_grammar.json',
       ).readAsString(),
     };
 
@@ -774,11 +1046,9 @@ paths=(
       sources['Bash header sync'],
       contains("nightly_tag_pattern='^b(0|[1-9][0-9]*)\$'"),
     );
-    for (final entry in sources.entries.where(
-      (entry) =>
-          entry.key.startsWith('Dart') || entry.key.startsWith('release'),
-    )) {
-      expect(entry.value, contains(r'b(?:0|[1-9][0-9]*)'), reason: entry.key);
+    expect(sources['Dart native release tag'], contains(r'b(?:0|[1-9][0-9]*)'));
+    expect(sources['Tag grammar fixture'], contains(r'b(?:0|[1-9][0-9]*)'));
+    for (final entry in sources.entries) {
       expect(entry.value, isNot(contains(r'b[0-9]+')), reason: entry.key);
     }
   });
@@ -819,21 +1089,31 @@ paths=(
     addTearDown(() => setup.root.delete(recursive: true));
 
     for (final tag in const [
+      '../bad',
+      '../v0.2.0',
+      '/v0.2.0',
+      ' v0.2.0',
+      'v0.2.0 ',
+      '1.2.3',
       'v1.2',
       'v01.2.3',
+      'v0.2.0-0',
+      'v0.2.0-01',
+      'v0.2.0-beta',
+      'v0.2.0-custom.1',
+      'v0.2.0-llamadart.1',
+      'b',
       'b00',
       'b0000',
       'b0001',
       'b0001-1',
       'b0001-llamadart.1',
+      'b1-0',
       'b1-01',
+      'b1-llamadart.0',
       'b1-llamadart.01',
-      'b10514-custom',
       'b10514-0',
-      'v0.2.0-0',
-      'v0.2.0-llamadart.1',
-      'v0.2.0-custom.1',
-      '../v0.2.0',
+      'b10514-custom',
       r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
       r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
     ]) {
@@ -851,15 +1131,33 @@ paths=(
     'header sync rejects invalid native tags before network lookup',
     () async {
       for (final tag in const [
+        '../bad',
+        '../v0.2.0',
+        '/v0.2.0',
+        ' v0.2.0',
+        'v0.2.0 ',
+        '1.2.3',
         'v1.2',
+        'v01.2.3',
+        'v0.2.0-0',
+        'v0.2.0-01',
+        'v0.2.0-beta',
+        'v0.2.0-custom.1',
+        'v0.2.0-llamadart.1',
+        'b',
+        'b00',
         'b0000',
+        'b0001',
         'b0001-1',
         'b0001-llamadart.1',
+        'b1-0',
         'b1-01',
+        'b1-llamadart.0',
         'b1-llamadart.01',
         'b10514-0',
-        'v0.2.0-llamadart.1',
+        'b10514-custom',
         r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+        r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
       ]) {
         final result = await Process.run('bash', [
           'tool/native/sync_native_headers_and_bindings.sh',
@@ -1031,7 +1329,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       );
       final releaseSkew = await _runLlamaSync(releaseSetup, 'v0.2.0');
       expect(releaseSkew.exitCode, 1);
-      expect(releaseSkew.stderr, contains('metadata resolved v0.2.1'));
+      expect(releaseSkew.stderr, contains('resolved unexpected tag v0.2.1'));
 
       final manifestSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => manifestSetup.root.delete(recursive: true));
@@ -1196,6 +1494,18 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
     expect(result.stderr, isNot(contains('AttributeError')));
   });
 
+  test('keeps LiteRT release identity separate from cache version', () {
+    final hook = File('hook/build.dart').readAsStringSync();
+    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-5';"));
+    expect(hook, contains(r"'$_litertLmReleaseTag'"));
+    expect(hook, isNot(contains(r"v$_litertLmVersion")));
+
+    final workflow = File(
+      '.github/workflows/sync_native_bindings.yml',
+    ).readAsStringSync();
+    expect(workflow, contains('tool/macos_litert_lm_prepare_app.sh'));
+  });
+
   test(
     'bounded runner terminates a Windows process tree with safe diagnostics',
     () async {
@@ -1206,34 +1516,44 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
-      final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childLockFile = File(path.join(root.path, 'child.lock'));
+      final childReadyFile = File(path.join(root.path, 'child.ready'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import msvcrt
+import sys
 import time
 
-while True:
-    time.sleep(60)
+lock_handle = open(sys.argv[1], "w+b")
+lock_handle.write(b"\0")
+lock_handle.flush()
+lock_handle.seek(0)
+msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+Path(sys.argv[2]).write_text("ready", encoding="utf-8")
+deadline = time.monotonic() + 60
+while not Path(sys.argv[3]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
-from pathlib import Path
 import subprocess
 import sys
 import time
 
-child = subprocess.Popen([sys.executable, sys.argv[1]])
-Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
-print(f"synthetic child ready: {child.pid}", flush=True)
-time.sleep(300)
+child = subprocess.Popen(
+    [sys.executable, sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]
+)
+print("synthetic child ready: lock-owned", flush=True)
+time.sleep(60)
 ''');
 
-      int? parentPid;
-      int? childPid;
+      Process? parentProcess;
       addTearDown(() async {
-        childPid ??= await _readPidFile(childPidFile);
-        if (parentPid != null) {
-          await _ensureWindowsProcessStopped(parentPid!);
+        if (parentProcess != null) {
+          await _ensureProcessHandleStopped(parentProcess!);
         }
-        if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+        if (childLockFile.existsSync()) {
+          await _ensureSyntheticLockReleased(childLockFile, childStopFile);
         }
       });
 
@@ -1242,22 +1562,33 @@ time.sleep(300)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childLockFile.path,
+            childReadyFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
-            childPid = await _waitForPidFile(
-              childPidFile,
+            await _waitForFile(
+              childReadyFile,
               timeout: const Duration(seconds: 30),
+            );
+            expect(
+              await _tryAcquireExclusiveLock(childLockFile),
+              isFalse,
+              reason: 'the exact synthetic child must own the lock',
             );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
-          onStart: (pid) => parentPid = pid,
+          onStart: (process) => parentProcess = process,
         );
       } on Object catch (error) {
         failure = error;
       }
       stopwatch.stop();
-      childPid = await _readPidFile(childPidFile);
 
       expect(failure, isA<TestFailure>());
       final message = '$failure';
@@ -1272,17 +1603,14 @@ time.sleep(300)
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 60)));
 
-      expect(parentPid, isNotNull);
-      expect(childPid, isNotNull);
-      // _terminateProcessTree awaits this exact Process handle. A numeric PID
-      // probe after exit can observe an unrelated process if Windows reuses it.
-      parentPid = null;
+      expect(parentProcess, isNotNull);
       expect(
-        await _waitForWindowsProcessToStop(
-          childPid!,
+        await _waitForExclusiveLock(
+          childLockFile,
           DateTime.now().add(const Duration(seconds: 10)),
         ),
         isTrue,
+        reason: 'taskkill /T must release the exact child-owned lock',
       );
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill /T cleanup',
@@ -1298,32 +1626,41 @@ time.sleep(300)
 
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
-      final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childLockFile = File(path.join(root.path, 'child.lock'));
+      final childReadyFile = File(path.join(root.path, 'child.ready'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import msvcrt
+import sys
 import time
 
+lock_handle = open(sys.argv[1], "w+b")
+lock_handle.write(b"\0")
+lock_handle.flush()
+lock_handle.seek(0)
+msvcrt.locking(lock_handle.fileno(), msvcrt.LK_NBLCK, 1)
+Path(sys.argv[2]).write_text("ready", encoding="utf-8")
 print("descendant owns inherited output", flush=True)
-time.sleep(300)
+deadline = time.monotonic() + 60
+while not Path(sys.argv[3]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
-from pathlib import Path
 import subprocess
 import sys
 
 child = subprocess.Popen(
-    [sys.executable, sys.argv[1]],
+    [sys.executable, sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]],
     stdout=sys.stdout,
     stderr=sys.stderr,
 )
-Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
 print("parent exited after spawning child", flush=True)
 ''');
 
-      int? childPid;
       addTearDown(() async {
-        childPid ??= await _readPidFile(childPidFile);
-        if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+        if (childLockFile.existsSync()) {
+          await _ensureSyntheticLockReleased(childLockFile, childStopFile);
         }
       });
 
@@ -1332,18 +1669,29 @@ print("parent exited after spawning child", flush=True)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childLockFile.path,
+            childReadyFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
-            childPid = await _waitForPidFile(
-              childPidFile,
+            await _waitForFile(
+              childReadyFile,
               timeout: const Duration(seconds: 30),
             );
+            expect(await _tryAcquireExclusiveLock(childLockFile), isFalse);
           },
           outputDrainTimeout: const Duration(seconds: 1),
-          outputDrainDescendantPid: () {
-            childPid ??= _readPidFileSync(childPidFile);
-            return childPid;
+          outputDrainDescendantCleanup: () async {
+            await childStopFile.writeAsString('stop');
+            return _waitForExclusiveLock(
+              childLockFile,
+              DateTime.now().add(const Duration(seconds: 25)),
+            );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
@@ -1351,7 +1699,6 @@ print("parent exited after spawning child", flush=True)
         failure = error;
       }
       stopwatch.stop();
-      childPid = await _readPidFile(childPidFile);
 
       expect(failure, isA<TestFailure>());
       final message = '$failure';
@@ -1361,10 +1708,9 @@ print("parent exited after spawning child", flush=True)
       expect(message, isNot(contains(root.path)));
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 45)));
-      expect(childPid, isNotNull);
       expect(
-        await _waitForWindowsProcessToStop(
-          childPid!,
+        await _waitForExclusiveLock(
+          childLockFile,
           DateTime.now().add(const Duration(seconds: 10)),
         ),
         isTrue,
@@ -1669,10 +2015,10 @@ Future<ProcessResult> _runPython(
   String? executable,
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
-  int? Function()? outputDrainDescendantPid,
+  Future<bool> Function()? outputDrainDescendantCleanup,
   Future<void> Function()? waitUntilReady,
   Map<String, String> redactions = const {},
-  void Function(int pid)? onStart,
+  void Function(Process process)? onStart,
 }) async {
   final resolvedExecutable =
       executable ?? (Platform.isWindows ? 'python' : 'python3');
@@ -1709,7 +2055,7 @@ Future<ProcessResult> _runPython(
       '$reason',
     );
   }
-  onStart?.call(process.pid);
+  onStart?.call(process);
   final stdout = _CappedTextBuffer(effectiveRedactions);
   final stderr = _CappedTextBuffer(effectiveRedactions);
   final stdoutSubscription = process.stdout
@@ -1787,17 +2133,11 @@ Future<ProcessResult> _runPython(
   );
   if (!outputDrained) {
     var cleanup = 'not-configured';
-    if (outputDrainDescendantPid != null) {
-      final descendantPid = outputDrainDescendantPid();
-      if (descendantPid == null) {
-        cleanup = 'missing-pid';
-      } else {
-        try {
-          await _ensureWindowsProcessStopped(descendantPid);
-          cleanup = 'confirmed';
-        } on Object {
-          cleanup = 'failed';
-        }
+    if (outputDrainDescendantCleanup != null) {
+      try {
+        cleanup = await outputDrainDescendantCleanup() ? 'confirmed' : 'failed';
+      } on Object {
+        cleanup = 'failed';
       }
     }
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
@@ -2099,122 +2439,56 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
   return '<truncated>\n${value.substring(value.length - maxCharacters)}';
 }
 
-Future<bool> _windowsProcessExists(
-  int pid, {
-  Duration timeout = const Duration(seconds: 3),
-}) async {
-  final probe = await Process.start('powershell', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    'try { '
-        '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
-        '| Out-Null; exit 0 '
-        '} catch [System.ArgumentException] { exit 1 } '
-        'catch { exit 2 }',
-  ], runInShell: false);
-  final stdoutSubscription = probe.stdout.listen(null);
-  final stderrSubscription = probe.stderr.listen(null);
-  final stdoutDone = stdoutSubscription.asFuture<void>();
-  final stderrDone = stderrSubscription.asFuture<void>();
-  var timedOut = false;
-  var exitCode = await _awaitProcessExit(probe, timeout);
-  if (exitCode == null) {
-    timedOut = true;
-    probe.kill();
-    exitCode = await _awaitProcessExit(probe, const Duration(seconds: 1));
-  }
-  final outputDrained = await _waitForOutputDrain(
-    stdoutDone,
-    stderrDone,
-    timeout: const Duration(seconds: 1),
-  );
-  if (!outputDrained) {
-    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
-  }
-  if (timedOut) {
-    return true;
-  }
-  return switch (exitCode) {
-    0 => true,
-    1 => false,
-    _ => true,
-  };
-}
-
-Future<int?> _readPidFile(File file) async {
-  if (!file.existsSync()) {
-    return null;
-  }
-  return int.tryParse((await file.readAsString()).trim());
-}
-
-Future<int> _waitForPidFile(File file, {required Duration timeout}) async {
+Future<void> _waitForFile(File file, {required Duration timeout}) async {
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
-    final pid = await _readPidFile(file);
-    if (pid != null) {
-      return pid;
+    if (file.existsSync()) {
+      return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   throw TimeoutException(
-    'Synthetic child did not publish its PID within ${timeout.inSeconds}s',
+    'Synthetic child did not become ready within ${timeout.inSeconds}s',
     timeout,
   );
 }
 
-int? _readPidFileSync(File file) {
+Future<bool> _tryAcquireExclusiveLock(File file) async {
   if (!file.existsSync()) {
-    return null;
+    return false;
   }
-  return int.tryParse(file.readAsStringSync().trim());
+  RandomAccessFile? handle;
+  try {
+    handle = await file.open(mode: FileMode.append);
+    await handle.lock(FileLock.exclusive);
+    await handle.unlock();
+    return true;
+  } on FileSystemException {
+    return false;
+  } finally {
+    await handle?.close();
+  }
 }
 
-Future<void> _ensureWindowsProcessStopped(int pid) async {
-  if (!await _windowsProcessExists(pid)) {
-    return;
-  }
-  final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
-  for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
-    if (!DateTime.now().isBefore(treeCleanupDeadline)) {
-      break;
-    }
-    try {
-      final result = await _taskkillWindowsPid(
-        pid,
-        deadline: treeCleanupDeadline,
-      );
-      if (result.exitCode != 0 || result.timedOut) {
-        continue;
-      }
-    } on ProcessException {
-      continue;
-    }
-    if (await _waitForWindowsProcessToStop(pid, treeCleanupDeadline)) {
-      return;
-    }
-  }
-  Process.killPid(pid);
-  final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
-  if (await _waitForWindowsProcessToStop(pid, directKillDeadline)) {
-    return;
-  }
-  fail('Failed to terminate synthetic Windows process $pid.');
-}
-
-Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
+Future<bool> _waitForExclusiveLock(File file, DateTime deadline) async {
   while (DateTime.now().isBefore(deadline)) {
-    final remaining = deadline.difference(DateTime.now());
-    final probeTimeout = remaining < const Duration(seconds: 3)
-        ? remaining
-        : const Duration(seconds: 3);
-    if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
+    if (await _tryAcquireExclusiveLock(file)) {
       return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
   return false;
+}
+
+Future<void> _ensureSyntheticLockReleased(File lock, File stop) async {
+  await stop.writeAsString('stop');
+  if (await _waitForExclusiveLock(
+    lock,
+    DateTime.now().add(const Duration(seconds: 25)),
+  )) {
+    return;
+  }
+  fail('Synthetic Windows child did not release its process-owned lock.');
 }
 
 Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
@@ -2224,7 +2498,8 @@ Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
         (entity) =>
             entity is File &&
             entity.path.endsWith('.json') &&
-            !entity.path.endsWith('__manifest.json'),
+            !entity.path.endsWith('__manifest.json') &&
+            !entity.path.endsWith('__commit.json'),
       )
       .cast<File>()
       .toList();
@@ -2375,18 +2650,131 @@ Future<void> _writeReleaseFixture(
   String tag,
   Map<String, String> assets, {
   String? resolvedTag,
-}) {
+}) async {
   final file = File(
     path.join(dir.path, '${repo.replaceAll('/', '__')}__$tag.json'),
   );
+  final releaseAssetChecksums = Map<String, String>.of(assets);
+  if (repo == 'leehack/litert-lm-native') {
+    final ownerFixture = File(
+      path.join(
+        Directory.current.path,
+        'tool/native/fixtures/litert_lm_schema2_owner_manifest.json',
+      ),
+    );
+    final manifest =
+        jsonDecode(await ownerFixture.readAsString()) as Map<String, dynamic>;
+    final releaseIdentity = manifest['release'] as Map<String, dynamic>;
+    final upstream = manifest['upstream'] as Map<String, dynamic>;
+    final originalReleaseTag = releaseIdentity['tag'] as String;
+    final originalCompatibilityTag = upstream['compatibilityTag'] as String;
+    releaseIdentity
+      ..['tag'] = tag
+      ..['kind'] = 'upstream'
+      ..['rebuild'] = 0
+      ..['githubPrerelease'] = false;
+    upstream
+      ..['tag'] = tag
+      ..['compatibilityTag'] = tag
+      ..['prebuiltOverrides'] = <Object>[];
+    for (final platform
+        in (manifest['platforms'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      platform['releaseAsset'] =
+          'litert-lm-native-runtime-${platform['platform']}-${platform['arch']}-$tag.tar.gz';
+      releaseAssetChecksums.putIfAbsent(
+        platform['releaseAsset'] as String,
+        () => _hex('f'),
+      );
+    }
+    for (final artifact
+        in (manifest['artifacts'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final originalPath = artifact['path'] as String;
+      final releaseRetagged = originalPath.replaceAll(originalReleaseTag, tag);
+      final retaggedPath = releaseRetagged.replaceAll(
+        originalCompatibilityTag,
+        tag,
+      );
+      artifact
+        ..['path'] = retaggedPath
+        ..['fileName'] = path.basename(retaggedPath)
+        ..['upstreamTag'] = tag
+        ..['releaseTag'] = tag;
+      if (retaggedPath.startsWith('dist/spm/$tag/') &&
+          retaggedPath.endsWith('.zip')) {
+        final assetName = path.basename(retaggedPath);
+        final checksum = releaseAssetChecksums[assetName] ?? _hex('f');
+        artifact['sha256'] = checksum;
+        releaseAssetChecksums[assetName] = checksum;
+      }
+    }
+    for (final assetName in <String>[
+      'SHA256SUMS',
+      'release-result.json',
+      'litert-lm-native-prebuilts-$tag.tar.gz',
+      'litert-lm-native-official-assets-$tag.tar.gz',
+    ]) {
+      releaseAssetChecksums.putIfAbsent(assetName, () => _hex('f'));
+    }
+    for (final smoke
+        in (manifest['realModelSmokes'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final source = smoke['source'] as Map<String, dynamic>;
+      source['runtimeReleaseAsset'] =
+          'litert-lm-native-runtime-${smoke['platform']}-${smoke['arch']}-$tag.tar.gz';
+    }
+    final manifestFile = File(
+      path.join(
+        dir.path,
+        '${repo.replaceAll('/', '__')}__${tag}__manifest.json',
+      ),
+    );
+    final manifestText = jsonEncode(manifest);
+    await manifestFile.writeAsString(manifestText);
+    releaseAssetChecksums['manifest.json'] = sha256
+        .convert(utf8.encode(manifestText))
+        .toString();
+    final upstreamCommit = upstream['commit'] as String;
+    await File(
+      path.join(
+        dir.path,
+        'google-ai-edge__LiteRT-LM__${upstream['tag']}__commit.json',
+      ),
+    ).writeAsString(jsonEncode({'sha': upstreamCommit}));
+    final native = manifest['native'] as Map<String, dynamic>;
+    final nativeCommit = native['commit'] as String;
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__commit.json'),
+    ).writeAsString(jsonEncode({'sha': nativeCommit}));
+    final checksumText = [
+      for (final artifact
+          in (manifest['artifacts'] as List<dynamic>)
+              .cast<Map<String, dynamic>>())
+        '${artifact['sha256']}  ${artifact['path']}',
+      '',
+    ].join('\n');
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__SHA256SUMS'),
+    ).writeAsString(checksumText);
+    releaseAssetChecksums['SHA256SUMS'] = sha256
+        .convert(utf8.encode(checksumText))
+        .toString();
+  }
+  final releaseAssets = [
+    for (final entry in releaseAssetChecksums.entries)
+      {'name': entry.key, 'digest': 'sha256:${entry.value}'},
+  ];
   final payload = {
     'tag_name': resolvedTag ?? tag,
-    'assets': [
-      for (final entry in assets.entries)
-        {'name': entry.key, 'digest': 'sha256:${entry.value}'},
-    ],
+    if (repo == 'leehack/litert-lm-native') ...{
+      'target_commitish': '451ba0ce7c366972b4dc0e58f08ffe590958f943',
+      'draft': false,
+      'prerelease': false,
+    },
+    'assets': releaseAssets,
   };
-  return file.writeAsString(jsonEncode(payload));
+  await file.writeAsString(jsonEncode(payload));
 }
 
 String _hex(String character) => List.filled(64, character).join();
@@ -2397,6 +2785,14 @@ const Map<String, (String, String)> _litertAppleTargets = {
   'CLiteRTLMMac': (
     'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '8',
+  ),
+  'LiteRtMetalAccelerator': (
+    'litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip',
+    '1',
+  ),
+  'LiteRtTopKMetalSampler': (
+    'litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip',
+    '2',
   ),
 };
 

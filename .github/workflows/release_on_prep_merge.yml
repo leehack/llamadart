@@ -91,7 +91,10 @@ jobs:
             exit 1
           fi
 
-          dart run tool/testing/verify_release_docs_versions.dart
+          # --release-prep also refuses a companion whose SwiftPM pin is still
+          # only in its `## Unreleased` section, which would otherwise publish
+          # the previous tag or be skipped as an already-published version.
+          dart run tool/testing/verify_release_docs_versions.dart --release-prep
 
           core_tag="v$version"
           if git ls-remote --exit-code --tags origin "refs/tags/$core_tag" >/dev/null 2>&1; then

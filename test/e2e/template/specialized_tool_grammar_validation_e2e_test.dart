@@ -4,10 +4,18 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
+import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
@@ -25,6 +33,96 @@ void main() {
       reason: 'Set LLAMA_CPP_GBNF_VALIDATOR to llama.cpp test-gbnf-validator.',
     );
     expect(File(validator).existsSync(), isTrue);
+  });
+
+  test(
+    'audio string-template rendering preserves compiled schema enforcement',
+    () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource:
+            '{# ]<]minimax[>[ <tool_call> <invoke name= #}'
+            '{{ messages[0].content }}{{ "<mm:think>" }}',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('inspect'),
+              LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
+            ],
+          ),
+        ],
+        metadata: const {},
+        tools: [_schemaTool],
+        toolChoice: ToolChoice.required,
+      );
+      expect(rendered.prompt, 'inspect<__media__><mm:think>');
+      expect(rendered.grammarLazy, isFalse);
+      const ns = MinimaxM3Handler.namespace;
+      const valid =
+          'reason</mm:think>$ns<tool_call>$ns<invoke name="inspect">'
+          '$ns<code>123$ns</code>'
+          '$ns<options>$ns</options>$ns<items>$ns</items>'
+          '$ns<count>7$ns</count>$ns<active>true$ns</active>'
+          '$ns<empty>null$ns</empty>$ns</invoke>$ns</tool_call>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [valid],
+        invalid: [
+          valid.replaceFirst('name="inspect"', 'name="unknown"'),
+          valid.replaceFirst('$ns<count>7$ns</count>', ''),
+          valid.replaceFirst('$ns<count>7', '$ns<count>wrong'),
+          valid.replaceFirst(
+            '$ns</invoke>',
+            '$ns<extra>x$ns</extra>$ns</invoke>',
+          ),
+          valid.replaceFirst('$ns</tool_call>', ''),
+          'reason</mm:think>No tool',
+        ],
+      );
+    },
+  );
+
+  test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
+    final grammar = Gemma4Handler().buildGrammar([
+      _weatherWithCityTool,
+      _zeroArgTool,
+      _gemmaEscapedTool,
+    ])!;
+    final weatherCall = '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
+    final pingCall = '<|tool_call>call:ping{}<tool_call|>';
+    final escapedRequiredArguments = <String, dynamic>{
+      'a b': 'one',
+      r'city&"zone\path': 'Montréal {north}',
+    };
+    final escapedOptionalArguments = <String, dynamic>{
+      ...escapedRequiredArguments,
+      'a-b': 'two',
+    };
+    String escapedCall(Map<String, dynamic> arguments) =>
+        '<|tool_call>call:${_gemmaEscapedTool.name}'
+        '${jsonEncode(arguments)}<tool_call|>';
+
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [
+        weatherCall,
+        pingCall,
+        escapedCall(escapedRequiredArguments),
+        escapedCall(escapedOptionalArguments),
+      ],
+      invalid: [
+        'leading prose$weatherCall',
+        '$weatherCall$pingCall',
+        '<|tool_call>call:unknown{}<tool_call|>',
+        '<|tool_call>call:weather{}<tool_call|>',
+        '<|tool_call>call:weather{"city":7}<tool_call|>',
+        '<|tool_call>call:weather{"city":"Seoul","extra":true}'
+            '<tool_call|>',
+        escapedCall(<String, dynamic>{'a b': 'one'}),
+      ],
+    );
   });
 
   test('MiniMax M1 accepts quoted names and rejects invalid JSON names', () {
@@ -835,6 +933,17 @@ final _optionalTool = ToolDefinition(
     ToolParam.string('query', required: true),
     ToolParam.string('note'),
     ToolParam.string('detail'),
+  ],
+  handler: (_) async => null,
+);
+
+final _gemmaEscapedTool = ToolDefinition(
+  name: r'weather&"alerts\route|primary',
+  description: 'Gemma escaped identity and collision coverage',
+  parameters: [
+    ToolParam.string('a b', required: true),
+    ToolParam.string('a-b'),
+    ToolParam.string(r'city&"zone\path', required: true),
   ],
   handler: (_) async => null,
 );

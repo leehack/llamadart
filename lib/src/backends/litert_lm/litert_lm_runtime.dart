@@ -14,7 +14,8 @@ import 'litert_lm_asr_types.dart';
 
 export 'litert_lm_asr_types.dart';
 
-const _litertLmVersion = '0.16.0-native.2';
+const _litertLmReleaseTag = 'v0.17.0-5';
+const _litertLmVersion = '0.17.0-5';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -55,7 +56,7 @@ String? liteRtLmStreamProxyCompatibilityError({
   return 'LiteRT-LM exposes the 0.15+ stream-chunk callback API, but its '
       'embedded StreamProxy is missing or not stream-chunk compatible. '
       'Expected callback ABI $_streamChunkCallbackAbiVersion from pinned '
-      'litert-lm-native v$_litertLmVersion; detected $detectedAbi. Install the '
+      'litert-lm-native $_litertLmReleaseTag; detected $detectedAbi. Install the '
       'pinned runtime before using asynchronous generation.';
 }
 
@@ -188,31 +189,44 @@ List<String> liteRtLmIosLibraryCandidates(
 /// native-assets cache directories.
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
-    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosArm64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    Abi.macosX64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libLiteRtLm.dylib',
+    ],
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     ],
     Abi.windowsX64 => const <String>[
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
-      'libwebgpu_dawn.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
     ],
     _ => const <String>[],
   };
@@ -280,14 +294,12 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
       'LiteRt.framework/Versions/A/LiteRt',
       'LiteRtLm.framework/Versions/A/LiteRtLm',
       'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
       'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
-      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-          'LiteRtTopKWebGpuSampler',
+      'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
@@ -306,13 +318,11 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
       'libCLiteRTLM_mac.dylib',
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
       'LiteRt.framework/Versions/A/LiteRt',
       'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
       'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
-      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-          'LiteRtTopKWebGpuSampler',
+      'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
@@ -731,7 +741,7 @@ class LiteRtLmRuntimeClient {
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
       final companionLibraryPaths = _liteRtLmCompanionLibraryPaths;
       final engineAddress = await Isolate.run(() {
-        final companionLibraries = _openCompanionLibraries(
+        final companionLibraries = liteRtLmOpenCompanionLibraries(
           companionLibraryPaths,
         );
         try {
@@ -783,8 +793,17 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Creates a new LiteRT-LM conversation for generation and token operations.
+  ///
+  /// [systemMessage] is plain text, including any literal JSON text. The native
+  /// API wraps this content in its own system-role message.
+  ///
+  /// [promptTemplate] overrides the bundle's native Jinja template. Omit it to
+  /// preserve model-specific formatting, especially for media. An explicit
+  /// override requires the native conversation-template setter; incompatible
+  /// runtime overrides fail with [LlamaUnsupportedException].
   void createConversation({
     String? systemMessage,
+    String? promptTemplate,
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
@@ -799,6 +818,15 @@ class LiteRtLmRuntimeClient {
     final engine = _requireEngine();
     _deleteConversation();
 
+    if (promptTemplate != null &&
+        !bindings._library.providesSymbol(
+          'litert_lm_conversation_config_set_prompt_template',
+        )) {
+      throw LlamaUnsupportedException(
+        'The LiteRT-LM runtime does not support conversation prompt templates. '
+        'Use the packaged runtime or a compatible newer runtime.',
+      );
+    }
     final sessionConfig = bindings.sessionConfigCreate();
     if (sessionConfig == nullptr) {
       throw StateError('litert_lm_session_config_create returned null');
@@ -815,9 +843,10 @@ class LiteRtLmRuntimeClient {
     }
     _setSessionLoraPath(bindings, sessionConfig, loraPath);
 
+    final templatePtr = promptTemplate?.toNativeUtf8(allocator: calloc);
     final systemPtr = systemMessage == null
         ? nullptr
-        : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
+        : jsonEncode(systemMessage).toNativeUtf8(allocator: calloc);
     final messagesPtr = messages == null || messages.isEmpty
         ? nullptr
         : jsonEncode(messages).toNativeUtf8(allocator: calloc);
@@ -834,6 +863,12 @@ class LiteRtLmRuntimeClient {
         throw StateError('litert_lm_conversation_config_create returned null');
       }
       bindings.conversationConfigSetSessionConfig(config, sessionConfig);
+      if (templatePtr != null) {
+        bindings.conversationConfigSetPromptTemplate(
+          config,
+          templatePtr.cast(),
+        );
+      }
       if (systemPtr != nullptr) {
         bindings.conversationConfigSetSystemMessage(config, systemPtr.cast());
       }
@@ -860,6 +895,7 @@ class LiteRtLmRuntimeClient {
         bindings.conversationConfigDelete(config);
       }
       bindings.sessionConfigDelete(sessionConfig);
+      if (templatePtr != null) calloc.free(templatePtr);
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
       }
@@ -1376,7 +1412,9 @@ class LiteRtLmRuntimeClient {
       throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
     }
 
-    final companionLibraries = _openCompanionLibraries(libraries.companions);
+    final companionLibraries = liteRtLmOpenCompanionLibraries(
+      libraries.companions,
+    );
 
     final liteRtLm = _openFirstAvailableWithPath(
       libraries.liteRtLmCandidates,
@@ -1923,23 +1961,6 @@ String _messageJson(String text) {
   });
 }
 
-String _systemMessageJson(String textOrJson) {
-  try {
-    final decoded = jsonDecode(textOrJson);
-    if (decoded is Map<String, dynamic>) {
-      return textOrJson;
-    }
-  } on FormatException {
-    // Plain text system messages are wrapped below.
-  }
-  return jsonEncode({
-    'role': 'system',
-    'content': [
-      {'type': 'text', 'text': textOrJson},
-    ],
-  });
-}
-
 void _setConversationOptionalArgs(
   _LiteRtLmBindings bindings,
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs, {
@@ -2053,7 +2074,7 @@ Future<String> _runBlockingSendMessageInIsolate(
 }
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
-  final companionLibraries = _openCompanionLibraries(
+  final companionLibraries = liteRtLmOpenCompanionLibraries(
     request.companionLibraryPaths,
   );
   try {
@@ -2130,12 +2151,41 @@ bool _hasNativeSymbol(DynamicLibrary library, String symbol) {
   }
 }
 
-List<DynamicLibrary> _openCompanionLibraries(Iterable<String> companions) {
+/// Opens companion libraries, retrying dependencies after other libraries load.
+///
+/// Runtime inventories are not dependency ordered. Retry failed loads only when
+/// the previous pass loaded another library; otherwise preserve the loader's
+/// original error and stack. Missing absolute paths retain discovery's existing
+/// behavior and are skipped. [openLibrary] allows isolated loader tests.
+List<DynamicLibrary> liteRtLmOpenCompanionLibraries(
+  Iterable<String> companions, {
+  DynamicLibrary Function(String)? openLibrary,
+}) {
+  final open = openLibrary ?? DynamicLibrary.open;
+  var pending = companions
+      .where(
+        (companion) =>
+            File(companion).existsSync() || !path.isAbsolute(companion),
+      )
+      .toList();
   final libraries = <DynamicLibrary>[];
-  for (final companion in companions) {
-    if (File(companion).existsSync() || !path.isAbsolute(companion)) {
-      libraries.add(DynamicLibrary.open(companion));
+  while (pending.isNotEmpty) {
+    final deferred = <String>[];
+    ArgumentError? firstError;
+    StackTrace? firstStack;
+    for (final companion in pending) {
+      try {
+        libraries.add(open(companion));
+      } on ArgumentError catch (error, stack) {
+        deferred.add(companion);
+        firstError ??= error;
+        firstStack ??= stack;
+      }
     }
+    if (deferred.length == pending.length) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+    pending = deferred;
   }
   return libraries;
 }
@@ -3201,6 +3251,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
         void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
       >('litert_lm_conversation_config_set_messages');
+
+  late final conversationConfigSetPromptTemplate = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_prompt_template');
 
   late final conversationConfigSetExtraContext = _library
       .lookupFunction<

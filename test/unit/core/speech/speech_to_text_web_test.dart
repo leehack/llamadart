@@ -69,6 +69,103 @@ void main() {
     await engine.dispose();
   });
 
+  test('validated Web bridge keeps the raw bytes-only prompt path', () async {
+    final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+    final engine = LlamaEngine(backend);
+    await engine.loadModel('https://example.com/qwen3-asr.gguf');
+    await engine.loadMultimodalProjector(
+      'https://example.com/qwen3-asr-mmproj.gguf',
+    );
+    final recognizer = SpeechToTextEngine(
+      engine,
+      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+    );
+
+    final task = await recognizer.transcribe(
+      SpeechToTextRequest(
+        audio: SpeechAudioBytesInput(
+          Uint8List.fromList(<int>[0x52, 0x49, 0x46, 0x46]),
+          format: const SpeechAudioFormat(encoding: 'wav'),
+        ),
+        maxOutputTokens: 37,
+      ),
+    );
+    await task.done;
+
+    expect(backend.lastPrompt, 'Transcribe this audio accurately.');
+    expect(backend.lastParts, hasLength(1));
+    expect(backend.lastParts!.single, isA<LlamaAudioContent>());
+    expect((backend.lastParts!.single as LlamaAudioContent).bytes, <int>[
+      0x52,
+      0x49,
+      0x46,
+      0x46,
+    ]);
+    expect(backend.lastGenerationParams?.maxTokens, 37);
+    expect(backend.lastGenerationParams?.temp, 0);
+    expect(backend.lastGenerationParams?.topK, 1);
+    expect(backend.lastGenerationParams?.topP, 1);
+    expect(backend.lastGenerationParams?.penalty, 1);
+    expect(backend.lastGenerationParams?.seed, 1);
+    expect(backend.lastGenerationParams?.streamBatchTokenThreshold, 1);
+    await engine.dispose();
+  });
+
+  test('validated Web bridge reports an empty transcript as failure', () async {
+    final backend = _WebSpeechBackend(
+      promptSpeechToTextSupported: true,
+      generationText: ' <asr_text> ',
+    );
+    final engine = LlamaEngine(backend);
+    await engine.loadModel('https://example.com/qwen3-asr.gguf');
+    await engine.loadMultimodalProjector(
+      'https://example.com/qwen3-asr-mmproj.gguf',
+    );
+    final recognizer = SpeechToTextEngine(
+      engine,
+      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+    );
+
+    final task = await recognizer.transcribe(
+      SpeechToTextRequest(
+        audio: SpeechAudioBytesInput(
+          Uint8List.fromList(<int>[0x52, 0x49, 0x46, 0x46]),
+          format: const SpeechAudioFormat(encoding: 'wav'),
+        ),
+      ),
+    );
+    final streamError = Completer<Object>();
+    task.events.listen(
+      (_) {},
+      onError: (Object error) => streamError.complete(error),
+    );
+    final completion = await task.done;
+
+    expect(
+      await streamError.future,
+      isA<LlamaSpeechException>().having(
+        (error) => error.message,
+        'message',
+        contains('empty transcript'),
+      ),
+    );
+    expect(completion.state, SpeechToTextCompletionState.failed);
+    expect(completion.result, isNull);
+    expect(completion.error, isA<LlamaSpeechException>());
+
+    backend.generationText = 'Recovered transcript.';
+    final retry = await recognizer.transcribe(
+      SpeechToTextRequest(
+        audio: SpeechAudioBytesInput(
+          Uint8List.fromList(<int>[0x52, 0x49, 0x46, 0x46]),
+          format: const SpeechAudioFormat(encoding: 'wav'),
+        ),
+      ),
+    );
+    expect((await retry.done).result?.text, 'Recovered transcript.');
+    await engine.dispose();
+  });
+
   test('validated Web bridge cancels an active transcription', () async {
     final generationGate = Completer<void>();
     final backend = _WebSpeechBackend(
@@ -189,11 +286,16 @@ class _WebSpeechBackend
   @override
   final bool supportsPromptSpeechToText;
   final Completer<void>? generationGate;
+  String generationText;
   bool cancelCalled = false;
+  String? lastPrompt;
+  List<LlamaContentPart>? lastParts;
+  GenerationParams? lastGenerationParams;
 
   _WebSpeechBackend({
     required bool promptSpeechToTextSupported,
     this.generationGate,
+    this.generationText = 'Hello.',
   }) : supportsPromptSpeechToText = promptSpeechToTextSupported;
 
   @override
@@ -258,12 +360,15 @@ class _WebSpeechBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
+    lastPrompt = prompt;
+    lastParts = parts;
+    lastGenerationParams = params;
     final gate = generationGate;
     if (gate != null) {
       await gate.future;
     }
     if (!cancelCalled) {
-      yield utf8.encode('Hello.');
+      yield utf8.encode(generationText);
     }
   }
 

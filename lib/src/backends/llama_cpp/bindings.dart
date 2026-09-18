@@ -1306,6 +1306,21 @@ external ffi.Pointer<ggml_tensor> ggml_clamp(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+    ffi.Float,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_clamp_inplace(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> a,
+  double min,
+  double max,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
     ffi.Int,
     ffi.Int,
     ffi.Int,
@@ -2210,6 +2225,13 @@ ggml_prec ggml_flash_attn_ext_get_prec(ffi.Pointer<ggml_tensor> a) {
   return ggml_prec.fromValue(_ggml_flash_attn_ext_get_prec(a));
 }
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.Int32)>()
+external void ggml_flash_attn_ext_set_n_kv_max(
+  ffi.Pointer<ggml_tensor> a,
+  int n_kv_max,
+);
+
+@Deprecated('use ggml_prec_set_acc() instead')
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
   symbol: 'ggml_flash_attn_ext_set_prec',
 )
@@ -3393,6 +3415,7 @@ void ggml_mul_mat_set_hint(ffi.Pointer<ggml_tensor> a, ggml_op_hint hint) {
   return _ggml_mul_mat_set_hint(a, hint.value);
 }
 
+@Deprecated('use ggml_prec_set_acc() instead')
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
   symbol: 'ggml_mul_mat_set_prec',
 )
@@ -3918,6 +3941,24 @@ ffi.Pointer<ggml_tensor> ggml_pool_2d_back(
   double p1,
 ) {
   return _ggml_pool_2d_back(ctx, a, af, op.value, k0, k1, s0, s1, p0, p1);
+}
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
+  symbol: 'ggml_prec_set_acc',
+)
+external bool _ggml_prec_set_acc(ffi.Pointer<ggml_tensor> a, int prec);
+
+bool ggml_prec_set_acc(ffi.Pointer<ggml_tensor> a, ggml_prec prec) {
+  return _ggml_prec_set_acc(a, prec.value);
+}
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt, ffi.Int)
+>(symbol: 'ggml_prec_set_src')
+external bool _ggml_prec_set_src(ffi.Pointer<ggml_tensor> a, int prec, int idx);
+
+bool ggml_prec_set_src(ffi.Pointer<ggml_tensor> a, ggml_prec prec, int idx) {
+  return _ggml_prec_set_src(a, prec.value, idx);
 }
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_object>)>()
@@ -5255,6 +5296,21 @@ external ffi.Pointer<ggml_tensor> ggml_sum_rows(
 external ffi.Pointer<ggml_tensor> ggml_swiglu(
   ffi.Pointer<ggml_context> ctx,
   ffi.Pointer<ggml_tensor> a,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_swiglu_clamp(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> a,
+  ffi.Pointer<ggml_tensor> b,
+  double limit,
 );
 
 @ffi.Native<
@@ -7109,7 +7165,7 @@ external ffi.Pointer<llama_sampler> llama_sampler_chain_init(
   llama_sampler_chain_params params,
 );
 
-@ffi.Native<ffi.Int Function(ffi.Pointer<llama_sampler>)>()
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_sampler>)>()
 external int llama_sampler_chain_n(ffi.Pointer<llama_sampler> chain);
 
 @ffi.Native<
@@ -8202,6 +8258,7 @@ external ffi.Pointer<ffi.Float> mtmd_get_output_embd(
     ffi.Pointer<ffi.UnsignedChar>,
     ffi.Size,
     ffi.Bool,
+    mtmd_helper_init_opt,
   )
 >()
 external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_buf(
@@ -8209,6 +8266,7 @@ external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_buf(
   ffi.Pointer<ffi.UnsignedChar> buf,
   int len,
   bool placeholder,
+  mtmd_helper_init_opt opt,
 );
 
 @ffi.Native<
@@ -8216,12 +8274,14 @@ external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_buf(
     ffi.Pointer<mtmd_context>,
     ffi.Pointer<ffi.Char>,
     ffi.Bool,
+    mtmd_helper_init_opt,
   )
 >()
 external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_file(
   ffi.Pointer<mtmd_context> ctx,
   ffi.Pointer<ffi.Char> fname,
   bool placeholder,
+  mtmd_helper_init_opt opt,
 );
 
 @ffi.Native<
@@ -8387,6 +8447,9 @@ external void mtmd_helper_image_get_decoder_pos(
   int pos_0,
   ffi.Pointer<mtmd_decoder_pos> out_pos,
 );
+
+@ffi.Native<mtmd_helper_init_opt Function()>()
+external mtmd_helper_init_opt mtmd_helper_init_opt_default();
 
 @ffi.Native<ffi.Void Function(ggml_log_callback, ffi.Pointer<ffi.Void>)>()
 external void mtmd_helper_log_set(
@@ -8639,6 +8702,23 @@ external int mtmd_tokenize(
   int n_bitmaps,
 );
 
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<mtmd_input_chunks>,
+    ffi.Pointer<ffi.Pointer<mtmd_input_part>>,
+    ffi.Size,
+    ffi.Bool,
+  )
+>()
+external int mtmd_tokenize_from_parts(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_input_chunks> output,
+  ffi.Pointer<ffi.Pointer<mtmd_input_part>> parts,
+  int n_parts,
+  bool add_special,
+);
+
 typedef FILE = __sFILE;
 
 const int GGML_BACKEND_META_MAX_DEVICES = 16;
@@ -8701,7 +8781,7 @@ const int LLAMA_FILE_MAGIC_GGSQ = 1734833009;
 
 const int LLAMA_SESSION_MAGIC = 1734833006;
 
-const int LLAMA_SESSION_VERSION = 9;
+const int LLAMA_SESSION_VERSION = 10;
 
 const int LLAMA_STATE_SEQ_FLAGS_NONE = 0;
 
@@ -8713,7 +8793,7 @@ const int LLAMA_STATE_SEQ_FLAGS_SWA_ONLY = 1;
 
 const int LLAMA_STATE_SEQ_MAGIC = 1734833009;
 
-const int LLAMA_STATE_SEQ_VERSION = 2;
+const int LLAMA_STATE_SEQ_VERSION = 3;
 
 const int LLAMA_TOKEN_NULL = -1;
 
@@ -9366,7 +9446,8 @@ enum ggml_glu_op {
   GGML_GLU_OP_SWIGLU_OAI(3),
   GGML_GLU_OP_GEGLU_ERF(4),
   GGML_GLU_OP_GEGLU_QUICK(5),
-  GGML_GLU_OP_COUNT(6);
+  GGML_GLU_OP_SWIGLU_CLAMP(6),
+  GGML_GLU_OP_COUNT(7);
 
   final int value;
   const ggml_glu_op(this.value);
@@ -9378,7 +9459,8 @@ enum ggml_glu_op {
     3 => GGML_GLU_OP_SWIGLU_OAI,
     4 => GGML_GLU_OP_GEGLU_ERF,
     5 => GGML_GLU_OP_GEGLU_QUICK,
-    6 => GGML_GLU_OP_COUNT,
+    6 => GGML_GLU_OP_SWIGLU_CLAMP,
+    7 => GGML_GLU_OP_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_glu_op: $value'),
   };
 }
@@ -9789,17 +9871,34 @@ final class ggml_opt_result extends ffi.Opaque {}
 typedef ggml_opt_result_t = ffi.Pointer<ggml_opt_result>;
 
 enum ggml_prec {
-  GGML_PREC_DEFAULT(0),
-  GGML_PREC_F32(10);
+  GGML_PREC_UNDEFINED(0),
+  GGML_PREC_F32(10),
+  GGML_PREC_BF16(15),
+  GGML_PREC_F16(20),
+  GGML_PREC_Q8(30),
+  GGML_PREC_Q4(40);
+
+  static const GGML_PREC_DEFAULT = GGML_PREC_UNDEFINED;
 
   final int value;
   const ggml_prec(this.value);
 
   static ggml_prec fromValue(int value) => switch (value) {
-    0 => GGML_PREC_DEFAULT,
+    0 => GGML_PREC_UNDEFINED,
     10 => GGML_PREC_F32,
+    15 => GGML_PREC_BF16,
+    20 => GGML_PREC_F16,
+    30 => GGML_PREC_Q8,
+    40 => GGML_PREC_Q4,
     _ => throw ArgumentError('Unknown value for ggml_prec: $value'),
   };
+
+  @override
+  String toString() {
+    if (this == GGML_PREC_UNDEFINED)
+      return "ggml_prec.GGML_PREC_UNDEFINED, ggml_prec.GGML_PREC_DEFAULT";
+    return super.toString();
+  }
 }
 
 enum ggml_scale_flag {
@@ -10914,6 +11013,22 @@ enum llama_ftype {
   };
 }
 
+enum llama_lazy_mode {
+  LLAMA_LAZY_MODE_OFF(0),
+  LLAMA_LAZY_MODE_AUTO(1),
+  LLAMA_LAZY_MODE_ON(2);
+
+  final int value;
+  const llama_lazy_mode(this.value);
+
+  static llama_lazy_mode fromValue(int value) => switch (value) {
+    0 => LLAMA_LAZY_MODE_OFF,
+    1 => LLAMA_LAZY_MODE_AUTO,
+    2 => LLAMA_LAZY_MODE_ON,
+    _ => throw ArgumentError('Unknown value for llama_lazy_mode: $value'),
+  };
+}
+
 enum llama_load_mode {
   LLAMA_LOAD_MODE_AUTO(-1),
   LLAMA_LOAD_MODE_NONE(0),
@@ -11066,6 +11181,12 @@ final class llama_model_params extends ffi.Struct {
   llama_load_mode get load_mode => llama_load_mode.fromValue(load_modeAsInt);
   set load_mode(llama_load_mode value) => load_modeAsInt = value.value;
 
+  @ffi.UnsignedInt()
+  external int lazy_modeAsInt;
+
+  llama_lazy_mode get lazy_mode => llama_lazy_mode.fromValue(lazy_modeAsInt);
+  set lazy_mode(llama_lazy_mode value) => lazy_modeAsInt = value.value;
+
   @ffi.Int32()
   external int main_gpu;
 
@@ -11103,6 +11224,7 @@ final class llama_model_params extends ffi.Struct {
     required int n_gpu_layers,
     required llama_split_mode split_mode,
     required llama_load_mode load_mode,
+    required llama_lazy_mode lazy_mode,
     required int main_gpu,
     required ffi.Pointer<ffi.Float> tensor_split,
     required llama_progress_callback progress_callback,
@@ -11120,6 +11242,7 @@ final class llama_model_params extends ffi.Struct {
     ..ref.n_gpu_layers = n_gpu_layers
     ..ref.split_mode = split_mode
     ..ref.load_mode = load_mode
+    ..ref.lazy_mode = lazy_mode
     ..ref.main_gpu = main_gpu
     ..ref.tensor_split = tensor_split
     ..ref.progress_callback = progress_callback
@@ -11185,6 +11308,9 @@ final class llama_model_quantize_params extends ffi.Struct {
 
   external ffi.Pointer<ffi.Int32> prune_layers;
 
+  @ffi.Size()
+  external int max_buf_size;
+
   static ffi.Pointer<llama_model_quantize_params> $allocate(
     ffi.Allocator $allocator, {
     required int nthread,
@@ -11201,6 +11327,7 @@ final class llama_model_quantize_params extends ffi.Struct {
     required ffi.Pointer<llama_model_kv_override> kv_overrides,
     required ffi.Pointer<llama_model_tensor_override> tt_overrides,
     required ffi.Pointer<ffi.Int32> prune_layers,
+    required int max_buf_size,
   }) => $allocator<llama_model_quantize_params>()
     ..ref.nthread = nthread
     ..ref.ftype = ftype
@@ -11215,7 +11342,8 @@ final class llama_model_quantize_params extends ffi.Struct {
     ..ref.imatrix = imatrix
     ..ref.kv_overrides = kv_overrides
     ..ref.tt_overrides = tt_overrides
-    ..ref.prune_layers = prune_layers;
+    ..ref.prune_layers = prune_layers
+    ..ref.max_buf_size = max_buf_size;
 }
 
 typedef llama_model_set_tensor_data_t =
@@ -12274,6 +12402,10 @@ enum mtmd_helper_gen_audio_outtype {
   };
 }
 
+final class mtmd_helper_init_opt extends ffi.Struct {
+  external mtmd_helper_video_init_params video_params;
+}
+
 typedef mtmd_helper_post_decode_callback =
     ffi.Pointer<ffi.NativeFunction<mtmd_helper_post_decode_callbackFunction>>;
 typedef mtmd_helper_post_decode_callbackFunction =
@@ -12352,6 +12484,20 @@ enum mtmd_input_chunk_type {
 }
 
 final class mtmd_input_chunks extends ffi.Opaque {}
+
+final class mtmd_input_part extends ffi.Struct {
+  external ffi.Pointer<mtmd_input_text> text;
+
+  external ffi.Pointer<mtmd_bitmap> bitmap;
+
+  static ffi.Pointer<mtmd_input_part> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<mtmd_input_text> text,
+    required ffi.Pointer<mtmd_bitmap> bitmap,
+  }) => $allocator<mtmd_input_part>()
+    ..ref.text = text
+    ..ref.bitmap = bitmap;
+}
 
 final class mtmd_input_text extends ffi.Struct {
   external ffi.Pointer<ffi.Char> text;
