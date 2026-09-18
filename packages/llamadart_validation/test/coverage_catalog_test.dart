@@ -88,9 +88,9 @@ void main() {
   test('CLI filters real coverage rows and rejects unknown selectors', () async {
     // CI prepares only this private package. The root CLI must use its
     // explicit package configuration, not depend on a prepared root checkout.
-      final isolated = Directory.systemTemp.createTempSync('coverage-cli-');
-      addTearDown(() => isolated.deleteSync(recursive: true));
-      Directory('${isolated.path}/tool/testing').createSync(recursive: true);
+    final isolated = Directory.systemTemp.createTempSync('coverage-cli-');
+    addTearDown(() => isolated.deleteSync(recursive: true));
+    Directory('${isolated.path}/tool/testing').createSync(recursive: true);
     File(
       '../../tool/testing/validation.dart',
     ).copySync('${isolated.path}/tool/testing/validation.dart');
