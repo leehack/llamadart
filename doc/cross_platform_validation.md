@@ -1038,8 +1038,10 @@ Vulkan offload and compute-buffer records do not establish physical GPU use when
 the log identifies a software device such as llvmpipe, lavapipe or SwiftShader.
 Those runs remain unverified, including mixed software/hardware inventories.
 Each Vulkan compute-buffer device also needs matching, unambiguous native
-discovery evidence identifying recognized GPU hardware; absent, conflicting or
-unknown device names fail closed. CUDA-ready VM images also need a Vulkan
+discovery or selected-model evidence identifying recognized GPU hardware.
+Both sources must agree when present. Discovery capability columns are stripped
+only after checking the original device text for software identities; absent,
+conflicting or unknown device names fail closed. CUDA-ready VM images need a Vulkan
 loader and a hardware ICD before they can qualify Vulkan or LiteRT WebGPU lanes.
 
 Catalog 3 executes C10 stop-marker comparison and C12 unloaded-engine readiness
