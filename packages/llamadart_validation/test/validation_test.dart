@@ -1072,12 +1072,41 @@ void main() {
         3;
     final hardware = 'ggml_vulkan: 0 = NVIDIA L4\n$allocations';
     expect(inspectPlacement(manifest, cases, hardware)['verified'], true);
+    String selected(String name, {int index = 0, int free = 21831}) =>
+        'llama_prepare_model_devices: using device Vulkan$index '
+        '($name) (0000:00:03.0) - $free MiB free\n';
+    final selectedHardware = selected('NVIDIA L4');
+    for (final valid in [
+      '$selectedHardware$allocations',
+      '${selected('NVIDIA L4', free: 21760)}$selectedHardware$allocations',
+      '$selectedHardware$hardware',
+      'ggml_vulkan: 0 = NVIDIA L4 (NVIDIA) | uma: 0\n'
+          '$selectedHardware$allocations',
+      '${selected('Intel(R) Arc(TM) A770')}$allocations',
+    ]) {
+      expect(inspectPlacement(manifest, cases, valid)['verified'], true);
+    }
     for (final invalid in [
       allocations,
       'ggml_vulkan: 1 = NVIDIA L4\n$allocations',
       'ggml_vulkan: 0 = unknown device\n$allocations',
       'ggml_vulkan: 0 = Intel CPU\n$allocations',
       '$hardware\nggml_vulkan: 0 = AMD Radeon',
+      '${selected('AMD Radeon')}$hardware',
+      '${selected('NVIDIA L4', index: 1)}$allocations',
+      '${selected('Intel CPU')}$allocations',
+      '${selected('NVIDIA virtual device')}$allocations',
+      '${selected('NVIDIA L4 | virtual device')}$allocations',
+      'ggml_vulkan: 0 = NVIDIA L4 | virtual device\n$allocations',
+      'ggml_vulkan: 0 = NVIDIA L4 | CPU\n$allocations',
+      'ggml_vulkan: 0 = NVIDIA L4 | software\n$allocations',
+      '${selected('unknown device')}$allocations',
+      '${selected('NVIDIA (L4')}$allocations',
+      '${selectedHardware.replaceFirst(' MiB free', '')}$allocations',
+      'unrecognized: $selectedHardware$allocations',
+      '$selectedHardware${allocations.replaceFirst('7/7', '0/7')}',
+      '$selectedHardware${allocations.replaceFirst('64.0', '0.0')}',
+      '$selectedHardware$allocations$allocations',
     ]) {
       expect(inspectPlacement(manifest, cases, invalid)['verified'], false);
     }
@@ -1095,6 +1124,14 @@ void main() {
       );
       expect(result['verified'], false, reason: device);
       expect(result['reason'], contains('software Vulkan'));
+      expect(
+        inspectPlacement(
+          manifest,
+          cases,
+          '${selected(device)}$allocations',
+        )['verified'],
+        false,
+      );
       // Mixed inventory cannot identify which physical device executed work.
       expect(
         inspectPlacement(manifest, cases, '$hardware\n$device')['verified'],

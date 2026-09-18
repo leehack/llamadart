@@ -110,10 +110,38 @@ Map<String, dynamic> inspectPlacement(
   var deviceIdentityVerified = true;
   if (backend == 'vulkan') {
     final devices = <String, Set<String>>{};
+    void addDevice(String index, String name, {bool discovery = false}) {
+      // Discovery includes capability columns and sometimes a vendor suffix;
+      // selected-model records contain just the same physical device name.
+      final unsafe = RegExp(
+        r'\b(cpu|software|virtual)\b',
+        caseSensitive: false,
+      ).hasMatch(name);
+      final identity = !discovery || unsafe
+          ? name.trim()
+          : name
+                .split('|')
+                .first
+                .trim()
+                .replaceFirst(
+                  RegExp(r'\s+\((?:NVIDIA|AMD|Intel|Apple|Qualcomm)\)$'),
+                  '',
+                );
+      devices.putIfAbsent(index, () => {}).add(identity);
+    }
+
     for (final match in RegExp(
       r'ggml_vulkan:\s*(\d+)\s*=\s*([^\r\n]+)',
     ).allMatches(log)) {
-      devices.putIfAbsent(match[1]!, () => {}).add(match[2]!);
+      addDevice(match[1]!, match[2]!, discovery: true);
+    }
+    for (final match in RegExp(
+      r'^llama_prepare_model_devices: using device Vulkan(\d+) '
+      r'\(((?:[^()\r\n]|\([^()\r\n]*\))+)\)'
+      r'(?: \([0-9a-fA-F:.]+\))? - [0-9]+(?:\.[0-9]+)? MiB free\r?$',
+      multiLine: true,
+    ).allMatches(log)) {
+      addDevice(match[1]!, match[2]!);
     }
     final selectedDevices = RegExp(
       r'Vulkan(\d+) compute buffer size',
