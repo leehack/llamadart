@@ -137,7 +137,7 @@ Pick targeted rows based on the touched surface:
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
-| LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
+| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -417,6 +417,25 @@ When an agent creates or updates a PR:
 The executable quick suite and provider commands are documented in the
 [cross-platform validation runbook](cross_platform_validation.md). Discover the
 model-free `validation-harness` and opt-in `validation-model-core` matrix rows.
+
+
+### LiteRT-LM lifecycle regression
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle \
+  --model-path /path/to/Qwen3.5-0.8B_int8.litertlm --backend gpu
+```
+
+This local-only row runs public engine reload/recovery and forced initialization
+timeout in separate child processes. Recovery retains a 60-second generation
+budget and requires the hello fixture after each reload; the parent enforces
+240-second recovery and 120-second timeout-process deadlines. The negative case
+requires an explicit cleanup error and failure of the abandoned request, never a
+cleanup pass. Outer deadline expiry kills only the owned child and fails the test.
+Logs and process results go to `.dart_tool/litert_lm_lifecycle`, or
+`LITERT_LM_LIFECYCLE_LOG_DIR`. Record source commit, model hash/revision, runtime
+artifact identity, requested backend, and device with these logs. A GPU request
+alone does not prove accelerator placement.
 
 ### Native GGUF stop sequences
 

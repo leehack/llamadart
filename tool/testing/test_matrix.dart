@@ -576,6 +576,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'LiteRT-LM backend, hook companion libraries, or runtime pins.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-lifecycle',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',

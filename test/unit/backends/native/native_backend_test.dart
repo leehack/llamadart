@@ -3,8 +3,11 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -22,6 +25,66 @@ import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
 void main() {
+  for (final action in ['dispose', 'switch']) {
+    test(
+      'retains failed LiteRT cleanup through router $action and reload',
+      () async {
+        final port = ReceivePort();
+        port.listen((message) {
+          if (message is LiteRtLmDisposeRequest) {
+            message.sendPort.send(
+              LiteRtLmErrorResponse(
+                'native operation unsettled',
+                kind: 'state',
+              ),
+            );
+          } else if (message is LiteRtLmModelLoadRequest) {
+            message.sendPort.send(LiteRtLmHandleResponse(1));
+          } else if (message is LiteRtLmWorkerRequest) {
+            message.sendPort.send(LiteRtLmDoneResponse());
+          }
+        });
+        var litertCreations = 0;
+        var llamaCreations = 0;
+        final backend = NativeAutoBackend(
+          liteRtLmFactory: () {
+            litertCreations++;
+            return LiteRtLmBackend(initialSendPort: port.sendPort);
+          },
+          llamaCppFactory: () {
+            llamaCreations++;
+            return _FakeBackend(handle: 2);
+          },
+        );
+        try {
+          await backend.modelLoad('model.litertlm', const ModelParams());
+          await expectLater(
+            action == 'dispose'
+                ? backend.dispose()
+                : backend.modelLoad('model.gguf', const ModelParams()),
+            throwsA(isA<LlamaStateException>()),
+          );
+          await expectLater(
+            backend.modelLoad('model.litertlm', const ModelParams()),
+            throwsA(isA<LlamaStateException>()),
+          );
+          await expectLater(
+            backend.modelLoad('model.gguf', const ModelParams()),
+            throwsA(isA<LlamaStateException>()),
+          );
+          await expectLater(
+            backend.dispose(),
+            throwsA(isA<LlamaStateException>()),
+          );
+          expect(litertCreations, 1);
+          expect(llamaCreations, 0);
+        } finally {
+          port.close();
+        }
+      },
+    );
+  }
+
   test('default native backend factory returns the format router', () async {
     final backend = LlamaBackend();
 

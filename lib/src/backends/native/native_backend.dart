@@ -298,10 +298,12 @@ class NativeAutoBackend
   @override
   Future<void> dispose() async {
     final delegate = _delegate;
-    _delegate = null;
-    _delegateKind = null;
     final diagnosticDelegate = await _takeDiagnosticDelegate();
     await delegate?.dispose();
+    // Retain a delegate whose cleanup failed: replacing it could start another
+    // native runtime while the previous operation is still executing.
+    _delegate = null;
+    _delegateKind = null;
     if (!identical(delegate, diagnosticDelegate)) {
       await diagnosticDelegate?.dispose();
     }
@@ -558,9 +560,9 @@ class NativeAutoBackend
     }
 
     final oldDelegate = _delegate;
+    await oldDelegate?.dispose();
     _delegate = null;
     _delegateKind = null;
-    await oldDelegate?.dispose();
     await diagnosticDelegate?.dispose();
 
     final delegate = switch (kind) {
