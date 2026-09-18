@@ -48,6 +48,15 @@ jobs:
       - name: Check WebGPU bridge asset tag
         run: dart run tool/testing/check_webgpu_bridge_tag.dart
 
+      - name: Verify native release pin policy
+        run: python3 tool/native/test_sync_native_release_pins.py
+
+      - name: Verify native header archive staging
+        run: python3 tool/native/test_native_header_archive.py
+
+      - name: Verify native header sync atomicity
+        run: python3 tool/native/test_sync_native_headers_and_bindings.py
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 
@@ -399,6 +408,10 @@ jobs:
           GGML_METAL_DEVICES: "0"
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
         run: dart test -p vm -j 1 --exclude-tags local-only
+
+      - name: Verify Flutter Apple companion cache transitions
+        if: runner.os == 'macOS'
+        run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
 
   native-prompt-reuse-parity:
     name: Native Prompt Reuse Parity

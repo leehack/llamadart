@@ -9,6 +9,93 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
+
+- Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
+
+- Aligned default WebGPU bridge assets to `v0.1.44` for Web/native
+  llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
+
+* Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
+
+* Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
+
+* Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
+
+* Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
+
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
+
+
+- Fix fresh macOS Flutter test/build dependency scanning while retaining the
+  Apple companion ABI and local-override guards.
+
+## 0.8.23
+
+- Fail Apple builds before native symbol lookup when the resolved llama.cpp
+  companion does not match the core native runtime, with actionable upgrade
+  guidance.
+
+- Adopted native llama.cpp v0.4.0 with matching bindings and multimodal calls.
+  Saved native sessions from older runtimes must be regenerated. Apple companion
+  `0.0.18` supplies the matching native runtime.
+
+- Aligned default WebGPU bridge assets to `v0.1.43` for Web/native
+  llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
+
+- Known upstream limitation: llama.cpp v0.4.0 can reject large grammar
+  repetitions, such as `root ::= "a"{2000}`. The post-v0.4.0 correction is
+  tracked in [native #76](https://github.com/leehack/llamadart-native/issues/76)
+  and is not included in this release.
+
+## 0.8.22
+
+- Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
+  Apple SwiftPM `v0.3.0` runtime pin.
+
+- Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.3.0`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
+- Aligned default WebGPU bridge assets to `v0.1.41` for corrected
+  TypeScript declarations and TTS recovery guidance, retaining Web/native
+  llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264` parity and Web
+  `@litert-lm/core@0.15.0`. Immutable manifest:
+  `fe97604daabaad6aefa223a8637d5fd9dcac09dd4a61b2ef19cd6aabb39392b9`.
+
+- Consolidated native release tag grammar across Dart, Python, Bash, workflows,
+  and documentation via a machine-readable fixture contract (`#404`).
+
+## 0.8.21
+
+- Aligned default WebGPU bridge assets to `v0.1.39` (immutable manifest
+  `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`),
+  restoring Web and native llama.cpp upstream
+  `v0.2.0@bb4caa7540188872173c44d161602d9271386413` parity with native
+  anchor `llamadart-native@v0.2.0-1` while preserving Web
+  `@litert-lm/core@0.15.0` packaging.
+
+- Fixed native Qwen3-ASR transcription by applying the model chat template to
+  audio turns, while preserving the validated raw-prompt Web bridge contract.
+  Empty ASR output now fails explicitly instead of reporting an empty result.
+
+- Fixed Qwen 2.5/3 LiteRT-LM `ToolChoice.required` requests silently running
+  without their required-call grammar and finishing with no call. They now fail
+  with an actionable `LlamaUnsupportedException` before generation when the
+  backend cannot enforce the declared tool schema; Gemma 4 compatibility and
+  `auto`/`none` tool routing are unchanged.
+
+- Fixed Gemma 4 thinking-budget output so split channel controls and tool-call
+  envelopes stay out of visible assistant content while preserving ordinary
+  whitespace. The chat example now also validates custom tool declarations,
+  executes declared host handlers exactly once, appends tool results, and
+  performs a bounded continuation for both llama.cpp and LiteRT-LM backends.
+
 - Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
   Docusaurus replaces its unpatched image parser, automatic local Markdown
   images are rejected; website contributors should use static pathname URLs.
@@ -114,13 +201,24 @@ For canonical full release notes, use:
   hierarchy. It is the same exception type `LlamaEngine.loadModelFromUrl`
   already throws for this condition; each keeps its own message.
 
-- Updated the default native llama.cpp runtime to `b10545`, adding LFM2 DSpark
-  support plus current upstream correctness and backend performance fixes.
-  Matching Dart FFI bindings, including the new multimodal projector-device
-  field, and the Apple SwiftPM artifact checksum were refreshed.
+- Updated the default native llama.cpp runtime to the immutable
+  `leehack/llamadart-native@v0.2.0-1` release (llama.cpp `v0.2.0`), adding LFM2
+  DSpark support plus current upstream correctness and backend performance
+  fixes. Matching Dart FFI bindings, including the new multimodal
+  projector-device field, and the Apple SwiftPM artifact checksum were
+  refreshed. Linux `libmtmd.so.0` now loads without the old
+  `libmtmd.so.SOVERSION` compatibility alias.
 
 - Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
   from the llama.cpp backend; speculative decoding behavior is unchanged.
+
+- Bumped `llamadart_llama_cpp_flutter` to `0.0.16` so the `v0.2.0-1` Apple
+  SwiftPM pin actually publishes; `0.0.14` was already on pub.dev, so release
+  automation skipped it and Apple builds would have kept the `b10514` runtime.
+
+- Corrected the WebGPU bridge docs, which claimed the pinned `v0.1.37` bridge
+  assets match the default native llama.cpp runtime. They embed `b10514` and now
+  trail the native `v0.2.0-1` pin.
 
 - Chat-template capability detection now logs a debug message naming the
   probe (`string-content`, `typed-content`, `system-role`, `tools`) when its

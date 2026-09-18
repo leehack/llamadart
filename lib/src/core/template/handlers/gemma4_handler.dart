@@ -1,27 +1,34 @@
 import 'package:dinja/dinja.dart';
 
+import '../../grammar/json_schema_converter.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_role.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/chat/completion_chunk.dart';
 import '../../models/chat/content_part.dart';
+import '../../models/inference/tool_choice.dart';
 import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
+import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
+import '../tool_schema_utils.dart';
 
 /// Handler for Gemma 4 chat templates.
 ///
 /// Gemma 4 uses `<|turn>/<turn|>` message frames, optional
 /// `<|channel>thought...<channel|>` reasoning blocks, and
 /// `<|tool_call>call:name{args}<tool_call|>` tool-call envelopes.
-class Gemma4Handler extends ChatTemplateHandler {
+class Gemma4Handler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const String _turnEnd = '<turn|>';
   static const String _toolCallStart = '<|tool_call>';
   static const String _toolCallEnd = '<tool_call|>';
+  static const String _callMarker = 'call:';
   static const String _channelStart = '<|channel>';
   static const String _channelEnd = '<channel|>';
   static const List<String> _customQuoteTokens = <String>['<|\\"|>', '<|"|>'];
@@ -124,10 +131,14 @@ class Gemma4Handler extends ChatTemplateHandler {
     }
 
     final hasTools = tools != null && tools.isNotEmpty;
+    // Upstream llama.cpp only makes the Gemma 4 tool grammar eager for
+    // `required`; `auto` stays unconstrained so the model can answer in prose.
+    final toolChoiceRequired =
+        metadata[internalToolChoiceMetadataKey] == ToolChoice.required.name;
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: hasTools && toolChoiceRequired ? buildGrammar(tools) : null,
       grammarLazy: false,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -204,6 +215,35 @@ class Gemma4Handler extends ChatTemplateHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parseInternal(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parseInternal(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parseInternal(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
     final reasoning = _extractReasoning(
       output,
@@ -212,28 +252,50 @@ class Gemma4Handler extends ChatTemplateHandler {
     );
 
     if (!parseToolCalls) {
+      final sanitized = _extractToolCalls(
+        reasoning.content,
+        isPartial: isPartial,
+        tools: tools,
+      );
       return ChatParseResult(
-        content: reasoning.content.trim(),
+        content: _visibleContent(
+          sanitized.content,
+          hasToolCalls: sanitized.toolCalls.isNotEmpty,
+        ),
         reasoningContent: reasoning.reasoning,
       );
     }
 
-    final parsed = _extractToolCalls(reasoning.content, isPartial: isPartial);
+    final parsed = _extractToolCalls(
+      reasoning.content,
+      isPartial: isPartial,
+      tools: tools,
+    );
     if (parsed.toolCalls.isEmpty) {
       final fallback = parseToolCallsFromLooseText(parsed.content);
       if (fallback.toolCalls.isNotEmpty) {
         return ChatParseResult(
-          content: fallback.content.trim(),
+          content: fallback.content,
           reasoningContent: reasoning.reasoning,
           toolCalls: fallback.toolCalls,
         );
       }
     }
     return ChatParseResult(
-      content: parsed.content.trim(),
+      content: _visibleContent(
+        parsed.content,
+        hasToolCalls: parsed.toolCalls.isNotEmpty,
+      ),
       reasoningContent: reasoning.reasoning,
       toolCalls: parsed.toolCalls,
     );
+  }
+
+  String _visibleContent(String content, {required bool hasToolCalls}) {
+    // A pure structured call may be surrounded by protocol whitespace that
+    // should not become an assistant message. Once there is ordinary visible
+    // text, preserve its whitespace exactly.
+    return hasToolCalls && content.trim().isEmpty ? '' : content;
   }
 
   ({String content, String? reasoning}) _extractReasoning(
@@ -246,26 +308,54 @@ class Gemma4Handler extends ChatTemplateHandler {
     var cursor = 0;
 
     while (cursor < output.length) {
+      if (thinkingForcedOpen) {
+        final end = output.indexOf(_channelEnd, cursor);
+        if (end == -1) {
+          final remaining = output.substring(cursor);
+          final heldPrefixLength = _controlMarkerPrefixLength(
+            remaining,
+            _channelEnd,
+            isPartial: isPartial,
+          );
+          final reasoning = remaining.substring(
+            0,
+            remaining.length - heldPrefixLength,
+          );
+          if (reasoning.isNotEmpty) {
+            reasoningParts.add(reasoning);
+          }
+          break;
+        }
+
+        final reasoning = output.substring(cursor, end);
+        if (reasoning.isNotEmpty) {
+          reasoningParts.add(reasoning);
+        }
+        cursor = end + _channelEnd.length;
+        thinkingForcedOpen = false;
+        continue;
+      }
+
       final start = output.indexOf(_channelStart, cursor);
       if (start == -1) {
-        if (thinkingForcedOpen) {
-          final end = output.indexOf(_channelEnd, cursor);
-          if (end == -1) {
-            final reasoning = output.substring(cursor);
-            if (reasoning.isNotEmpty) {
-              reasoningParts.add(reasoning);
-            }
-          } else {
-            final reasoning = output.substring(cursor, end);
-            if (reasoning.isNotEmpty) {
-              reasoningParts.add(reasoning);
-            }
-            content.write(output.substring(end + _channelEnd.length));
-            thinkingForcedOpen = false;
-          }
-        } else {
-          content.write(output.substring(cursor));
-        }
+        final remaining = output.substring(cursor);
+        final heldPrefixLength = _max(
+          _controlMarkerPrefixLength(
+            remaining,
+            _channelStart,
+            isPartial: isPartial,
+          ),
+          _controlMarkerPrefixLength(
+            remaining,
+            _channelEnd,
+            isPartial: isPartial,
+          ),
+        );
+        content.write(
+          remaining
+              .substring(0, remaining.length - heldPrefixLength)
+              .replaceAll(_channelEnd, ''),
+        );
         break;
       }
 
@@ -276,12 +366,12 @@ class Gemma4Handler extends ChatTemplateHandler {
           output.substring(start),
           isPartial: true,
         );
-        if (isPartial && partial != null && partial.channel == 'thought') {
+        if (partial != null && partial.channel == 'thought') {
           if (partial.body.isNotEmpty) {
             reasoningParts.add(partial.body);
           }
-        } else {
-          content.write(output.substring(start));
+        } else if (!isPartial && partial != null && partial.body.isNotEmpty) {
+          content.write(partial.body);
         }
         break;
       }
@@ -299,7 +389,7 @@ class Gemma4Handler extends ChatTemplateHandler {
           reasoningParts.add(body);
         }
       } else {
-        content.write(output.substring(start, end + _channelEnd.length));
+        content.write(body);
       }
 
       cursor = end + _channelEnd.length;
@@ -334,14 +424,22 @@ class Gemma4Handler extends ChatTemplateHandler {
           : (channel: block.trim(), body: '');
     }
 
+    final rawBody = block.substring(newline + 1);
+    final heldPrefixLength = isPartial
+        ? _trailingMarkerPrefixLength(rawBody, _channelEnd)
+        : 0;
     return (
       channel: block.substring(0, newline).trim(),
-      body: block.substring(newline + 1).trim(),
+      body: rawBody.substring(0, rawBody.length - heldPrefixLength),
     );
   }
 
   ({String content, List<LlamaCompletionChunkToolCall> toolCalls})
-  _extractToolCalls(String output, {required bool isPartial}) {
+  _extractToolCalls(
+    String output, {
+    required bool isPartial,
+    required List<ToolDefinition>? tools,
+  }) {
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     final content = StringBuffer();
     var cursor = 0;
@@ -349,16 +447,35 @@ class Gemma4Handler extends ChatTemplateHandler {
     while (cursor < output.length) {
       final start = output.indexOf(_toolCallStart, cursor);
       if (start == -1) {
-        content.write(output.substring(cursor));
+        final remaining = output.substring(cursor);
+        final heldPrefixLength = _max(
+          _controlMarkerPrefixLength(
+            remaining,
+            _toolCallStart,
+            isPartial: isPartial,
+          ),
+          _controlMarkerPrefixLength(
+            remaining,
+            _toolCallEnd,
+            isPartial: isPartial,
+          ),
+        );
+        content.write(
+          remaining
+              .substring(0, remaining.length - heldPrefixLength)
+              .replaceAll(_toolCallEnd, ''),
+        );
         break;
       }
 
       content.write(output.substring(cursor, start));
-      final parsed = _parseToolCall(output, start, toolCalls.length);
+      final parsed = _parseToolCall(
+        output,
+        start,
+        toolCalls.length,
+        tools: tools,
+      );
       if (parsed == null) {
-        if (!isPartial) {
-          content.write(output.substring(start));
-        }
         break;
       }
 
@@ -372,8 +489,9 @@ class Gemma4Handler extends ChatTemplateHandler {
   ({int end, LlamaCompletionChunkToolCall toolCall})? _parseToolCall(
     String output,
     int start,
-    int index,
-  ) {
+    int index, {
+    required List<ToolDefinition>? tools,
+  }) {
     var cursor = _skipWhitespace(output, start + _toolCallStart.length);
 
     if (output.startsWith('call', cursor)) {
@@ -385,22 +503,12 @@ class Gemma4Handler extends ChatTemplateHandler {
       cursor = _skipWhitespace(output, cursor);
     }
 
-    final nameStart = cursor;
-    while (cursor < output.length &&
-        _isIdentifierChar(output.codeUnitAt(cursor))) {
-      cursor++;
-    }
-
-    final name = output.substring(nameStart, cursor).trim();
-    if (name.isEmpty || _invalidToolNames.contains(name)) {
+    final parsedName = _parseToolName(output, cursor, tools: tools);
+    if (parsedName == null) {
       return null;
     }
-
-    cursor = _skipWhitespace(output, cursor);
-
-    if (cursor >= output.length || output.codeUnitAt(cursor) != 0x7B) {
-      return null;
-    }
+    final name = parsedName.name;
+    cursor = parsedName.argumentsStart;
 
     final endBrace = _findMatchingBrace(output, cursor);
     if (endBrace == -1) {
@@ -512,14 +620,80 @@ class Gemma4Handler extends ChatTemplateHandler {
     return offset;
   }
 
-  bool _isIdentifierChar(int codeUnit) {
-    return (codeUnit >= 0x30 && codeUnit <= 0x39) ||
-        (codeUnit >= 0x41 && codeUnit <= 0x5A) ||
-        (codeUnit >= 0x61 && codeUnit <= 0x7A) ||
-        codeUnit == 0x5F ||
-        codeUnit == 0x2D ||
-        codeUnit == 0x2E;
+  ({String name, int argumentsStart})? _parseToolName(
+    String output,
+    int start, {
+    required List<ToolDefinition>? tools,
+  }) {
+    if (tools != null && tools.isNotEmpty) {
+      ToolDefinition? bestMatch;
+      var bestArgumentsStart = -1;
+      for (final tool in tools) {
+        if (!output.startsWith(tool.name, start)) {
+          continue;
+        }
+        final argumentsStart = _skipWhitespace(
+          output,
+          start + tool.name.length,
+        );
+        if (argumentsStart >= output.length ||
+            output.codeUnitAt(argumentsStart) != 0x7B) {
+          continue;
+        }
+        if (bestMatch == null || tool.name.length > bestMatch.name.length) {
+          bestMatch = tool;
+          bestArgumentsStart = argumentsStart;
+        }
+      }
+      if (bestMatch == null) {
+        return _parseUndeclaredToolName(output, start);
+      }
+      return (name: bestMatch.name, argumentsStart: bestArgumentsStart);
+    }
+
+    return _parseUndeclaredToolName(output, start);
   }
+
+  ({String name, int argumentsStart})? _parseUndeclaredToolName(
+    String output,
+    int start,
+  ) {
+    var cursor = start;
+    while (cursor < output.length && output.codeUnitAt(cursor) != 0x7B) {
+      cursor++;
+    }
+    final name = output.substring(start, cursor).trimRight();
+    if (name.isEmpty || _invalidToolNames.contains(name)) {
+      return null;
+    }
+    if (cursor >= output.length || output.codeUnitAt(cursor) != 0x7B) {
+      return null;
+    }
+    return (name: name, argumentsStart: cursor);
+  }
+
+  int _trailingMarkerPrefixLength(String text, String marker) {
+    final maxLength = text.length < marker.length
+        ? text.length
+        : marker.length - 1;
+    for (var length = maxLength; length > 0; length--) {
+      if (text.endsWith(marker.substring(0, length))) {
+        return length;
+      }
+    }
+    return 0;
+  }
+
+  int _controlMarkerPrefixLength(
+    String text,
+    String marker, {
+    required bool isPartial,
+  }) {
+    final length = _trailingMarkerPrefixLength(text, marker);
+    return isPartial || length >= 2 ? length : 0;
+  }
+
+  int _max(int a, int b) => a > b ? a : b;
 
   bool _isWhitespace(int codeUnit) {
     return codeUnit == 0x20 ||
@@ -528,8 +702,47 @@ class Gemma4Handler extends ChatTemplateHandler {
         codeUnit == 0x09;
   }
 
+  /// Builds a grammar admitting exactly one
+  /// `<|tool_call>call:<name>{args}<tool_call|>` envelope.
+  ///
+  /// Arguments use standard JSON, which [parse] already accepts alongside the
+  /// model's pseudo-JSON spelling.
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    return null;
+    if (tools == null || tools.isEmpty) {
+      return null;
+    }
+
+    // Grammar alternatives and parser routing both depend on exact tool and
+    // parameter identities. Reject lossy duplicates before constructing rules.
+    toolSchemas(tools);
+
+    final converter = JsonSchemaConverter();
+    final callRules = <String>[];
+
+    for (var i = 0; i < tools.length; i++) {
+      final tool = tools[i];
+      final schema = tool.toJsonSchema();
+      converter.resolveRefs(schema, schema);
+      final argsRule = converter.visit(schema, 'tool-$i-args');
+      final callRule = 'tool-$i-call';
+      converter.rules[callRule] =
+          '${ToolCallGrammarUtils.literal('$_toolCallStart$_callMarker${tool.name}')} '
+          '$argsRule '
+          '${ToolCallGrammarUtils.literal(_toolCallEnd)}';
+      callRules.add(callRule);
+    }
+
+    final buffer = StringBuffer()..writeln('root ::= ${callRules.join(' | ')}');
+    final otherRules = converter.rules.entries.toList(growable: false)
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in otherRules) {
+      if (entry.key == 'root') {
+        continue;
+      }
+      buffer.writeln('${entry.key} ::= ${entry.value}');
+    }
+
+    return buffer.toString();
   }
 }

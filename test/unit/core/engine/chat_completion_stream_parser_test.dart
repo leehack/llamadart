@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -156,6 +158,212 @@ void main() {
         expect(chunks.last.choices.single.finishReason, 'tool_calls');
       },
     );
+
+    test(
+      'Gemma 4 withholds a character-split tool envelope after thinking',
+      () async {
+        const output =
+            'private reasoning<channel|>'
+            '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(output.split('')),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.gemma4.index,
+            thinkingForcedOpen: true,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'gemma4-character-split',
+          tools: [_weatherTool],
+        ).toList();
+
+        final reasoning = chunks
+            .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+            .join();
+        final content = chunks
+            .map((chunk) => chunk.choices.single.delta.content ?? '')
+            .join();
+        final toolCall = chunks
+            .expand((chunk) => chunk.choices.single.delta.toolCalls ?? const [])
+            .single;
+
+        expect(reasoning, 'private reasoning');
+        expect(content, isEmpty);
+        expect(content, isNot(contains('<|tool_call>')));
+        expect(toolCall.function?.name, 'weather');
+        expect(jsonDecode(toolCall.function!.arguments!), {'city': 'Seoul'});
+        expect(chunks.last.choices.single.finishReason, 'tool_calls');
+      },
+    );
+
+    test(
+      'Gemma 4 withholds a character-split tool envelope after content',
+      () async {
+        const output =
+            'Visible answer.'
+            '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(output.split('')),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.gemma4.index,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'gemma4-content-tool-split',
+          tools: [_weatherTool],
+        ).toList();
+
+        final content = chunks
+            .map((chunk) => chunk.choices.single.delta.content ?? '')
+            .join();
+        final toolCall = chunks
+            .expand((chunk) => chunk.choices.single.delta.toolCalls ?? const [])
+            .single;
+
+        expect(content, 'Visible answer.');
+        expect(content, isNot(contains('<|tool_call>')));
+        expect(toolCall.function?.name, 'weather');
+        expect(jsonDecode(toolCall.function!.arguments!), {'city': 'Seoul'});
+      },
+    );
+
+    test(
+      'Gemma 4 suppresses split tool controls when parsing is disabled',
+      () async {
+        const output =
+            'Visible answer.'
+            '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(output.split('')),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.gemma4.index,
+          ),
+          parseToolCallsEnabled: false,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'gemma4-no-tool-parse',
+          tools: [_weatherTool],
+        ).toList();
+
+        final content = chunks
+            .map((chunk) => chunk.choices.single.delta.content ?? '')
+            .join();
+
+        expect(content, 'Visible answer.');
+        expect(content, isNot(contains('<|tool_call>')));
+        expect(
+          chunks.expand(
+            (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+          ),
+          isEmpty,
+        );
+        expect(chunks.last.choices.single.finishReason, 'stop');
+      },
+    );
+
+    test('Gemma 4 preserves ordinary raw whitespace exactly', () async {
+      const output = ' \tVisible answer.  \n';
+
+      for (final parseToolCallsEnabled in <bool>[true, false]) {
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.fromIterable(output.split('')),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.gemma4.index,
+          ),
+          parseToolCallsEnabled: parseToolCallsEnabled,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'gemma4-raw-whitespace-$parseToolCallsEnabled',
+          tools: [_weatherTool],
+        ).toList();
+
+        final content = chunks
+            .map((chunk) => chunk.choices.single.delta.content ?? '')
+            .join();
+
+        expect(content, output, reason: 'parse tools: $parseToolCallsEnabled');
+        expect(
+          chunks.expand(
+            (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+          ),
+          isEmpty,
+        );
+      }
+    });
+
+    test(
+      'Gemma 4 character-split explicit thinking never becomes content',
+      () async {
+        const output = '<|channel>thought\ninternal draft<channel|>';
+
+        for (final enableThinking in <bool>[true, false]) {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(output.split('')),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: ChatFormat.gemma4.index,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: enableThinking,
+            modelName: 'test-model',
+            completionId: 'gemma4-thinking-$enableThinking',
+            tools: [_weatherTool],
+          ).toList();
+
+          final reasoning = chunks
+              .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+              .join();
+          final content = chunks
+              .map((chunk) => chunk.choices.single.delta.content ?? '')
+              .join();
+
+          expect(content, isEmpty);
+          expect(content, isNot(contains('<|channel>')));
+          expect(content, isNot(contains('<channel|>')));
+          expect(reasoning, enableThinking ? 'internal draft' : isEmpty);
+        }
+      },
+    );
+
+    test('debug logging records only parsed output metadata', () async {
+      final messages = <String>[];
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.debug)
+        ..setHandler((record) => messages.add(record.message));
+
+      try {
+        await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.value(
+            '<|channel>thought\ninternal draft<channel|>'
+            '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>',
+          ),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.gemma4.index,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'safe-debug-log',
+          tools: [_weatherTool],
+        ).toList();
+      } finally {
+        LlamaLogger.instance
+          ..setHandler(null)
+          ..setLevel(LlamaLogLevel.none);
+      }
+
+      expect(messages, [
+        'Parsed completion: contentChars=0, reasoningChars=14, '
+            'toolCallCount=1',
+      ]);
+    });
 
     test('carries tool schemas into specialized final parsing', () async {
       const namespace = ']<]minimax[>[';

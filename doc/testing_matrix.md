@@ -22,6 +22,7 @@ the change, and mark skipped rows as `N/A` with a concrete reason.
 | --- | --- | --- |
 | `essential` | Cheap baseline package health checks. | Run for most code PRs and expect CI to cover them. |
 | `targeted` | Runtime/model/feature checks selected by touched code. | Run locally or cite the matching CI workflow when the PR touches that path. |
+| `high-risk` | Exact-head independent QA and adversarial production-path evidence. | Required before mark-ready for parser/grammar/streaming, backend/runtime, capability, artifact-consumer, release-automation, or regression-policy changes. |
 | `platform` | Supported platform or architecture validation rows. | Use when a PR affects runtime packaging, native pins, backend selection, app launch, or release confidence for a platform. |
 | `release` | Device or representative smoke checks that are too heavy for every PR. | Run for release candidates, native bundle changes, or high-risk runtime changes. |
 
@@ -57,6 +58,67 @@ For a typical code PR, include:
 Docs-only PRs can mark runtime rows `N/A`, but should run `docs-site` when docs
 or website files changed.
 
+## High-Risk Pre-Merge Review
+
+Discover the high-risk rows with:
+
+```bash
+# Replace upstream/main with the remote/ref for the current PR base.
+PR_BASE_REF=upstream/main
+git diff --name-only --no-renames "$PR_BASE_REF"...HEAD | \
+  dart run tool/testing/classify_high_risk_changes.dart
+dart run tool/testing/test_matrix.dart --tier high-risk
+```
+
+Before mark-ready, assign an independent blocking review pass that did not
+implement the change, using an independent operator-owned or fresh Codex
+adversarial audit identity (the standalone qa profile is retired; author
+self-approval is rejected). It must review the exact head against the current
+base, inspect the actual production call sites, and verify positive and negative
+tests that fail if the relevant branch is deleted, bypassed, or miswired.
+Validate the evidence payload with `tool/testing/high_risk_readiness.dart`,
+supplying repository, PR, author, exact head, and exact base values from an
+independent source as documented in `doc/high_risk_pre_merge_readiness.md`.
+The evaluator derives the rename-aware changed-file inventory from Git and
+rejects unchanged, deleted, renamed-old, non-test, and phantom evidence paths.
+Fill the PR template's high-risk block with the task identities, exact head/base,
+affected-family evidence or precise N/A, zero known PR-caused P1 regressions,
+and the live unresolved-thread count. A known PR-caused P1 or any unresolved
+thread blocks readiness.
+
+For structured output, cover the applicable production-path axes:
+
+- compile generated grammars and accept upstream-emitted valid shapes;
+- reject unknown, missing, mismatched, wrong-type, and malformed structures;
+- reconstruct schema-directed strings, numbers, booleans, nulls, objects, and
+  arrays, including empty containers and zero-argument calls;
+- suppress incomplete protocol markup while streaming and preserve ordinary
+  content through malformed-final rollback;
+- exercise `auto`, `required`, and `none` tool choice with thinking/reasoning
+  prefixes; and
+- run pinned and current upstream template/parser parity.
+
+Use the closest affected-family real model or artifact. When it is unavailable,
+name every unavailable family and substitute primary upstream emissions plus
+durable fixtures. An unrelated representative model can validate the shared
+pipeline only; it cannot be reported as affected-family evidence.
+
+The readiness evaluator validates the repository-local portion of these rules;
+it never emits operational readiness. External auditor authentication, GitHub
+App status publication, protected-environment provenance, and conditional
+ruleset enforcement remain unavailable and fail closed. The default-branch
+workflow is a non-required advisory that warns on high-risk paths instead of
+failing. See
+`doc/high_risk_pre_merge_readiness.md`.
+
+The structured-output requirements encode the regression classes found after
+the broad parser rollout: envelope/name escaping and quoting (#394/#399),
+schema exactness and wrong-type rejection (#395/#396/#407), partial-protocol
+leakage and malformed-final content loss (#397/#398), thinking/tool-choice
+prefix handling (#402/#406), and empty/schema-directed value reconstruction
+(#408/#410). The compiled production-path coverage added separately to `main`
+is the durable execution proof; this policy slice does not duplicate it.
+
 ## Targeted Runtime and Model Rows
 
 Pick targeted rows based on the touched surface:
@@ -80,6 +142,13 @@ Pick targeted rows based on the touched surface:
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
+
+Apple companion hook changes also require
+`dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart` on
+macOS with the pinned Flutter SDK. This explicit `local-only` test runs in a
+temporary clone and exercises fresh/warm Flutter tests, rejects a newly added
+local `Artifacts` override, then verifies recovery after removal without
+clearing caches. The macOS CI native job runs it explicitly.
 
 The required `Web Chat Contract` check runs the chat app tests on VM and
 Chrome, validates the final Flutter Web artifact, exercises deterministic UI
@@ -148,6 +217,11 @@ gate passes.
 ## Local Model Scenarios
 
 Real model checks are intentionally local-only. They can use the unified runner:
+
+The native speech smoke checks the same encoded WAV as file and in-memory bytes,
+requires the exact supplied transcript, bounds prompt tokens, and verifies
+cancellation followed by successful transcription for both inputs, plus malformed
+byte rejection and recovery.
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
@@ -328,3 +402,7 @@ When an agent creates or updates a PR:
    `test/unit/`, `test/integration/`, or `test/e2e/`; wire heavyweight manual
    checks through `tool/testing/run_local_e2e.dart` and
    `tool/testing/test_matrix.dart`.
+6. When updating an open PR branch, enforce expected-head CAS and fast-forward
+   ancestry with `tool/git/safe_pr_head_update.dart` to prevent stale head
+   rewinds. Consult `doc/pr_branch_writer_inventory.md` for writer scope and the
+   remaining GitHub-managed governance boundary.

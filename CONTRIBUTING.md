@@ -267,6 +267,12 @@ If you need to build binaries for a new release:
 4.  Push to your fork and submit a Pull Request.
 5.  Complete the production-readiness sections in the pull request template.
 
+For the initial branch publication, `tool/git/safe_pr_head_update.dart` accepts
+the all-zero expected SHA only while the fork ref is absent. After the pull
+request opens, use the helper with the exact observed fork-branch head for every
+update; blind or force pushes are not authorized open-PR update paths. See
+`doc/pr_branch_writer_inventory.md` for the repository-local writer boundary.
+
 ### Production-readiness expectations
 
 `main` should remain production-ready. A pull request may reduce its scope, but
@@ -297,6 +303,20 @@ Every non-trivial pull request should explain:
 If a feature is not ready across all originally imagined paths, prefer reducing
 the declared scope and tracking follow-up issues over merging incomplete or
 ambiguous behavior.
+
+### High-risk pre-merge review
+
+Changes touching parsers, grammars, streaming, backend routing, capabilities,
+artifact consumers, release automation, or regression policy require an
+independent blocking review pass bound to the exact candidate head SHA and base
+SHA (`tool/testing/high_risk_readiness.dart`, `doc/high_risk_pre_merge_readiness.md`).
+Self-approval is prohibited, and the standalone `qa` profile is retired in favor
+of an independent operator-owned or fresh Codex adversarial audit identity.
+The local evaluator derives the changed-file inventory from Git and never emits
+operational readiness. Until the separately reviewed GitHub App, auditor
+authentication, and conditional ruleset boundary exist, a valid high-risk run
+is explicitly unverified and the default-branch workflow is a non-required
+advisory that warns rather than fails.
 
 ### PR type examples
 

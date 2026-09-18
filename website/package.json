@@ -34,6 +34,7 @@
       "serialize-javascript": "7.0.5"
     },
     "nanoid": "3.3.18",
+    "qs": "6.16.0",
     "sockjs": {
       "uuid": "11.1.1"
     }

@@ -23,6 +23,8 @@ library;
 import 'package:code_assets/code_assets.dart';
 import 'package:path/path.dart' as path;
 
+export 'native_release_tag.dart';
+
 /// User-define key selecting which llama.cpp backend modules to bundle (`cpu`,
 /// `vulkan`, `cuda`, `blas`, `opencl`, `hip`); also carries the Android arm64
 /// `cpu_profile`/`cpu_variants` policy. [parseRequestedBackends] decodes the
@@ -219,11 +221,11 @@ class NativeLibraryDescriptor {
   /// Path the file was found at, verbatim.
   ///
   /// `hook/build.dart` re-describes every file it copies into the build output
-  /// directory, and on `linux-*` copies each `.so` under its SONAME aliases
-  /// too, so each `.so` yields two descriptors — three for `libmtmd.so`,
-  /// which also gets a `.so.SOVERSION` alias. Those extras differ in
-  /// [fileName] too: a `.so.0` alias still shares the source [canonicalName],
-  /// but `libmtmd.so.SOVERSION` canonicalises to a non-core
+  /// directory, and on `linux-*` copies each `.so` under its `.so.0` SONAME
+  /// alias too, so each `.so` yields two descriptors sharing one
+  /// [canonicalName]. Overrides pinning a historical `bNNNN` artifact or the
+  /// original `v0.2.0` add a third `libmtmd.so.SOVERSION` descriptor for their
+  /// literal placeholder SONAME, which canonicalises to a non-core
   /// `mtmd.so.soversion`.
   final String filePath;
 

@@ -1,18 +1,26 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
 
-Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
+Directory _fakeRepo(
+  String assetsTag, {
+  String version = '1.2.3',
+  Map<String, String> files = const {},
+}) {
   final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
   addTearDown(() => root.deleteSync(recursive: true));
   final entries = <String, String>{
     bridgeTagSourcePath:
         'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-$assetsTag}"\n',
+    rootPubspecPath: 'name: llamadart\nversion: $version\n',
     ...files,
   };
   for (final entry in entries.entries) {
@@ -23,7 +31,214 @@ Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
   return root;
 }
 
+/// Builds a repo whose docs, chat bootstrap and native pin describe
+/// [bridgeTag]/[nativeTag].
+Directory _fakeRuntimeRepo({
+  required String bridgeTag,
+  required String nativeTag,
+  bool parityWording = true,
+}) {
+  final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
+  addTearDown(() => root.deleteSync(recursive: true));
+  final entries = <String, String>{
+    nativeLlamaCppTagPath: "const _llamaCppTag = '$nativeTag';\n",
+    'example/chat_app/web/index.html':
+        "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
+    'doc/webgpu_bridge.md': parityWording
+        ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
+              '`hook/build.dart` native pin\n'
+        : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
+              '`hook/build.dart`\n',
+    'website/docs/platforms/webgpu-bridge.md': parityWording
+        ? '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, matching '
+              'the native runtime\n'
+        : '- The pinned `v1.2.3` bridge assets embed llama.cpp `$bridgeTag`, which now '
+              'trails the\n',
+  };
+  for (final entry in entries.entries) {
+    File('${root.path}/${entry.key}')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(entry.value);
+  }
+  return root;
+}
+
+const String _approvedManifestJson = '''
+{
+  "artifacts": {
+    "llama_webgpu_bridge.d.ts": {
+      "sha256": "be584430457c76cf991c39ebfd19f771424f86f6304899840bf9e50f1b32cafc",
+      "size_bytes": 6330
+    },
+    "llama_webgpu_bridge.js": {
+      "sha256": "a704115fe87d3defff4a02c5a2b1d1bf0ab3bc1f00de3f40ed2c9b2d5983fd73",
+      "size_bytes": 210601
+    },
+    "llama_webgpu_bridge_worker.js": {
+      "sha256": "47bbfa0fe897e708455b9497e9aa41d2e94489c329300c33b12936fb3169deca",
+      "size_bytes": 257
+    },
+    "llama_webgpu_core.js": {
+      "sha256": "67bade52aad19471ee96a7180db691e1f6b4e87d4254adaa3e5d9a31f6206ed1",
+      "size_bytes": 113847
+    },
+    "llama_webgpu_core.wasm": {
+      "sha256": "f643e79520ac97bc150db6806735b9b73a98b07eb1b2fa4146bb773944315c71",
+      "size_bytes": 8918014
+    },
+    "llama_webgpu_core_mem64.js": {
+      "sha256": "6575880ad6a631b6a8f9aaaebb9a5c3f1cc2910f59700ce529d3de6077276337",
+      "size_bytes": 130764
+    },
+    "llama_webgpu_core_mem64.wasm": {
+      "sha256": "aaf399050af09af0c44b55ecf9d665e8f6e18df6f6deada3feab07677ddd7233",
+      "size_bytes": 9145549
+    }
+  },
+  "assets_repository": "leehack/llama-web-bridge-assets",
+  "bridge_assets_tag": "v0.1.44",
+  "bridge_commit": "89178be67c3c84300bc1b129182bd5bc5a8e21fc",
+  "bridge_repository": "leehack/llama-web-bridge",
+  "capabilities": {
+    "memory64": true,
+    "multimodal": {
+      "direct": true,
+      "worker": true
+    },
+    "speech_to_text": {
+      "advertised": true,
+      "direct": true,
+      "memory64": true,
+      "wasm32": true,
+      "worker": true
+    },
+    "state_persistence": {
+      "direct": true,
+      "worker": true
+    },
+    "text_to_speech": {
+      "advertised": true,
+      "direct": true,
+      "memory64": true,
+      "wasm32": false,
+      "worker": true
+    },
+    "wasm32": true
+  },
+  "emscripten_version": "6.0.8",
+  "files": {
+    "llama_webgpu_bridge.d.ts": {
+      "sha256": "be584430457c76cf991c39ebfd19f771424f86f6304899840bf9e50f1b32cafc",
+      "size_bytes": 6330
+    },
+    "llama_webgpu_bridge.js": {
+      "sha256": "a704115fe87d3defff4a02c5a2b1d1bf0ab3bc1f00de3f40ed2c9b2d5983fd73",
+      "size_bytes": 210601
+    },
+    "llama_webgpu_bridge_worker.js": {
+      "sha256": "47bbfa0fe897e708455b9497e9aa41d2e94489c329300c33b12936fb3169deca",
+      "size_bytes": 257
+    },
+    "llama_webgpu_core.js": {
+      "sha256": "67bade52aad19471ee96a7180db691e1f6b4e87d4254adaa3e5d9a31f6206ed1",
+      "size_bytes": 113847
+    },
+    "llama_webgpu_core.wasm": {
+      "sha256": "f643e79520ac97bc150db6806735b9b73a98b07eb1b2fa4146bb773944315c71",
+      "size_bytes": 8918014
+    },
+    "llama_webgpu_core_mem64.js": {
+      "sha256": "6575880ad6a631b6a8f9aaaebb9a5c3f1cc2910f59700ce529d3de6077276337",
+      "size_bytes": 130764
+    },
+    "llama_webgpu_core_mem64.wasm": {
+      "sha256": "aaf399050af09af0c44b55ecf9d665e8f6e18df6f6deada3feab07677ddd7233",
+      "size_bytes": 9145549
+    }
+  },
+  "github_run_id": "35075283754",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/35075283754",
+  "llama_cpp_commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
+  "llama_cpp_tag": "v0.4.1",
+  "native_commit": "a4ee6b9fa71127d6cdf625e26d82ca5ab7b1d102",
+  "native_manifest_sha256": "d8dc86fcb55e566ee04aa9ed235716bd0e7a48cdaecb17822c098b074ec33d3e",
+  "native_release_tag": "v0.4.1",
+  "native_repository": "leehack/llamadart-native",
+  "orchestrator_correlation_id": "auto-stable-v0.4.1-d8dc86fcb55e566e-build-89178be67c3c8430",
+  "qualification_gates": {
+    "multimodal": "passed",
+    "speech_to_text": "required-automated-qualification",
+    "state_persistence": "passed",
+    "text_to_speech": "required-automated-qualification"
+  },
+  "release_channel": "stable",
+  "release_rebuild": 0,
+  "release_tag": "v0.1.44",
+  "schema_version": 2,
+  "source_commit": "89178be67c3c84300bc1b129182bd5bc5a8e21fc",
+  "source_repository": "leehack/llama-web-bridge",
+  "unproven_capabilities": {
+    "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
+    "real_device_intelligibility": "unproven",
+    "real_device_playback": "unproven",
+    "speaker_reference_fidelity": "unproven",
+    "wasm32_text_to_speech": "unsupported"
+  },
+  "upstream_commit": "b29c606e28a01b1bc8c1351026a0fa6e616bf6c4",
+  "upstream_repository": "ggml-org/llama.cpp",
+  "upstream_tag": "v0.4.1"
+}
+''';
+
+Future<List<String>> _verifyManifestJson(
+  String manifestJson, {
+  String? expectedManifestSha256,
+}) {
+  final bytes = utf8.encode(manifestJson);
+  return verifyManifest(
+    expectedTag: 'v0.1.44',
+    expectedLlamaCppTag: bridgeLlamaCppTag,
+    expectedLlamaCppCommit: bridgeLlamaCppCommit,
+    expectedBridgeCommit: bridgeSourceCommit,
+    expectedNativeReleaseTag: bridgeNativeReleaseTag,
+    expectedManifestSha256:
+        expectedManifestSha256 ?? sha256.convert(bytes).toString(),
+    fetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+  );
+}
+
+String _currentReleaseNotes(String path) {
+  final section = currentReleaseNotesSection(
+    File(path).readAsStringSync(),
+    readRootPackageVersion(Directory.current),
+  );
+  expect(
+    section,
+    isNotNull,
+    reason: '$path has no current release-notes section',
+  );
+  return section!;
+}
+
 void main() {
+  test(
+    'aggregate gate runs offline checks and opt-in byte verification',
+    () async {
+      final bytes = utf8.encode(_approvedManifestJson);
+      final repoRoot = Directory.current;
+
+      expect(
+        await findBridgeProblems(
+          repoRoot,
+          readPinnedBridgeTag(repoRoot),
+          verifyPublishedManifest: true,
+          manifestFetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
     expect(
@@ -31,6 +246,36 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'current release notes keep exact Web provenance and LiteRT separation',
+    () {
+      for (final path in const <String>[
+        'CHANGELOG.md',
+        'website/docs/changelog/recent-releases.md',
+      ]) {
+        final current = _currentReleaseNotes(path);
+        expect(current, contains('`v0.1.44`'), reason: path);
+        expect(current, contains(bridgeManifestSha256), reason: path);
+        expect(
+          current,
+          contains('$bridgeLlamaCppTag@$bridgeLlamaCppCommit'),
+          reason: path,
+        );
+        expect(current, contains(bridgeNativeReleaseTag), reason: path);
+        expect(current, contains('@litert-lm/core@0.15.0'), reason: path);
+      }
+
+      expect(
+        File('example/chat_app/web/index.html').readAsStringSync(),
+        contains('@litert-lm/core@0.15.0/+esm'),
+      );
+      expect(
+        File(nativeLlamaCppTagPath).readAsStringSync(),
+        contains("const _litertLmReleaseTag = 'v0.17.0-5';"),
+      );
+    },
+  );
 
   test('a pin quoting a different tag is reported', () {
     final root = _fakeRepo(
@@ -80,6 +325,180 @@ void main() {
       findBridgeTagDrift(root, readPinnedBridgeTag(root)),
       contains(contains('matches 2 lines, expected 1')),
     );
+  });
+
+  group('current release-notes section', () {
+    /// A repo whose top release-notes section is headed [heading] and claims
+    /// [currentTag], over a frozen `## 1.0.0` section claiming `v1.0.0`.
+    Directory releaseNotesRepo(
+      String heading, {
+      String currentTag = 'v9.9.9',
+      String currentClaim = 'Aligned the default WebGPU bridge assets to',
+      String websiteClaim = 'Aligned default WebGPU bridge assets to',
+    }) => _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        'CHANGELOG.md':
+            '## $heading\n\n'
+            '* $currentClaim `$currentTag`.\n\n'
+            '## 1.0.0\n\n'
+            '* Aligned the default WebGPU bridge assets to `v1.0.0`.\n',
+        'website/docs/changelog/recent-releases.md':
+            '## $heading\n\n'
+            '- $websiteClaim `$currentTag`.\n\n'
+            '## 1.0.0\n\n'
+            '- Aligned default WebGPU bridge assets to `v1.0.0`.\n',
+      },
+    );
+
+    test('accepts `## Unreleased` and ignores frozen release history', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('Unreleased'), 'v9.9.9'),
+        isEmpty,
+      );
+    });
+
+    test('accepts the promoted `## <pubspec version>` heading', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.3'), 'v9.9.9'),
+        isEmpty,
+      );
+    });
+
+    test(
+      'unrelated Unreleased notes retain the exact current released pin',
+      () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          file.writeAsStringSync(
+            '## Unreleased\n\n* Fix Apple dependency scanning.\n\n'
+            'WebGPU bridge assets are unchanged.\n\n${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), isEmpty);
+        expect(findCurrentReleaseNotesDrift(root, 'v8.8.8'), isNotEmpty);
+      },
+    );
+
+    test('pin-free Unreleased cannot borrow another historical version', () {
+      final root = releaseNotesRepo('1.0.0');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        file.writeAsStringSync(
+          '## Unreleased\n\n* Apple fix.\n${file.readAsStringSync()}',
+        );
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      for (final pin in releaseNotesPins) {
+        File(
+          '${root.path}/${pin.path}',
+        ).writeAsStringSync('## Unreleased\n\n* Apple fix.\n');
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+    });
+
+    for (final claim in [
+      'Aligned default WebGPU bridge assets to `v0.0.1`.',
+      'Moved WebGPU bridge assets to an invalid tag.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Moved WebGPU bridge assets to malformed.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Aligned default WebGPU bridge assets to `v9.9.9`.',
+    ]) {
+      test('Unreleased claim cannot hide behind released history: $claim', () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          final currentClaim = pin.path == 'CHANGELOG.md'
+              ? claim
+                    .replaceAll(
+                      'Aligned default WebGPU',
+                      'Aligned the default WebGPU',
+                    )
+                    .replaceAll('\n- ', '\n* ')
+              : claim;
+          final bullet = pin.path == 'CHANGELOG.md' ? '*' : '-';
+          file.writeAsStringSync(
+            '## Unreleased\n\n$bullet $currentClaim\n\n'
+            '${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      });
+    }
+
+    test('a heading naming another version is reported', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.4'), 'v9.9.9'),
+        everyElement(
+          contains('the top section is neither `## Unreleased` nor `## 1.2.3`'),
+        ),
+      );
+    });
+
+    test('a stale tag in the current section is reported', () {
+      expect(
+        findCurrentReleaseNotesDrift(
+          releaseNotesRepo('1.2.3', currentTag: 'v0.0.1'),
+          'v9.9.9',
+        ),
+        everyElement(contains('pins v0.0.1, expected v9.9.9')),
+      );
+    });
+
+    test('frozen history cannot satisfy a reworded current claim', () {
+      expect(
+        findCurrentReleaseNotesDrift(
+          releaseNotesRepo(
+            '1.2.3',
+            currentClaim: 'Moved the WebGPU bridge assets to',
+            websiteClaim: 'Moved the WebGPU bridge assets to',
+          ),
+          'v9.9.9',
+        ),
+        everyElement(
+          contains(
+            'matches 0 lines in the current release-notes section, expected 1',
+          ),
+        ),
+      );
+    });
+
+    test('a duplicated claim in the current section is reported', () {
+      final root = releaseNotesRepo('1.2.3');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        final line = pin.pattern.firstMatch(file.readAsStringSync())!.group(0)!;
+        file.writeAsStringSync(
+          file.readAsStringSync().replaceFirst(line, '$line\n$line'),
+        );
+      }
+
+      expect(
+        findCurrentReleaseNotesDrift(root, 'v9.9.9'),
+        everyElement(
+          contains(
+            'matches 2 lines in the current release-notes section, expected 1',
+          ),
+        ),
+      );
+    });
+
+    test('a missing release-notes file fails instead of passing vacuously', () {
+      expect(
+        findCurrentReleaseNotesDrift(_fakeRepo('v9.9.9'), 'v9.9.9'),
+        everyElement(contains('file is missing')),
+      );
+    });
+
+    test('a missing root pubspec version fails closed', () {
+      final root = releaseNotesRepo('Unreleased');
+      File('${root.path}/$rootPubspecPath').writeAsStringSync('name: x\n');
+
+      expect(
+        findCurrentReleaseNotesDrift(root, 'v9.9.9'),
+        contains(contains('Expected exactly one version field')),
+      );
+    });
   });
 
   test('every bash assignment form is counted', () {
@@ -213,5 +632,441 @@ void main() {
       ..writeAsStringSync('ASSETS_TAG="whatever"\n');
 
     expect(() => readPinnedBridgeTag(root), throwsFormatException);
+  });
+
+  test('an unreadable registered pin is reported without throwing', () {
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        'README.md':
+            '| Web llama.cpp / GGUF | '
+            '`leehack/llama-web-bridge-assets@v9.9.9` |\n',
+      },
+    );
+    final file = File('${root.path}/README.md');
+    expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+    addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+    final problems = findBridgeTagDrift(root, 'v9.9.9');
+    expect(problems, contains(contains('README.md: could not be read:')));
+  }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+
+  group('Web/native llama.cpp relationship', () {
+    test('the checked-in repo agrees on upstream family parity', () {
+      expect(
+        findBridgeRuntimeDrift(Directory.current, bridgeLlamaCppTag),
+        isEmpty,
+      );
+    });
+
+    test('a malformed native wrapper tag is reported', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'v0.2.0',
+        nativeTag: 'v0.2.0-custom',
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(contains('malformed native llama.cpp tag "v0.2.0-custom"')),
+      );
+    });
+
+    test('a wrapper tag cannot masquerade as the upstream bridge tag', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-1');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0-1'),
+        contains(
+          'bridgeLlamaCppTag v0.2.0-1 is not a canonical upstream llama.cpp '
+          'release tag',
+        ),
+      );
+    });
+
+    test('an upstream-family mismatch is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.3.0-1');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(
+          'bridge assets embed llama.cpp v0.2.0 but $nativeLlamaCppTagPath '
+          'pins v0.3.0-1 (upstream family v0.3.0) — Web and native must share '
+          'the same upstream llama.cpp release',
+        ),
+      );
+    });
+
+    test('a different wrapper in the same family is not the approved anchor', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-2');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(
+          '$nativeLlamaCppTagPath pins v0.2.0-2, expected the bridge-qualified '
+          'native anchor $bridgeNativeReleaseTag',
+        ),
+      );
+    });
+
+    test('stale divergence prose is reported', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'v0.2.0',
+        nativeTag: 'v0.2.0-1',
+        parityWording: false,
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0').join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('parity prose is accepted for matching upstream tags', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: bridgeLlamaCppTag,
+        nativeTag: bridgeNativeReleaseTag,
+        parityWording: true,
+      );
+
+      expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), isEmpty);
+    });
+
+    test('a doc naming a different bridge build is reported', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'v0.1.0',
+        nativeTag: 'v0.2.0-1',
+        parityWording: true,
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains('doc/webgpu_bridge.md: states v0.1.0, expected v0.2.0'),
+      );
+    });
+
+    test('a reworded parity sentence is reported rather than skipped', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'v0.2.0',
+        nativeTag: 'v0.2.0-1',
+        parityWording: true,
+      );
+      File('${root.path}/doc/webgpu_bridge.md').writeAsStringSync(
+        'That release embeds llama.cpp `v0.2.0`, matching.\n',
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0').join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('a missing native pin fails instead of passing vacuously', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-1');
+      File(
+        '${root.path}/$nativeLlamaCppTagPath',
+      ).writeAsStringSync('// nothing here\n');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(
+          '$nativeLlamaCppTagPath: found 0 _llamaCppTag constants, expected '
+          'exactly 1; the gate cannot identify the active native pin',
+        ),
+      );
+    });
+
+    test('duplicate native pin constants fail closed', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-1');
+      File('${root.path}/$nativeLlamaCppTagPath').writeAsStringSync(
+        "const _llamaCppTag = 'v0.2.0-1';\n"
+        "const _llamaCppTag = 'v0.3.0-1';\n",
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(
+          contains('found 2 _llamaCppTag constants, expected exactly 1'),
+        ),
+      );
+    });
+
+    test('an unreadable native pin is reported without throwing', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-1');
+      final file = File('${root.path}/$nativeLlamaCppTagPath');
+      expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+      addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+      expect(
+        findBridgeRuntimeDrift(root, 'v0.2.0'),
+        contains(contains('$nativeLlamaCppTagPath: could not be read:')),
+      );
+    }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+
+    test(
+      'a recorded anchor outside the recorded upstream family is reported',
+      () {
+        // bridgeNativeReleaseTag is a constant, so drive the mismatch from the
+        // other side: a tree whose bridge and native pins agree on a family the
+        // checked-in anchor does not belong to.
+        final root = _fakeRuntimeRepo(bridgeTag: 'v0.5.0', nativeTag: 'v0.5.0');
+
+        expect(
+          findBridgeRuntimeDrift(root, 'v0.5.0'),
+          contains(
+            contains(
+              'bridgeNativeReleaseTag $bridgeNativeReleaseTag does not belong to '
+              'the recorded upstream llama.cpp release v0.5.0',
+            ),
+          ),
+        );
+      },
+    );
+  });
+
+  group('Pinned release provenance', () {
+    test('the checked-in docs restate the pinned provenance', () {
+      expect(findBridgeProvenanceDrift(Directory.current), isEmpty);
+    });
+
+    test('immutable release identity stays pinned to the approved release', () {
+      expect(bridgeAssetsReleaseId, '389783936');
+      expect(bridgeAssetsTagCommit, 'fdafd9f8cbdb9bf99c359536595eff9a23095379');
+    });
+
+    test('accepts equivalent CRLF documentation passages', () {
+      final root = Directory.systemTemp.createTempSync(
+        'bridge_provenance_crlf',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final pin in bridgeProvenancePins) {
+        final source = File(pin.path).readAsStringSync();
+        final crlfSource = source
+            .replaceAll('\r\n', '\n')
+            .replaceAll('\n', '\r\n');
+        File('${root.path}/${pin.path}')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(crlfSource);
+      }
+
+      expect(findBridgeProvenanceDrift(root), isEmpty);
+    });
+
+    test('a doc restating a stale provenance value is reported', () {
+      final root = Directory.systemTemp.createTempSync('bridge_provenance');
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final pin in bridgeProvenancePins) {
+        final source = File(pin.path).readAsStringSync();
+        final passage = pin.pattern.firstMatch(source)!.group(0)!;
+        File('${root.path}/${pin.path}')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            '${passage.replaceFirst(bridgeManifestSha256, 'a' * 64)}\n',
+          );
+      }
+
+      expect(
+        findBridgeProvenanceDrift(root),
+        everyElement(
+          contains(
+            'states manifestSha256 ${'a' * 64}, expected '
+            '$bridgeManifestSha256',
+          ),
+        ),
+      );
+    });
+
+    test('a reworded provenance passage is reported rather than skipped', () {
+      final root = Directory.systemTemp.createTempSync('bridge_provenance');
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final pin in bridgeProvenancePins) {
+        File('${root.path}/${pin.path}')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync('Built from some release, trust us.\n');
+      }
+
+      expect(
+        findBridgeProvenanceDrift(root),
+        everyElement(contains('matches 0 lines, expected 1')),
+      );
+    });
+
+    test('a missing provenance doc fails instead of passing vacuously', () {
+      final root = Directory.systemTemp.createTempSync('bridge_provenance');
+      addTearDown(() => root.deleteSync(recursive: true));
+
+      expect(
+        findBridgeProvenanceDrift(root),
+        everyElement(contains('file is missing')),
+      );
+    });
+  });
+
+  group('Remote manifest machine verification', () {
+    test('verifies success for the exact approved manifest', () async {
+      // Deliberately the production constants, not literals: the fixture is
+      // the only offline proof that they describe the approved bytes, and
+      // repeating them here would let a half-finished bump still pass.
+      final bytes = utf8.encode(_approvedManifestJson);
+      final errors = await verifyManifest(
+        expectedTag: readPinnedBridgeTag(Directory.current),
+        expectedLlamaCppTag: bridgeLlamaCppTag,
+        expectedLlamaCppCommit: bridgeLlamaCppCommit,
+        expectedBridgeCommit: bridgeSourceCommit,
+        expectedNativeReleaseTag: bridgeNativeReleaseTag,
+        expectedManifestSha256: bridgeManifestSha256,
+        fetcher: (_) async => ManifestResponse(HttpStatus.ok, bytes),
+      );
+
+      expect(errors, isEmpty);
+    });
+
+    test(
+      'an alias-only manifest no longer satisfies the required fields',
+      () async {
+        // The published manifest carries a legacy alias for each of these four
+        // fields; dropping the canonical names must fail rather than fall back.
+        final aliasOnly =
+            jsonDecode(_approvedManifestJson) as Map<String, dynamic>;
+        aliasOnly.remove('release_tag');
+        aliasOnly.remove('upstream_tag');
+        aliasOnly.remove('upstream_commit');
+        aliasOnly.remove('bridge_commit');
+        final manifestJson = jsonEncode(aliasOnly);
+        final errors = await _verifyManifestJson(manifestJson);
+
+        expect(
+          errors,
+          allOf(
+            contains(contains('release_tag is missing or empty')),
+            contains(contains('upstream_tag is missing or empty')),
+            contains(contains('upstream_commit is missing or empty')),
+            contains(contains('bridge_commit is missing or empty')),
+          ),
+        );
+      },
+    );
+
+    test('conflicting legacy provenance aliases fail closed', () async {
+      for (final alias in const <String>[
+        'bridge_assets_tag',
+        'source_repository',
+        'source_commit',
+        'llama_cpp_tag',
+        'llama_cpp_commit',
+      ]) {
+        final manifestJson = jsonEncode(<String, dynamic>{
+          ...jsonDecode(_approvedManifestJson) as Map<String, dynamic>,
+          alias: 'conflict',
+        });
+        final errors = await _verifyManifestJson(manifestJson);
+
+        expect(
+          errors,
+          contains(contains('conflicting provenance aliases')),
+          reason: '$alias conflict was accepted',
+        );
+      }
+    });
+
+    test('reports mismatching manifest SHA-256 hash', () async {
+      final errors = await _verifyManifestJson(
+        _approvedManifestJson,
+        expectedManifestSha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      );
+
+      expect(errors, hasLength(greaterThanOrEqualTo(1)));
+      expect(errors.first, contains('manifest SHA-256 is'));
+    });
+
+    test('rejects drift in every canonical provenance field', () async {
+      for (final mutation in <String, Object>{
+        'schema_version': 1,
+        'release_tag': 'v0.1.38',
+        'assets_repository': 'fork/llama-web-bridge-assets',
+        'bridge_repository': 'fork/llama-web-bridge',
+        'bridge_commit': '2' * 40,
+        'upstream_repository': 'fork/llama.cpp',
+        'upstream_tag': 'v0.1.9',
+        'upstream_commit': '1' * 40,
+        'native_repository': 'fork/llamadart-native',
+        'native_release_tag': 'v0.1.0-1',
+      }.entries) {
+        final manifestJson = jsonEncode(<String, dynamic>{
+          ...jsonDecode(_approvedManifestJson) as Map<String, dynamic>,
+          mutation.key: mutation.value,
+        });
+        final errors = await _verifyManifestJson(manifestJson);
+
+        expect(
+          errors,
+          contains(contains('reports ${mutation.key} ${mutation.value}')),
+          reason: '${mutation.key} drift was accepted',
+        );
+      }
+    });
+
+    test('HTTP error response is reported without throwing', () async {
+      final errors = await verifyManifest(
+        expectedTag: 'v0.1.39',
+        expectedLlamaCppTag: 'v0.2.0',
+        expectedLlamaCppCommit: 'bb4caa7540188872173c44d161602d9271386413',
+        expectedBridgeCommit: '79b6ef31e394dd2de92a456b7c249f9da377c720',
+        expectedNativeReleaseTag: 'v0.2.0-1',
+        expectedManifestSha256: bridgeManifestSha256,
+        fetcher: (_) async =>
+            const ManifestResponse(HttpStatus.notFound, <int>[]),
+      );
+
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('returned HTTP 404'));
+    });
+
+    test(
+      'malformed remote manifest JSON is reported without throwing',
+      () async {
+        final errors = await _verifyManifestJson(
+          '{not-json',
+          expectedManifestSha256: bridgeManifestSha256,
+        );
+
+        expect(errors, hasLength(greaterThanOrEqualTo(1)));
+        expect(errors.join('\n'), contains('returned invalid manifest JSON'));
+      },
+    );
+
+    test('a stalled remote manifest request times out', () async {
+      final pending = Completer<ManifestResponse>();
+
+      final errors = await verifyManifest(
+        expectedTag: 'v0.1.39',
+        expectedLlamaCppTag: 'v0.2.0',
+        expectedLlamaCppCommit: 'bb4caa7540188872173c44d161602d9271386413',
+        expectedBridgeCommit: '79b6ef31e394dd2de92a456b7c249f9da377c720',
+        expectedNativeReleaseTag: 'v0.2.0-1',
+        expectedManifestSha256: bridgeManifestSha256,
+        fetcher: (_) => pending.future,
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('timed out reading'));
+    });
+
+    test('an oversized manifest response fails before validation', () async {
+      final errors = await verifyManifest(
+        expectedTag: 'v0.1.39',
+        expectedLlamaCppTag: 'v0.2.0',
+        expectedLlamaCppCommit: 'bb4caa7540188872173c44d161602d9271386413',
+        expectedBridgeCommit: '79b6ef31e394dd2de92a456b7c249f9da377c720',
+        expectedNativeReleaseTag: 'v0.2.0-1',
+        expectedManifestSha256: bridgeManifestSha256,
+        maximumBytes: 16,
+        fetcher: (_) async =>
+            ManifestResponse(HttpStatus.ok, List<int>.filled(17, 0)),
+      );
+
+      expect(errors.single, contains('exceeds the 16-byte limit'));
+    });
   });
 }

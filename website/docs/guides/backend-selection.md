@@ -68,7 +68,7 @@ JavaScript runtime.
 | --- | --- | --- |
 | Native Android | CPU, Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
 | Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU |
-| Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU in the current pinned runtime |
+| Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |

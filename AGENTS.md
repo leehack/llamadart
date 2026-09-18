@@ -212,6 +212,14 @@ flow in ownership order:
 
 ## Native And Web Asset Sync
 
+Apple llama.cpp process lookup requires the resolved companion's package
+identity and SwiftPM pin to match the core native pin. Preserve this guard and
+its metadata cache dependencies when changing sync or hook behavior; declared
+version constraints and core native overrides are not ABI evidence. Unverified
+local companion `Artifacts` overrides must fail closed.
+Changes to the companion SwiftPM implementation require reviewing/updating the
+hook's normalized manifest template contract; tag/checksum-only syncs do not.
+
 Prefer the repository workflow for native version and binding updates:
 `.github/workflows/sync_native_bindings.yml`.
 
@@ -274,7 +282,13 @@ Before release prep or current install-snippet changes, run:
 
 ```bash
 dart run tool/testing/verify_release_docs_versions.dart
+dart run tool/testing/verify_release_docs_versions.dart --release-prep
 ```
+
+The default run reports a companion whose `Package.swift` pin is still only in
+its `## Unreleased` section as a pending bump; `--release-prep` fails on it.
+Resolve every pending bump in the release-prep PR, because the post-merge
+workflow skips a companion version that already exists on pub.dev.
 
 After release automation runs, verify the release workflow, package publication,
 GitHub Release, docs cut, docs pages deployment, and docs version selector
@@ -303,9 +317,73 @@ rationale in the thread before resolving it; classification alone is not a
 substitute for closing the thread. Do not merge while any review thread remains
 unresolved.
 
+Treat parser, grammar, streaming-protocol, backend/runtime-routing, capability-
+probe, artifact-consumer, release-automation, and regression-policy changes as
+high risk. Before mark-ready, run a blocking-only review pass that is independent
+from the implementation task and reviews the exact PR head against the current
+base. Use an independent operator-owned or fresh Codex adversarial audit identity
+(the standalone qa profile is retired and prohibited; author self-approval is
+rejected).
+Classify changed paths with `tool/testing/classify_high_risk_changes.dart`.
+Evaluate pre-merge readiness evidence with `tool/testing/high_risk_readiness.dart`
+against `tool/testing/high_risk_readiness_evidence.schema.json`, supplying the
+repository, PR, author, exact head, and exact base from an independent source.
+The evaluator derives the rename-aware changed-file inventory from Git; it does
+not accept a caller-supplied inventory. Inspect production call sites and
+require issue-specific positive and negative tests that fail if the relevant
+branch is deleted, bypassed, or miswired.
+Record zero known PR-caused P1 regressions and zero unresolved review threads
+in the PR's high-risk block and evidence payload.
+For core-patch release metadata only, use the bounded
+`release-metadata-verification` evidence route described in
+`doc/high_risk_pre_merge_readiness.md`. It checks exact Git blobs and existing
+release tests; do not fabricate changed tests or reclassify the PR as standard.
+
+Structured-output changes must cover compiled grammar acceptance and rejection,
+schema-directed scalar and container reconstruction, partial-streaming
+suppression and malformed-final rollback, `auto`/`required`/`none` tool choice
+with thinking prefixes, and pinned/current upstream parity as applicable. Use
+the closest affected-family model or artifact. If exact weights are unavailable,
+name every unavailable family and use primary upstream emissions plus durable
+fixtures; an unrelated representative model is pipeline-only evidence.
+
+Post-merge QA remains mandatory, but it must not be the first adversarial pass.
+If it finds a PR-caused P1, stop lower-priority merge work, file a causally
+accurate issue, and prepare one cohesive recovery before resuming feature work.
+Security-sensitive required-check publication and repository settings are
+governed by `doc/high_risk_pre_merge_readiness.md`; checkout-local verification
+can return only an unverified-prerequisites result and fails closed until the
+dedicated GitHub App, authenticated auditor boundary, and conditional ruleset
+enforcement are separately implemented and configured. The default-branch
+workflow is a non-required advisory: it warns on high-risk paths instead of
+failing, so high-risk readiness must be established by the repository-local
+review and evidence. Do not configure it as a required readiness check.
+
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather
 than merging incomplete behavior.
+
+### PR Branch Integrity and Mutation Contract
+
+- Repository-local mutations to open PR branches must enforce an expected-head
+  compare-and-swap (CAS) plus fast-forward-only contract (`tool/git/safe_pr_head_update.dart`).
+  Immediately before mutation, the remote head must match the caller's expected
+  head, and the proposed new head must equal that head for an idempotent retry or
+  descend from it.
+- The helper uses a normal push guarded by the remote OID advertised to a
+  one-shot `pre-push` hook. Stale ancestor restorations, force options,
+  `+refspec` updates, and blind overwrites are strictly rejected. Read the exact
+  target ref back before claiming success.
+- Consequence of unexpected transitions (#434 incident): Any unexpected
+  branch-head transition invalidates prior CI runs, review approvals, and
+  independent QA evidence recorded against that head. If the remote head moves,
+  all validation and QA blocks must be re-executed against the exact new head.
+- Residual governance boundaries: checkout-local tooling governs only writers
+  that invoke it. It cannot govern GitHub web UI updates, Dependabot, installed
+  apps, or other server-side writers. The repository relies on branch protection
+  and rulesets to block force pushes and enforce linear history, status checks,
+  and CODEOWNERS reviews across those paths. See the bounded writer inventory
+  and incident evidence in `doc/pr_branch_writer_inventory.md`.
 
 ## AGENTS.md Maintenance
 

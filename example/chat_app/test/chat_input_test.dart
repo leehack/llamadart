@@ -1221,6 +1221,10 @@ void main() {
 
     await tester.tap(find.text('Stop & transcribe'));
     await tester.pumpAndSettle();
+    for (var turn = 0; turn < 10 && recorder.deletedPaths.isEmpty; turn++) {
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+    }
 
     expect(find.byKey(const ValueKey('audio_recording_status')), findsNothing);
     expect(find.byTooltip('Record for transcription'), findsOneWidget);

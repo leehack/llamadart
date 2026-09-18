@@ -1,5 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
@@ -52,10 +55,16 @@ void main() {
           await _downloadFile(modelUrl, modelFile);
         }
 
+        const expectedSha = String.fromEnvironment('LLAMADART_GGUF_SHA256');
+        final digest = await sha256.bind(modelFile.openRead()).first;
+        debugPrint('MODEL_SHA256 $digest');
+        if (expectedSha.isNotEmpty) expect(digest.toString(), expectedSha);
+
         // 3. Full Inference Pipeline Test
         final backend = LlamaBackend();
         final engine = LlamaEngine(backend);
 
+        addTearDown(engine.dispose);
         final preferredBackend = _backendFromEnvironment();
         await engine.loadModel(
           modelPath,
@@ -71,6 +80,80 @@ void main() {
         );
         expect(engine.isReady, isTrue);
 
+        final selected = await engine.getBackendName();
+        final layers = await engine.getResolvedGpuLayers();
+        debugPrint(
+          jsonEncode({
+            'requested': preferredBackend.name,
+            'selected': selected,
+            'gpuLayers': layers,
+          }),
+        );
+        if (preferredBackend != GpuBackend.auto &&
+            preferredBackend != GpuBackend.cpu) {
+          expect(selected.toLowerCase(), contains(preferredBackend.name));
+          expect(layers, greaterThan(0));
+        }
+        const semantic = bool.fromEnvironment('LLAMADART_GGUF_SEMANTIC');
+        if (semantic) {
+          Future<void> answer(
+            String name,
+            String prompt,
+            RegExp expected,
+          ) async {
+            final out = StringBuffer();
+            await for (final chunk in engine.create(
+              [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: prompt,
+                ),
+              ],
+              enableThinking: false,
+              params: const GenerationParams(maxTokens: 64, temp: 0, seed: 1),
+            )) {
+              out.write(chunk.choices.first.delta.content ?? '');
+            }
+            debugPrint(jsonEncode({'case': name, 'output': out.toString()}));
+            expect(out.toString().trim(), matches(expected));
+          }
+
+          final math = RegExp(r'^(?:2\s*\+\s*2\s*=\s*)?4[.!]?$');
+          await answer(
+            'math',
+            'What is 2+2? Reply with the number only.',
+            math,
+          );
+          await answer(
+            'capital',
+            'What is the capital of France? Reply with the city name only.',
+            RegExp(r'^Paris[.!]?$', caseSensitive: false),
+          );
+          var cancelled = false;
+          await for (final chunk in engine.create(
+            [
+              const LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Count from one to one hundred.',
+              ),
+            ],
+            enableThinking: false,
+            params: const GenerationParams(maxTokens: 256, temp: 0),
+          )) {
+            if (!cancelled &&
+                (chunk.choices.first.delta.content?.isNotEmpty ?? false)) {
+              cancelled = true;
+              engine.cancelGeneration();
+            }
+          }
+          expect(cancelled, isTrue);
+          await answer(
+            'reuse-after-cancel',
+            'What is 2+2? Reply with the number only.',
+            math,
+          );
+          return;
+        }
         final stream = engine.create([
           const LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
@@ -80,9 +163,6 @@ void main() {
         final tokens = await stream.toList();
 
         expect(tokens, isNotEmpty);
-
-        await engine.dispose();
-        llama_backend_free();
       } catch (e) {
         fail('Smoke test failed: $e');
       }
@@ -100,13 +180,15 @@ GpuBackend _backendFromEnvironment() {
       return GpuBackend.auto;
     case 'cpu':
       return GpuBackend.cpu;
+    case 'vulkan':
+      return GpuBackend.vulkan;
     case 'metal':
       return GpuBackend.metal;
     default:
       throw ArgumentError.value(
         backend,
         'LLAMADART_GGUF_BACKEND',
-        'Expected auto, cpu, or metal.',
+        'Expected auto, cpu, metal, or vulkan.',
       );
   }
 }
@@ -136,9 +218,14 @@ Future<void> _downloadFile(String url, File output) async {
     await tempFile.parent.create(recursive: true);
     final sink = tempFile.openWrite();
     try {
-      await response.stream.pipe(sink);
-    } finally {
+      await sink.addStream(response.stream);
       await sink.close();
+    } catch (_) {
+      // Preserve the download error if closing an interrupted sink also fails.
+      try {
+        await sink.close();
+      } catch (_) {}
+      rethrow;
     }
     if (await output.exists()) {
       await output.delete();

@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -18,6 +19,7 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
@@ -39,6 +41,98 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
+    for (final thinking in [false, true]) {
+      test('$name native text template preserves thinking=$thinking', () async {
+        final file = File('${tempDir.path}/$name.litertlm');
+        await file.writeAsString('fake model');
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        );
+        try {
+          final model = await service.loadModel(file.path, params);
+          final context = service.createContext(model, params);
+          final pending = service
+              .generateChat(
+                context,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Hello',
+                  ),
+                ],
+                const GenerationParams(maxTokens: 64),
+                enableThinking: thinking,
+              )
+              .toList();
+          await client.generateStarted.future;
+          client.generated.add('Hello');
+          await client.generated.close();
+          expect(await pending, [utf8.encode('Hello')]);
+          expect(client.lastExtraContext?['enable_thinking'], thinking);
+          if (name == 'Qwen3-0.6B') {
+            expect(client.lastPromptTemplate, contains('enable_thinking'));
+            expect(
+              client.lastPromptTemplate,
+              service.getMetadata(model)['tokenizer.chat_template'],
+            );
+          } else {
+            expect(client.lastPromptTemplate, isNull);
+          }
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  }
+
+  for (final withMedia in [false, true]) {
+    test(
+      'Qwen3 custom text override and native media boundary: $withMedia',
+      () async {
+        final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+        await file.writeAsString('fake model');
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const custom = '{{ messages[0].content }}';
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(file.path, params);
+          final context = service.createContext(model, params);
+          final pending = service
+              .generateChat(
+                context,
+                [
+                  LlamaChatMessage.withContent(
+                    role: LlamaChatRole.user,
+                    content: [
+                      const LlamaTextContent('Hello'),
+                      if (withMedia)
+                        LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+                    ],
+                  ),
+                ],
+                const GenerationParams(maxTokens: 64),
+                enableThinking: false,
+              )
+              .toList();
+          await client.generateStarted.future;
+          client.generated.add('Hello');
+          await client.generated.close();
+          expect(await pending, [utf8.encode('Hello')]);
+          expect(client.lastPromptTemplate, withMedia ? isNull : custom);
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+  }
 
   test(
     'loads local litertlm bundles without initializing native runtime',
@@ -1614,6 +1708,51 @@ void main() {
     }
   });
 
+  for (final chat in [false, true]) {
+    for (final requestedTopK in [0, 1, 40]) {
+      test('uses greedy LiteRT sampling for zero temperature '
+          '(chat=$chat, topK=$requestedTopK)', () async {
+        final fakeClient = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => fakeClient);
+        const modelParams = ModelParams(preferredBackend: GpuBackend.cpu);
+        try {
+          final model = await service.loadModel(modelFile.path, modelParams);
+          final context = service.createContext(model, modelParams);
+          final params = GenerationParams(
+            temp: 0,
+            topK: requestedTopK,
+            topP: 0.4,
+            seed: 9,
+          );
+          final stream = chat
+              ? service.generateChat(
+                  context,
+                  const [
+                    LlamaChatMessage.fromText(
+                      role: LlamaChatRole.user,
+                      text: '2+2?',
+                    ),
+                  ],
+                  params,
+                  enableThinking: false,
+                )
+              : service.generate(context, '2+2?', params);
+          final chunks = stream.toList();
+          await fakeClient.generateStarted.future;
+          fakeClient.generated.add('4');
+          await fakeClient.generated.close();
+          expect(await chunks, [utf8.encode('4')]);
+          expect(fakeClient.lastTemperature, 0);
+          expect(fakeClient.lastTopK, 1);
+          expect(fakeClient.lastTopP, 0.4);
+          expect(fakeClient.lastSeed, 9);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  }
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -1836,6 +1975,65 @@ void main() {
       service.dispose();
     }
   });
+
+  test(
+    'rejects native required tool choice before runtime initialization',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          service
+              .generateChat(
+                contextHandle,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Call get_weather for Seoul.',
+                  ),
+                ],
+                const GenerationParams(maxTokens: 32),
+                tools: [
+                  ToolDefinition(
+                    name: 'get_weather',
+                    description: 'Gets weather.',
+                    parameters: const [],
+                    handler: (_) async => 'sunny',
+                  ).toJson(),
+                ],
+                toolChoice: ToolChoice.required,
+              )
+              .drain<void>(),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('ToolChoice.required enforcement'),
+                contains('rendered-prompt fallback'),
+                contains('grammar-capable backend'),
+              ),
+            ),
+          ),
+        );
+        expect(fakeClient.initializeStarted.isCompleted, isFalse);
+        expect(fakeClient.createConversationCount, 0);
+        expect(fakeClient.generateCount, 0);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
 
   test(
     'recreates LiteRT-LM client when speculative decoding changes',
@@ -2729,7 +2927,14 @@ void main() {
     final service = LiteRtLmService();
 
     try {
-      expect(service.getGpuSupport(), Platform.isMacOS || Platform.isAndroid);
+      expect(
+        service.getGpuSupport(),
+        Platform.isMacOS ||
+            Platform.isIOS ||
+            Platform.isAndroid ||
+            Abi.current() == Abi.linuxX64 ||
+            Abi.current() == Abi.windowsX64,
+      );
       expect(service.getVramInfo(), (total: 0, free: 0));
       expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
       expect(() => service.supportsVision(1), throwsUnsupportedError);
@@ -2796,6 +3001,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   LiteRtLmRuntimeMetrics? metrics;
   Object? metricsError;
   void Function()? onCreateConversation;
+  String? lastPromptTemplate;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -2860,6 +3066,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   void createConversation({
     String? systemMessage,
+    String? promptTemplate,
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
@@ -2878,6 +3085,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastNpuBackend = npuBackend;
     lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
+    lastPromptTemplate = promptTemplate;
     lastMessages = messages
         ?.map(Map<String, dynamic>.from)
         .toList(growable: false);

@@ -262,17 +262,21 @@ typedef _MtmdInputChunksInitNative = Pointer<mtmd_input_chunks> Function();
 typedef _MtmdInputChunksInitDart = Pointer<mtmd_input_chunks> Function();
 typedef _MtmdInputChunksFreeNative = Void Function(Pointer<mtmd_input_chunks>);
 typedef _MtmdInputChunksFreeDart = void Function(Pointer<mtmd_input_chunks>);
+typedef _MtmdHelperInitOptDefaultNative = mtmd_helper_init_opt Function();
+typedef _MtmdHelperInitOptDefaultDart = mtmd_helper_init_opt Function();
 typedef _MtmdHelperBitmapInitFromFileNative =
     mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<Char>,
       Bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromFileDart =
     mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<Char>,
       bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromBufNative =
     mtmd_helper_bitmap_wrapper Function(
@@ -280,6 +284,7 @@ typedef _MtmdHelperBitmapInitFromBufNative =
       Pointer<UnsignedChar>,
       Size,
       Bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromBufDart =
     mtmd_helper_bitmap_wrapper Function(
@@ -287,6 +292,7 @@ typedef _MtmdHelperBitmapInitFromBufDart =
       Pointer<UnsignedChar>,
       int,
       bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdBitmapInitFromAudioNative =
     Pointer<mtmd_bitmap> Function(Size, Pointer<Float>);
@@ -654,6 +660,7 @@ class LlamaCppService {
   _MtmdApi? _mtmdFallbackApi;
   bool _reasoningBudgetApiLookupAttempted = false;
   _ReasoningBudgetApi? _reasoningBudgetApi;
+  final Map<String, int> _reasoningBudgetLoadFailures = <String, int>{};
   bool _speculativeApiLookupAttempted = false;
   _SpeculativeApi? _speculativeApi;
   bool _ttsApiLookupAttempted = false;
@@ -2721,7 +2728,7 @@ class LlamaCppService {
         continue;
       }
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         _llamaDartSetLogLevelFallback = library
             .lookupFunction<
               _LlamaDartSetLogLevelNative,
@@ -2734,7 +2741,10 @@ class LlamaCppService {
     }
   }
 
-  _ReasoningBudgetApi _resolveReasoningBudgetApi() {
+  _ReasoningBudgetApi _resolveReasoningBudgetApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final cached = _reasoningBudgetApi;
     if (cached != null) {
       return cached;
@@ -2745,16 +2755,25 @@ class LlamaCppService {
     }
     _reasoningBudgetApiLookupAttempted = true;
 
-    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
+      var stage = 'open';
       try {
-        final library = DynamicLibrary.open(candidate);
-        final api = _ReasoningBudgetApi.tryLoad(library);
-        if (api != null) {
-          _reasoningBudgetApi = api;
-          return api;
-        }
-      } catch (_) {
-        continue;
+        final library = (open ?? _openWrapperLibrary)(candidate);
+        stage = 'lookup';
+        final api = _ReasoningBudgetApi.load(library);
+        _reasoningBudgetApi = api;
+        _reasoningBudgetLoadFailures.clear();
+        return api;
+      } catch (error) {
+        final diagnostic = stage == 'lookup'
+            ? 'lookup: required export unavailable'
+            : _reasoningBudgetOpenFailure(error);
+        _reasoningBudgetLoadFailures.update(
+          diagnostic,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
       }
     }
 
@@ -2763,9 +2782,31 @@ class LlamaCppService {
 
   String _reasoningBudgetUnavailableMessage() {
     return 'llama.cpp thinking-budget control is unavailable in this native '
-        'runtime bundle (missing llama_dart_sampler_init_reasoning_budget). '
-        'Update to a libllamadart build that includes the reasoning-budget '
-        'wrapper.';
+        'runtime bundle (could not resolve '
+        'llama_dart_sampler_init_reasoning_budget). '
+        'Use the package-pinned reasoning-budget wrapper and ensure its sibling '
+        'DLLs and Microsoft runtime dependencies can load. '
+        'loaderDiagnostics=['
+        '${_reasoningBudgetLoadFailures.entries.map((entry) => '${entry.key} '
+            '(${entry.value} attempts)').join('; ')}]';
+  }
+
+  // Emit only a finite vocabulary: OS errors can contain credentials, signed
+  // URLs and arbitrary paths. Never retain the candidate or raw exception.
+  static String _reasoningBudgetOpenFailure(Object error) {
+    final message = error.toString();
+    final code = RegExp(
+      r'\(error code: (5|126|127|193|1114)\)',
+    ).firstMatch(message)?.group(1);
+    final reason = switch (code) {
+      '5' => 'access denied',
+      '126' => 'library or dependency not found',
+      '127' => 'dependency procedure not found',
+      '193' => 'invalid binary or architecture mismatch',
+      '1114' => 'DLL initialization failed',
+      _ => 'library or dependency could not be loaded',
+    };
+    return 'open: $reason${code == null ? '' : ' (Windows error $code)'}';
   }
 
   _SpeculativeApi _resolveSpeculativeApi() {
@@ -2797,7 +2838,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _SpeculativeApi.tryLoad(library);
         if (api != null) {
           _speculativeApi = api;
@@ -2829,7 +2870,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _TtsApi.tryLoad(library);
         if (api != null) {
           _ttsApi = api;
@@ -2846,6 +2887,42 @@ class LlamaCppService {
     return 'Native text-to-speech is unavailable in this runtime bundle '
         '(missing llama_dart_tts_* ABI v$LLAMA_DART_TTS_API_VERSION symbols). '
         'Update to a compatible llamadart-native artifact.';
+  }
+
+  DynamicLibrary _openWrapperLibrary(String candidate) {
+    return openWrapperLibraryWithDependencies(
+      candidate,
+      isWindows: Platform.isWindows,
+      preload: (candidate) =>
+          _preloadWindowsBackendModule(candidate, 'wrapper'),
+      open: DynamicLibrary.open,
+      release: (handle, candidate) =>
+          _freeWindowsBackendModule(handle, candidate, 'wrapper'),
+    );
+  }
+
+  /// Opens a wrapper while its sibling dependencies remain loaded on Windows.
+  ///
+  /// The temporary handle uses the same altered search path as backend modules.
+  /// Keep it alive until [open] acquires its own reference, including on failure.
+  /// Injectable operations allow resource-lifetime regression tests on every OS.
+  static DynamicLibrary openWrapperLibraryWithDependencies(
+    String candidate, {
+    required bool isWindows,
+    required Pointer<Void> Function(String) preload,
+    required DynamicLibrary Function(String) open,
+    required void Function(Pointer<Void>, String) release,
+  }) {
+    final handle = isWindows && windowsBackendModuleLoadFlags(candidate) != 0
+        ? preload(candidate)
+        : nullptr;
+    try {
+      return open(candidate);
+    } finally {
+      if (handle != nullptr) {
+        release(handle, candidate);
+      }
+    }
   }
 
   List<String> _llamadartWrapperLibraryCandidates() {
@@ -6013,7 +6090,8 @@ class LlamaCppService {
     final model = _models[modelHandle];
     if (model == null) return "";
     final vocab = llama_model_get_vocab(model.pointer);
-    final buffer = malloc<Int8>(256);
+    // UTF-8 decoding requires unsigned bytes, including byte-fallback tokens.
+    final buffer = malloc<Uint8>(256);
     final bytes = <int>[];
     for (final t in tokens) {
       final n = llama_token_to_piece(vocab, t, buffer.cast(), 256, 0, special);
@@ -6817,7 +6895,12 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_file(ctx, pathPtr, false).bitmap;
+        return mtmd_helper_bitmap_init_from_file(
+          ctx,
+          pathPtr,
+          false,
+          mtmd_helper_init_opt_default(),
+        ).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -6828,7 +6911,14 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_file'),
       );
     }
-    return fallback.helperBitmapInitFromFile(ctx, pathPtr, false).bitmap;
+    return fallback
+        .helperBitmapInitFromFile(
+          ctx,
+          pathPtr,
+          false,
+          fallback.helperInitOptDefault(),
+        )
+        .bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromBuf(
@@ -6838,7 +6928,13 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_buf(ctx, data, size, false).bitmap;
+        return mtmd_helper_bitmap_init_from_buf(
+          ctx,
+          data,
+          size,
+          false,
+          mtmd_helper_init_opt_default(),
+        ).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -6849,7 +6945,15 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_buf'),
       );
     }
-    return fallback.helperBitmapInitFromBuf(ctx, data, size, false).bitmap;
+    return fallback
+        .helperBitmapInitFromBuf(
+          ctx,
+          data,
+          size,
+          false,
+          fallback.helperInitOptDefault(),
+        )
+        .bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdBitmapInitFromAudio(int n, Pointer<Float> samples) {
@@ -7892,18 +7996,14 @@ class _ReasoningBudgetApi {
     }
   }
 
-  static _ReasoningBudgetApi? tryLoad(DynamicLibrary library) {
-    try {
-      return _ReasoningBudgetApi(
-        init: library
-            .lookupFunction<
-              _LlamaDartReasoningBudgetInitNative,
-              _LlamaDartReasoningBudgetInitDart
-            >('llama_dart_sampler_init_reasoning_budget'),
-      );
-    } catch (_) {
-      return null;
-    }
+  static _ReasoningBudgetApi load(DynamicLibrary library) {
+    return _ReasoningBudgetApi(
+      init: library
+          .lookupFunction<
+            _LlamaDartReasoningBudgetInitNative,
+            _LlamaDartReasoningBudgetInitDart
+          >('llama_dart_sampler_init_reasoning_budget'),
+    );
   }
 }
 
@@ -8118,6 +8218,7 @@ class _MtmdApi {
   final _MtmdFreeDart free;
   final _MtmdInputChunksInitDart inputChunksInit;
   final _MtmdInputChunksFreeDart inputChunksFree;
+  final _MtmdHelperInitOptDefaultDart helperInitOptDefault;
   final _MtmdHelperBitmapInitFromFileDart helperBitmapInitFromFile;
   final _MtmdHelperBitmapInitFromBufDart helperBitmapInitFromBuf;
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
@@ -8137,6 +8238,7 @@ class _MtmdApi {
     required this.free,
     required this.inputChunksInit,
     required this.inputChunksFree,
+    required this.helperInitOptDefault,
     required this.helperBitmapInitFromFile,
     required this.helperBitmapInitFromBuf,
     required this.bitmapInitFromAudio,
@@ -8200,6 +8302,11 @@ class _MtmdApi {
               _MtmdInputChunksFreeNative,
               _MtmdInputChunksFreeDart
             >('mtmd_input_chunks_free'),
+        helperInitOptDefault: library
+            .lookupFunction<
+              _MtmdHelperInitOptDefaultNative,
+              _MtmdHelperInitOptDefaultDart
+            >('mtmd_helper_init_opt_default'),
         helperBitmapInitFromFile: library
             .lookupFunction<
               _MtmdHelperBitmapInitFromFileNative,

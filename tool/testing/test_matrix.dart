@@ -16,7 +16,7 @@ class TestMatrixRow {
   /// Stable row identifier used in PR evidence.
   final String id;
 
-  /// One of `essential`, `targeted`, `platform`, or `release`.
+  /// One of `essential`, `targeted`, `high-risk`, `platform`, or `release`.
   final String tier;
 
   /// Free-form descriptor for where the row normally runs.
@@ -75,6 +75,56 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'Before merge when lib/ behavior changes or coverage is in doubt.',
   ),
   TestMatrixRow(
+    id: 'high-risk-exact-head-independent-qa',
+    tier: 'high-risk',
+    mode: 'pre-mark-ready review',
+    covers:
+        'independent blocking-only review of exact head/current base, live '
+        'threads, production call sites, adversarial negatives, and tests '
+        'sensitive to production-branch deletion, bypass, or miswiring',
+    command:
+        'Complete the PR high-risk regression review block from a task '
+        'independent of implementation; record exact head/base, affected-family '
+        'evidence or precise N/A, zero known PR-caused P1 regressions, and zero '
+        'unresolved threads.',
+    useWhen:
+        'Parser/grammar/streaming, backend/runtime routing, public capability '
+        'probe, artifact consumer, release automation, or regression-policy '
+        'changes. Required before mark-ready, not after merge.',
+  ),
+  TestMatrixRow(
+    id: 'release-metadata-verification',
+    tier: 'high-risk',
+    mode: 'local exact-head release evidence',
+    covers:
+        'bounded core-patch metadata diff and unchanged release regression suite',
+    command:
+        'dart run tool/testing/verify_release_docs_versions.dart --release-prep && '
+        'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
+    useWhen:
+        'Only the evaluator-verified core-patch metadata release route; '
+        'never a substitute for changed tests on production or policy changes.',
+  ),
+  TestMatrixRow(
+    id: 'structured-output-adversarial',
+    tier: 'high-risk',
+    mode: 'CI + local + primary upstream fixtures',
+    covers:
+        'compiled grammar acceptance/rejection, schema-directed scalar and '
+        'container types including empty values, partial/final streaming and '
+        'rollback, auto/required/none tool choice with thinking prefixes, and '
+        'pinned/current upstream template/parser parity',
+    command:
+        './tool/testing/run_template_parity_suites.sh; run issue-specific VM '
+        'and Chrome production-path tests against upstream-emitted valid and '
+        'adversarial invalid shapes.',
+    useWhen:
+        'Chat-template parser, grammar, streaming, thinking, or tool-call '
+        'changes. Exact affected-family evidence is preferred; when weights '
+        'are unavailable, name each family and use primary upstream emissions '
+        'plus durable fixtures. An unrelated model is pipeline-only.',
+  ),
+  TestMatrixRow(
     id: 'docs-site',
     tier: 'targeted',
     mode: 'CI + local',
@@ -87,8 +137,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'CI + local',
     covers:
-        'current README/website install snippets and companion README versions',
-    command: 'dart run tool/testing/verify_release_docs_versions.dart',
+        'current README/website install snippets, companion README versions, '
+        'and each companion SwiftPM pin against its own released CHANGELOG '
+        'section',
+    command:
+        'dart run tool/testing/verify_release_docs_versions.dart '
+        '(add --release-prep during release prep)',
     useWhen:
         'Release prep, companion package version bumps, or current install docs.',
   ),
@@ -98,9 +152,14 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers:
         'every site pinning the WebGPU bridge asset tag matches the fetch '
-        'script default',
-    command: 'dart run tool/testing/check_webgpu_bridge_tag.dart',
-    useWhen: 'Bridge asset tag bumps, or edits to the docs that pin it.',
+        'script default, and the bridge assets\' llama.cpp build matches the '
+        'native pin unless a divergence is recorded',
+    command:
+        'dart run tool/testing/check_webgpu_bridge_tag.dart '
+        '(add --verify-manifest to re-read the published manifest)',
+    useWhen:
+        'Bridge asset tag bumps, native llama.cpp pin bumps, or edits to the '
+        'docs that pin either.',
   ),
   TestMatrixRow(
     id: 'examples-tests',
@@ -255,8 +314,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real native Qwen3-ASR projector capability, whole-file transcription, '
-        'language-marker normalization, and exact known-fixture text',
+        'real native Qwen3-ASR file/encoded-bytes parity, bounded prompt tokens, '
+        'exact known-fixture text, malformed-byte rejection, cancellation and recovery',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'speech-to-text-smoke --model-path <model.gguf> '
@@ -329,6 +388,58 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'Chat-app microphone capture, recording permissions, lifecycle, or '
         'temporary-audio handling changes.',
+  ),
+  TestMatrixRow(
+    id: 'physical-ios-speech-e2e',
+    tier: 'targeted',
+    mode: 'manual/device',
+    covers:
+        'physical iOS real microphone WAV capture, llama.cpp Qwen3-ASR with '
+        'cancellation and reload, LiteRT-LM streaming ASR with partials and '
+        'cancellation, llama.cpp Qwen3-TTS with 24 kHz WAV export, non-audible '
+        'ASR round-trip intelligibility, and LiteRT-LM TTS unsupported '
+        'classification across immutable local artifacts with no audio playback',
+    command:
+        r'cd example/chat_app && flutter drive --no-pub '
+        r'--publish-port --no-start-paused '
+        r'--device-vmservice-port="$IOS_SPEECH_DEVICE_VM_PORT" '
+        r'--host-vmservice-port="$IOS_SPEECH_HOST_VM_PORT" '
+        r'--driver=test_driver/integration_test.dart '
+        r'--target=integration_test/physical_ios_speech_e2e_test.dart '
+        r'--timeout=21600 -d "$PHYSICAL_IOS_DEVICE_ID" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_PATH="$IOS_SPEECH_QWEN3_ASR_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_SHA256="$IOS_SPEECH_QWEN3_ASR_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH="$IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256" '
+        r'--dart-define=IOS_SPEECH_ASR_AUDIO_PATH="$IOS_SPEECH_ASR_AUDIO_PATH" '
+        r'--dart-define=IOS_SPEECH_ASR_AUDIO_SHA256="$IOS_SPEECH_ASR_AUDIO_SHA256" '
+        r'--dart-define=IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_MIC_DURATION_SECONDS="$IOS_SPEECH_MIC_DURATION_SECONDS" '
+        r'--dart-define=IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT="$IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_MODEL_PATH="$IOS_SPEECH_LITERT_ASR_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_MODEL_SHA256="$IOS_SPEECH_LITERT_ASR_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH="$IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256="$IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_PRESET="$IOS_SPEECH_LITERT_ASR_PRESET" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_PATH="$IOS_SPEECH_LITERT_ASR_AUDIO_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_SHA256="$IOS_SPEECH_LITERT_ASR_AUDIO_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_PATH="$IOS_SPEECH_QWEN3_TTS_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_SHA256="$IOS_SPEECH_QWEN3_TTS_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH="$IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256" '
+        r'--dart-define=IOS_SPEECH_TTS_TEXT="$IOS_SPEECH_TTS_TEXT" '
+        r'--dart-define=IOS_SPEECH_TTS_OUTPUT_PATH="$IOS_SPEECH_TTS_OUTPUT_PATH" '
+        r'--dart-define=IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT="$IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_LITERT_LM_MODEL_PATH="$IOS_SPEECH_LITERT_LM_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_LM_MODEL_SHA256="$IOS_SPEECH_LITERT_LM_MODEL_SHA256"',
+    useWhen:
+        'Physical iOS speech validation across Qwen3-ASR, LiteRT-LM streaming '
+        'ASR, Qwen3-TTS, microphone capture, and typed speech API contracts. '
+        'Each _PATH define takes a safe absolute device path or an '
+        '@appcache/ relative reference; prefer @appcache/ because installing '
+        'rotates the app data-container UUID and invalidates absolute '
+        'pre-install container paths.',
   ),
   TestMatrixRow(
     id: 'chat-app-live-speech-smoke',
@@ -740,7 +851,7 @@ List<TestMatrixRow> _filterRows(String tier) {
     throw ArgumentError.value(
       tier,
       'tier',
-      'Expected all, essential, targeted, platform, or release.',
+      'Expected all, essential, targeted, high-risk, platform, or release.',
     );
   }
   return rows;
@@ -754,7 +865,7 @@ String _usage() {
 Options:
   --list                 Print the canonical test matrix (default).
   --pr-template          Print a PR evidence table.
-  --tier <tier>          Filter by all, essential, targeted, platform, or release.
+  --tier <tier>          Filter by all, essential, targeted, high-risk, platform, or release.
   -h, --help             Show this help.
 ''';
 }

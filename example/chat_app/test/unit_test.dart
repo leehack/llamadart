@@ -935,7 +935,7 @@ void main() {
       );
     });
 
-    test('generation errors redact credentialed URLs', () async {
+    test('generation errors do not expose backend exception details', () async {
       final failingProvider = ChatProvider(
         chatService: MockChatService(
           engine: _FailingCreateEngine(
@@ -956,7 +956,12 @@ void main() {
       final errorMessage = failingProvider.messages.last;
       expect(errorMessage.isInfo, isTrue);
       expect(failingProvider.canRegenerateLastResponse, isFalse);
-      expect(errorMessage.text, contains('https://example.com/model.gguf'));
+      expect(
+        errorMessage.text,
+        'Generation failed before a usable response was produced. '
+        'Reload the model and retry; if it continues, check backend diagnostics.',
+      );
+      expect(errorMessage.text, isNot(contains('example.com')));
       expect(errorMessage.text, isNot(contains('token=secret')));
       expect(errorMessage.text, isNot(contains('signed-fragment')));
     });
@@ -1186,7 +1191,7 @@ void main() {
       expect(captureEngine.lastTools!.first.name, 'lookup_city');
     });
 
-    test('handles tool-call responses in a single pass', () async {
+    test('parses a streamed tool call and runs one continuation', () async {
       final engine = _SinglePassToolCallEngine();
       final singlePassProvider = ChatProvider(
         chatService: MockChatService(engine: engine),
@@ -1200,15 +1205,19 @@ void main() {
 
       await singlePassProvider.sendMessage('what time is it?');
 
-      expect(engine.createCallCount, 1);
-      final assistant = singlePassProvider.messages
-          .where((m) => !m.isUser && !m.isInfo)
-          .last;
-      expect(assistant.isToolCall, isTrue);
+      expect(engine.createCallCount, 2);
+      final toolCallMessage = singlePassProvider.messages.firstWhere(
+        (m) => m.isToolCall,
+      );
       expect(
-        assistant.parts?.whereType<LlamaToolCallContent>().length,
+        toolCallMessage.parts?.whereType<LlamaToolCallContent>().length,
         equals(1),
       );
+      expect(
+        toolCallMessage.parts?.whereType<LlamaToolResultContent>().length,
+        equals(1),
+      );
+      expect(singlePassProvider.messages.last.text, 'It is sunny in Seoul.');
     });
 
     test(
@@ -1227,18 +1236,33 @@ void main() {
 
         await customProvider.sendMessage('weather in london');
 
-        final assistant = customProvider.messages
-            .where((m) => !m.isUser && !m.isInfo)
-            .last;
+        final assistant = customProvider.messages.firstWhere(
+          (m) => m.isToolCall,
+        );
         final toolCalls =
             assistant.parts?.whereType<LlamaToolCallContent>().toList(
               growable: false,
             ) ??
             const <LlamaToolCallContent>[];
-        expect(assistant.isToolCall, isTrue);
         expect(toolCalls, hasLength(1));
         expect(toolCalls.first.name, equals('getWeather'));
         expect(toolCalls.first.arguments, equals({'city': 'London'}));
+
+        final results =
+            assistant.parts?.whereType<LlamaToolResultContent>().toList(
+              growable: false,
+            ) ??
+            const <LlamaToolResultContent>[];
+        expect(results, hasLength(1));
+        expect(
+          (results.first.result as Map<String, Object?>)['city'],
+          equals('London'),
+        );
+        expect(engine.createCallCount, 2);
+        expect(
+          customProvider.messages.last.text,
+          equals('London is showing the simulated forecast.'),
+        );
       },
     );
 
@@ -2234,6 +2258,22 @@ class _SinglePassToolCallEngine extends MockLlamaEngine {
     DateTime? templateNow,
   }) async* {
     createCallCount++;
+    if (createCallCount > 1) {
+      yield LlamaCompletionChunk(
+        id: 'single-pass-tool-continuation',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'mock-model',
+        choices: [
+          LlamaCompletionChunkChoice(
+            index: 0,
+            delta: LlamaCompletionChunkDelta(content: 'It is sunny in Seoul.'),
+          ),
+        ],
+      );
+      return;
+    }
+
     yield LlamaCompletionChunk(
       id: 'single-pass-tool-call',
       object: 'chat.completion.chunk',
@@ -2482,6 +2522,8 @@ class _RecordingModelService
 }
 
 class _FunctionGemmaRawCallTextEngine extends MockLlamaEngine {
+  int createCallCount = 0;
+
   @override
   Future<Map<String, String>> getMetadata() async => {
     'tokenizer.chat_template': '<start_function_declaration>',
@@ -2501,6 +2543,25 @@ class _FunctionGemmaRawCallTextEngine extends MockLlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
+    createCallCount++;
+    if (createCallCount > 1) {
+      yield LlamaCompletionChunk(
+        id: 'function-gemma-continuation',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'mock-model',
+        choices: [
+          LlamaCompletionChunkChoice(
+            index: 0,
+            delta: LlamaCompletionChunkDelta(
+              content: 'London is showing the simulated forecast.',
+            ),
+          ),
+        ],
+      );
+      return;
+    }
+
     yield LlamaCompletionChunk(
       id: 'function-gemma-tool',
       object: 'chat.completion.chunk',
