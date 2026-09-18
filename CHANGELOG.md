@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
+
 * Aligned the default WebGPU bridge assets to `v0.1.44` for Web/native
   llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
   Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
