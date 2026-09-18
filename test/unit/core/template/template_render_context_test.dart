@@ -9,6 +9,79 @@ import 'package:test/test.dart';
 
 void main() {
   group('TemplateRenderContext', () {
+    for (final payload in <Object?>[
+      {
+        'city': 'Montréal 👋',
+        'quote': '"line\\next\n',
+        'nested': [17, true, null],
+      },
+      [
+        1,
+        {'value': '한글'},
+      ],
+      17,
+      1.5,
+      false,
+      null,
+      'unchanged "text" 👋',
+    ]) {
+      for (final multimodal in [false, true]) {
+        test(
+          'serializes typed tool result ${payload.runtimeType}, multimodal=$multimodal',
+          () {
+            final part = LlamaToolResultContent(
+              id: 'call_0',
+              name: 'get_weather',
+              result: payload,
+            );
+            final message = LlamaChatMessage.withContent(
+              role: LlamaChatRole.tool,
+              content: [part],
+            );
+            final before = message.toJson();
+            final rendered = TemplateRenderContext.messagesForTemplate([
+              message,
+            ], multimodal: multimodal).single;
+            final expected = payload is String ? payload : jsonEncode(payload);
+            expect(
+              rendered['content'],
+              multimodal
+                  ? [
+                      {'type': 'text', 'text': expected},
+                    ]
+                  : expected,
+            );
+            expect(rendered['tool_call_id'], 'call_0');
+            expect(rendered['name'], 'get_weather');
+            expect(message.toJson(), before);
+            expect(identical(part.result, payload), true);
+          },
+        );
+      }
+    }
+    test(
+      'tool-result normalization does not stringify ordinary media parts',
+      () {
+        final message = LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('look 👋'),
+            LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+          ],
+        );
+        expect(
+          TemplateRenderContext.messagesForTemplate([message]).single,
+          message.toJson(),
+        );
+        expect(
+          TemplateRenderContext.messagesForTemplate([
+            message,
+          ], multimodal: true).single,
+          message.toJsonMultimodal(),
+        );
+      },
+    );
+
     test('serializes tool-call policy without mutating typed messages', () {
       final imageBytes = Uint8List.fromList([1, 2, 3, 4]);
       final messages = [

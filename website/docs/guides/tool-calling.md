@@ -47,6 +47,12 @@ final stream = engine.create(
 4. Append tool result message.
 5. Call `engine.create(...)` again for final assistant response.
 
+`LlamaToolResultContent.result` can contain JSON-compatible objects, arrays,
+scalars, or null. The shared template renderer encodes these as JSON text;
+string results remain unchanged. This conversion does not mutate the typed
+result or change its public JSON representation. Multimodal templates receive
+the encoded result as a text part.
+
 For an end-to-end OpenAI-compatible reference, see
 `example/llamadart_server` and the docs page
 [OpenAI-Compatible Server](../examples/llamadart-server).
