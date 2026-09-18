@@ -43,6 +43,7 @@ Future<void> main(List<String> args) async {
   final backend = _parseBackend(backendArg);
   final engine = LlamaEngine(LlamaBackend());
   try {
+    await engine.setNativeLogLevel(LlamaLogLevel.info);
     final loadSw = Stopwatch()..start();
     await engine.loadModel(
       modelPath,

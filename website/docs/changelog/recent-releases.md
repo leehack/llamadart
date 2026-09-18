@@ -9,6 +9,26 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
+
+- Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
+
+- Aligned default WebGPU bridge assets to `v0.1.44` for Web/native
+  llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
+
+* Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
+
+* Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
+
+* Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
+
+* Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
+
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
+
+
 - Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 

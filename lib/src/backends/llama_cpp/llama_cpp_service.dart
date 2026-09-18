@@ -660,6 +660,7 @@ class LlamaCppService {
   _MtmdApi? _mtmdFallbackApi;
   bool _reasoningBudgetApiLookupAttempted = false;
   _ReasoningBudgetApi? _reasoningBudgetApi;
+  final Map<String, int> _reasoningBudgetLoadFailures = <String, int>{};
   bool _speculativeApiLookupAttempted = false;
   _SpeculativeApi? _speculativeApi;
   bool _ttsApiLookupAttempted = false;
@@ -2727,7 +2728,7 @@ class LlamaCppService {
         continue;
       }
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         _llamaDartSetLogLevelFallback = library
             .lookupFunction<
               _LlamaDartSetLogLevelNative,
@@ -2740,7 +2741,10 @@ class LlamaCppService {
     }
   }
 
-  _ReasoningBudgetApi _resolveReasoningBudgetApi() {
+  _ReasoningBudgetApi _resolveReasoningBudgetApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final cached = _reasoningBudgetApi;
     if (cached != null) {
       return cached;
@@ -2751,16 +2755,25 @@ class LlamaCppService {
     }
     _reasoningBudgetApiLookupAttempted = true;
 
-    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
+      var stage = 'open';
       try {
-        final library = DynamicLibrary.open(candidate);
-        final api = _ReasoningBudgetApi.tryLoad(library);
-        if (api != null) {
-          _reasoningBudgetApi = api;
-          return api;
-        }
-      } catch (_) {
-        continue;
+        final library = (open ?? _openWrapperLibrary)(candidate);
+        stage = 'lookup';
+        final api = _ReasoningBudgetApi.load(library);
+        _reasoningBudgetApi = api;
+        _reasoningBudgetLoadFailures.clear();
+        return api;
+      } catch (error) {
+        final diagnostic = stage == 'lookup'
+            ? 'lookup: required export unavailable'
+            : _reasoningBudgetOpenFailure(error);
+        _reasoningBudgetLoadFailures.update(
+          diagnostic,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
       }
     }
 
@@ -2769,9 +2782,31 @@ class LlamaCppService {
 
   String _reasoningBudgetUnavailableMessage() {
     return 'llama.cpp thinking-budget control is unavailable in this native '
-        'runtime bundle (missing llama_dart_sampler_init_reasoning_budget). '
-        'Update to a libllamadart build that includes the reasoning-budget '
-        'wrapper.';
+        'runtime bundle (could not resolve '
+        'llama_dart_sampler_init_reasoning_budget). '
+        'Use the package-pinned reasoning-budget wrapper and ensure its sibling '
+        'DLLs and Microsoft runtime dependencies can load. '
+        'loaderDiagnostics=['
+        '${_reasoningBudgetLoadFailures.entries.map((entry) => '${entry.key} '
+            '(${entry.value} attempts)').join('; ')}]';
+  }
+
+  // Emit only a finite vocabulary: OS errors can contain credentials, signed
+  // URLs and arbitrary paths. Never retain the candidate or raw exception.
+  static String _reasoningBudgetOpenFailure(Object error) {
+    final message = error.toString();
+    final code = RegExp(
+      r'\(error code: (5|126|127|193|1114)\)',
+    ).firstMatch(message)?.group(1);
+    final reason = switch (code) {
+      '5' => 'access denied',
+      '126' => 'library or dependency not found',
+      '127' => 'dependency procedure not found',
+      '193' => 'invalid binary or architecture mismatch',
+      '1114' => 'DLL initialization failed',
+      _ => 'library or dependency could not be loaded',
+    };
+    return 'open: $reason${code == null ? '' : ' (Windows error $code)'}';
   }
 
   _SpeculativeApi _resolveSpeculativeApi() {
@@ -2803,7 +2838,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _SpeculativeApi.tryLoad(library);
         if (api != null) {
           _speculativeApi = api;
@@ -2835,7 +2870,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _TtsApi.tryLoad(library);
         if (api != null) {
           _ttsApi = api;
@@ -2852,6 +2887,42 @@ class LlamaCppService {
     return 'Native text-to-speech is unavailable in this runtime bundle '
         '(missing llama_dart_tts_* ABI v$LLAMA_DART_TTS_API_VERSION symbols). '
         'Update to a compatible llamadart-native artifact.';
+  }
+
+  DynamicLibrary _openWrapperLibrary(String candidate) {
+    return openWrapperLibraryWithDependencies(
+      candidate,
+      isWindows: Platform.isWindows,
+      preload: (candidate) =>
+          _preloadWindowsBackendModule(candidate, 'wrapper'),
+      open: DynamicLibrary.open,
+      release: (handle, candidate) =>
+          _freeWindowsBackendModule(handle, candidate, 'wrapper'),
+    );
+  }
+
+  /// Opens a wrapper while its sibling dependencies remain loaded on Windows.
+  ///
+  /// The temporary handle uses the same altered search path as backend modules.
+  /// Keep it alive until [open] acquires its own reference, including on failure.
+  /// Injectable operations allow resource-lifetime regression tests on every OS.
+  static DynamicLibrary openWrapperLibraryWithDependencies(
+    String candidate, {
+    required bool isWindows,
+    required Pointer<Void> Function(String) preload,
+    required DynamicLibrary Function(String) open,
+    required void Function(Pointer<Void>, String) release,
+  }) {
+    final handle = isWindows && windowsBackendModuleLoadFlags(candidate) != 0
+        ? preload(candidate)
+        : nullptr;
+    try {
+      return open(candidate);
+    } finally {
+      if (handle != nullptr) {
+        release(handle, candidate);
+      }
+    }
   }
 
   List<String> _llamadartWrapperLibraryCandidates() {
@@ -6019,7 +6090,8 @@ class LlamaCppService {
     final model = _models[modelHandle];
     if (model == null) return "";
     final vocab = llama_model_get_vocab(model.pointer);
-    final buffer = malloc<Int8>(256);
+    // UTF-8 decoding requires unsigned bytes, including byte-fallback tokens.
+    final buffer = malloc<Uint8>(256);
     final bytes = <int>[];
     for (final t in tokens) {
       final n = llama_token_to_piece(vocab, t, buffer.cast(), 256, 0, special);
@@ -7924,18 +7996,14 @@ class _ReasoningBudgetApi {
     }
   }
 
-  static _ReasoningBudgetApi? tryLoad(DynamicLibrary library) {
-    try {
-      return _ReasoningBudgetApi(
-        init: library
-            .lookupFunction<
-              _LlamaDartReasoningBudgetInitNative,
-              _LlamaDartReasoningBudgetInitDart
-            >('llama_dart_sampler_init_reasoning_budget'),
-      );
-    } catch (_) {
-      return null;
-    }
+  static _ReasoningBudgetApi load(DynamicLibrary library) {
+    return _ReasoningBudgetApi(
+      init: library
+          .lookupFunction<
+            _LlamaDartReasoningBudgetInitNative,
+            _LlamaDartReasoningBudgetInitDart
+          >('llama_dart_sampler_init_reasoning_budget'),
+    );
   }
 }
 

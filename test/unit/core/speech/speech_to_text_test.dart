@@ -156,17 +156,21 @@ void main() {
       backend.generationText = ' <asr_text> Byte-backed transcript. ';
       await _loadSpeechModel(llamaEngine);
 
+      final bytes = Uint8List.fromList(<int>[1, 2, 3]);
       final task = await speechEngine.transcribe(
-        SpeechToTextRequest(
-          audio: SpeechAudioBytesInput(Uint8List.fromList(<int>[1, 2, 3])),
-        ),
+        SpeechToTextRequest(audio: SpeechAudioBytesInput(bytes)),
       );
       final result = (await task.done).result!;
 
       expect(result.text, 'Byte-backed transcript.');
       expect(result.language, isNull);
       final audio = backend.lastParts![1] as LlamaAudioContent;
-      expect(audio.bytes, <int>[1, 2, 3]);
+      expect(audio.bytes, same(bytes));
+      expect(audio.path, isNull);
+      expect(
+        backend.lastGenerationPrompt,
+        'user: Transcribe this audio accurately.<__media__>assistant: ',
+      );
     });
 
     test('reports an empty transcript as a typed failure', () async {
