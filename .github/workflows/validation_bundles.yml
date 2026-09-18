@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
@@ -75,7 +75,7 @@ jobs:
               if 'tiny-gguf-cpu' not in profiles:
                   raise RuntimeError('Extracted command did not discover bundled profiles')
           PY
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: validation-desktop-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: .dart_tool/validation/bundle.tar.gz
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: 3.47.1
@@ -105,7 +105,7 @@ jobs:
       - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
       - name: Preserve executable permissions in transport
         run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: validation-${{ matrix.target }}-${{ github.sha }}
           path: .dart_tool/validation/bundle.tar.gz
