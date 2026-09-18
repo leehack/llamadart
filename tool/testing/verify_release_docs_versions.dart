@@ -379,6 +379,53 @@ final RegExp _dependencyLine = RegExp(
 );
 final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
+
+/// Selects the documented install pair without confusing a prepared companion
+/// with the companion shipped for the core version. Release preparation always
+/// requires the exact checkout versions instead.
+Map<String, String> installDocVersions(
+  Directory repoRoot,
+  Map<String, String> checkoutVersions,
+  List<String> errors, {
+  required bool releasePrep,
+}) {
+  final result = Map<String, String>.of(checkoutVersions);
+  if (releasePrep) return result;
+  final coreVersion = checkoutVersions['llamadart'];
+  final coreSections = _changelogSections(repoRoot, 'CHANGELOG.md', errors);
+  final coreNotes = coreSections?[coreVersion];
+  if (coreNotes == null) {
+    errors.add('CHANGELOG.md has no section for install core $coreVersion.');
+    return result;
+  }
+  final recordedCompanion = RegExp(
+    r'Apple companion `([0-9]+\.[0-9]+\.[0-9]+)`',
+  ).firstMatch(coreNotes)?.group(1);
+  // Most patch releases do not prepare a different companion. An explicit
+  // release pairing may override the checkout only after native-pin agreement.
+  if (recordedCompanion == null) return result;
+  final companion = companionSwiftPins.first;
+  final nativeTag = companion.changelogTag.firstMatch(coreNotes)?.group(1);
+  final companionSections = _changelogSections(
+    repoRoot,
+    companion.changelogPath,
+    errors,
+  );
+  final companionNotes = companionSections?[recordedCompanion];
+  final companionTag = companionNotes == null
+      ? null
+      : companion.changelogTag.firstMatch(companionNotes)?.group(1);
+  if (nativeTag == null || companionTag != nativeTag) {
+    errors.add(
+      'Install core $coreVersion and companion $recordedCompanion '
+      'must record the same native runtime pin in their changelogs.',
+    );
+    return result;
+  }
+  result[companion.package] = recordedCompanion;
+  return result;
+}
+
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -402,12 +449,18 @@ void main(List<String> arguments) {
     }
   }
 
+  final docVersions = installDocVersions(
+    Directory.current,
+    versions,
+    errors,
+    releasePrep: releasePrep,
+  );
   if (errors.isEmpty) {
     for (final entry in _currentDocDependencies.entries) {
       _checkCurrentDoc(
         path: entry.key,
         expectedPackages: entry.value,
-        versions: versions,
+        versions: docVersions,
         errors: errors,
       );
     }
@@ -440,8 +493,8 @@ void main(List<String> arguments) {
 
   stdout.writeln(
     'Release docs versions verified: '
-    '${versions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
-    'llamadart-native $nativePin.',
+    '${docVersions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
+    'checkout llamadart-native $nativePin.',
   );
   for (final bump in pending) {
     stdout.writeln('Pending companion bump: $bump');
@@ -566,7 +619,7 @@ void _checkCurrentDoc({
     if (documentedVersion != expectedVersion) {
       errors.add(
         '$path:${index + 1} documents $package ^$documentedVersion, '
-        'but ${packagePubspecPath(package)} is $expectedVersion.',
+        'but the install-version contract requires $expectedVersion.',
       );
     }
   }

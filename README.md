@@ -64,6 +64,10 @@ Package Manager should also add the runtime companion packages they need:
 Pair companion `0.0.18` with core `0.8.23` for matching llama.cpp v0.4.0
 bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 
+The unreleased source checkout instead uses native `v0.4.1` and the local
+companion prepared as `0.0.19`. Use the core and companion from that same
+checkout together; `0.0.19` is not the companion for the published `0.8.23` core.
+
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
 overrides fail the build; resolve the matching companion and rerun
@@ -151,9 +155,9 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.4.0` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.4.1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-5` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.43` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.44` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve

@@ -17,6 +17,79 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  group('wrapper sibling dependency loading', () {
+    final absolute = path.join(Directory.systemTemp.path, 'llamadart.dll');
+    final handle = Pointer<Void>.fromAddress(123);
+
+    test('holds the preload until the wrapper acquires its reference', () {
+      final events = <String>[];
+      final library = DynamicLibrary.process();
+      final result = LlamaCppService.openWrapperLibraryWithDependencies(
+        absolute,
+        isWindows: true,
+        preload: (candidate) {
+          expect(candidate, absolute);
+          events.add('preload');
+          return handle;
+        },
+        open: (candidate) {
+          expect(events, ['preload']);
+          events.add('open');
+          return library;
+        },
+        release: (actual, candidate) {
+          expect(actual, handle);
+          events.add('release');
+        },
+      );
+      expect(result, same(library));
+      expect(events, ['preload', 'open', 'release']);
+    });
+
+    test('releases the preload and preserves the original opening error', () {
+      final failure = StateError('missing transitive import');
+      var released = false;
+      expect(
+        () => LlamaCppService.openWrapperLibraryWithDependencies(
+          absolute,
+          isWindows: true,
+          preload: (_) => handle,
+          open: (_) => throw failure,
+          release: (_, _) => released = true,
+        ),
+        throwsA(same(failure)),
+      );
+      expect(released, isTrue);
+    });
+
+    for (final candidate in [
+      'llamadart.dll',
+      'package:llamadart/llamadart_wrapper',
+    ]) {
+      test('does not alter search semantics for $candidate', () {
+        LlamaCppService.openWrapperLibraryWithDependencies(
+          candidate,
+          isWindows: true,
+          preload: (_) => throw StateError('unexpected preload'),
+          open: (_) => DynamicLibrary.process(),
+          release: (_, _) => fail('unexpected release'),
+        );
+      });
+    }
+
+    test('does not preload on non-Windows or release a failed preload', () {
+      for (final isWindows in [false, true]) {
+        LlamaCppService.openWrapperLibraryWithDependencies(
+          absolute,
+          isWindows: isWindows,
+          preload: (_) => nullptr,
+          open: (_) => DynamicLibrary.process(),
+          release: (_, _) => fail('unexpected release'),
+        );
+      }
+    });
+  });
+
   test('LlamaCppService can be instantiated', () {
     final service = LlamaCppService();
     expect(service, isA<LlamaCppService>());

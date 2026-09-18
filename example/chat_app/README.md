@@ -613,3 +613,40 @@ custom_headers:
 - [x] Real-time streaming UI
 - [x] Persistent settings & split Dart/native log control
 - [x] Advanced sampling parameters (Temp/Top-K/Top-P)
+
+### Firebase Test Lab native qualification
+
+The Android instrumentation runner can execute `integration_test/smoke_test.dart`
+on Firebase physical devices. Build the app with `flutter build apk --debug
+--target integration_test/smoke_test.dart`, then build the test APK from `android/`
+with `./gradlew app:assembleAndroidTest -Ptarget=../integration_test/smoke_test.dart`.
+Submit the app and test APKs as an instrumentation test with an explicit device,
+Android version, project, and timeout.
+
+Use `--dart-define=LLAMADART_GGUF_MODEL_URL=<immutable-model-url>` and
+`--dart-define=LLAMADART_GGUF_SHA256=<sha256>` to bind the model artifact.
+`LLAMADART_GGUF_BACKEND` accepts `auto`, `cpu`, `metal`, or `vulkan`.
+Set `LLAMADART_GGUF_SEMANTIC=true` for an instruction-tuned model to check math,
+capital-city answers, cancellation, and reuse. Explicit GPU runs assert the
+selected backend and positive GPU layer count. The default tiny-model test checks
+loading and basic output only; it does not establish semantic or GPU qualification.
+Preserve the Firebase matrix ID, test XML, device logs, model checksum, and actual
+backend diagnostics with the PR's platform evidence.
+
+For large models, the test runner supports pre-staging without granting production
+storage permissions. Build the smoke APK with
+`LLAMADART_GGUF_MODEL=/data/user/0/com.example.llamadart_chat_example/cache/firebase-model.gguf`
+and the expected `LLAMADART_GGUF_SHA256`. Build the instrumentation APK from the
+same checkout. Pass these additional options to `gcloud firebase test android run`:
+
+```sh
+--environment-variables=stageModel=true \
+--other-files=/data/local/tmp/llamadart-smoke.gguf=gs://YOUR_BUCKET/model.gguf
+```
+
+The opt-in runner copies the shell-staged file into the target app's private cache
+before launching Flutter. The Dart test still verifies the model checksum before
+inference. Do not stage directly into `/sdcard/Android/data`: scoped storage can
+prevent the app from reading files installed there by Test Lab. A staging or
+checksum failure is a harness failure, not evidence that a runtime backend passed
+or failed inference.

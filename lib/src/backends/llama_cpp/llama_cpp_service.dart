@@ -2727,7 +2727,7 @@ class LlamaCppService {
         continue;
       }
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         _llamaDartSetLogLevelFallback = library
             .lookupFunction<
               _LlamaDartSetLogLevelNative,
@@ -2753,7 +2753,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _ReasoningBudgetApi.tryLoad(library);
         if (api != null) {
           _reasoningBudgetApi = api;
@@ -2803,7 +2803,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _SpeculativeApi.tryLoad(library);
         if (api != null) {
           _speculativeApi = api;
@@ -2835,7 +2835,7 @@ class LlamaCppService {
 
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       try {
-        final library = DynamicLibrary.open(candidate);
+        final library = _openWrapperLibrary(candidate);
         final api = _TtsApi.tryLoad(library);
         if (api != null) {
           _ttsApi = api;
@@ -2852,6 +2852,42 @@ class LlamaCppService {
     return 'Native text-to-speech is unavailable in this runtime bundle '
         '(missing llama_dart_tts_* ABI v$LLAMA_DART_TTS_API_VERSION symbols). '
         'Update to a compatible llamadart-native artifact.';
+  }
+
+  DynamicLibrary _openWrapperLibrary(String candidate) {
+    return openWrapperLibraryWithDependencies(
+      candidate,
+      isWindows: Platform.isWindows,
+      preload: (candidate) =>
+          _preloadWindowsBackendModule(candidate, 'wrapper'),
+      open: DynamicLibrary.open,
+      release: (handle, candidate) =>
+          _freeWindowsBackendModule(handle, candidate, 'wrapper'),
+    );
+  }
+
+  /// Opens a wrapper while its sibling dependencies remain loaded on Windows.
+  ///
+  /// The temporary handle uses the same altered search path as backend modules.
+  /// Keep it alive until [open] acquires its own reference, including on failure.
+  /// Injectable operations allow resource-lifetime regression tests on every OS.
+  static DynamicLibrary openWrapperLibraryWithDependencies(
+    String candidate, {
+    required bool isWindows,
+    required Pointer<Void> Function(String) preload,
+    required DynamicLibrary Function(String) open,
+    required void Function(Pointer<Void>, String) release,
+  }) {
+    final handle = isWindows && windowsBackendModuleLoadFlags(candidate) != 0
+        ? preload(candidate)
+        : nullptr;
+    try {
+      return open(candidate);
+    } finally {
+      if (handle != nullptr) {
+        release(handle, candidate);
+      }
+    }
   }
 
   List<String> _llamadartWrapperLibraryCandidates() {

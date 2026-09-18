@@ -172,7 +172,7 @@ memory-constrained mobile devices.
 - Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
   pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
   memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.43`, which retains the `v0.1.34` worker
+- The chat example pins `v0.1.44`, which retains the `v0.1.34` worker
   recovery. Eligible WebGPU errors and generic worker timeouts retry once on
   the main thread using cached model/projector bytes with CPU-only settings.
   The exact `worker request timeout` and `worker init timeout` errors preserve
