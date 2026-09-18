@@ -231,6 +231,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'gguf-stop-sequences',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Verify public GGUF caller stop suppression and recovery.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '--run-skipped',
+            'test/e2e/backends/gguf_stop_sequences_e2e_test.dart',
+          ],
+          environment: {
+            if (context.modelPath != null)
+              'GGUF_STOP_MODEL': context.modelPath!,
+            'GGUF_STOP_BACKEND': context.backend,
+          },
+          description: 'GGUF public stop-sequence regression',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

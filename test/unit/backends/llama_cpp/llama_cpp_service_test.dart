@@ -17,6 +17,18 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('preserved template tokens remain excluded from native text stops', () {
+    final stops = _invokePrivateForTesting<List<String>>(
+      LlamaCppService(),
+      '_effectiveStopSequences',
+      [
+        ['<tool_call>', 'cedar17', '<tool_call>suffix'],
+        ['<tool_call>'],
+      ],
+    );
+    expect(stops, ['cedar17', '<tool_call>suffix']);
+  });
+
   group('reasoning-budget resolver diagnostics', () {
     Object? resolve(
       LlamaCppService service,
