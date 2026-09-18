@@ -291,7 +291,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'speech-to-text-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run typed native Qwen3-ASR whole-file transcription against a known fixture.',
+          'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(

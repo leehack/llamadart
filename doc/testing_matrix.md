@@ -218,6 +218,11 @@ gate passes.
 
 Real model checks are intentionally local-only. They can use the unified runner:
 
+The native speech smoke checks the same encoded WAV as file and in-memory bytes,
+requires the exact supplied transcript, bounds prompt tokens, and verifies
+cancellation followed by successful transcription for both inputs, plus malformed
+byte rejection and recovery.
+
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
   --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
