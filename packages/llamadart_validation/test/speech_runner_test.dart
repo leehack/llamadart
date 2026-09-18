@@ -14,6 +14,7 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool wrongWords = false;
   bool failLoad = false;
   bool failCleanup = false;
+  Object? invalidError;
   @override
   Future<void> load() async {
     calls.add('load');
@@ -39,12 +40,44 @@ class FakeSpeech implements SpeechValidationAdapter {
           ? 'invalid'
           : 'execute',
     );
-    if (invalid && !ignoreInvalid) throw ArgumentError('invalid');
+    if (invalid && !ignoreInvalid) {
+      throw invalidError ?? ArgumentError('invalid');
+    }
     return {'predicate_passed': !wrongWords, if (cancel) 'cancelled': true};
   }
 }
 
 void main() {
+  test(
+    'speech input rejection accepts contract errors, not inference failures',
+    () async {
+      for (final error in [
+        LlamaAudioFormatException('Encoded audio bytes must not be empty.'),
+        LlamaTextToSpeechException('Text to synthesize must not be empty.'),
+        LlamaTextToSpeechException('Synthesis failed.'),
+        LlamaInferenceException('Generation failed.'),
+      ]) {
+        final adapter = FakeSpeech()..invalidError = error;
+        final result = await runSpeechValidation(adapter);
+        final checks = result['checks'] as List;
+        final rejection = checks.singleWhere(
+          (item) => item['id'] == 'invalid_input',
+        );
+        final accepted =
+            error is LlamaAudioFormatException ||
+            error.message == 'Text to synthesize must not be empty.';
+        expect(rejection['status'], accepted ? 'PASS' : 'FAIL');
+        expect(result['functional_pass'], accepted);
+        expect(result['qualified'], false);
+        expect(
+          checks.singleWhere((item) => item['id'] == 'after_invalid')['status'],
+          'PASS',
+        );
+        expect(adapter.calls.last, 'dispose');
+      }
+    },
+  );
+
   test(
     'WER counts substitutions, insertions, deletions and rejects empty oracle',
     () {

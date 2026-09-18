@@ -302,6 +302,13 @@ Future<Map<String, Object?>> runSpeechValidation(
           await adapter.execute(invalid: true);
         } on ArgumentError {
           return {'rejected': true};
+        } on LlamaAudioFormatException {
+          return {'rejected': true};
+        } on LlamaTextToSpeechException catch (error) {
+          // This exception also represents synthesis failures. Only the exact
+          // empty-text contract exercised by this case is an input rejection.
+          if (error.message != 'Text to synthesize must not be empty.') rethrow;
+          return {'rejected': true};
         } on LlamaUnsupportedException {
           return {'rejected': true};
         }
