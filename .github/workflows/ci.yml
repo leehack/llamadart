@@ -230,7 +230,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: coverage/lcov.info
           flags: unittests
