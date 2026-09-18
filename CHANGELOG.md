@@ -6,6 +6,8 @@
 
 * Preserve system instructions as plain text when seeding native LiteRT-LM chat history.
 
+- Suppress caller stop markers in native GGUF streams, including split markers and speculative decoding.
+
 - Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
 
 * Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
