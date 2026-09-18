@@ -35,6 +35,48 @@ void main() {
     },
   );
 
+  test('overlapping repeated patterns agree with a complete-text oracle', () {
+    const stops = ['aaa', 'aab', 'bab'];
+    for (var bits = 0; bits < 256; bits++) {
+      final text = List.generate(
+        8,
+        (i) => bits & (1 << i) == 0 ? 'a' : 'b',
+      ).join();
+      final matches =
+          stops.map(text.indexOf).where((index) => index >= 0).toList()..sort();
+      final expected = matches.isEmpty
+          ? text
+          : text.substring(0, matches.first);
+      final bytes = utf8.encode(text);
+      for (var split = 0; split <= bytes.length; split++) {
+        expect(
+          collect([bytes.sublist(0, split), bytes.sublist(split)], stops),
+          utf8.encode(expected),
+          reason: '$text at $split',
+        );
+      }
+      expect(
+        collect([
+          for (final byte in bytes) [byte],
+        ], stops),
+        utf8.encode(expected),
+      );
+    }
+  });
+
+  test('long repeated prefixes match without losing the preceding bytes', () {
+    final marker = '${'x' * 10000}y';
+    final buffer = StopSequenceBuffer([marker]);
+    final visible = <int>[];
+    for (var i = 0; i < 20000; i++) {
+      visible.addAll(buffer.add([120]));
+    }
+    visible.addAll(buffer.add([121, 122]));
+    expect(visible, List.filled(10000, 120));
+    expect(buffer.isStopped, isTrue);
+    expect(buffer.finish(), isEmpty);
+  });
+
   test('long irrelevant stops do not delay ordinary streaming', () {
     final buffer = StopSequenceBuffer(['x' * 10000, 'cedar17']);
     for (var i = 0; i < 100; i++) {
