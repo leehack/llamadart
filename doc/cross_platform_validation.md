@@ -1026,6 +1026,10 @@ status. Follow it with `collect`, which refreshes terminal status again before
 retrieval. A failed recovery persists an incomplete, unqualified assessment;
 cancelled preparation-only runs cannot qualify from old artifacts.
 
+Windows compiled CLI bundles resolve native backends from their verified
+`bin/../lib` layout, before unrelated working-directory or hook caches.
+Explicit native overrides and executable-adjacent bundles retain precedence.
+
 Windows VM uploads and result collection explicitly use legacy SCP (`-O`),
 because the Google Windows SSH image used in live validation closed the default
 SFTP-based transfer. Linux retains the default protocol. Both remain IAP-tunneled.

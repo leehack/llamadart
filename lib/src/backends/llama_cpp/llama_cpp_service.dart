@@ -1365,10 +1365,11 @@ class LlamaCppService {
   /// 1. Explicit environment override (`LLAMADART_NATIVE_LIB_DIR` or
   ///    `LLAMADART_BACKEND_MODULE_DIR`)
   /// 2. Directory of resolved executable (if it looks like a native bundle)
-  /// 3. Current working directory (if it looks like a native bundle)
-  /// 4. Hook cache under `.dart_tool/llamadart/native_bundles`, including
+  /// 3. Standard CLI `bin/../lib` directory (if it looks like a native bundle)
+  /// 4. Current working directory (if it looks like a native bundle)
+  /// 5. Hook cache under `.dart_tool/llamadart/native_bundles`, including
   ///    default, custom GitHub, and local archive cache namespaces.
-  /// 5. Directory of resolved executable (best-effort fallback)
+  /// 6. Directory of resolved executable (best-effort fallback)
   static String? resolveWindowsBackendModuleDirectory({
     required String resolvedExecutablePath,
     required String currentDirectoryPath,
@@ -1390,6 +1391,16 @@ class LlamaCppService {
     final executableDir = path.dirname(resolvedExecutablePath);
     if (_containsWindowsNativeModules(executableDir)) {
       return executableDir;
+    }
+
+    // `dart build cli` places executables in bin/ and native assets in lib/.
+    if (path.basename(executableDir).toLowerCase() == 'bin') {
+      final cliLibraryDir = path.normalize(
+        path.join(executableDir, '..', 'lib'),
+      );
+      if (_containsWindowsNativeModules(cliLibraryDir)) {
+        return cliLibraryDir;
+      }
     }
 
     if (_containsWindowsNativeModules(currentDirectoryPath)) {

@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Discover Windows backend libraries in standard compiled Dart CLI bundles.
+
 - Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
 
 - Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.

@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Discover Windows backend libraries in standard compiled Dart CLI bundles.
+
 * Add locked Gemma 4/Qwen3.5 validation profiles, explicit NPU coverage, and opt-in speech and voice-pipeline diagnostics.
 
 * Preserve system instructions as plain text when seeding native LiteRT-LM chat history.
