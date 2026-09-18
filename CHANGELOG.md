@@ -4,6 +4,8 @@
 
 * Preserve system instructions as plain text when seeding native LiteRT-LM chat history.
 
+- Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
+
 * Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
 
 * Aligned the default WebGPU bridge assets to `v0.1.44` for Web/native

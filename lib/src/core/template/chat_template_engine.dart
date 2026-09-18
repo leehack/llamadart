@@ -12,6 +12,7 @@ import 'chat_format.dart';
 import 'chat_parse_result.dart';
 import 'peg_chat_parser.dart';
 import 'chat_template_handler.dart';
+import 'media_placeholders.dart';
 import 'handlers/cohere2_moe_handler.dart';
 import 'handlers/command_r7b_handler.dart';
 import 'handlers/deepseek_r1_handler.dart';
@@ -276,6 +277,26 @@ class ChatTemplateEngine {
         responseFormat,
       );
       return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
+    }
+
+    // String-content templates cannot consume transport objects. Keep media
+    // in the original request for the backend and render only its placeholder
+    // here, in content order, as llama.cpp does for media_marker parts.
+    if (hasMediaParts) {
+      effectiveMessages = effectiveMessages
+          .map((message) {
+            return message.copyWith(
+              parts: message.parts
+                  .map((part) {
+                    return part is LlamaImageContent ||
+                            part is LlamaAudioContent
+                        ? const LlamaTextContent(mtmdMediaMarker)
+                        : part;
+                  })
+                  .toList(growable: false),
+            );
+          })
+          .toList(growable: false);
     }
 
     var baseResult = handler.render(
