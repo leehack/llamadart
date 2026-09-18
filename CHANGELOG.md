@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Add locked Gemma 4/Qwen3.5 validation profiles, explicit NPU coverage, and opt-in speech and voice-pipeline diagnostics.
+
 * Preserve system instructions as plain text when seeding native LiteRT-LM chat history.
 
 * Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.

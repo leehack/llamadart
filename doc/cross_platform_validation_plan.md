@@ -1,5 +1,16 @@
 # Lightweight cross-platform validation plan
 
+> Model-priority update: Gemma 4 E2B and Qwen3.5 0.8B are the primary
+> chat families; STT and TTS remain required dedicated-model exceptions.
+> `dart run tool/testing/validation.dart coverage` exposes explicit planned
+> platform/backend/use-case rows, including Gemma 4 Tensor G5, SM8750 and
+> the SM8650 compatibility gap. Older Gemma 3 NPU profiles below remain
+> legacy controls, not Gemma 4 qualification. See
+> [the coverage catalog guide](cross_platform_validation.md#planned-platformbackend-coverage)
+> and [tracker #514](https://github.com/leehack/llamadart/issues/514) for the
+> current priorities and required speech acceptance cases.
+
+
 Status: **initial quick-core harness implemented; broader qualification remains planned**
 (2026-09-17). The maintainer authorized implementation after the earlier deferral.
 The implementation starts from current merged main and preserves its runtime pins;

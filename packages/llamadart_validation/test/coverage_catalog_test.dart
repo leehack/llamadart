@@ -1,0 +1,117 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:test/test.dart';
+
+import '../../../tool/testing/validation/coverage_catalog.dart';
+
+void main() {
+  test('primary runnable rows bind the intended model and backend', () {
+    for (final row in validationCoverage().where(
+      (row) => row['profile'] != null && row['priority'] == 'primary',
+    )) {
+      final profile = jsonDecode(
+        File('assets/profiles/${row['profile']}.json').readAsStringSync(),
+      );
+      expect(profile['runtime'], row['runtime']);
+      expect(profile['backend'], row['backend']);
+      expect(
+        (profile['model']['filename'] as String).toLowerCase(),
+        startsWith(row['model'] == 'gemma4-e2b' ? 'gemma-4' : 'qwen3.5'),
+      );
+      expect(row['status'], 'NOT_RUN');
+    }
+  });
+
+  test('coverage never fabricates qualification or duplicate identities', () {
+    final rows = validationCoverage();
+    expect(rows.map((row) => row['id']).toSet(), hasLength(rows.length));
+    for (final row in rows) {
+      expect(row['status'], isIn(['NOT_RUN', 'UNVERIFIED', 'UNSUPPORTED']));
+      expect(row['qualification'], 'NO_EVIDENCE_IN_CATALOG');
+      expect(row['reason'], isNotEmpty);
+    }
+  });
+
+  test('Gemma4 NPU candidates cannot resolve legacy executable profiles', () {
+    final rows = validationCoverage().where(
+      (row) =>
+          row['backend'] == 'npu' &&
+          row['platform'] == 'android-arm64' &&
+          (row['model'] as String).startsWith('gemma4'),
+    );
+    expect(
+      rows.map((row) => row['target_soc']),
+      unorderedEquals(['tensor-g5', 'qualcomm-sm8750', 'qualcomm-sm8650']),
+    );
+    for (final row in rows) {
+      expect(row['status'], 'UNVERIFIED');
+      expect(row['profile'], isNull);
+    }
+    for (final row in validationCoverage().where(
+      (row) => row['priority'] == 'legacy-control',
+    )) {
+      final profile =
+          jsonDecode(
+                File(
+                  'assets/profiles/${row['profile']}.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      expect(profile['backend'], 'npu');
+      expect(profile['model']['id'], startsWith('gemma3'));
+    }
+  });
+
+  test('speech cannot inherit chat GPU or NPU support', () {
+    for (final row in validationCoverage().where(
+      (row) => row['runtime'] == 'litert' && row['use_case'] != 'chat',
+    )) {
+      final cpuAsr =
+          row['backend'] == 'cpu' &&
+          row['use_case'] == 'stt' &&
+          !['web', 'windows-arm64'].contains(row['platform']);
+      expect(row['status'], cpuAsr ? 'NOT_RUN' : 'UNSUPPORTED');
+    }
+  });
+
+  test('Apple desktop and browser NPU remain explicitly unsupported', () {
+    final rows = validationCoverage().where(
+      (row) => row['backend'] == 'npu' && row['platform'] != 'android-arm64',
+    );
+    expect(rows, isNotEmpty);
+    for (final row in rows) {
+      expect(row['status'], 'UNSUPPORTED');
+    }
+  });
+
+  test(
+    'CLI filters real coverage rows and rejects unknown selectors',
+    () async {
+      final command = ['../../tool/testing/validation.dart', 'coverage'];
+      final result = await Process.run(Platform.resolvedExecutable, [
+        ...command,
+        '--platform',
+        'android-arm64',
+        '--backend',
+        'npu',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final rows = (jsonDecode(result.stdout as String) as Map)['rows'] as List;
+      expect(rows, isNotEmpty);
+      expect(
+        rows.every(
+          (dynamic row) =>
+              row['backend'] == 'npu' && row['platform'] == 'android-arm64',
+        ),
+        isTrue,
+      );
+      final bad = await Process.run(Platform.resolvedExecutable, [
+        ...command,
+        '--backend',
+        'nonexistent',
+      ]);
+      expect(bad.exitCode, isNot(0));
+    },
+  );
+}

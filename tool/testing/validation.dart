@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import 'validation/bundle.dart';
 import 'validation/collect.dart';
+import 'validation/coverage_catalog.dart';
 import 'validation/npu.dart';
 import 'validation/process.dart';
 import 'validation/remote.dart';
@@ -19,6 +20,9 @@ Future<void> main(List<String> arguments) async {
     if (arguments.isEmpty || arguments.first == '--help') {
       stdout.writeln(
         'llamadart validation\n'
+        '  coverage [--platform <id>] [--backend <id>] [--use-case chat|stt|tts]\n'
+        '  voice --out <new-directory> [--chat-profile <primary-cpu-profile>] [--chat-model <file>]\n'
+        '  speech --pack stt|tts|litert-asr --backend cpu|metal|vulkan|cuda --out <new-directory> [--model <file>] [--projector <file>]\n'
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>]\n'
         '    Android NPU: --kit <directory> --model <file> [--execution-path public_api|native_c_api]\n'
         '  local --profile <id> [--model <path>] [--out <new-directory>]\n'
@@ -33,14 +37,91 @@ Future<void> main(List<String> arguments) async {
       return;
     }
     final command = arguments.first;
-    final options = _options(arguments.skip(1).toList());
+    final options = _options(
+      arguments.skip(1).toList(),
+      coverage: command == 'coverage',
+      speech: command == 'speech',
+      voice: command == 'voice',
+    );
     final root = File.fromUri(Platform.script).parent.parent.parent.path;
     final package = p.join(root, 'packages', 'llamadart_validation');
     final runRoot = Directory(p.join(root, '.dart_tool', 'validation', 'runs'));
     final profile = options['profile'] ?? 'tiny-gguf-cpu';
     String required(String key) =>
         options[key] ?? (throw FormatException('--$key is required'));
-    if (command == 'npu-preflight') {
+    if (command == 'coverage') {
+      final rows = validationCoverage()
+          .where(
+            (row) =>
+                (options['platform'] == null ||
+                    row['platform'] == options['platform']) &&
+                (options['backend'] == null ||
+                    row['backend'] == options['backend']) &&
+                (options['use-case'] == null ||
+                    row['use_case'] == options['use-case']),
+          )
+          .toList();
+      if (rows.isEmpty) {
+        throw FormatException('No coverage rows match the filters.');
+      }
+      stdout.writeln(
+        const JsonEncoder.withIndent('  ').convert({
+          'schema_version': 1,
+          'kind': 'planned_coverage_not_execution_results',
+          'rows': rows,
+        }),
+      );
+    } else if (command == 'voice') {
+      final result = await executeCommand(
+        Platform.resolvedExecutable,
+        [
+          'run',
+          'bin/voice.dart',
+          '--out',
+          p.absolute(required('out')),
+          if (options['chat-profile'] != null) ...[
+            '--chat-profile',
+            options['chat-profile']!,
+          ],
+          for (final name in ['chat-model', 'cache'])
+            if (options[name] != null) ...[
+              '--$name',
+              p.absolute(options[name]!),
+            ],
+        ],
+        directory: package,
+        timeout: const Duration(minutes: 15),
+      );
+      stdout.write(result.output);
+      stderr.write(result.error);
+      exitCode = result.code;
+    } else if (command == 'speech') {
+      final result = await executeCommand(
+        Platform.resolvedExecutable,
+        [
+          'run',
+          required('pack') == 'litert-asr'
+              ? 'bin/dedicated_speech.dart'
+              : 'bin/speech.dart',
+          '--pack',
+          required('pack'),
+          '--backend',
+          options['backend'] ?? 'cpu',
+          '--out',
+          p.absolute(required('out')),
+          for (final name in ['model', 'projector', 'tokenizer', 'cache'])
+            if (options[name] != null) ...[
+              '--$name',
+              p.absolute(options[name]!),
+            ],
+        ],
+        directory: package,
+        timeout: const Duration(minutes: 15),
+      );
+      stdout.write(result.output);
+      stderr.write(result.error);
+      exitCode = result.code;
+    } else if (command == 'npu-preflight') {
       final report = await inspectNpuInputs(
         root,
         required('profile'),
@@ -228,21 +309,32 @@ Future<void> main(List<String> arguments) async {
   }
 }
 
-Map<String, String> _options(List<String> args) {
-  const allowed = {
-    'team',
-    'target',
-    'out',
-    'profile',
-    'model',
-    'kit',
-    'execution-path',
-    'config',
-    'bundle',
-    'plan',
-    'run-id',
-    'remote-id',
-  };
+Map<String, String> _options(
+  List<String> args, {
+  bool coverage = false,
+  bool speech = false,
+  bool voice = false,
+}) {
+  final allowed = coverage
+      ? {'platform', 'backend', 'use-case'}
+      : speech
+      ? {'pack', 'backend', 'out', 'model', 'projector', 'tokenizer', 'cache'}
+      : voice
+      ? {'out', 'cache', 'chat-model', 'chat-profile'}
+      : {
+          'team',
+          'target',
+          'out',
+          'profile',
+          'model',
+          'kit',
+          'execution-path',
+          'config',
+          'bundle',
+          'plan',
+          'run-id',
+          'remote-id',
+        };
   final options = <String, String>{};
   for (var i = 0; i < args.length; i += 2) {
     if (!args[i].startsWith('--') ||

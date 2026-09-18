@@ -39,7 +39,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'CI + local; model-free',
     covers:
-        'private runner, result integrity, provider lifecycle, artifact and NPU input checks',
+        'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
     useWhen:
@@ -55,6 +55,19 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
     useWhen:
         'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+  ),
+  TestMatrixRow(
+    id: 'validation-speech',
+    tier: 'platform',
+    mode: 'opt-in; local model-backed',
+    covers:
+        'Locked Qwen3-ASR/Qwen3-TTS and dedicated LiteRT CPU ASR, cancellation, reload, typed guards, WER and audio timing',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-voice-round-trip',
+    useWhen:
+        'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
   ),
   TestMatrixRow(
     id: 'static-format-analyze',

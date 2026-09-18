@@ -899,3 +899,85 @@ invalid profiles, waived accelerator flags and self-granted unsupported status.
 All 43 harness tests and 44 provider/input tests pass. Revalidating copies of the
 three CPU journals and latest public/native S24 journals preserves their exact
 verdicts and counts, with no new integrity problems; originals remain unchanged.
+
+## Planned platform/backend coverage
+
+Inspect the model/use-case coverage catalog without downloading models or
+starting cloud resources:
+
+```bash
+dart run tool/testing/validation.dart coverage
+dart run tool/testing/validation.dart coverage --platform android-arm64 --backend npu
+dart run tool/testing/validation.dart coverage --use-case stt
+dart run tool/testing/validation.dart coverage --use-case tts
+```
+
+This JSON is a planning inventory, not a qualification report. `NOT_RUN` means
+execution evidence is still required; `UNVERIFIED` identifies an artifact or
+compatibility gap; `UNSUPPORTED` identifies a current runtime/API boundary.
+Actual results remain in collected run reports. The catalog never emits PASS.
+
+Gemma 4 E2B and Qwen3.5 0.8B are primary chat families. Gemma 4 Tensor G5 and
+Qualcomm SM8750 NPU rows require immutable artifacts and matched vendor kits
+before executable profiles can be added. SM8750 does not qualify S24 SM8650.
+Existing Gemma 3 NPU profiles remain separate legacy controls. No Qwen3.5 NPU
+combination is established; Apple, desktop and Web NPU paths are unsupported.
+
+Dedicated STT/TTS models are required exceptions to the primary chat families.
+GGUF Qwen3-ASR and Qwen3-TTS need separate platform/backend execution evidence.
+Typed LiteRT ASR is native CPU-only; LiteRT TTS and NPU speech are unsupported.
+Current TTS produces complete audio, not playable streaming chunks. Speech
+quality, real-time factor and app microphone/playback checks remain separate
+from chat token throughput and accelerator availability.
+
+The catalog regressions run in the existing `validation-harness` local E2E
+scenario and private package tests. Candidate rows cannot be passed to the
+builder as runnable profiles; existing model-lock and NPU preflight requirements
+remain mandatory. Browser/delegate and device-specific model memory checks are
+still required for every actual run.
+
+### Primary model profiles and runnable speech packs
+
+Gemma 4 E2B now has immutable `gemma4-gguf-{cpu,metal,vulkan,cuda}` and
+`gemma4-litert-{cpu,gpu}` text profiles. Qwen3.5 0.8B retains the existing
+`chat-gguf-*` Q4_0 profiles and adds `qwen35-litert-{cpu,gpu}` INT8 profiles.
+The new profiles disable thinking, retain strict core predicates, and record
+resolved sampling and TPS with the existing reporter. Native LiteRT profiles
+are not Web or NPU artifacts. Multimodal/projector profiles remain separate work.
+
+```bash
+dart run tool/testing/validation.dart local --profile gemma4-gguf-cpu --model /models/gemma-4-E2B-it-Q4_K_S.gguf
+dart run tool/testing/validation.dart speech --pack stt --backend cpu --out /tmp/new-stt-run
+dart run tool/testing/validation.dart speech --pack tts --backend cpu --out /tmp/new-tts-run
+dart run tool/testing/validation.dart speech --pack litert-asr --backend cpu --model /models/moonshine_tiny_5s_i8.tflite --tokenizer /models/moonshine_tokenizer.json --out /tmp/new-litert-asr-run
+dart run tool/testing/validation.dart voice --chat-profile gemma4-gguf-cpu --chat-model /models/gemma-4-E2B-it-Q4_K_S.gguf --out /tmp/new-voice-run
+```
+
+GGUF speech downloads or verifies the locked Qwen3-ASR/Qwen3-TTS model and
+projector. Dedicated LiteRT ASR requires supplied files matching the checked-in
+Moonshine model/tokenizer hashes; immutable source URLs are in
+`packages/llamadart_validation/assets/speech/litert-asr.json`.
+Every entry point runs under the existing subprocess host's 15-minute deadline.
+The `validation-speech-stt`, `validation-speech-tts`,
+`validation-speech-litert-asr` and `validation-voice-round-trip` scenarios are
+registered in the local E2E runner; use `--model-path`, `--mmproj-path`, or
+`--tokenizer-path` to reuse local inputs. The voice scenario uses Gemma 4 CPU;
+the direct command also accepts the other primary CPU chat profiles.
+
+Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
+raw/reference transcript, WER, processing time, first partial/first playable
+audio timing where available, real-time factor, and generated WAV artifacts.
+Cases cover generation, immediate cancellation, subsequent request, invalid
+input/recovery, independent reload and cleanup. GGUF STT additionally compares
+file and bytes inputs. TTS rejects silent, nonfinite or truncated output;
+playability is not a listening-quality assertion. Its first playable audio is
+the final buffer, never a progress callback. The voice report preserves the
+transcript and chat response and writes the synthesized response WAV.
+
+These new speech commands are **diagnostic local runners**, not yet portable
+bundle/Firebase adapters or accepted qualification-report imports. They never
+set `qualified=true`. Exit zero means the selected functional assertions passed,
+not accelerator or perceptual qualification. Full microphone/playback,
+noise/language/voice fixtures, mobile/Web speech packaging, and historical
+speech dashboards remain open. A supported backend request still requires
+actual hardware execution evidence before marking a platform/backend row green.
