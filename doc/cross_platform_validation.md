@@ -1026,6 +1026,10 @@ status. Follow it with `collect`, which refreshes terminal status again before
 retrieval. A failed recovery persists an incomplete, unqualified assessment;
 cancelled preparation-only runs cannot qualify from old artifacts.
 
+Windows VM uploads and result collection explicitly use legacy SCP (`-O`),
+because the Google Windows SSH image used in live validation closed the default
+SFTP-based transfer. Linux retains the default protocol. Both remain IAP-tunneled.
+
 Vulkan offload and compute-buffer records do not establish physical GPU use when
 the log identifies a software device such as llvmpipe, lavapipe or SwiftShader.
 Those runs remain unverified, including mixed software/hardware inventories.

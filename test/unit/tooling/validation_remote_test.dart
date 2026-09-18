@@ -1284,6 +1284,64 @@ void main() {
       expect(provider.calls, isEmpty);
     },
   );
+  for (final target in ['gce-windows-cuda', 'gce-linux-cuda']) {
+    test(
+      '$target selects the supported transfer protocol for upload and collection',
+      () async {
+        final transfers = <List<String>>[];
+        final provider = GcloudProvider(
+          execute: (_, args, {directory, timeout}) async {
+            if (args.contains('scp')) {
+              transfers.add(args);
+              // Stop before executing the uploaded fixture, and exercise the
+              // real upload failure path as well as successful collection.
+              return CommandResult(transfers.length == 1 ? 1 : 0, '', '');
+            }
+            if (args.contains('create')) {
+              return CommandResult(
+                0,
+                jsonEncode([
+                  {
+                    'id': '123',
+                    'disks': [
+                      {'source': 'owned-boot'},
+                    ],
+                    'scheduling': {
+                      'instanceTerminationAction': 'DELETE',
+                      'terminationTime': '2026-09-18T14:00:00Z',
+                    },
+                  },
+                ]),
+                '',
+              );
+            }
+            if (args.any((a) => a.contains('nvidia-smi'))) {
+              return const CommandResult(0, '550', '');
+            }
+            return const CommandResult(0, '', '');
+          },
+        );
+        await expectLater(
+          provider.start(plan(target: target), (_) {}),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'Bundle upload failed',
+            ),
+          ),
+        );
+        await provider.collect(plan(target: target), {}, scratch);
+        expect(transfers, hasLength(2));
+        for (final args in transfers) {
+          expect(args.contains('--scp-flag=-O'), target == 'gce-windows-cuda');
+          expect(args, contains('--tunnel-through-iap'));
+        }
+        expect(transfers.first, contains('qa-one:validation/qa-one/'));
+        expect(transfers.last, contains('qa-one:validation/qa-one/results'));
+      },
+    );
+  }
   test(
     'uncertain GCE creation cannot be cleared by an empty inventory',
     () async {

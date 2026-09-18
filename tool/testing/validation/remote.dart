@@ -1125,6 +1125,7 @@ class GcloudProvider implements RemoteProvider {
       final result = await command(plan, [
         'compute',
         'scp',
+        if (plan.windows) '--scp-flag=-O',
         '--recurse',
         '--tunnel-through-iap',
         '--zone=${plan.settings['zone']}',
@@ -1309,6 +1310,7 @@ class GcloudProvider implements RemoteProvider {
     final upload = await command(plan, [
       'compute',
       'scp',
+      if (plan.windows) '--scp-flag=-O',
       '--recurse',
       '--tunnel-through-iap',
       '--zone=${plan.settings['zone']}',
