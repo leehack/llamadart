@@ -314,8 +314,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real native Qwen3-ASR projector capability, whole-file transcription, '
-        'language-marker normalization, and exact known-fixture text',
+        'real native Qwen3-ASR file/encoded-bytes parity, bounded prompt tokens, '
+        'exact known-fixture text, malformed-byte rejection, cancellation and recovery',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'speech-to-text-smoke --model-path <model.gguf> '

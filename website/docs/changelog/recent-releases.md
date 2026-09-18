@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
+
 - Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
 
 - Aligned default WebGPU bridge assets to `v0.1.44` for Web/native

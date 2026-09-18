@@ -4,6 +4,13 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -27,6 +34,54 @@ void main() {
     );
     expect(File(validator).existsSync(), isTrue);
   });
+
+  test(
+    'audio string-template rendering preserves compiled schema enforcement',
+    () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource:
+            '{# ]<]minimax[>[ <tool_call> <invoke name= #}'
+            '{{ messages[0].content }}{{ "<mm:think>" }}',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('inspect'),
+              LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
+            ],
+          ),
+        ],
+        metadata: const {},
+        tools: [_schemaTool],
+        toolChoice: ToolChoice.required,
+      );
+      expect(rendered.prompt, 'inspect<__media__><mm:think>');
+      expect(rendered.grammarLazy, isFalse);
+      const ns = MinimaxM3Handler.namespace;
+      const valid =
+          'reason</mm:think>$ns<tool_call>$ns<invoke name="inspect">'
+          '$ns<code>123$ns</code>'
+          '$ns<options>$ns</options>$ns<items>$ns</items>'
+          '$ns<count>7$ns</count>$ns<active>true$ns</active>'
+          '$ns<empty>null$ns</empty>$ns</invoke>$ns</tool_call>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [valid],
+        invalid: [
+          valid.replaceFirst('name="inspect"', 'name="unknown"'),
+          valid.replaceFirst('$ns<count>7$ns</count>', ''),
+          valid.replaceFirst('$ns<count>7', '$ns<count>wrong'),
+          valid.replaceFirst(
+            '$ns</invoke>',
+            '$ns<extra>x$ns</extra>$ns</invoke>',
+          ),
+          valid.replaceFirst('$ns</tool_call>', ''),
+          'reason</mm:think>No tool',
+        ],
+      );
+    },
+  );
 
   test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
     final grammar = Gemma4Handler().buildGrammar([
