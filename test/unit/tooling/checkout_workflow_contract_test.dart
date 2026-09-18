@@ -48,13 +48,14 @@ void main() {
     expect(inputs['fetch-depth'], 0);
   });
 
-  test('no checkout opts out of the upstream unsafe fork guard', () {
+  test('all checkouts use v7 without opting out of the unsafe fork guard', () {
     final files = Directory('.github/workflows').listSync().whereType<File>();
     var count = 0;
     for (final file in files.where((file) => file.path.endsWith('.yml'))) {
       final config = loadYaml(file.readAsStringSync()) as YamlMap;
       for (final checkout in checkouts(config)) {
         count++;
+        expect(checkout['uses'], 'actions/checkout@v7', reason: file.path);
         final inputs = checkout['with'] as YamlMap?;
         expect(
           inputs?.containsKey('allow-unsafe-pr-checkout') ?? false,

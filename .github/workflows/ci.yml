@@ -355,7 +355,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Prepare diagnostic fixtures and verify production upload contract
         run: |
