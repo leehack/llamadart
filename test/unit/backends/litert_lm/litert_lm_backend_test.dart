@@ -504,6 +504,42 @@ void main() {
     );
   }
 
+  for (final freeContext in [true, false]) {
+    test(
+      'free fails when worker exits during generation cancellation: $freeContext',
+      () async {
+        final backend = LiteRtLmBackend(workerEntryPoint: _exitOnCancelWorker);
+        final started = Completer<void>();
+        final stream = freeContext
+            ? backend.generate(1, 'hello', const GenerationParams())
+            : backend.generateChat(1, const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'hello',
+                ),
+              ], const GenerationParams());
+        final generation = stream.map((tokens) {
+          if (!started.isCompleted) started.complete();
+          return tokens;
+        }).toList();
+        final failed = expectLater(
+          generation,
+          throwsA(isA<LlamaStateException>()),
+        );
+        await started.future.timeout(const Duration(seconds: 2));
+        await expectLater(
+          freeContext ? backend.contextFree(1) : backend.modelFree(1),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await failed;
+        await expectLater(
+          backend.dispose(),
+          throwsA(isA<LlamaStateException>()),
+        );
+      },
+    );
+  }
+
   test('worker exit before handshake settles startup', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _exitBeforeHandshake);
     await expectLater(
@@ -1283,6 +1319,21 @@ void _terminatingWorker(SendPort port, {required bool crash}) {
     if (message is LiteRtLmWorkerHandshake) return;
     if (++requests == 3) {
       if (crash) throw StateError('injected worker failure');
+      Isolate.exit();
+    }
+  });
+}
+
+void _exitOnCancelWorker(SendPort port) {
+  final receive = ReceivePort();
+  port.send(receive.sendPort);
+  receive.listen((message) {
+    if (message is LiteRtLmGenerateRequest ||
+        message is LiteRtLmGenerateChatRequest) {
+      (message as LiteRtLmWorkerRequest).sendPort.send(
+        LiteRtLmTokenResponse([65]),
+      );
+    } else if (message is LiteRtLmCancelGenerationRequest) {
       Isolate.exit();
     }
   });
