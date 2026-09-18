@@ -562,6 +562,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'litert-lm-lifecycle',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_lifecycle_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_MODEL': context.modelPath!,
+            'LITERT_LM_BACKEND': context.backend,
+          },
+          description: 'LiteRT-LM lifecycle and process cleanup',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1110,6 +1139,7 @@ Future<LocalE2eResult> runLocalE2e(
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
+          scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-chat-features-smoke') &&
       parsed.modelPath == null) {
     return LocalE2eResult(

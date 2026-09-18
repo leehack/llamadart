@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Settle pending LiteRT-LM requests when a worker stops, close their response ports, and report unverified native cleanup as an error.
+
 - Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
 
 * Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.

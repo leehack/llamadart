@@ -53,6 +53,34 @@ void main() {
     });
 
     test(
+      'requires a model and wires the bounded LiteRT lifecycle scenario',
+      () async {
+        final missing = await runLocalE2e(const [
+          '--scenario',
+          'litert-lm-lifecycle',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(missing.exitCode, 64);
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'litert-lm-lifecycle',
+          '--model-path',
+          '/model.litertlm',
+          '--backend',
+          'gpu',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('LITERT_LM_MODEL=/model.litertlm'));
+        expect(result.stdout, contains('LITERT_LM_BACKEND=gpu'));
+        expect(
+          result.stdout,
+          contains('test/e2e/backends/litert_lm_lifecycle_e2e_test.dart'),
+        );
+      },
+    );
+
+    test(
       'dry-runs a Flutter device scenario with the requested device',
       () async {
         final result = await runLocalE2e(const [

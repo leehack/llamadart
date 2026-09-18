@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -9,6 +10,7 @@ import 'dart:isolate';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -354,6 +356,197 @@ void main() {
       worker.close();
     }
   });
+
+  for (final operation in ['dispose', 'contextFree', 'modelFree']) {
+    test(
+      '$operation settles abandoned requests and reports unsafe cleanup',
+      () async {
+        final port = ReceivePort();
+        final received = Completer<LiteRtLmTokenizeRequest>();
+        port.listen((message) {
+          if (message is LiteRtLmTokenizeRequest) {
+            received.complete(message);
+          } else if (message is LiteRtLmCancelGenerationRequest ||
+              message is LiteRtLmDisposeRequest) {
+            (message as LiteRtLmWorkerRequest).sendPort.send(
+              LiteRtLmDoneResponse(),
+            );
+          }
+          // Free requests deliberately never settle, as with a blocked runtime.
+        });
+        final backend = LiteRtLmBackend(initialSendPort: port.sendPort);
+        final pending = backend.tokenize(1, 'hello');
+        final failed = expectLater(
+          pending,
+          throwsA(isA<LlamaStateException>()),
+        );
+        final request = await received.future;
+        try {
+          await expectLater(switch (operation) {
+            'contextFree' => backend.contextFree(1),
+            'modelFree' => backend.modelFree(1),
+            _ => backend.dispose(),
+          }, throwsA(isA<LlamaStateException>()));
+          await failed.timeout(const Duration(seconds: 1));
+          expect(backend.isReady, isFalse);
+          await expectLater(
+            backend.tokenize(1, 'retry'),
+            throwsA(isA<LlamaStateException>()),
+          );
+          await expectLater(
+            backend.dispose(),
+            throwsA(isA<LlamaStateException>()),
+          );
+          // A late reply cannot revive the terminated request or backend.
+          request.sendPort.send(LiteRtLmTokenizeResponse([42]));
+          if (operation != 'dispose') {
+            await expectLater(
+              backend.dispose(),
+              throwsA(isA<LlamaStateException>()),
+            );
+          }
+        } finally {
+          port.close();
+        }
+      },
+    );
+  }
+
+  test('concurrent disposal waits for the same cleanup result', () async {
+    final port = ReceivePort();
+    final received = Completer<LiteRtLmDisposeRequest>();
+    var disposeCount = 0;
+    port.listen((message) {
+      if (message is LiteRtLmDisposeRequest) {
+        disposeCount++;
+        received.complete(message);
+      } else if (message is LiteRtLmCancelGenerationRequest) {
+        message.sendPort.send(LiteRtLmDoneResponse());
+      }
+    });
+    final backend = LiteRtLmBackend(initialSendPort: port.sendPort);
+    final first = backend.dispose();
+    final second = backend.dispose();
+    expect(identical(first, second), isTrue);
+    final checks = [
+      expectLater(first, throwsA(isA<LlamaStateException>())),
+      expectLater(second, throwsA(isA<LlamaStateException>())),
+    ];
+    final request = await received.future;
+    request.sendPort.send(LiteRtLmErrorResponse('unsettled', kind: 'state'));
+    await Future.wait(checks);
+    expect(disposeCount, 1);
+    port.close();
+  });
+
+  test(
+    'dispose reports rejected native cleanup even without pending requests',
+    () async {
+      final port = ReceivePort();
+      port.listen((message) {
+        if (message is LiteRtLmDisposeRequest) {
+          message.sendPort.send(
+            LiteRtLmErrorResponse(
+              'native operation has not settled',
+              kind: 'state',
+            ),
+          );
+        } else if (message is LiteRtLmCancelGenerationRequest) {
+          message.sendPort.send(LiteRtLmDoneResponse());
+        }
+      });
+      final backend = LiteRtLmBackend(initialSendPort: port.sendPort);
+      try {
+        await expectLater(
+          backend.dispose(),
+          throwsA(isA<LlamaStateException>()),
+        );
+      } finally {
+        port.close();
+      }
+    },
+  );
+
+  for (final entry in [_exitingWorker, _crashingWorker]) {
+    test(
+      'unexpected worker termination fails concurrent requests and generation',
+      () async {
+        final backend = LiteRtLmBackend(workerEntryPoint: entry);
+        final requests = [
+          expectLater(
+            backend.tokenize(1, 'hello'),
+            throwsA(isA<LlamaStateException>()),
+          ),
+          expectLater(
+            backend.detokenize(1, [1]),
+            throwsA(isA<LlamaStateException>()),
+          ),
+          expectLater(
+            backend.generate(1, 'hello', const GenerationParams()).toList(),
+            throwsA(isA<LlamaStateException>()),
+          ),
+        ];
+        await Future.wait(requests).timeout(const Duration(seconds: 2));
+        expect(backend.isReady, isFalse);
+        await expectLater(
+          backend.dispose(),
+          throwsA(isA<LlamaStateException>()),
+        );
+      },
+    );
+  }
+
+  test('worker exit before handshake settles startup', () async {
+    final backend = LiteRtLmBackend(workerEntryPoint: _exitBeforeHandshake);
+    await expectLater(
+      backend.tokenize(1, 'hello').timeout(const Duration(seconds: 2)),
+      throwsA(isA<LlamaStateException>()),
+    );
+    await expectLater(backend.dispose(), throwsA(isA<LlamaStateException>()));
+  });
+
+  test(
+    'completed response stays successful when disposal follows immediately',
+    () async {
+      final port = ReceivePort();
+      port.listen((message) {
+        if (message is LiteRtLmTokenizeRequest) {
+          message.sendPort.send(LiteRtLmTokenizeResponse([42]));
+        } else if (message is LiteRtLmWorkerRequest) {
+          message.sendPort.send(LiteRtLmDoneResponse());
+        }
+      });
+      final backend = LiteRtLmBackend(initialSendPort: port.sendPort);
+      try {
+        expect(await backend.tokenize(1, 'hello'), [42]);
+        await backend.dispose();
+      } finally {
+        port.close();
+      }
+    },
+  );
+
+  test(
+    'abandoned request cleanup allows a CLI process to exit naturally',
+    () async {
+      final packageConfig = await Isolate.packageConfig;
+      final process = await Process.start(Platform.resolvedExecutable, [
+        '--packages=${packageConfig!.toFilePath()}',
+        'test/fixtures/litert_lm_pending_request_exit.dart',
+      ]);
+      final stdout = process.stdout.drain<void>();
+      final stderr = process.stderr.transform(utf8.decoder).join();
+      try {
+        final code = await process.exitCode.timeout(
+          const Duration(seconds: 10),
+        );
+        expect(code, 0, reason: await stderr);
+        await stdout;
+      } finally {
+        process.kill();
+      }
+    },
+  );
 
   test('routes tokenization APIs through the LiteRT-LM worker', () async {
     final worker = _FakeLiteRtLmWorker(
@@ -1066,4 +1259,23 @@ class _FakeLiteRtLmWorker {
         }
     }
   }
+}
+
+void _exitBeforeHandshake(SendPort port) => Isolate.exit();
+
+void _exitingWorker(SendPort port) => _terminatingWorker(port, crash: false);
+
+void _crashingWorker(SendPort port) => _terminatingWorker(port, crash: true);
+
+void _terminatingWorker(SendPort port, {required bool crash}) {
+  final receive = ReceivePort();
+  port.send(receive.sendPort);
+  var requests = 0;
+  receive.listen((message) {
+    if (message is LiteRtLmWorkerHandshake) return;
+    if (++requests == 3) {
+      if (crash) throw StateError('injected worker failure');
+      Isolate.exit();
+    }
+  });
 }
