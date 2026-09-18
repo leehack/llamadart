@@ -46,14 +46,24 @@ void runLiteRtLmWorkerForTesting(
       } catch (_) {
         // Request errored but is settled; safe to dispose.
       }
+      Object? disposeError;
       if (requestSettled) {
         try {
           service.dispose();
-        } catch (_) {
-          // Ignore errors during dispose.
+        } catch (error) {
+          disposeError = error;
         }
       }
-      message.sendPort.send(LiteRtLmDoneResponse());
+      message.sendPort.send(
+        !requestSettled
+            ? LiteRtLmErrorResponse(
+                'LiteRT-LM native operation has not settled; cleanup skipped.',
+                kind: 'state',
+              )
+            : disposeError != null
+            ? LiteRtLmErrorResponse.from(disposeError)
+            : LiteRtLmDoneResponse(),
+      );
       receivePort.close();
       if (exitOnDispose) {
         Isolate.exit();

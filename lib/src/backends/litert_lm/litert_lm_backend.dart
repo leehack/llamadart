@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import '../../core/exceptions.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
@@ -28,14 +29,19 @@ class LiteRtLmBackend
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration {
   Isolate? _isolate;
+  ReceivePort? _workerLifecyclePort;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
+  Future<void>? _disposeFuture;
   int _workerGeneration = 0;
-  void Function()? _activeGenerationCleanup;
+  void Function([Object? error])? _activeGenerationCleanup;
+  final Map<ReceivePort, Completer<Object?>> _pendingRequests = {};
   final String? _preferredBackend;
+  final void Function(SendPort) _workerEntryPoint;
 
   bool _isReady = false;
   bool _disposed = false;
+  bool _nativeSettlementUnverified = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a LiteRT-LM backend.
@@ -43,8 +49,13 @@ class LiteRtLmBackend
   /// Prefer [ModelParams.liteRtLmBackend] when using the default
   /// `LlamaBackend()` router. [preferredBackend] remains available for callers
   /// that instantiate [LiteRtLmBackend] directly.
-  LiteRtLmBackend({SendPort? initialSendPort, String? preferredBackend})
-    : _preferredBackend = preferredBackend {
+  /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
+  LiteRtLmBackend({
+    SendPort? initialSendPort,
+    String? preferredBackend,
+    void Function(SendPort)? workerEntryPoint,
+  }) : _preferredBackend = preferredBackend,
+       _workerEntryPoint = workerEntryPoint ?? liteRtLmWorkerEntry {
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -99,7 +110,9 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     await _cancelActiveGeneration();
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     if (_sendPort == null) {
       _isReady = false;
       return;
@@ -110,7 +123,9 @@ class LiteRtLmBackend
         timeout: const Duration(seconds: 5),
       );
     } on TimeoutException {
+      _nativeSettlementUnverified = true;
       _killWorker();
+      throw _unsettledWorkerError();
     }
     _isReady = false;
   }
@@ -125,7 +140,9 @@ class LiteRtLmBackend
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     await _cancelActiveGeneration();
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     if (_sendPort == null) {
       return;
     }
@@ -135,7 +152,9 @@ class LiteRtLmBackend
         timeout: const Duration(seconds: 5),
       );
     } on TimeoutException {
+      _nativeSettlementUnverified = true;
       _killWorker();
+      throw _unsettledWorkerError();
     }
   }
 
@@ -162,13 +181,14 @@ class LiteRtLmBackend
     var cleanedUp = false;
     var activeGeneration = false;
 
-    void cleanup() {
+    void cleanup([Object? error]) {
       if (cleanedUp) {
         return;
       }
       cleanedUp = true;
       responsePort?.close();
       if (!controller.isClosed) {
+        if (error != null) controller.addError(error);
         unawaited(controller.close());
       }
       if (_activeGenerationCleanup == cleanup) {
@@ -267,13 +287,14 @@ class LiteRtLmBackend
         ?.map((tool) => tool.toJson())
         .toList(growable: false);
 
-    void cleanup() {
+    void cleanup([Object? error]) {
       if (cleanedUp) {
         return;
       }
       cleanedUp = true;
       responsePort?.close();
       if (!controller.isClosed) {
+        if (error != null) controller.addError(error);
         unawaited(controller.close());
       }
       if (_activeGenerationCleanup == cleanup) {
@@ -516,10 +537,9 @@ class LiteRtLmBackend
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) {
-      return;
-    }
+  Future<void> dispose() => _disposeFuture ??= _disposeWorker();
+
+  Future<void> _disposeWorker() async {
     _disposed = true;
     await _cancelGeneration();
     _activeGenerationCleanup?.call();
@@ -529,16 +549,23 @@ class LiteRtLmBackend
       final responsePort = ReceivePort();
       try {
         sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
-        await responsePort.first.timeout(const Duration(seconds: 5));
+        final response = await responsePort.first.timeout(
+          const Duration(seconds: 5),
+        );
+        if (response is! LiteRtLmDoneResponse) {
+          _nativeSettlementUnverified = true;
+        }
       } catch (_) {
         // Native LiteRT-LM teardown can stall on some accelerator paths. The
-        // isolate is killed below so app shutdown is not held indefinitely.
+        // caller ports are closed below; this does not prove native settlement.
+        _nativeSettlementUnverified = true;
       } finally {
         responsePort.close();
       }
     }
     _killWorker();
     _isReady = false;
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
   }
 
   @override
@@ -616,6 +643,7 @@ class LiteRtLmBackend
   }
 
   Future<void> _ensureIsolate() async {
+    if (_nativeSettlementUnverified) throw _unsettledWorkerError();
     if (_disposed) {
       throw StateError('LiteRT-LM backend has been disposed.');
     }
@@ -657,6 +685,16 @@ class LiteRtLmBackend
   Future<void> _startIsolate(int generation) async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
+    final lifecyclePort = ReceivePort();
+    _workerLifecyclePort = lifecyclePort;
+    lifecyclePort.listen((_) {
+      if (_disposed || generation != _workerGeneration) return;
+      _nativeSettlementUnverified = true;
+      if (!completer.isCompleted) {
+        completer.completeError(_unsettledWorkerError());
+      }
+      _killWorker();
+    });
     late final StreamSubscription<Object?> subscription;
     subscription = tempPort.listen((message) {
       if (message is SendPort) {
@@ -681,7 +719,12 @@ class LiteRtLmBackend
     });
     Isolate? isolate;
     try {
-      isolate = await Isolate.spawn(liteRtLmWorkerEntry, tempPort.sendPort);
+      isolate = await Isolate.spawn(
+        _workerEntryPoint,
+        tempPort.sendPort,
+        onExit: lifecyclePort.sendPort,
+        onError: lifecyclePort.sendPort,
+      );
       if (_disposed || generation != _workerGeneration) {
         isolate.kill(priority: Isolate.immediate);
         throw StateError('LiteRT-LM worker startup was cancelled.');
@@ -700,6 +743,10 @@ class LiteRtLmBackend
       isolate?.kill(priority: Isolate.immediate);
       await subscription.cancel();
       tempPort.close();
+      lifecyclePort.close();
+      if (identical(_workerLifecyclePort, lifecyclePort)) {
+        _workerLifecyclePort = null;
+      }
       rethrow;
     }
   }
@@ -718,23 +765,45 @@ class LiteRtLmBackend
     }
 
     final responsePort = ReceivePort();
+    final completion = Completer<Object?>();
+    _pendingRequests[responsePort] = completion;
+    responsePort.listen((response) {
+      if (!completion.isCompleted) completion.complete(response);
+    });
     try {
       sendPort.send(buildRequest(responsePort.sendPort));
       final response = timeout == null
-          ? await responsePort.first
-          : await responsePort.first.timeout(timeout);
+          ? await completion.future
+          : await completion.future.timeout(timeout);
       if (response is LiteRtLmErrorResponse) {
         _throwLiteRtLmError(response);
       }
       return response;
     } finally {
+      _pendingRequests.remove(responsePort);
       responsePort.close();
     }
   }
 
   void _killWorker() {
-    _activeGenerationCleanup?.call();
+    if (_pendingRequests.isNotEmpty) _nativeSettlementUnverified = true;
+    _activeGenerationCleanup?.call(
+      _nativeSettlementUnverified ? _unsettledWorkerError() : null,
+    );
+    // A killed worker cannot reply. Closing its callers' ports alone would
+    // leave their futures pending, while leaving ports open retains the VM.
+    // This settles Dart requests only; an in-flight native call may still be
+    // running and must not have its resources freed here.
+    for (final entry in _pendingRequests.entries) {
+      entry.key.close();
+      if (!entry.value.isCompleted) {
+        entry.value.completeError(_unsettledWorkerError());
+      }
+    }
+    _pendingRequests.clear();
     _workerGeneration += 1;
+    _workerLifecyclePort?.close();
+    _workerLifecyclePort = null;
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _sendPort = null;
@@ -742,6 +811,12 @@ class LiteRtLmBackend
     _activeGenerationCleanup = null;
     _isReady = false;
   }
+
+  LlamaStateException _unsettledWorkerError() => LlamaStateException(
+    'LiteRT-LM worker stopped before native cleanup was confirmed. '
+    'Native operation settlement is unverified; restart the process before '
+    'retrying this runtime.',
+  );
 
   Future<void> _cancelActiveGeneration() async {
     final cleanup = _activeGenerationCleanup;
