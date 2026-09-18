@@ -36,7 +36,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Exact-head Linux/Windows/macOS CI builds and portable execution on each target; iOS signing remains local |
 | Cloud lifecycle | Firebase submission, retrieval and cleanup exercised; Firebase/GCE failure controls tested locally | Real GCE upload/run/retrieve/delete lifecycle when credit and a run are authorized |
 | Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
-| Critical feature packs | Stop markers, unloaded-engine guards and batching/lifecycle controls execute; missing obligations remain NOT_RUN | Thinking, tools, Unicode generation, broader guards, multimodal, speech qualification and embeddings |
+| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls | Exact-model feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal, speech qualification and embeddings |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
 control below passes the strict history predicate; the LiteRT results remain failed.
@@ -159,7 +159,7 @@ The shared runner accepts three profile selections:
 - `release`: every current extended core obligation, including unfinished cases.
 
 For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
-adds C07 tools, C10 stop markers and C11 batching. C07 still records NOT_RUN;
+adds C07 tools, C10 stop markers and C11 batching. Catalog 4 executes C07;
 catalog 3 executes C10 control/stop/recovery, and C11 executes the parity or
 rejection contracts below.
 `tiny-gguf-lifecycle` is a runnable focused CPU profile: it adds
@@ -201,13 +201,14 @@ definitions, with C11 still unimplemented. Unknown versions or new batching
 selections claiming the old catalog fail closed. A legacy report is not evidence that the
 newer extended selection ran. Focused selection requires schema 2.
 
-Thinking, tool calls, stop-marker fixtures, tool-bearing batching, expanded unsupported guards,
+Thinking budgets, tool-bearing batching, expanded unsupported guards,
 multimodal/speech/embedding packs and full browser/device rotation remain
 subsequent qualification work. NPU requires the verified Android packaging
 described below; selecting `npu` alone cannot supply vendor libraries or evidence.
-Selecting `release` today
-keeps those additional obligations visible as NOT_RUN and cannot pass as a
-release qualification.
+Catalog 4 executes all currently selected core release cases. This does not
+qualify the broader planned feature packs or historical runs: existing journals
+retain their original catalog and NOT_RUN results. Direct-native controls keep
+public-only feature cases NOT_RUN.
 
 ## NPU input preparation
 

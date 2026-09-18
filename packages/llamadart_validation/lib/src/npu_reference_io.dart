@@ -85,7 +85,15 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
   }) {
+    if (enableThinking != null || tools != null || toolChoice != null) {
+      throw UnsupportedError(
+        "Native control does not implement feature overrides",
+      );
+    }
     if (stopSequences != null) {
       throw LlamaUnsupportedException(
         'Native reference has no public stop filter',

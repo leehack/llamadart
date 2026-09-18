@@ -250,6 +250,36 @@ class ValidationProfile {
     };
   }
 
+  Map<String, dynamic> _fixturesForVersion(int version) {
+    final resolved = fixtures;
+    if (version < 4) {
+      final tools = resolved['tools'] as Map;
+      final tool = tools['tool'] as Map;
+      final function = tool['function'] as Map;
+      resolved['tools'] = {
+        ...tools,
+        'tool': {
+          ...tool,
+          'function': {
+            ...function,
+            'parameters': {
+              ...function['parameters'] as Map,
+              'additionalProperties': false,
+            },
+          },
+        },
+      };
+      resolved['unicode_generation'] = {
+        ...resolved['unicode_generation'] as Map,
+        'qualification':
+            (data['fixtures']
+                as Map?)?['unicode_generation']?['qualification'] ??
+            'requires an exact-model reference before execution',
+      };
+    }
+    return resolved;
+  }
+
   /// Text read by the runner and included in the replay catalog.
   String fixtureText(String fixture, String field) =>
       (fixtures[fixture] as Map)[field] as String;
@@ -263,7 +293,7 @@ class ValidationProfile {
       id,
       catalogVersion: catalogVersion,
     ).fixtures)
-      key: fixtures[key],
+      key: _fixturesForVersion(catalogVersion)[key],
   };
 
   /// Current selected/omitted inventory with reproducible fixture contents.
@@ -289,7 +319,7 @@ class ValidationProfile {
       'selection': selection,
       'focus_features': focusFeatures,
       'fixtures': {
-        for (final entry in fixtures.entries)
+        for (final entry in _fixturesForVersion(version).entries)
           if ((version != 1 || entry.key != 'batching') &&
               (version >= 3 || entry.key != 'stop'))
             entry.key: entry.value,

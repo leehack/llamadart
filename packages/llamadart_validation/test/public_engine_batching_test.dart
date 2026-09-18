@@ -10,6 +10,7 @@ class CapturingEngine implements LlamaEngine {
   bool lateContent = false;
   bool duplicateFinish = false;
   bool emitTool = false;
+  final featureRequests = <Map<String, dynamic>>[];
 
   @override
   Stream<String> generate(
@@ -36,6 +37,11 @@ class CapturingEngine implements LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
+    featureRequests.add({
+      'thinking': enableThinking,
+      'tools': tools,
+      'choice': toolChoice,
+    });
     requests.add(params!);
     LlamaCompletionChunk chunk(
       LlamaCompletionChunkDelta delta, {
@@ -88,6 +94,40 @@ void main() {
   final profile = ValidationProfile.fromJson(
     jsonDecode(File('assets/profiles/chat-litert-cpu.json').readAsStringSync())
         as Map<String, dynamic>,
+  );
+
+  test(
+    'public feature controls reach the engine and restore defaults',
+    () async {
+      final captured = CapturingEngine();
+      final adapter = PublicValidationEngine(engineFactory: () => captured);
+      final tool = ToolDefinition(
+        name: 'get_weather',
+        description: 'Weather',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: (_) async => {},
+      );
+      for (final mode in ToolChoice.values) {
+        final output = await adapter.generate(
+          'prompt',
+          profile,
+          enableThinking: true,
+          tools: [tool],
+          toolChoice: mode,
+          maxTokens: 512,
+        );
+        expect(captured.featureRequests.last['thinking'], true);
+        expect(captured.featureRequests.last['choice'], mode);
+        expect(captured.featureRequests.last['tools'], [tool]);
+        expect(captured.requests.last.maxTokens, 512);
+        expect(output['tool_choice'], mode.name);
+        expect(output['tools'], [tool.toJson()]);
+      }
+      await adapter.generate('prompt', profile);
+      expect(captured.featureRequests.last['thinking'], profile.enableThinking);
+      expect(captured.featureRequests.last['choice'], isNull);
+      expect(captured.featureRequests.last['tools'], isNull);
+    },
   );
 
   test(

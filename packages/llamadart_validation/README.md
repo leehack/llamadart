@@ -43,6 +43,23 @@ The reporter derives mandatory cases, effective settings and accelerator-proof
 requirements from the validated profile. Self-declared inventory, rehashed
 conflicting settings and per-record unsupported exemptions cannot waive them.
 
+Reports expose independent `summary.qualification_gaps`: assertion failures,
+execution errors, unexecuted cases, missing accelerator evidence, incomplete
+provenance, and journal/lifecycle problems. Multiple gaps can coexist. An
+unverified accelerator does not establish model or platform incompatibility;
+successful inference also does not prove GPU/NPU execution. Execution errors
+require diagnosis against the retained native logs and host setup. The HTML
+report shows these distinctions and the placement verifier's reason. These
+diagnostics do not relax qualification requirements or replace case results.
+
+`C01.load` measures public load/readiness, which can precede native engine
+initialization. In LiteRT, the first `C02.unicode` tokenization call can include
+deferred engine creation. Its `tokenize_call_ms` is therefore not isolated
+tokenizer latency. The runner records this timing scope, separate detokenization
+latency, and the active public operation on errors/timeouts. A first-use timeout
+does not establish a tokenizer defect. Case deadlines remain unchanged; provider
+process deadlines can additionally include model preparation and host startup.
+
 Profiles select `quick`, `focused` or `release`. Focused profiles require a
 nonempty, unique `focus_features` list; `tiny-gguf-lifecycle` adds the second
 dispose/load/generate cycle to the quick CPU run. Core feature IDs are `text`,
@@ -63,3 +80,16 @@ and metrics are retained; chunk counts may differ. LiteRT Web checks each native
 option's typed rejection instead. NPU deterministic parity, GGUF Web controls and
 tool-bearing fixtures remain unqualified. Catalog version 2 preserves imports of
 version-1 journals against their original case/fixture definitions.
+
+Catalog 4 adds executable C02 Unicode generation (exact output, no trimming),
+C05 thinking enabled/disabled (512 output-token bound, separated nonempty thinking
+when enabled and none when disabled), and C07 tool choice (`auto`, `required`,
+`none`, 128 output-token bound). C07 checks one weather call with exact city
+arguments, public completion semantics, synthetic tool-result consumption and
+default recovery. The actual tools, choices, prompts, messages and per-call
+settings are logged; tool schemas are produced by the public ToolDefinition API.
+Failures are strict model/runtime observations, not automatic diagnoses.
+Thinking-budget controls and tool-bearing batching remain separate planned work.
+Native C API controls do not execute these public feature cases. Catalogs 1–3
+retain their original fixtures and unimplemented obligations on import. No
+existing device/model run is upgraded by this implementation.

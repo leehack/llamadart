@@ -43,6 +43,9 @@ class FakeEngine implements ValidationEngine {
   int? switchAfterLoad;
   Completer<void>? pauseReload;
   var timeout = false;
+  bool tokenizeTimeout = false;
+  String? featureFault;
+  bool toolsSeen = false;
   var cleanupFails = false;
   @override
   Future<void> load(String location, ValidationProfile profile) async {
@@ -80,7 +83,11 @@ class FakeEngine implements ValidationEngine {
         : backendName,
   };
   @override
-  Future<List<int>> tokenize(String text) async => utf8.encode(text);
+  Future<List<int>> tokenize(String text) async {
+    if (tokenizeTimeout) await Completer<void>().future;
+    return utf8.encode(text);
+  }
+
   @override
   Future<String> detokenize(List<int> tokens) async => utf8.decode(tokens);
   @override
@@ -94,8 +101,12 @@ class FakeEngine implements ValidationEngine {
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
   }) async {
     generated++;
+    if (tools != null) toolsSeen = true;
     if (!ready && !ignoresReadiness) throw LlamaContextException('Not loaded');
     final adjusted = streamBatchTokens != null || streamBatchBytes != null;
     requests.add({
@@ -118,8 +129,21 @@ class FakeEngine implements ValidationEngine {
     if (adjusted) _batchingSeen = true;
     if (timeout) return Completer<Map<String, dynamic>>().future;
     return {
+      'enable_thinking': featureFault == 'thinking_config'
+          ? false
+          : enableThinking ?? profile.enableThinking,
+      'tools': tools?.map((t) => t.toJson()).toList(),
+      'tool_choice': featureFault == 'tool_config' ? null : toolChoice?.name,
       'stop_sequences': stopSequences ?? const <String>[],
-      'content': prompt.contains('alpha cedar17 omega')
+      'content': prompt.contains('temperature_celsius from the tool result')
+          ? featureFault == 'tool_followup'
+                ? '18'
+                : '17'
+          : prompt == profile.fixtureText('unicode_generation', 'prompt')
+          ? featureFault == 'unicode'
+                ? 'Montréal �'
+                : profile.fixtureText('unicode_generation', 'expected')
+          : prompt.contains('alpha cedar17 omega')
           ? stopSequences != null && !ignoresStop
                 ? 'alpha '
                 : 'alpha cedar17 omega'
@@ -135,7 +159,13 @@ class FakeEngine implements ValidationEngine {
                 ? '2'
                 : '4'
           : 'hello',
-      'thinking': adjusted && batchingFault == 'thinking' ? 'changed' : '',
+      'thinking': featureFault == 'thinking_leak'
+          ? 'leaked'
+          : enableThinking == true && featureFault != 'thinking_missing'
+          ? 'Two plus two is four.'
+          : adjusted && batchingFault == 'thinking'
+          ? 'changed'
+          : '',
       'chunks': adjusted ? 32 : 5,
       'stream_batch_tokens': batchingFault == 'config'
           ? 8
@@ -145,12 +175,37 @@ class FakeEngine implements ValidationEngine {
           !(adjusted && batchingFault == 'incomplete') &&
           !(recovering && batchingFault == 'recovery'),
       'completion_order_valid': !(adjusted && batchingFault == 'order'),
-      'tool_call_deltas': adjusted && batchingFault == 'tools'
+      'tool_call_deltas':
+          featureFault == 'tool_recovery' && toolsSeen && tools == null
+          ? [
+              {
+                'index': featureFault == 'tool_index' ? 1 : 0,
+                'function': {'name': 'get_weather'},
+              },
+            ]
+          : tools != null &&
+                (toolChoice != ToolChoice.none || featureFault == 'tool_none')
+          ? [
+              {
+                'index': featureFault == 'tool_index' ? 1 : 0,
+                'function': {
+                  'name': 'get_weather',
+                  'arguments': featureFault == 'tool_malformed'
+                      ? '{broken'
+                      : featureFault == 'tool_arguments'
+                      ? '{"city":"Paris"}'
+                      : '{"city":"Montréal"}',
+                },
+              },
+            ]
+          : adjusted && batchingFault == 'tools'
           ? [
               {'index': 0},
             ]
           : [],
-      'finish_reasons': raw
+      'finish_reasons': tools != null && toolChoice != ToolChoice.none
+          ? [featureFault == 'tool_finish' ? 'length' : 'tool_calls']
+          : raw
           ? []
           : [adjusted && batchingFault == 'finish' ? 'length' : 'stop'],
       'prompt': prompt,
@@ -204,6 +259,162 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  test('native control cannot execute public release feature cases', () async {
+    final data =
+        jsonDecode(
+              File(
+                'assets/profiles/npu-qualcomm-sm8650.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    data['execution_path'] = 'native_c_api';
+    data['selection'] = 'release';
+    data['enable_thinking'] = true;
+    final result = await run(
+      FakeEngine(),
+      selected: ValidationProfile.fromJson(data),
+    );
+    for (final id in ['C02.generate', 'C05.thinking', 'C07.tools']) {
+      final record = result.report.cases.singleWhere((c) => c['case_id'] == id);
+      expect(record['status'], 'NOT_RUN');
+      expect(record['reason'], 'Requires public chat feature controls');
+    }
+  });
+
+  for (final entry in {
+    'unicode': 'C02.generate',
+    'thinking_config': 'C05.thinking',
+    'thinking_leak': 'C05.thinking',
+    'thinking_missing': 'C05.thinking',
+    'tool_config': 'C07.tools',
+    'tool_arguments': 'C07.tools',
+    'tool_finish': 'C07.tools',
+    'tool_followup': 'C07.tools',
+    'tool_recovery': 'C07.tools',
+    'tool_none': 'C07.tools',
+    'tool_index': 'C07.tools',
+    'tool_malformed': 'C07.tools',
+  }.entries) {
+    test('release feature rejects ${entry.key}', () async {
+      final result = await run(
+        FakeEngine()..featureFault = entry.key,
+        selected: profile(release: true),
+      );
+      expect(
+        result.report.cases.singleWhere(
+          (c) => c['case_id'] == entry.value,
+        )['status'],
+        'FAIL',
+      );
+      expect(result.report.qualified, false);
+    });
+  }
+
+  test('catalog three preserves unimplemented feature obligations', () async {
+    final selected = profile(release: true);
+    final result = await run(FakeEngine(), selected: selected);
+    final events = result.events;
+    events.first['catalog'] = selected.catalogForVersion(3);
+    events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+    for (final record in events.where((e) => e['type'] == 'case')) {
+      final id = record['case_id'] as String;
+      record['fixture_hash'] = jsonHash(
+        selected.caseFixtures(id, catalogVersion: 3),
+      );
+      if (['C05.thinking', 'C07.tools', 'C02.generate'].contains(id)) {
+        record['case_version'] = 1;
+        record['status'] = 'NOT_RUN';
+      }
+    }
+    final historical = ValidationReport.parse(
+      events.map(jsonEncode).join('\n'),
+    );
+    expect(historical.problems, isEmpty);
+    expect(historical.qualified, false);
+    events.firstWhere(
+      (e) => e['type'] == 'case' && e['case_id'] == 'C07.tools',
+    )['status'] = 'PASS';
+    expect(
+      ValidationReport.parse(events.map(jsonEncode).join('\n')).problems,
+      contains(
+        'Unimplemented catalog case cannot claim an executed result: C07.tools',
+      ),
+    );
+  });
+
+  test(
+    'first-use timeout preserves deferred initialization attribution',
+    () async {
+      final result = await run(FakeEngine()..tokenizeTimeout = true);
+      final load = result.report.cases.first;
+      expect(load['load_scope'], 'public_load_and_readiness');
+      expect(load['native_initialization_proven'], false);
+      final failed = result.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C02.unicode',
+      );
+      expect(failed['status'], 'ERROR');
+      expect(failed['reason'], 'case_timeout');
+      expect(
+        failed['operation_phase'],
+        'tokenize_including_possible_deferred_initialization',
+      );
+      expect(failed['timeout_ms'], 30);
+      expect(failed['elapsed_ms'], greaterThanOrEqualTo(30));
+      expect(
+        result.report.cases.skip(2).every((c) => c['status'] == 'NOT_RUN'),
+        true,
+      );
+      expect(result.report.qualified, false);
+
+      final success = await run(FakeEngine());
+      final unicode = success.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C02.unicode',
+      );
+      expect(unicode['tokenize_call_ms'], isNonNegative);
+      expect(unicode['detokenize_call_ms'], isNonNegative);
+      expect(
+        unicode['tokenize_timing_scope'],
+        'public_call_including_possible_deferred_initialization',
+      );
+    },
+  );
+
+  test('report separates missing GPU proof from functional failures', () async {
+    final passing = await run(
+      FakeEngine()..backendName = 'LiteRT-LM GPU',
+      selected: profile(backend: 'gpu'),
+    );
+    expect(passing.report.assertionsPassed, true);
+    expect(passing.report.qualified, false);
+    expect(passing.report.qualificationGaps, ['accelerator_evidence_missing']);
+    expect((passing.report.toJson()['summary'] as Map)['qualification_gaps'], [
+      'accelerator_evidence_missing',
+    ]);
+    expect(
+      passing.report.toHtml(),
+      contains('does not by itself establish incompatibility'),
+    );
+
+    final failed = await run(FakeEngine()..wrongArithmetic = true);
+    expect(failed.report.qualificationGaps, contains('assertion_failure'));
+    expect(
+      failed.report.qualificationGaps,
+      isNot(contains('accelerator_evidence_missing')),
+    );
+
+    final incomplete = await run(
+      FakeEngine(),
+      selected: profile(release: true),
+    );
+    expect(incomplete.report.qualificationGaps, isEmpty);
+    final broken = await run(FakeEngine()..failOnLoad = 1);
+    expect(
+      broken.report.qualificationGaps,
+      containsAll(['execution_error', 'cases_not_run']),
+    );
+    expect((await run(FakeEngine())).report.qualificationGaps, isEmpty);
+  });
+
   ValidationProfile focused(List<String> features) =>
       ValidationProfile.fromJson(
         profile().toJson()
@@ -256,12 +467,12 @@ void main() {
       ]);
       expect(selected.focusFeatures, ['streaming', 'tools']);
       final result = await run(FakeEngine(), selected: selected);
-      expect(result.report.qualified, false);
+      expect(result.report.qualified, true);
       expect(
         result.report.cases
             .where((c) => c['status'] == 'NOT_RUN')
             .map((c) => c['case_id']),
-        ['C07.tools'],
+        isEmpty,
       );
       expect(result.report.problems, isEmpty);
     },
@@ -1308,14 +1519,14 @@ void main() {
       expect(result.report.toHtml(), contains('unverified'));
     },
   );
-  test('release selection keeps unimplemented obligations visible', () async {
+  test('release selection executes every implemented obligation', () async {
     final result = await run(FakeEngine(), selected: profile(release: true));
-    expect(result.report.qualified, isFalse);
+    expect(result.report.qualified, isTrue);
     expect(
       result.report.cases.singleWhere(
         (c) => c['case_id'] == 'C07.tools',
       )['status'],
-      'NOT_RUN',
+      'PASS',
     );
   });
   test(

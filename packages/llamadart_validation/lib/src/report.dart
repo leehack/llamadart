@@ -154,7 +154,7 @@ class ValidationReport {
       }
       if (!legacy &&
           profile != null &&
-          const [1, 2, 3].contains(catalogVersion)) {
+          const [1, 2, 3, 4].contains(catalogVersion)) {
         if (event['case_version'] !=
                 validationCase(
                   id,
@@ -168,7 +168,7 @@ class ValidationReport {
         }
       }
       if (!legacy &&
-          const [1, 2, 3].contains(catalogVersion) &&
+          const [1, 2, 3, 4].contains(catalogVersion) &&
           !validationCase(
             id,
             catalogVersion: catalogVersion as int,
@@ -230,6 +230,19 @@ class ValidationReport {
   /// Public selector values alone never qualify an accelerator.
   bool get acceleratorVerified => placement['verified'] == true;
 
+  /// Independent findings; missing evidence does not diagnose incompatibility.
+  List<String> get qualificationGaps => [
+    if (problems.isNotEmpty || !finished || !cleanupPassed)
+      'journal_or_lifecycle_incomplete',
+    if (cases.any((c) => c['status'] == 'FAIL')) 'assertion_failure',
+    if (cases.any((c) => c['status'] == 'ERROR')) 'execution_error',
+    if (cases.any((c) => c['status'] == 'NOT_RUN')) 'cases_not_run',
+    if (cases.any((c) => c['status'] == 'UNSUPPORTED'))
+      'unsupported_case_unqualified',
+    if (!acceleratorVerified) 'accelerator_evidence_missing',
+    if (provenanceProblems.isNotEmpty) 'provenance_incomplete',
+  ];
+
   /// Missing or uncommitted build identity preserves results but cannot qualify.
   List<String> get provenanceProblems {
     final environment = manifest['environment'] is Map
@@ -286,6 +299,7 @@ class ValidationReport {
     'cases': cases,
     'summary': {
       'qualified': qualified,
+      'qualification_gaps': qualificationGaps,
       'assertions_passed': assertionsPassed,
       'accelerator_verified': acceleratorVerified,
       'accelerator_evidence': placement,
@@ -423,6 +437,12 @@ class ValidationReport {
                   ? 'NPU participation verified; CPU partition coverage unknown'
                   : 'verified native offload'
             : 'unverified'}.</p>'
+        '<p>Qualification gaps: ${_escape(qualificationGaps.isEmpty ? 'none' : qualificationGaps.join(', '))}.</p>'
+        '<p>Unverified placement means accelerator execution has not been proven; '
+        'it does not by itself establish incompatibility. FAIL denotes an assertion '
+        'mismatch, ERROR an execution error, and NOT_RUN an unexecuted obligation. '
+        'Execution errors still require diagnosis to distinguish runtime, model and host setup.</p>'
+        '<p>Placement evidence: ${_escape(placement['reason'] ?? '')}.</p>'
         '<p>${_escape([...problems, ...provenanceProblems].join('; '))}</p>'
         '<table><tr><th>Case</th><th>Status</th><th>Reason</th></tr>'
         '${cases.map((c) => '<tr><td>${_escape(c['case_id'])}</td><td>${_escape(c['status'])}</td><td>${_escape(c['reason'] ?? '')}</td></tr>').join()}</table>'

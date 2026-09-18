@@ -1,5 +1,5 @@
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 3;
+const int validationCatalogVersion = 4;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -22,7 +22,8 @@ const validationFixtures = <String, Map<String, Object>>{
   'unicode_generation': {
     'prompt': 'Reply with exactly: Montréal 👋',
     'expected': 'Montréal 👋',
-    'qualification': 'requires an exact-model reference before execution',
+    'qualification':
+        'strict public output assertion; a failure does not identify its root cause',
   },
   'raw': {'prompt': 'Once upon a time'},
   'hello': {
@@ -53,7 +54,6 @@ const validationFixtures = <String, Map<String, Object>>{
             'city': {'type': 'string'},
           },
           'required': ['city'],
-          'additionalProperties': false,
         },
       },
     },
@@ -160,14 +160,9 @@ const extendedValidationCases = [
     'C05.thinking',
     ['thinking'],
     ['arithmetic'],
-    implemented: false,
+    version: 2,
   ),
-  ValidationCaseDefinition(
-    'C07.tools',
-    ['tools'],
-    ['tools'],
-    implemented: false,
-  ),
+  ValidationCaseDefinition('C07.tools', ['tools'], ['tools'], version: 2),
   ValidationCaseDefinition(
     'C10.stop',
     ['streaming'],
@@ -190,7 +185,7 @@ const extendedValidationCases = [
     'C02.generate',
     ['unicode'],
     ['unicode_generation'],
-    implemented: false,
+    version: 2,
   ),
   ValidationCaseDefinition(
     'C09.reload.second',
@@ -210,8 +205,20 @@ ValidationCaseDefinition validationCase(
   String id, {
   int catalogVersion = validationCatalogVersion,
 }) {
-  if (![1, 2, validationCatalogVersion].contains(catalogVersion)) {
+  if (![1, 2, 3, validationCatalogVersion].contains(catalogVersion)) {
     throw const FormatException('Unsupported catalog version');
+  }
+  if (catalogVersion < 4 &&
+      ['C05.thinking', 'C07.tools', 'C02.generate'].contains(id)) {
+    final current = validationCaseCatalog.singleWhere(
+      (definition) => definition.id == id,
+    );
+    return ValidationCaseDefinition(
+      id,
+      current.features,
+      current.fixtures,
+      implemented: false,
+    );
   }
   if (catalogVersion < 3 && (id == 'C10.stop' || id == 'C12.guards')) {
     return ValidationCaseDefinition(

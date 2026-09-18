@@ -163,6 +163,120 @@ void main() {
             });
           }
           expect(inspectPlacement(manifest, cases, null)['verified'], true);
+          if (focused && !native) {
+            final extendedData = {
+              ...data,
+              'selection': 'focused',
+              'focus_features': [
+                'lifecycle',
+                'streaming',
+                'guards',
+                'unicode',
+                'thinking',
+                'tools',
+              ],
+            };
+            final extendedManifest = {
+              ...manifest,
+              'profile': extendedData,
+              'catalog': {'version': 4},
+            };
+            final extendedCases = cases
+                .map((c) => jsonDecode(jsonEncode(c)) as Map<String, dynamic>)
+                .toList();
+            extendedCases.addAll([
+              {'case_id': 'C02.generate'},
+              {
+                'case_id': 'C05.thinking',
+                'trials': [{}, {}],
+              },
+              {
+                'case_id': 'C07.tools',
+                'trials': [
+                  {'tool_result_followup': {}},
+                  {'tool_result_followup': {}},
+                  {},
+                ],
+                'recovery': {},
+              },
+            ]);
+            final ordered = ValidationProfile.fromJson(extendedData).caseIds;
+            extendedCases.sort(
+              (a, b) => ordered
+                  .indexOf(a['case_id'])
+                  .compareTo(ordered.indexOf(b['case_id'])),
+            );
+            final generations = <Map>[];
+            final added = <Map>[];
+            for (final record in extendedCases) {
+              final id = record['case_id'];
+              final parts = switch (id) {
+                'C08.cancel' => [
+                  record['uncancelled_control'],
+                  record,
+                  record['recovery'],
+                ],
+                'C10.stop' => [
+                  record['control'],
+                  record['stopped'],
+                  record['recovery'],
+                ],
+                'C12.guards' => [record['recovery']],
+                'C05.thinking' => record['trials'] as List,
+                'C07.tools' => [
+                  for (final trial in record['trials'] as List) ...[
+                    trial,
+                    if ((trial as Map).containsKey('tool_result_followup'))
+                      trial['tool_result_followup'],
+                  ],
+                  record['recovery'],
+                ],
+                _ => [record],
+              };
+              generations.addAll(parts.cast<Map>());
+              if (['C02.generate', 'C05.thinking', 'C07.tools'].contains(id)) {
+                added.addAll(parts.cast<Map>());
+              }
+            }
+            for (var i = 0; i < generations.length; i++) {
+              generations[i]['npu_execution'] = {
+                'before': [1, i, i, 0, 0, 0, 0],
+                'after': [1, i + 1, i + 1, 0, 0, 0, 0],
+              };
+            }
+            expect(
+              inspectPlacement(
+                extendedManifest,
+                extendedCases,
+                null,
+              )['verified'],
+              true,
+            );
+            for (final generation in added) {
+              final saved = generation.remove('npu_execution');
+              expect(
+                inspectPlacement(
+                  extendedManifest,
+                  extendedCases,
+                  null,
+                )['verified'],
+                false,
+              );
+              generation['npu_execution'] = {
+                'before': [1, 0, 0, 0, 0, 0, 0],
+                'after': [1, 0, 0, 0, 0, 0, 1],
+              };
+              expect(
+                inspectPlacement(
+                  extendedManifest,
+                  extendedCases,
+                  null,
+                )['verified'],
+                false,
+              );
+              generation['npu_execution'] = saved;
+            }
+          }
           expect(
             inspectPlacement(manifest, cases, null)['proven_generations'],
             (native ? 11 : 14) +

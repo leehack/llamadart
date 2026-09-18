@@ -45,7 +45,9 @@ Map<String, dynamic> inspectPlacement(
         .where(
           (id) =>
               !['C10.stop', 'C12.guards'].contains(id) ||
-              (schema == 2 && version == 3 && !parsed.nativeReference),
+              (schema == 2 &&
+                  [3, 4].contains(version) &&
+                  !parsed.nativeReference),
         )
         .toList();
   } catch (_) {
@@ -72,7 +74,7 @@ Map<String, dynamic> inspectPlacement(
   }
   final expectedIds = selected
       .where(
-        (id) => const [
+        (id) => [
           'C01.load',
           'C09.reload',
           'C12.recovery',
@@ -228,7 +230,7 @@ Map<String, dynamic> _inspectNpu(
             (lock['sha256'] == null || value['sha256'] == lock['sha256']);
       });
   final expected = selected.where(
-    (id) => const [
+    (id) => [
       'C03.raw',
       'C04.hello',
       'C04.arithmetic',
@@ -247,6 +249,11 @@ Map<String, dynamic> _inspectNpu(
       'C09.reload.second',
       'C10.stop',
       'C12.guards',
+      if ((manifest['catalog'] as Map?)?['version'] == 4) ...[
+        'C02.generate',
+        'C05.thinking',
+        'C07.tools',
+      ],
     ].contains(id),
   );
   final records = {for (final record in cases) record['case_id']: record};
@@ -267,6 +274,26 @@ Map<String, dynamic> _inspectNpu(
       ],
       'C10.stop' => [record['control'], record['stopped'], record['recovery']],
       'C12.guards' => [record['recovery']],
+      'C05.thinking' => [
+        for (var i = 0; i < 2; i++)
+          record['trials'] is List && (record['trials'] as List).length > i
+              ? (record['trials'] as List)[i]
+              : null,
+      ],
+      'C07.tools' => [
+        for (var i = 0; i < 3; i++) ...[
+          record['trials'] is List && (record['trials'] as List).length > i
+              ? (record['trials'] as List)[i]
+              : null,
+          if (i < 2)
+            record['trials'] is List &&
+                    (record['trials'] as List).length > i &&
+                    (record['trials'] as List)[i] is Map
+                ? ((record['trials'] as List)[i] as Map)['tool_result_followup']
+                : null,
+        ],
+        record['recovery'],
+      ],
       _ => [record],
     };
     for (final generation in generations) {

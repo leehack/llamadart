@@ -32,6 +32,9 @@ abstract interface class ValidationEngine {
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
   });
 }
 
@@ -107,6 +110,9 @@ class PublicValidationEngine implements ValidationEngine {
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
   }) async {
     final text = StringBuffer();
     final thinking = StringBuffer();
@@ -156,7 +162,9 @@ class PublicValidationEngine implements ValidationEngine {
                 ),
               ],
           params: params,
-          enableThinking: profile.enableThinking,
+          enableThinking: enableThinking ?? profile.enableThinking,
+          tools: tools,
+          toolChoice: toolChoice,
         )) {
           chunks++;
           for (final choice in chunk.choices) {
@@ -210,7 +218,9 @@ class PublicValidationEngine implements ValidationEngine {
       if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
       'max_tokens': params.maxTokens,
       'stop_sequences': params.stopSequences,
-      'enable_thinking': profile.enableThinking,
+      'enable_thinking': enableThinking ?? profile.enableThinking,
+      'tools': tools?.map((tool) => tool.toJson()).toList(),
+      'tool_choice': toolChoice?.name,
       if (npuBefore != null && npuAfter != null)
         'npu_execution': npuGenerationEvidence(npuBefore, npuAfter),
       'content': text.toString(),
@@ -278,6 +288,7 @@ class ValidationRunner {
   bool _closed = false;
   bool _poisoned = false;
   bool _settled = true;
+  String? _operationPhase;
 
   /// Request cancellation from the UI or host without marking success.
   void cancel() {
@@ -337,6 +348,7 @@ class ValidationRunner {
           'sequence': _sequence++,
         });
         final watch = Stopwatch()..start();
+        _operationPhase = id;
         try {
           _settled = false;
           final pending = _runCase(
@@ -357,10 +369,13 @@ class ValidationRunner {
           await _record(id, 'ERROR', {
             'reason': 'case_timeout',
             'timeout_ms': caseTimeout.inMilliseconds,
+            'operation_phase': _operationPhase,
+            'elapsed_ms': watch.elapsedMicroseconds / 1000,
           });
         } catch (error) {
           await _record(id, 'ERROR', {
             'reason': 'runtime_exception',
+            'operation_phase': _operationPhase,
             'error_type': error.runtimeType.toString(),
             'message': redactDiagnostic('$error'),
           });
@@ -583,15 +598,253 @@ class ValidationRunner {
     };
   }
 
+  Future<Map<String, dynamic>> _tools() async {
+    final fixture = profile.fixtures['tools'] as Map;
+    final function = (fixture['tool'] as Map)['function'] as Map;
+    final tool = ToolDefinition(
+      name: function['name'] as String,
+      description: function['description'] as String,
+      parameters: [ToolParam.string('city', required: true)],
+      handler: (_) async => fixture['response'],
+    );
+    if (canonicalJson(tool.toJson()) != canonicalJson(fixture['tool'])) {
+      throw StateError(
+        'Tool fixture schema does not match the public tool definition',
+      );
+    }
+    final trials = <Map<String, dynamic>>[];
+    var passed = true;
+    for (final mode in [
+      ToolChoice.auto,
+      ToolChoice.required,
+      ToolChoice.none,
+    ]) {
+      final output = await _checked(
+        () => engine.generate(
+          fixture['prompt'] as String,
+          profile,
+          tools: [tool],
+          toolChoice: mode,
+          enableThinking: false,
+          maxTokens: 128,
+        ),
+      );
+      final deltas = output['tool_call_deltas'] as List;
+      final name = StringBuffer();
+      final arguments = StringBuffer();
+      String? callId;
+      var valid = true;
+      for (final delta in deltas.cast<Map>()) {
+        if (delta['index'] != 0) valid = false;
+        if (delta['id'] != null) {
+          if (callId != null && callId != delta['id']) valid = false;
+          callId = delta['id'] as String;
+        }
+        final fn = delta['function'] as Map?;
+        name.write(fn?['name'] ?? '');
+        arguments.write(fn?['arguments'] ?? '');
+      }
+      Object? decoded;
+      if (deltas.isNotEmpty) {
+        try {
+          decoded = jsonDecode(arguments.toString());
+        } on FormatException {
+          valid = false;
+        }
+      }
+      final expectedFinish = mode == ToolChoice.none ? 'stop' : 'tool_calls';
+      final modePassed =
+          canonicalJson(output['finish_reasons']) ==
+              canonicalJson([expectedFinish]) &&
+          output['tool_choice'] == mode.name &&
+          output['enable_thinking'] == false &&
+          canonicalJson(output['tools']) == canonicalJson([tool.toJson()]) &&
+          output['stream_completed'] == true &&
+          output['completion_order_valid'] == true &&
+          (mode == ToolChoice.none
+              ? deltas.isEmpty &&
+                    (output['content'] as String).trim().isNotEmpty
+              : valid &&
+                    deltas.isNotEmpty &&
+                    name.toString() == tool.name &&
+                    canonicalJson(decoded) ==
+                        canonicalJson(fixture['expected_arguments']));
+      passed = passed && modePassed;
+      Map<String, dynamic>? followup;
+      if (mode != ToolChoice.none && modePassed) {
+        final response = await tool.invoke(
+          Map<String, dynamic>.from(decoded as Map),
+        );
+        final prompt =
+            'What is the temperature_celsius from the tool result? Reply with only the number.';
+        final answer = await _checked(
+          () => engine.generate(
+            prompt,
+            profile,
+            enableThinking: false,
+            tools: [tool],
+            toolChoice: ToolChoice.none,
+            history: [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: fixture['prompt'] as String,
+              ),
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.assistant,
+                content: [
+                  LlamaToolCallContent(
+                    id: callId,
+                    name: tool.name,
+                    arguments: Map<String, dynamic>.from(decoded as Map),
+                    rawJson: arguments.toString(),
+                  ),
+                ],
+              ),
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: callId,
+                    name: tool.name,
+                    result: response,
+                  ),
+                ],
+              ),
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
+            ],
+          ),
+        );
+        passed =
+            passed &&
+            (answer['content'] as String).trim() ==
+                '${(fixture['response'] as Map)['temperature_celsius']}' &&
+            (answer['tool_call_deltas'] as List).isEmpty &&
+            answer['tool_choice'] == 'none' &&
+            canonicalJson(answer['finish_reasons']) ==
+                canonicalJson(['stop']) &&
+            answer['stream_completed'] == true &&
+            answer['completion_order_valid'] == true;
+        followup = answer;
+      }
+      trials.add({
+        ...output,
+        'tool_result_followup': ?followup,
+        'mode_passed': modePassed,
+        'reconstructed_name': name.toString(),
+        'reconstructed_arguments': decoded,
+      });
+    }
+    final recovery = await _short();
+    return {
+      'trials': trials,
+      'recovery': recovery,
+      'status':
+          passed &&
+              RegExp(
+                profile.fixtureText('hello', 'regex'),
+                caseSensitive: false,
+              ).hasMatch(recovery['content'] as String) &&
+              recovery['stream_completed'] == true &&
+              recovery['completion_order_valid'] == true &&
+              recovery['tools'] == null &&
+              recovery['tool_choice'] == null &&
+              (recovery['tool_call_deltas'] as List).isEmpty &&
+              (profile.enableThinking || recovery['thinking'] == '') &&
+              recovery['enable_thinking'] == profile.enableThinking &&
+              canonicalJson(recovery['finish_reasons']) ==
+                  canonicalJson(['stop'])
+          ? 'PASS'
+          : 'FAIL',
+    };
+  }
+
   Future<Map<String, dynamic>> _runCase(String id, String location) async {
+    if (profile.nativeReference &&
+        ['C02.generate', 'C05.thinking', 'C07.tools'].contains(id)) {
+      return {
+        'status': 'NOT_RUN',
+        'reason': 'Requires public chat feature controls',
+      };
+    }
     switch (id) {
+      case 'C02.generate':
+        final output = await _checked(
+          () => engine.generate(
+            profile.fixtureText('unicode_generation', 'prompt'),
+            profile,
+            enableThinking: false,
+          ),
+        );
+        final expected = profile.fixtureText('unicode_generation', 'expected');
+        return {
+          ...output,
+          'expected': expected,
+          'status':
+              output['content'] == expected &&
+                  output['thinking'] == '' &&
+                  output['enable_thinking'] == false &&
+                  output['stream_completed'] == true &&
+                  output['completion_order_valid'] == true
+              ? 'PASS'
+              : 'FAIL',
+        };
+      case 'C05.thinking':
+        final prompt = profile.fixtureText('arithmetic', 'prompt');
+        final trials = <Map<String, dynamic>>[];
+        for (final enabled in [true, false]) {
+          trials.add(
+            await _checked(
+              () => engine.generate(
+                prompt,
+                profile,
+                enableThinking: enabled,
+                maxTokens: 512,
+              ),
+            ),
+          );
+        }
+        final expected = RegExp(profile.fixtureText('arithmetic', 'regex'));
+        return {
+          'trials': trials,
+          'status':
+              trials.every(
+                    (trial) =>
+                        expected.hasMatch(
+                          (trial['content'] as String).trim(),
+                        ) &&
+                        trial['stream_completed'] == true &&
+                        trial['completion_order_valid'] == true,
+                  ) &&
+                  trials[0]['enable_thinking'] == true &&
+                  (trials[0]['thinking'] as String).trim().isNotEmpty &&
+                  trials[1]['enable_thinking'] == false &&
+                  trials[1]['thinking'] == ''
+              ? 'PASS'
+              : 'FAIL',
+        };
+      case 'C07.tools':
+        return _tools();
       case 'C01.load':
+        _operationPhase = 'public_load';
         await _checked(() => engine.load(location, profile));
-        return _withDiagnostics({});
+        return _withDiagnostics({
+          'load_scope': 'public_load_and_readiness',
+          'native_initialization_proven': false,
+          'initialization_note':
+              'Public readiness does not prove eager native initialization; first use may include deferred initialization.',
+        });
       case 'C02.unicode':
         final text = profile.fixtureText('unicode', 'input');
+        _operationPhase = profile.runtime == 'litert'
+            ? 'tokenize_including_possible_deferred_initialization'
+            : 'tokenize';
+        final tokenizeWatch = Stopwatch()..start();
         final tokens = await _checked(() => engine.tokenize(text));
+        tokenizeWatch.stop();
+        _operationPhase = 'detokenize';
+        final detokenizeWatch = Stopwatch()..start();
         final decoded = await _checked(() => engine.detokenize(tokens));
+        detokenizeWatch.stop();
         final prefix = profile.fixtureText('unicode', 'expected_prefix');
         final expected = '$prefix$text';
         return {
@@ -600,6 +853,11 @@ class ValidationRunner {
           'decoded': decoded,
           'expected': expected,
           'tokenizer_prefix': prefix,
+          'tokenize_call_ms': tokenizeWatch.elapsedMicroseconds / 1000,
+          'detokenize_call_ms': detokenizeWatch.elapsedMicroseconds / 1000,
+          'tokenize_timing_scope': profile.runtime == 'litert'
+              ? 'public_call_including_possible_deferred_initialization'
+              : 'public_call',
           'status': decoded == expected ? 'PASS' : 'FAIL',
         };
       case 'C03.raw':
