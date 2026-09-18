@@ -79,7 +79,7 @@ jobs:
             echo "app_url=$APP_URL"
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: ${{ github.event.action != 'closed' }}
         with:
           ref: ${{ github.event.pull_request.head.sha }}
