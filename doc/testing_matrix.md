@@ -425,3 +425,23 @@ Logs and process results go to `.dart_tool/litert_lm_lifecycle`, or
 `LITERT_LM_LIFECYCLE_LOG_DIR`. Record source commit, model hash/revision, runtime
 artifact identity, requested backend, and device with these logs. A GPU request
 alone does not prove accelerator placement.
+
+### Native GGUF stop sequences
+
+`dart test -p vm test/integration/stop_sequences_test.dart` uses the small test
+GGUF to cover ordinary and speculative stop handling, Unicode, token boundaries,
+completion, cancellation, and subsequent generation. Ordinary tests constrain
+output with grammar; speculative tests use deterministic unrestricted controls
+because grammar sampling is unsupported there, and assert actual draft acceptance.
+
+Use a compliant chat model (Gemma 4 E2B or Qwen3.5 0.8B) for the unforced public
+chat fixture; the control must emit `alpha cedar17 omega` and caller stop
+`cedar17` must leave exactly `alpha `, under single-piece and default batching:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario gguf-stop-sequences \
+  --model-path /path/to/chat.gguf --backend cpu
+```
+
+Repeat with `--backend metal` on macOS when available. Record the source commit,
+native runtime tag, printed model SHA-256, and native offload logs with results.

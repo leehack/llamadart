@@ -23,6 +23,7 @@ import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
 import 'load_param_helpers.dart';
+import 'stop_sequence_buffer.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 
@@ -5399,7 +5400,7 @@ class LlamaCppService {
   ) async* {
     final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
     int currentPos = startPos;
-    final accumulatedBytes = <int>[];
+    final stopBuffer = StopSequenceBuffer(stopSequences);
     final evalStopwatch = Stopwatch()..start();
     var sampleMicros = 0;
     var evalMicros = 0;
@@ -5429,17 +5430,10 @@ class LlamaCppService {
 
       if (n > 0) {
         final bytes = pieceBuf.asTypedList(n).toList();
-        yield bytes;
         generatedTokens++;
-
-        if (stopSequences.isNotEmpty) {
-          accumulatedBytes.addAll(bytes);
-          if (accumulatedBytes.length > 64) {
-            accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
-          }
-          final text = utf8.decode(accumulatedBytes, allowMalformed: true);
-          if (stopSequences.any((s) => text.endsWith(s))) break;
-        }
+        final visible = stopBuffer.add(bytes);
+        if (visible.isNotEmpty) yield visible;
+        if (stopBuffer.isStopped) break;
       }
 
       batch.n_tokens = 1;
@@ -5455,6 +5449,9 @@ class LlamaCppService {
       evalMicros += evalTick.elapsedMicroseconds;
       if (decodeStatus != 0) break;
     }
+
+    final remaining = stopBuffer.finish();
+    if (remaining.isNotEmpty) yield remaining;
 
     evalStopwatch.stop();
     ctx.lastPerfEvalMs = evalMicros / 1000.0;
@@ -5491,7 +5488,7 @@ class LlamaCppService {
 
     int currentPos = startPos;
     int? pendingSampledToken;
-    final accumulatedBytes = <int>[];
+    final stopBuffer = StopSequenceBuffer(stopSequences);
     final evalStopwatch = Stopwatch()..start();
     var sampleMicros = 0;
     var evalMicros = 0;
@@ -5536,17 +5533,9 @@ class LlamaCppService {
 
           if (n > 0) {
             final bytes = pieceBuf.asTypedList(n).toList();
-            yield bytes;
-            if (stopSequences.isNotEmpty) {
-              accumulatedBytes.addAll(bytes);
-              if (accumulatedBytes.length > 64) {
-                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
-              }
-              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
-              if (stopSequences.any((s) => text.endsWith(s))) {
-                shouldStop = true;
-              }
-            }
+            final visible = stopBuffer.add(bytes);
+            if (visible.isNotEmpty) yield visible;
+            shouldStop = stopBuffer.isStopped;
           }
 
           if (shouldStop) {
@@ -5850,20 +5839,9 @@ class LlamaCppService {
 
             if (n > 0) {
               final bytes = pieceBuf.asTypedList(n).toList();
-              yield bytes;
-              if (stopSequences.isNotEmpty) {
-                accumulatedBytes.addAll(bytes);
-                if (accumulatedBytes.length > 64) {
-                  accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
-                }
-                final text = utf8.decode(
-                  accumulatedBytes,
-                  allowMalformed: true,
-                );
-                if (stopSequences.any((s) => text.endsWith(s))) {
-                  shouldStop = true;
-                }
-              }
+              final visible = stopBuffer.add(bytes);
+              if (visible.isNotEmpty) yield visible;
+              shouldStop = stopBuffer.isStopped;
             }
 
             if (shouldStop || generatedTokens >= params.maxTokens) {
@@ -5880,6 +5858,8 @@ class LlamaCppService {
           }
         }
       }
+      final remaining = stopBuffer.finish();
+      if (remaining.isNotEmpty) yield remaining;
     } finally {
       malloc.free(draftPtr);
       malloc.free(idxPtr);

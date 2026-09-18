@@ -35,6 +35,19 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'gguf-stop-sequences',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers: 'public GGUF caller stop suppression, batching, and recovery',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'gguf-stop-sequences --model-path <chat.gguf> --backend cpu',
+    useWhen:
+        'Native GGUF streaming or stop-sequence changes. Use a compliant '
+        'Gemma 4 or Qwen3.5 chat model; pair with the deterministic ordinary/'
+        'speculative test/integration/stop_sequences_test.dart suite.',
+  ),
+  TestMatrixRow(
     id: 'static-format-analyze',
     tier: 'essential',
     mode: 'CI + local',
