@@ -31,6 +31,7 @@ abstract interface class ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
   });
 }
 
@@ -105,6 +106,7 @@ class PublicValidationEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
   }) async {
     final text = StringBuffer();
     final thinking = StringBuffer();
@@ -119,6 +121,7 @@ class PublicValidationEngine implements ValidationEngine {
       maxTokens: maxTokens,
       streamBatchTokenThreshold: streamBatchTokens,
       streamBatchByteThreshold: streamBatchBytes,
+      stopSequences: stopSequences,
     );
     final npuBefore = npu?.snapshot();
     final watch = Stopwatch()..start();
@@ -206,6 +209,7 @@ class PublicValidationEngine implements ValidationEngine {
       'prompt': prompt,
       if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
       'max_tokens': params.maxTokens,
+      'stop_sequences': params.stopSequences,
       'enable_thinking': profile.enableThinking,
       if (npuBefore != null && npuAfter != null)
         'npu_execution': npuGenerationEvidence(npuBefore, npuAfter),
@@ -764,6 +768,67 @@ class ValidationRunner {
         };
       case 'C11.batching':
         return _batching();
+      case 'C10.stop':
+        if (profile.nativeReference || !profile.isChat) {
+          return {
+            'status': 'NOT_RUN',
+            'reason': 'Requires public chat generation',
+          };
+        }
+        final prompt = profile.fixtureText('stop', 'prompt');
+        final marker = profile.fixtureText('stop', 'marker');
+        final control = await _checked(() => engine.generate(prompt, profile));
+        final text = control['content'] as String;
+        final index = text.indexOf(marker);
+        final stopped = await _checked(
+          () => engine.generate(prompt, profile, stopSequences: [marker]),
+        );
+        final recovery = await _short();
+        return {
+          'control': control,
+          'stopped': stopped,
+          'recovery': recovery,
+          'stop_marker': marker,
+          'expected_prefix': index < 0 ? null : text.substring(0, index),
+          'status':
+              index > 0 &&
+                  marker.isNotEmpty &&
+                  stopped['content'] == text.substring(0, index) &&
+                  stopped['stream_completed'] == true &&
+                  stopped['completion_order_valid'] == true &&
+                  canonicalJson(stopped['stop_sequences']) ==
+                      canonicalJson([marker]) &&
+                  (recovery['content'] as String).trim().isNotEmpty
+              ? 'PASS'
+              : 'FAIL',
+        };
+      case 'C12.guards':
+        if (profile.nativeReference) {
+          return {
+            'status': 'NOT_RUN',
+            'reason': 'Native control bypasses public readiness guards',
+          };
+        }
+        await _checked(() => engine.unload());
+        String? rejected;
+        try {
+          await _short();
+        } on LlamaContextException catch (error) {
+          rejected = error.runtimeType.toString();
+        }
+        await _checked(() => engine.load(location, profile));
+        final recovery = await _short();
+        return _withDiagnostics({
+          'rejected_error_type': rejected,
+          'recovery': recovery,
+          'expected':
+              'typed unloaded-engine rejection followed by valid generation',
+          'status':
+              rejected != null &&
+                  (recovery['content'] as String).trim().isNotEmpty
+              ? 'PASS'
+              : 'FAIL',
+        });
       case 'C12.recovery':
         await _checked(() => engine.unload());
         String? errorType;

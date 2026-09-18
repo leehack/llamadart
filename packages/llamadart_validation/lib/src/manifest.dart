@@ -290,7 +290,9 @@ class ValidationProfile {
       'focus_features': focusFeatures,
       'fixtures': {
         for (final entry in fixtures.entries)
-          if (version != 1 || entry.key != 'batching') entry.key: entry.value,
+          if ((version != 1 || entry.key != 'batching') &&
+              (version >= 3 || entry.key != 'stop'))
+            entry.key: entry.value,
       },
       'cases': [
         for (final definition in validationCaseCatalog)

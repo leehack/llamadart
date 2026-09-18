@@ -7,6 +7,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:yaml/yaml.dart';
 import 'package:path/path.dart' as p;
@@ -29,6 +31,7 @@ class FakeProvider implements RemoteProvider {
   bool checkpointBeforeFailure = false;
   void Function(RemotePlan)? onStart;
   final List<String> calls = [];
+  final List<Object> statusErrors = [];
   Map<String, dynamic>? cleanupRemote;
   @override
   Future<Map<String, dynamic>> identify(
@@ -68,6 +71,7 @@ class FakeProvider implements RemoteProvider {
     Map<String, dynamic> remote,
   ) async {
     calls.add('status');
+    if (statusErrors.isNotEmpty) throw statusErrors.removeAt(0);
     return {
       'terminal': true,
       'state': 'FINISHED',
@@ -1014,14 +1018,20 @@ void main() {
     await expectLater(control.run(plan()), throwsStateError);
   });
   test(
-    'early checkpoint survives bootstrap failure and collects before cleanup',
+    'Firebase checkpoint survives bootstrap failure and collects after cleanup',
     () async {
       final provider = FakeProvider()
         ..uncertainStart = true
         ..checkpointBeforeFailure = true;
       final result = await controller(provider).run(plan());
       expect(provider.cleanupRemote?['matrix_id'], 'matrix-one');
-      expect(provider.calls, ['preflight', 'start', 'collect', 'cleanup']);
+      expect(provider.calls, [
+        'preflight',
+        'start',
+        'cleanup',
+        'status',
+        'collect',
+      ]);
       expect(result['qualified'], false);
       expect(result['cleanup'], 'VERIFIED');
     },
@@ -1029,10 +1039,115 @@ void main() {
   test('collection failure still cleans up and stays failed', () async {
     final provider = FakeProvider()..collectionFails = true;
     final result = await controller(provider).run(plan());
-    expect(provider.calls.last, 'cleanup');
+    expect(
+      provider.calls,
+      containsAllInOrder(['cleanup', 'status', 'collect']),
+    );
     expect(result['qualified'], false);
     expect(result['collection'], 'INCOMPLETE');
   });
+  test(
+    'transient status failures retry reads only and preserve safe evidence',
+    () async {
+      final provider = FakeProvider()
+        ..statusErrors.addAll([
+          const RemoteProviderFailure(RemoteFailureKind.http, httpStatus: 503),
+          const RemoteProviderFailure(RemoteFailureKind.transport),
+        ]);
+      final result = await controller(provider).run(plan());
+      expect(result['qualified'], true);
+      expect(provider.starts, 1);
+      expect(provider.calls.where((c) => c == 'status'), hasLength(3));
+      expect((result['poll_failures'] as List).first['http_status'], 503);
+      expect(result['error'], isNull);
+    },
+  );
+  test(
+    'permanent and exhausted poll failures clean up before final collection',
+    () async {
+      for (final errors in [
+        [const RemoteProviderFailure(RemoteFailureKind.http, httpStatus: 403)],
+        List.filled(3, const RemoteProviderFailure(RemoteFailureKind.timeout)),
+      ]) {
+        final provider = FakeProvider()..statusErrors.addAll(errors);
+        final result = await controller(
+          provider,
+        ).run(plan(id: 'qa-fail-${errors.length}'));
+        expect(provider.starts, 1);
+        expect(result['qualified'], false);
+        expect(result['cleanup'], 'VERIFIED');
+        expect(result['collection'], 'COMPLETE');
+        expect((result['poll_failures'] as List), hasLength(errors.length));
+        expect(
+          provider.calls,
+          containsAllInOrder(['cleanup', 'status', 'collect']),
+        );
+        expect(result['failure']['operation'], 'RUNNING');
+      }
+    },
+  );
+  test('poll retry cannot extend the original deadline', () async {
+    var time = now;
+    final provider = FakeProvider()
+      ..statusErrors.add(
+        const RemoteProviderFailure(RemoteFailureKind.timeout),
+      );
+    final control = RemoteController(
+      runs,
+      provider,
+      now: () => time,
+      delay: (_) async {
+        time = time.add(const Duration(hours: 1));
+      },
+      assess: (_, _) async => true,
+    );
+    final result = await control.run(plan());
+    expect(result['qualified'], false);
+    expect(provider.starts, 1);
+    expect(provider.calls.where((c) => c == 'status'), hasLength(2));
+    expect(result['failure']['error_type'], 'TimeoutException');
+  });
+  test(
+    'matrix errors exclude response and token secrets from diagnostics',
+    () async {
+      for (final status in [403, 429, 503]) {
+        final provider = GcloudProvider(
+          execute: (_, _, {directory, timeout}) async =>
+              const CommandResult(0, 'secret-token', ''),
+          createHttpClient: () => MockClient((request) async {
+            expect(request.headers['Authorization'], 'Bearer secret-token');
+            return http.Response('secret-response https://secret-url', status);
+          }),
+        );
+        try {
+          await provider.matrix(plan(), 'matrix-one');
+          fail('Expected classified error');
+        } on RemoteProviderFailure catch (error) {
+          expect(error.httpStatus, status);
+          expect(error.retryable, status != 403);
+          expect(jsonEncode(error.toJson()), isNot(contains('secret')));
+        }
+      }
+    },
+  );
+  test(
+    'provider refuses to collect a pre-terminal Firebase snapshot',
+    () async {
+      var transferred = false;
+      final provider = MatrixProvider(
+        {'state': 'PENDING'},
+        execute: (_, _, {directory, timeout}) async {
+          transferred = true;
+          return const CommandResult(0, '', '');
+        },
+      );
+      await expectLater(
+        provider.collect(plan(), {'matrix_id': 'matrix-one'}, scratch),
+        throwsStateError,
+      );
+      expect(transferred, false);
+    },
+  );
   test(
     'recovery never submits and cleanup failure blocks replacement',
     () async {

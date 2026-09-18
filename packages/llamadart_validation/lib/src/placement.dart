@@ -39,7 +39,15 @@ Map<String, dynamic> inspectPlacement(
         schema == 1 && parsed.selection == 'focused') {
       return result;
     }
-    selected = schema == 1 ? parsed.legacyCaseIds : parsed.caseIds;
+    final catalog = manifest['catalog'] as Map?;
+    final version = catalog?['version'] ?? 1;
+    selected = (schema == 1 ? parsed.legacyCaseIds : parsed.caseIds)
+        .where(
+          (id) =>
+              !['C10.stop', 'C12.guards'].contains(id) ||
+              (schema == 2 && version == 3 && !parsed.nativeReference),
+        )
+        .toList();
   } catch (_) {
     return result;
   }
@@ -58,6 +66,7 @@ Map<String, dynamic> inspectPlacement(
           'C09.reload',
           'C12.recovery',
           'C09.reload.second',
+          'C12.guards',
         ].contains(id),
       )
       .toList();
@@ -165,6 +174,8 @@ Map<String, dynamic> _inspectNpu(
       'B01.2',
       'B01.3',
       'C09.reload.second',
+      'C10.stop',
+      'C12.guards',
     ].contains(id),
   );
   final records = {for (final record in cases) record['case_id']: record};
@@ -177,9 +188,16 @@ Map<String, dynamic> _inspectNpu(
       valid = false;
       continue;
     }
-    final generations = id == 'C08.cancel'
-        ? [record['uncancelled_control'], record, record['recovery']]
-        : [record];
+    final generations = switch (id) {
+      'C08.cancel' => [
+        record['uncancelled_control'],
+        record,
+        record['recovery'],
+      ],
+      'C10.stop' => [record['control'], record['stopped'], record['recovery']],
+      'C12.guards' => [record['recovery']],
+      _ => [record],
+    };
     for (final generation in generations) {
       final evidence = generation is Map ? generation['npu_execution'] : null;
       final before = evidence is Map ? evidence['before'] : null;

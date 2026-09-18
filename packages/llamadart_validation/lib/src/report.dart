@@ -152,7 +152,9 @@ class ValidationReport {
       if (records.containsKey(id)) {
         problems.add('Duplicate terminal record: $id');
       }
-      if (!legacy && profile != null && const [1, 2].contains(catalogVersion)) {
+      if (!legacy &&
+          profile != null &&
+          const [1, 2, 3].contains(catalogVersion)) {
         if (event['case_version'] !=
                 validationCase(
                   id,
@@ -166,7 +168,7 @@ class ValidationReport {
         }
       }
       if (!legacy &&
-          const [1, 2].contains(catalogVersion) &&
+          const [1, 2, 3].contains(catalogVersion) &&
           !validationCase(
             id,
             catalogVersion: catalogVersion as int,

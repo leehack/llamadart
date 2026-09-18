@@ -84,7 +84,13 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
   }) {
+    if (stopSequences != null) {
+      throw LlamaUnsupportedException(
+        'Native reference has no public stop filter',
+      );
+    }
     if (streamBatchTokens != null || streamBatchBytes != null) {
       throw LlamaUnsupportedException(
         'Direct native control has no public worker batching',

@@ -66,12 +66,13 @@ void main() {
           if (native) data['execution_path'] = 'native_c_api';
           if (focused) {
             data['selection'] = 'focused';
-            data['focus_features'] = ['lifecycle'];
+            data['focus_features'] = ['lifecycle', 'streaming', 'guards'];
           }
           final target = data['npu_target'] as Map;
           final locks = target['libraries'] as Map;
           final manifest = <String, dynamic>{
             'schema_version': focused ? 2 : 1,
+            if (focused) 'catalog': {'version': 3},
             'profile': data,
             'accelerator_evidence_required': true,
             'environment': {'litert_tag': '0.17.0-3'},
@@ -122,6 +123,7 @@ void main() {
             'B01.1',
             'B01.2',
             'B01.3',
+            if (focused && !native) ...['C10.stop', 'C12.guards'],
             if (focused) 'C09.reload.second',
           ]) {
             Map<String, dynamic> generation() {
@@ -136,6 +138,18 @@ void main() {
               };
             }
 
+            if (id == 'C10.stop' || id == 'C12.guards') {
+              cases.add({
+                'case_id': id,
+                'status': 'PASS',
+                if (id == 'C10.stop') ...{
+                  'control': generation(),
+                  'stopped': generation(),
+                },
+                'recovery': generation(),
+              });
+              continue;
+            }
             final control = id == 'C08.cancel' ? generation() : null;
             final record = generation();
             cases.add({
@@ -151,7 +165,9 @@ void main() {
           expect(inspectPlacement(manifest, cases, null)['verified'], true);
           expect(
             inspectPlacement(manifest, cases, null)['proven_generations'],
-            (native ? 11 : 14) + (focused ? 1 : 0),
+            (native ? 11 : 14) +
+                (focused ? 1 : 0) +
+                (focused && !native ? 4 : 0),
           );
           for (final missing in cases.map((record) => record['case_id'])) {
             expect(
@@ -168,6 +184,21 @@ void main() {
             inspectPlacement(manifest, cases.sublist(1), null)['verified'],
             false,
           );
+          for (final record in cases.where(
+            (r) => ['C10.stop', 'C12.guards'].contains(r['case_id']),
+          )) {
+            for (final key in ['control', 'stopped', 'recovery']) {
+              if (record[key] is! Map) continue;
+              final generation = record[key] as Map;
+              final proof = generation.remove('npu_execution');
+              expect(
+                inspectPlacement(manifest, cases, null)['verified'],
+                false,
+                reason: '${record['case_id']} $key must prove NPU work',
+              );
+              generation['npu_execution'] = proof;
+            }
+          }
           final proof = cases.last.remove('npu_execution');
           expect(inspectPlacement(manifest, cases, null)['verified'], false);
           cases.last['npu_execution'] = proof;

@@ -225,6 +225,41 @@ class RemotePlan {
   }
 }
 
+/// Safe categories, never provider response bodies or credential-bearing URLs.
+enum RemoteFailureKind {
+  authentication,
+  http,
+  timeout,
+  transport,
+  invalidResponse,
+}
+
+/// A provider failure whose journal representation cannot contain secrets.
+class RemoteProviderFailure implements Exception {
+  const RemoteProviderFailure(this.kind, {this.httpStatus});
+  final RemoteFailureKind kind;
+  final int? httpStatus;
+
+  bool get retryable =>
+      kind == RemoteFailureKind.timeout ||
+      kind == RemoteFailureKind.transport ||
+      (kind == RemoteFailureKind.http &&
+          (httpStatus == 408 ||
+              httpStatus == 429 ||
+              (httpStatus != null && httpStatus! >= 500)));
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind.name,
+    if (httpStatus != null) 'http_status': httpStatus,
+  };
+}
+
+Map<String, dynamic> _safeFailure(Object error, String operation) => {
+  'operation': operation,
+  'error_type': error.runtimeType.toString(),
+  if (error is RemoteProviderFailure) ...error.toJson(),
+};
+
 /// Provider adapter boundary exercised with deterministic fake responses.
 abstract interface class RemoteProvider {
   Future<void> preflight(RemotePlan plan);
@@ -484,12 +519,37 @@ class RemoteController {
       state['phase'] = 'RUNNING';
       _save(plan.runId, state);
       final deadline = DateTime.parse(state['deadline'] as String);
+      var consecutivePollFailures = 0;
       while (true) {
         if (cancelled) throw StateError('Run cancelled by operator');
-        final result = await provider.status(
-          plan,
-          Map<String, dynamic>.from(state['remote'] as Map),
-        );
+        if (!now().isBefore(deadline)) {
+          throw TimeoutException('Remote run deadline exceeded');
+        }
+        final Map<String, dynamic> result;
+        try {
+          result = await provider.status(
+            plan,
+            Map<String, dynamic>.from(state['remote'] as Map),
+          );
+          consecutivePollFailures = 0;
+        } on RemoteProviderFailure catch (error) {
+          consecutivePollFailures++;
+          final failures =
+              state.putIfAbsent('poll_failures', () => <dynamic>[]) as List;
+          failures.add({
+            ..._safeFailure(error, 'status'),
+            'attempt': consecutivePollFailures,
+          });
+          if (failures.length > 16) failures.removeAt(0);
+          _save(plan.runId, state);
+          if (!error.retryable ||
+              consecutivePollFailures >= 3 ||
+              !now().isBefore(deadline)) {
+            rethrow;
+          }
+          await delay(Duration(seconds: consecutivePollFailures * 2));
+          continue;
+        }
         (state['remote'] as Map).addAll(result);
         _save(plan.runId, state);
         if (result['terminal'] == true) break;
@@ -507,13 +567,17 @@ class RemoteController {
       );
       state['collection'] = 'COMPLETE';
     } catch (error) {
+      state['failure'] = _safeFailure(error, state['phase'] as String);
       state['error'] =
-          'Remote operation failed (${error.runtimeType}); inspect bounded local diagnostics';
+          'Remote operation failed (${error.runtimeType}); inspect journal failure diagnostics';
       state['phase'] = started ? 'INTERRUPTED' : 'PREFLIGHT_FAILED';
       _save(plan.runId, state);
     } finally {
       if (started) {
-        if (state['collection'] != 'COMPLETE' &&
+        // GCE results must be retrieved before deleting its disk. Firebase
+        // artifacts remain available and must be collected after cancellation.
+        if (!plan.firebase &&
+            state['collection'] != 'COMPLETE' &&
             (state['remote'] as Map).isNotEmpty) {
           try {
             await provider.collect(
@@ -537,6 +601,34 @@ class RemoteController {
               : 'UNKNOWN';
         } catch (_) {
           state['cleanup'] = 'UNKNOWN';
+        }
+        if (plan.firebase &&
+            state['collection'] != 'COMPLETE' &&
+            (state['remote'] as Map).isNotEmpty) {
+          try {
+            final terminal = await provider.status(
+              plan,
+              Map<String, dynamic>.from(state['remote'] as Map),
+            );
+            (state['remote'] as Map).addAll(terminal);
+            if (terminal['terminal'] != true) {
+              throw StateError(
+                'Final Firebase artifacts are not available yet',
+              );
+            }
+            await provider.collect(
+              plan,
+              Map<String, dynamic>.from(state['remote'] as Map),
+              Directory(p.join(root.path, plan.runId, 'remote-results')),
+            );
+            state['collection'] = 'COMPLETE';
+          } catch (error) {
+            state['collection'] = 'INCOMPLETE';
+            state['collection_failure'] = _safeFailure(
+              error,
+              'collect_terminal',
+            );
+          }
         }
         await _finishAssessment(plan, state);
         _save(plan.runId, state);
@@ -683,9 +775,14 @@ class RemoteController {
 
 /// gcloud transport with explicit account/project, never global config changes.
 class GcloudProvider implements RemoteProvider {
-  GcloudProvider({this.execute = executeCommand, this.gcloud = 'gcloud'});
+  GcloudProvider({
+    this.execute = executeCommand,
+    this.gcloud = 'gcloud',
+    http.Client Function()? createHttpClient,
+  }) : createHttpClient = createHttpClient ?? http.Client.new;
   final CommandExecutor execute;
   final String gcloud;
+  final http.Client Function() createHttpClient;
 
   @override
   Future<Map<String, dynamic>> identify(
@@ -757,8 +854,10 @@ class GcloudProvider implements RemoteProvider {
       'print-access-token',
       '--account=${plan.account}',
     ]);
-    if (token.code != 0) throw StateError('Authentication unavailable');
-    final client = http.Client();
+    if (token.code != 0) {
+      throw const RemoteProviderFailure(RemoteFailureKind.authentication);
+    }
+    final client = createHttpClient();
     try {
       final url = Uri.parse(
         'https://testing.googleapis.com/v1/projects/${plan.project}/testMatrices/$id${cancel ? ':cancel' : ''}',
@@ -770,9 +869,24 @@ class GcloudProvider implements RemoteProvider {
                   : client.get(url, headers: headers))
               .timeout(const Duration(seconds: 45));
       if (response.statusCode != 200) {
-        throw StateError('Matrix API returned HTTP ${response.statusCode}');
+        throw RemoteProviderFailure(
+          RemoteFailureKind.http,
+          httpStatus: response.statusCode,
+        );
       }
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw const RemoteProviderFailure(RemoteFailureKind.invalidResponse);
+      }
+      return decoded;
+    } on TimeoutException {
+      throw const RemoteProviderFailure(RemoteFailureKind.timeout);
+    } on SocketException {
+      throw const RemoteProviderFailure(RemoteFailureKind.transport);
+    } on http.ClientException {
+      throw const RemoteProviderFailure(RemoteFailureKind.transport);
+    } on FormatException {
+      throw const RemoteProviderFailure(RemoteFailureKind.invalidResponse);
     } finally {
       client.close();
     }
@@ -984,6 +1098,14 @@ class GcloudProvider implements RemoteProvider {
       return;
     }
     final result = await matrix(plan, remote['matrix_id'] as String);
+    if (!const [
+      'FINISHED',
+      'ERROR',
+      'INVALID',
+      'CANCELLED',
+    ].contains(result['state'])) {
+      throw StateError('Firebase collection requires a terminal matrix');
+    }
     final uri =
         ((result['resultStorage'] as Map?)?['googleCloudStorage']
                 as Map?)?['gcsPath']

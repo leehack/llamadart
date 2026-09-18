@@ -36,7 +36,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Exact-head Linux/Windows/macOS CI builds and portable execution on each target; iOS signing remains local |
 | Cloud lifecycle | Firebase submission, retrieval and cleanup exercised; Firebase/GCE failure controls tested locally | Real GCE upload/run/retrieve/delete lifecycle when credit and a run are authorized |
 | Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
-| Critical feature packs | Release selection preserves missing obligations as NOT_RUN | Thinking, tools, stop sequences, remaining batching contracts, guards, multimodal, speech and embeddings |
+| Critical feature packs | Stop markers, unloaded-engine guards and batching/lifecycle controls execute; missing obligations remain NOT_RUN | Thinking, tools, Unicode generation, broader guards, multimodal, speech qualification and embeddings |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
 control below passes the strict history predicate; the LiteRT results remain failed.
@@ -159,8 +159,9 @@ The shared runner accepts three profile selections:
 - `release`: every current extended core obligation, including unfinished cases.
 
 For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
-adds C07 tools, C10 stop markers and C11 batching. C07 and C10 still record
-NOT_RUN; C11 executes only the qualified parity or rejection contracts below.
+adds C07 tools, C10 stop markers and C11 batching. C07 still records NOT_RUN;
+catalog 3 executes C10 control/stop/recovery, and C11 executes the parity or
+rejection contracts below.
 `tiny-gguf-lifecycle` is a runnable focused CPU profile: it adds
 `C09.reload.second` after the first reload, invalid-input recovery and benchmark.
 It is available in the QA app, portable bundles and manual build workflow:
@@ -1010,3 +1011,22 @@ any is missing; selecting a CUDA profile alone does not override Dart build-hook
 defaults. The GPU driver remains a host prerequisite, and a shipped CUDA module
 is not execution or placement evidence. Earlier 31867c10c CI bundles use the
 CPU/Vulkan defaults and must not be used for CUDA qualification.
+
+### Terminal Firebase recovery and release catalog 3
+
+Firebase polling retains safe failure categories and HTTP status codes without
+response bodies, authentication values or request URLs. Transient read failures
+retry at most three consecutive attempts under the original run deadline; the
+controller never retries submission. Interrupted runs stay unqualified. Failed
+Firebase runs cancel/verify terminal state before collecting final artifacts;
+pre-terminal snapshots cannot be labelled complete. GCE still collects before
+VM/disk deletion. An unknown cleanup state continues to block new submissions.
+
+Catalog 3 executes C10 stop-marker comparison and C12 unloaded-engine readiness
+rejection/reload recovery. Stop tests retain an unrestricted control, exact
+pre-marker output, forwarded stop configuration and subsequent-request recovery;
+a model that does not emit the control marker fails the oracle. Readiness tests
+require the public `LlamaContextException` contract. Direct native reference
+controls do not stand in for either public API case. Catalogs 1 and 2 retain
+these cases as unimplemented and cannot claim their execution. Thinking, tool
+calls and Unicode generation still require implementation/reference work.

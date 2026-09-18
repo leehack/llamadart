@@ -28,6 +28,9 @@ class FakeEngine implements ValidationEngine {
   var disposed = false;
   var cancelled = false;
   var loads = 0;
+  var ready = false;
+  bool ignoresReadiness = false;
+  bool ignoresStop = false;
   int? failOnLoad;
   var disposeCalls = 0;
   var generated = 0;
@@ -47,12 +50,16 @@ class FakeEngine implements ValidationEngine {
       throw LlamaModelException('missing model');
     }
     loads++;
+    ready = true;
     if (loads == failOnLoad) throw LlamaModelException('reload failed');
     if (loads == 2) await pauseReload?.future;
   }
 
   @override
-  Future<void> unload() async {}
+  Future<void> unload() async {
+    ready = false;
+  }
+
   @override
   Future<void> dispose() async {
     disposeCalls++;
@@ -86,14 +93,17 @@ class FakeEngine implements ValidationEngine {
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
   }) async {
     generated++;
+    if (!ready && !ignoresReadiness) throw LlamaContextException('Not loaded');
     final adjusted = streamBatchTokens != null || streamBatchBytes != null;
     requests.add({
       'prompt': prompt,
       'history': history,
       'batch_tokens': streamBatchTokens,
       'batch_bytes': streamBatchBytes,
+      'stop_sequences': stopSequences,
     });
     if (adjusted && rejectBatching) {
       _batchingSeen = true;
@@ -108,9 +118,13 @@ class FakeEngine implements ValidationEngine {
     if (adjusted) _batchingSeen = true;
     if (timeout) return Completer<Map<String, dynamic>>().future;
     return {
-      'content':
-          (adjusted && batchingFault == 'content') ||
-              (recovering && batchingFault == 'recovery')
+      'stop_sequences': stopSequences ?? const <String>[],
+      'content': prompt.contains('alpha cedar17 omega')
+          ? stopSequences != null && !ignoresStop
+                ? 'alpha '
+                : 'alpha cedar17 omega'
+          : (adjusted && batchingFault == 'content') ||
+                (recovering && batchingFault == 'recovery')
           ? 'corrupted'
           : history != null || prompt.contains('The secret code is cedar17.')
           ? wrongHistory
@@ -247,7 +261,7 @@ void main() {
         result.report.cases
             .where((c) => c['status'] == 'NOT_RUN')
             .map((c) => c['case_id']),
-        ['C07.tools', 'C10.stop'],
+        ['C07.tools'],
       );
       expect(result.report.problems, isEmpty);
     },
@@ -389,6 +403,14 @@ void main() {
         selected.caseFixtures('C11.batching', catalogVersion: 1),
       );
       batching['status'] = 'NOT_RUN';
+      final stop = events.singleWhere(
+        (e) => e['type'] == 'case' && e['case_id'] == 'C10.stop',
+      );
+      stop['case_version'] = 1;
+      stop['fixture_hash'] = jsonHash(
+        selected.caseFixtures('C10.stop', catalogVersion: 1),
+      );
+      stop['status'] = 'NOT_RUN';
       final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
       expect(report.problems, isEmpty);
       expect(report.cases.last['status'], 'NOT_RUN');
@@ -402,10 +424,119 @@ void main() {
     },
   );
 
+  test(
+    'stop marker requires the exact prefix, forwarded control and recovery',
+    () async {
+      for (final ignored in [false, true]) {
+        final engine = FakeEngine()..ignoresStop = ignored;
+        final result = await run(engine, selected: focused(['streaming']));
+        final record = result.report.cases.singleWhere(
+          (c) => c['case_id'] == 'C10.stop',
+        );
+        expect(record['status'], ignored ? 'FAIL' : 'PASS');
+        expect(record['expected_prefix'], 'alpha ');
+        expect(
+          engine.requests.any(
+            (r) =>
+                r['stop_sequences'] is List &&
+                (r['stop_sequences'] as List).contains('cedar17'),
+          ),
+          true,
+        );
+        expect(record['recovery']['content'], isNotEmpty);
+      }
+    },
+  );
+  test(
+    'readiness guard cannot pass when unloaded generation is accepted',
+    () async {
+      for (final ignored in [false, true]) {
+        final result = await run(
+          FakeEngine()..ignoresReadiness = ignored,
+          selected: focused(['guards']),
+        );
+        final record = result.report.cases.singleWhere(
+          (c) => c['case_id'] == 'C12.guards',
+        );
+        expect(record['status'], ignored ? 'FAIL' : 'PASS');
+        expect(record['recovery']['content'], isNotEmpty);
+        expect(result.report.cleanupPassed, true);
+      }
+    },
+  );
+  test(
+    'catalog two cannot claim new stop and readiness guard execution',
+    () async {
+      final selected = profile(release: true);
+      final result = await run(FakeEngine(), selected: selected);
+      final events = result.events;
+      events.first['catalog'] = selected.catalogForVersion(2);
+      events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+      expect(
+        (events.first['catalog']['fixtures'] as Map).containsKey('stop'),
+        false,
+      );
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(report.qualified, false);
+      expect(
+        report.problems,
+        contains(
+          'Unimplemented catalog case cannot claim an executed result: C10.stop',
+        ),
+      );
+      expect(
+        report.problems,
+        contains(
+          'Unimplemented catalog case cannot claim an executed result: C12.guards',
+        ),
+      );
+    },
+  );
+
   test('batching feature cannot downgrade to old catalog', () async {
     final selected = focused(['batching']);
     expect(() => selected.catalogForVersion(1), throwsFormatException);
   });
+
+  test(
+    'catalog three requires guard reload placement without changing old logs',
+    () async {
+      final data =
+          jsonDecode(
+                File('assets/profiles/chat-gguf-metal.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      data['selection'] = 'focused';
+      data['focus_features'] = ['guards'];
+      final selected = ValidationProfile.fromJson(data);
+      final engine = FakeEngine()..backendName = 'Metal';
+      final result = await run(engine, selected: selected);
+      final cases = result.report.cases;
+      const load =
+          'load_tensors: offloaded 7/7 layers to GPU\nMTL0 compute buffer size = 64.0 MiB\n';
+      final manifest = result.events.first;
+      expect(engine.loads, 4);
+      expect(inspectPlacement(manifest, cases, load * 4)['verified'], true);
+      expect(inspectPlacement(manifest, cases, load * 3)['verified'], false);
+      expect(
+        inspectPlacement(
+          manifest,
+          cases.where((c) => c['case_id'] != 'C12.guards').toList(),
+          load * 4,
+        )['verified'],
+        false,
+      );
+      final old = {...manifest, 'catalog': selected.catalogForVersion(2)};
+      expect(
+        inspectPlacement(
+          old,
+          cases.where((c) => c['case_id'] != 'C12.guards').toList(),
+          load * 3,
+        )['verified'],
+        true,
+      );
+    },
+  );
 
   test(
     'invalid feature selections and fixture overrides fail before execution',

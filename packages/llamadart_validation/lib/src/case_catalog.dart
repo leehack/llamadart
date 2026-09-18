@@ -1,5 +1,5 @@
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 2;
+const int validationCatalogVersion = 3;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -68,6 +68,10 @@ const validationFixtures = <String, Map<String, Object>>{
     'deadline_ms': 5000,
   },
   'batching': {'token_threshold': 1, 'byte_threshold': 1},
+  'stop': {
+    'prompt': 'Reply with exactly: alpha cedar17 omega',
+    'marker': 'cedar17',
+  },
   'limit': {'max_tokens': 1, 'expected_native_decode_tokens': 1},
   'benchmark': {
     'chat_prompt': 'List the numbers from one to twenty in English.',
@@ -164,14 +168,24 @@ const extendedValidationCases = [
     ['tools'],
     implemented: false,
   ),
-  ValidationCaseDefinition('C10.stop', ['streaming'], [], implemented: false),
+  ValidationCaseDefinition(
+    'C10.stop',
+    ['streaming'],
+    ['stop', 'hello', 'raw'],
+    version: 2,
+  ),
   ValidationCaseDefinition(
     'C11.batching',
     ['streaming', 'batching'],
     ['raw', 'hello', 'batching'],
     version: 2,
   ),
-  ValidationCaseDefinition('C12.guards', ['guards'], [], implemented: false),
+  ValidationCaseDefinition(
+    'C12.guards',
+    ['guards'],
+    ['hello', 'raw'],
+    version: 2,
+  ),
   ValidationCaseDefinition(
     'C02.generate',
     ['unicode'],
@@ -196,8 +210,16 @@ ValidationCaseDefinition validationCase(
   String id, {
   int catalogVersion = validationCatalogVersion,
 }) {
-  if (catalogVersion != 1 && catalogVersion != validationCatalogVersion) {
+  if (![1, 2, validationCatalogVersion].contains(catalogVersion)) {
     throw const FormatException('Unsupported catalog version');
+  }
+  if (catalogVersion < 3 && (id == 'C10.stop' || id == 'C12.guards')) {
+    return ValidationCaseDefinition(
+      id,
+      [id == 'C10.stop' ? 'streaming' : 'guards'],
+      [],
+      implemented: false,
+    );
   }
   if (catalogVersion == 1 && id == 'C11.batching') {
     return const ValidationCaseDefinition(

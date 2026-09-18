@@ -91,6 +91,23 @@ void main() {
   );
 
   test(
+    'public adapter preserves the unloaded engine context rejection',
+    () async {
+      final adapter = PublicValidationEngine();
+      try {
+        for (final raw in [false, true]) {
+          await expectLater(
+            adapter.generate('hello', profile, raw: raw),
+            throwsA(isA<LlamaContextException>()),
+          );
+        }
+      } finally {
+        await adapter.dispose();
+      }
+    },
+  );
+
+  test(
     'public adapter forwards batching to both raw and chat generation',
     () async {
       final captured = CapturingEngine();
@@ -103,11 +120,14 @@ void main() {
           maxTokens: 17,
           streamBatchTokens: 1,
           streamBatchBytes: 1,
+          stopSequences: ['cedar17'],
         );
         final request = captured.requests.last;
         expect(request.streamBatchTokenThreshold, 1);
         expect(request.streamBatchByteThreshold, 1);
         expect(request.maxTokens, 17);
+        expect(request.stopSequences, ['cedar17']);
+        expect(result['stop_sequences'], ['cedar17']);
         expect(request.temp, 0);
         expect(request.seed, 1);
         expect(result['content'], 'Montréal 👋');
@@ -122,6 +142,7 @@ void main() {
         await adapter.generate('prompt', profile, raw: raw);
         expect(captured.requests.last.streamBatchTokenThreshold, 8);
         expect(captured.requests.last.streamBatchByteThreshold, 512);
+        expect(captured.requests.last.stopSequences, isEmpty);
       }
     },
   );
