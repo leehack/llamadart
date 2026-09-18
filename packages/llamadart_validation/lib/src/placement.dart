@@ -59,6 +59,17 @@ Map<String, dynamic> inspectPlacement(
       !['cuda', 'metal', 'vulkan'].contains(backend)) {
     return result;
   }
+  if (backend == 'vulkan' &&
+      RegExp(
+        r'llvmpipe|lavapipe|swiftshader|microsoft basic render driver|software rasterizer',
+        caseSensitive: false,
+      ).hasMatch(log)) {
+    return {
+      ...result,
+      'reason':
+          'software Vulkan device present; physical accelerator execution is unproven',
+    };
+  }
   final expectedIds = selected
       .where(
         (id) => const [
@@ -96,7 +107,37 @@ Map<String, dynamic> inspectPlacement(
   final buffers = RegExp(
     '(?:$prefix) compute buffer size =\\s*([0-9.]+) (?:MiB|MB)',
   ).allMatches(log).toList();
+  var deviceIdentityVerified = true;
+  if (backend == 'vulkan') {
+    final devices = <String, Set<String>>{};
+    for (final match in RegExp(
+      r'ggml_vulkan:\s*(\d+)\s*=\s*([^\r\n]+)',
+    ).allMatches(log)) {
+      devices.putIfAbsent(match[1]!, () => {}).add(match[2]!);
+    }
+    final selectedDevices = RegExp(
+      r'Vulkan(\d+) compute buffer size',
+    ).allMatches(log).map((match) => match[1]!).toSet();
+    final hardwareVendor = RegExp(
+      r'\b(NVIDIA|AMD|Radeon|Intel|Apple|Adreno|Mali|PowerVR|Immortalis|Xclipse|Qualcomm)\b',
+      caseSensitive: false,
+    );
+    final softwareDevice = RegExp(
+      r'\b(cpu|software|virtual)\b',
+      caseSensitive: false,
+    );
+    deviceIdentityVerified =
+        selectedDevices.isNotEmpty &&
+        selectedDevices.every((id) {
+          final names = devices[id];
+          return names != null &&
+              names.length == 1 &&
+              hardwareVendor.hasMatch(names.single) &&
+              !softwareDevice.hasMatch(names.single);
+        });
+  }
   final positive =
+      deviceIdentityVerified &&
       offloads.length == expectedLoads &&
       offloads.every(
         (m) => int.parse(m[1]!) > 0 && int.parse(m[1]!) <= int.parse(m[2]!),
@@ -108,6 +149,8 @@ Map<String, dynamic> inspectPlacement(
     'verified': positive,
     'reason': positive
         ? 'matching runtime diagnostics, positive native tensor offload and compute buffers for all $expectedLoads loads'
+        : !deviceIdentityVerified
+        ? 'Vulkan compute device identity is missing, contradictory or unrecognized as physical hardware'
         : 'native placement records incomplete or contradictory',
     'expected_loads': expectedLoads,
     'offload_records': offloads.map((m) => m[0]).toList(),

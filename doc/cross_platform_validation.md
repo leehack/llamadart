@@ -1026,6 +1026,14 @@ status. Follow it with `collect`, which refreshes terminal status again before
 retrieval. A failed recovery persists an incomplete, unqualified assessment;
 cancelled preparation-only runs cannot qualify from old artifacts.
 
+Vulkan offload and compute-buffer records do not establish physical GPU use when
+the log identifies a software device such as llvmpipe, lavapipe or SwiftShader.
+Those runs remain unverified, including mixed software/hardware inventories.
+Each Vulkan compute-buffer device also needs matching, unambiguous native
+discovery evidence identifying recognized GPU hardware; absent, conflicting or
+unknown device names fail closed. CUDA-ready VM images also need a Vulkan
+loader and a hardware ICD before they can qualify Vulkan or LiteRT WebGPU lanes.
+
 Catalog 3 executes C10 stop-marker comparison and C12 unloaded-engine readiness
 rejection/reload recovery. Stop tests retain an unrestricted control, exact
 pre-marker output, forwarded stop configuration and subsequent-request recovery;

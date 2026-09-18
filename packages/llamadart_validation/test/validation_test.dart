@@ -1050,6 +1050,61 @@ void main() {
     },
   );
 
+  test('software Vulkan cannot qualify despite positive offload records', () {
+    final profile =
+        jsonDecode(
+              File('assets/profiles/tiny-gguf-cpu.json').readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    profile['backend'] = 'vulkan';
+    final manifest = <String, dynamic>{'schema_version': 1, 'profile': profile};
+    final cases = [
+      for (final id in ['C01.load', 'C09.reload', 'C12.recovery'])
+        <String, dynamic>{
+          'case_id': id,
+          'status': 'PASS',
+          'diagnostics': {'backend_name': 'Vulkan0'},
+        },
+    ];
+    final allocations =
+        'load_tensors: offloaded 7/7 layers to GPU\n'
+            'Vulkan0 compute buffer size = 64.0 MiB\n' *
+        3;
+    final hardware = 'ggml_vulkan: 0 = NVIDIA L4\n$allocations';
+    expect(inspectPlacement(manifest, cases, hardware)['verified'], true);
+    for (final invalid in [
+      allocations,
+      'ggml_vulkan: 1 = NVIDIA L4\n$allocations',
+      'ggml_vulkan: 0 = unknown device\n$allocations',
+      'ggml_vulkan: 0 = Intel CPU\n$allocations',
+      '$hardware\nggml_vulkan: 0 = AMD Radeon',
+    ]) {
+      expect(inspectPlacement(manifest, cases, invalid)['verified'], false);
+    }
+    for (final device in [
+      'llvmpipe (LLVM 20.1.2, 256 bits)',
+      'Lavapipe',
+      'SwiftShader Device',
+      'Microsoft Basic Render Driver',
+      'Software Rasterizer',
+    ]) {
+      final result = inspectPlacement(
+        manifest,
+        cases,
+        'ggml_vulkan: 0 = $device\n$allocations',
+      );
+      expect(result['verified'], false, reason: device);
+      expect(result['reason'], contains('software Vulkan'));
+      // Mixed inventory cannot identify which physical device executed work.
+      expect(
+        inspectPlacement(manifest, cases, '$hardware\n$device')['verified'],
+        false,
+      );
+    }
+    profile['backend'] = 'cpu';
+    expect(inspectPlacement(manifest, cases, 'llvmpipe')['required'], false);
+  });
+
   for (final selection in ['focused', 'release']) {
     test('$selection GPU proof includes every selected reload', () {
       final data =
