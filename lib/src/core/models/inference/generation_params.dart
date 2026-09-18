@@ -620,7 +620,12 @@ class GenerationParams {
   /// If null, a seed based on the current time will be used.
   final int? seed;
 
-  /// List of strings that, if generated, will immediately stop the generation process.
+  /// Strings that end generation when matched, excluding the marker from output.
+  ///
+  /// Empty strings are ignored. Native GGUF matches across token boundaries and
+  /// inside token pieces; an unfinished prefix is emitted if generation ends
+  /// without a full match. Exact entries in [preservedTokens] remain available
+  /// to the native chat parser instead of acting as text stops.
   final List<String> stopSequences;
 
   /// GBNF grammar string for structured output (e.g., "root ::= \"hello\" | \"world\"").
