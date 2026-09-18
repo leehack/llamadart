@@ -660,6 +660,7 @@ class LlamaCppService {
   _MtmdApi? _mtmdFallbackApi;
   bool _reasoningBudgetApiLookupAttempted = false;
   _ReasoningBudgetApi? _reasoningBudgetApi;
+  final Map<String, int> _reasoningBudgetLoadFailures = <String, int>{};
   bool _speculativeApiLookupAttempted = false;
   _SpeculativeApi? _speculativeApi;
   bool _ttsApiLookupAttempted = false;
@@ -2740,7 +2741,10 @@ class LlamaCppService {
     }
   }
 
-  _ReasoningBudgetApi _resolveReasoningBudgetApi() {
+  _ReasoningBudgetApi _resolveReasoningBudgetApi({
+    List<String>? candidates,
+    DynamicLibrary Function(String)? open,
+  }) {
     final cached = _reasoningBudgetApi;
     if (cached != null) {
       return cached;
@@ -2751,16 +2755,25 @@ class LlamaCppService {
     }
     _reasoningBudgetApiLookupAttempted = true;
 
-    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+    for (final candidate
+        in candidates ?? _llamadartWrapperLibraryCandidates()) {
+      var stage = 'open';
       try {
-        final library = _openWrapperLibrary(candidate);
-        final api = _ReasoningBudgetApi.tryLoad(library);
-        if (api != null) {
-          _reasoningBudgetApi = api;
-          return api;
-        }
-      } catch (_) {
-        continue;
+        final library = (open ?? _openWrapperLibrary)(candidate);
+        stage = 'lookup';
+        final api = _ReasoningBudgetApi.load(library);
+        _reasoningBudgetApi = api;
+        _reasoningBudgetLoadFailures.clear();
+        return api;
+      } catch (error) {
+        final diagnostic = stage == 'lookup'
+            ? 'lookup: required export unavailable'
+            : _reasoningBudgetOpenFailure(error);
+        _reasoningBudgetLoadFailures.update(
+          diagnostic,
+          (count) => count + 1,
+          ifAbsent: () => 1,
+        );
       }
     }
 
@@ -2769,9 +2782,31 @@ class LlamaCppService {
 
   String _reasoningBudgetUnavailableMessage() {
     return 'llama.cpp thinking-budget control is unavailable in this native '
-        'runtime bundle (missing llama_dart_sampler_init_reasoning_budget). '
-        'Update to a libllamadart build that includes the reasoning-budget '
-        'wrapper.';
+        'runtime bundle (could not resolve '
+        'llama_dart_sampler_init_reasoning_budget). '
+        'Use the package-pinned reasoning-budget wrapper and ensure its sibling '
+        'DLLs and Microsoft runtime dependencies can load. '
+        'loaderDiagnostics=['
+        '${_reasoningBudgetLoadFailures.entries.map((entry) => '${entry.key} '
+            '(${entry.value} attempts)').join('; ')}]';
+  }
+
+  // Emit only a finite vocabulary: OS errors can contain credentials, signed
+  // URLs and arbitrary paths. Never retain the candidate or raw exception.
+  static String _reasoningBudgetOpenFailure(Object error) {
+    final message = error.toString();
+    final code = RegExp(
+      r'\(error code: (5|126|127|193|1114)\)',
+    ).firstMatch(message)?.group(1);
+    final reason = switch (code) {
+      '5' => 'access denied',
+      '126' => 'library or dependency not found',
+      '127' => 'dependency procedure not found',
+      '193' => 'invalid binary or architecture mismatch',
+      '1114' => 'DLL initialization failed',
+      _ => 'library or dependency could not be loaded',
+    };
+    return 'open: $reason${code == null ? '' : ' (Windows error $code)'}';
   }
 
   _SpeculativeApi _resolveSpeculativeApi() {
@@ -7961,18 +7996,14 @@ class _ReasoningBudgetApi {
     }
   }
 
-  static _ReasoningBudgetApi? tryLoad(DynamicLibrary library) {
-    try {
-      return _ReasoningBudgetApi(
-        init: library
-            .lookupFunction<
-              _LlamaDartReasoningBudgetInitNative,
-              _LlamaDartReasoningBudgetInitDart
-            >('llama_dart_sampler_init_reasoning_budget'),
-      );
-    } catch (_) {
-      return null;
-    }
+  static _ReasoningBudgetApi load(DynamicLibrary library) {
+    return _ReasoningBudgetApi(
+      init: library
+          .lookupFunction<
+            _LlamaDartReasoningBudgetInitNative,
+            _LlamaDartReasoningBudgetInitDart
+          >('llama_dart_sampler_init_reasoning_budget'),
+    );
   }
 }
 

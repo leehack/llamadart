@@ -17,6 +17,118 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  group('reasoning-budget resolver diagnostics', () {
+    Object? resolve(
+      LlamaCppService service,
+      List<String> candidates, {
+      DynamicLibrary Function(String)? open,
+    }) => _invokePrivateForTesting<Object?>(
+      service,
+      '_resolveReasoningBudgetApi',
+      const [],
+      {#candidates: candidates, #open: open},
+    );
+
+    String failure(void Function() action) {
+      try {
+        action();
+      } on LlamaUnsupportedException catch (error) {
+        return error.message;
+      }
+      fail('Expected the production resolver to reject an unavailable helper');
+    }
+
+    test('a real library without the export reports lookup, not open', () {
+      final systemLibrary = Platform.isWindows
+          ? 'kernel32.dll'
+          : Platform.isMacOS
+          ? '/usr/lib/libSystem.B.dylib'
+          : 'libc.so.6';
+      final service = LlamaCppService();
+      final message = failure(() => resolve(service, [systemLibrary]));
+      expect(message, contains('lookup: required export unavailable'));
+      expect(message, isNot(contains('open:')));
+      expect(message, contains('llama_dart_sampler_init_reasoning_budget'));
+      expect(message, isNot(contains(systemLibrary)));
+      // A cached failure must preserve the explanation without re-opening.
+      expect(
+        failure(
+          () => resolve(service, [], open: (_) => throw StateError('retry')),
+        ),
+        message,
+      );
+    });
+
+    test('an actual missing library reports an opening failure', () {
+      final directory = Directory.systemTemp.createTempSync('budget-loader-');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final candidate = path.join(directory.path, 'secret-token', 'absent.dll');
+      final message = failure(() => resolve(LlamaCppService(), [candidate]));
+      expect(message, contains('open:'));
+      expect(message, isNot(contains('lookup:')));
+      expect(message, isNot(contains(directory.path)));
+      expect(message, isNot(contains('secret-token')));
+    });
+
+    test(
+      'retains safe Windows causes and bounds repeated sensitive errors',
+      () {
+        for (final code in [5, 126, 127, 193, 1114]) {
+          final message = failure(
+            () => resolve(
+              LlamaCppService(),
+              List.filled(
+                1000,
+                'https://user:password@host/wrapper?token=secret',
+              ),
+              open: (_) => throw ArgumentError(
+                'Failed to load C:\\private\\secret\\wrapper.dll\n'
+                'https://user:password@host/?token=secret (error code: $code)',
+              ),
+            ),
+          );
+          expect(message, contains('Windows error $code'));
+          expect(message, contains('1000 attempts'));
+          expect(message.length, lessThan(700));
+          for (final secret in [
+            'private',
+            'secret',
+            'password',
+            'https:',
+            '\n',
+          ]) {
+            expect(message, isNot(contains(secret)));
+          }
+        }
+      },
+    );
+
+    test('continues after opening failure and caches the real wrapper API', () {
+      final service = LlamaCppService();
+      final wrapper = path.absolute(
+        '.dart_tool',
+        'lib',
+        Platform.isWindows
+            ? 'llamadart.dll'
+            : Platform.isMacOS
+            ? 'libllamadart.dylib'
+            : 'libllamadart.so',
+      );
+      final api = resolve(service, ['$wrapper.absent', wrapper]);
+      expect(api, isNotNull);
+      expect(
+        resolve(service, [], open: (_) => throw StateError('retry')),
+        same(api),
+      );
+      final message = _invokePrivateForTesting<String>(
+        service,
+        '_reasoningBudgetUnavailableMessage',
+        const [],
+      );
+      expect(message, contains('loaderDiagnostics=[]'));
+    });
+  });
+
   group('wrapper sibling dependency loading', () {
     final absolute = path.join(Directory.systemTemp.path, 'llamadart.dll');
     final handle = Pointer<Void>.fromAddress(123);
