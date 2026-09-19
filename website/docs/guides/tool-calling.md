@@ -47,6 +47,14 @@ final stream = engine.create(
 4. Append tool result message.
 5. Call `engine.create(...)` again for final assistant response.
 
+Qwen XML tool calls are validated against the tools supplied to `engine.create`.
+Schema-declared strings such as `"123"` retain their type. Unknown functions,
+unknown or duplicate parameters, missing required values, and invalid value
+types remain response content instead of producing callable tool deltas.
+Tool calls are emitted after final validation; malformed output is preserved
+through the existing rollback behavior. Direct schema-free template parsing
+retains its legacy behavior, so pass tool definitions when validating calls.
+
 For an end-to-end OpenAI-compatible reference, see
 `example/llamadart_server` and the docs page
 [OpenAI-Compatible Server](../examples/llamadart-server).
