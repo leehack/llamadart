@@ -74,6 +74,8 @@ class TemplateRenderContext {
   );
 
   /// Serializes [messages] into the JSON shape expected by a template handler.
+  /// Typed tool results become JSON text (or text parts for multimodal
+  /// templates); string results and the original typed messages are unchanged.
   static List<Map<String, dynamic>> messagesForTemplate(
     List<LlamaChatMessage> messages, {
     TemplateToolCallSerialization toolCallSerialization =
@@ -86,6 +88,16 @@ class TemplateRenderContext {
       final rendered = multimodal
           ? message.toJsonMultimodal()
           : message.toJson();
+      final toolResults = message.parts.whereType<LlamaToolResultContent>();
+      if (toolResults.isNotEmpty) {
+        final result = toolResults.first.result;
+        final text = result is String ? result : jsonEncode(result);
+        rendered['content'] = multimodal
+            ? [
+                {'type': 'text', 'text': text},
+              ]
+            : text;
+      }
       if (rendered['tool_calls'] is List) {
         hasToolCalls = true;
       }
