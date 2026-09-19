@@ -1073,7 +1073,7 @@ blocking independently of speed. No throughput threshold hides a known failure.
    optional lane without blocking the Mac/CI/Firebase harness.
 6. **Next mobile milestone:** preserve the demonstrated Android/iOS submission,
    result retrieval and S24 NPU execution. The system-content boundary is now
-   corrected locally, and the public replay matches canonical native `Cedar17`
+   covered by the suite branch correction, and the public replay matches canonical native `Cedar17`
    rather than repeated tokens. Keep its strict capitalization failure and the
    native combined-prompt failure explicit. Repeated Mac CPU public/native
    controls reproduce both failure patterns. The original Gemma reference now
@@ -1081,8 +1081,8 @@ blocking independently of speed. No throughput threshold hides a known failure.
    rendered prompt/token IDs match after accounting for BOS. Separate converted
    weights/quantization from LiteRT runtime execution next, alongside Qwen
    arithmetic and GPU work. Keep those findings separate from NPU attribution.
-   Complete the remaining Unicode
-   generation, compatible S24 Gemma CPU and paired-report controls. Gated CPU
+   Qualify the implemented Unicode generation case, compatible S24 Gemma CPU
+   and paired-report controls. Gated CPU
    weights require verified private model transfer before a Firebase run; never
    package an access token or substitute a signed URL in its model lock.
    Qualify S24 then Pixel 10 NPU only after model/library
@@ -1110,7 +1110,7 @@ exact-head CI build and portable execution evidence, followed by the missing
 critical feature packs. Original-model diagnostics remain private local evidence,
 not an extra heavyweight dependency in the default core or CI.
 
-## 13. Remaining work checklist (2026-09-17)
+## 13. Remaining work checklist (updated 2026-09-19)
 
 GitHub tracker: [#514](https://github.com/leehack/llamadart/issues/514).
 
@@ -1123,16 +1123,16 @@ failures remain visible and are investigated separately from harness completion.
 | ID | Remaining work | Completion evidence |
 | --- | --- | --- |
 | R01 | Qualify the PR and bundle workflow on Linux x64, Windows x64 and macOS; build Android APK/test APK, Web and iOS inputs | Exact-head CI green, extracted bundles executable outside a checkout, checksums/manifests retained; independent high-risk review before ready. iOS physical signing remains on the Mac. |
-| R02 | Complete C05 thinking/budgets, C07 tool auto/required/none and continuation, C10 stop-marker semantics, C12 guard/recovery subcases, C02 separate Unicode generation and C11 tool-bearing parity | C09's second cycle and C11 native text/thinking parity plus LiteRT Web option rejection are implemented. The five unimplemented catalog cases remain NOT_RUN. C11 tool-bearing fixtures, NPU deterministic sampling and GGUF Web worker controls remain unqualified; do not substitute text-only evidence. |
-| R03 | Core focused selection and versioned metadata implemented; extend the catalog as future model/media packs land | Schema 2 binds case/feature versions, resolved prompts/tools/predicates and fixture hashes; omitted cases have explicit reasons. `tiny-gguf-lifecycle` and `tiny-gguf-batching` are runnable focused examples. Catalog version 2 imports older version-1 reports against their original definitions. Future pack media hashes and reference qualifications remain with R04/R05. |
+| R02 | Complete C05 thinking/budgets, C07 tool auto/required/none and continuation, C10 stop-marker semantics, C12 guard/recovery subcases, C02 separate Unicode generation and C11 tool-bearing parity | C09's second cycle and C11 native text/thinking parity plus LiteRT Web option rejection are implemented. Catalog 4 now implements Unicode generation, thinking on/off, tool choice/result continuation, stop markers and unloaded-engine guards. Historical catalogs retain their original NOT_RUN records; current exact-model qualification is separate. C11 tool-bearing fixtures, NPU deterministic sampling and GGUF Web worker controls remain unqualified; do not substitute text-only evidence. |
+| R03 | Core focused selection and versioned metadata implemented; extend the catalog as future model/media packs land | Schema 2 binds case/feature versions, resolved prompts/tools/predicates and fixture hashes; omitted cases have explicit reasons. `tiny-gguf-lifecycle` and `tiny-gguf-batching` are runnable focused examples. Catalog version 4 imports version-1/2/3 reports against their original definitions. Future pack media hashes and reference qualifications remain with R04/R05. |
 | R04 | Add the eleven targeted packs in section 6 | Structured output; state/prompt reuse; embeddings; vision; audio understanding; ASR; TTS; LoRA; speculative decoding; runtime controls; app/device/browser lifecycle. Reuse existing registered tests and keep large models opt-in. |
-| R05 | Lock and reference-qualify pack models/media | Dense Qwen2.5, FunctionGemma, Gemma 4 GGUF/native/Web bundles, EmbeddingGemma, Qwen3-ASR, Moonshine, Qwen3-TTS and needed adapters/drafts/projectors; exact revisions/hashes/access and memory limits. Current quick/NPU model locks do not qualify these candidates. |
+| R05 | Lock and reference-qualify pack models/media | Primary Qwen3.5 and Gemma 4 GGUF/native/Web bundles; dedicated Qwen3-ASR, Moonshine and Qwen3-TTS exceptions; additional embedding/adaptor/draft fixtures only for their targeted packs; exact revisions/hashes/access and memory limits. Current quick/NPU model locks do not qualify these candidates. |
 | R06 | Finish Firebase core device rotation | Isolated GGUF CPU/GPU and LiteRT CPU/GPU on S24, Tab P12, iPhone 16 Pro and SE 3; targeted iPad 10 GPU runs. Existing pilots are partial evidence, not a completed rotation. A05s full/compact, iPhone 8 and Pixel 5 remain later compatibility rows. |
 | R07 | Complete S24 NPU qualification, then Tensor G5 | Resolve #513; add N02 Unicode generation/native tokenizer control, compatible S24 CPU Gemma with verified private model transfer, and paired native/public comparison. Require coherent N03 outputs and N04 lifecycle evidence; retain hybrid/unknown placement limits. Pixel 10 needs installed-app vendor-kit/SoC/probe and native/public/CPU runs; a compiled dispatch library is not execution proof. |
 | R08 | Fill remaining platform/packaging rows | Android arm64 virtual 4K/16K and separate backcompat, Android x64 emulator, Apple simulators, Linux arm64, Windows arm64, macOS x64 as available; full/compact and lower-ISA physical coverage. Record unavailable hardware explicitly. |
 | R09 | Qualify browser and GPU evidence paths | LiteRT GPU adapters with actual driver/delegate proof; Chrome WASM/WebGPU, Safari and Firefox capability rows; a genuine LiteRT Web model bundle and negative native-only contracts. Native Firebase XCTest does not qualify iPadOS Safari. |
-| R10 | Exercise the GCE lifecycle and desktop CUDA runs | One bounded Linux then Windows GGUF/CUDA run proving upload, execution, retrieval and deletion of instance/disks; inspect actual NVIDIA execution. Recheck current credit before provisioning. LiteRT desktop GPU is Vulkan/D3D12, not CUDA. No available credit means NOT_RUN, not personal charges. |
-| R11 | Complete the required evidence envelope and missing measurements | Model hash/size evidence, portable desktop payload verification, override rejection and collected identity binding are implemented. Remaining: structured preparation failures before a model manifest; explicit provenance/availability for artifact and companion hashes, device memory/page size, cold first response, prefill/native TTFT and first-thinking timing where observable. Keep unsupported counters null; add ASR/TTS WER/real-time factor with their packs. |
+| R10 | Exercise the GCE lifecycle and desktop CUDA runs | Historical Linux/Windows bootstrap runs executed GGUF CPU/CUDA/Vulkan and verified cleanup. Still qualify the maintained GCE adapter and reproducible image end to end; bootstrap evidence does not establish that contract or current-head model qualification. Recheck current credit before provisioning. LiteRT desktop GPU is Vulkan/D3D12, not CUDA. No available credit means NOT_RUN, not personal charges. |
+| R11 | Complete the required evidence envelope and missing measurements | Model hash/size evidence, portable desktop payload verification, override rejection and collected identity binding are implemented. Preparation stage/byte progress before a model manifest is implemented. Remaining: explicit provenance/availability for artifact and companion hashes, device memory/page size, cold first response, prefill/native TTFT and first-thinking timing where observable. Keep unsupported counters null; local speech reports already record WER/real-time factor, but portable/mobile speech import and quality qualification remain open. |
 | R12 | Add aggregate and historical reporting after core evidence is stable | Paired run comparison, device/backend coverage heatmap, comparable-cohort filters, trend and quota views. Existing per-run JSON/JUnit/CSV/HTML and three-sample TPS are usable; a dashboard or performance threshold is not required for the first PR. |
 
 Prioritize R01, then bounded R02/R03 work. R06/R07 use only freshly verified free
@@ -1140,3 +1140,10 @@ Firebase allowance or covered credit; never dispatch the entire rotation at once
 R10 is optional while credit is unavailable. R04/R05 are change-focused feature
 coverage, not every-model-by-every-device permutations. R12 visual polish comes
 after the mandatory evidence, not before correctness.
+
+
+The [current Qwen reference diagnosis](cross_platform_validation.md#current-qwen-tool-and-history-reference-2026-09-19)
+separates implemented infrastructure from model conformance: C07 passes after
+merged runtime fixes, while the original C06 exact-case failure also reproduces
+in matched upstream execution. Keep that failure and all unrun device rows
+visible; reference agreement does not waive an expected-output predicate.

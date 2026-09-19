@@ -21,20 +21,22 @@ history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 The quick diagnostic core is usable; the full platform/release suite is incomplete.
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
-As of 2026-09-17, the local harness has 82 passing model-free tests and the provider
-and input controls have 46. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
-now runs the portable build workflow on relevant changes. Follow its current CI
-for target-specific build results; build-only success is not model execution.
+Catalog 4 has 129 passing private harness tests at the reviewed pre-integration
+head `b13c545f`; fresh head/base checks remain required after merging main.
+Draft [PR #515](https://github.com/leehack/llamadart/pull/515) builds Linux x64,
+Windows x64 and macOS arm64 desktop bundles plus Android, Web and iOS inputs.
+Follow its current CI for exact-head results; build success and extracted CLI
+startup are not model execution or complete device qualification.
 Native GGUF Unicode corruption was fixed in merged
 [PR #516](https://github.com/leehack/llamadart/pull/516). Earlier failed journals
 remain historical evidence; reruns must identify the fixed source commit.
 
 | Area | Current evidence | Remaining qualification |
 | --- | --- | --- |
-| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Keep model/backend failures visible; add separate Unicode generation |
+| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; retain model/backend failures |
 | Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
-| Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Exact-head Linux/Windows/macOS CI builds and portable execution on each target; iOS signing remains local |
-| Cloud lifecycle | Firebase submission, retrieval and cleanup exercised; Firebase/GCE failure controls tested locally | Real GCE upload/run/retrieve/delete lifecycle when credit and a run are authorized |
+| Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
+| Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
 | Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
 | Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls | Exact-model feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal, speech qualification and embeddings |
 
@@ -171,7 +173,7 @@ dart run tool/testing/validation.dart local --profile tiny-gguf-lifecycle \
   --out .dart_tool/validation/runs/tiny-lifecycle
 ```
 
-`tiny-gguf-batching` selects C11 without also selecting the unfinished stop-marker
+`tiny-gguf-batching` selects C11 without also selecting the separate stop-marker
 case. It runs the same short prompt with default worker thresholds (8 pieces /
 512 bytes), then 1 piece / 1 byte, then defaults again. Content, thinking and
 finish reasons must match, every stream must complete in order, and the recorded
@@ -1051,5 +1053,35 @@ pre-marker output, forwarded stop configuration and subsequent-request recovery;
 a model that does not emit the control marker fails the oracle. Readiness tests
 require the public `LlamaContextException` contract. Direct native reference
 controls do not stand in for either public API case. Catalogs 1 and 2 retain
-these cases as unimplemented and cannot claim their execution. Thinking, tool
-calls and Unicode generation still require implementation/reference work.
+these cases as unimplemented and cannot claim their execution. Catalog 4 adds
+Unicode generation, thinking on/off and tool choice/result controls. Thinking
+budgets, tool-bearing batching and model-specific qualification remain separate.
+
+
+### Current Qwen tool and history reference (2026-09-19)
+
+The unchanged catalog-4 Qwen CPU profile from suite `b13c545f`, run in an
+isolated setup against main `699969b0` after PRs #531 and #529, records
+**16 PASS, 1 FAIL, 0 ERROR**. C07 auto/required/none, exact tool arguments,
+typed-Map result follow-ups and recovery pass. C06 still returns `Cedar17`
+instead of the strict expected `cedar17`; no predicate was relaxed. This is JIT
+diagnostic evidence, not a sealed current-PR portable qualification report.
+
+For the locked Qwen3.5-0.8B-Q4_0 model (SHA256
+`57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf`),
+unmodified upstream `llama-server` at native v0.4.1's exact upstream commit
+`b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` matches all 11 diagnostic trials:
+rendered prompts, input token IDs and public/raw Dart outputs. The original
+history remains intact. Three baseline repetitions return `Cedar17`; disabling
+the repetition penalty returns `17`, while changing the stored code to `maple42`
+returns `maple42` and removing history produces a different output. The same
+explicit-case instruction still returns `Cedar17` on both paths.
+
+This does not demonstrate a Dart history-loss or parser defect, and it does not
+distinguish original model behavior, quantization or upstream numerical execution.
+Keep the exact conformance failure and `qualified=false`. A separate multi-secret
+history-transport diagnostic, if added, must not replace this obligation.
+The [tracking diagnosis](https://github.com/leehack/llamadart/issues/514#issuecomment-5738623925)
+records source/model/settings and attribution limits. Gemma3 LiteRT issue #513
+remains a distinct investigation; this CPU GGUF control does not qualify other
+models, runtime backends or devices.
