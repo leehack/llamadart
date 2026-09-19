@@ -22,6 +22,8 @@ import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
+import '../../support/qwen_tool_schema_fixture.dart';
+
 void main() {
   late String validator;
 
@@ -33,6 +35,48 @@ void main() {
       reason: 'Set LLAMA_CPP_GBNF_VALIDATOR to llama.cpp test-gbnf-validator.',
     );
     expect(File(validator).existsSync(), isTrue);
+  });
+
+  test('Qwen typed result history preserves compiled follow-up grammar', () {
+    for (final thinking in [true, false]) {
+      final rendered = renderQwenResultHistory(
+        thinking: thinking,
+        templateSource: File(qwenResultTemplatePath).readAsStringSync(),
+      );
+      expect(rendered.prompt, contains(jsonEncode(qwenResultPayload)));
+      expect(rendered.grammarLazy, isFalse);
+      final parsed = ChatTemplateEngine.parse(
+        rendered.format,
+        qwenResultEnvelope,
+        tools: [qwenResultTool],
+      );
+      expect(parsed.toolCalls, hasLength(1));
+      expect(
+        jsonDecode(parsed.toolCalls.single.function!.arguments!),
+        qwenResultPayload,
+      );
+      // Qwen's existing grammar constrains the XML envelope and declared names;
+      // scalar typing is reconstructed by the output parser, tested separately.
+      // Its grammar root begins at the tool envelope, not the thinking prefix.
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [qwenResultEnvelope],
+        invalid: [
+          qwenResultEnvelope.replaceFirst(
+            '<function=inspect>',
+            '<function=unknown>',
+          ),
+          qwenResultEnvelope.replaceFirst(
+            '<parameter=count>',
+            '<parameter=unknown>',
+          ),
+          qwenResultEnvelope.replaceFirst('</tool_call>', ''),
+          qwenResultEnvelope.replaceFirst('</function>', ''),
+          'No tool',
+        ],
+      );
+    }
   });
 
   test(
