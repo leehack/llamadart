@@ -11,7 +11,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Select affected checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      plan: ${{ steps.select.outputs.plan }}
+      companions: ${{ steps.select.outputs.companions }}
+      analyze: ${{ steps.select.outputs.analyze }}
+      docs-check: ${{ steps.select.outputs.docs-check }}
+      docs-versions: ${{ steps.select.outputs.docs-versions }}
+      validation-harness: ${{ steps.select.outputs.validation-harness }}
+      validation-integration: ${{ steps.select.outputs.validation-integration }}
+      companion-packages: ${{ steps.select.outputs.companion-packages }}
+      test-linux-coverage: ${{ steps.select.outputs.test-linux-coverage }}
+      test-web: ${{ steps.select.outputs.test-web }}
+      web-chat-contract: ${{ steps.select.outputs.web-chat-contract }}
+      test-other-os: ${{ steps.select.outputs.test-other-os }}
+      native-prompt-reuse-parity: ${{ steps.select.outputs.native-prompt-reuse-parity }}
+      artifact-contract: ${{ steps.select.outputs.artifact-contract }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test CI selection
+        run: python3 -m unittest discover -s test/ci -p 'test_*.py'
+      - id: select
+        run: python3 tool/ci/select_jobs.py select
+
   analyze:
+    needs: changes
+    if: needs.changes.outputs.analyze == 'true'
     name: Analyze & Lint
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -38,6 +71,9 @@ jobs:
 
       - name: Analyze project source
         run: dart analyze
+
+      - name: Verify CI workflow selection contracts
+        run: dart test -p vm test/unit/tooling/ci_workflow_selection_test.dart
 
       - name: Check platform boundaries
         run: dart run tool/testing/check_platform_boundaries.dart
@@ -70,6 +106,8 @@ jobs:
         run: flutter pub global run pana . --exit-code-threshold 0
 
   validation-harness:
+    needs: changes
+    if: needs.changes.outputs.validation-harness == 'true'
     name: Validation harness (model-free)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -88,15 +126,15 @@ jobs:
         working-directory: packages/llamadart_validation
 
   companion-packages:
+    needs: changes
+    if: needs.changes.outputs.companion-packages == 'true'
     name: Companion Package (${{ matrix.package }})
     runs-on: macos-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - packages/llamadart_llama_cpp_flutter
-          - packages/llamadart_litert_lm_flutter
+        package: ${{ fromJSON(needs.changes.outputs.companions) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -143,6 +181,8 @@ jobs:
           (cd "$tmp_package" && flutter pub publish --dry-run)
 
   docs-check:
+    needs: changes
+    if: needs.changes.outputs.docs-check == 'true'
     name: Docs Build Check
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -166,6 +206,8 @@ jobs:
         run: ./tool/docs/build_site.sh
 
   test-linux-coverage:
+    needs: changes
+    if: needs.changes.outputs.test-linux-coverage == 'true'
     name: Test Linux VM (with Coverage)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -183,7 +225,7 @@ jobs:
         run: flutter pub get
 
       - name: Install Coverage tool
-        run: dart pub global activate coverage
+        run: dart pub global activate coverage 1.15.1
 
       - name: Cache tiny GGUF test model
         id: tiny-gguf-cache
@@ -257,6 +299,8 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   test-web:
+    needs: changes
+    if: needs.changes.outputs.test-web == 'true'
     name: Test Web (Chrome)
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -277,6 +321,8 @@ jobs:
         run: dart test -p chrome --exclude-tags local-only
 
   web-chat-contract:
+    needs: changes
+    if: needs.changes.outputs.web-chat-contract == 'true'
     name: Web Chat Contract
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -367,6 +413,8 @@ jobs:
           if-no-files-found: ignore
 
   artifact-contract:
+    needs: changes
+    if: needs.changes.outputs.artifact-contract == 'true'
     name: Web Diagnostics Artifact Contract
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -454,16 +502,36 @@ jobs:
 
   test-linux-web:
     name: Test Linux & Web (with Coverage)
+    if: ${{ always() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs:
+      - changes
+      - analyze
+      - docs-check
+      - docs-versions
+      - validation-harness
+      - validation-integration
+      - companion-packages
       - test-linux-coverage
       - test-web
       - web-chat-contract
+      - test-other-os
+      - native-prompt-reuse-parity
+      - artifact-contract
     steps:
-      - name: Confirm Linux coverage and Web tests passed
-        run: echo "Linux VM coverage and Chrome tests passed."
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify every selected check succeeded
+        env:
+          PLAN: ${{ needs.changes.outputs.plan }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci/select_jobs.py aggregate
 
   test-other-os:
+    needs: changes
+    if: needs.changes.outputs.test-other-os == 'true'
     name: Test Native (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -518,6 +586,8 @@ jobs:
         run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
 
   native-prompt-reuse-parity:
+    needs: changes
+    if: needs.changes.outputs.native-prompt-reuse-parity == 'true'
     name: Native Prompt Reuse Parity
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -565,3 +635,40 @@ jobs:
             --min-p 0.0 \
             --repeat-penalty 1.0 \
             --fail-on-mismatch
+
+  docs-versions:
+    name: Documentation version and pin checks
+    needs: changes
+    if: needs.changes.outputs.docs-versions == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart run tool/testing/verify_release_docs_versions.dart
+      - run: dart run tool/testing/check_webgpu_bridge_tag.dart
+
+  validation-integration:
+    name: Validation provider and workspace contracts
+    needs: changes
+    if: needs.changes.outputs.validation-integration == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: dart pub get
+      - run: dart test -p vm test/unit/tooling/validation_remote_test.dart test/unit/tooling/validation_npu_test.dart test/unit/tooling/prepare_workspace_test.dart
+      - run: flutter pub get
+        working-directory: example/chat_app
+      - run: flutter test test/validation_controller_test.dart test/validation_app_test.dart
+        working-directory: example/chat_app
