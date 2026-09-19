@@ -3,18 +3,6 @@ name: Validation bundles
 on:
   pull_request:
     branches: [main]
-    paths:
-      - .github/workflows/validation_bundles.yml
-      - packages/llamadart_validation/**
-      - tool/testing/validation.dart
-      - tool/testing/validation/**
-      - example/chat_app/lib/validation_main.dart
-      - example/chat_app/lib/validation/**
-      - example/chat_app/integration_test/validation_test.dart
-      - example/chat_app/android/**
-      - example/chat_app/ios/**
-      - example/chat_app/pubspec.*
-      - scripts/build_chat_app_web.sh
   workflow_dispatch:
     inputs:
       profile:
@@ -27,16 +15,36 @@ permissions:
   contents: read
 
 concurrency:
-  group: validation-bundles-${{ github.ref }}
-  cancel-in-progress: false
+  group: validation-bundles-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Select affected bundle targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plan: ${{ steps.select.outputs.plan }}
+      desktops: ${{ steps.select.outputs.desktops }}
+      desktops-enabled: ${{ steps.select.outputs.desktops-enabled }}
+      apps: ${{ steps.select.outputs.apps }}
+      apps-enabled: ${{ steps.select.outputs.apps-enabled }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: select
+        run: python3 tool/ci/select_jobs.py select
+
   desktop:
+    needs: changes
+    if: needs.changes.outputs.desktops-enabled == 'true'
     name: Desktop ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-15]
+        os: ${{ fromJSON(needs.changes.outputs.desktops) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     steps:
@@ -83,11 +91,13 @@ jobs:
           if-no-files-found: error
 
   app:
+    needs: changes
+    if: needs.changes.outputs.apps-enabled == 'true'
     name: App ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
-        target: [android, web, ios-inputs]
+        target: ${{ fromJSON(needs.changes.outputs.apps) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -111,3 +121,19 @@ jobs:
           path: .dart_tool/validation/bundle.tar.gz
           retention-days: 7
           if-no-files-found: error
+
+  result:
+    name: Validation bundle result
+    if: ${{ always() }}
+    needs: [changes, desktop, app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify selected bundles succeeded
+        env:
+          PLAN: ${{ needs.changes.outputs.plan }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 tool/ci/select_jobs.py aggregate --bundle

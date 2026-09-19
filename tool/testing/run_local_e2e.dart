@@ -190,6 +190,41 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'ci-selection',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'CI trigger selection and aggregate workflow wiring contracts.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.isWindows ? 'python' : 'python3',
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'test/ci',
+            '-p',
+            'test_*.py',
+          ],
+          description:
+              'Git change inventory, dependency selection and aggregate behavior',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            'test/unit/tooling/ci_workflow_selection_test.dart',
+          ],
+          description: 'Actual workflow target, event and aggregate wiring',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'validation-harness',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

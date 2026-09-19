@@ -35,6 +35,16 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'ci-selection',
+    tier: 'targeted',
+    mode: 'CI + local; no models',
+    covers:
+        'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario ci-selection',
+    useWhen:
+        'CI workflow or impact selection changes; see doc/ci_selection.md.',
+  ),
+  TestMatrixRow(
     id: 'validation-harness',
     tier: 'targeted',
     mode: 'CI + local; model-free',
