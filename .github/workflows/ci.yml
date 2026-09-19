@@ -681,6 +681,7 @@ jobs:
   deploy-chat-app:
     needs: [test-linux-web, web-chat-contract]
     if: >-
+      !cancelled() &&
       github.event_name == 'push' && github.ref == 'refs/heads/main' &&
       github.repository == 'leehack/llamadart' &&
       needs.test-linux-web.result == 'success' && needs.web-chat-contract.result == 'success'

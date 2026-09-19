@@ -33,6 +33,9 @@ void main() {
       final jobs = readWorkflow('ci')['jobs'] as Map;
       final deploy = jobs['deploy-chat-app'] as Map;
       expect(deploy['needs'], ['test-linux-web', 'web-chat-contract']);
+      // GitHub's implicit success() includes skipped ancestors of the aggregate.
+      // Explicit cancellation status lets direct successful needs decide eligibility.
+      expect(deploy['if'], startsWith('!cancelled() &&'));
       for (final guard in [
         "github.event_name == 'push'",
         "github.ref == 'refs/heads/main'",
