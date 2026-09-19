@@ -47,6 +47,12 @@ final stream = engine.create(
 4. Append tool result message.
 5. Call `engine.create(...)` again for final assistant response.
 
+`LlamaToolResultContent.result` can contain JSON-compatible objects, arrays,
+scalars, or null. The shared template renderer encodes these as JSON text;
+string results remain unchanged. This conversion does not mutate the typed
+result or change its public JSON representation. Multimodal templates receive
+the encoded result as a text part.
+
 Qwen XML tool calls are validated against the tools supplied to `engine.create`.
 Schema-declared strings such as `"123"` retain their type. Unknown functions,
 unknown or duplicate parameters, missing required values, and invalid value
