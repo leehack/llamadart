@@ -110,8 +110,9 @@ def select(paths, force_full=False):
             full('shared/runtime or unclassified path: ' + path)
     if 'analyze' in jobs:
         jobs.discard('docs-versions')  # Already included in root static validation.
-    if 'test-linux-coverage' in jobs:
-        jobs.discard('validation-integration')  # Same root tests run in full VM.
+    if 'test-linux-coverage' in jobs and 'web-chat-contract' in jobs:
+        # Both root provider tests and all Flutter consumer tests are covered.
+        jobs.discard('validation-integration')
     return {
         'schema_version': 1,
         'jobs': {job: job in jobs for job in CORE_JOBS},

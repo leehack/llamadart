@@ -667,7 +667,8 @@ jobs:
           channel: stable
           cache: true
       - run: dart pub get
-      - run: dart test -p vm test/unit/tooling/validation_remote_test.dart test/unit/tooling/validation_npu_test.dart test/unit/tooling/prepare_workspace_test.dart
+      - if: needs.changes.outputs.test-linux-coverage != 'true'
+        run: dart test -p vm test/unit/tooling/validation_remote_test.dart test/unit/tooling/validation_npu_test.dart test/unit/tooling/prepare_workspace_test.dart
       - run: flutter pub get
         working-directory: example/chat_app
       - run: flutter test test/validation_controller_test.dart test/validation_app_test.dart

@@ -157,6 +157,41 @@ void main() {
   );
 
   test(
+    'full graph substitution executes both root and all Flutter consumers',
+    () async {
+      final jobs = readWorkflow('ci')['jobs'];
+      final rootRun = (jobs['validation-integration']['steps'] as List)
+          .singleWhere(
+            (s) => '${s['run']}'.contains('validation_remote_test.dart'),
+          );
+      expect(
+        rootRun['if'],
+        "needs.changes.outputs.test-linux-coverage != 'true'",
+      );
+      final appSteps = (jobs['web-chat-contract']['steps'] as List).where(
+        (s) => s['working-directory'] == 'example/chat_app',
+      );
+      expect(
+        appSteps.any(
+          (s) =>
+              (s['run'] as String? ?? '').split('\n').contains('flutter test'),
+        ),
+        isTrue,
+      );
+      final mixed = await selected([
+        'packages/llamadart_validation/lib/src/runner.dart',
+        'test/unit/tooling/validation_remote_test.dart',
+      ]);
+      expect(mixed['jobs']['validation-integration'], isTrue);
+      final integrationFlutter =
+          (jobs['validation-integration']['steps'] as List).singleWhere(
+            (s) => '${s['run']}'.contains('validation_controller_test.dart'),
+          );
+      expect(integrationFlutter.containsKey('if'), isFalse);
+    },
+  );
+
+  test(
     'runtime lanes retain full OS tests, model smoke, and coverage threshold',
     () {
       final jobs = readWorkflow('ci')['jobs'];

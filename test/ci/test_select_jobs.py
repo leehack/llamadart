@@ -65,6 +65,17 @@ class SelectionTest(unittest.TestCase):
             self.assertEqual(plan['apps'], list(ci.APPS))
             self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
 
+    def test_mixed_changes_keep_flutter_consumer_when_only_root_tests_are_substituted(self):
+        validation = 'packages/llamadart_validation/lib/src/runner.dart'
+        mixed = ci.select([validation, 'test/unit/tooling/validation_remote_test.dart'])
+        self.assertTrue(mixed['jobs']['test-linux-coverage'])
+        self.assertFalse(mixed['jobs']['web-chat-contract'])
+        self.assertTrue(mixed['jobs']['validation-integration'])
+        full = ci.select([validation, 'lib/llamadart.dart'])
+        self.assertTrue(full['jobs']['test-linux-coverage'])
+        self.assertTrue(full['jobs']['web-chat-contract'])
+        self.assertFalse(full['jobs']['validation-integration'])
+
     def test_platform_targets(self):
         for directory, target in [('android', 'android'), ('ios', 'ios-inputs'), ('web', 'web')]:
             plan = ci.select([f'example/chat_app/{directory}/config'])

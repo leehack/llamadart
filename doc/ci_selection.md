@@ -23,6 +23,9 @@ PR. A path filter must not prevent a required workflow from reporting.
 Selections combine for mixed changes. Version checks already executed by the
 root static job are not duplicated in the docs-only job. Provider root tests
 already executed by full Linux coverage are not duplicated in a separate job.
+The consumer job is omitted entirely only when both root coverage and Web Chat
+(which runs all Flutter app tests) substitute its assertions. Mixed validation
+and root-test changes still run the Flutter consumer assertions.
 The private harness also checks APK integrity. Its separate consumer job runs
 root provider/NPU/workspace tests and the Flutter validation controller/app tests.
 
