@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Preserve Qwen XML tool argument types using declared schemas and reject invalid or undeclared calls without exposing executable tool deltas.
+
 - Settle pending LiteRT-LM requests when a worker stops, close their response ports, and report unverified native cleanup as an error.
 
 - Suppress caller stop markers in native GGUF streams, including split markers and speculative decoding.

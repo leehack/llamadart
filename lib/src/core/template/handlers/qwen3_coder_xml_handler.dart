@@ -11,12 +11,14 @@ import '../peg_parser_builder.dart';
 import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_call_parsing_utils.dart';
+import '../tool_schema_utils.dart';
 import '../xml_tool_call_format.dart';
 
 /// Handler for Qwen Coder and Qwen3.6 XML tool-call formats.
 ///
 /// Uses `<tool_call><function=...><parameter=...>` envelopes.
-class Qwen3CoderXmlHandler extends ChatTemplateHandler {
+class Qwen3CoderXmlHandler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const List<String> _qwenPreservedTokens = <String>[
     '<think>',
     '</think>',
@@ -277,9 +279,28 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    return parseWithTools(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+  }
+
+  /// Parses Qwen XML using declared tool schemas when [tools] is supplied.
+  /// Invalid calls remain content and cannot become executable tool deltas.
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) {
     final result = parseXmlToolCalls(
       output,
       XmlToolCallFormat.qwen3Coder,
+      schemas: tools == null ? null : toolSchemas(tools),
       isPartial: isPartial,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
