@@ -834,6 +834,82 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-web-production-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Test the exact production-root build with mock and real GGUF smokes.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: [
+            context.skipBuild
+                ? 'scripts/validate_chat_app_web_build.sh'
+                : 'scripts/build_chat_app_web.sh',
+          ],
+          environment: const {'CHAT_APP_BASE_HREF': '/'},
+          description: 'Build or validate the production-root artifact',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--directory',
+            'example/chat_app/build/web',
+            '--port',
+            '${context.port}',
+            '--coep',
+            'require-corp',
+          ],
+          description: 'Serve the unchanged production artifact at root',
+          background: true,
+          waitForPort: context.port,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--directory',
+            '.',
+            '--port',
+            '${context.port + 1}',
+            '--cors-origin',
+            'http://127.0.0.1:${context.port}',
+          ],
+          description:
+              'Serve the tiny test model separately from deployable files',
+          background: true,
+          waitForPort: context.port + 1,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_chat_app_mock_smoke.py',
+            'http://127.0.0.1:${context.port}/?llamadart_mock_bridge=echo',
+          ],
+          description: 'Run deterministic mock smoke on the production layout',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_chat_app_real_model_smoke.py',
+            'http://127.0.0.1:${context.port}/',
+            '--model-url',
+            context.modelUrl ??
+                'http://127.0.0.1:${context.port + 1}/.dart_tool/test_models/stories15M.gguf',
+            '--allow-any-response',
+          ],
+          description:
+              'Run real worker/GGUF smoke on the same production artifact',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-web-real-model-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
