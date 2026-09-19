@@ -190,6 +190,59 @@ void main() {
     });
 
     test(
+      'production smoke builds once and tests root with separate model server',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'chat-app-web-production-smoke',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(result.exitCode, 0);
+        final output = result.stdout.toString();
+        expect(
+          'scripts/build_chat_app_web.sh'.allMatches(output),
+          hasLength(1),
+        );
+        expect(output, contains('CHAT_APP_BASE_HREF=/'));
+        expect(
+          output,
+          contains(
+            '--directory example/chat_app/build/web --port 7358 --coep require-corp',
+          ),
+        );
+        expect(output, contains('--cors-origin http://127.0.0.1:7358'));
+        expect(
+          output,
+          contains('http://127.0.0.1:7358/?llamadart_mock_bridge=echo'),
+        );
+        expect(
+          output,
+          contains(
+            '--model-url http://127.0.0.1:7359/.dart_tool/test_models/stories15M.gguf',
+          ),
+        );
+        expect(
+          output,
+          contains(
+            'playwright_chat_app_real_model_smoke.py http://127.0.0.1:7358/',
+          ),
+        );
+        final reuse = await runLocalE2e(const [
+          '--scenario',
+          'chat-app-web-production-smoke',
+          '--skip-build',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(reuse.exitCode, 0);
+        expect(
+          reuse.stdout,
+          contains('scripts/validate_chat_app_web_build.sh'),
+        );
+        expect(reuse.stdout, isNot(contains('scripts/build_chat_app_web.sh')));
+      },
+    );
+
+    test(
       'dry-runs Web real-model smoke with build, serve, and Playwright steps',
       () async {
         final result = await runLocalE2e(const [

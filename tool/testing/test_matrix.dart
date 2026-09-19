@@ -634,6 +634,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'Bridge asset loading, web bootstrap, or web interop changes.',
   ),
   TestMatrixRow(
+    id: 'web-production-artifact-smoke',
+    tier: 'targeted',
+    mode: 'CI + local',
+    covers:
+        'one production-root build tested by mock and real worker/GGUF smokes',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
+    useWhen:
+        'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
+  ),
+  TestMatrixRow(
     id: 'web-mock-chat-smoke',
     tier: 'targeted',
     mode: 'CI + local',

@@ -67,8 +67,8 @@ would not implement parallel formatting. Benchmark numbers must be identified
 as local or hosted measurements and compared on identical raw coverage using
 semantic LCOV records, including all hit counts, not just overall percentages.
 
-Preview/deployment reuse, narrower runtime OS inventories, and impact-based
-readiness policy are separate proposals tracked by #532. #384 remains the
+Narrower runtime OS inventories and integration-repository cleanup remain
+separate proposals tracked by #532. #384 remains the
 coverage measurement work item; historical latency targets are not claims about
 this implementation. No release, publication, runtime pin or settings change is
 part of this batch.
@@ -92,3 +92,47 @@ Predicted savings come from omitted jobs and obsolete PR cancellation, not
 faster runtime tests. Measure hosted wall time, queue delay and summed job time
 separately after approved PR execution; do not report docs-only results as a
 full-code speedup or local measurements as GitHub-hosted results.
+
+## Tested Web deployment and previews
+
+On canonical-repository main pushes, Web Chat Contract builds the production
+root (`/`) once, runs mock and real tiny-GGUF browser smokes against those files,
+and uploads the successful artifact. The production reusable workflow waits for
+both Web Chat and the existing all-selected-checks aggregate to succeed. It
+verifies the same run's artifact ID, archive digest, source commit/tree, pinned
+Flutter version and production build target before uploading those files to HF.
+It does not install Flutter or rebuild. HF's README remains hosting metadata.
+A latest-main check before upload rejects obsolete deployments.
+
+The former manual arbitrary-ref deployment is removed. Retry a failed deployment
+through its original CI run while it remains current main and its seven-day
+artifact is available; otherwise rerun the full current-main CI run. No artifact
+from another run or untested rebuild is accepted. GitHub-hosted promotion and HF
+upload must still be verified after an approved PR/merge; local tests do not
+claim hosted deployment evidence.
+
+PR previews default to non-draft same-repository changes selected for Web Chat
+(including shared runtime dependencies and conservative unknown inputs).
+Docs-only and mobile-only changes skip the build. A `preview` label explicitly
+opts in, including drafts. Forks and Dependabot remain excluded. Selection runs
+before Flutter setup; the build job has no deployment secrets. Deployment uses
+the resulting artifact and verification scripts from the PR base. Closing a PR
+always attempts cleanup regardless of paths, labels or draft status. Converting
+a PR to draft or removing the label skips future ineligible builds; an existing
+preview remains until close. Per-PR concurrency cancels obsolete runs.
+
+To exercise the production layout locally, cache `stories15M.gguf` at
+`.dart_tool/test_models/stories15M.gguf`, then run:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke
+```
+
+The runner builds once and starts two loopback servers: the unchanged app at
+`--port` (default 7358), with HF's `require-corp` isolation policy, and the model
+at the next port with CORS limited to that app origin. Both servers are cleaned
+up on success or failure. `--model-url` overrides the model URL; `--skip-build`
+validates and tests an existing build. Model files are never added to the
+uploaded app. The corresponding matrix row is `web-production-artifact-smoke`.
+The concrete saving is one removed production Flutter setup/dependency/build;
+no hosted timing or cost percentage is claimed before measurement.

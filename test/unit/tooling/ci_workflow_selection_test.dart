@@ -28,13 +28,107 @@ Future<Map<String, dynamic>> selected(List<String> paths) async {
 
 void main() {
   test(
+    'production deployment consumes the gated same-run artifact without rebuild',
+    () {
+      final jobs = readWorkflow('ci')['jobs'] as Map;
+      final deploy = jobs['deploy-chat-app'] as Map;
+      expect(deploy['needs'], ['test-linux-web', 'web-chat-contract']);
+      for (final guard in [
+        "github.event_name == 'push'",
+        "github.ref == 'refs/heads/main'",
+        "github.repository == 'leehack/llamadart'",
+        "needs.test-linux-web.result == 'success'",
+        "needs.web-chat-contract.result == 'success'",
+      ]) {
+        expect(deploy['if'], contains(guard));
+      }
+      expect(
+        deploy['with']['artifact_id'],
+        r'${{ needs.web-chat-contract.outputs.artifact-id }}',
+      );
+      expect(
+        deploy['with']['artifact_digest'],
+        r'${{ needs.web-chat-contract.outputs.artifact-digest }}',
+      );
+      final steps = jobs['web-chat-contract']['steps'] as List;
+      final smoke = steps.indexWhere(
+        (step) => '${step['run']}'.contains(
+          '--scenario chat-app-web-production-smoke',
+        ),
+      );
+      final upload = steps.indexWhere(
+        (step) => step['id'] == 'production-artifact',
+      );
+      expect(smoke, greaterThanOrEqualTo(0));
+      expect(upload, greaterThan(smoke));
+      expect(steps[upload]['if'], contains("github.event_name == 'push'"));
+      final workflow = readWorkflow('chat_app_hf_static_deploy');
+      expect((workflow['on'] as Map).keys, ['workflow_call']);
+      final callee = workflow['jobs']['deploy'];
+      expect(callee['if'], contains("github.event_name == 'push'"));
+      expect(callee['if'], contains("github.ref == 'refs/heads/main'"));
+      expect(
+        callee['if'],
+        contains("github.repository == 'leehack/llamadart'"),
+      );
+      final text = jsonEncode(callee);
+      expect(text, contains('web_deployment.py verify'));
+      expect(text, contains('git/ref/heads/main'));
+      expect(text, isNot(contains('build_chat_app_web.sh')));
+      expect(text, isNot(contains('flutter-action')));
+    },
+  );
+
+  test(
+    'preview selection precedes SDK and secrets while close cleanup is unfiltered',
+    () {
+      final workflow = readWorkflow('chat_app_hf_pr_preview');
+      final trigger = workflow['on']['pull_request'] as Map;
+      expect(trigger.containsKey('paths'), isFalse);
+      expect(
+        trigger['types'],
+        containsAll(['closed', 'ready_for_review', 'labeled', 'unlabeled']),
+      );
+      final build = workflow['jobs']['build'];
+      expect(build['permissions'], {'contents': 'read'});
+      expect(jsonEncode(build), isNot(contains('secrets.')));
+      final steps = build['steps'] as List;
+      expect(steps.first['if'], "github.event.action == 'closed'");
+      expect(steps.first['run'], contains('action=cleanup'));
+      final select = steps.indexWhere((step) => step['id'] == 'select');
+      final sdk = steps.indexWhere(
+        (step) => '${step['uses']}'.contains('flutter-action'),
+      );
+      expect(select, lessThan(sdk));
+      expect(steps[sdk]['if'], "steps.select.outputs.action == 'build'");
+      final deploy = workflow['jobs']['preview'];
+      expect(deploy['needs'], 'build');
+      expect(deploy['if'], contains("needs.build.result == 'success'"));
+      expect(deploy['env'].containsKey('HF_TOKEN'), isFalse);
+      final checkout = (deploy['steps'] as List).singleWhere(
+        (step) => '${step['uses']}'.contains('checkout@'),
+      );
+      expect(
+        checkout['with']['ref'],
+        r'${{ github.event.pull_request.base.sha }}',
+      );
+      expect(checkout['if'], "github.event.action != 'closed'");
+    },
+  );
+
+  test(
     'core workflow wires every planned job into truthful always aggregate',
     () async {
       final workflow = readWorkflow('ci');
       final jobs = workflow['jobs'] as Map<String, dynamic>;
       final plan = await selected(['lib/llamadart.dart']);
       final planned = (plan['jobs'] as Map).keys.toSet();
-      expect(jobs.keys.toSet(), {...planned, 'changes', 'test-linux-web'});
+      expect(jobs.keys.toSet(), {
+        ...planned,
+        'changes',
+        'test-linux-web',
+        'deploy-chat-app',
+      });
       final aggregate = jobs['test-linux-web'] as Map;
       expect(aggregate['if'], r'${{ always() }}');
       expect((aggregate['needs'] as List).toSet(), {...planned, 'changes'});

@@ -324,6 +324,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web-chat-contract == 'true'
     name: Web Chat Contract
+    outputs:
+      artifact-id: ${{ steps.production-artifact.outputs.artifact-id }}
+      artifact-digest: ${{ steps.production-artifact.outputs.artifact-digest }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -354,7 +357,7 @@ jobs:
 
       - name: Build and validate deployable Web artifact
         env:
-          CHAT_APP_BASE_HREF: /example/chat_app/build/web/
+          CHAT_APP_BASE_HREF: /
           CHAT_APP_BUILD_SHA: ${{ github.sha }}
         run: ./scripts/build_chat_app_web.sh
 
@@ -386,20 +389,21 @@ jobs:
           .dart_tool/playwright-python/bin/pip install "playwright==1.61.0"
           .dart_tool/playwright-python/bin/python -m playwright install --with-deps chromium
 
-      - name: Run deterministic Web chat smoke
+      - name: Smoke-test the production Web artifact
         run: |
           dart run tool/testing/run_local_e2e.dart \
-            --scenario chat-app-web-mock-smoke \
+            --scenario chat-app-web-production-smoke \
             --skip-build
 
-      - name: Run real worker and GGUF browser smoke
-        run: |
-          dart run tool/testing/run_local_e2e.dart \
-            --scenario chat-app-web-real-model-smoke \
-            --skip-build \
-            --model-url \
-            "http://127.0.0.1:7358/.dart_tool/test_models/stories15M.gguf" \
-            --allow-any-response
+      - name: Keep tested production artifact
+        id: production-artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: chat-app-web-${{ github.sha }}-${{ github.run_attempt }}
+          path: example/chat_app/build/web/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload Web contract diagnostics
         if: ${{ failure() }}
@@ -673,3 +677,19 @@ jobs:
         working-directory: example/chat_app
       - run: flutter test test/validation_controller_test.dart test/validation_app_test.dart
         working-directory: example/chat_app
+
+  deploy-chat-app:
+    needs: [test-linux-web, web-chat-contract]
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'leehack/llamadart' &&
+      needs.test-linux-web.result == 'success' && needs.web-chat-contract.result == 'success'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/chat_app_hf_static_deploy.yml
+    with:
+      artifact_id: ${{ needs.web-chat-contract.outputs.artifact-id }}
+      artifact_digest: ${{ needs.web-chat-contract.outputs.artifact-digest }}
+    secrets:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}

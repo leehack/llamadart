@@ -1,29 +1,21 @@
 name: Chat App HF Static Deploy
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "example/chat_app/**"
-      - "lib/**"
-      - "pubspec.yaml"
-      - "pubspec.lock"
-      - "scripts/build_chat_app_web.sh"
-      - "scripts/fetch_webgpu_bridge_assets.sh"
-      - "scripts/validate_chat_app_web_build.sh"
-      - "scripts/verify_chat_app_web_deployment.sh"
-      - ".github/workflows/chat_app_hf_static_deploy.yml"
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      space_repo:
-        description: "Hugging Face Space repo (owner/space), optional override"
-        required: false
-      deploy_ref:
-        description: "Git ref to deploy (optional)"
-        required: false
+      artifact_id:
+        type: string
+        required: true
+      artifact_digest:
+        type: string
+        required: true
+    secrets:
+      HF_TOKEN:
+        required: true
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: chat-app-hf-static-deploy
@@ -31,56 +23,46 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build and deploy chat app
+    name: Deploy tested chat app
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      github.repository == 'leehack/llamadart'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      HF_TOKEN: ${{ secrets.HF_TOKEN }}
       HF_CHAT_APP_SPACE_REPO: ${{ vars.HF_CHAT_APP_SPACE_REPO }}
-      INPUT_SPACE_REPO: ${{ github.event.inputs.space_repo }}
+      ARTIFACT_ID: ${{ inputs.artifact_id }}
+      ARTIFACT_DIGEST: ${{ inputs.artifact_digest }}
+      DEPLOY_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.deploy_ref || github.ref }}
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Record deployment source commit
-        run: echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: 3.47.1
-          channel: stable
-          cache: true
+      - name: Download and verify the tested artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" > web-artifact.json
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > web-artifact.zip
+          python3 tool/ci/web_deployment.py verify
+          ./scripts/validate_chat_app_web_build.sh web-artifact
 
       - name: Resolve Hugging Face target
         id: target
         run: |
-          SPACE_REPO="$INPUT_SPACE_REPO"
-          if [ -z "$SPACE_REPO" ]; then
-            SPACE_REPO="$HF_CHAT_APP_SPACE_REPO"
-          fi
+          SPACE_REPO="$HF_CHAT_APP_SPACE_REPO"
 
           if [ -z "$SPACE_REPO" ]; then
-            echo "error: set HF_CHAT_APP_SPACE_REPO repo variable or provide workflow input 'space_repo'"
-            exit 1
-          fi
-
-          if [ -z "$HF_TOKEN" ]; then
-            echo "error: set HF_TOKEN repository secret with write access to the Space"
+            echo "error: set HF_CHAT_APP_SPACE_REPO repo variable"
             exit 1
           fi
 
           APP_HOST="$(printf '%s' "$SPACE_REPO" | tr '[:upper:]/' '[:lower:]-')"
           echo "space_repo=$SPACE_REPO" >> "$GITHUB_OUTPUT"
           echo "app_url=https://${APP_HOST}.static.hf.space" >> "$GITHUB_OUTPUT"
-
-      - name: Install dependencies
-        run: |
-          (cd example/chat_app && flutter pub get)
-
-      - name: Build and validate chat app web
-        run: CHAT_APP_BUILD_SHA="$DEPLOY_SHA" ./scripts/build_chat_app_web.sh
 
       - name: Install Hugging Face Hub client
         run: |
@@ -89,12 +71,15 @@ jobs:
       - name: Deploy to Hugging Face Space
         env:
           SPACE_REPO: ${{ steps.target.outputs.space_repo }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$DEPLOY_SHA"
           rm -rf hf-space-sync
           mkdir -p hf-space-sync
 
           rsync -a --delete \
-            "example/chat_app/build/web/" "hf-space-sync/"
+            "web-artifact/" "hf-space-sync/"
 
           {
             printf '%s\n' '---'

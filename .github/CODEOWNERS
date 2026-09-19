@@ -46,3 +46,5 @@ website/docs/maintainers/release-workflow.md @leehack
 packages/*/CHANGELOG.md @leehack
 packages/*/darwin/*/Package.swift @leehack
 packages/*/pubspec.yaml @leehack
+
+tool/ci/web_deployment.py @leehack
