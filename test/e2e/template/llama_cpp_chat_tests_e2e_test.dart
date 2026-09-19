@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
@@ -114,6 +115,79 @@ void main() {
           _canonicalToolDeclarations(output.readAsStringSync()),
         );
         expect(rendered.prompt, contains(jsonEncode(qwenResultPayload)));
+      }
+    },
+  );
+  test(
+    'typed Qwen result history matches pinned upstream template rendering',
+    () async {
+      final build =
+          Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
+          '${Directory.current.path}/.dart_tool/llama_cpp_chat_tests';
+      final binary = File('$build/bin/test-chat-template');
+      expect(
+        binary.existsSync(),
+        isTrue,
+        reason: 'Run the upstream selection to build test-chat-template.',
+      );
+      final temp = Directory.systemTemp.createTempSync(
+        'qwen-tool-result-parity-',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      for (final thinking in [true, false]) {
+        // Independent upstream input oracle: the public typed payload is encoded
+        // as JSON text, without calling the production normalization helper.
+        final messages =
+            jsonDecode(
+                  jsonEncode(
+                    typed
+                        .qwenResultHistory(stringControl: true)
+                        .map((m) => m.toJson())
+                        .toList(),
+                  ),
+                )
+                as List<dynamic>;
+        ((messages[1]['tool_calls'] as List).single['function']
+                as Map)['arguments'] =
+            typed.qwenResultPayload;
+        final input = File('${temp.path}/input.json')
+          ..writeAsStringSync(
+            jsonEncode({
+              'messages': messages,
+              'tools': [typed.qwenResultTool.toJson()],
+              'bos_token': '<|im_start|>',
+              'eos_token': '<|im_end|>',
+              'add_generation_prompt': true,
+              'enable_thinking': thinking,
+            }),
+          );
+        final output = File('${temp.path}/prompt.txt');
+        final result = await Process.run(binary.path, [
+          '--no-common',
+          '--json',
+          input.path,
+          '--output',
+          output.path,
+          File(typed.qwenResultTemplatePath).absolute.path,
+        ]);
+        expect(
+          result.exitCode,
+          0,
+          reason: 'Upstream Qwen render failed: ${result.stderr}',
+        );
+        expect(output.existsSync(), isTrue);
+        final rendered = typed.renderQwenResultHistory(
+          choice: ToolChoice.auto,
+          thinking: thinking,
+        );
+        // Upstream tojson uses spaced separators; Dart emits compact JSON.
+        // Canonicalize only the tools declaration, preserving history and the
+        // generation/thinking suffix byte-for-byte.
+        expect(
+          _canonicalToolDeclarations(rendered.prompt),
+          _canonicalToolDeclarations(output.readAsStringSync()),
+        );
+        expect(rendered.prompt, contains(jsonEncode(typed.qwenResultPayload)));
       }
     },
   );

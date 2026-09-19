@@ -22,6 +22,7 @@ import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
+import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
@@ -35,6 +36,35 @@ void main() {
       reason: 'Set LLAMA_CPP_GBNF_VALIDATOR to llama.cpp test-gbnf-validator.',
     );
     expect(File(validator).existsSync(), isTrue);
+  });
+
+  test('Qwen typed Map result history preserves compiled follow-up grammar', () {
+    for (final thinking in [true, false]) {
+      final rendered = typed.renderQwenResultHistory(thinking: thinking);
+      expect(rendered.prompt, contains(jsonEncode(typed.qwenResultPayload)));
+      expect(rendered.grammarLazy, isFalse);
+      // Qwen's existing grammar constrains the XML envelope and declared names;
+      // scalar typing is reconstructed by the output parser, tested separately.
+      // Its grammar root begins at the tool envelope, not the thinking prefix.
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [typed.qwenResultEnvelope],
+        invalid: [
+          typed.qwenResultEnvelope.replaceFirst(
+            '<function=inspect>',
+            '<function=unknown>',
+          ),
+          typed.qwenResultEnvelope.replaceFirst(
+            '<parameter=count>',
+            '<parameter=unknown>',
+          ),
+          typed.qwenResultEnvelope.replaceFirst('</tool_call>', ''),
+          typed.qwenResultEnvelope.replaceFirst('</function>', ''),
+          'No tool',
+        ],
+      );
+    }
   });
 
   test('Qwen typed result history preserves compiled follow-up grammar', () {
