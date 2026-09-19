@@ -51,9 +51,8 @@ def select(paths, force_full=False):
     reasons = []
 
     def full(reason):
-        jobs.update(CORE_JOBS)
-        # Synthetic upload/download is only necessary for workflow changes.
-        jobs.discard('artifact-contract')
+        # Do not clear an artifact check selected by another changed path.
+        jobs.update(job for job in CORE_JOBS if job != 'artifact-contract')
         companions.update(COMPANIONS)
         desktops.update(DESKTOPS)
         apps.update(APPS)

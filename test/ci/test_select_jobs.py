@@ -97,6 +97,31 @@ class SelectionTest(unittest.TestCase):
             self.assertTrue(ci.select([path])['jobs']['artifact-contract'])
         self.assertFalse(ci.select(['lib/llamadart.dart'])['jobs']['artifact-contract'])
 
+    def test_workflow_artifact_selection_survives_later_shared_paths(self):
+        for paths in (
+            ['.github/workflows/ci.yml', 'tool/testing/test_matrix.dart'],
+            ['tool/testing/test_matrix.dart', '.github/workflows/ci.yml'],
+            ['.github/workflows/ci.yml', 'lib/llamadart.dart', 'README.md'],
+        ):
+            with self.subTest(paths=paths):
+                self.assertTrue(ci.select(paths)['jobs']['artifact-contract'])
+
+    def test_selection_is_independent_of_changed_path_order(self):
+        paths = [
+            'README.md', 'lib/llamadart.dart', '.github/workflows/ci.yml',
+            'tool/testing/test_matrix.dart', 'new/unknown',
+            'packages/llamadart_llama_cpp_flutter/lib/plugin.dart',
+            'packages/llamadart_validation/lib/src/runner.dart',
+            'packages/llamadart_validation/assets/profiles/chat-gguf-cpu.json',
+            'test/unit/tooling/validation_remote_test.dart',
+            'example/chat_app/android/config', 'example/chat_app/web/config',
+        ]
+        for left in paths:
+            for right in paths:
+                forward, reverse = ci.select([left, right]), ci.select([right, left])
+                for key in ('jobs', 'companions', 'desktops', 'apps'):
+                    self.assertEqual(forward[key], reverse[key], (left, right, key))
+
     def test_rename_delete_and_union(self):
         paths = ci.inventory(b'R100\0lib/old.dart\0doc/new.md\0D\0hook/build.dart\0')
         self.assertEqual(paths, ['lib/old.dart', 'doc/new.md', 'hook/build.dart'])
