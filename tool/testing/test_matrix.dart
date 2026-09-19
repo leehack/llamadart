@@ -161,21 +161,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
     useWhen:
         'Only the evaluator-verified core-patch metadata release route; '
-        'never a substitute for changed tests on production or policy changes.',
+        'never a substitute for relevant causal tests on production or policy changes.',
   ),
   TestMatrixRow(
     id: 'structured-output-adversarial',
     tier: 'high-risk',
     mode: 'CI + local + primary upstream fixtures',
     covers:
-        'compiled grammar acceptance/rejection, schema-directed scalar and '
+        'applicable v2 impact axes: input rendering/history, compiled grammar acceptance/rejection, schema-directed scalar and '
         'container types including empty values, partial/final streaming and '
         'rollback, auto/required/none tool choice with thinking prefixes, and '
         'pinned/current upstream template/parser parity',
     command:
-        './tool/testing/run_template_parity_suites.sh; run issue-specific VM '
-        'and Chrome production-path tests against upstream-emitted valid and '
-        'adversarial invalid shapes.',
+        'Select applicable tests using doc/high_risk_pre_merge_readiness.md; '
+        'for mixed changes run ./tool/testing/run_template_parity_suites.sh '
+        'plus issue-specific VM and Chrome production-path tests.',
     useWhen:
         'Chat-template parser, grammar, streaming, thinking, or tool-call '
         'changes. Exact affected-family evidence is preferred; when weights '

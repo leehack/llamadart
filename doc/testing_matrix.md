@@ -87,23 +87,27 @@ Validate the evidence payload with `tool/testing/high_risk_readiness.dart`,
 supplying repository, PR, author, exact head, and exact base values from an
 independent source as documented in `doc/high_risk_pre_merge_readiness.md`.
 The evaluator derives the rename-aware changed-file inventory from Git and
-rejects unchanged, deleted, renamed-old, non-test, and phantom evidence paths.
+rejects deleted, renamed-old, non-test, and phantom evidence paths. Existing
+tests are accepted with independently reviewed production reachability and causal
+before-fix or mutation evidence; changed filenames alone are insufficient.
 Fill the PR template's high-risk block with the task identities, exact head/base,
 affected-family evidence or precise N/A, zero known PR-caused P1 regressions,
 and the live unresolved-thread count. A known PR-caused P1 or any unresolved
 thread blocks readiness.
 
-For structured output, cover the applicable production-path axes:
+For structured output, use evidence v2 and review three behavioral impacts:
 
-- compile generated grammars and accept upstream-emitted valid shapes;
-- reject unknown, missing, mismatched, wrong-type, and malformed structures;
-- reconstruct schema-directed strings, numbers, booleans, nulls, objects, and
-  arrays, including empty containers and zero-argument calls;
-- suppress incomplete protocol markup while streaming and preserve ordinary
-  content through malformed-final rollback;
-- exercise `auto`, `required`, and `none` tool choice with thinking/reasoning
-  prefixes; and
-- run pinned and current upstream template/parser parity.
+- Input rendering/history: byte, role, content, typed tool-result and history
+  preservation plus affected-family upstream comparison.
+- Output parsing/streaming: scalar/container schema reconstruction, partial
+  suppression, malformed-final rollback, tool choice/thinking, and upstream parity.
+- Grammar/schema enforcement: compiled acceptance/rejection, reconstruction,
+  tool choice/thinking, and upstream parity.
+
+The independent exact-head/base audit records source-grounded exclusions for
+unaffected impacts. Shared handlers and unknown/mixed changes require all axes.
+See `doc/high_risk_pre_merge_readiness.md` for the evidence contract. Do not edit
+unrelated grammar tests just to satisfy a rendering-only change.
 
 Use the closest affected-family real model or artifact. When it is unavailable,
 name every unavailable family and substitute primary upstream emissions plus

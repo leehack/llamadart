@@ -29,6 +29,39 @@ class HighRiskAssessment {
   bool get isHighRisk => surfaces.isNotEmpty;
 }
 
+/// Behavioral proof groups. File hints are deliberately conservative.
+enum StructuredImpact {
+  inputRenderingHistory,
+  outputParsingStreaming,
+  grammarSchema,
+}
+
+/// Minimum impacts implied by changed production paths. Evidence-only changes
+/// cannot expand a known production change into unrelated runtime behavior.
+Set<StructuredImpact> structuredImpactHints(Iterable<String> paths) {
+  final production = paths.where(
+    (path) => _isStructuredOutput(path) && !path.startsWith('test/'),
+  );
+  final impacts = <StructuredImpact>{};
+  for (final path in production) {
+    if (path == 'lib/src/core/template/template_render_context.dart') {
+      impacts.add(StructuredImpact.inputRenderingHistory);
+    } else if (const {
+      'lib/src/core/template/peg_chat_parser.dart',
+      'lib/src/core/template/chat_parse_result.dart',
+      'lib/src/core/template/tool_call_fallback_parser.dart',
+    }.contains(path)) {
+      impacts.add(StructuredImpact.outputParsingStreaming);
+    } else if (path.startsWith('lib/src/core/grammar/')) {
+      impacts.add(StructuredImpact.grammarSchema);
+    } else {
+      // Handlers, shared utilities, exports, and unknown paths can mix effects.
+      impacts.addAll(StructuredImpact.values);
+    }
+  }
+  return impacts.isEmpty ? StructuredImpact.values.toSet() : impacts;
+}
+
 /// Platform-independent result of classifying paths read from standard input.
 class HighRiskCliResult {
   const HighRiskCliResult({
@@ -167,6 +200,7 @@ bool _isRegressionPolicy(String path) {
       path == 'tool/testing/high_risk_readiness.dart' ||
       path == 'tool/testing/release_metadata_readiness.dart' ||
       path == 'tool/testing/high_risk_readiness_evidence.schema.json' ||
+      path == 'tool/testing/high_risk_readiness_evidence.v1.schema.json' ||
       path == 'test/unit/tooling/test_matrix_test.dart' ||
       path == 'test/unit/tooling/classify_high_risk_changes_test.dart' ||
       path == 'test/unit/tooling/high_risk_review_policy_test.dart' ||
