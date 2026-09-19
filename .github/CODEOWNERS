@@ -20,6 +20,7 @@ tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
 tool/testing/high_risk_readiness.dart @leehack
 tool/testing/high_risk_readiness_evidence.schema.json @leehack
+tool/testing/high_risk_readiness_evidence.v1.schema.json @leehack
 tool/testing/run_template_parity_suites.sh @leehack
 tool/testing/run_llama_cpp_chat_tests.sh @leehack
 tool/testing/prepare_llama_cpp_source.sh @leehack

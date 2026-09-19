@@ -486,7 +486,7 @@ class HighRiskReadinessResult {
   });
 
   static const schema = 'llamadart.high-risk-readiness-evidence';
-  static const schemaVersion = '1.0.0';
+  static const schemaVersion = '2.0.0';
 
   final Map<String, Object?> evidence;
   final DateTime evaluatedAt;
@@ -550,6 +550,7 @@ class HighRiskReadinessEvaluator {
     'independent_audit',
     'structured_output_evidence',
     'affected_test_paths',
+    'test_evidence',
     'evaluation',
   };
   static const _auditKeys = <String>{
@@ -573,8 +574,9 @@ class HighRiskReadinessEvaluator {
     'structured-output-adversarial',
     releaseMetadataRow,
   };
-  static const _structuredKeys = <String>{'coverage', 'families'};
+  static const _structuredKeys = <String>{'coverage', 'families', 'impacts'};
   static const _coverageAxes = <String>{
+    'input_rendering_history',
     'compiled_grammar_acceptance',
     'compiled_grammar_rejection',
     'schema_reconstruction',
@@ -964,7 +966,7 @@ class HighRiskReadinessEvaluator {
     } else if (affectedPaths.isEmpty) {
       return reject(
         ReadinessFailureClassification.missingTestPath,
-        'High-risk evidence must cite at least one changed production test.',
+        'High-risk evidence must cite at least one relevant production test.',
         changedFiles: changedFiles,
       );
     }
@@ -992,6 +994,29 @@ class HighRiskReadinessEvaluator {
           changedFiles: changedFiles,
         );
       }
+    }
+
+    try {
+      final error = await _validateImpactEvidence(
+        evidence,
+        context,
+        changedByPath,
+        metadataClaim,
+        workingDirectory,
+      );
+      if (error != null) {
+        return reject(
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+          error,
+          changedFiles: changedFiles,
+        );
+      }
+    } on Object {
+      return reject(
+        ReadinessFailureClassification.gitExecutionError,
+        'Could not inspect impact evidence blobs.',
+        changedFiles: changedFiles,
+      );
     }
 
     if (actualSurfaces.contains(HighRiskSurface.structuredOutput.name)) {
@@ -1022,10 +1047,11 @@ class HighRiskReadinessEvaluator {
         'compiled_grammar_rejection',
       }) {
         final paths = (coverage[axis] as List<dynamic>).cast<String>().toSet();
-        if (paths.intersection(_knownCompiledGrammarTests).isEmpty) {
+        if (paths.isNotEmpty &&
+            paths.intersection(_knownCompiledGrammarTests).isEmpty) {
           return reject(
             ReadinessFailureClassification.missingStructuredOutputEvidence,
-            'Structured-output axis "$axis" must cite a changed compiled production grammar test.',
+            'Structured-output axis "$axis" must cite a compiled production grammar test.',
             changedFiles: changedFiles,
           );
         }
@@ -1065,6 +1091,245 @@ class HighRiskReadinessEvaluator {
     );
   }
 
+  static const _impactAxes = <String, Set<String>>{
+    'inputRenderingHistory': {'input_rendering_history', 'upstream_parity'},
+    'outputParsingStreaming': {
+      'schema_reconstruction',
+      'streaming_rollback',
+      'tool_choice_thinking',
+      'upstream_parity',
+    },
+    'grammarSchema': {
+      'compiled_grammar_acceptance',
+      'compiled_grammar_rejection',
+      'schema_reconstruction',
+      'tool_choice_thinking',
+      'upstream_parity',
+    },
+  };
+
+  // These are reviewed observations, not authenticated execution receipts.
+  // The local evaluator checks exact-tree references and consistency only.
+  static String? _validateImpactShape(Map<String, dynamic> evidence) {
+    final tests = evidence['test_evidence'];
+    if (tests is! Map<String, dynamic>) {
+      return 'test_evidence must be an object.';
+    }
+    for (final entry in tests.entries) {
+      final value = entry.value;
+      if (value is! Map<String, dynamic>) {
+        return 'Test evidence must be an object.';
+      }
+      final error = _exactKeys(value, {
+        'test_case',
+        'test_snippet',
+        'production_refs',
+        'command',
+        'head_result',
+        'control_result',
+        'control_kind',
+        'control_description',
+        'evidence_notes',
+      }, 'test evidence');
+      if (error != null) return error;
+      for (final key in [
+        'test_case',
+        'test_snippet',
+        'command',
+        'control_description',
+        'evidence_notes',
+      ]) {
+        if (!_isNonEmptyString(value[key])) {
+          return 'Test evidence $key must be nonempty.';
+        }
+      }
+      if (value['head_result'] != 'pass' ||
+          value['control_result'] != 'fail' ||
+          !{'before-fix', 'mutation'}.contains(value['control_kind'])) {
+        return 'Test evidence requires head pass and causal control failure.';
+      }
+      final refsError = _validateRefsShape(value['production_refs']);
+      if (refsError != null) return refsError;
+    }
+    final structured = evidence['structured_output_evidence'];
+    if (structured == null) return null;
+    if (structured is! Map<String, dynamic>) {
+      return 'Structured evidence must be an object.';
+    }
+    final impacts = structured['impacts'];
+    if (impacts is! Map<String, dynamic>) {
+      return 'Structured impacts must be an object.';
+    }
+    final error = _exactKeys(impacts, _impactAxes.keys.toSet(), 'impacts');
+    if (error != null) return error;
+    for (final value in impacts.values) {
+      if (value is! Map<String, dynamic>) {
+        return 'Each impact must be an object.';
+      }
+      final error = _exactKeys(value, {
+        'applicable',
+        'rationale',
+        'production_refs',
+      }, 'impact');
+      if (error != null) return error;
+      if (value['applicable'] is! bool ||
+          !_isNonEmptyString(value['rationale'])) {
+        return 'Impact applicability and independent rationale are required.';
+      }
+      final refsError = _validateRefsShape(value['production_refs']);
+      if (refsError != null) return refsError;
+    }
+    return null;
+  }
+
+  static String? _validateRefsShape(dynamic refs) {
+    if (refs is! List || refs.isEmpty) {
+      return 'Production references must be nonempty.';
+    }
+    final paths = <String>{};
+    for (final ref in refs) {
+      if (ref is! Map<String, dynamic>) {
+        return 'Production reference must be an object.';
+      }
+      final error = _exactKeys(ref, {
+        'path',
+        'snippet',
+      }, 'production reference');
+      if (error != null) return error;
+      final path = ref['path'];
+      if (path is! String ||
+          !paths.add(path) ||
+          !(path.startsWith('lib/') ||
+              path.startsWith('tool/') ||
+              path.startsWith('hook/')) ||
+          path.contains('..') ||
+          path.contains('\\') ||
+          RegExp(r'[\x00-\x20\x7f*?\[\]]').hasMatch(path) ||
+          !_isNonEmptyString(ref['snippet'])) {
+        return 'Invalid production reference.';
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _validateImpactEvidence(
+    Map<String, dynamic> evidence,
+    PullRequestContext context,
+    Map<String, RepositoryChange> changes,
+    bool metadataClaim,
+    String? workingDirectory,
+  ) async {
+    final tests = evidence['test_evidence'] as Map<String, dynamic>;
+    final paths = (evidence['affected_test_paths'] as List)
+        .cast<String>()
+        .toSet();
+    if (metadataClaim) {
+      return tests.isEmpty
+          ? null
+          : 'Release metadata uses its existing bounded evidence route.';
+    }
+    if (!_sameSet(tests.keys.toSet(), paths)) {
+      return 'Every cited test needs exactly one relevance and causal evidence record.';
+    }
+    final renamedSources = {
+      for (final change in changes.values)
+        if (change.kind == RepositoryChangeKind.renamed &&
+            change.previousPath != null)
+          change.previousPath!,
+    };
+    final inspectedPaths = {...changes.keys, ...renamedSources};
+    final changedProduction = inspectedPaths
+        .where(
+          (path) =>
+              path.startsWith('lib/') ||
+              path.startsWith('tool/') ||
+              path.startsWith('hook/'),
+        )
+        .toSet();
+    Future<bool> refsExist(List<dynamic> refs) async {
+      for (final ref in refs.cast<Map<String, dynamic>>()) {
+        final path = ref['path'] as String;
+        // Deleted code is inspectable at the base, never at an invented head.
+        final sha =
+            changes[path]?.kind == RepositoryChangeKind.deleted ||
+                renamedSources.contains(path)
+            ? context.baseSha
+            : context.headSha;
+        final file = await repositoryState.fileAt(
+          sha,
+          path,
+          workingDirectory: workingDirectory,
+        );
+        if (file == null ||
+            !{'100644', '100755'}.contains(file.mode) ||
+            !file.contents.contains(ref['snippet'] as String)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    final coveredProduction = <String>{};
+    for (final entry in tests.entries) {
+      final proof = entry.value as Map<String, dynamic>;
+      final file = await repositoryState.fileAt(
+        context.headSha,
+        entry.key,
+        workingDirectory: workingDirectory,
+      );
+      if (file == null ||
+          !file.contents.contains(proof['test_snippet'] as String) ||
+          !file.contents.contains(proof['test_case'] as String)) {
+        return 'Named test case or callsite snippet is missing from the exact head: ${entry.key}.';
+      }
+      final refs = proof['production_refs'] as List<dynamic>;
+      final referenced = refs
+          .map((ref) => (ref as Map)['path'] as String)
+          .toSet();
+      if (!await refsExist(refs) ||
+          (changedProduction.isNotEmpty &&
+              referenced.intersection(changedProduction).isEmpty)) {
+        return 'Test evidence is disconnected from the changed production path: ${entry.key}.';
+      }
+      coveredProduction.addAll(referenced);
+    }
+    if (!coveredProduction.containsAll(changedProduction)) {
+      return 'Some changed production paths lack reviewed test reachability.';
+    }
+    final structured =
+        evidence['structured_output_evidence'] as Map<String, dynamic>?;
+    if (structured == null) return null;
+    final impacts = structured['impacts'] as Map<String, dynamic>;
+    final minimum = structuredImpactHints(
+      inspectedPaths,
+    ).map((impact) => impact.name).toSet();
+    final requiredAxes = <String>{};
+    for (final entry in impacts.entries) {
+      final impact = entry.value as Map<String, dynamic>;
+      final refs = impact['production_refs'] as List<dynamic>;
+      final referenced = refs
+          .map((ref) => (ref as Map)['path'] as String)
+          .toSet();
+      if (!await refsExist(refs) ||
+          !referenced.containsAll(changedProduction)) {
+        return 'Impact review must inspect the changed production paths and their callsites.';
+      }
+      if (minimum.contains(entry.key) && impact['applicable'] != true) {
+        return 'Known or unknown/mixed production effects cannot be excluded: ${entry.key}.';
+      }
+      if (impact['applicable'] == true) {
+        requiredAxes.addAll(_impactAxes[entry.key]!);
+      }
+    }
+    final coverage = structured['coverage'] as Map<String, dynamic>;
+    for (final axis in requiredAxes) {
+      if ((coverage[axis] as List).isEmpty) {
+        return 'Applicable impact requires coverage.$axis.';
+      }
+    }
+    return null;
+  }
+
   Future<(ReadinessFailureClassification, String)?> _validateEvidencePath(
     String path,
     String headSha,
@@ -1085,13 +1350,7 @@ class HighRiskReadinessEvaluator {
       );
     }
     final change = changedByPath[path];
-    if (change == null) {
-      return (
-        ReadinessFailureClassification.unchangedEvidencePath,
-        'Evidence path is not changed in the exact base-to-head inventory: $path.',
-      );
-    }
-    if (change.kind == RepositoryChangeKind.deleted) {
+    if (change?.kind == RepositoryChangeKind.deleted) {
       return (
         ReadinessFailureClassification.deletedEvidencePath,
         'Evidence path is deleted in the candidate: $path.',
@@ -1127,12 +1386,12 @@ class HighRiskReadinessEvaluator {
   }
 
   static String? _validateShape(Map<String, dynamic> evidence) {
-    final rootError = _exactKeys(evidence, _rootKeys, 'evidence');
-    if (rootError != null) return rootError;
     if (evidence['schema'] != HighRiskReadinessResult.schema ||
         evidence['schema_version'] != HighRiskReadinessResult.schemaVersion) {
-      return 'Unsupported evidence schema or schema_version.';
+      return 'Unsupported evidence schema or schema_version; historical v1 evidence must be reviewed and reissued as v2.';
     }
+    final rootError = _exactKeys(evidence, _rootKeys, 'evidence');
+    if (rootError != null) return rootError;
     if (!_isUtcTimestamp(evidence['timestamp'])) {
       return 'timestamp must be a valid RFC 3339 UTC string.';
     }
@@ -1226,6 +1485,8 @@ class HighRiskReadinessEvaluator {
       }
     }
 
+    final impactError = _validateImpactShape(evidence);
+    if (impactError != null) return impactError;
     final structured = evidence['structured_output_evidence'];
     if (structured != null) {
       if (structured is! Map<String, dynamic>) {
@@ -1248,11 +1509,7 @@ class HighRiskReadinessEvaluator {
       );
       if (coverageError != null) return coverageError;
       for (final axis in _coverageAxes) {
-        final axisError = _stringList(
-          coverage[axis],
-          'coverage.$axis',
-          requireNonEmpty: true,
-        );
+        final axisError = _stringList(coverage[axis], 'coverage.$axis');
         if (axisError != null) return axisError;
       }
       final families = structured['families'];
@@ -1291,7 +1548,9 @@ class HighRiskReadinessEvaluator {
         (evidence['matrix_row_evidence'] as Map<String, dynamic>).isNotEmpty ||
         evidence['independent_audit'] != null ||
         evidence['structured_output_evidence'] != null ||
-        (evidence['affected_test_paths'] as List<dynamic>).isNotEmpty) {
+        (evidence['affected_test_paths'] as List<dynamic>).isNotEmpty ||
+        (evidence['test_evidence'] is Map &&
+            (evidence['test_evidence'] as Map).isNotEmpty)) {
       return 'Standard-risk evidence must not contain high-risk claims.';
     }
     return null;
@@ -1308,6 +1567,7 @@ class HighRiskReadinessEvaluator {
         'schema': HighRiskReadinessResult.schema,
         'schema_version': HighRiskReadinessResult.schemaVersion,
         'timestamp': now.toIso8601String(),
+        'test_evidence': const <String, Object?>{},
         'correlation_id': 'invalid-input',
         ..._boundIdentity(context),
         'classification': 'standard',
@@ -1323,6 +1583,7 @@ class HighRiskReadinessEvaluator {
     return <String, Object?>{
       'schema': HighRiskReadinessResult.schema,
       'schema_version': HighRiskReadinessResult.schemaVersion,
+      'test_evidence': evidence['test_evidence'],
       'timestamp': _isUtcTimestamp(evidence['timestamp'])
           ? evidence['timestamp']
           : now.toIso8601String(),

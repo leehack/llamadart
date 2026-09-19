@@ -52,7 +52,11 @@ class FakeRepositoryState implements RepositoryStateReader {
     String sha,
     String path, {
     String? workingDirectory,
-  }) async => files[sha]?[path];
+  }) async =>
+      files[sha]?[path] ??
+      (files.isEmpty && existingPaths.contains(path)
+          ? (mode: '100644', contents: 'regression case\nproductionCall();')
+          : null);
 
   @override
   Future<bool> commitExists(String sha, {String? workingDirectory}) async {
@@ -94,9 +98,32 @@ class FakeRepositoryState implements RepositoryStateReader {
   }
 }
 
+const structuredSource = 'lib/src/core/template/chat_template_handler.dart';
+const backendSource = 'lib/src/backends/example_backend.dart';
+List<Map<String, dynamic>> productionRefs(String path) => [
+  {'path': path, 'snippet': 'productionCall();'},
+];
+Map<String, dynamic> testProof(String path) => {
+  'test_case': 'regression case',
+  'test_snippet': 'productionCall();',
+  'production_refs': productionRefs(path),
+  'command': 'dart test --name "regression case"',
+  'head_result': 'pass',
+  'control_result': 'fail',
+  'control_kind': 'mutation',
+  'control_description': 'Bypass productionCall at the changed branch.',
+  'evidence_notes':
+      'Independent reviewer inspected reachability and control failure.',
+};
+Map<String, dynamic> impactProof(String path, {bool applicable = true}) => {
+  'applicable': applicable,
+  'rationale': 'Independent exact-pair review of production callsites.',
+  'production_refs': productionRefs(path),
+};
+
 Map<String, dynamic> structuredEvidence() => <String, dynamic>{
   'schema': 'llamadart.high-risk-readiness-evidence',
-  'schema_version': '1.0.0',
+  'schema_version': '2.0.0',
   'timestamp': '2026-08-28T12:00:00.000Z',
   'correlation_id': 'issue-419-audit-1',
   'repository': context.repository,
@@ -134,8 +161,14 @@ Map<String, dynamic> structuredEvidence() => <String, dynamic>{
     'known_pr_caused_p1_regressions': 0,
     'summary': 'Independent audit completed against production call sites.',
   },
+  'test_evidence': {compiledTest: testProof(structuredSource)},
   'structured_output_evidence': {
+    'impacts': {
+      for (final impact in StructuredImpact.values)
+        impact.name: impactProof(structuredSource),
+    },
     'coverage': {
+      'input_rendering_history': [compiledTest],
       'compiled_grammar_acceptance': [compiledTest],
       'compiled_grammar_rejection': [compiledTest],
       'schema_reconstruction': [compiledTest],
@@ -167,6 +200,7 @@ Map<String, dynamic> backendEvidence() {
   };
   evidence['structured_output_evidence'] = null;
   evidence['affected_test_paths'] = [backendTest];
+  evidence['test_evidence'] = {backendTest: testProof(backendSource)};
   return evidence;
 }
 
@@ -182,6 +216,7 @@ Map<String, dynamic> metadataEvidence() {
         'Strict verifier and existing companion-pin tests passed on exact head.',
   };
   evidence['affected_test_paths'] = [releaseMetadataTest];
+  evidence['test_evidence'] = <String, dynamic>{};
   return evidence;
 }
 
@@ -241,6 +276,7 @@ Map<String, dynamic> standardEvidence() {
   evidence['matrix_row_evidence'] = <String, dynamic>{};
   evidence['independent_audit'] = null;
   evidence['affected_test_paths'] = <String>[];
+  evidence['test_evidence'] = <String, dynamic>{};
   return evidence;
 }
 
@@ -335,6 +371,379 @@ void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
 }
 
 void main() {
+  for (final scenario in [
+    (
+      'lib/src/core/template/peg_chat_parser.dart',
+      'outputParsingStreaming',
+      {
+        'schema_reconstruction',
+        'streaming_rollback',
+        'tool_choice_thinking',
+        'upstream_parity',
+      },
+    ),
+    (
+      'lib/src/core/grammar/gbnf_grammar_generator.dart',
+      'grammarSchema',
+      {
+        'compiled_grammar_acceptance',
+        'compiled_grammar_rejection',
+        'schema_reconstruction',
+        'tool_choice_thinking',
+        'upstream_parity',
+      },
+    ),
+  ]) {
+    test(
+      '${scenario.$2} keeps only applicable gates and rejects each missing gate',
+      () async {
+        final evidence =
+            jsonDecode(
+                  jsonEncode(
+                    structuredEvidence(),
+                  ).replaceAll(structuredSource, scenario.$1),
+                )
+                as Map<String, dynamic>;
+        final structured = evidence['structured_output_evidence'] as Map;
+        for (final impact in StructuredImpact.values) {
+          structured['impacts'][impact.name]['applicable'] =
+              impact.name == scenario.$2;
+        }
+        for (final axis in (structured['coverage'] as Map).keys) {
+          if (!scenario.$3.contains(axis)) {
+            structured['coverage'][axis] = <String>[];
+          }
+        }
+        Future<HighRiskReadinessResult> evaluate() => evaluatorFor(
+          [
+            RepositoryChange(
+              path: scenario.$1,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ],
+          existingPaths: {scenario.$1, compiledTest},
+        ).evaluate(evidence: evidence, context: context);
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        for (final axis in scenario.$3) {
+          structured['coverage'][axis] = <String>[];
+          expectFailure(
+            await evaluate(),
+            ReadinessFailureClassification.missingStructuredOutputEvidence,
+          );
+          structured['coverage'][axis] = [compiledTest];
+        }
+      },
+    );
+  }
+  group('v2 impact and existing-test evidence', () {
+    const source = 'lib/src/core/template/template_render_context.dart';
+    const testPath =
+        'test/unit/core/template/template_render_context_test.dart';
+    Map<String, dynamic> renderingEvidence() {
+      final evidence =
+          jsonDecode(
+                jsonEncode(structuredEvidence())
+                    .replaceAll(structuredSource, source)
+                    .replaceAll(compiledTest, testPath),
+              )
+              as Map<String, dynamic>;
+      final structured = evidence['structured_output_evidence'] as Map;
+      final coverage = structured['coverage'] as Map;
+      for (final axis in coverage.keys) {
+        if (!{'input_rendering_history', 'upstream_parity'}.contains(axis)) {
+          coverage[axis] = <String>[];
+        }
+      }
+      for (final impact in ['outputParsingStreaming', 'grammarSchema']) {
+        structured['impacts'][impact]['applicable'] = false;
+      }
+      return evidence;
+    }
+
+    Future<HighRiskReadinessResult> evaluateRendering(
+      Map<String, dynamic> evidence, {
+      List<RepositoryChange>? changes,
+      Map<String, Map<String, ReadinessFile>> files = const {},
+    }) => HighRiskReadinessEvaluator(
+      repositoryState: FakeRepositoryState(
+        changes:
+            changes ??
+            const [
+              RepositoryChange(
+                path: source,
+                kind: RepositoryChangeKind.modified,
+              ),
+            ],
+        existingPaths: {source, testPath, structuredSource},
+        files: files,
+      ),
+    ).evaluate(evidence: evidence, context: context);
+
+    test(
+      'existing test evidence reads committed blobs, not working tree edits',
+      () async {
+        final repo = Directory.systemTemp.createTempSync(
+          'impact-evidence-git-',
+        );
+        addTearDown(() => repo.deleteSync(recursive: true));
+        String git(List<String> args) {
+          final result = Process.runSync(
+            'git',
+            args,
+            workingDirectory: repo.path,
+          );
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          return (result.stdout as String).trim();
+        }
+
+        git(['init', '--quiet']);
+        git(['config', 'user.name', 'Impact evidence test']);
+        git(['config', 'user.email', 'impact@example.invalid']);
+        final sourceFile = File('${repo.path}/$source');
+        sourceFile.parent.createSync(recursive: true);
+        sourceFile.writeAsStringSync('bool productionCall() => false;\n');
+        final testFile = File('${repo.path}/$testPath');
+        testFile.parent.createSync(recursive: true);
+        testFile.writeAsStringSync(
+          "void main() { test('regression case', () { productionCall(); }); }\n",
+        );
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        final base = git(['rev-parse', 'HEAD']);
+        sourceFile.writeAsStringSync('bool productionCall() => true;\n');
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'head']);
+        final head = git(['rev-parse', 'HEAD']);
+        final evidence = renderingEvidence()
+          ..['expected_pr_head_sha'] = head
+          ..['current_base_sha'] = base;
+        evidence['independent_audit']['audit_head_sha'] = head;
+        evidence['independent_audit']['audit_base_sha'] = base;
+        final refs = [
+          {'path': source, 'snippet': 'bool productionCall() => true;'},
+        ];
+        evidence['test_evidence'][testPath]['production_refs'] = refs;
+        for (final impact in StructuredImpact.values) {
+          evidence['structured_output_evidence']['impacts'][impact
+                  .name]['production_refs'] =
+              refs;
+        }
+        Future<HighRiskReadinessResult> evaluate() =>
+            const HighRiskReadinessEvaluator().evaluate(
+              evidence: evidence,
+              context: PullRequestContext(
+                repository: context.repository,
+                prNumber: context.prNumber,
+                headSha: head,
+                baseSha: base,
+                author: context.author,
+              ),
+              workingDirectory: repo.path,
+            );
+        expect(
+          (await evaluate()).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        testFile.writeAsStringSync('invented local test case');
+        evidence['test_evidence'][testPath]['test_case'] =
+            'invented local test case';
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        evidence['test_evidence'][testPath]['test_case'] = 'regression case';
+        refs.single['snippet'] = 'bool productionCall() => false;';
+        sourceFile.writeAsStringSync('bool productionCall() => false;');
+        expectFailure(
+          await evaluate(),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+      },
+    );
+    test(
+      'rendering-only accepts unchanged relevant test without grammar edits',
+      () async {
+        final result = await evaluateRendering(renderingEvidence());
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        expect(result.changedFiles.map((change) => change.path), [source]);
+      },
+    );
+    test(
+      'evidence-only grammar file edits do not invent runtime effects',
+      () async {
+        final result = await evaluateRendering(
+          renderingEvidence(),
+          changes: const [
+            RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+            RepositoryChange(
+              path: compiledTest,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ],
+        );
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+      },
+    );
+    test('changed test filename alone is insufficient', () async {
+      final evidence = renderingEvidence()
+        ..['test_evidence'] = <String, dynamic>{};
+      expectFailure(
+        await evaluateRendering(
+          evidence,
+          changes: const [
+            RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+            RepositoryChange(
+              path: testPath,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ],
+        ),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+    for (final field in ['test_case', 'test_snippet']) {
+      test('rejects invented existing-test $field', () async {
+        final evidence = renderingEvidence();
+        evidence['test_evidence'][testPath][field] =
+            'invented unreachable case';
+        expectFailure(
+          await evaluateRendering(evidence),
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+      });
+    }
+    test('rejects disconnected existing-test production references', () async {
+      final evidence = renderingEvidence();
+      evidence['test_evidence'][testPath]['production_refs'] = productionRefs(
+        structuredSource,
+      );
+      expectFailure(
+        await evaluateRendering(evidence),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+    for (final field in ['rationale', 'production_refs']) {
+      test('rejects empty impact $field', () async {
+        final evidence = renderingEvidence();
+        evidence['structured_output_evidence']['impacts']['grammarSchema'][field] =
+            field == 'rationale' ? ' ' : [];
+        expectFailure(
+          await evaluateRendering(evidence),
+          ReadinessFailureClassification.schemaViolation,
+        );
+      });
+    }
+    test('rejects author-only exclusion review', () async {
+      final evidence = renderingEvidence();
+      evidence['independent_audit']['auditor_identity'] = context.author;
+      expectFailure(
+        await evaluateRendering(evidence),
+        ReadinessFailureClassification.selfApprovalProhibited,
+      );
+    });
+    test('rejects omitted mixed production effects', () async {
+      expectFailure(
+        await evaluateRendering(
+          renderingEvidence(),
+          changes: const [
+            RepositoryChange(path: source, kind: RepositoryChangeKind.modified),
+            RepositoryChange(
+              path: structuredSource,
+              kind: RepositoryChangeKind.modified,
+            ),
+          ],
+        ),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+    test(
+      'renaming mixed source into rendering cannot erase source effects',
+      () async {
+        final evidence = renderingEvidence();
+        final refs = [
+          ...productionRefs(source),
+          ...productionRefs(structuredSource),
+        ];
+        evidence['test_evidence'][testPath]['production_refs'] = refs;
+        for (final impact in StructuredImpact.values) {
+          evidence['structured_output_evidence']['impacts'][impact
+                  .name]['production_refs'] =
+              refs;
+        }
+        final result = await evaluateRendering(
+          evidence,
+          changes: const [
+            RepositoryChange(
+              path: source,
+              previousPath: structuredSource,
+              kind: RepositoryChangeKind.renamed,
+            ),
+          ],
+        );
+        expectFailure(
+          result,
+          ReadinessFailureClassification.missingStructuredOutputEvidence,
+        );
+        expect(result.message, contains('cannot be excluded'));
+      },
+    );
+    test('unknown handler cannot exclude parser or grammar', () async {
+      final evidence = structuredEvidence();
+      evidence['structured_output_evidence']['impacts']['grammarSchema']['applicable'] =
+          false;
+      expectFailure(
+        await evaluateStructured(evidence),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+    test('rejects missing required rendering checks', () async {
+      final evidence = renderingEvidence();
+      evidence['structured_output_evidence']['coverage']['input_rendering_history'] =
+          [];
+      expectFailure(
+        await evaluateRendering(evidence),
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
+      );
+    });
+    for (final field in ['control_description', 'evidence_notes', 'command']) {
+      test('rejects empty causal $field', () async {
+        final evidence = renderingEvidence();
+        evidence['test_evidence'][testPath][field] = '';
+        expectFailure(
+          await evaluateRendering(evidence),
+          ReadinessFailureClassification.schemaViolation,
+        );
+      });
+    }
+    test('rejects nonfailing counterfactual', () async {
+      final evidence = renderingEvidence();
+      evidence['test_evidence'][testPath]['control_result'] = 'pass';
+      expectFailure(
+        await evaluateRendering(evidence),
+        ReadinessFailureClassification.schemaViolation,
+      );
+    });
+    test('rejects old schema explicitly', () async {
+      final evidence = renderingEvidence()..['schema_version'] = '1.0.0';
+      final result = await evaluateRendering(evidence);
+      expectFailure(result, ReadinessFailureClassification.schemaViolation);
+      expect(result.message, contains('historical v1'));
+    });
+    test('rejects stale pair on rendering exclusion', () async {
+      for (final field in ['audit_head_sha', 'audit_base_sha']) {
+        final evidence = renderingEvidence();
+        evidence['independent_audit'][field] = otherSha;
+        expect(
+          (await evaluateRendering(evidence)).decision,
+          ReadinessDecision.rejected,
+        );
+      }
+    });
+  });
+
   group('bounded metadata-only release evidence', () {
     test(
       'new release prefix cannot duplicate or invent historical sections',
@@ -1336,58 +1745,55 @@ void main() {
       },
     );
 
-    test(
-      'rejects unchanged, deleted, renamed-old, and phantom paths',
-      () async {
-        expectFailure(
-          await evaluatorFor([
-            backendChanges.first,
-          ]).evaluate(evidence: backendEvidence(), context: context),
-          ReadinessFailureClassification.unchangedEvidencePath,
-        );
+    test('rejects absent, deleted, renamed-old, and phantom paths', () async {
+      expectFailure(
+        await evaluatorFor([
+          backendChanges.first,
+        ]).evaluate(evidence: backendEvidence(), context: context),
+        ReadinessFailureClassification.missingTestPath,
+      );
 
-        expectFailure(
-          await evaluatorFor(const [
-            RepositoryChange(
-              path: 'lib/src/backends/example_backend.dart',
-              kind: RepositoryChangeKind.modified,
-            ),
-            RepositoryChange(
-              path: backendTest,
-              kind: RepositoryChangeKind.deleted,
-            ),
-          ]).evaluate(evidence: backendEvidence(), context: context),
-          ReadinessFailureClassification.deletedEvidencePath,
-        );
+      expectFailure(
+        await evaluatorFor(const [
+          RepositoryChange(
+            path: 'lib/src/backends/example_backend.dart',
+            kind: RepositoryChangeKind.modified,
+          ),
+          RepositoryChange(
+            path: backendTest,
+            kind: RepositoryChangeKind.deleted,
+          ),
+        ]).evaluate(evidence: backendEvidence(), context: context),
+        ReadinessFailureClassification.deletedEvidencePath,
+      );
 
-        final renamed = backendEvidence()
-          ..['affected_test_paths'] = [
-            'test/unit/backends/old_backend_test.dart',
-          ];
-        expectFailure(
-          await evaluatorFor(const [
-            RepositoryChange(
-              path: 'lib/src/backends/example_backend.dart',
-              kind: RepositoryChangeKind.modified,
-            ),
-            RepositoryChange(
-              path: backendTest,
-              previousPath: 'test/unit/backends/old_backend_test.dart',
-              kind: RepositoryChangeKind.renamed,
-            ),
-          ]).evaluate(evidence: renamed, context: context),
-          ReadinessFailureClassification.renamedEvidencePath,
-        );
+      final renamed = backendEvidence()
+        ..['affected_test_paths'] = [
+          'test/unit/backends/old_backend_test.dart',
+        ];
+      expectFailure(
+        await evaluatorFor(const [
+          RepositoryChange(
+            path: 'lib/src/backends/example_backend.dart',
+            kind: RepositoryChangeKind.modified,
+          ),
+          RepositoryChange(
+            path: backendTest,
+            previousPath: 'test/unit/backends/old_backend_test.dart',
+            kind: RepositoryChangeKind.renamed,
+          ),
+        ]).evaluate(evidence: renamed, context: context),
+        ReadinessFailureClassification.renamedEvidencePath,
+      );
 
-        expectFailure(
-          await evaluatorFor(
-            backendChanges,
-            existingPaths: {'lib/src/backends/example_backend.dart'},
-          ).evaluate(evidence: backendEvidence(), context: context),
-          ReadinessFailureClassification.missingTestPath,
-        );
-      },
-    );
+      expectFailure(
+        await evaluatorFor(
+          backendChanges,
+          existingPaths: {'lib/src/backends/example_backend.dart'},
+        ).evaluate(evidence: backendEvidence(), context: context),
+        ReadinessFailureClassification.missingTestPath,
+      );
+    });
 
     test('does not treat a copy source as the old side of a rename', () async {
       final result = await evaluatorFor(const [
@@ -1442,7 +1848,7 @@ void main() {
           <String>[];
       expectFailure(
         await evaluateStructured(emptyAxis),
-        ReadinessFailureClassification.schemaViolation,
+        ReadinessFailureClassification.missingStructuredOutputEvidence,
       );
 
       final noFamilies = structuredEvidence();
@@ -1456,12 +1862,13 @@ void main() {
     });
 
     test(
-      'requires changed compiled acceptance and rejection production tests',
+      'requires compiled acceptance and rejection production tests',
       () async {
         const ordinaryTest =
             'test/unit/core/template/example_handler_test.dart';
         final evidence = structuredEvidence();
         evidence['affected_test_paths'] = [ordinaryTest];
+        evidence['test_evidence'] = {ordinaryTest: testProof(structuredSource)};
         final coverage =
             (evidence['structured_output_evidence']
                     as Map<String, dynamic>)['coverage']
@@ -1496,7 +1903,7 @@ void main() {
     );
 
     test(
-      'rejects coverage and family paths outside changed affected tests',
+      'rejects coverage and family paths outside cited affected tests',
       () async {
         const otherTest = 'test/unit/core/template/other_handler_test.dart';
         final axis = structuredEvidence();

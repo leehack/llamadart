@@ -49,8 +49,10 @@ For docs and release-sensitive snippets:
 dart run tool/testing/verify_release_docs_versions.dart
 ```
 
-For chat-template handler, parser, or grammar changes, run the pinned upstream
-suite plus compiled specialized-grammar acceptance checks:
+For mixed chat-template handler changes, run the full parity suite below.
+Rendering-only, parser-only, and grammar-only changes use the applicable checks
+in `doc/high_risk_pre_merge_readiness.md`; compiled grammar checks are required
+when grammar/schema enforcement is affected:
 
 ```bash
 tool/testing/run_template_parity_suites.sh
@@ -339,13 +341,16 @@ For core-patch release metadata only, use the bounded
 `doc/high_risk_pre_merge_readiness.md`. It checks exact Git blobs and existing
 release tests; do not fabricate changed tests or reclassify the PR as standard.
 
-Structured-output changes must cover compiled grammar acceptance and rejection,
-schema-directed scalar and container reconstruction, partial-streaming
-suppression and malformed-final rollback, `auto`/`required`/`none` tool choice
-with thinking prefixes, and pinned/current upstream parity as applicable. Use
-the closest affected-family model or artifact. If exact weights are unavailable,
-name every unavailable family and use primary upstream emissions plus durable
-fixtures; an unrelated representative model is pipeline-only evidence.
+Structured-output evidence v2 separates input rendering/history, output
+parsing/streaming, and grammar/schema enforcement. Require the applicable axes;
+unknown or mixed effects stay conservative. The same independent exact-pair
+review must justify exclusions with inspected production callsites. Changed and
+existing tests both need production reachability and causal before-fix or
+mutation failure evidence; changing a test filename is not proof. See
+`doc/high_risk_pre_merge_readiness.md` for the axis mapping and schema migration.
+Use the closest affected-family model or artifact. If exact weights are
+unavailable, name every unavailable family and use primary upstream emissions
+plus durable fixtures; an unrelated representative model is pipeline-only evidence.
 
 Post-merge QA remains mandatory, but it must not be the first adversarial pass.
 If it finds a PR-caused P1, stop lower-priority merge work, file a causally
