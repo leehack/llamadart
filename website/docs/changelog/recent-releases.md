@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Discover Windows backend libraries in standard compiled Dart CLI bundles.
+
 - Render structured typed tool results as JSON text for chat templates while preserving string results and source objects.
 
 - Preserve Qwen XML tool argument types using declared schemas and reject invalid or undeclared calls without exposing executable tool deltas.

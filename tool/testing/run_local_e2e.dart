@@ -190,6 +190,53 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'validation-harness',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Model-free validation runner, bundle and provider lifecycle checks.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['pub', 'get'],
+          description: 'Prepare private suite',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['test'],
+          description: 'Shared suite regressions',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            'test/unit/tooling/validation_remote_test.dart',
+            'test/unit/tooling/validation_npu_test.dart',
+          ],
+          description: 'Provider safety, bundle identity and NPU input checks',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.isWindows ? 'python' : 'python3',
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'tool/testing/validation',
+            '-p',
+            'test_npu_apk.py',
+          ],
+          description: 'Embedded NPU model/library integrity checks',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'root-template-e2e',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description: 'Run local-only upstream/template parity E2E tests.',
@@ -312,6 +359,67 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         ),
       ],
     ),
+    LocalE2eScenario(
+      name: 'validation-voice-round-trip',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Locked file STT -> Gemma 4 CPU -> TTS WAV round trip.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/testing/validation.dart',
+            'voice',
+            '--out',
+            '${context.projectRoot}/.dart_tool/validation/runs/voice-${DateTime.now().microsecondsSinceEpoch}',
+            if (context.modelPath != null) ...[
+              '--chat-model',
+              context.modelPath!,
+            ],
+          ],
+          description:
+              'Voice pipeline; physical microphone/playback remains separate.',
+        ),
+      ],
+    ),
+    for (final pack in ['stt', 'tts', 'litert-asr'])
+      LocalE2eScenario(
+        name: 'validation-speech-$pack',
+        group: LocalE2eScenarioGroup.dartLocalOnly,
+        description:
+            'Locked GGUF $pack pack with lifecycle and speech metrics.',
+        requiresDevice: false,
+        stepsBuilder: (context) => [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: [
+              'run',
+              'tool/testing/validation.dart',
+              'speech',
+              '--pack',
+              pack,
+              '--backend',
+              'cpu',
+              '--out',
+              '${context.projectRoot}/.dart_tool/validation/runs/$pack-${DateTime.now().microsecondsSinceEpoch}',
+              if (context.modelPath != null) ...['--model', context.modelPath!],
+              if (pack == 'litert-asr' && context.tokenizerPath != null) ...[
+                '--tokenizer',
+                context.tokenizerPath!,
+              ],
+              if (pack != 'litert-asr' && context.mmprojPath != null) ...[
+                '--projector',
+                context.mmprojPath!,
+              ],
+            ],
+            description:
+                'Run $pack with verified model/projector inputs; no cloud resources.',
+          ),
+        ],
+      ),
     LocalE2eScenario(
       name: 'speech-to-text-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,

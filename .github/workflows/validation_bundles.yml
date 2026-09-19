@@ -1,0 +1,113 @@
+name: Validation bundles
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/validation_bundles.yml
+      - packages/llamadart_validation/**
+      - tool/testing/validation.dart
+      - tool/testing/validation/**
+      - example/chat_app/lib/validation_main.dart
+      - example/chat_app/lib/validation/**
+      - example/chat_app/integration_test/validation_test.dart
+      - example/chat_app/android/**
+      - example/chat_app/ios/**
+      - example/chat_app/pubspec.*
+      - scripts/build_chat_app_web.sh
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Locked quick profile compiled into mobile and Web apps
+        type: choice
+        options: [tiny-gguf-cpu, tiny-gguf-lifecycle, tiny-gguf-batching, tiny-gguf-metal, tiny-gguf-vulkan, tiny-gguf-cuda, chat-gguf-cpu, chat-gguf-metal, chat-gguf-vulkan, chat-gguf-cuda, chat-litert-cpu, chat-litert-gpu]
+        default: tiny-gguf-cpu
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-bundles-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: dart pub get
+      - run: dart run tool/testing/validation.dart build --target desktop --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
+      - name: Preserve executable permissions in transport
+        run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - name: Verify extracted desktop command and profiles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import tarfile
+          import tempfile
+
+          archive = Path('.dart_tool/validation/bundle.tar.gz').resolve()
+          with tempfile.TemporaryDirectory(prefix='llamadart-portable-') as scratch:
+              with tarfile.open(archive) as package:
+                  package.extractall(scratch, filter='data')
+              extension = '.exe' if os.name == 'nt' else ''
+              command = Path(scratch) / 'bundle/bin' / ('llamadart-validate' + extension)
+              subprocess.run([str(command), '--help'], cwd=scratch, check=True, timeout=30)
+              profiles = subprocess.run([str(command), '--list'], cwd=scratch, check=True,
+                                        capture_output=True, text=True, timeout=30).stdout.splitlines()
+              if 'tiny-gguf-cpu' not in profiles:
+                  raise RuntimeError('Extracted command did not discover bundled profiles')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validation-desktop-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: .dart_tool/validation/bundle.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  app:
+    name: App ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [android, web, ios-inputs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: dart run tool/prepare_workspace.dart
+      - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
+      - name: Preserve executable permissions in transport
+        run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validation-${{ matrix.target }}-${{ github.sha }}
+          path: .dart_tool/validation/bundle.tar.gz
+          retention-days: 7
+          if-no-files-found: error

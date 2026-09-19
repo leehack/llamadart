@@ -46,6 +46,11 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage('example/llamadart_server', WorkspacePackageManager.dart),
   WorkspacePackage('example/tui_coding_agent', WorkspacePackageManager.dart),
   WorkspacePackage(
+    'packages/llamadart_validation',
+    WorkspacePackageManager.dart,
+    prepareForRootQualityGates: false,
+  ),
+  WorkspacePackage(
     'packages/llamadart_litert_lm_flutter',
     WorkspacePackageManager.flutter,
     prepareForRootQualityGates: false,

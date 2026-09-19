@@ -1871,6 +1871,71 @@ void main() {
       }
     });
 
+    test(
+      'prefers standard CLI sibling lib over unrelated working directory',
+      () {
+        final lib = Directory(
+          path.join(tempRoot.path, 'portable bundle', 'lib'),
+        )..createSync(recursive: true);
+        final cwd = Directory(path.join(tempRoot.path, 'unrelated'))
+          ..createSync();
+        _createWindowsBundleMarkerFiles(lib.path);
+        _createWindowsBundleMarkerFiles(cwd.path);
+        final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+          resolvedExecutablePath: path.join(lib.parent.path, 'bin', 'app.exe'),
+          currentDirectoryPath: cwd.path,
+          environment: const {},
+        );
+        expect(path.normalize(resolved!), path.normalize(lib.path));
+      },
+    );
+
+    test(
+      'CLI layout preserves override and executable-adjacent precedence',
+      () {
+        final root = Directory(path.join(tempRoot.path, 'portable'))
+          ..createSync();
+        final bin = Directory(path.join(root.path, 'bin'))..createSync();
+        final lib = Directory(path.join(root.path, 'lib'))..createSync();
+        final override = Directory(path.join(tempRoot.path, 'override'))
+          ..createSync();
+        for (final dir in [bin, lib, override]) {
+          _createWindowsBundleMarkerFiles(dir.path);
+        }
+        for (final useOverride in [false, true]) {
+          final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+            resolvedExecutablePath: path.join(bin.path, 'app.exe'),
+            currentDirectoryPath: tempRoot.path,
+            environment: useOverride
+                ? {'LLAMADART_NATIVE_LIB_DIR': override.path}
+                : const {},
+          );
+          expect(
+            path.normalize(resolved!),
+            path.normalize(useOverride ? override.path : bin.path),
+          );
+        }
+      },
+    );
+
+    test(
+      'incomplete CLI sibling lib preserves valid working directory fallback',
+      () {
+        final lib = Directory(path.join(tempRoot.path, 'portable', 'lib'))
+          ..createSync(recursive: true);
+        File(path.join(lib.path, 'llama.dll')).writeAsStringSync('fixture');
+        final cwd = Directory(path.join(tempRoot.path, 'working'))
+          ..createSync();
+        _createWindowsBundleMarkerFiles(cwd.path);
+        final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+          resolvedExecutablePath: path.join(lib.parent.path, 'bin', 'app.exe'),
+          currentDirectoryPath: cwd.path,
+          environment: const {},
+        );
+        expect(path.normalize(resolved!), path.normalize(cwd.path));
+      },
+    );
+
     test('uses explicit environment override when valid', () {
       final overrideDir = Directory(path.join(tempRoot.path, 'override'))
         ..createSync(recursive: true);

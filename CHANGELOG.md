@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Discover Windows backend libraries in standard compiled Dart CLI bundles.
+
+* Add locked Gemma 4/Qwen3.5 validation profiles, explicit NPU coverage, and opt-in speech and voice-pipeline diagnostics.
+
+* Preserve system instructions as plain text when seeding native LiteRT-LM chat history.
+
 - Render structured typed tool results as JSON text for chat templates while preserving string results and source objects.
 
 - Preserve Qwen XML tool argument types using declared schemas and reject invalid or undeclared calls without exposing executable tool deltas.

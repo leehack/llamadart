@@ -1177,14 +1177,9 @@ class LiteRtLmService {
       seededMessages.add(_chatMessageToNativeJson(message));
     }
 
-    final systemMessage = systemText.isEmpty
-        ? null
-        : jsonEncode({
-            'role': LlamaChatRole.system.name,
-            'content': [
-              {'type': 'text', 'text': systemText.join('\n')},
-            ],
-          });
+    // The runtime encodes this text as JSON content; the native conversation
+    // adds the system role itself.
+    final systemMessage = systemText.isEmpty ? null : systemText.join('\n');
     return (
       systemMessage: systemMessage,
       messages: seededMessages.isEmpty ? null : seededMessages,

@@ -1927,12 +1927,7 @@ void main() {
       expect(fakeClient.lastSeed, 9);
       expect(fakeClient.lastNpuBackend, isFalse);
 
-      expect(jsonDecode(fakeClient.lastSystemMessage!), {
-        'role': 'system',
-        'content': [
-          {'type': 'text', 'text': 'Be concise.'},
-        ],
-      });
+      expect(fakeClient.lastSystemMessage, 'Be concise.');
       expect(fakeClient.lastMessages, [
         {
           'role': 'user',
@@ -1975,6 +1970,53 @@ void main() {
       service.dispose();
     }
   });
+
+  for (final entry in <(String, List<String>, String?)>[
+    ('absent', [], null),
+    ('empty', ['', ' \n\t '], null),
+    (
+      'multiple',
+      ['  Remember "cedar17".\nKeep case.  ', ' ', '안녕'],
+      'Remember "cedar17".\nKeep case.\n안녕',
+    ),
+    (
+      'literal JSON',
+      ['{"role":"system","content":[{"type":"text","text":"cedar17"}]}'],
+      '{"role":"system","content":[{"type":"text","text":"cedar17"}]}',
+    ),
+  ]) {
+    test('native chat passes ${entry.$1} system text unchanged', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      const params = ModelParams(preferredBackend: GpuBackend.cpu);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        final pending = service.generateChat(context, [
+          for (final text in entry.$2)
+            LlamaChatMessage.fromText(role: LlamaChatRole.system, text: text),
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is the code?',
+          ),
+        ], const GenerationParams(maxTokens: 32)).toList();
+        await client.generateStarted.future;
+        client.generated.add('cedar17');
+        await client.generated.close();
+        expect(await pending, [utf8.encode('cedar17')]);
+        expect(client.lastSystemMessage, entry.$3);
+        expect(client.lastMessages, isNull);
+        expect(jsonDecode(client.lastMessageJson!), {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'What is the code?'},
+          ],
+        });
+      } finally {
+        service.dispose();
+      }
+    });
+  }
 
   test(
     'rejects native required tool choice before runtime initialization',

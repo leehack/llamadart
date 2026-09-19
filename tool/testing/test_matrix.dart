@@ -35,6 +35,41 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'validation-harness',
+    tier: 'targeted',
+    mode: 'CI + local; model-free',
+    covers:
+        'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
+    useWhen:
+        'Validation harness, report, bundle or cloud orchestration changes.',
+  ),
+  TestMatrixRow(
+    id: 'validation-model-core',
+    tier: 'platform',
+    mode: 'opt-in; owned hardware or explicit remote run',
+    covers:
+        'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
+    command:
+        'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
+    useWhen:
+        'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+  ),
+  TestMatrixRow(
+    id: 'validation-speech',
+    tier: 'platform',
+    mode: 'opt-in; local model-backed',
+    covers:
+        'Locked Qwen3-ASR/Qwen3-TTS and dedicated LiteRT CPU ASR, cancellation, reload, typed guards, WER and audio timing',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-voice-round-trip',
+    useWhen:
+        'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
+  ),
+  TestMatrixRow(
     id: 'gguf-stop-sequences',
     tier: 'targeted',
     mode: 'local-only',
