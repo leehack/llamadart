@@ -98,7 +98,10 @@ full-code speedup or local measurements as GitHub-hosted results.
 On canonical-repository main pushes, Web Chat Contract builds the production
 root (`/`) once, runs mock and real tiny-GGUF browser smokes against those files,
 and uploads the successful artifact. The production reusable workflow waits for
-both Web Chat and the existing all-selected-checks aggregate to succeed. It
+both Web Chat and the existing all-selected-checks aggregate to succeed. An
+explicit cancellation status check prevents intentionally skipped ancestors from
+triggering GitHub’s implicit `success()` skip propagation; failed or skipped
+direct requirements still block deployment. It
 verifies the same run's artifact ID, archive digest, source commit/tree, pinned
 Flutter version and production build target before uploading those files to HF.
 It does not install Flutter or rebuild. HF's README remains hosting metadata.
