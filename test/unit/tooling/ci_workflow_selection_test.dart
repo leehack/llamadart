@@ -91,6 +91,7 @@ void main() {
       );
       final build = workflow['jobs']['build'];
       expect(build['permissions'], {'contents': 'read'});
+      expect(build['timeout-minutes'], 45);
       expect(jsonEncode(build), isNot(contains('secrets.')));
       final steps = build['steps'] as List;
       expect(steps.first['if'], "github.event.action == 'closed'");
