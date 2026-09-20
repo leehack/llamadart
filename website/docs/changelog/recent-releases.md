@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Prevent split MiniMax M3 thinking delimiters from leaking into streamed
+  reasoning while preserving literal text and tool-call parsing.
+
 * Discover Windows backend libraries in standard compiled Dart CLI bundles.
 
 - Render structured typed tool results as JSON text for chat templates while preserving string results and source objects.
