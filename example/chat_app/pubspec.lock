@@ -420,7 +420,7 @@ packages:
       path: "../../packages/llamadart_litert_lm_flutter"
       relative: true
     source: path
-    version: "0.0.10"
+    version: "0.0.11"
   llamadart_llama_cpp_flutter:
     dependency: "direct main"
     description:
