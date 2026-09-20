@@ -5,12 +5,13 @@ import {optimize} from 'svgo';
 
 const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
-// Issue #519: check nested copies too, so deduplication cannot hide a regression.
+// Issues #519, #454: check nested copies too, so deduplication cannot hide a regression.
 for (const [name, minimum] of Object.entries({
   'js-yaml': '4.3.2',
   svgo: '3.3.5',
   colord: '2.9.4',
   joi: '17.13.6',
+  'image-size': '2.0.3',
 })) {
   test(`all locked ${name} copies include the security fixes`, () => {
     const copies = Object.entries(lock.packages).filter(([path]) =>
