@@ -125,16 +125,30 @@ void main() {
         await engine.setLogLevel(LlamaLogLevel.none);
         await engine.setLogLevel(LlamaLogLevel.warn);
 
-        // 8. LoRA (should fail gracefully or not crash if path is wrong)
-        try {
-          await engine.setLora('non_existent.bin');
-        } catch (_) {}
+        // 8. LoRA (a missing adapter file must surface as a typed error)
+        await expectLater(
+          engine.setLora('non_existent.bin'),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (e) => e.message,
+              'message',
+              contains('Failed to load LoRA'),
+            ),
+          ),
+        );
         await engine.clearLoras();
 
         // 9. Multimodal failure test
-        try {
-          await engine.loadMultimodalProjector('non_existent_path.gguf');
-        } catch (_) {}
+        await expectLater(
+          engine.loadMultimodalProjector('non_existent_path.gguf'),
+          throwsA(
+            isA<Exception>().having(
+              (e) => e.toString(),
+              'toString()',
+              contains('Failed to load multimodal projector'),
+            ),
+          ),
+        );
 
         await engine.dispose();
         print('SMOKE TEST SUCCESS');
