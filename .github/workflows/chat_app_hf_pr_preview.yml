@@ -126,7 +126,7 @@ jobs:
           # Run only trusted verification scripts in the credential-bearing job.
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         if: github.event.action != 'closed'
         with:
           artifact-ids: ${{ needs.build.outputs.artifact-id }}
