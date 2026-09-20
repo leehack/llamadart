@@ -9,9 +9,11 @@ For canonical full release notes, use:
 
 ## 0.8.24
 
-- Align native `leehack/llamadart-native@v0.4.1` and Web assets `v0.1.44` on
-  upstream `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, with matching Dart
-  bindings and Apple companion `0.0.19`. Web asset manifest:
+- Align native `leehack/llamadart-native@v0.4.1` on upstream
+  `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, with matching Dart bindings
+  and Apple companion `0.0.19`.
+- Aligned default WebGPU bridge assets to `v0.1.44` for matching
+  Web/native upstream parity. Immutable Web asset manifest:
   `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
 - Update native LiteRT-LM to `v0.17.0-5` with Apple companion `0.0.11`,
   Qwen3 tokenizer compatibility, corrected Linux loading, and explicit Linux
