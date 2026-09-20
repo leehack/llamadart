@@ -11,7 +11,9 @@ For canonical full release notes, use:
 
 - Align native `leehack/llamadart-native@v0.4.1` on upstream
   `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, with matching Dart bindings
-  and Apple companion `0.0.19`.
+  and Apple companion `0.0.19`. This resolves the 0.8.23 grammar limitation:
+  native `{2000}` repetitions are accepted again
+  ([llamadart-native#76](https://github.com/leehack/llamadart-native/issues/76)).
 - Aligned default WebGPU bridge assets to `v0.1.44` for matching
   Web/native `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
   Immutable Web asset manifest:
@@ -51,6 +53,11 @@ For canonical full release notes, use:
   ([#509](https://github.com/leehack/llamadart/issues/509)). The affected cases
   remain unqualified; these changes do not resolve the failures or establish
   their remaining owning layer.
+- Known gap: explicit Windows LiteRT-LM GPU selection fails at engine creation
+  with `v0.17.0-5` because the runtime archive omits `dxil.dll` and
+  `dxcompiler.dll`; CPU is unaffected. Fixed in source for the next native
+  LiteRT-LM release
+  ([litert-lm-native#47](https://github.com/leehack/litert-lm-native/issues/47)).
 
 ## 0.8.23
 
