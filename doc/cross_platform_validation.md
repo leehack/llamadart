@@ -1,0 +1,1087 @@
+# Cross-platform validation runbook
+
+The first implementation supplies the quick core, shared reports, portable
+builds, and explicit Firebase/GCE orchestration. It uses the current checkout's
+runtime pins. It does not replace the release matrix, qualify unrun platforms,
+or schedule paid work. The broader [validation plan](cross_platform_validation_plan.md)
+retains the later feature and device milestones.
+
+Firebase is the primary physical Android/iOS qualification route. The personal
+Pixel and iPad are optional debugging devices; the Mac remains the local build,
+iOS signing and desktop/browser test host. The next milestone includes Firebase
+NPU qualification on Galaxy S24 (Qualcomm SM8650) and Pixel 10 (Tensor G5).
+The two SoC-specific model locks and offline input preflight are implemented.
+The Android builder now embeds verified model/vendor inputs, and the installed
+app checks its SoC before loading. Public-Dart and direct-native control paths
+capture per-generation dispatch evidence. S24 execution is verified, but strict
+history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
+
+## Current readiness
+
+The quick diagnostic core is usable; the full platform/release suite is incomplete.
+Model-backed Mac, browser and Firebase runs have exposed actual product failures,
+and the reports retain failed assertions alongside useful timing and device evidence.
+Catalog 4 has 129 passing private harness tests at the reviewed pre-integration
+head `b13c545f`; fresh head/base checks remain required after merging main.
+Draft [PR #515](https://github.com/leehack/llamadart/pull/515) builds Linux x64,
+Windows x64 and macOS arm64 desktop bundles plus Android, Web and iOS inputs.
+Follow its current CI for exact-head results; build success and extracted CLI
+startup are not model execution or complete device qualification.
+Native GGUF Unicode corruption was fixed in merged
+[PR #516](https://github.com/leehack/llamadart/pull/516). Earlier failed journals
+remain historical evidence; reruns must identify the fixed source commit.
+
+| Area | Current evidence | Remaining qualification |
+| --- | --- | --- |
+| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; retain model/backend failures |
+| Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
+| Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
+| Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
+| Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
+| Critical feature packs | Catalog 4 executes Unicode generation, thinking on/off, tool choice/result roundtrips, stop markers, unloaded-engine guards and batching/lifecycle controls | Exact-model feature qualification, thinking budgets, tool-bearing batching, broader guards, multimodal, speech qualification and embeddings |
+
+Do not weaken semantic predicates to obtain a green run. The Gemma original-model
+control below passes the strict history predicate; the LiteRT results remain failed.
+Three benchmark samples support diagnosis, not a performance regression threshold
+or a device ranking. First qualify the portable build workflow, then expand the
+critical feature packs with representative locked models before broadening devices.
+
+## Source and generated artifacts
+
+- `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
+  runner/reporter, JSONL validation and JSON/JUnit/CSV/HTML rendering.
+- `example/chat_app/lib/validation_main.dart`: interactive QA app. Run with
+  `flutter run -t lib/validation_main.dart` from `example/chat_app`.
+- `example/chat_app/integration_test/validation_test.dart`: unattended entrypoint;
+  Android instrumentation and iOS XCTest invoke the same controller.
+- `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
+  reconcile, cleanup. Provider helpers live beside it under `tool/testing/validation/`.
+- `.github/workflows/validation_bundles.yml`: build-only workflow on relevant PR
+  changes (tiny CPU profile) or explicit manual selection. No cloud
+  credentials, model runs, VM creation or Firebase submission in CI.
+  Desktop jobs extract the transport archive outside the checkout and verify
+  command startup and bundled profile discovery without loading a model.
+- `.dart_tool/validation/`: ignored local models, bundles and journals. Do not
+  commit weights, signing files, account configs, results or credentials.
+
+Use Flutter **3.47.1**, its Dart executable, and Python 3.10+ (Windows: `python`,
+other hosts: `python3`). Android uses the installed Android SDK/JDK; XCTest needs
+Xcode, configured local signing and the owned Mac. gcloud is needed only for
+provider operations. Normal chat-app behavior is unchanged.
+The `local` command records source/runtime pins for diagnostics. Desktop JIT and
+Flutter desktop runs cannot qualify without verified portable payload evidence;
+use the built CLI bundle for desktop qualification. Plain `flutter run` without
+the builder's identity defines also remains diagnostic. Dirty builds retain all
+assertion results and metrics; qualification requires clean committed source,
+known runtime identities, and verified model hash/size evidence matching the lock.
+
+Desktop launch verifies the bundle inventory, runtime files and environment,
+rejects runtime overrides and unlisted loader sidecars, then anchors native cache
+discovery to the bundle directory. Caller model/cache/output paths retain their
+original meaning. `runtime_payload_verified` and `runtime_bundle_sha256` record
+this check separately from accelerator placement. The builder rejects local pub
+overrides; explicit native library overrides are rejected by the public adapter.
+Dart tooling's JIT library search paths remain usable only for diagnostics.
+This is payload integrity verification, not code signing or a signature over an
+untrusted producer's report.
+
+## Quick model profiles and cases
+
+| Profiles | Locked fixture | Use |
+| --- | --- | --- |
+| `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
+| `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
+| `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
+| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
+| `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
+| `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
+
+Full revisions and SHA256 values live in profile JSON. The instruction GGUF is
+[ggml-org's Q4_0 artifact](https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/blob/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf),
+so its results are a distinct cohort from the Q4_K_M candidate in the original plan.
+Native LiteRT files cannot qualify LiteRT Web; that requires a Web model bundle.
+The app reports this explicitly before downloading a native LiteRT fixture in Web.
+
+The Gemma CPU profile uses the same pinned model repository revision as the NPU
+profile, with a distinct CPU artifact hash and conversion. It aligns context
+1280, four threads, 32 output tokens and thinking enabled. CPU uses the requested
+greedy sampler; NPU uses unknown compiled defaults. These are semantic controls,
+not an identical-artifact speed comparison. The CPU profile adds the same four
+strict history variants as the native NPU diagnostic, producing 17 cases:
+canonical, the original literal-system representation, no system and a combined
+user prompt. `enable_thinking` is an explicit boolean profile override;
+`history_controls` opts LiteRT CPU chat profiles into the extra diagnostic cases.
+Other core profiles retain their original inventory and settings.
+
+```bash
+dart run tool/testing/validation.dart local --profile gemma3-litert-cpu \
+  --model /path/to/gemma3-1b-it-int4.litertlm \
+  --out .dart_tool/validation/runs/gemma-cpu-control-1
+```
+
+Use fresh output directories for repetitions. The CPU artifact has native context
+capacity 4096 but is loaded with the matched 1280 limit. A Mac result is a desktop
+semantic control; it does not fill the separate S24 CPU device obligation.
+The builder rejects this gated profile for mobile/Web, and remote submission
+rejects it before spending quota. Desktop bundles remain usable with `--model`;
+private mobile model transfer must be implemented before enabling that lane.
+
+The quick inventory is C01 load/diagnostics, C02 Unicode tokenize/detokenize,
+C03 raw generation, C04 hello/arithmetic and C06 multi-turn history for chat
+fixtures, C08 cancellation/control/recovery, C09 dispose/new engine/reload,
+C10 one-token limit, C12 missing-model rejection/recovery, and B01 one warmup
+plus three measured generations. Independent assertion failures do not suppress
+later metrics; load failure or timeout prevents unsafe later inference.
+
+Sampling is temperature 0, seed 1, top-k 40, top-p .9, repeat penalty 1.1,
+context 1024, four threads, 32 generated tokens, thinking disabled, prompt reuse
+disabled. Case overrides (one-token limit and 256-token cancellation) are recorded.
+C08 compares the same prompt against an uncancelled control; the pinned WASM
+delegate's explicit cancellation AbortError is also recorded as interruption evidence. Merely calling cancel
+is not a pass; missing interruption evidence is NOT_RUN. Case timeouts are 60s;
+disposal has a 10s bound and unresolved work cannot report successful cleanup.
+Native Flutter model acquisition has a ten-minute deadline within the
+18-minute integration test and 20-minute Test Lab execution limits. CLI downloads
+retain their five-minute default. Download deadline failures report received and
+expected bytes, remove partial weights and never become inference/TPS samples.
+
+Prompts, regex expectations, exact output/thinking, ordered terminal case IDs,
+configuration hashes, model hashes, source/runtime pins and environment all appear
+in the journal. The raw tiny fixture does not claim chat capability.
+
+### Focused selections and replay metadata
+
+The shared runner accepts three profile selections:
+
+- `quick`: the original short core and one three-sample benchmark series.
+- `focused`: the quick core plus cases matching the profile's nonempty, unique
+  `focus_features` list. Valid IDs are `text`, `unicode`, `thinking`, `history`,
+  `tools`, `streaming`, `batching`, `lifecycle`, `guards` and `performance`. Text/history/
+  performance are already covered by the applicable quick cases.
+- `release`: every current extended core obligation, including unfinished cases.
+
+For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
+adds C07 tools, C10 stop markers and C11 batching. Catalog 4 executes C07;
+catalog 3 executes C10 control/stop/recovery, and C11 executes the parity or
+rejection contracts below.
+`tiny-gguf-lifecycle` is a runnable focused CPU profile: it adds
+`C09.reload.second` after the first reload, invalid-input recovery and benchmark.
+It is available in the QA app, portable bundles and manual build workflow:
+
+```bash
+dart run tool/testing/validation.dart local --profile tiny-gguf-lifecycle \
+  --out .dart_tool/validation/runs/tiny-lifecycle
+```
+
+`tiny-gguf-batching` selects C11 without also selecting the separate stop-marker
+case. It runs the same short prompt with default worker thresholds (8 pieces /
+512 bytes), then 1 piece / 1 byte, then defaults again. Content, thinking and
+finish reasons must match, every stream must complete in order, and the recorded
+options must match each trial. Chunk counts may differ. All three requests retain
+output, effective batching thresholds and timing/TPS; they are parity trials,
+not extra benchmark samples.
+
+LiteRT Web separately checks that each nondefault option produces a named
+`LlamaUnsupportedException` before inference, then verifies default-request
+recovery. This is negative-contract coverage, not native batching qualification.
+GGUF Web, direct-native controls and NPU runtime-default sampling remain NOT_RUN
+for C11. Tool-bearing parity requires the qualified C07 fixture; unexpected tool
+emissions remain visible and cannot pass the text/thinking case.
+
+Journal/report schema 2 exports catalog version 2, per-feature and per-case
+versions, resolved synthetic prompts/tool schemas/predicates, selected cases and
+omission reasons. The runner reads the same compiled fixture definitions that it
+exports; model-specific text/predicate overrides are explicit hashed profile
+fields. Each terminal record binds its case version and fixture hash. Reports
+reject missing or rehashed conflicting catalog data, and HTML shows selection
+and unselected cases separately from verdicts. Future media/model packs still
+need their own fixture locks and reference qualification.
+
+Schema-1 journals remain readable with their original case inventory; missing
+catalog metadata stays unavailable. Catalog-version-1 schema-2 reports are also imported against their original
+definitions, with C11 still unimplemented. Unknown versions or new batching
+selections claiming the old catalog fail closed. A legacy report is not evidence that the
+newer extended selection ran. Focused selection requires schema 2.
+
+Thinking budgets, tool-bearing batching, expanded unsupported guards,
+multimodal/speech/embedding packs and full browser/device rotation remain
+subsequent qualification work. NPU requires the verified Android packaging
+described below; selecting `npu` alone cannot supply vendor libraries or evidence.
+Catalog 4 executes all currently selected core release cases. This does not
+qualify the broader planned feature packs or historical runs: existing journals
+retain their original catalog and NOT_RUN results. Direct-native controls keep
+public-only feature cases NOT_RUN.
+
+## NPU input preparation
+
+`npu-qualcomm-sm8650` and `npu-tensor-g5` are **unqualified candidate locks**
+with opt-in Android build support. Each records Gemma 3 1B IT revision
+`a6306a4e292016480083b73b8dc6f3f939ae04c3`, the SoC-specific file/hash/size,
+context 1280, max output 32 and required library architectures. The Qualcomm
+file is 690,094,080 bytes; Tensor G5 is 1,678,542,365 bytes. Model access is gated:
+stage an authorized copy locally without embedding tokens or signed URLs in
+the APK, kit manifest or report. The preflight never downloads a model.
+
+```sh
+dart run tool/testing/validation.dart npu-preflight \
+  --profile npu-qualcomm-sm8650 \
+  --model /path/to/Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm \
+  --kit /path/to/qualcomm-kit \
+  --out .dart_tool/validation/npu-preflight.json
+```
+
+Omit `--model` or `--kit` to obtain the missing-input inventory. `--out` must be
+a new file. The command writes hashes, sizes, SoC/runtime identities and checks;
+it does not export supplied local paths. Exit 1 and `status: NOT_RUN` remain
+intentional even when `inputs_verified: true`: file integrity is not native
+execution or qualification. It creates no remote resources and uses no quota.
+
+The kit contains flat regular library files and `npu-kit.json` with schema 1,
+`target`, `runtime_tag`, `litert_revision`, `dispatch_header_sha256`, and a
+`libraries` map from basename to `sha256`/`bytes`. Host libraries must be
+AArch64 ELF64; the Qualcomm V75 skeleton is Hexagon ELF32. The lock includes
+QAIRT 2.47.0.260601 host/DSP hashes, audited vendor dispatch hashes and the
+matching diagnostic proxy hashes. Rebuilding a proxy requires reviewing and
+updating its lock; a caller-supplied manifest cannot bless a different probe.
+An older prebuilt, different SoC, tampered file, missing file or symlink fails
+the input check. Dynamic dependency resolution still needs final-APK/device
+verification; this inventory check does not execute or resolve a shared library.
+The inspected S24 stub needs device `libcdsprpc.so`; its DSP skeleton needs
+Hexagon `libc++.so.1` and `libc++abi.so.1`. The 2026-09-17 installed S24 pilot
+initialized and executed the NPU through both adapters, establishing access for
+that exact device/runtime/kit combination. Other targets remain unverified.
+Android host libraries cannot substitute for DSP libraries with the same basename.
+
+For runtimes `0.17.0-3` and `0.17.0-5`, the actual LiteRT dependency is
+`9fe5be45564c868408e6514c8aabb83e211a0911`. Its dispatch header adds `get_hooks`
+to the nested interface relative to LiteRT v2.2.0 while retaining the same API
+version. The version string alone cannot establish table-layout compatibility.
+The native owner repository's diagnostic proxy is built against the exact
+headers and accepts only the audited same-source vendor binaries. It preserves
+vendor calls and exports lifetime counters for synchronous completions/failures,
+async submissions/failures and synchronous calls in flight. Async submission is
+not completion; positive counts establish some NPU work, never all-NPU placement.
+
+The builder stages the model as an uncompressed APK asset and the verified kit
+as extracted native libraries. The final APK checker streams every model/library
+entry and rechecks sizes/hashes; remote upload repeats this check. The Android
+host checks `Build.SOC_MODEL`, API and ABI before loading, checks installed library
+hashes, copies the model to the app's private cache, and verifies its hash again.
+It declares the required device library (`libcdsprpc.so` or
+`libedgetpu_litert.so`) and configures the app-local DSP search directory. These
+checks cannot prove that the Firebase sandbox grants access to its device driver.
+Use the dated device results below for actual execution evidence.
+
+Build separate bundles from clean committed source; each contains interactive
+`qa-app.apk`, unattended `app.apk` and instrumentation `test.apk`:
+
+```sh
+dart run tool/testing/validation.dart build --target android \
+  --profile npu-qualcomm-sm8650 \
+  --kit /path/to/qualcomm-kit \
+  --model /path/to/Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm \
+  --execution-path native_c_api \
+  --out .dart_tool/validation/bundles/s24-npu-native
+# Repeat with --execution-path public_api and a separate output directory.
+```
+
+These locally staged bundles contain authorized model weights and licensed vendor
+libraries. Keep them private; the public CI bundle workflow does not accept NPU
+kit/model inputs. No Hugging Face token, signed download URL or SDK credential is
+packaged. Kit `license-*` files are retained in the APK.
+
+The direct native control bypasses `LlamaEngine` and its backend/worker bindings,
+calling the pinned C API on a dedicated isolate. It now runs twelve cases: load,
+hello, arithmetic, four history controls, reload, warmup and three throughput
+repetitions. The history controls retain the exact `cedar17` oracle and compare
+canonical native system/history seeding, the former public path's literal JSON system
+content, history without a system message, and one combined user prompt. Each
+records the JSON bytes supplied to the C API, response, timing and dispatch
+counters. The native system setter receives JSON content, not a complete message
+object; the literal-JSON variant deliberately preserves the original incorrect
+public serialization for regression diagnosis. Setup timing and its dispatch snapshot are separate
+from send/decode timing; total dispatch proof includes preface initialization.
+It uses the
+same Gemma artifact, dispatch kit, context 1280, four threads and per-request
+output cap 32 as the public LiteRT service. The public NPU runtime skips session
+sampler overrides, so both paths retain compiled model/runtime defaults. Requested
+seed/temperature/top-k/top-p remain recorded, but effective NPU sampling is
+explicitly unknown; these runs cannot claim seeded deterministic sampling.
+Gemma keeps the native conversation default for thinking; the Qwen pilot's
+explicit thinking-disable setting is not reused. The public NPU path runs the
+14-case quick chat inventory, including Unicode tokenization, raw/history,
+cancel/control/recovery, one-token limit and missing-model recovery.
+
+Every generation records before/after probe counters. The reporter recomputes
+deltas and rejects absent, reset, failed, in-flight or async-only proof. Positive
+proof means **NPU participation; CPU partition coverage unknown**, never all-NPU.
+Native controls are labelled separately and do not qualify the public Dart path.
+Native decode TPS/token counts and native TTFT are separate from wall throughput;
+the blocking native control cannot observe visible-answer TTFA, so that field
+is null. Warmup is retained but excluded from the three-sample charts.
+
+Main `21135e37dadf60882ea427db6078ccc90f84a28a` adopts runtime `0.17.0-5`.
+Its published manifest retains upstream LiteRT-LM
+`e9fd8c53ff968071774206163027dd84bedfe925` and the same LiteRT dependency above.
+The NPU input guard now requires this runtime and a separately recorded kit
+audit; preserve the old kit and reports. The new runtime's desktop linkage fixes
+do not establish that Gemma NPU history is fixed. The native repository's
+[Qwen tokenizer repair](https://github.com/leehack/litert-lm-native/blob/3eb4079397d19e2058e176fcdb5ab15b28a70ad0/docs/qwen3_tokenizer_repair.md)
+creates a distinct model artifact; the locked original Qwen fixture is unchanged.
+
+Use the normal Firebase `plan`/`run`/`collect`/`cleanup` flow below with the exact
+S24 or Pixel 10 profile/device pairing. Run the native control first and stop if
+it cannot initialize. Do not automatically submit both bundles or bypass the
+selected Spark quota or Blaze budget guard. The compatible S24 CPU Gemma semantic control, separate Unicode
+generation fixture and aggregate paired-control qualification remain future
+work; the existing Qwen CPU retry is not a matched Gemma control. A per-run green
+report is not completion of the full NPU pack. The `validation-harness` row covers
+the model-free identity/proof/input checks and APK tampering tests.
+
+## Build and run
+
+```sh
+# Model-free safety and report regression tests.
+dart run tool/testing/run_local_e2e.dart --scenario validation-harness
+
+# Uses a shared verified model cache; creates a fresh output directory.
+dart run tool/testing/validation.dart local --profile chat-litert-cpu
+
+# Build on each native OS/architecture; weights are downloaded when running.
+dart run tool/testing/validation.dart build --target desktop --profile tiny-gguf-cpu --out .dart_tool/validation/bundles/desktop
+dart run tool/testing/validation.dart build --target android --profile tiny-gguf-vulkan --out .dart_tool/validation/bundles/android
+dart run tool/testing/validation.dart build --target web --out .dart_tool/validation/bundles/web
+dart run tool/testing/validation.dart build --target ios-inputs --out .dart_tool/validation/bundles/ios-inputs
+# On the owned Mac with existing local Xcode signing configured:
+dart run tool/testing/validation.dart build --target ios --profile tiny-gguf-cpu --out .dart_tool/validation/bundles/ios
+```
+
+Desktop bundles include `bin/llamadart-validate`, `bin/llamadart-report`, native
+code assets, profiles and remote wrappers.
+The hidden `.dart_tool/llamadart/litert_lm/` directory inside desktop bundles
+contains the pinned LiteRT runtime, re-extracted from its SHA256-verified archive.
+Preserve it when copying or extracting a bundle; the public runtime discovers it
+relative to the executable. This avoids depending on the build machine's cache.
+Windows arm64 bundles retain GGUF only; the manifest records LiteRT unavailable,
+and an explicitly selected LiteRT build profile is rejected on that ABI.
+Run outside the repository:
+
+```sh
+bin/llamadart-validate --profile tiny-gguf-cpu --environment-file environment.json --out results
+bin/llamadart-report results
+# Explicit GGUF accelerator evidence can be derived from that run's native log:
+bin/llamadart-report results --native-log results/stderr.log
+```
+
+Windows executables have `.exe`. Keep the complete bundle layout. GitHub artifacts
+contain `bundle.tar.gz` so executable permissions survive download; extract it
+before use. Bundle manifests enumerate every shipped byte and record build OS/ABI,
+SDKs, source commit/dirty state, native pins and the compiled mobile profile.
+Resolved suite/app dependency locks are included as provenance too.
+Remote dispatch rejects changed, dirty, wrong-OS or wrong-profile bundles.
+
+Android produces `qa-app.apk` for interactive installation and a matched
+`app.apk`/`test.apk` instrumentation pair. These are Debug builds, explicitly
+labelled; do not compare their TPS to Release builds. Both native runtimes are
+bundled, making APKs larger than a single-runtime deployment.
+
+`ios-inputs` contains committed source, no signing credentials. `ios` invokes
+`build-for-testing` and packages `tests.zip`; signing must already be configured. The unique existing project team is applied
+to the test target too; use `--team TEAMID` when selecting another configured team.
+Building the iOS bundle does not submit a test; use the explicit Firebase
+`plan`/`run` steps below. Web builds use the maintained bridge-staging script. Serve with isolation
+headers, for example:
+
+```sh
+python3 tool/testing/serve_static_with_headers.py --directory .dart_tool/validation/bundles/web --port 7367
+```
+
+## Firebase setup, submission and collection
+
+The [device rotation and NPU cases](cross_platform_validation_plan.md#8-firebase-device-selection-and-free-rotation)
+include S24, Tab P12, iPhone 16 Pro, iPhone SE 3, Pixel 10 and iPad 10. The planned
+initial selection is 16 CPU/GPU core executions, six NPU reference/public-Dart/CPU
+control executions and two targeted iPad GPU/lifecycle executions: **24 across
+at least seven Spark quota days**, with at most four planned physical executions/day.
+NPU submissions require the verified APK packaging and preflight first. iOS cases
+cover CPU/Metal/LiteRT GPU; Apple NPU is not exposed by the current backend.
+Native XCTest coverage does not qualify Safari/iPadOS browser execution.
+
+By default, use an explicitly selected **unbilled Spark project** and account. Preflight checks
+billing is disabled and the selected physical model/OS exists in the live catalog.
+Pick one row per submission; never use an implicit device matrix. Check available
+physical quota in Firebase before creating a receipt. Receipt evidence expires
+after 15 minutes. The local journal permits at most four physical submissions in
+a rolling 24 hours; other clients still share the provider's quota.
+
+Copy `tool/testing/validation/firebase.example.json` to an ignored local path and
+fill account, project, exact device/OS and a freshly checked quota receipt.
+
+```sh
+dart run tool/testing/validation.dart plan --target firebase-android --config .dart_tool/validation/firebase.json --bundle .dart_tool/validation/bundles/android --out .dart_tool/validation/plan.json
+dart run tool/testing/validation.dart run --plan .dart_tool/validation/plan.json
+```
+
+Use `firebase-ios` with the signed `ios` bundle. Plan creation is local/read-only;
+`run` rechecks identity, budget evidence and live provider state before submission.
+The CLI uses explicit `--project` and `--account`, one execution capped at 20 minutes, no
+flaky retries and no video. It records the matrix ID, polls terminal state, copies
+the default Test Lab results, then verifies completion or cancellation. It does
+not enable billing or create a custom result bucket.
+
+### Explicit Blaze runs
+
+Blaze is an opt-in mode for separately authorized runs. Copy
+`tool/testing/validation/firebase_blaze.example.json` to an ignored local path.
+The operator links billing separately; the runner never upgrades a project.
+Preflight requires `billing_mode: "blaze"`, an enabled billing link to the exact
+`billing_account`, and current physical execution quota. Spark plans still reject
+billed projects. A quota receipt proves execution capacity, not free minutes.
+
+Supply a fresh `budget` receipt with an authorization/pricing evidence reference,
+fixed `window_start`, `expires_at` no more than 24 hours later, and positive
+`maximum_run_usd` and `maximum_total_usd`. At least one hour must remain before
+dispatch. Refresh `verified_at` within 15 minutes of each run, without moving
+the authorized window or increasing its cap. All amounts are USD: record any
+conservative conversion, tax and auxiliary-cost allowance in the evidence.
+Do not copy a CAD credit balance into `available_usd`.
+
+`funding: "credit"` also requires a fresh credit receipt that verifies Test Lab
+eligibility, at least twice the entire batch budget available, and two hours
+before credit expiry. A balance alone or a scope of "certain usage" does not
+establish eligibility. `funding: "approved_charges"` is only for an explicit
+user authorization covering out-of-pocket charges; it is not implied by having
+a payment method or requesting a credit-funded upgrade.
+
+For free execution on Blaze, select `funding: "free_allowance"` and supply a fresh
+`free_allowance` receipt (`verified_at`, `evidence`, `remaining_physical_minutes`).
+Verify the full project inventory, including other clients and pre-upgrade use;
+round each physical test's **test-process duration** up to whole minutes. Queue,
+installation and result-collection durations are not the billable test duration.
+Subtract this usage from the published 30-minute daily physical allowance. Unknown
+or active executions prevent relying on that calculation. The receipt must be
+within the budget window. This mode needs no assumed credit eligibility or paid
+authorization; gross USD reservations remain for traceability.
+
+Set `test_timeout_minutes` to an integer from 1 to 20 (default 20). Verified free
+minutes must cover that timeout plus a one-minute rounding reserve. The journal
+also reserves minutes for submissions made after the receipt was checked, so
+reusing a receipt cannot spend those minutes twice. Refresh the full project
+inventory after each completed execution before reclaiming unused reserved time;
+do not simply update its timestamp. These controls cannot exclude submissions
+from another client after the check, so keep this dedicated project serialized.
+
+The journal reserves the full per-run estimate before any submission, rounding
+up to cents, and rejects runs exceeding the batch cap. Earlier Blaze submissions
+for the same project within that window consume the cap even when failed or
+cancelled; preflight failures do not. An uncertain submission still blocks all
+new remote work until reconciled. Keep one shared run journal for the batch;
+do not delete it or move the window to reset the allowance.
+
+Each run remains one physical device, at most a 20-minute provider timeout and zero
+flaky retries. The estimate must cover at least the full timeout at the current
+[$5/device-hour rate](https://firebase.google.com/docs/test-lab/usage-quotas-pricing),
+before deducting any free minutes or credits. For example, a $2/run reservation
+and $6 batch cap permit three runs. Check current prices and add other costs
+where applicable. This is a local submission guard, not a Cloud Billing hard
+cap: it cannot control other clients, determine promotional eligibility, or
+reconcile the provider invoice. Actual usage, applied credits and charged cost
+remain separate evidence. Budget alerts also do not cap charges.
+
+The gcloud asynchronous response contains a console URL, not a matrix object.
+The adapter reads the matrix creation receipt and verifies its project and unique
+run label through the Testing API before using it. If submission is interrupted,
+recover the existing matrix with `reconcile`; never repeat `run` to find out
+whether a submission succeeded. An unverified candidate ID is diagnostic only.
+
+Android pulls external app result files. The first live S24 run recovered a
+complete journal through this path, but its collected console log contained no
+validation JSONL; console-only recovery is not yet qualified on Flutter devices.
+iOS attaches bounded result files to XCTest; collection exports `.xcresult`
+attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
+Physical device export/crash behavior is an explicit live-qualification step;
+a build and fake-provider tests alone do not prove it.
+
+A model-preparation error can occur before the suite manifest exists. The current
+collector retains those raw device files under `remote-results`, but cannot
+produce a validated suite report from them. Record preparation as ERROR and
+inference as NOT_RUN, with TPS unavailable. Zero cases and successful artifact
+collection are not a passing run; a structured preparation-error envelope remains
+a follow-up. Do not insert requested bundle metadata as observed runtime evidence.
+
+## GCE setup and teardown
+
+Run the GCE controller from the owned Mac or Linux. Windows is supported as the
+CUDA test guest; Windows-hosted GCE orchestration is not yet qualified.
+
+Copy `tool/testing/validation/gce.example.json` to an ignored path. Configure an
+immutable **GPU-ready image**, exact expected driver, compatible machine/accelerator,
+zone, an existing network and a targeted IAP TCP/22 firewall tag. Linux needs
+Python, `timeout` and `sha256sum`; Windows needs Google-supported SSH and PowerShell.
+This initial adapter consumes an already qualified image; it does not install GPU
+drivers or change project networking. Check quotas and image/machine compatibility
+before the first approved run. Instance readiness rechecks the actual driver.
+
+The GCE profile must explicitly select GGUF CUDA and the uploaded desktop bundle
+must be built for the destination x64 OS. Each run requires fresh evidence that
+promotional credit applies to **all** expected costs, has at least twice the
+estimated run cost available, and expires at least two hours after dispatch.
+The receipt is an operator-verified billing-console record, not an automatic
+credit API lookup. A budget alert is not a guarantee against charges.
+
+```sh
+dart run tool/testing/validation.dart plan --target gce-linux-cuda --profile tiny-gguf-cuda --config .dart_tool/validation/gce.json --bundle .dart_tool/validation/bundles/linux --out .dart_tool/validation/plan.json
+dart run tool/testing/validation.dart run --plan .dart_tool/validation/plan.json
+```
+
+Use `gce-windows-cuda` with a Windows x64 bundle and Windows-ready image. The
+adapter records intent before creating one VM, requires provider-confirmed deletion
+after 60 minutes, persists instance/disk IDs before setup, verifies the driver,
+uploads/checks the bundle over IAP, runs under a 20-minute watchdog, collects
+results, deletes the owned VM/boot disk, and reads the inventories back.
+It creates no reusable volumes, static IPs or service accounts. An ephemeral
+public IP provides outbound model download access and belongs in the cost estimate.
+
+Deletion is the default cleanup. **Stopped VMs can retain charged disks**; stopping
+also clears the runtime deadline. Provider deletion deadlines and local finally
+cleanup are complementary, not a zero-cost guarantee. If identity is uncertain,
+cleanup refuses to delete a potentially unrelated resource, records UNKNOWN and
+blocks another run. No cloud run is permitted under the $0-out-of-pocket policy
+when applicable credit cannot be verified.
+
+## Recovery and evidence
+
+```sh
+dart run tool/testing/validation.dart status --run-id qa-EXACT-ID
+dart run tool/testing/validation.dart collect --run-id qa-EXACT-ID
+dart run tool/testing/validation.dart cleanup --run-id qa-EXACT-ID
+# Only after finding the exact ID in the provider console:
+dart run tool/testing/validation.dart reconcile --run-id qa-EXACT-ID --remote-id EXACT-PROVIDER-ID
+```
+
+Use the ID printed in the saved plan (the placeholder above is not a valid ID).
+OS locks serialize provider operations and release if the controlling process dies.
+SIGINT requests cancellation; cleanup still runs after the current bounded provider
+operation. Reusing a run ID cannot submit twice. A missing creation/submission
+response is UNKNOWN, never permission to retry. If no remote ID was received,
+inspect the provider console using the exact project/run label, preserve the
+journal, and use `reconcile` before recovery; do not delete the journal to bypass
+the blocker. Reconciliation checks the Firebase project/matrix/run label, or the
+GCE numeric instance ID, zone, label and owned automatic boot disk. It cannot
+replace an established identity and does not erase the original failure. Then
+run `status`, `collect` and `cleanup`. Recovery commands never submit a replacement.
+
+`orchestration.json` stores phase, exact IDs, provider state and collection state;
+`cleanup.json` stores verified/unknown cleanup. `remote-summary.json` is the
+combined verdict: provider success **and** validated Dart assertions/provenance
+**and** complete retrieval **and** verified cleanup. Test-only report success
+cannot override provider failure or unresolved infrastructure. Collection also
+matches the source commit, cleanliness, hook hash and all runtime pins against
+the uploaded bundle; desktop evidence must match its bundle manifest hash.
+
+Each run exports `events.jsonl`, `manifest.json`, `results.json`, `junit.xml`,
+`samples.csv`, and `summary.html`. HTML has case status/output, native decode TPS,
+estimated visible-output TPS, TTFA, and median/min/max for three measured samples.
+Warmup is retained but excluded from these comparisons. Missing counters are null;
+chunks are never called tokens. Backend-native decode timing and retokenized
+wall-time estimates stay in separate series. Three samples are informational,
+not a performance regression gate or a cross-device ranking.
+
+The reporter validates the embedded profile, derives its canonical mandatory case
+inventory and effective configuration, and checks the journal against both. Hash
+consistency alone is insufficient. Accelerator proof is derived from the backend;
+an event flag cannot waive it. The current catalog grants no expected-unsupported
+exemptions, so a producer cannot qualify a skipped case by setting
+`expected_unsupported: true`. Old reports are evidence snapshots; revalidation
+with a newer catalog must preserve the original and write a separate result.
+Reimport requires `preparation.verified == true` and the exact model SHA256/byte
+size from the profile. Historical desktop journals without runtime payload proof
+retain their assertion results but are incomplete under the current qualification
+gate; do not copy new verification flags into old journals.
+
+Explicit CPU rows reject contradictory GPU diagnostics. GGUF accelerator reports
+require matching backend diagnostics plus positive native tensor offload and
+compute allocations for all three successful loads. Device presence or requested
+GPU layers alone does not qualify execution. LiteRT NPU uses the checked per-generation dispatch adapter described above.
+LiteRT GPU and browser accelerator proof still require qualified evidence
+adapters; they remain incomplete.
+
+Normal model runs are opt-in. Model-free suite/provider tests run in CI. Before
+claiming another platform qualified, attach the exact commit, model/backend,
+command, provider/device identity, combined verdict, cleanup and native evidence.
+
+## Initial owned-machine observations (2026-09-17)
+
+The portable macOS arm64 bundle ran outside the repository. Tiny GGUF CPU/Metal
+completed inference/lifecycle/TPS, while native Unicode corruption remains tracked
+in [#511](https://github.com/leehack/llamadart/issues/511). The tiny model's expected
+SentencePiece leading space is an explicit fixture normalization; corrupted
+Unicode is still a failure. A Web/WASM UI run preserved Unicode and proved
+cancellation through the pinned delegate's explicit AbortError and successful
+recovery. The CPU identity check recognizes the pinned WASM name only with zero
+GPU layers and its CPU core metadata.
+Web native-token counters were unavailable, so C10 stayed NOT_RUN.
+
+Qwen3.5 GGUF also exposed native Unicode corruption and returned `Cedar17` for the
+case-sensitive `cedar17` history oracle. LiteRT CPU ran 13/14 cases successfully
+but answered `2` for `2 + 2`; retain the semantic failure and relate it to
+[#509](https://github.com/leehack/llamadart/issues/509), without inferring the same
+cause before a native reference comparison. These runs are diagnostics, not
+release qualification or stable performance baselines.
+
+## Maintained Firebase CPU pilot (2026-09-17)
+
+Four physical executions used the unbilled Spark project. All reached terminal
+provider states, artifacts were collected, and completion was verified. No GCE
+VM was created. Android file pulls and iOS XCTest attachment export both recovered
+complete quick-core journals when model preparation succeeded.
+
+| Device / profile | Outcome | Median native decode TPS |
+| --- | --- | ---: |
+| Galaxy S24 / tiny GGUF CPU | 10 PASS, 1 FAIL: C02 Unicode corruption | 538.5 |
+| iPhone 16 Pro / tiny GGUF CPU | 10 PASS, 1 FAIL: C02 Unicode corruption | 708.3 |
+| Galaxy S24 / Qwen3 LiteRT CPU | Preparation ERROR; inference NOT_RUN | Unavailable |
+| iPhone 16 Pro / Qwen3 LiteRT CPU | 13 PASS, 1 FAIL: C04 arithmetic returned `2` | 8.9 |
+
+GGUF used native `v0.4.0`; LiteRT used `0.17.0-3`. Unicode matches
+[#511](https://github.com/leehack/llamadart/issues/511); the arithmetic observation
+matches [#509](https://github.com/leehack/llamadart/issues/509) and does not by
+itself establish a Dart-layer defect. The three benchmark samples after warmup
+remain available despite those independent assertion failures. Android is Debug
+and iOS is Release; the tiny GGUF model is a packaging fixture, so these numbers
+are not a device ranking or a comparison of backend performance.
+
+The Android LiteRT attempt ended after 302 seconds during model download, before
+any suite manifest or inference. Its old diagnostic recorded a closed connection
+without partial byte progress. The corrected mobile host now has a ten-minute
+download deadline and reports byte counts on timeout. The final iOS bundle used
+that host, downloaded and verified the 614 MB fixture in about 65 seconds, then
+ran the suite. The original failed Android attempt remains in the evidence;
+the separately selected retry below establishes download recovery for one run.
+
+The remaining mobile milestones are reliable preparation-error envelopes,
+semantic-failure investigation, and the planned accelerator qualification packs.
+These CPU observations do not qualify accelerator paths or a release.
+
+### Android LiteRT CPU retry after Blaze upgrade
+
+Run `qa-1789668430755373` / `matrix-2thou79z4k2ud` used the corrected clean
+`b860bfe6c13958bede6df7088d1f53e05eac8f7c` Debug bundle on S24/API 36. It
+downloaded the 614,236,160-byte Qwen3 model in 169.332 seconds, verified its locked
+SHA256, and finished preparation in 175.961 seconds within the ten-minute
+download deadline. This is one successful retry, not a network reliability rate.
+
+The result was **13 PASS, 1 FAIL**: C04 arithmetic again returned `2` for `2 + 2`,
+matching [#509](https://github.com/leehack/llamadart/issues/509). Median native
+decode throughput was 12.34 TPS, estimated wall throughput 8.53 TPS, and visible
+TTFA 2,054.97 ms across three measured samples after warmup. The provider recorded
+232 seconds of test process time (four rounded free minutes), and collection and
+completion were verified. The scheduled September 18 retry was paused to prevent
+a duplicate. Qwen CPU is not the matched Gemma CPU control for the NPU pack.
+
+## Galaxy S24 NPU pilot (2026-09-17)
+
+Both installed apps used clean bundle source `2288eed19c482e7774df2c93b1e7d9a96e6e9c4e`,
+Flutter 3.47.1, Debug mode, LiteRT-LM `0.17.0-3`, QAIRT `2.47.0.260601`, and the
+locked `Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm` model. The device reported
+`SC-51E`, `SM8650`, arm64-v8a and API 36. Model and kit hashes were verified on
+installation and per-generation synchronous vendor-call completions established
+**NPU participation; CPU partition coverage unknown**.
+
+| Execution path | Result | Native decode TPS, median | Estimated wall TPS, median | Collection/completion |
+| --- | --- | ---: | ---: | --- |
+| Direct native C API control | 8 PASS; NPU proof in 7 generations | 80.08 | 72.45 | COMPLETE / VERIFIED |
+| Public llamadart API | 13 PASS, 1 FAIL; NPU proof in 14 generations | 82.27 | 72.24 | COMPLETE / VERIFIED |
+
+These are three short 32-token measured generations after warmup, not a sustained
+benchmark or evidence that one adapter is faster. Both use compiled NPU sampling
+defaults: requested temperature/seed overrides are not applied, and effective
+sampler values remain unknown. Native-control TTFT median was 36.37 ms; public
+visible-answer TTFA median was 135.56 ms. They measure different boundaries and
+must not be substituted for each other.
+
+The public history case expected `cedar17` and returned 32 repeated `7` characters.
+It remains FAIL and blocks public NPU qualification. Load, Unicode tokenizer
+round-trip, raw generation, hello, arithmetic, cancellation/recovery, reload,
+one-token output limit and invalid-path recovery passed. Track the exact inputs
+and controls in [history investigation #513](https://github.com/leehack/llamadart/issues/513).
+The native control does not yet test this history input, so its success does not
+establish whether the failure belongs to Dart, the runtime, or the compiled model.
+
+Native run `qa-1789667329901788` / `matrix-pt34kzd9mgxsa` used six seconds of test
+process time; public run `qa-1789667821365130` / `matrix-21m98jmyipzo2` used 45 seconds.
+Both were capped at ten minutes after a fresh project-wide free-minute check.
+Each consumes one rounded free physical minute. All raw outputs, configuration,
+provenance, timing samples and dispatch counters are retained with the run reports.
+The matched Gemma CPU control, separate Unicode generation fixture and aggregate
+NPU pack qualification remain outstanding; the Qwen CPU retry is independent.
+
+The final project-wide inventory at 18:15 UTC found all seven September 17
+physical executions complete, with no unresolved executions. Individually
+rounded test times totalled **17 of the 30 free physical minutes**: 11 from the
+earlier Spark runs and six from this three-run batch. The gross USD 6 journal
+reservation is a dispatch guard, not a charge. No VM or custom storage bucket was
+created. The default Test Lab result bucket is
+[provided at no charge](https://docs.cloud.google.com/sdk/gcloud/reference/firebase/test/android/run#description),
+and complete copies of the reports are retained locally.
+
+### Native history replay on current main / LiteRT-LM 0.17.0-5
+
+The follow-up control used clean source
+`fb8d2beb4db65f1b8987d69022049b4d0ae4fbda`, including main
+`21135e37dadf60882ea427db6078ccc90f84a28a`, with the same Gemma model, QAIRT kit
+and S24/API 36. Runtime `0.17.0-5` was verified from the release archive through
+the APK: its core SHA256 `502d017d8375c0796adf5f720da29fb1915b2a70103e3cf8f6e8e8880ac0f614`
+becomes `5424262e8a396b1cc32813a5d3f061c0ccba06cdff2ddc61d5bfdc40a249d2c4`
+after the reproduced Android NDK symbol-stripping operation.
+
+Run `qa-1789670325547288` / `matrix-1serhazjregr5` completed **8 PASS, 4 FAIL**,
+with no ERROR/NOT_RUN and NPU participation verified in all eleven generations.
+Every history variant retained the exact, case-sensitive `cedar17` oracle:
+
+| Direct native history control | Output | Verdict |
+| --- | --- | --- |
+| Normal system content plus prior messages | `Cedar17` | FAIL: capitalization |
+| Public path's literal-JSON system content, same prior messages | 32 repeated `7` characters | FAIL |
+| Prior messages without system content | `Cedar17` | FAIL: capitalization |
+| Four text contents joined into one user prompt | `7777\n` | FAIL |
+
+This reproduces degeneration without the public worker/streaming adapter on the
+new runtime. The literal-system input conflicts with the C API's system-content
+contract; normal content removed degeneration in this observed comparison, but
+strict recall still failed. One generation per variant and unknown compiled
+sampling do not establish a failure rate or isolate every cause. The native
+conversation-creation snapshots showed no vendor calls for these controls, so
+this result does not establish a separate initialization-prefill defect.
+[#513](https://github.com/leehack/llamadart/issues/513) retains the exact setter
+JSON and next controls: correct the serialization boundary, replay public Dart,
+and compare a compatible Gemma CPU/model reference. No public `0.17.0-5` rerun
+or production serialization change is claimed by this control.
+
+The independent short benchmarks had median native decode 80.58 TPS, estimated
+wall 71.71 TPS and native TTFT 37.05 ms. Collection was COMPLETE and terminal
+cleanup VERIFIED. The provider recorded 46 seconds, consuming one rounded free
+minute. The final 18:52 UTC project inventory found eight completed physical
+executions, **18 of 30 free minutes used**, twelve remaining and no unresolved
+executions. No VM was created or additional run scheduled.
+
+### Public history replay after the system-content fix
+
+Clean source `d0bd029b07e31649ab5760756dcc1841ba487282` corrects the service's
+system-message boundary: pass plain joined text to the runtime, which JSON-encodes
+it once for the C API. Literal JSON, quotes, newlines, Unicode, multiple and
+empty system messages are covered; the existing history-order and unsupported
+system-media assertions remain. Three regression assertions failed against the
+old service. All 161 LiteRT VM tests, full repository analysis and changed-file
+format checks pass, with every executable history-seeding line covered.
+
+The one public API retest used the same S24, model hash, QAIRT kit and audited
+`0.17.0-5` core as the preceding native control. Run `qa-1789672372212252`,
+matrix `matrix-23gzng6la12qr`, completed **13 PASS, 1 FAIL**, with no ERROR/NOT_RUN,
+complete provenance and NPU participation verified across fourteen generations.
+`C06.history` now returns **`Cedar17`**, matching the canonical native control,
+instead of the original repeated `7` output. The exact lowercase `cedar17`
+oracle remains unchanged and failed; the NPU profile remains unqualified and
+[#513](https://github.com/leehack/llamadart/issues/513) stays open. The history
+request recorded 52 prompt tokens, four decoded tokens, two public chunks and
+five completed vendor calls; CPU partition coverage is still unknown.
+
+This fixes the demonstrated serialization contract mismatch and removes the
+degeneration in this single public observation. It does not establish a failure
+rate or attribute the remaining capitalization and combined-prompt failures to
+model behavior, model conversion or the NPU runtime. A compatible Gemma CPU/model
+reference and repeated controlled comparison remain the next diagnostic steps.
+Compiled NPU sampling defaults are unknown; requested temperature/seed are not
+applied by this path.
+
+Three measured short benchmark samples after warmup gave median native decode
+**77.84 TPS**, estimated wall **66.13 TPS** and time to first public output
+**152.17 ms**. Native TTFT is unavailable on this public path. These benchmarks
+assert bounded nonempty output, not number-list semantics, and the earlier
+82.27 TPS sample is not a statistically controlled performance baseline.
+
+Collection is COMPLETE and terminal cleanup VERIFIED. The test process took
+46 seconds, consuming **one rounded free minute**. The 19:22 UTC project audit
+found nine completed physical executions, **19 of 30 free minutes used**, eleven
+remaining and zero unresolved executions. No paid test minutes were needed, no
+VM was created and no further run was scheduled. The interactive report, exact
+JSON, immutable usage receipt and runtime audit are retained under
+`.dart_tool/validation/system-fix-20260917/` and the run's `report/` directory.
+
+### Repeated Gemma CPU controls on macOS
+
+The local CPU comparison uses clean source
+`2b604775ac49f0532e2a0a9f34024c93d3998c10`, Apple M4 Max/macOS 26.6.2 arm64,
+and LiteRT-LM `0.17.0-5`. The CPU artifact from the same pinned model repository
+is `gemma3-1b-it-int4.litertlm`, 584,417,280 bytes, SHA256
+`1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be`.
+The core library SHA256 is
+`42a1fa7cc0666ceda1bb00f864065e7b6bcae041234bd501ecc1c56de54b7530`, matching
+the cached release archive and published release manifest's macOS smoke record.
+
+Three fresh public-API processes each completed **13 PASS, 4 FAIL**, with no
+ERROR/NOT_RUN and complete provenance. A separate local Python/ctypes diagnostic
+used the upstream C API directly, without Dart, and repeated all four history
+inputs three times with fresh engines. Its exact setter JSON matches the prior
+NPU controls; its outputs match the public CPU path in all twelve comparisons.
+
+| Input | Public CPU, each of three runs | Direct-native CPU, each of three repetitions |
+| --- | --- | --- |
+| Canonical system and prior history | `Cedar17` | `Cedar17` |
+| Former public literal-JSON system content | 32 repeated `7` characters | 32 repeated `7` characters |
+| History without system content | `Cedar17` | `Cedar17` |
+| Combined user prompt | 32 repeated `7` characters | 32 repeated `7` characters |
+
+Every row still fails exact `cedar17`. These failures therefore occur without
+Qualcomm/NPU execution and without the Dart service, worker or streaming adapter.
+This narrowed attribution but did not distinguish the converted model/tokenizer,
+shared LiteRT runtime, and original model behavior. The subsequent original-model
+and prompt comparison below narrows that boundary further; keep
+[#513](https://github.com/leehack/llamadart/issues/513) open.
+
+Both CPU paths use context 1280, four threads, max output 32, thinking enabled
+and greedy decoding. The public requested top-k 40/temperature zero resolves to
+top-k 1 in the service; the direct C API used TopP sampler type 2, top-k 1,
+top-p 0.9, temperature zero and seed 1. NPU still has unknown compiled sampling.
+Platform, artifact/conversion, maximum native context capacity, and sampling
+differ between CPU and NPU. Do not treat their TPS ratio as accelerator speedup
+or fill the S24 CPU row with this Mac evidence.
+
+Across nine short public benchmark samples (three per run after separate
+warmups), median native decode was **74.06 TPS**, estimated wall **67.46 TPS**,
+and time to first public output **137.33 ms**. This is diagnostic throughput,
+not semantic qualification. No Firebase run, VM or paid resource was created;
+no cloud test minutes were consumed. The three run directories are
+`.dart_tool/validation/runs/gemma-cpu-20260917-{1,2,3}`; comparison JSON,
+direct-native script/results/logs and runtime/model audit are under
+`.dart_tool/validation/gemma-cpu-20260917/`.
+
+### Original Gemma and tokenizer reference (2026-09-17)
+
+The original `google/gemma-3-1b-it` model at revision
+`dcc83ea841ab6100d6b47a070329e1ba4cf78752` was acquired through existing authorized
+access and verified against repository Git blobs/LFS hashes. Its safetensors file
+is 1,999,811,208 bytes, SHA256
+`3d4ef8d71c14db7e448a09ebe891cfb6bf32c57a9b44499ae0d1c098e48516b6`.
+The local reference used Transformers 5.17.0, PyTorch 2.14.0, Tokenizers 0.23.2,
+CPU float32, four threads, eager attention, greedy decoding, seed 1 and at most
+32 new tokens. It used the model's original chat template and the exact four
+role/content inputs from the prior direct-native control.
+
+All four variants returned `cedar17\n` in each of three repetitions: **12/12 PASS**
+under the existing trimmed, case-sensitive predicate. No assertion was relaxed.
+This is a semantic reference, not a comparable speed or quantization benchmark.
+
+The CPU LiteRT model embeds a SentencePiece tokenizer byte-identical to the
+original: SHA256
+`1299c11d7cf632ef3b4e11937501358ada021bbdf7c47638d13c0ee982f2e79c`.
+For every input, the native conversation render exactly matches the original
+prompt after accounting for BOS. The native tokenizer IDs plus metadata BOS ID 2
+match the original Transformers input IDs. The pinned upstream session code adds
+that BOS separately on the first turn; this comparison checks rendering and the
+tokenizer API, not a trace of tensors passed to the executor.
+
+The NPU tokenizer differs in IDs 256000–262143 (6,144 vocabulary entries), with
+the same normalizer and core special-token IDs. None of the observed input IDs
+uses those changed entries. That difference is not evidence of the cause; actual
+NPU prompt tokenization was not captured in this local comparison. Both LiteRT
+files use non-Jinja role affixes with BOS ID 2; the NPU metadata additionally
+specifies the 1280-token limit.
+
+These results rule out an impossible oracle and a mismatched CPU tokenizer file
+for these inputs. They do not separate quantization/conversion effects from
+LiteRT executor/runtime behavior. Continue #513 with a controlled alternative
+conversion or upstream execution comparison; keep the strict failures and S24 CPU
+gap open. No Firebase execution, VM or paid resource was used. Hash audits,
+original inputs/token IDs/outputs, native rendered prompts, extracted tokenizer
+metadata, dependency versions and comparison JSON are retained privately under
+`.dart_tool/validation/gemma-reference-20260917/`.
+
+The report validator was also tightened after five regression tests demonstrated
+false qualifications from omitted obligations, conflicting rehashed settings,
+invalid profiles, waived accelerator flags and self-granted unsupported status.
+All 43 harness tests and 44 provider/input tests pass. Revalidating copies of the
+three CPU journals and latest public/native S24 journals preserves their exact
+verdicts and counts, with no new integrity problems; originals remain unchanged.
+
+## Planned platform/backend coverage
+
+Inspect the model/use-case coverage catalog without downloading models or
+starting cloud resources:
+
+```bash
+dart run tool/testing/validation.dart coverage
+dart run tool/testing/validation.dart coverage --platform android-arm64 --backend npu
+dart run tool/testing/validation.dart coverage --use-case stt
+dart run tool/testing/validation.dart coverage --use-case tts
+```
+
+This JSON is a planning inventory, not a qualification report. `NOT_RUN` means
+execution evidence is still required; `UNVERIFIED` identifies an artifact or
+compatibility gap; `UNSUPPORTED` identifies a current runtime/API boundary.
+Actual results remain in collected run reports. The catalog never emits PASS.
+
+Gemma 4 E2B and Qwen3.5 0.8B are primary chat families. Gemma 4 Tensor G5 and
+Qualcomm SM8750 NPU rows require immutable artifacts and matched vendor kits
+before executable profiles can be added. SM8750 does not qualify S24 SM8650.
+Existing Gemma 3 NPU profiles remain separate legacy controls. No Qwen3.5 NPU
+combination is established; Apple, desktop and Web NPU paths are unsupported.
+
+Dedicated STT/TTS models are required exceptions to the primary chat families.
+GGUF Qwen3-ASR and Qwen3-TTS need separate platform/backend execution evidence.
+Typed LiteRT ASR is native CPU-only; LiteRT TTS and NPU speech are unsupported.
+Current TTS produces complete audio, not playable streaming chunks. Speech
+quality, real-time factor and app microphone/playback checks remain separate
+from chat token throughput and accelerator availability.
+
+The catalog regressions run in the existing `validation-harness` local E2E
+scenario and private package tests. Candidate rows cannot be passed to the
+builder as runnable profiles; existing model-lock and NPU preflight requirements
+remain mandatory. Browser/delegate and device-specific model memory checks are
+still required for every actual run.
+
+### Primary model profiles and runnable speech packs
+
+Gemma 4 E2B now has immutable `gemma4-gguf-{cpu,metal,vulkan,cuda}` and
+`gemma4-litert-{cpu,gpu}` text profiles. Qwen3.5 0.8B retains the existing
+`chat-gguf-*` Q4_0 profiles and adds `qwen35-litert-{cpu,gpu}` INT8 profiles.
+The new profiles disable thinking, retain strict core predicates, and record
+resolved sampling and TPS with the existing reporter. Native LiteRT profiles
+are not Web or NPU artifacts. Multimodal/projector profiles remain separate work.
+
+```bash
+dart run tool/testing/validation.dart local --profile gemma4-gguf-cpu --model /models/gemma-4-E2B-it-Q4_K_S.gguf
+dart run tool/testing/validation.dart speech --pack stt --backend cpu --out /tmp/new-stt-run
+dart run tool/testing/validation.dart speech --pack tts --backend cpu --out /tmp/new-tts-run
+dart run tool/testing/validation.dart speech --pack litert-asr --backend cpu --model /models/moonshine_tiny_5s_i8.tflite --tokenizer /models/moonshine_tokenizer.json --out /tmp/new-litert-asr-run
+dart run tool/testing/validation.dart voice --chat-profile gemma4-gguf-cpu --chat-model /models/gemma-4-E2B-it-Q4_K_S.gguf --out /tmp/new-voice-run
+```
+
+GGUF speech downloads or verifies the locked Qwen3-ASR/Qwen3-TTS model and
+projector. Dedicated LiteRT ASR requires supplied files matching the checked-in
+Moonshine model/tokenizer hashes; immutable source URLs are in
+`packages/llamadart_validation/assets/speech/litert-asr.json`.
+Every entry point runs under the existing subprocess host's 15-minute deadline.
+The `validation-speech-stt`, `validation-speech-tts`,
+`validation-speech-litert-asr` and `validation-voice-round-trip` scenarios are
+registered in the local E2E runner; use `--model-path`, `--mmproj-path`, or
+`--tokenizer-path` to reuse local inputs. The voice scenario uses Gemma 4 CPU;
+the direct command also accepts the other primary CPU chat profiles.
+
+Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
+raw/reference transcript, WER, processing time, first partial/first playable
+audio timing where available, real-time factor, and generated WAV artifacts.
+Cases cover generation, immediate cancellation, subsequent request, invalid
+input/recovery, independent reload and cleanup. GGUF STT additionally compares
+file and bytes inputs. TTS rejects silent, nonfinite or truncated output;
+playability is not a listening-quality assertion. Its first playable audio is
+the final buffer, never a progress callback. The voice report preserves the
+transcript and chat response and writes the synthesized response WAV.
+
+These new speech commands are **diagnostic local runners**, not yet portable
+bundle/Firebase adapters or accepted qualification-report imports. They never
+set `qualified=true`. Exit zero means the selected functional assertions passed,
+not accelerator or perceptual qualification. Full microphone/playback,
+noise/language/voice fixtures, mobile/Web speech packaging, and historical
+speech dashboards remain open. A supported backend request still requires
+actual hardware execution evidence before marking a platform/backend row green.
+
+### Preparation progress on interrupted runs
+
+Native desktop and Flutter validation write a separate `preparation.jsonl` with `preparation_progress`
+records before inference: download started/finished, checksum started/verified
+(or rejected), and ready only after size and SHA256 verification. Active byte
+processing emits at most one progress update per ten seconds per stage; a stalled
+network does not emit a heartbeat. Records contain profile ID, locked model hash,
+processed/expected bytes and elapsed preparation milliseconds, never a URL or
+local model path. Subtract stage timestamps to separate transfer from verification
+cost. Existing completed-run `download_ms` and `checksum_ms` remain available.
+
+These flushed JSONL records also appear in provider logs with the
+`LLAMADART_PREPARATION` prefix. They leave the manifest-first suite protocol
+unchanged and survive a provider timeout where no suite
+manifest was written, but cannot qualify a run or replace missing test results.
+The eight-minute S24 Gemma 4 attempt reached model loading only after about 7m44s;
+its old logs do not distinguish transfer and checksum cost. Use these records
+before choosing a longer timeout or another model delivery strategy, and recheck
+free allowance before any device dispatch.
+
+### Desktop CUDA payloads
+
+Linux x64 and Windows x64 validation bundles explicitly include CPU, Vulkan and
+CUDA modules through the private harness hook configuration. Bundling fails if
+any is missing; selecting a CUDA profile alone does not override Dart build-hook
+defaults. The GPU driver remains a host prerequisite, and a shipped CUDA module
+is not execution or placement evidence. Earlier 31867c10c CI bundles use the
+CPU/Vulkan defaults and must not be used for CUDA qualification.
+
+### Terminal Firebase recovery and release catalog 3
+
+Firebase polling retains safe failure categories and HTTP status codes without
+response bodies, authentication values or request URLs. Transient read failures
+retry at most three consecutive attempts under the original run deadline; the
+controller never retries submission. Interrupted runs stay unqualified. Failed
+Firebase runs cancel/verify terminal state before collecting final artifacts;
+pre-terminal snapshots cannot be labelled complete. GCE still collects before
+VM/disk deletion. An unknown cleanup state continues to block new submissions.
+Manual Firebase cleanup invalidates earlier collections and refreshes provider
+status. Follow it with `collect`, which refreshes terminal status again before
+retrieval. A failed recovery persists an incomplete, unqualified assessment;
+cancelled preparation-only runs cannot qualify from old artifacts.
+
+Windows compiled CLI bundles resolve native backends from their verified
+`bin/../lib` layout, before unrelated working-directory or hook caches.
+Explicit native overrides and executable-adjacent bundles retain precedence.
+
+Windows VM uploads and result collection explicitly use legacy SCP (`-O`),
+because the Google Windows SSH image used in live validation closed the default
+SFTP-based transfer. Linux retains the default protocol. Both remain IAP-tunneled.
+
+Vulkan offload and compute-buffer records do not establish physical GPU use when
+the log identifies a software device such as llvmpipe, lavapipe or SwiftShader.
+Those runs remain unverified, including mixed software/hardware inventories.
+Each Vulkan compute-buffer device also needs matching, unambiguous native
+discovery or selected-model evidence identifying recognized GPU hardware.
+Both sources must agree when present. Discovery capability columns are stripped
+only after checking the original device text for software identities; absent,
+conflicting or unknown device names fail closed. CUDA-ready VM images need a Vulkan
+loader and a hardware ICD before they can qualify Vulkan or LiteRT WebGPU lanes.
+
+Catalog 3 executes C10 stop-marker comparison and C12 unloaded-engine readiness
+rejection/reload recovery. Stop tests retain an unrestricted control, exact
+pre-marker output, forwarded stop configuration and subsequent-request recovery;
+a model that does not emit the control marker fails the oracle. Readiness tests
+require the public `LlamaContextException` contract. Direct native reference
+controls do not stand in for either public API case. Catalogs 1 and 2 retain
+these cases as unimplemented and cannot claim their execution. Catalog 4 adds
+Unicode generation, thinking on/off and tool choice/result controls. Thinking
+budgets, tool-bearing batching and model-specific qualification remain separate.
+
+
+### Current Qwen tool and history reference (2026-09-19)
+
+The unchanged catalog-4 Qwen CPU profile from suite `b13c545f`, run in an
+isolated setup against main `699969b0` after PRs #531 and #529, records
+**16 PASS, 1 FAIL, 0 ERROR**. C07 auto/required/none, exact tool arguments,
+typed-Map result follow-ups and recovery pass. C06 still returns `Cedar17`
+instead of the strict expected `cedar17`; no predicate was relaxed. This is JIT
+diagnostic evidence, not a sealed current-PR portable qualification report.
+
+For the locked Qwen3.5-0.8B-Q4_0 model (SHA256
+`57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf`),
+unmodified upstream `llama-server` at native v0.4.1's exact upstream commit
+`b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` matches all 11 diagnostic trials:
+rendered prompts, input token IDs and public/raw Dart outputs. The original
+history remains intact. Three baseline repetitions return `Cedar17`; disabling
+the repetition penalty returns `17`, while changing the stored code to `maple42`
+returns `maple42` and removing history produces a different output. The same
+explicit-case instruction still returns `Cedar17` on both paths.
+
+This does not demonstrate a Dart history-loss or parser defect, and it does not
+distinguish original model behavior, quantization or upstream numerical execution.
+Keep the exact conformance failure and `qualified=false`. A separate multi-secret
+history-transport diagnostic, if added, must not replace this obligation.
+The [tracking diagnosis](https://github.com/leehack/llamadart/issues/514#issuecomment-5738623925)
+records source/model/settings and attribution limits. Gemma3 LiteRT issue #513
+remains a distinct investigation; this CPU GGUF control does not qualify other
+models, runtime backends or devices.

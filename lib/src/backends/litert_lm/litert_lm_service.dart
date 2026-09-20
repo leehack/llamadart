@@ -172,7 +172,8 @@ class LiteRtLmService {
     final loraPath = _activeTextLoraPath();
     client.createConversation(
       temperature: params.temp,
-      topK: params.topK,
+      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+      topK: params.temp == 0 ? 1 : params.topK,
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
@@ -285,13 +286,28 @@ class LiteRtLmService {
       templateNow: templateNow,
       enableThinking: enableThinking,
     );
+    // Older Qwen bundles use a native ChatML template that ignores
+    // enable_thinking. Match the text template used by the Dart parser so
+    // disabled thinking closes the reasoning prefix before generation.
+    // Media remains owned by the native model-specific processor.
+    final modelName = File(
+      _modelPath!,
+    ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
+    final isQwen3TextModel = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName);
+    final builtinTemplate = _resolveBuiltinTemplate(modelName);
+    final promptTemplate =
+        maxNumImages == null && !enableAudio && isQwen3TextModel
+        ? _modelParams?.chatTemplate ?? builtinTemplate?.template
+        : null;
     client.createConversation(
+      promptTemplate: promptTemplate,
       systemMessage: seed.systemMessage,
       messages: seed.messages,
       tools: nativeTools,
       extraContext: extraContext,
       temperature: params.temp,
-      topK: params.topK,
+      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+      topK: params.temp == 0 ? 1 : params.topK,
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
@@ -1161,14 +1177,9 @@ class LiteRtLmService {
       seededMessages.add(_chatMessageToNativeJson(message));
     }
 
-    final systemMessage = systemText.isEmpty
-        ? null
-        : jsonEncode({
-            'role': LlamaChatRole.system.name,
-            'content': [
-              {'type': 'text', 'text': systemText.join('\n')},
-            ],
-          });
+    // The runtime encodes this text as JSON content; the native conversation
+    // adds the system role itself.
+    final systemMessage = systemText.isEmpty ? null : systemText.join('\n');
     return (
       systemMessage: systemMessage,
       messages: seededMessages.isEmpty ? null : seededMessages,

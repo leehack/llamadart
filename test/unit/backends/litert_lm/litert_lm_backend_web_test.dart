@@ -7,6 +7,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -412,6 +413,48 @@ void main() {
       await backend.dispose();
     }
   });
+
+  for (final option in [
+    'streamBatchTokenThreshold',
+    'streamBatchByteThreshold',
+  ]) {
+    test('public engine rejects LiteRT Web $option and recovers', () async {
+      var prompts = 0;
+      _installFakeEngine(
+        onPrompt: (_) {
+          prompts++;
+        },
+        chunks: <JSAny?>[_messageChunk('Hello')],
+      );
+      final engine = LlamaEngine(LiteRtLmBackend());
+      try {
+        await engine.loadModel('https://example.com/model.litertlm');
+        final params = const GenerationParams().copyWith(
+          streamBatchTokenThreshold: option == 'streamBatchTokenThreshold'
+              ? 1
+              : null,
+          streamBatchByteThreshold: option == 'streamBatchByteThreshold'
+              ? 1
+              : null,
+        );
+        await expectLater(
+          engine.generate('hello', params: params),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.toString(),
+              'named option',
+              contains(option),
+            ),
+          ),
+        );
+        expect(prompts, 0, reason: 'Rejection must precede model execution');
+        expect(await engine.generate('hello').join(), 'Hello');
+        expect(prompts, 1);
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
 
   test('rejects thinking budget on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);

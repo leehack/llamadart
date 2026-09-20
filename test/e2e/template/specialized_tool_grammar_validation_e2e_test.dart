@@ -4,6 +4,13 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -14,6 +21,9 @@ import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
+
+import '../../support/qwen35_tool_result_fixture.dart' as typed;
+import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
   late String validator;
@@ -27,6 +37,125 @@ void main() {
     );
     expect(File(validator).existsSync(), isTrue);
   });
+
+  test('Qwen typed Map result history preserves compiled follow-up grammar', () {
+    for (final thinking in [true, false]) {
+      final rendered = typed.renderQwenResultHistory(thinking: thinking);
+      expect(rendered.prompt, contains(jsonEncode(typed.qwenResultPayload)));
+      expect(rendered.grammarLazy, isFalse);
+      // Qwen's existing grammar constrains the XML envelope and declared names;
+      // scalar typing is reconstructed by the output parser, tested separately.
+      // Its grammar root begins at the tool envelope, not the thinking prefix.
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [typed.qwenResultEnvelope],
+        invalid: [
+          typed.qwenResultEnvelope.replaceFirst(
+            '<function=inspect>',
+            '<function=unknown>',
+          ),
+          typed.qwenResultEnvelope.replaceFirst(
+            '<parameter=count>',
+            '<parameter=unknown>',
+          ),
+          typed.qwenResultEnvelope.replaceFirst('</tool_call>', ''),
+          typed.qwenResultEnvelope.replaceFirst('</function>', ''),
+          'No tool',
+        ],
+      );
+    }
+  });
+
+  test('Qwen typed result history preserves compiled follow-up grammar', () {
+    for (final thinking in [true, false]) {
+      final rendered = renderQwenResultHistory(
+        thinking: thinking,
+        templateSource: File(qwenResultTemplatePath).readAsStringSync(),
+      );
+      expect(rendered.prompt, contains(jsonEncode(qwenResultPayload)));
+      expect(rendered.grammarLazy, isFalse);
+      final parsed = ChatTemplateEngine.parse(
+        rendered.format,
+        qwenResultEnvelope,
+        tools: [qwenResultTool],
+      );
+      expect(parsed.toolCalls, hasLength(1));
+      expect(
+        jsonDecode(parsed.toolCalls.single.function!.arguments!),
+        qwenResultPayload,
+      );
+      // Qwen's existing grammar constrains the XML envelope and declared names;
+      // scalar typing is reconstructed by the output parser, tested separately.
+      // Its grammar root begins at the tool envelope, not the thinking prefix.
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [qwenResultEnvelope],
+        invalid: [
+          qwenResultEnvelope.replaceFirst(
+            '<function=inspect>',
+            '<function=unknown>',
+          ),
+          qwenResultEnvelope.replaceFirst(
+            '<parameter=count>',
+            '<parameter=unknown>',
+          ),
+          qwenResultEnvelope.replaceFirst('</tool_call>', ''),
+          qwenResultEnvelope.replaceFirst('</function>', ''),
+          'No tool',
+        ],
+      );
+    }
+  });
+
+  test(
+    'audio string-template rendering preserves compiled schema enforcement',
+    () {
+      final rendered = ChatTemplateEngine.render(
+        templateSource:
+            '{# ]<]minimax[>[ <tool_call> <invoke name= #}'
+            '{{ messages[0].content }}{{ "<mm:think>" }}',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('inspect'),
+              LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
+            ],
+          ),
+        ],
+        metadata: const {},
+        tools: [_schemaTool],
+        toolChoice: ToolChoice.required,
+      );
+      expect(rendered.prompt, 'inspect<__media__><mm:think>');
+      expect(rendered.grammarLazy, isFalse);
+      const ns = MinimaxM3Handler.namespace;
+      const valid =
+          'reason</mm:think>$ns<tool_call>$ns<invoke name="inspect">'
+          '$ns<code>123$ns</code>'
+          '$ns<options>$ns</options>$ns<items>$ns</items>'
+          '$ns<count>7$ns</count>$ns<active>true$ns</active>'
+          '$ns<empty>null$ns</empty>$ns</invoke>$ns</tool_call>';
+      _expectGrammar(
+        validator,
+        rendered.grammar!,
+        valid: [valid],
+        invalid: [
+          valid.replaceFirst('name="inspect"', 'name="unknown"'),
+          valid.replaceFirst('$ns<count>7$ns</count>', ''),
+          valid.replaceFirst('$ns<count>7', '$ns<count>wrong'),
+          valid.replaceFirst(
+            '$ns</invoke>',
+            '$ns<extra>x$ns</extra>$ns</invoke>',
+          ),
+          valid.replaceFirst('$ns</tool_call>', ''),
+          'reason</mm:think>No tool',
+        ],
+      );
+    },
+  );
 
   test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
     final grammar = Gemma4Handler().buildGrammar([

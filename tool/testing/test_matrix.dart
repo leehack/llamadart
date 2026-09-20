@@ -35,6 +35,64 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'ci-selection',
+    tier: 'targeted',
+    mode: 'CI + local; no models',
+    covers:
+        'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario ci-selection',
+    useWhen:
+        'CI workflow or impact selection changes; see doc/ci_selection.md.',
+  ),
+  TestMatrixRow(
+    id: 'validation-harness',
+    tier: 'targeted',
+    mode: 'CI + local; model-free',
+    covers:
+        'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
+    useWhen:
+        'Validation harness, report, bundle or cloud orchestration changes.',
+  ),
+  TestMatrixRow(
+    id: 'validation-model-core',
+    tier: 'platform',
+    mode: 'opt-in; owned hardware or explicit remote run',
+    covers:
+        'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
+    command:
+        'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
+    useWhen:
+        'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+  ),
+  TestMatrixRow(
+    id: 'validation-speech',
+    tier: 'platform',
+    mode: 'opt-in; local model-backed',
+    covers:
+        'Locked Qwen3-ASR/Qwen3-TTS and dedicated LiteRT CPU ASR, cancellation, reload, typed guards, WER and audio timing',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-voice-round-trip',
+    useWhen:
+        'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
+  ),
+  TestMatrixRow(
+    id: 'gguf-stop-sequences',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers: 'public GGUF caller stop suppression, batching, and recovery',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'gguf-stop-sequences --model-path <chat.gguf> --backend cpu',
+    useWhen:
+        'Native GGUF streaming or stop-sequence changes. Use a compliant '
+        'Gemma 4 or Qwen3.5 chat model; pair with the deterministic ordinary/'
+        'speculative test/integration/stop_sequences_test.dart suite.',
+  ),
+  TestMatrixRow(
     id: 'static-format-analyze',
     tier: 'essential',
     mode: 'CI + local',
@@ -103,21 +161,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
     useWhen:
         'Only the evaluator-verified core-patch metadata release route; '
-        'never a substitute for changed tests on production or policy changes.',
+        'never a substitute for relevant causal tests on production or policy changes.',
   ),
   TestMatrixRow(
     id: 'structured-output-adversarial',
     tier: 'high-risk',
     mode: 'CI + local + primary upstream fixtures',
     covers:
-        'compiled grammar acceptance/rejection, schema-directed scalar and '
+        'applicable v2 impact axes: input rendering/history, compiled grammar acceptance/rejection, schema-directed scalar and '
         'container types including empty values, partial/final streaming and '
         'rollback, auto/required/none tool choice with thinking prefixes, and '
         'pinned/current upstream template/parser parity',
     command:
-        './tool/testing/run_template_parity_suites.sh; run issue-specific VM '
-        'and Chrome production-path tests against upstream-emitted valid and '
-        'adversarial invalid shapes.',
+        'Select applicable tests using doc/high_risk_pre_merge_readiness.md; '
+        'for mixed changes run ./tool/testing/run_template_parity_suites.sh '
+        'plus issue-specific VM and Chrome production-path tests.',
     useWhen:
         'Chat-template parser, grammar, streaming, thinking, or tool-call '
         'changes. Exact affected-family evidence is preferred; when weights '
@@ -314,8 +372,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real native Qwen3-ASR projector capability, whole-file transcription, '
-        'language-marker normalization, and exact known-fixture text',
+        'real native Qwen3-ASR file/encoded-bytes parity, bounded prompt tokens, '
+        'exact known-fixture text, malformed-byte rejection, cancellation and recovery',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'speech-to-text-smoke --model-path <model.gguf> '
@@ -528,6 +586,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'LiteRT-LM backend, hook companion libraries, or runtime pins.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-lifecycle',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
+    useWhen:
+        'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
+  ),
+  TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',
@@ -563,6 +632,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers: 'WebGPU bridge bootstrap and fallback wiring',
     command: 'dart run tool/testing/run_local_e2e.dart --scenario bridge-smoke',
     useWhen: 'Bridge asset loading, web bootstrap, or web interop changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-production-artifact-smoke',
+    tier: 'targeted',
+    mode: 'CI + local',
+    covers:
+        'one production-root build tested by mock and real worker/GGUF smokes',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
+    useWhen:
+        'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
   ),
   TestMatrixRow(
     id: 'web-mock-chat-smoke',

@@ -545,8 +545,17 @@ class MinimaxM3Handler extends _DirectJinjaHandler
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    // Partial markers are provisional: emitting them now cannot be undone
+    // when the remaining bytes complete a thinking delimiter. Final parsing
+    // keeps unmatched prefixes as literal text.
+    final thinkingInput = isPartial
+        ? _hideIncompleteProtocolSuffix(
+            _hideIncompleteProtocolSuffix(output, thinkingEndTag),
+            thinkingStartTag,
+          )
+        : output;
     final thinking = extractThinking(
-      output,
+      thinkingInput,
       startTag: thinkingStartTag,
       endTag: thinkingEndTag,
       thinkingForcedOpen: thinkingForcedOpen,

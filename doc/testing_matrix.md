@@ -4,6 +4,13 @@ This repository uses a layered test matrix so contributors can validate the
 essential runtime, model, feature, and platform paths without forcing every pull
 request to run large local models or device-only checks.
 
+The proposed [cross-platform validation plan](cross_platform_validation_plan.md)
+details reusable test apps, model/backend cases, metrics, a free Firebase
+physical-device rotation, and VM/Firebase upload, execution and cleanup. It is
+planning work; implementation is deferred until
+the current release additions are complete, and its proposed rows are not yet
+implemented by the runners below.
+
 Use the matrix for every non-trivial PR:
 
 ```bash
@@ -80,23 +87,27 @@ Validate the evidence payload with `tool/testing/high_risk_readiness.dart`,
 supplying repository, PR, author, exact head, and exact base values from an
 independent source as documented in `doc/high_risk_pre_merge_readiness.md`.
 The evaluator derives the rename-aware changed-file inventory from Git and
-rejects unchanged, deleted, renamed-old, non-test, and phantom evidence paths.
+rejects deleted, renamed-old, non-test, and phantom evidence paths. Existing
+tests are accepted with independently reviewed production reachability and causal
+before-fix or mutation evidence; changed filenames alone are insufficient.
 Fill the PR template's high-risk block with the task identities, exact head/base,
 affected-family evidence or precise N/A, zero known PR-caused P1 regressions,
 and the live unresolved-thread count. A known PR-caused P1 or any unresolved
 thread blocks readiness.
 
-For structured output, cover the applicable production-path axes:
+For structured output, use evidence v2 and review three behavioral impacts:
 
-- compile generated grammars and accept upstream-emitted valid shapes;
-- reject unknown, missing, mismatched, wrong-type, and malformed structures;
-- reconstruct schema-directed strings, numbers, booleans, nulls, objects, and
-  arrays, including empty containers and zero-argument calls;
-- suppress incomplete protocol markup while streaming and preserve ordinary
-  content through malformed-final rollback;
-- exercise `auto`, `required`, and `none` tool choice with thinking/reasoning
-  prefixes; and
-- run pinned and current upstream template/parser parity.
+- Input rendering/history: byte, role, content, typed tool-result and history
+  preservation plus affected-family upstream comparison.
+- Output parsing/streaming: scalar/container schema reconstruction, partial
+  suppression, malformed-final rollback, tool choice/thinking, and upstream parity.
+- Grammar/schema enforcement: compiled acceptance/rejection, reconstruction,
+  tool choice/thinking, and upstream parity.
+
+The independent exact-head/base audit records source-grounded exclusions for
+unaffected impacts. Shared handlers and unknown/mixed changes require all axes.
+See `doc/high_risk_pre_merge_readiness.md` for the evidence contract. Do not edit
+unrelated grammar tests just to satisfy a rendering-only change.
 
 Use the closest affected-family real model or artifact. When it is unavailable,
 name every unavailable family and substitute primary upstream emissions plus
@@ -130,7 +141,7 @@ Pick targeted rows based on the touched surface:
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
-| LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
+| LiteRT-LM native backend | `litert-lm-lifecycle`, `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
 | WebGPU multimodal | `webgpu-multimodal-regression`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR and `web-text-to-speech-smoke` for typed Qwen3-TTS |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
@@ -217,6 +228,11 @@ gate passes.
 ## Local Model Scenarios
 
 Real model checks are intentionally local-only. They can use the unified runner:
+
+The native speech smoke checks the same encoded WAV as file and in-memory bytes,
+requires the exact supplied transcript, bounds prompt tokens, and verifies
+cancellation followed by successful transcription for both inputs, plus malformed
+byte rejection and recovery.
 
 ```bash
 dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
@@ -401,3 +417,46 @@ When an agent creates or updates a PR:
    ancestry with `tool/git/safe_pr_head_update.dart` to prevent stale head
    rewinds. Consult `doc/pr_branch_writer_inventory.md` for writer scope and the
    remaining GitHub-managed governance boundary.
+
+The executable quick suite and provider commands are documented in the
+[cross-platform validation runbook](cross_platform_validation.md). Discover the
+model-free `validation-harness` and opt-in `validation-model-core` matrix rows.
+
+
+### LiteRT-LM lifecycle regression
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle \
+  --model-path /path/to/Qwen3.5-0.8B_int8.litertlm --backend gpu
+```
+
+This local-only row runs public engine reload/recovery and forced initialization
+timeout in separate child processes. Recovery retains a 60-second generation
+budget and requires the hello fixture after each reload; the parent enforces
+240-second recovery and 120-second timeout-process deadlines. The negative case
+requires an explicit cleanup error and failure of the abandoned request, never a
+cleanup pass. Outer deadline expiry kills only the owned child and fails the test.
+Logs and process results go to `.dart_tool/litert_lm_lifecycle`, or
+`LITERT_LM_LIFECYCLE_LOG_DIR`. Record source commit, model hash/revision, runtime
+artifact identity, requested backend, and device with these logs. A GPU request
+alone does not prove accelerator placement.
+
+### Native GGUF stop sequences
+
+`dart test -p vm test/integration/stop_sequences_test.dart` uses the small test
+GGUF to cover ordinary and speculative stop handling, Unicode, token boundaries,
+completion, cancellation, and subsequent generation. Ordinary tests constrain
+output with grammar; speculative tests use deterministic unrestricted controls
+because grammar sampling is unsupported there, and assert actual draft acceptance.
+
+Use a compliant chat model (Gemma 4 E2B or Qwen3.5 0.8B) for the unforced public
+chat fixture; the control must emit `alpha cedar17 omega` and caller stop
+`cedar17` must leave exactly `alpha `, under single-piece and default batching:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario gguf-stop-sequences \
+  --model-path /path/to/chat.gguf --backend cpu
+```
+
+Repeat with `--backend metal` on macOS when available. Record the source commit,
+native runtime tag, printed model SHA-256, and native offload logs with results.

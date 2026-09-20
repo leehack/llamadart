@@ -584,7 +584,14 @@ void main() {
           );
           disposePort.close();
 
-          expect(ack, isA<LiteRtLmDoneResponse>());
+          expect(
+            ack,
+            isA<LiteRtLmErrorResponse>().having(
+              (error) => error.message,
+              'message',
+              contains('has not settled'),
+            ),
+          );
           // The blocking generation never settled, so the worker must not
           // delete native handles out from under the in-flight native call.
           expect(service.disposeCalled, isFalse);
@@ -617,6 +624,29 @@ void main() {
         disposePort.close();
 
         expect(service.disposeCalled, isTrue);
+      },
+    );
+
+    test(
+      'reports native dispose failures instead of acknowledging cleanup',
+      () async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _FailingDisposeService(),
+        );
+        final responsePort = ReceivePort();
+        worker.sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
+        try {
+          expect(
+            await responsePort.first.timeout(const Duration(seconds: 1)),
+            isA<LiteRtLmErrorResponse>().having(
+              (response) => response.message,
+              'message',
+              contains('injected cleanup failure'),
+            ),
+          );
+        } finally {
+          responsePort.close();
+        }
       },
     );
 
@@ -957,4 +987,9 @@ class _FeatureLiteRtLmService extends LiteRtLmService {
 
   @override
   ({int total, int free}) getVramInfo() => (total: 2048, free: 512);
+}
+
+class _FailingDisposeService extends LiteRtLmService {
+  @override
+  void dispose() => throw StateError('injected cleanup failure');
 }

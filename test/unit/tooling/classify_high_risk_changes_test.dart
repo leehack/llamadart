@@ -11,6 +11,47 @@ Future<HighRiskCliResult> runClassifier(List<int> input) =>
     classifyHighRiskInput(Stream.value(input));
 
 void main() {
+  test('impact hints separate known boundaries and union mixed effects', () {
+    const render = 'lib/src/core/template/template_render_context.dart';
+    const parser = 'lib/src/core/template/peg_chat_parser.dart';
+    expect(
+      structuredImpactHints(['lib/src/core/template/tool_schema_utils.dart']),
+      StructuredImpact.values.toSet(),
+    );
+    const grammar = 'lib/src/core/grammar/gbnf_grammar_generator.dart';
+    expect(structuredImpactHints([render]), {
+      StructuredImpact.inputRenderingHistory,
+    });
+    expect(structuredImpactHints([parser]), {
+      StructuredImpact.outputParsingStreaming,
+    });
+    expect(structuredImpactHints([grammar]), {StructuredImpact.grammarSchema});
+    expect(
+      structuredImpactHints([render, parser, grammar]),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      structuredImpactHints(['lib/src/core/template/new_helper.dart']),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      structuredImpactHints([
+        'lib/src/core/template/handlers/qwen3_handler.dart',
+      ]),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      structuredImpactHints(['test/unit/core/template/handler_test.dart']),
+      StructuredImpact.values.toSet(),
+    );
+    expect(
+      assessHighRiskFiles([
+        'tool/testing/high_risk_readiness_evidence.v1.schema.json',
+      ]).surfaces,
+      contains(HighRiskSurface.regressionPolicy),
+    );
+  });
+
   group('assessHighRiskFiles', () {
     test('classifies structured-output production and parity changes', () {
       final assessment = assessHighRiskFiles([

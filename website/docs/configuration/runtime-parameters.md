@@ -30,6 +30,13 @@ await engine.loadModel(
 );
 ```
 
+Native GGUF `stopSequences` suppress the first completed marker and any text
+following it, including markers split across tokens or embedded inside a token.
+Empty stops are ignored. Unfinished marker prefixes are emitted when generation
+ends without a match. Template tokens listed in `preservedTokens` remain
+available to the chat parser; identical stop entries are excluded from native
+text matching. This applies to ordinary and speculative generation.
+
 Important fields:
 
 - `contextSize`: total context window.
@@ -98,6 +105,10 @@ For high-throughput `embedBatch(...)`, tune context batch fields together:
 See [Embeddings](../guides/embeddings) for API usage and benchmark scripts.
 
 ## GenerationParams essentials
+
+For native LiteRT-LM CPU/GPU generation, `temp: 0` selects greedy decoding: llamadart uses
+`topK: 1` regardless of the requested top-k value. Positive temperatures
+retain the requested sampling settings.
 
 ```dart
 const params = GenerationParams(

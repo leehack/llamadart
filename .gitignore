@@ -4,6 +4,10 @@
 build/
 pubspec.lock
 !example/chat_app/pubspec.lock
+!packages/llamadart_validation/pubspec.lock
+
+# Native runtime profiling output from optional model validation.
+*.profraw
 .flutter-plugins
 .flutter-plugins-dependencies
 .metadata

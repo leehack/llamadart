@@ -585,7 +585,8 @@ class GenerationParams {
   final int maxTokens;
 
   /// Temperature for sampling (higher = more creative/random, lower = more deterministic).
-  /// Range is typically 0.0 to 2.0.
+  /// Range is typically 0.0 to 2.0. Native LiteRT-LM CPU/GPU treats zero as
+  /// greedy decoding and uses one candidate regardless of [topK].
   final double temp;
 
   /// Top-K sampling: only sample from the top K most likely tokens.
@@ -619,7 +620,12 @@ class GenerationParams {
   /// If null, a seed based on the current time will be used.
   final int? seed;
 
-  /// List of strings that, if generated, will immediately stop the generation process.
+  /// Strings that end generation when matched, excluding the marker from output.
+  ///
+  /// Empty strings are ignored. Native GGUF matches across token boundaries and
+  /// inside token pieces; an unfinished prefix is emitted if generation ends
+  /// without a full match. Exact entries in [preservedTokens] remain available
+  /// to the native chat parser instead of acting as text stops.
   final List<String> stopSequences;
 
   /// GBNF grammar string for structured output (e.g., "root ::= \"hello\" | \"world\"").

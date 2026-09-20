@@ -190,6 +190,88 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'ci-selection',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'CI trigger selection and aggregate workflow wiring contracts.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.isWindows ? 'python' : 'python3',
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'test/ci',
+            '-p',
+            'test_*.py',
+          ],
+          description:
+              'Git change inventory, dependency selection and aggregate behavior',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            'test/unit/tooling/ci_workflow_selection_test.dart',
+          ],
+          description: 'Actual workflow target, event and aggregate wiring',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'validation-harness',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Model-free validation runner, bundle and provider lifecycle checks.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['pub', 'get'],
+          description: 'Prepare private suite',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['test'],
+          description: 'Shared suite regressions',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            'test/unit/tooling/validation_remote_test.dart',
+            'test/unit/tooling/validation_npu_test.dart',
+          ],
+          description: 'Provider safety, bundle identity and NPU input checks',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.isWindows ? 'python' : 'python3',
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'tool/testing/validation',
+            '-p',
+            'test_npu_apk.py',
+          ],
+          description: 'Embedded NPU model/library integrity checks',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'root-template-e2e',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description: 'Run local-only upstream/template parity E2E tests.',
@@ -227,6 +309,31 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'test/e2e/tooling/qwen35_multimodal_macos_repro_e2e_test.dart',
           ],
           description: 'Qwen3.5 multimodal macOS repro E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'gguf-stop-sequences',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Verify public GGUF caller stop suppression and recovery.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '--run-skipped',
+            'test/e2e/backends/gguf_stop_sequences_e2e_test.dart',
+          ],
+          environment: {
+            if (context.modelPath != null)
+              'GGUF_STOP_MODEL': context.modelPath!,
+            'GGUF_STOP_BACKEND': context.backend,
+          },
+          description: 'GGUF public stop-sequence regression',
         ),
       ],
     ),
@@ -288,10 +395,71 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'validation-voice-round-trip',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Locked file STT -> Gemma 4 CPU -> TTS WAV round trip.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/testing/validation.dart',
+            'voice',
+            '--out',
+            '${context.projectRoot}/.dart_tool/validation/runs/voice-${DateTime.now().microsecondsSinceEpoch}',
+            if (context.modelPath != null) ...[
+              '--chat-model',
+              context.modelPath!,
+            ],
+          ],
+          description:
+              'Voice pipeline; physical microphone/playback remains separate.',
+        ),
+      ],
+    ),
+    for (final pack in ['stt', 'tts', 'litert-asr'])
+      LocalE2eScenario(
+        name: 'validation-speech-$pack',
+        group: LocalE2eScenarioGroup.dartLocalOnly,
+        description:
+            'Locked GGUF $pack pack with lifecycle and speech metrics.',
+        requiresDevice: false,
+        stepsBuilder: (context) => [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: [
+              'run',
+              'tool/testing/validation.dart',
+              'speech',
+              '--pack',
+              pack,
+              '--backend',
+              'cpu',
+              '--out',
+              '${context.projectRoot}/.dart_tool/validation/runs/$pack-${DateTime.now().microsecondsSinceEpoch}',
+              if (context.modelPath != null) ...['--model', context.modelPath!],
+              if (pack == 'litert-asr' && context.tokenizerPath != null) ...[
+                '--tokenizer',
+                context.tokenizerPath!,
+              ],
+              if (pack != 'litert-asr' && context.mmprojPath != null) ...[
+                '--projector',
+                context.mmprojPath!,
+              ],
+            ],
+            description:
+                'Run $pack with verified model/projector inputs; no cloud resources.',
+          ),
+        ],
+      ),
+    LocalE2eScenario(
       name: 'speech-to-text-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run typed native Qwen3-ASR whole-file transcription against a known fixture.',
+          'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -562,6 +730,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'litert-lm-lifecycle',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/litert_lm_lifecycle_e2e_test.dart',
+          ],
+          environment: {
+            'LITERT_LM_MODEL': context.modelPath!,
+            'LITERT_LM_BACKEND': context.backend,
+          },
+          description: 'LiteRT-LM lifecycle and process cleanup',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -633,6 +830,82 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.device,
           ],
           description: 'Flutter chat app model cache E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-production-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Test the exact production-root build with mock and real GGUF smokes.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'bash',
+          arguments: [
+            context.skipBuild
+                ? 'scripts/validate_chat_app_web_build.sh'
+                : 'scripts/build_chat_app_web.sh',
+          ],
+          environment: const {'CHAT_APP_BASE_HREF': '/'},
+          description: 'Build or validate the production-root artifact',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--directory',
+            'example/chat_app/build/web',
+            '--port',
+            '${context.port}',
+            '--coep',
+            'require-corp',
+          ],
+          description: 'Serve the unchanged production artifact at root',
+          background: true,
+          waitForPort: context.port,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/serve_static_with_headers.py',
+            '--directory',
+            '.',
+            '--port',
+            '${context.port + 1}',
+            '--cors-origin',
+            'http://127.0.0.1:${context.port}',
+          ],
+          description:
+              'Serve the tiny test model separately from deployable files',
+          background: true,
+          waitForPort: context.port + 1,
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_chat_app_mock_smoke.py',
+            'http://127.0.0.1:${context.port}/?llamadart_mock_bridge=echo',
+          ],
+          description: 'Run deterministic mock smoke on the production layout',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: [
+            'tool/testing/playwright_chat_app_real_model_smoke.py',
+            'http://127.0.0.1:${context.port}/',
+            '--model-url',
+            context.modelUrl ??
+                'http://127.0.0.1:${context.port + 1}/.dart_tool/test_models/stories15M.gguf',
+            '--allow-any-response',
+          ],
+          description:
+              'Run real worker/GGUF smoke on the same production artifact',
         ),
       ],
     ),
@@ -1110,6 +1383,7 @@ Future<LocalE2eResult> runLocalE2e(
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
+          scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-chat-features-smoke') &&
       parsed.modelPath == null) {
     return LocalE2eResult(

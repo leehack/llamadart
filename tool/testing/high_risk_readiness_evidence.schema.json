@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:llamadart:high-risk-readiness-evidence:1.0.0",
+  "$id": "urn:llamadart:high-risk-readiness-evidence:2.0.0",
   "title": "llamadart high-risk pre-merge readiness evidence and evaluation",
   "type": "object",
   "additionalProperties": false,
@@ -21,11 +21,12 @@
     "independent_audit",
     "structured_output_evidence",
     "affected_test_paths",
+    "test_evidence",
     "evaluation"
   ],
   "properties": {
     "schema": { "const": "llamadart.high-risk-readiness-evidence" },
-    "schema_version": { "const": "1.0.0" },
+    "schema_version": { "const": "2.0.0" },
     "timestamp": {
       "type": "string",
       "format": "date-time",
@@ -96,6 +97,11 @@
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/testPath" }
     },
+    "test_evidence": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/testPath" },
+      "additionalProperties": { "$ref": "#/$defs/testEvidence" }
+    },
     "evaluation": {
       "oneOf": [
         { "type": "null" },
@@ -104,6 +110,54 @@
     }
   },
   "$defs": {
+    "axisPaths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/testPath" }
+    },
+    "productionRefs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "snippet"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "snippet": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicable", "rationale", "production_refs"],
+      "properties": {
+        "applicable": { "type": "boolean" },
+        "rationale": { "type": "string", "minLength": 1 },
+        "production_refs": { "$ref": "#/$defs/productionRefs" }
+      }
+    },
+    "testEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "test_case", "test_snippet", "production_refs", "command",
+        "head_result", "control_result", "control_kind", "control_description",
+        "evidence_notes"
+      ],
+      "properties": {
+        "test_case": { "type": "string", "minLength": 1 },
+        "test_snippet": { "type": "string", "minLength": 1 },
+        "production_refs": { "$ref": "#/$defs/productionRefs" },
+        "command": { "type": "string", "minLength": 1 },
+        "head_result": { "const": "pass" },
+        "control_result": { "const": "fail" },
+        "control_kind": { "enum": ["before-fix", "mutation"] },
+        "control_description": { "type": "string", "minLength": 1 },
+        "evidence_notes": { "type": "string", "minLength": 1 }
+      }
+    },
     "identifier": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$"
@@ -170,12 +224,13 @@
     "structuredOutputEvidence": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["coverage", "families"],
+      "required": ["coverage", "families", "impacts"],
       "properties": {
         "coverage": {
           "type": "object",
           "additionalProperties": false,
           "required": [
+            "input_rendering_history",
             "compiled_grammar_acceptance",
             "compiled_grammar_rejection",
             "schema_reconstruction",
@@ -184,24 +239,35 @@
             "upstream_parity"
           ],
           "properties": {
+            "input_rendering_history": { "$ref": "#/$defs/axisPaths" },
             "compiled_grammar_acceptance": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             },
             "compiled_grammar_rejection": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             },
             "schema_reconstruction": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             },
             "streaming_rollback": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             },
             "tool_choice_thinking": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             },
             "upstream_parity": {
-              "$ref": "#/$defs/coveragePaths"
+              "$ref": "#/$defs/axisPaths"
             }
+          }
+        },
+        "impacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inputRenderingHistory", "outputParsingStreaming", "grammarSchema"],
+          "properties": {
+            "inputRenderingHistory": { "$ref": "#/$defs/impact" },
+            "outputParsingStreaming": { "$ref": "#/$defs/impact" },
+            "grammarSchema": { "$ref": "#/$defs/impact" }
           }
         },
         "families": {

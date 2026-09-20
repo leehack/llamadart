@@ -12,6 +12,9 @@ dependencies:
     sdk: flutter
   llamadart:
     path: ../..  # Use local version
+  llamadart_validation:
+    path: ../../packages/llamadart_validation
+  http: ^1.1.0
   llamadart_llama_cpp_flutter:
     path: ../../packages/llamadart_llama_cpp_flutter
   llamadart_litert_lm_flutter:
@@ -45,7 +48,6 @@ dev_dependencies:
   test: ^1.26.3
 
   ffi: any
-  http: any
 flutter:
   uses-material-design: true
 

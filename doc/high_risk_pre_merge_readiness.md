@@ -13,7 +13,7 @@ The repository currently provides:
   author, head, and base values;
 - a Git-derived name-status inventory that preserves deletions and both sides
   of renames;
-- candidate-tree checks for changed production tests;
+- candidate-tree checks for relevant production tests;
 - a trusted-default-branch GitHub Actions advisory.
 
 It does **not** provide an authenticated GitHub App publisher, protected
@@ -43,7 +43,7 @@ The contract fails closed against:
 3. duplicate JSON keys, unknown fields, wrong scalar/container types, and
    caller-declared decisions;
 4. caller-forged changed-file lists;
-5. deleted, renamed-old, unauthorized unchanged, absolute, traversal, wildcard, non-test, or
+5. deleted, renamed-old, unproven existing, absolute, traversal, wildcard, non-test, or
    phantom evidence paths;
 6. boolean-only structured-output attestations without named production tests;
 7. PR-authored workflow or evidence execution;
@@ -64,7 +64,7 @@ The input binds:
 - `classification` and the exact classified `surfaces`;
 - the exact required matrix row IDs and matching row evidence;
 - an independent audit record for high-risk changes;
-- changed production tests under `test/**/_test.dart`;
+- relevant production tests under `test/**/_test.dart`, with causal evidence;
 - structured-output coverage and affected-family evidence when applicable.
 
 The evaluator rejects missing and unknown keys at every object level. Lists
@@ -86,14 +86,36 @@ Both commits must exist and the base must be an ancestor of the head. Rename
 source and destination paths are both classified. Every cited test must:
 
 - be a normalized, wildcard-free repository-relative `test/**/_test.dart` path;
-- appear in the exact base-to-head inventory;
 - not be deleted or the old side of a rename;
 - resolve literally to one regular blob in the exact candidate tree via
   `git ls-tree`.
 
-This intentionally rejects unchanged tests as issue-specific proof. Existing
-coverage can still inform a human audit, but it cannot satisfy the changed
-production-test evidence field except through the bounded release route below.
+Changed and unchanged tests follow the same evidence rule. `test_evidence` is
+keyed by exactly `affected_test_paths`. Each record names the test case and a
+literal test callsite snippet, inspected production references (`path`, `snippet`),
+the test command, `head_result: pass`, `control_result: fail`, `control_kind`
+(`before-fix` or `mutation`), control description, and evidence notes linking the
+observed results. The independent reviewer checks that the case really reaches
+the affected branch and that the failure is causal, not a setup error. Every
+changed production path under `lib/`, `tool/`, or `hook/` needs this coverage.
+
+The evaluator verifies named cases/snippets against exact Git blobs and rejects
+missing or disconnected references. A literal match does **not** establish a
+callgraph, execute tests, authenticate logs, or prove independence. The existing
+independent audit must inspect those semantics and results; do not invent a
+record for tests that were not run. Unknown or unproven reachability blocks the
+review even if local JSON validation succeeds. No new approval identity is added.
+
+### Schema migration
+
+New evidence uses `schema_version: 2.0.0`. The current evaluator rejects v1;
+changing its version string is not migration. Re-review the exact head/base and
+supply impact decisions plus test relevance/causal observations. The frozen
+`high_risk_readiness_evidence.v1.schema.json` is retained only for historical
+report readers. Consumers must select the schema by version; archived v1 output
+is never current readiness evidence. The repository advisory workflow does not
+consume evidence JSON and is unchanged. Standard-risk and release-metadata v2
+records set `test_evidence` to `{}`; the bounded release route remains unchanged.
 
 ### Core-patch release metadata evidence
 
@@ -136,7 +158,7 @@ not a `metadata_only` flag or a caller-provided inventory:
 The exact allowlist lives in `tool/testing/release_metadata_readiness.dart`.
 Companion version changes, runtime pins, generated bindings, hooks, SwiftPM,
 workflows, security/review policy, other docs/MDX and production changes cannot
-use this exception. Broader release changes use the ordinary changed-test
+use this exception. Broader release changes use the ordinary relevance-and-causal-evidence
 contract instead of expanding this route implicitly.
 
 An internally consistent release evaluation still returns
@@ -156,25 +178,52 @@ below.
 
 ### Structured-output proof
 
-Structured-output evidence names changed production tests for every axis:
+`structured_output_evidence.impacts` accounts for all three impacts. Each entry
+contains `applicable`, a nonempty independently reviewed `rationale`, and
+`production_refs` with exact source paths/snippets. The existing audit binds
+these observations to the exact head/base and rejects author self-approval.
+All changed production paths must be inspected. Deleted source and the old side of a rename are read at base. Both sides of
+a rename contribute impacts; a copy source does not.
 
-- compiled grammar acceptance;
-- compiled grammar rejection;
-- schema-directed scalar and container reconstruction;
-- partial-stream suppression and malformed-final rollback;
-- `auto`, `required`, and `none` tool choice with thinking prefixes;
-- pinned/current upstream parity.
+| Impact | Required coverage axes |
+| --- | --- |
+| `inputRenderingHistory` | `input_rendering_history`, `upstream_parity` |
+| `outputParsingStreaming` | `schema_reconstruction`, `streaming_rollback`, `tool_choice_thinking`, `upstream_parity` |
+| `grammarSchema` | `compiled_grammar_acceptance`, `compiled_grammar_rejection`, `schema_reconstruction`, `tool_choice_thinking`, `upstream_parity` |
 
-Acceptance and rejection must cite at least one changed compiled production
-grammar test:
+All seven coverage keys are present. An inapplicable axis may have an empty
+list; applicable axes must cite reviewed tests. Rendering evidence checks byte,
+role, content, history and typed tool-result preservation. Parser evidence checks
+schema-directed scalars/containers, incomplete-stream suppression, malformed-final
+rollback and `auto`/`required`/`none` with thinking prefixes. Grammar evidence must
+exercise compiled valid and malformed/unknown/missing/wrong-type shapes.
+Acceptance/rejection still cite a maintained compiled production grammar test:
 
 - `test/integration/core/grammar/generated_tool_schema_grammar_test.dart`; or
 - `test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart`.
 
-The `families` list requires a unique family, `tested` or `unavailable`
-status, changed evidence tests, and a rationale. An unavailable family is not a
-boolean N/A shortcut; the audit must still explain the missing weights and the
-primary upstream fixture used for the shared production path.
+Path hints establish conservative minimum impacts. The render-context boundary
+is rendering/history; dedicated PEG execution/fallback parse files are parsing/streaming;
+grammar files are grammar/schema; shared tool-schema utilities and parser builders stay conservative. Shared handlers, shared
+utilities, unknown paths, and evidence-only changes require all impacts. A mixed
+change unions its impacts. Test filenames do not add runtime effects to a known
+production change. Hints cannot prove the absence of indirect effects: the
+independent reviewer must add any further affected impacts, and only exclude an
+impact after inspecting its production callsites. A minimum impact cannot be
+excluded. No empty rationale or blanket author-authored N/A is sufficient.
+
+The `families` list retains unique `tested`/`unavailable` entries, relevant tests
+and a rationale. Missing weights require named unavailable families and primary
+upstream emissions plus fixtures; unrelated model evidence remains pipeline-only.
+
+For the original rendering-only #529 fix, `TemplateRenderContext.messagesForTemplate`
+normalizes typed incoming tool results. A review of its handler callsites can
+exclude emitted parsing and grammar enforcement. Relevant existing tests can be
+used if they actually exercise that conversion and fail before the fix or under
+a targeted bypass. Existing tests that never cover typed results are insufficient;
+add a focused rendering regression in that case. No unrelated compiled-grammar
+edit is required. This policy example is not a claim that historical #529 had
+already supplied v2 causal evidence or an authenticated audit.
 
 ## CLI
 

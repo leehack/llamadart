@@ -3,6 +3,7 @@ import '../models/chat/completion_chunk.dart';
 import 'chat_parse_result.dart';
 import 'thinking_utils.dart';
 import 'tool_call_parsing_utils.dart';
+import 'tool_schema_utils.dart';
 
 /// Describes the XML-style tool call format used by several models.
 ///
@@ -299,6 +300,8 @@ String _literal(String value) {
 /// Parses XML-style tool calls with optional reasoning.
 ///
 /// Matches llama.cpp's `consume_reasoning_with_xml_tool_calls`.
+/// When [schemas] is supplied, only declared tools and schema-valid arguments
+/// are accepted. Omitting it preserves the legacy schema-free parser.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -307,6 +310,7 @@ ChatParseResult parseXmlToolCalls(
   bool isPartial = false,
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
+  Map<String, Map<String, dynamic>>? schemas,
 }) {
   String? reasoning;
   var content = input;
@@ -410,7 +414,7 @@ ChatParseResult parseXmlToolCalls(
       parsedContent.write(content.substring(pos, toolIdx));
     }
 
-    final toolCall = _parseXmlToolCall(content, toolIdx, format);
+    final toolCall = _parseXmlToolCall(content, toolIdx, format, schemas);
     if (toolCall == null) {
       if (format.scopeStart.isNotEmpty) {
         parseFailed = true;
@@ -480,6 +484,7 @@ _ParsedXmlToolCall? _parseXmlToolCall(
   String content,
   int toolIdx,
   XmlToolCallFormat format,
+  Map<String, Map<String, dynamic>>? schemas,
 ) {
   final nameStart = toolIdx + format.toolStart.length;
   final sepIdx = content.indexOf(format.toolSep, nameStart);
@@ -488,7 +493,7 @@ _ParsedXmlToolCall? _parseXmlToolCall(
   }
 
   final name = content.substring(nameStart, sepIdx).trim();
-  if (name.isEmpty) {
+  if (name.isEmpty || (schemas != null && !schemas.containsKey(name))) {
     return null;
   }
 
@@ -496,6 +501,7 @@ _ParsedXmlToolCall? _parseXmlToolCall(
     content,
     sepIdx + format.toolSep.length,
     format,
+    schemas?[name],
   );
   if (arguments == null) {
     return null;
@@ -512,7 +518,9 @@ _ParsedXmlArguments? _parseXmlArguments(
   String content,
   int start,
   XmlToolCallFormat format,
+  Map<String, dynamic>? schema,
 ) {
+  final properties = schema == null ? null : schemaProperties(schema);
   final strictScope = format.scopeStart.isNotEmpty;
   final args = <String, dynamic>{};
   var pos = start;
@@ -546,12 +554,19 @@ _ParsedXmlArguments? _parseXmlArguments(
     }
 
     final key = content.substring(keyNameStart, keyNameEnd).trim();
-    if (key.isEmpty) {
+    if (key.isEmpty ||
+        (properties != null &&
+            (!properties.containsKey(key) || args.containsKey(key)))) {
       return null;
     }
     pos = keyNameEnd + format.keyValSep.length;
 
-    final argumentValue = _parseXmlArgumentValue(content, pos, format);
+    final argumentValue = _parseXmlArgumentValue(
+      content,
+      pos,
+      format,
+      schema: properties?[key],
+    );
     if (argumentValue == null) {
       return null;
     }
@@ -569,6 +584,9 @@ _ParsedXmlArguments? _parseXmlArguments(
     }
   }
 
+  if (schema != null && !validateToolSchemaValue(args, schema).valid) {
+    return null;
+  }
   return _ParsedXmlArguments(arguments: args, nextPos: pos);
 }
 
@@ -666,8 +684,23 @@ int _consumeXmlWhitespace(String text, int from) {
 _ParsedXmlArgumentValue? _parseXmlArgumentValue(
   String content,
   int start,
-  XmlToolCallFormat format,
-) {
+  XmlToolCallFormat format, {
+  Map<String, dynamic>? schema,
+}) {
+  if (schema != null) {
+    final cdata = _parseCdataValue(content, start, format);
+    final end = cdata == null ? _findValueEnd(content, start, format) : null;
+    if (cdata == null && end == null) return null;
+    var raw = cdata?.value ?? content.substring(start, end!.valueEnd);
+    if (format.trimRawArgval) raw = raw.trim();
+    final decoded = decodeToolSchemaText(raw, schema);
+    if (!decoded.valid) return null;
+    return _ParsedXmlArgumentValue(
+      value: decoded.value,
+      nextPos: cdata?.nextPos ?? end!.nextPos,
+    );
+  }
+
   if (format.rawArgval == false) {
     final valueStart = _consumeXmlWhitespace(content, start);
     final parsed = ToolCallParsingUtils.extractLeadingJsonValue(

@@ -531,3 +531,18 @@ platform-specific behavior.
 - Check `engine.isReady` before inference paths.
 - Use `try/finally` to guarantee `dispose()` on shutdown.
 - Keep model switch logic serialized to avoid overlapping load/unload calls.
+
+
+## LiteRT-LM interrupted cleanup
+
+Native LiteRT-LM worker termination fails outstanding requests with
+`LlamaStateException` and closes their Dart response ports. If native cleanup
+cannot be confirmed, unload/dispose also throws and the backend refuses further
+work. Restart the process before retrying that runtime; creating another backend
+in the same process does not establish that the old native operation stopped.
+
+A Dart timeout or killed isolate does not forcibly interrupt a blocking native
+call. CLI validation should use an outer process deadline and retain the timeout
+and cleanup error in its results. Closing response ports must not be counted as
+successful native cleanup. Requested GPU selection remains separate from verified
+accelerator placement.
