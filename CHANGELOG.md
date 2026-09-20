@@ -4,12 +4,13 @@
   `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, with matching Dart bindings
   and Apple companion `0.0.19`.
 * Aligned the default WebGPU bridge assets to `v0.1.44` for matching
-  Web/native upstream parity. Immutable Web asset manifest:
+  Web/native `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
+  Immutable Web asset manifest:
   `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
 - Update native LiteRT-LM to `v0.17.0-5` with Apple companion `0.0.11`,
   Qwen3 tokenizer compatibility, corrected Linux loading, and explicit Linux
   and Windows GPU selection while retaining CPU defaults. Web LiteRT-LM stays
-  at `0.15.0`.
+  at `@litert-lm/core@0.15.0`.
 - Preserve required iOS LiteRT-LM provider and Metal plugins, handle dependency
   ordering in companion libraries, and exclude metadata/import archives from
   runtime library inventories.
