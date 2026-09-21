@@ -8,6 +8,11 @@
   `teardown: `, are dropped first, duplicates are recorded once, entries are
   capped at 2048 characters, and each omitted run renders as `...`
   ([#415](https://github.com/leehack/llamadart/issues/415)).
+- Cache `TemplateCaps.detect` results in a per-isolate LRU keyed by exact
+  template source and bounded at 16 entries, so repeated chat-template renders
+  skip both Jinja parses and all four capability probes. Detections in which
+  any analysis step failed are not cached and keep logging on every call
+  ([#448](https://github.com/leehack/llamadart/issues/448)).
 
 ## 0.8.24
 
