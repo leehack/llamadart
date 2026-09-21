@@ -179,6 +179,7 @@ void main() {
       for (final path in [
         '.flutter-version',
         'hook/build.dart',
+        'lib/src/hook/native_release_pins.dart',
         'scripts/fetch_webgpu_bridge_assets.sh',
         'packages/llamadart_validation/assets/profiles/tiny-gguf-cpu.json',
       ]) {
@@ -294,7 +295,9 @@ void main() {
   test(
     'standalone LiteRT archive inventory matches every supported desktop hook',
     () {
-      final hook = File('hook/build.dart').readAsStringSync();
+      final hook = File(
+        'lib/src/hook/native_release_pins.dart',
+      ).readAsStringSync();
       for (final target in [
         'macos-arm64',
         'macos-x64',

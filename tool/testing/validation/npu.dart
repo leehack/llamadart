@@ -152,10 +152,12 @@ Future<Map<String, dynamic>> inspectNpuInputs(
     'status': pass ? 'PASS' : 'NOT_RUN',
     'reason': reason,
   });
-  final hook = File(p.join(root, 'hook/build.dart')).readAsStringSync();
+  final pins = File(
+    p.join(root, 'lib/src/hook/native_release_pins.dart'),
+  ).readAsStringSync();
   final tag = RegExp(
-    r"const _litertLmVersion = '([^']+)'",
-  ).firstMatch(hook)?.group(1);
+    r"const liteRtLmVersion = '([^']+)'",
+  ).firstMatch(pins)?.group(1);
   check(
     'runtime_pin',
     tag == npuRuntimeTag,

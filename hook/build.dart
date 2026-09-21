@@ -13,8 +13,8 @@ import 'package:path/path.dart' as path;
 import 'package:yaml/yaml.dart';
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 
-const _llamaCppTag = 'v0.4.1';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
@@ -32,11 +32,9 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
-const _litertLmReleaseTag = 'v0.17.0-6';
-const _litertLmVersion = '0.17.0-6';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
-    '$_litertLmReleaseTag';
+    '$liteRtLmReleaseTag';
 const _litertLmCacheDir = 'litert_lm';
 const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
@@ -52,119 +50,8 @@ typedef RuntimeBundleDownloadFallbackForTesting =
     });
 
 final _litertLmBundles = Map.unmodifiable({
-  for (final bundle in _litertLmBundleSpecs) bundle.bundle: bundle,
+  for (final bundle in liteRtLmBundleSpecs) bundle.bundle: bundle,
 });
-
-const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
-  _LiteRtLmBundleSpec(
-    'android-arm64',
-    sha256: '807021ae83dc36a40c7cae1fee6dd4ab37d5611e1e847fc6ad49da9edbfb4b09',
-    requiredLibraries: {
-      'libGemmaModelConstraintProvider.so',
-      'libLiteRtGpuAccelerator.so',
-      'libLiteRtLm.so',
-      'libLiteRtOpenClAccelerator.so',
-      'libLiteRtTopKOpenClSampler.so',
-      'libLiteRtTopKWebGpuSampler.so',
-      'libLiteRtWebGpuAccelerator.so',
-      'libwebgpu_dawn.so',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'android-x64',
-    sha256: '45a169baa9c3231c620fe242b2dc1f2ff9a6072f6482d61713e1093119e38ec1',
-    requiredLibraries: {
-      'libGemmaModelConstraintProvider.so',
-      'libLiteRtGpuAccelerator.so',
-      'libLiteRtLm.so',
-      'libLiteRtOpenClAccelerator.so',
-      'libLiteRtTopKOpenClSampler.so',
-      'libLiteRtTopKWebGpuSampler.so',
-      'libLiteRtWebGpuAccelerator.so',
-      'libwebgpu_dawn.so',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'ios-arm64',
-    sha256: '8a3b9d15fb7f058602ea376766e64793716b2f4ead4febea1f0cbddd54783a63',
-    requiredLibraries: {
-      'CLiteRTLM',
-      'GemmaModelConstraintProvider',
-      'LiteRtLm',
-      'LiteRtMetalAccelerator',
-      'LiteRtTopKMetalSampler',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'ios-arm64-sim',
-    sha256: 'd0b8d926e512251c3c735a5455b6a4661c30fe6256b8a7fd72d97c317caac446',
-    requiredLibraries: {
-      'CLiteRTLM',
-      'GemmaModelConstraintProvider',
-      'LiteRtLm',
-      'LiteRtMetalAccelerator',
-      'LiteRtTopKMetalSampler',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'macos-arm64',
-    sha256: 'dceade08abc09a8e652cf182d7c9de633244db6cbffb1d125e52e535b356ec66',
-    requiredLibraries: {
-      'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'macos-x64',
-    sha256: '82cf3b4034d36d234699fb506ad87e5575813b8346bb87d4603b9f89c6dfb1e4',
-    requiredLibraries: {'libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'},
-  ),
-  _LiteRtLmBundleSpec(
-    'linux-arm64',
-    sha256: '89d5d65a0a0090028441527894108ce2913a76a33eeece1b918271776be53980',
-    requiredLibraries: {
-      'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
-      'libLiteRtLm.so',
-      'libLiteRtTopKWebGpuSampler.so',
-      'libLiteRtWebGpuAccelerator.so',
-      'libwebgpu_dawn.so',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'linux-x64',
-    sha256: 'a6c049d97f4e72d59fb6307d8c7c62fb3fffa0434471f6e9204ee501952ca9db',
-    requiredLibraries: {
-      'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
-      'libLiteRtLm.so',
-      'libLiteRtTopKWebGpuSampler.so',
-      'libLiteRtWebGpuAccelerator.so',
-      'libwebgpu_dawn.so',
-    },
-  ),
-  _LiteRtLmBundleSpec(
-    'windows-x64',
-    sha256: 'af49f2189deb504b57e275ad5aa1934f04c1a01632ee7e52d08464ea9915e625',
-    requiredLibraries: {
-      'LiteRtLm.dll',
-      'dxcompiler.dll',
-      'dxil.dll',
-      'libGemmaModelConstraintProvider.dll',
-      'libLiteRt.dll',
-      'libLiteRtTopKWebGpuSampler.dll',
-      'libLiteRtWebGpuAccelerator.dll',
-      'libwebgpu_dawn.dll',
-    },
-  ),
-];
 
 const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
@@ -184,7 +71,7 @@ class _NativeBundleConfig {
   });
 
   bool get usesOverride =>
-      tag != _llamaCppTag || repository != _nativeRepoSlug || localPath != null;
+      tag != llamaCppTag || repository != _nativeRepoSlug || localPath != null;
 
   String get sourceLabel {
     final pathUri = localPath;
@@ -195,19 +82,9 @@ class _NativeBundleConfig {
   }
 }
 
-class _LiteRtLmBundleSpec {
-  final String bundle;
-  final String sha256;
-  final Set<String> requiredLibraries;
-
-  const _LiteRtLmBundleSpec(
-    this.bundle, {
-    required this.sha256,
-    required this.requiredLibraries,
-  });
-
+extension _LiteRtLmBundleSpecPaths on LiteRtLmBundleSpec {
   String get archiveName =>
-      'litert-lm-native-runtime-$bundle-$_litertLmReleaseTag.tar.gz';
+      'litert-lm-native-runtime-$bundle-$liteRtLmReleaseTag.tar.gz';
 
   String get directoryName {
     final separator = bundle.indexOf('-');
@@ -336,7 +213,7 @@ void main(List<String> args) async {
       log.warning(
         'Native runtime overrides do not regenerate Dart FFI bindings. '
         'The selected binaries must stay ABI- and symbol-compatible with '
-        '$_nativeRepoSlug@$_llamaCppTag.',
+        '$_nativeRepoSlug@$llamaCppTag.',
       );
     }
 
@@ -602,7 +479,7 @@ void _validateAppleLlamaCompanion(
   Never reject(String reason) => throw StateError(
     'Incompatible Apple llama.cpp companion: $reason '
     'Resolve $_llamaCppFlutterPackageName with a Package.swift pin matching '
-    '$_nativeRepoSlug@$_llamaCppTag and rerun flutter pub get. '
+    '$_nativeRepoSlug@$llamaCppTag and rerun flutter pub get. '
     'Upgrade the core and companion together to a matching released pair; '
     'native tag/path overrides do not replace SPM frameworks. '
     'No in-process native asset was emitted.',
@@ -677,10 +554,10 @@ void _validateAppleLlamaCompanion(
       r'^let llamaCppTag = "([^"\r\n]+)"\s*$',
       multiLine: true,
     ).allMatches(source).toList();
-    if (pins.length != 1 || pins.single.group(1) != _llamaCppTag) {
+    if (pins.length != 1 || pins.single.group(1) != llamaCppTag) {
       reject(
         'Resolved companion ${metadata['version']} does not uniquely pin '
-        'the required native runtime $_llamaCppTag.',
+        'the required native runtime $llamaCppTag.',
       );
     }
     final normalizedSource = source.replaceAll('\r\n', '\n');
@@ -904,7 +781,7 @@ Future<void> _makeOwnerWritableForAppleStrip(
   log.fine('Made iOS native asset owner-writable: ${file.path}.');
 }
 
-_LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
+LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
   switch (code.targetOS) {
     case OS.android:
       return switch (code.targetArchitecture) {
@@ -964,7 +841,7 @@ String _liteRtLmAssetName(String fileName) {
 
 Future<Directory> _acquireLiteRtLmBundle({
   required String packageRoot,
-  required _LiteRtLmBundleSpec bundleSpec,
+  required LiteRtLmBundleSpec bundleSpec,
   required Logger log,
 }) async {
   final cacheDir = path.join(
@@ -972,7 +849,7 @@ Future<Directory> _acquireLiteRtLmBundle({
     _dartToolDir,
     _cacheBaseDir,
     _litertLmCacheDir,
-    _litertLmVersion,
+    liteRtLmVersion,
   );
   final extractedDir = Directory(path.join(cacheDir, bundleSpec.directoryName));
   if (_liteRtLmBundleIsUsable(extractedDir, bundleSpec)) {
@@ -1024,7 +901,7 @@ Future<Directory> _acquireLiteRtLmBundle({
 
 Future<bool> _verifyLiteRtLmArchiveChecksum({
   required File archiveFile,
-  required _LiteRtLmBundleSpec bundleSpec,
+  required LiteRtLmBundleSpec bundleSpec,
   required Logger log,
   required bool allowRefresh,
 }) async {
@@ -1050,7 +927,7 @@ Future<bool> _verifyLiteRtLmArchiveChecksum({
 Future<bool> _tryExtractLiteRtLmArchive({
   required File archiveFile,
   required Directory extractedDir,
-  required _LiteRtLmBundleSpec bundleSpec,
+  required LiteRtLmBundleSpec bundleSpec,
   required Logger log,
   required bool allowRefresh,
 }) async {
@@ -1130,7 +1007,7 @@ Future<bool> _tryExtractLiteRtLmArchive({
 }
 
 Future<void> _downloadLiteRtLmArchive({
-  required _LiteRtLmBundleSpec bundleSpec,
+  required LiteRtLmBundleSpec bundleSpec,
   required File destination,
   required Logger log,
 }) async {
@@ -1143,10 +1020,7 @@ Future<void> _downloadLiteRtLmArchive({
   );
 }
 
-bool _isLiteRtLmEntrySelected(
-  String entryName,
-  _LiteRtLmBundleSpec bundleSpec,
-) {
+bool _isLiteRtLmEntrySelected(String entryName, LiteRtLmBundleSpec bundleSpec) {
   final normalized = path.posix.normalize(entryName);
   final sourcePrefix = bundleSpec.sourcePrefix;
   return normalized == sourcePrefix || normalized.startsWith('$sourcePrefix/');
@@ -1154,7 +1028,7 @@ bool _isLiteRtLmEntrySelected(
 
 Future<void> _flattenLiteRtLmDynamicLibraries(
   Directory extractedDir,
-  _LiteRtLmBundleSpec bundleSpec,
+  LiteRtLmBundleSpec bundleSpec,
 ) async {
   final sourcePrefix = bundleSpec.sourcePrefix;
   final nestedDir = Directory(
@@ -1178,7 +1052,7 @@ Future<void> _flattenLiteRtLmDynamicLibraries(
 
 bool _liteRtLmBundleIsUsable(
   Directory directory,
-  _LiteRtLmBundleSpec bundleSpec,
+  LiteRtLmBundleSpec bundleSpec,
 ) {
   if (_missingLiteRtLmLibraries(directory, bundleSpec).isNotEmpty) {
     return false;
@@ -1188,7 +1062,7 @@ bool _liteRtLmBundleIsUsable(
 
 List<String> _missingLiteRtLmLibraries(
   Directory directory,
-  _LiteRtLmBundleSpec bundleSpec,
+  LiteRtLmBundleSpec bundleSpec,
 ) {
   if (!directory.existsSync()) {
     return bundleSpec.requiredLibraries.toList(growable: false);
@@ -1202,7 +1076,7 @@ List<String> _missingLiteRtLmLibraries(
 
 bool _isLiteRtLmRuntimeLibraryFileName(
   String fileName,
-  _LiteRtLmBundleSpec bundleSpec,
+  LiteRtLmBundleSpec bundleSpec,
 ) {
   return _dynamicLibraryExtensions.contains(
         path.extension(fileName).toLowerCase(),
@@ -1240,13 +1114,13 @@ _NativeBundleConfig _resolveNativeBundleConfig(
 
 String _resolveNativeTag(Object? rawUserConfig) {
   if (rawUserConfig == null) {
-    return _llamaCppTag;
+    return llamaCppTag;
   }
 
   if (rawUserConfig is! String) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
-      'string release tag such as $_llamaCppTag.',
+      'string release tag such as $llamaCppTag.',
     );
   }
 
@@ -1264,7 +1138,7 @@ String _resolveNativeTag(Object? rawUserConfig) {
       'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN tag without '
       'leading zeros, nightly wrapper '
       'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N '
-      '(for example $_llamaCppTag).',
+      '(for example $llamaCppTag).',
     );
   }
 

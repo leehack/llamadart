@@ -260,7 +260,7 @@ void main() {
       findStaleDefaultRuntimeClaims(path, contents, 'v0.2.0-1'),
       contains(
         '$path:2 calls b10514 the default native runtime, but '
-        'hook/build.dart pins v0.2.0-1.',
+        'lib/src/hook/native_release_pins.dart pins v0.2.0-1.',
       ),
     );
   });
@@ -282,7 +282,7 @@ void main() {
       ),
       contains(
         'any.md:1 calls b10514 the default native runtime, but '
-        'hook/build.dart pins v0.2.0-1.',
+        'lib/src/hook/native_release_pins.dart pins v0.2.0-1.',
       ),
     );
   });

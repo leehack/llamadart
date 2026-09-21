@@ -44,7 +44,9 @@ const Map<String, List<String>> _currentDocDependencies =
     };
 
 final Map<String, RegExp> _currentNativePins = <String, RegExp>{
-  'hook/build.dart': RegExp(r"const _llamaCppTag = '([^']+)';"),
+  'lib/src/hook/native_release_pins.dart': RegExp(
+    r"const llamaCppTag = '([^']+)';",
+  ),
   'packages/llamadart_llama_cpp_flutter/darwin/'
       'llamadart_llama_cpp_flutter/Package.swift': RegExp(
     r'let llamaCppTag = "([^"]+)"',
@@ -111,7 +113,7 @@ List<String> findStaleDefaultRuntimeClaims(
     final line = contents.substring(0, match.start).split('\n').length;
     problems.add(
       '$path:$line calls $claimed the default native runtime, but '
-      'hook/build.dart pins $expectedPin.',
+      'lib/src/hook/native_release_pins.dart pins $expectedPin.',
     );
   }
   return problems;
@@ -120,7 +122,8 @@ List<String> findStaleDefaultRuntimeClaims(
 /// A companion package whose Apple SwiftPM pin must already be recorded in the
 /// CHANGELOG section its `pubspec.yaml` version will publish.
 ///
-/// `hook/build.dart` and `Package.swift` agreeing is not enough: a companion
+/// `lib/src/hook/native_release_pins.dart` and `Package.swift` agreeing is not
+/// enough: a companion
 /// publishes the tag its own released section documents, and
 /// `release_on_prep_merge.yml` silently skips a companion whose version is
 /// already on pub.dev. Without this check a moved pin can sit in `Unreleased`
@@ -540,12 +543,13 @@ String? _checkCurrentNativePins(List<String> errors) {
   if (pins.isEmpty) {
     return null;
   }
-  final expectedPin = pins['hook/build.dart'] ?? pins.values.first;
+  final expectedPin =
+      pins['lib/src/hook/native_release_pins.dart'] ?? pins.values.first;
   for (final entry in pins.entries) {
     if (entry.value != expectedPin) {
       errors.add(
-        '${entry.key} pins native tag ${entry.value}, but hook/build.dart '
-        'pins $expectedPin.',
+        '${entry.key} pins native tag ${entry.value}, but '
+        'lib/src/hook/native_release_pins.dart pins $expectedPin.',
       );
     }
   }

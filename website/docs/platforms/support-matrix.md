@@ -9,7 +9,7 @@ backend-module configuration for
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.4.1` and
-`litert-lm-native` release `v0.17.0-6` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.17.0-6` (`lib/src/hook/native_release_pins.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local

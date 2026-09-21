@@ -135,7 +135,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- \
-            hook/build.dart \
+            lib/src/hook/native_release_pins.dart \
             packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift \
             packages/llamadart_llama_cpp_flutter/pubspec.yaml \
             packages/llamadart_llama_cpp_flutter/CHANGELOG.md \

@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
+  checksums) from `hook/build.dart` into
+  `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
+  rewrites.
 - Force greedy `topK: 1` for zero-temperature
   `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
   text on the LiteRT WebGPU sampler with the default top-k.

@@ -12,8 +12,8 @@ import 'package:test/test.dart';
 import '../../../hook/build.dart' as build_hook;
 
 void main() {
-  final nativeTag = _readHookConst('_llamaCppTag');
-  final litertVersion = _readHookConst('_litertLmVersion');
+  final nativeTag = _readPinnedConst('llamaCppTag');
+  final litertVersion = _readPinnedConst('liteRtLmVersion');
   final nativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
   );
@@ -142,7 +142,9 @@ void main() {
   });
 
   test('LiteRT-LM bundle specs require platform runtime companions', () {
-    final source = File('hook/build.dart').readAsStringSync();
+    final source = File(
+      'lib/src/hook/native_release_pins.dart',
+    ).readAsStringSync();
 
     _expectSpecLibraries(source, 'android-arm64', _androidLiteRtLibraries);
     _expectSpecLibraries(source, 'android-x64', _androidLiteRtLibraries);
@@ -156,7 +158,9 @@ void main() {
   });
 
   test('LiteRT-LM bundle specs pin archive checksums', () {
-    final source = File('hook/build.dart').readAsStringSync();
+    final source = File(
+      'lib/src/hook/native_release_pins.dart',
+    ).readAsStringSync();
 
     for (final bundleKey in const [
       'android-arm64',
@@ -876,11 +880,15 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
   );
 }
 
-String _readHookConst(String name) {
-  final source = File('hook/build.dart').readAsStringSync();
+String _readPinnedConst(String name) {
+  final source = File(
+    'lib/src/hook/native_release_pins.dart',
+  ).readAsStringSync();
   final match = RegExp("const $name = '([^']+)';").firstMatch(source);
   if (match == null) {
-    throw StateError('Could not locate $name in hook/build.dart');
+    throw StateError(
+      'Could not locate $name in lib/src/hook/native_release_pins.dart',
+    );
   }
   return match.group(1)!;
 }
@@ -1013,8 +1021,8 @@ ${dependencies.map((dependency) => '  $dependency: ^0.0.17').join('\n')}
         'packages/llamadart_llama_cpp_flutter/'
         'darwin/llamadart_llama_cpp_flutter/Package.swift',
       ).readAsStringSync().replaceFirst(
-        'let llamaCppTag = "${_readHookConst('_llamaCppTag')}"',
-        'let llamaCppTag = "${companionTag ?? _readHookConst('_llamaCppTag')}"',
+        'let llamaCppTag = "${_readPinnedConst('llamaCppTag')}"',
+        'let llamaCppTag = "${companionTag ?? _readPinnedConst('llamaCppTag')}"',
       ),
     );
     if (localArtifacts) {
@@ -1061,7 +1069,7 @@ void _expectSpecLibraries(
 ) {
   final escapedKey = RegExp.escape(bundleKey);
   final match = RegExp(
-    "_LiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
+    "\\bLiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
     'requiredLibraries:\\s*\\{([\\s\\S]*?)\\},',
   ).firstMatch(source);
   if (match == null) {
@@ -1076,7 +1084,7 @@ void _expectSpecLibraries(
 void _expectSpecChecksum(String source, String bundleKey) {
   final escapedKey = RegExp.escape(bundleKey);
   final match = RegExp(
-    "_LiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
+    "\\bLiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
     "sha256:\\s*'([0-9a-f]{64})',",
   ).firstMatch(source);
   expect(match, isNotNull, reason: bundleKey);

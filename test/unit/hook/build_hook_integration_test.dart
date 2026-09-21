@@ -691,21 +691,29 @@ Set<String> _emittedFileNames(BuildOutput output) {
 }
 
 String _readHookNativeTag() {
-  final source = File('hook/build.dart').readAsStringSync();
-  final match = RegExp(r"const _llamaCppTag = '([^']+)';").firstMatch(source);
+  final source = File(
+    'lib/src/hook/native_release_pins.dart',
+  ).readAsStringSync();
+  final match = RegExp(r"const llamaCppTag = '([^']+)';").firstMatch(source);
   if (match == null) {
-    throw StateError('Could not locate _llamaCppTag in hook/build.dart');
+    throw StateError(
+      'Could not locate llamaCppTag in lib/src/hook/native_release_pins.dart',
+    );
   }
   return match.group(1)!;
 }
 
 String _readHookLiteRtLmVersion() {
-  final source = File('hook/build.dart').readAsStringSync();
+  final source = File(
+    'lib/src/hook/native_release_pins.dart',
+  ).readAsStringSync();
   final match = RegExp(
-    r"const _litertLmVersion = '([^']+)';",
+    r"const liteRtLmVersion = '([^']+)';",
   ).firstMatch(source);
   if (match == null) {
-    throw StateError('Could not locate _litertLmVersion in hook/build.dart');
+    throw StateError(
+      'Could not locate liteRtLmVersion in lib/src/hook/native_release_pins.dart',
+    );
   }
   return match.group(1)!;
 }
