@@ -44,6 +44,7 @@ class FakeEngine implements ValidationEngine {
   Completer<void>? pauseReload;
   var timeout = false;
   bool tokenizeTimeout = false;
+  Duration? tokenizeDelay;
   String? featureFault;
   bool toolsSeen = false;
   var cleanupFails = false;
@@ -85,6 +86,7 @@ class FakeEngine implements ValidationEngine {
   @override
   Future<List<int>> tokenize(String text) async {
     if (tokenizeTimeout) await Completer<void>().future;
+    if (tokenizeDelay != null) await Future<void>.delayed(tokenizeDelay!);
     return utf8.encode(text);
   }
 
@@ -1512,6 +1514,127 @@ void main() {
     expect(result.report.samples, hasLength(3));
     expect(result.report.assertionsPassed, isFalse);
   });
+  test('engine create deadline override rejects invalid contracts', () {
+    for (final patch in <Map<String, dynamic>>[
+      {'engine_create_case_timeout_ms': 120000},
+      {'backend': 'gpu', 'engine_create_case_timeout_ms': '120000'},
+      {'backend': 'gpu', 'engine_create_case_timeout_ms': 59999},
+      {'backend': 'gpu', 'engine_create_case_timeout_ms': 180001},
+      {'backend': 'npu', 'engine_create_case_timeout_ms': 120000},
+    ]) {
+      expect(
+        () => ValidationProfile.fromJson(profile().toJson()..addAll(patch)),
+        throwsFormatException,
+      );
+    }
+    final gguf =
+        jsonDecode(
+                File('assets/profiles/chat-gguf-metal.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>
+          ..['engine_create_case_timeout_ms'] = 120000;
+    expect(() => ValidationProfile.fromJson(gguf), throwsFormatException);
+  });
+
+  test(
+    'only the measured LiteRT GPU profile extends engine create deadlines',
+    () {
+      for (final file in Directory(
+        'assets/profiles',
+      ).listSync().whereType<File>()) {
+        final selected = ValidationProfile.fromJson(
+          jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
+        );
+        expect(
+          selected.engineCreateCaseTimeout,
+          selected.id == 'qwen35-litert-gpu'
+              ? const Duration(seconds: 120)
+              : null,
+          reason: selected.id,
+        );
+        final runner = ValidationRunner(
+          profile: selected,
+          engine: FakeEngine(),
+          emit: (_) async {},
+        );
+        for (final id in selected.caseIds) {
+          expect(
+            runner.caseDeadline(id),
+            selected.id == 'qwen35-litert-gpu' &&
+                    ValidationRunner.engineReloadCaseIds.contains(id)
+                ? const Duration(seconds: 120)
+                : const Duration(seconds: 60),
+            reason: '${selected.id} $id',
+          );
+        }
+        expect(
+          runner.caseDeadline('C02.unicode', firstUse: true),
+          selected.id == 'qwen35-litert-gpu'
+              ? const Duration(seconds: 120)
+              : const Duration(seconds: 60),
+          reason: selected.id,
+        );
+      }
+    },
+  );
+
+  test('engine create deadline override leaves other cases bounded', () async {
+    Future<Map<String, dynamic>> reload(ValidationProfile selected) async {
+      final paused = Completer<void>();
+      final engine = FakeEngine()..pauseReload = paused;
+      Timer(const Duration(milliseconds: 120), paused.complete);
+      final result = await run(engine, selected: selected);
+      return result.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C09.reload',
+      );
+    }
+
+    final base = await reload(profile(backend: 'gpu'));
+    expect(base['reason'], 'case_timeout');
+    expect(base['timeout_ms'], 30);
+
+    final extended = await reload(
+      ValidationProfile.fromJson(
+        profile(backend: 'gpu').toJson()
+          ..['engine_create_case_timeout_ms'] = 60000,
+      ),
+    );
+    expect(extended['reason'], isNot('case_timeout'));
+    expect(extended['status'], isNot('ERROR'));
+
+    Future<Map<String, dynamic>> firstUse(ValidationProfile selected) async {
+      final result = await run(
+        FakeEngine()..tokenizeDelay = const Duration(milliseconds: 120),
+        selected: selected,
+      );
+      return result.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C02.unicode',
+      );
+    }
+
+    expect((await firstUse(profile(backend: 'gpu')))['reason'], 'case_timeout');
+    expect(
+      (await firstUse(
+        ValidationProfile.fromJson(
+          profile(backend: 'gpu').toJson()
+            ..['engine_create_case_timeout_ms'] = 60000,
+        ),
+      ))['status'],
+      'PASS',
+    );
+
+    final hung = await run(
+      FakeEngine()..timeout = true,
+      selected: ValidationProfile.fromJson(
+        profile(backend: 'gpu').toJson()
+          ..['engine_create_case_timeout_ms'] = 60000,
+      ),
+    );
+    final raw = hung.report.cases.singleWhere((c) => c['case_id'] == 'C03.raw');
+    expect(raw['reason'], 'case_timeout');
+    expect(raw['timeout_ms'], 30);
+  });
+
   test(
     'timeout cancels and prevents overlapping subsequent inference',
     () async {

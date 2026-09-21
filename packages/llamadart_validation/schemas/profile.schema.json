@@ -55,6 +55,11 @@
       "minimum": 1,
       "maximum": 32
     },
+    "engine_create_case_timeout_ms": {
+      "type": "integer",
+      "minimum": 60000,
+      "maximum": 180000
+    },
     "max_tokens": {
       "type": "integer",
       "minimum": 1,
@@ -120,6 +125,23 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "required": [
+          "engine_create_case_timeout_ms"
+        ]
+      },
+      "then": {
+        "properties": {
+          "runtime": {
+            "const": "litert"
+          },
+          "backend": {
+            "const": "gpu"
+          }
+        }
+      }
+    },
     {
       "if": {
         "required": [
