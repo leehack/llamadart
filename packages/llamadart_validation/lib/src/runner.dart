@@ -283,6 +283,21 @@ class ValidationRunner {
   final ValidationEngine engine;
   final ValidationEventSink emit;
   final Duration caseTimeout;
+
+  /// Cases that reload the model and generate within one deadline.
+  static const engineReloadCaseIds = {
+    'C09.reload',
+    'C09.reload.second',
+    'C12.guards',
+    'C12.recovery',
+  };
+
+  /// Deadline applied to [id]. The profile override, when declared, applies to
+  /// [engineReloadCaseIds] and to the [firstUse] case that follows `C01.load`.
+  Duration caseDeadline(String id, {bool firstUse = false}) =>
+      firstUse || engineReloadCaseIds.contains(id)
+      ? profile.engineCreateCaseTimeout ?? caseTimeout
+      : caseTimeout;
   var _sequence = 0;
   var _cancelled = false;
   bool _closed = false;
@@ -326,6 +341,7 @@ class ValidationRunner {
       });
       var usable = false;
       var poisoned = false;
+      var firstUsePending = false;
       for (final id in caseIds) {
         if (_cancelled || poisoned || (!usable && id != 'C01.load')) {
           await _record(id, 'NOT_RUN', {
@@ -351,13 +367,15 @@ class ValidationRunner {
         final watch = Stopwatch()..start();
         _operationPhase = id;
         _partialCaseEvidence = null;
+        final deadline = caseDeadline(id, firstUse: firstUsePending);
+        firstUsePending = id == 'C01.load';
         try {
           _settled = false;
           final pending = _runCase(
             id,
             location,
           ).whenComplete(() => _settled = true);
-          final actual = await pending.timeout(caseTimeout);
+          final actual = await pending.timeout(deadline);
           if (id == 'C01.load') usable = true;
           final status = actual.remove('status') as String? ?? 'PASS';
           await _record(id, status, {
@@ -371,7 +389,7 @@ class ValidationRunner {
           await _record(id, 'ERROR', {
             'reason': 'case_timeout',
             ...?_partialCaseEvidence,
-            'timeout_ms': caseTimeout.inMilliseconds,
+            'timeout_ms': deadline.inMilliseconds,
             'operation_phase': _operationPhase,
             'elapsed_ms': watch.elapsedMicroseconds / 1000,
           });

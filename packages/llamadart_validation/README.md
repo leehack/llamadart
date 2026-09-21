@@ -57,7 +57,8 @@ initialization. In LiteRT, the first `C02.unicode` tokenization call can include
 deferred engine creation. Its `tokenize_call_ms` is therefore not isolated
 tokenizer latency. The runner records this timing scope, separate detokenization
 latency, and the active public operation on errors/timeouts. A first-use timeout
-does not establish a tokenizer defect. Case deadlines remain unchanged; provider
+does not establish a tokenizer defect. Case deadlines remain 60s unless a LiteRT
+GPU profile sets `engine_create_case_timeout_ms` for engine-create cases; provider
 process deadlines can additionally include model preparation and host startup.
 
 Profiles select `quick`, `focused` or `release`. Focused profiles require a
