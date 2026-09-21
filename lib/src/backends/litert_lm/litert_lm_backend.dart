@@ -24,6 +24,7 @@ class LiteRtLmBackend
         BackendAvailability,
         BackendGrammarConstraintsSupport,
         BackendRuntimeDiagnostics,
+        BackendDeferredEngineCreation,
         BackendPerformanceDiagnostics,
         BackendEmbeddingsSupport,
         BackendStatePersistenceSupport,
@@ -67,6 +68,9 @@ class LiteRtLmBackend
 
   @override
   bool get supportsUrlLoading => false;
+
+  @override
+  bool get defersEngineCreation => true;
 
   @override
   bool get supportsEmbeddings => false;

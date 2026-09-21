@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Log `Model … loaded from …; native engine creation is deferred until the
+  first generation or tokenizer call` instead of `loaded successfully` when
+  the native LiteRT-LM backend finishes `loadModel`, since it creates the
+  engine lazily
+  ([#569](https://github.com/leehack/llamadart/issues/569)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
   deletes `*_mldrift_program_cache.bin` files above the cap before each engine

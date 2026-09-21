@@ -47,7 +47,12 @@ void main() {
     expect(backend, isA<BackendEmbeddingsSupport>());
     expect(backend, isA<BackendStatePersistenceSupport>());
     expect(backend, isA<BackendNativeChatGeneration>());
+    expect(backend, isA<BackendDeferredEngineCreation>());
     expect(backend.supportsUrlLoading, isFalse);
+    expect(
+      (backend as BackendDeferredEngineCreation).defersEngineCreation,
+      isTrue,
+    );
     expect((backend as BackendEmbeddingsSupport).supportsEmbeddings, isFalse);
     expect(
       (backend as BackendStatePersistenceSupport).supportsStatePersistence,

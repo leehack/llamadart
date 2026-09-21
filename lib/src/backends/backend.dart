@@ -177,6 +177,18 @@ abstract class BackendRuntimeDiagnostics {
   Future<int?> getResolvedGpuLayers();
 }
 
+/// Optional backend capability for reporting deferred native engine creation.
+///
+/// A backend that defers creation returns from [LlamaBackend.modelLoad] and
+/// [LlamaBackend.contextCreate] before the native engine exists and creates it
+/// on the first operation that needs it, so engine creation failures surface
+/// there instead of during load.
+abstract class BackendDeferredEngineCreation {
+  /// Whether native engine creation happens after model load and context
+  /// creation.
+  bool get defersEngineCreation;
+}
+
 /// Optional backend capability for prompt-adapted speech recognition.
 ///
 /// Web runtimes use this explicit opt-in to distinguish a bridge release that
