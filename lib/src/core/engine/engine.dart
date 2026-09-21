@@ -189,9 +189,7 @@ class LlamaEngine {
       _modelHandle = await backend.modelLoad(path, modelParams);
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _isReady = true;
-      LlamaLogger.instance.info(
-        'Model $modelName loaded successfully from $path',
-      );
+      LlamaLogger.instance.info(_modelLoadedMessage(modelName, path));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
       LlamaLogger.instance.error(
@@ -320,9 +318,7 @@ class LlamaEngine {
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _isReady = true;
 
-      LlamaLogger.instance.info(
-        'Model $modelName loaded successfully from $redactedUrl',
-      );
+      LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
 
@@ -1366,6 +1362,16 @@ class LlamaEngine {
       return (candidate as BackendAvailability).getAvailableBackends();
     }
     return candidate.getBackendName();
+  }
+
+  String _modelLoadedMessage(String modelName, String source) {
+    final candidate = backend;
+    if (candidate is BackendDeferredEngineCreation &&
+        (candidate as BackendDeferredEngineCreation).defersEngineCreation) {
+      return 'Model $modelName loaded from $source; native engine creation is '
+          'deferred until the first generation or tokenizer call';
+    }
+    return 'Model $modelName loaded successfully from $source';
   }
 
   /// Returns resolved GPU layers for the active model load when available.

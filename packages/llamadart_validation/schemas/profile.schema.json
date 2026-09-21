@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "llamadart validation profile v1",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "schema_version",
     "id",
@@ -67,6 +68,7 @@
     },
     "model": {
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "revision",
         "filename",
@@ -76,6 +78,9 @@
         "url"
       ],
       "properties": {
+        "id": {
+          "type": "string"
+        },
         "revision": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
@@ -97,6 +102,12 @@
             "raw",
             "chat"
           ]
+        },
+        "access": {
+          "type": "string"
+        },
+        "quantization": {
+          "type": "string"
         },
         "url": {
           "type": "string",
@@ -121,6 +132,205 @@
           "guards",
           "performance"
         ]
+      }
+    },
+    "fixtures": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unicode": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "type": "string"
+            },
+            "expected_prefix": {
+              "type": "string"
+            }
+          }
+        },
+        "unicode_generation": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "expected": {
+              "type": "string"
+            },
+            "qualification": {
+              "type": "string"
+            }
+          }
+        },
+        "raw": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            }
+          }
+        },
+        "hello": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "regex": {
+              "type": "string"
+            }
+          }
+        },
+        "arithmetic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "regex": {
+              "type": "string"
+            }
+          }
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "system": {
+              "type": "string"
+            },
+            "user": {
+              "type": "string"
+            },
+            "assistant": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "expected": {
+              "type": "string"
+            }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            }
+          }
+        },
+        "cancel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "chat_prompt": {
+              "type": "string"
+            }
+          }
+        },
+        "batching": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "stop": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "marker": {
+              "type": "string"
+            }
+          }
+        },
+        "limit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {}
+        },
+        "benchmark": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "chat_prompt": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "npu_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "soc",
+        "abi",
+        "minimum_android_api",
+        "libraries",
+        "device_soc_models"
+      ],
+      "properties": {
+        "soc": {
+          "type": "string"
+        },
+        "abi": {
+          "type": "string"
+        },
+        "minimum_android_api": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "qairt_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "libraries": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "elf_machine",
+              "elf_class"
+            ],
+            "properties": {
+              "elf_machine": {
+                "type": "integer"
+              },
+              "elf_class": {
+                "type": "integer"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "device_soc_models": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "firebase_model": {
+          "type": "string"
+        }
       }
     }
   },
@@ -164,6 +374,20 @@
             "focus_features"
           ]
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "backend": {
+            "const": "npu"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "npu_target"
+        ]
       }
     }
   ]

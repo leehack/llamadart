@@ -35,6 +35,7 @@ class NativeAutoBackend
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
+        BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendVideoRuntimeSupport {
   final LlamaBackend Function() _llamaCppFactory;
@@ -78,6 +79,15 @@ class NativeAutoBackend
     if (delegate is BackendNativeChatGeneration) {
       return (delegate as BackendNativeChatGeneration)
           .supportsNativeChatGeneration;
+    }
+    return false;
+  }
+
+  @override
+  bool get defersEngineCreation {
+    final delegate = _delegate;
+    if (delegate is BackendDeferredEngineCreation) {
+      return (delegate as BackendDeferredEngineCreation).defersEngineCreation;
     }
     return false;
   }

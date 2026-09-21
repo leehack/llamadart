@@ -12,6 +12,11 @@ For canonical full release notes, use:
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).
+- Log `Model … loaded from …; native engine creation is deferred until the
+  first generation or tokenizer call` instead of `loaded successfully` when
+  the native LiteRT-LM backend finishes `loadModel`, since it creates the
+  engine lazily
+  ([#569](https://github.com/leehack/llamadart/issues/569)).
 - Document that Linux llama.cpp loads need the OpenMP runtime
   (`libgomp.so.1`; `libgomp1` on Ubuntu/Debian, `libgomp` on Fedora and Arch)
   and that Linux LiteRT-LM GPU needs a hardware Vulkan ICD: with only Mesa
