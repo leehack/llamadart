@@ -22,6 +22,12 @@
   skip both Jinja parses and all four capability probes. Detections in which
   any analysis step failed are not cached and keep logging on every call
   ([#448](https://github.com/leehack/llamadart/issues/448)).
+- Detect `supportsTools` and `supportsToolCalls` for chat templates that
+  reject two tool calls in one assistant message (Llama 3.2) or a user turn
+  directly after a tool call (Ministral 3). The tools capability probe now
+  renders a single tool call, and a separate parallel probe clears only
+  `supportsParallelToolCalls` when it throws
+  ([#557](https://github.com/leehack/llamadart/issues/557)).
 
 ## 0.8.24
 
