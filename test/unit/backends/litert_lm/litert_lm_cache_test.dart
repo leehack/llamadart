@@ -25,7 +25,7 @@ void main() {
   });
 
   File write(String name, int bytes, {Directory? dir}) {
-    final file = File('${(dir ?? tempDir).path}/$name');
+    final file = File('${(dir ?? tempDir).path}${Platform.pathSeparator}$name');
     file.writeAsBytesSync(List<int>.filled(bytes, 0));
     return file;
   }

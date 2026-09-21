@@ -1825,7 +1825,7 @@ void main() {
     }
 
     File writeCache(Directory dir, String name, int bytes) {
-      return File('${dir.path}/$name')
+      return File('${dir.path}${Platform.pathSeparator}$name')
         ..writeAsBytesSync(List<int>.filled(bytes, 0));
     }
 
