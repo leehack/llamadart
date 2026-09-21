@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 import 'litert_lm_asr_types.dart';
+import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
 
@@ -2024,9 +2025,7 @@ void _setSessionSamplerParams(
 }) {
   // The LiteRT WebGPU sampler emits incoherent text at temperature 0 with
   // top-k > 1 (#544).
-  if (temperature == 0) {
-    topK = 1;
-  }
+  topK = liteRtLmEffectiveTopK(temperature: temperature, topK: topK);
   final create = bindings.samplerParamsCreate;
   final delete = bindings.samplerParamsDelete;
   if (create != null && delete != null) {
