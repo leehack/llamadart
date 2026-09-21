@@ -40,43 +40,33 @@ void main() {
         expect(engine.isReady, isTrue);
         print('Model loaded successfully.');
         print('Running 5-token generation check...');
-        try {
-          final stream = engine.create(
-            [
-              LlamaChatMessage.withContent(
-                role: LlamaChatRole.user,
-                content: [
-                  LlamaTextContent('Hello'),
-                  LlamaImageContent(
-                    bytes: Uint8List.fromList([0, 0, 0]),
-                    width: 1,
-                    height: 1,
-                  ),
-                ],
-              ),
-            ],
-            params: const GenerationParams(
-              maxTokens: 5,
-              penalty: 1.2,
-              grammar: 'root ::= "World"',
+        final stream = engine.create(
+          [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaTextContent('Hello'),
+                LlamaImageContent(
+                  bytes: Uint8List.fromList([0, 0, 0]),
+                  width: 1,
+                  height: 1,
+                ),
+              ],
             ),
-          );
+          ],
+          params: const GenerationParams(
+            maxTokens: 5,
+            penalty: 1.2,
+            grammar: 'root ::= "World"',
+          ),
+        );
 
-          final tokens = <String>[];
-          await for (final chunk in stream.timeout(
-            const Duration(seconds: 60),
-          )) {
-            final token = chunk.choices.first.delta.content ?? '';
-            tokens.add(token);
-          }
-          expect(tokens, isNotEmpty, reason: 'No tokens were generated');
-        } catch (e) {
-          if (e.toString().contains('chat template')) {
-            // WARNING: Skipped generation due to chat template error, expected for some raw models
-          } else {
-            rethrow;
-          }
+        final tokens = <String>[];
+        await for (final chunk in stream.timeout(const Duration(seconds: 60))) {
+          final token = chunk.choices.first.delta.content ?? '';
+          tokens.add(token);
         }
+        expect(tokens.join(), 'World');
 
         // 4b. Verify chat with streaming
         final messages = [
@@ -86,25 +76,16 @@ void main() {
           ),
         ];
 
-        // Removed print: Running generation check...
         print('Running generation check...');
         final fullContent = StringBuffer();
-        try {
-          await for (final chunk in engine.create(messages)) {
-            final delta = chunk.choices.first.delta.content;
-            if (delta != null) {
-              fullContent.write(delta);
-            }
-          }
-          print('Generation completed.');
-          expect(fullContent.isNotEmpty, isTrue);
-        } catch (e) {
-          if (e.toString().contains('chat template')) {
-            // WARNING: Skipped generation due to chat template error
-          } else {
-            rethrow;
+        await for (final chunk in engine.create(messages)) {
+          final delta = chunk.choices.first.delta.content;
+          if (delta != null) {
+            fullContent.write(delta);
           }
         }
+        print('Generation completed.');
+        expect(fullContent.isNotEmpty, isTrue);
 
         // 4. Tokenizer test
         final encoded = await engine.tokenize('Hello world');

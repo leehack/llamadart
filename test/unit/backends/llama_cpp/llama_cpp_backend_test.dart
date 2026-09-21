@@ -16,10 +16,6 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('NativeLlamaBackend type is available', () {
-    expect(NativeLlamaBackend, isNotNull);
-  });
-
   group('NativeLlamaBackend request routing', () {
     late _FakeWorkerHarness harness;
     late _TrackingNativeLlamaBackend backend;
