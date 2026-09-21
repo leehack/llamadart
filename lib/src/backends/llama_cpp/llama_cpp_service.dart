@@ -866,7 +866,7 @@ class LlamaCppService {
       }
     }
 
-    if (!applied) {
+    if (!applied && fallback == null) {
       _recordStartupDiagnostic(
         '`llama_dart_set_log_level` is unavailable: the primary FFI asset '
         'does not export it and no wrapper candidate provided it '
@@ -2144,6 +2144,9 @@ class LlamaCppService {
     _preloadWindowsBackendDependencies(backend);
 
     final failures = BackendProbeFailures();
+    if (backendModuleDirectory != null && fileNameCandidates.isEmpty) {
+      failures.add(_backendLibraryFileName(backend), 'file missing');
+    }
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
         failures.add(candidate, 'file missing');
@@ -8596,24 +8599,28 @@ class BackendProbeFailures {
 }
 
 /// The identity a probe summary keeps for [candidate]: a `package:` asset URI
-/// verbatim, otherwise the file name without its directory.
+/// verbatim, otherwise the file name without its directory. Anything from the
+/// first `?` or `#` on is dropped first.
 String probeCandidateIdentity(String candidate) {
-  if (candidate.startsWith('package:')) {
-    return candidate;
+  final bare = candidate.split(RegExp(r'[?#]')).first;
+  if (bare.startsWith('package:')) {
+    return bare;
   }
-  return path.basename(candidate);
+  return path.basename(bare);
 }
 
 /// Classifies a `DynamicLibrary.open` failure for [candidate] as one of
 /// `unresolved symbol \`name\``, `unresolved symbol`, `incompatible binary`,
-/// `dependency not loaded \`name\``, `not found` or `open failed`.
+/// `dependency not loaded \`name\``, `blocked by namespace`, `not found` or
+/// `open failed`.
 ///
 /// The loader text itself is never returned: it can carry the process search
 /// paths and the candidate's directory.
 String describeLibraryProbeError(Object error, String candidate) {
   final text = error.toString();
   final symbol = RegExp(
-    r'(?:undefined symbol|symbol not found)(?: in flat namespace)?'
+    r'(?:undefined symbol|symbol not found|cannot locate symbol)'
+    r'(?: in flat namespace)?'
     r'''[:\s]+['"]?_?([A-Za-z_][A-Za-z0-9_]*)''',
     caseSensitive: false,
   ).firstMatch(text);
@@ -8621,17 +8628,21 @@ String describeLibraryProbeError(Object error, String candidate) {
     return 'unresolved symbol `${symbol.group(1)}`';
   }
   if (RegExp(
-    r'undefined symbol|symbol not found|error code: 127',
+    r'undefined symbol|symbol not found|cannot locate symbol|error code: 127',
     caseSensitive: false,
   ).hasMatch(text)) {
     return 'unresolved symbol';
   }
   if (RegExp(
     r'incompatible architecture|wrong ELF class|invalid ELF header|'
+    r'unexpected e_machine|has bad ELF magic|'
     r'not a valid Win32 application|error code: 193|cannot execute binary',
     caseSensitive: false,
   ).hasMatch(text)) {
     return 'incompatible binary';
+  }
+  if (text.contains('is not accessible for the namespace')) {
+    return 'blocked by namespace';
   }
   final appleDependency = RegExp(
     r'Library not loaded:\s*(\S+)',
@@ -8640,12 +8651,14 @@ String describeLibraryProbeError(Object error, String candidate) {
     return 'dependency not loaded '
         '`${path.basename(appleDependency.group(1)!)}`';
   }
-  final linuxMissing = RegExp(
-    r'''([^\s"']+): cannot open shared object file''',
-  ).firstMatch(text);
-  if (linuxMissing != null &&
-      path.basename(linuxMissing.group(1)!) != path.basename(candidate)) {
-    return 'dependency not loaded `${path.basename(linuxMissing.group(1)!)}`';
+  final missing =
+      RegExp(
+        r'''([^\s"']+): cannot open shared object file''',
+      ).firstMatch(text) ??
+      RegExp(r'library "([^"]+)" not found').firstMatch(text);
+  if (missing != null &&
+      path.basename(missing.group(1)!) != path.basename(candidate)) {
+    return 'dependency not loaded `${path.basename(missing.group(1)!)}`';
   }
   if (RegExp(
     r'no such file|not found|cannot open shared object|could not be found|'

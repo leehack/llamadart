@@ -13,7 +13,7 @@ For canonical full release notes, use:
   module family fails to load, or when a `ggml`/wrapper symbol is missing from
   both the primary FFI asset and every fallback library. Candidates are named
   by asset URI or file name only and loader errors are classified, never
-  quoted, so no directory, search path or credential reaches the diagnostic
+  quoted, so no directory or loader search path reaches the diagnostic
   ([#416](https://github.com/leehack/llamadart/issues/416)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which

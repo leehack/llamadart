@@ -1924,6 +1924,22 @@ void main() {
             'incompatible binary',
         '%1 is not a valid Win32 application. (error code: 193)':
             'incompatible binary',
+        'dlopen failed: cannot locate symbol "ggml_backend_dev_get_props" '
+                'referenced by "$candidate"...':
+            'unresolved symbol `ggml_backend_dev_get_props`',
+        'dlopen failed: library "libvulkan.so" not found: needed by '
+                '$candidate in namespace classloader-namespace':
+            'dependency not loaded `libvulkan.so`',
+        'dlopen failed: library "libggml-vulkan.so" not found': 'not found',
+        'dlopen failed: "$candidate" has unexpected e_machine: 62 '
+                '(EM_X86_64)':
+            'incompatible binary',
+        'dlopen failed: "$candidate" has bad ELF magic: 0a0a0a0a':
+            'incompatible binary',
+        'dlopen failed: library "$candidate" ("$candidate") needed or '
+                'dlopened by "/system/lib64/libnativeloader.so" is not '
+                'accessible for the namespace "classloader-namespace"':
+            'blocked by namespace',
         'Authorization: Bearer secret-token https://user:pass@example.com/'
                 'lib.so?token=secret':
             'open failed',
@@ -1960,10 +1976,57 @@ void main() {
 
       expect(buffer.entries, <String>[
         'Backend module `cpu` not loaded from any candidate: '
-            'not found (lib ggml cpu.so); open failed (lib.so?token=secret).',
+            'not found (lib ggml cpu.so); open failed (lib.so).',
       ]);
       expect(buffer.entries.single, isNot(contains('pass')));
       expect(buffer.entries.single, isNot(contains('Bearer')));
+      expect(buffer.entries.single, isNot(contains('secret')));
+    });
+
+    test('candidate identity drops directories, queries and fragments', () {
+      expect(
+        probeCandidateIdentity('package:llamadart/cpu'),
+        'package:llamadart/cpu',
+      );
+      expect(
+        probeCandidateIdentity('/Users/secret/libggml-cpu.so?token=secret#f'),
+        'libggml-cpu.so',
+      );
+      expect(
+        probeCandidateIdentity('package:llamadart/cpu?token=secret'),
+        'package:llamadart/cpu',
+      );
+    });
+
+    test('an empty module directory names the expected module file', () {
+      final tempDir = Directory.systemTemp.createTempSync('empty_module_dir_');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      const backend = 'nonexistent-probe';
+      final expectedFile = Platform.isWindows
+          ? 'ggml-$backend.dll'
+          : Platform.isMacOS
+          ? 'libggml-$backend.dylib'
+          : 'libggml-$backend.so';
+
+      final service = LlamaCppService();
+      _writePrivateForTesting(service, '_backendModuleDirectory', tempDir.path);
+      final loaded = _invokePrivateForTesting<bool>(
+        service,
+        '_tryLoadBackendModule',
+        <Object?>[backend],
+      );
+
+      expect(loaded, isFalse);
+      final entry = service.getStartupDiagnostics().single;
+      expect(
+        entry,
+        startsWith(
+          'Backend module `$backend` not loaded from any candidate: '
+          'file missing ($expectedFile); ',
+        ),
+      );
+      expect(entry, contains('(package:llamadart/$backend'));
+      expect(entry, isNot(contains(tempDir.path)));
     });
 
     test('a backend family with no usable candidate records one summary', () {
@@ -2047,6 +2110,59 @@ void main() {
       expect(entries.single, isNot(contains(Directory.current.path)));
     });
 
+    test('a missing ggml symbol reports the candidates that opened', () {
+      final service = LlamaCppService();
+      _writePrivateForTesting(
+        service,
+        '_ggmlRuntimeProbeOutcome',
+        'the opened ggml runtime candidates (libggml.so) do not export it; '
+            'other candidates: not found (package:llamadart/ggml)',
+      );
+      _invokePrivateForTesting<void>(
+        service,
+        '_recordMissingGgmlSymbol',
+        const <Object?>['`ggml_backend_load_all`'],
+      );
+
+      expect(service.getStartupDiagnostics(), <String>[
+        '`ggml_backend_load_all` is unavailable: the primary FFI asset does '
+            'not export it and the opened ggml runtime candidates (libggml.so) '
+            'do not export it; other candidates: not found '
+            '(package:llamadart/ggml).',
+      ]);
+    });
+
+    test('a registry symbol missing everywhere records one entry', () {
+      final service = LlamaCppService();
+      final value = _invokePrivateForTesting<Object?>(
+        service,
+        '_ggmlRegistryFallbackOr',
+        <Object?>[-1, () => throw ArgumentError('primary'), () => null],
+      );
+
+      expect(value, -1);
+      expect(
+        _readPrivateForTesting<bool>(
+          service,
+          '_backendRegistrySymbolUnavailable',
+        ),
+        isTrue,
+      );
+      final entries = service.getStartupDiagnostics();
+      expect(entries, hasLength(1));
+      expect(
+        entries.single,
+        startsWith(
+          'A ggml backend registry symbol is unavailable: the primary FFI '
+          'asset does not export it and ',
+        ),
+      );
+      expect(
+        entries.single,
+        isNot(contains(path.dirname(Platform.resolvedExecutable))),
+      );
+    });
+
     test('a ggml candidate that resolves the symbols records nothing', () {
       final source = _locateGgmlRuntimeLibraryForTesting();
       if (source == null) {
@@ -2064,6 +2180,10 @@ void main() {
       if (path.basename(source) == ggmlFileName) {
         moduleDir = path.dirname(source);
       } else {
+        if (Platform.isWindows) {
+          markTestSkipped('a mapped DLL copy cannot be deleted on teardown');
+          return;
+        }
         final copy = path.join(tempDir.path, ggmlFileName);
         File(source).copySync(copy);
         if (!_exportsGgmlBackendLoad(copy)) {
@@ -2084,6 +2204,32 @@ void main() {
       expect(
         _readPrivateForTesting<Object?>(service, '_ggmlBackendLoadFallback'),
         isNotNull,
+      );
+      final regCount = _readPrivateForTesting<Function?>(
+        service,
+        '_ggmlBackendRegCountFallback',
+      );
+      expect(regCount, isNotNull);
+      final value = _invokePrivateForTesting<Object?>(
+        service,
+        '_ggmlRegistryFallbackOr',
+        <Object?>[
+          -1,
+          () => throw ArgumentError('primary'),
+          () => Function.apply(regCount!, const <Object?>[]),
+        ],
+      );
+
+      expect(
+        value,
+        isA<int>().having((count) => count, 'count', isNonNegative),
+      );
+      expect(
+        _readPrivateForTesting<bool>(
+          service,
+          '_backendRegistrySymbolUnavailable',
+        ),
+        isFalse,
       );
       expect(service.getStartupDiagnostics(), isEmpty);
     });
