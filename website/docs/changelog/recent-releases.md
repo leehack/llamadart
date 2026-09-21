@@ -12,6 +12,11 @@ For canonical full release notes, use:
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).
+- Log `Model … loaded from …; native engine creation is deferred until the
+  first generation or tokenizer call` instead of `loaded successfully` when
+  the native LiteRT-LM backend finishes `loadModel`, since it creates the
+  engine lazily
+  ([#569](https://github.com/leehack/llamadart/issues/569)).
 - Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
   `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
   native startup diagnostics with `<redacted-secret>`; URL and

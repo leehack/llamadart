@@ -11,6 +11,7 @@ import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -273,6 +274,57 @@ void main() {
         expect(grammar.supportsGrammarConstraints, isFalse);
       } finally {
         await backend.dispose();
+      }
+    },
+  );
+
+  test(
+    'forwards deferred engine creation and the engine logs it on load',
+    () async {
+      final records = <LlamaLogRecord>[];
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.info,
+        handler: records.add,
+      );
+      addTearDown(LlamaEngine.configureLogging);
+
+      final llama = _FakeBackend(handle: 11);
+      final litert = _DeferredEngineFakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+      final engine = LlamaEngine(backend);
+
+      try {
+        expect(backend, isA<BackendDeferredEngineCreation>());
+        expect(backend.defersEngineCreation, isFalse);
+
+        await engine.loadModel('/models/model.litertlm');
+        expect(backend.defersEngineCreation, isTrue);
+        final messages = records.map((record) => record.message).toList();
+        expect(
+          messages,
+          contains(
+            'Model model.litertlm loaded from /models/model.litertlm; native '
+            'engine creation is deferred until the first generation or '
+            'tokenizer call',
+          ),
+        );
+        expect(messages, isNot(contains(contains('loaded successfully'))));
+
+        await engine.unloadModel();
+        records.clear();
+        await engine.loadModel('/models/model.gguf');
+        expect(backend.defersEngineCreation, isFalse);
+        expect(
+          records.map((record) => record.message),
+          contains(
+            'Model model.gguf loaded successfully from /models/model.gguf',
+          ),
+        );
+      } finally {
+        await engine.dispose();
       }
     },
   );
@@ -1174,6 +1226,14 @@ class _FailingLogLevelBackend extends _FakeBackend {
     logLevels.add(level);
     throw StateError('diagnostic log level failed');
   }
+}
+
+class _DeferredEngineFakeBackend extends _FakeBackend
+    implements BackendDeferredEngineCreation {
+  _DeferredEngineFakeBackend({required super.handle});
+
+  @override
+  bool get defersEngineCreation => true;
 }
 
 class _CapabilityFakeBackend extends _FakeBackend
