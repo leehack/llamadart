@@ -154,7 +154,24 @@ Set<String> _literalKeys(String source, List<String> receivers) => {
     "(?<![.\\w])(${receivers.join('|')})\\['([a-z0-9_]+)'\\]",
   ).allMatches(source))
     match.group(2)!,
+  for (final match in RegExp(
+    "for \\(final key in \\[([^\\]]*)\\]\\) \\{\\s*if \\("
+    "(${receivers.join('|')})\\.containsKey\\(key\\)",
+  ).allMatches(source))
+    for (final key in RegExp("'([a-z0-9_]+)'").allMatches(match.group(1)!))
+      key.group(1)!,
 };
+
+String _readerSources() =>
+    [
+          ...Directory('lib/src').listSync().whereType<File>(),
+          ...Directory(
+            '../../tool/testing/validation',
+          ).listSync().whereType<File>(),
+        ]
+        .where((file) => file.path.endsWith('.dart'))
+        .map((file) => file.readAsStringSync())
+        .join('\n');
 
 void main() {
   final schema = _readJson('schemas/profile.schema.json');
@@ -182,22 +199,35 @@ void main() {
     }
   });
 
-  test('schema declares every property the manifest reads', () {
-    final manifest = File('lib/src/manifest.dart').readAsStringSync();
-    final npuReaders = [
-      'lib/src/npu_evidence.dart',
-      'lib/src/placement.dart',
-    ].map((path) => File(path).readAsStringSync()).join();
-    final topLevel = _literalKeys(manifest, ['data'])
-      ..addAll(_literalKeys(npuReaders, ['profile', r'profile\.data']));
-    final model = _literalKeys(manifest, ['model']);
-    final target = _literalKeys(npuReaders, ['target']);
+  test('schema declares every profile key lib/src and tool readers index', () {
+    final sources = _readerSources();
+    final topLevel = _literalKeys(sources, [
+      'data',
+      'profile',
+      r'profile\.data',
+      'selectedProfile',
+    ]);
+    final model = _literalKeys(sources, [
+      'model',
+      r"\(profile\['model'\] as Map\??\)\??",
+    ]);
+    final target = _literalKeys(sources, [
+      'target',
+      r"\(profile\['npu_target'\] as Map\??\)\??",
+    ]);
     expect(
       topLevel,
-      containsAll(['fixtures', 'history_controls', 'npu_target']),
+      containsAll([
+        'enable_thinking',
+        'execution_path',
+        'fixtures',
+        'history_controls',
+        'npu_target',
+        'selection',
+      ]),
     );
-    expect(model, contains('sha256'));
-    expect(target, contains('libraries'));
+    expect(model, containsAll(['access', 'sha256']));
+    expect(target, containsAll(['firebase_model', 'libraries']));
     expect(topLevel.difference(properties.keys.toSet()), isEmpty);
     expect(
       model.difference(
