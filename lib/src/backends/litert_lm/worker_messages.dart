@@ -6,6 +6,9 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
+import '../worker_log_message.dart';
+
+export '../worker_log_message.dart';
 
 /// Base class for LiteRT-LM worker requests.
 abstract class LiteRtLmWorkerRequest {
@@ -267,6 +270,18 @@ class LiteRtLmLogLevelRequest extends LiteRtLmWorkerRequest {
 
   /// Creates a log level request.
   LiteRtLmLogLevelRequest(this.logLevel, super.sendPort);
+}
+
+/// Request to set the level the worker's Dart logger forwards from.
+///
+/// Ignored, but still answered with [LiteRtLmDoneResponse], when the
+/// handshake carried no log port.
+class LiteRtLmDartLogLevelRequest extends LiteRtLmWorkerRequest {
+  /// The target log level.
+  final LlamaLogLevel logLevel;
+
+  /// Creates a Dart log level request.
+  LiteRtLmDartLogLevelRequest(this.logLevel, super.sendPort);
 }
 
 /// Request to get the actual context size.
@@ -535,8 +550,20 @@ class LiteRtLmWorkerHandshake {
   /// Initial log level.
   final LlamaLogLevel initialLogLevel;
 
+  /// The main isolate's [LlamaLogger] level at spawn; the worker forwards
+  /// only records at or above it.
+  final LlamaLogLevel dartLogLevel;
+
+  /// Port that receives [WorkerLogMessage]s; `null` disables forwarding and
+  /// leaves the worker's logger untouched.
+  final SendPort? logPort;
+
   /// Creates a worker handshake.
-  LiteRtLmWorkerHandshake(this.initialLogLevel);
+  LiteRtLmWorkerHandshake(
+    this.initialLogLevel, {
+    this.dartLogLevel = LlamaLogLevel.none,
+    this.logPort,
+  });
 }
 
 String _stripErrorPrefix(String message, String prefix) {

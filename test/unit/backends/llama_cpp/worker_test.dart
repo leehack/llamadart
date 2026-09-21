@@ -13,6 +13,7 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -192,6 +193,25 @@ void main() {
           final error = response as ErrorResponse;
           expect(error.kind, WorkerErrorKind.unsupported);
           expect(error.message, contains('reasoning-budget wrapper'));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
+    test(
+      'DartLogLevelRequest leaves the logger alone without a log port',
+      () async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _UnsupportedGenerationLlamaCppService(),
+        );
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => DartLogLevelRequest(LlamaLogLevel.debug, sendPort),
+          );
+          expect(response, isA<DoneResponse>());
+          expect(LlamaLogger.instance.level, LlamaLogLevel.none);
         } finally {
           await _disposeWorker(worker);
         }

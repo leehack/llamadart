@@ -539,6 +539,16 @@ class MockBatchEmbeddingBackend extends MockLlamaBackend
   }
 }
 
+class DartLogLevelMockBackend extends MockLlamaBackend
+    implements BackendDartLogLevel {
+  final List<LlamaLogLevel> dartLogLevels = <LlamaLogLevel>[];
+
+  @override
+  Future<void> setDartLogLevel(LlamaLogLevel level) async {
+    dartLogLevels.add(level);
+  }
+}
+
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -546,6 +556,32 @@ void main() {
   setUp(() {
     backend = MockLlamaBackend();
     engine = LlamaEngine(backend);
+  });
+
+  group('LlamaEngine Dart log level', () {
+    tearDown(() => LlamaLogger.instance.setLevel(LlamaLogLevel.none));
+
+    test(
+      'setDartLogLevel and setLogLevel reach a BackendDartLogLevel',
+      () async {
+        final logBackend = DartLogLevelMockBackend();
+        final logEngine = LlamaEngine(logBackend);
+        await logEngine.setDartLogLevel(LlamaLogLevel.info);
+        await logEngine.setLogLevel(LlamaLogLevel.warn);
+        expect(logBackend.dartLogLevels, [
+          LlamaLogLevel.info,
+          LlamaLogLevel.warn,
+        ]);
+        expect(LlamaLogger.instance.level, LlamaLogLevel.warn);
+        expect(logEngine.dartLogLevel, LlamaLogLevel.warn);
+      },
+    );
+
+    test('setDartLogLevel skips a backend without the capability', () async {
+      await engine.setDartLogLevel(LlamaLogLevel.info);
+      expect(LlamaLogger.instance.level, LlamaLogLevel.info);
+      expect(engine.dartLogLevel, LlamaLogLevel.info);
+    });
   });
 
   group('LlamaEngine Mock Tests', () {

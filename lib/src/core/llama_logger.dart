@@ -60,6 +60,9 @@ class LlamaLogger {
   /// Gets the singleton instance of [LlamaLogger].
   static LlamaLogger get instance => _instance ??= LlamaLogger._();
 
+  /// The current log level; records below it are ignored.
+  LlamaLogLevel get level => _level;
+
   /// Sets the current log level.
   ///
   /// Logs below this level will be ignored.

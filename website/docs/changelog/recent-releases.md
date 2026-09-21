@@ -34,6 +34,14 @@ For canonical full release notes, use:
   by asset URI or file name only and loader errors are classified, never
   quoted, so no directory or loader search path reaches the diagnostic
   ([#416](https://github.com/leehack/llamadart/issues/416)).
+- Forward llama.cpp and LiteRT-LM worker-isolate log records to the
+  `LlamaEngine.configureLogging` handler. A worker takes the Dart logger level
+  when it starts and `LlamaEngine.setDartLogLevel`/`setLogLevel` update a
+  running worker; the default `none` sends nothing and `debug` records are
+  capped at 1000 per worker. The LiteRT-LM program-cache pruning warnings are
+  now ordinary `warn` records gated by that level instead of the native log
+  level. Adds `LlamaLogger.level` and the `BackendDartLogLevel` capability
+  ([#567](https://github.com/leehack/llamadart/issues/567)).
 - Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
   `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
   native startup diagnostics with `<redacted-secret>`; URL and

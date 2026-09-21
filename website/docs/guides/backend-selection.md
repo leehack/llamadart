@@ -208,10 +208,12 @@ regular files directly inside the effective cache directory whose name ends
 with `_mldrift_program_cache.bin` and whose size exceeds the cap. Weight and
 XNNPACK caches, subdirectories, and symbolic links are left alone. Each
 deletion logs a warning with the file size, and prune failures log a warning
-without failing the load. The backend worker prints both when the native log
-level (`LlamaEngine.setNativeLogLevel` or `setLogLevel`) is `debug`, `info`,
-or `warn`; the `LlamaEngine` default `none` suppresses them. They do not reach
-a `LlamaEngine.configureLogging` handler. When no directory is passed to the
+without failing the load. Both are `warn` records of the Dart logger: they
+reach the `LlamaEngine.configureLogging` handler (or `print` without one) when
+the Dart level is `debug`, `info`, or `warn` both in the backend worker and on
+the main isolate (see [Logging](../configuration/logging)); the default `none`
+suppresses them, and the native log level does not gate them. When no
+directory is passed to the
 runtime (default on platforms other than macOS and Android), nothing is
 pruned; set `liteRtLmCacheDir` to enable pruning there.
 
