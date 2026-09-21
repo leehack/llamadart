@@ -113,7 +113,6 @@ void main() {
         expect(topK(), 40);
         expect(temperature(), closeTo(0.8, 1e-6));
         expect(samplerSets(), 4);
-        // NPU conversations skip sampler overrides.
         client.createConversation(temperature: 0, topK: 40, npuBackend: true);
         expect(samplerSets(), 4);
       } finally {

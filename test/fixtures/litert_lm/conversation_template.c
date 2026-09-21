@@ -1,4 +1,4 @@
-// Minimal C ABI fixture for the real Dart conversation-template FFI path.
+// Minimal C ABI fixture for the Dart conversation-template and sampler FFI paths.
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -16,7 +16,7 @@ void* litert_lm_engine_create(void* p) { return (void*)2; }
 void litert_lm_engine_delete(void* p) {}
 void* litert_lm_session_config_create(void) { return (void*)3; }
 void litert_lm_session_config_delete(void* p) {}
-// Mirrors the legacy sampler struct so both sampler paths record the same way.
+// Layout must match _LegacyLiteRtLmSamplerParams in litert_lm_runtime.dart.
 typedef struct { int32_t type, top_k; float top_p, temperature; int32_t seed; } sampler_params;
 static sampler_params session_sampler;
 static int32_t sampler_sets;

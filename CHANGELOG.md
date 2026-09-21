@@ -2,7 +2,7 @@
 
 - Force greedy `topK: 1` for zero-temperature
   `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
-  text on LiteRT GPU samplers with the default top-k.
+  text on the LiteRT WebGPU sampler with the default top-k.
 
 ## 0.8.24
 
