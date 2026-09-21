@@ -397,7 +397,7 @@ void main() {
         'source_dirty': false,
         'hook_sha256': 'b' * 64,
         'native_tag': 'v0.4.0',
-        'litert_tag': '0.17.0-5',
+        'litert_tag': '0.17.0-6',
         'bridge_tag': 'fixture-bridge',
       };
       await writeBundleManifest(bundle, {'target': 'android', ...identity});

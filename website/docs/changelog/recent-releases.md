@@ -33,7 +33,9 @@ For canonical full release notes, use:
 
 * Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
 
-* Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
+* Update native LiteRT-LM to `v0.17.0-6` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
+
+* Native LiteRT-LM `v0.17.0-6` bundles the DirectX Shader Compiler pair (`dxil.dll`, `dxcompiler.dll`) in the Windows x64 runtime so explicit GPU selection initializes.
 
 * Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
 
