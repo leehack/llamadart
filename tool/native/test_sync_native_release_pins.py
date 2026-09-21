@@ -2261,7 +2261,6 @@ class CompanionChangelogUnreleasedTest(unittest.TestCase):
             "`leehack/litert-lm-native@v1`.\n",
             self.entry,
             self.repo,
-            released_version="0.0.11",
         )
         self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.11"))
 
@@ -2271,20 +2270,46 @@ class CompanionChangelogUnreleasedTest(unittest.TestCase):
             "`leehack/litert-lm-native@v1`.\n* Kept.\n\n## 0.0.11\n\n* Old.\n",
             self.entry,
             self.repo,
-            released_version="0.0.11",
         )
         self.assertEqual(
             updated,
             f"## Unreleased\n\n{self.entry}\n\n* Kept.\n\n## 0.0.11\n\n* Old.\n",
         )
 
-    def test_is_a_no_op_when_the_released_section_records_the_pin(self) -> None:
+    def test_is_a_no_op_when_a_released_section_records_the_pin(self) -> None:
         self.assertEqual(
             pins.update_companion_changelog_unreleased(
-                self.released, self.entry, self.repo, released_version="0.0.11"
+                self.released, self.entry, self.repo
             ),
             self.released,
         )
+        pinless_release = "## 0.0.12\n\n* Updated the install example.\n\n" + self.released
+        self.assertEqual(
+            pins.update_companion_changelog_unreleased(
+                pinless_release, self.entry, self.repo
+            ),
+            pinless_release,
+        )
+
+    def test_matches_a_wrapped_released_pin_entry(self) -> None:
+        wrapped = (
+            "## 0.0.11\n\n* Updated Apple SwiftPM native pin to\n"
+            "  `leehack/litert-lm-native@v2`\n  and packaged more plugins.\n"
+        )
+        self.assertEqual(
+            pins.update_companion_changelog_unreleased(wrapped, self.entry, self.repo),
+            wrapped,
+        )
+
+    def test_records_a_rollback_to_an_older_released_pin(self) -> None:
+        rolled_back = (
+            "## 0.0.12\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/litert-lm-native@v3`.\n\n" + self.released
+        )
+        updated = pins.update_companion_changelog_unreleased(
+            rolled_back, self.entry, self.repo
+        )
+        self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.12"))
 
     def test_drops_stale_unreleased_pin_already_released(self) -> None:
         stale = (
@@ -2292,9 +2317,7 @@ class CompanionChangelogUnreleasedTest(unittest.TestCase):
             "`leehack/litert-lm-native@v1`.\n\n" + self.released
         )
         self.assertEqual(
-            pins.update_companion_changelog_unreleased(
-                stale, self.entry, self.repo, released_version="0.0.11"
-            ),
+            pins.update_companion_changelog_unreleased(stale, self.entry, self.repo),
             self.released,
         )
         kept = (
@@ -2302,16 +2325,16 @@ class CompanionChangelogUnreleasedTest(unittest.TestCase):
             "`leehack/litert-lm-native@v1`.\n* Kept.\n\n" + self.released
         )
         self.assertEqual(
-            pins.update_companion_changelog_unreleased(
-                kept, self.entry, self.repo, released_version="0.0.11"
-            ),
+            pins.update_companion_changelog_unreleased(kept, self.entry, self.repo),
             "## Unreleased\n\n* Kept.\n\n" + self.released,
         )
 
-    def test_without_released_version_keeps_the_previous_behavior(self) -> None:
-        updated = pins.update_companion_changelog_unreleased(
-            self.released, self.entry, self.repo
+    def test_ignores_other_repo_pins(self) -> None:
+        other = (
+            "## 0.0.11\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/llamadart-native@v2`.\n"
         )
+        updated = pins.update_companion_changelog_unreleased(other, self.entry, self.repo)
         self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.11"))
 
 

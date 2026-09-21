@@ -3380,7 +3380,6 @@ def update_companion_package_metadata(
             changelog_text,
             f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
-            released_version=current_version,
         )
 
     return next_version
@@ -3668,26 +3667,32 @@ def update_companion_changelog_unreleased(
     changelog_text: str,
     entry: str,
     repo: str,
-    *,
-    released_version: str | None = None,
 ) -> str:
     """Records `entry` under `## Unreleased`, replacing any earlier pin entry.
 
-    When the `## {released_version}` section already records `entry`, the pin
-    is published and no `Unreleased` entry is added; a stale pin entry left
-    under `Unreleased` is removed, and an emptied section is dropped.
+    When the newest released section that records a `repo` pin already names
+    the tag in `entry`, the pin is published: no `Unreleased` entry is added, a
+    stale pin entry left under `Unreleased` is removed, and an emptied section
+    is dropped.
     """
     old_entry_pattern = re.compile(
         rf"^\* Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
-    already_released = False
-    if released_version is not None:
-        released = _changelog_section_span(changelog_text, released_version)
-        already_released = (
-            released is not None and entry in changelog_text[released[1] : released[2]]
-        )
+    pin_pattern = re.compile(
+        rf"\* Updated Apple SwiftPM native pin to[^`]*`{re.escape(repo)}@([^`]+)`"
+    )
     unreleased = _changelog_section_span(changelog_text, "Unreleased")
+    released_text = (
+        changelog_text if unreleased is None else changelog_text[unreleased[2] :]
+    )
+    target_pin = pin_pattern.search(entry)
+    published_pin = pin_pattern.search(released_text)
+    already_released = (
+        target_pin is not None
+        and published_pin is not None
+        and published_pin.group(1) == target_pin.group(1)
+    )
     if unreleased is None:
         if already_released:
             return changelog_text

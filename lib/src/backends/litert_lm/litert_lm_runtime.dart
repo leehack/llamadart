@@ -257,9 +257,10 @@ String? liteRtLmPrimaryLibraryForAbi(Abi abi) {
   };
 }
 
-/// Required libraries the runtime opens before the primary library, in
-/// [liteRtLmRequiredLibrariesForAbi] order, excluding the primary library and
-/// [liteRtLmNonPreloadedLibrariesForAbi].
+/// [liteRtLmRequiredLibrariesForAbi] minus the primary library and
+/// [liteRtLmNonPreloadedLibrariesForAbi], in the same order. The runtime opens
+/// these before the primary library when it loads a Linux or Windows extracted
+/// cache directory.
 List<String> liteRtLmCompanionLibrariesForAbi(Abi abi) {
   final primary = liteRtLmPrimaryLibraryForAbi(abi);
   if (primary == null) {
