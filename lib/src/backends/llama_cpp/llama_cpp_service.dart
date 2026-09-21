@@ -8522,9 +8522,16 @@ String _startupDiagnosticHead(String text, int length) {
 /// Returns an empty string when nothing was recorded, so platforms that never
 /// populate the buffer keep their existing message byte for byte. Control
 /// characters are flattened and credential-bearing HTTP URL components are
-/// redacted before the diagnostics are included in an exception. An entry with
-/// a control-split credentialed URL is replaced entirely rather than guessing
-/// whether the control was part of the URL or a diagnostic boundary.
+/// redacted before the diagnostics are included in an exception. Outside HTTP
+/// URLs, the token in `Bearer <token>` and the value in `<name>=<value>` are
+/// replaced with `<redacted-secret>`: `Bearer` and `<name>` match
+/// case-insensitively when not preceded by an ASCII letter or digit, `<name>`
+/// is `token`, `key`, `secret`, `password`, `api_key` or `apikey`, and the
+/// token or value is a double- or single-quoted string or a run of
+/// non-whitespace characters, for `<value>` optionally after `Bearer` and
+/// whitespace. An entry with a control-split credentialed URL is replaced
+/// entirely rather than guessing whether the control was part of the URL or a
+/// diagnostic boundary.
 ///
 /// Entries render in the given order. When they exceed [maxLength], each entry
 /// longer than half of [maxLength] is cut to that half, and entries are kept by
@@ -8641,23 +8648,68 @@ String _sanitizeStartupDiagnostic(String entry) {
       .replaceAll(controlCharacters, ' ')
       .replaceAll(RegExp(r' {2,}'), ' ')
       .trim();
-  final redactedUrls = flattenedEntry.replaceAllMapped(
-    RegExp(r'https?://(?:(?!https?://)\S)+', caseSensitive: false),
-    (match) {
-      final uri = Uri.tryParse(match.group(0)!);
-      final scheme = uri?.scheme.toLowerCase();
-      if (uri == null || (scheme != 'http' && scheme != 'https')) {
-        return '<redacted-url>';
-      }
-      return Uri(
-        scheme: scheme,
-        host: uri.host,
-        port: uri.hasPort ? uri.port : null,
-        path: uri.path,
-      ).toString();
-    },
+  final redacted = StringBuffer();
+  var start = 0;
+  for (final url in _startupDiagnosticHttpUrl.allMatches(flattenedEntry)) {
+    redacted
+      ..write(
+        _redactStartupDiagnosticSecrets(
+          flattenedEntry.substring(start, url.start),
+        ),
+      )
+      ..write(_redactStartupDiagnosticUrl(url.group(0)!));
+    start = url.end;
+  }
+  redacted.write(
+    _redactStartupDiagnosticSecrets(flattenedEntry.substring(start)),
   );
-  return redactedUrls.replaceAll(RegExp(r' {2,}'), ' ').trim();
+  return redacted.toString().replaceAll(RegExp(r' {2,}'), ' ').trim();
+}
+
+final RegExp _startupDiagnosticHttpUrl = RegExp(
+  r'https?://(?:(?!https?://)\S)+',
+  caseSensitive: false,
+);
+
+const String _startupDiagnosticSecretValue = '''(?:"[^"]*"|'[^']*'|\\S+)''';
+
+final RegExp _startupDiagnosticKeyValueSecret = RegExp(
+  r'(?<![A-Za-z0-9])(token|key|secret|password|api_key|apikey)='
+  r'(?:bearer\s+)?'
+  '$_startupDiagnosticSecretValue',
+  caseSensitive: false,
+);
+
+final RegExp _startupDiagnosticBearerToken = RegExp(
+  r'(?<![A-Za-z0-9])(bearer)\s+'
+  '$_startupDiagnosticSecretValue',
+  caseSensitive: false,
+);
+
+String _redactStartupDiagnosticUrl(String text) {
+  final uri = Uri.tryParse(text);
+  final scheme = uri?.scheme.toLowerCase();
+  if (uri == null || (scheme != 'http' && scheme != 'https')) {
+    return '<redacted-url>';
+  }
+  return Uri(
+    scheme: scheme,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+    path: uri.path,
+  ).toString();
+}
+
+String _redactStartupDiagnosticSecrets(String text) {
+  return text
+      .replaceAllMapped(
+        _startupDiagnosticKeyValueSecret,
+        (match) => '${match.group(1)}=<redacted-secret>',
+      )
+      .replaceAllMapped(
+        _startupDiagnosticBearerToken,
+        (match) => '${match.group(1)} <redacted-secret>',
+      );
 }
 
 bool _hasControlSplitSensitiveHttpUrl(String entry, RegExp controlCharacters) {

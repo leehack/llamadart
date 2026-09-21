@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
+  `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
+  native startup diagnostics with `<redacted-secret>`; URL and
+  control-character handling is unchanged
+  ([#551](https://github.com/leehack/llamadart/issues/551)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
   deletes `*_mldrift_program_cache.bin` files above the cap before each engine

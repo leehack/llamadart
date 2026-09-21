@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
+  `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
+  native startup diagnostics with `<redacted-secret>`; URL and
+  control-character handling is unchanged
+  ([#551](https://github.com/leehack/llamadart/issues/551)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
