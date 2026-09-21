@@ -19,6 +19,12 @@
   llvmpipe the runtime segfaults after model load instead of failing cleanly
   ([llamadart-native#82](https://github.com/leehack/llamadart-native/issues/82),
   [#572](https://github.com/leehack/llamadart/issues/572)).
+- Record one startup diagnostic when every candidate of a native backend
+  module family fails to load, or when a `ggml`/wrapper symbol is missing from
+  both the primary FFI asset and every fallback library. Candidates are named
+  by asset URI or file name only and loader errors are classified, never
+  quoted, so no directory or loader search path reaches the diagnostic
+  ([#416](https://github.com/leehack/llamadart/issues/416)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
