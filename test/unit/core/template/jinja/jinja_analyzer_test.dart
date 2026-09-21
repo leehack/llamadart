@@ -3,6 +3,41 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
 
+const String _toolBody = '''
+{%- for tool in tools %}{{ tool.function.name }}{% endfor %}
+{%- for message in messages %}
+{%- if message.tool_calls %}
+{%- for call in message.tool_calls %}{{ call.function.name }}{% endfor %}
+{%- else %}{{ message.content }}
+{%- endif %}
+{%- endfor %}''';
+
+const String _singleCallTemplate = '''
+{%- for message in messages %}
+{%- if message.tool_calls and message.tool_calls | length != 1 %}
+{{- raise_exception('single tool-calls only') }}
+{%- endif %}
+{%- endfor %}
+$_toolBody''';
+
+const String _strictTurnsTemplate = '''
+{%- set ns = namespace(after_call=false) %}
+{%- for message in messages %}
+{%- if message.role == 'user' and ns.after_call %}
+{{- raise_exception('user turn directly after a tool call') }}
+{%- endif %}
+{%- set ns.after_call = message.role == 'assistant' and message.tool_calls %}
+{%- endfor %}
+$_toolBody''';
+
+const String _noToolRoleTemplate = '''
+{%- for message in messages %}
+{%- if message.role == 'tool' %}
+{{- raise_exception('tool role is not supported') }}
+{%- endif %}
+{%- endfor %}
+$_toolBody''';
+
 void main() {
   group('JinjaAnalyzer', () {
     test('detects capabilities in valid Jinja template', () {
@@ -189,6 +224,66 @@ void main() {
       expect(
         messages,
         contains(contains('tools capability probe failed to render')),
+      );
+    });
+
+    test('keeps tool support when only parallel tool calls are rejected', () {
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(_singleCallTemplate);
+
+      expect(outcome.caps.supportsTools, isTrue);
+      expect(outcome.caps.supportsToolCalls, isTrue);
+      expect(outcome.caps.supportsParallelToolCalls, isFalse);
+      expect(outcome.failed, isFalse);
+      expect(
+        messages,
+        contains(
+          allOf(
+            contains('parallel-tool-calls capability probe failed to render'),
+            contains('single tool-calls only'),
+          ),
+        ),
+      );
+      expect(
+        messages,
+        isNot(contains(contains('tools capability probe failed to render'))),
+      );
+    });
+
+    test('detects tools when a user turn may not follow a tool call', () {
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(_strictTurnsTemplate);
+
+      expect(outcome.caps.supportsTools, isTrue);
+      expect(outcome.caps.supportsToolCalls, isTrue);
+      expect(outcome.caps.supportsParallelToolCalls, isTrue);
+      expect(outcome.failed, isFalse);
+      expect(messages, isEmpty);
+    });
+
+    test('detects tools when the template rejects the tool role', () {
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(_noToolRoleTemplate);
+
+      expect(outcome.caps.supportsTools, isTrue);
+      expect(outcome.caps.supportsToolCalls, isTrue);
+      expect(outcome.caps.supportsParallelToolCalls, isTrue);
+      expect(outcome.failed, isFalse);
+      expect(messages, isEmpty);
+    });
+
+    test('reports a failure when no tool conversation renders', () {
+      const template = '''
+{% for message in messages %}{{ message.content }}{% endfor %}
+{% for tool in tools %}{{ tool.function.name | no_such_filter }}{% endfor %}
+''';
+
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(template);
+
+      expect(outcome.failed, isTrue);
+      expect(
+        messages.where(
+          (message) =>
+              message.contains('tools capability probe failed to render'),
+        ),
+        hasLength(1),
       );
     });
 
