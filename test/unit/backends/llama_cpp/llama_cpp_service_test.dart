@@ -1001,7 +1001,6 @@ void main() {
         formatStartupDiagnostics(entries, maxLength: 40),
         ', startupDiagnostics=[root cause; ...; final outcome]',
       );
-      // Teardown is admitted only after every causal entry that fits.
       expect(
         formatStartupDiagnostics(entries, maxLength: 60),
         ', startupDiagnostics=['
@@ -1034,7 +1033,6 @@ void main() {
         if (maxLength == untruncated.length) {
           expect(content, untruncated);
         } else if (maxLength >= 7) {
-          // The root cause always renders, however tight the limit.
           expect(content, contains('root'), reason: reason);
           expect(content, contains('...'), reason: reason);
         }
@@ -1097,8 +1095,6 @@ void main() {
         ]);
       });
 
-      // Deterministic Windows ordering from #415: one dependency discovery
-      // failure, then a FreeLibrary failure per probed backend module.
       test('teardown overflow never evicts the discovery failure', () {
         final buffer = StartupDiagnosticBuffer();
         const discovery =
@@ -1119,7 +1115,6 @@ void main() {
         expect(entries, hasLength(StartupDiagnosticBuffer.maxEntries));
         expect(entries.first, discovery);
         expect(entries.last, outcome);
-        // Teardown rotates among itself: the newest noise is what remains.
         expect(entries[1], contains('ggml-cuda-70.dll'));
         expect(entries[entries.length - 2], contains('ggml-cuda-99.dll'));
 
@@ -1198,7 +1193,6 @@ void main() {
           expect(entry, isNot(contains('secret')));
           expect(entry, isNot(contains('X-Amz')));
         }
-        // Rendering sanitizes again; stored entries must survive unchanged.
         expect(
           formatStartupDiagnostics(entries),
           ', startupDiagnostics=[${entries.join('; ')}]',
@@ -2573,7 +2567,6 @@ void _recordStartupDiagnosticForTesting(
     service,
     '_recordStartupDiagnostic',
     <Object?>[diagnostic],
-    // Causal records take the String-only path of `onDiagnostic:` tear-offs.
     category == StartupDiagnosticCategory.causal
         ? const <Symbol, Object?>{}
         : <Symbol, Object?>{#category: category},

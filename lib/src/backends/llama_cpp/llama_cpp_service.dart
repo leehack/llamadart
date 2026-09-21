@@ -1295,10 +1295,7 @@ class LlamaCppService {
     }
   }
 
-  /// Returns best-effort startup diagnostics collected during setup.
-  ///
-  /// See [StartupDiagnosticBuffer] for the ordering, deduplication, and
-  /// retention semantics.
+  /// Returns startup diagnostics as retained by [StartupDiagnosticBuffer].
   List<String> getStartupDiagnostics() {
     return _startupDiagnostics.entries;
   }
@@ -1352,8 +1349,6 @@ class LlamaCppService {
         '`ggml_backend_score`=$score.';
   }
 
-  // [category] stays optional so `onDiagnostic:` tear-offs remain String-only;
-  // unclassified diagnostics default to causal and are never lost to noise.
   void _recordStartupDiagnostic(
     String message, {
     StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
@@ -8432,34 +8427,29 @@ class _LlamaContextWrapper {
 
 /// Retention class of a startup diagnostic.
 enum StartupDiagnosticCategory {
-  /// Library discovery or probe result: a likely root cause or final outcome.
+  /// Library discovery and backend probe results.
   causal,
 
-  /// Cleanup noise, such as a failed `FreeLibrary`, that never explains a load
-  /// failure.
+  /// Cleanup failures, such as a failed Windows `FreeLibrary`.
   teardown,
 }
 
-/// Prefix marking a teardown entry; retention and rendering classify by it.
+/// Prefix of stored teardown entries.
 const String startupTeardownDiagnosticPrefix = 'teardown: ';
 
-/// Bounded startup-diagnostic buffer that keeps root causes under noise.
+/// Bounded buffer of sanitized startup diagnostics, in recorded order.
 ///
-/// Semantics callers may rely on:
-/// - [entries] is in recorded order. Entries are stored sanitized and cut to
-///   [maxEntryLength]; teardown entries carry
+/// - Entries are cut to [maxEntryLength]; teardown entries start with
 ///   [startupTeardownDiagnosticPrefix].
-/// - An entry equal to a retained one is dropped, so the first occurrence
-///   keeps its position and "newest" below means the newest distinct entry.
-/// - When full, the oldest teardown entry is evicted first and a teardown
-///   entry never displaces a causal one. Among causal entries the first
-///   [pinnedCausalEntries] (root cause) stay and the oldest later one is
-///   evicted, so the newest (final outcome) survives as well.
+/// - A message whose stored form equals a retained entry is ignored.
+/// - At [maxEntries], recording evicts the oldest teardown entry. With none
+///   retained, a teardown message is ignored and a causal one evicts the causal
+///   entry at index [pinnedCausalEntries].
 class StartupDiagnosticBuffer {
   /// Maximum retained entries.
   static const int maxEntries = 32;
 
-  /// Earliest causal entries that are never evicted.
+  /// Leading causal entries that are never evicted.
   static const int pinnedCausalEntries = 16;
 
   /// Maximum stored characters per entry.
@@ -8475,7 +8465,6 @@ class StartupDiagnosticBuffer {
     String message, {
     StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
   }) {
-    // Sanitize before cutting: a cut raw URL could expose partial credentials.
     var entry = _sanitizeStartupDiagnostic(message);
     if (entry.isEmpty) {
       return;
@@ -8503,15 +8492,13 @@ class StartupDiagnosticBuffer {
     _entries.add(entry);
   }
 
-  /// Drops every retained entry. Test support: the service never resets it.
+  /// Removes all entries.
   void clear() => _entries.clear();
 }
 
 bool _isTeardownStartupDiagnostic(String entry) =>
     entry.startsWith(startupTeardownDiagnosticPrefix);
 
-// First [length] code units of [text] plus `...`; steps back one unit rather
-// than split a surrogate pair.
 String _startupDiagnosticHead(String text, int length) {
   var end = math.min(length, text.length);
   if (end > 0 &&
@@ -8531,15 +8518,13 @@ String _startupDiagnosticHead(String text, int length) {
 /// a control-split credentialed URL is replaced entirely rather than guessing
 /// whether the control was part of the URL or a diagnostic boundary.
 ///
-/// Entries render in the given order. When they exceed [maxLength], whole
-/// entries are admitted by priority while they fit: the first causal entry
-/// (root cause), the last causal entry (final outcome), the other causal
-/// entries oldest first, then entries carrying
-/// [startupTeardownDiagnosticPrefix]. Each run of omitted entries renders as
-/// `...`, and an entry longer than half of [maxLength] keeps only its head
-/// followed by `...`. The last causal entry is cut further to the remaining
-/// budget rather than omitted. A limit too tight even for that leaves the head
-/// of the first-ranked entry alone.
+/// Entries render in the given order. When they exceed [maxLength], each entry
+/// longer than half of [maxLength] is cut to that half, and entries are kept by
+/// priority while they fit: first causal, last causal, other causal oldest
+/// first, then those starting with [startupTeardownDiagnosticPrefix]. Each run
+/// of omitted entries renders as `...`. The last causal entry is cut to the
+/// remaining budget instead of being omitted; if even the first-ranked entry
+/// does not fit, its head is rendered alone.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   if (maxLength < 0) {
     throw RangeError.range(maxLength, 0, null, 'maxLength');
@@ -8568,8 +8553,6 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
     return marker.substring(0, maxLength);
   }
 
-  // Half the budget per entry, so an oversized root cause leaves room for the
-  // final outcome.
   final entryCap = math.max(maxLength ~/ 2, marker.length + 1);
   final texts = <String>[
     for (final entry in entries)
@@ -8590,8 +8573,6 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
   ];
   final finalOutcome = causal.length > 1 ? causal.last : -1;
 
-  // Exact rendered length: kept text plus one marker per omitted run, all
-  // joined by the separator. Everything starts omitted, as a single run.
   final kept = List<bool>.filled(entries.length, false);
   var keptCount = 0;
   var keptLength = 0;
@@ -8608,14 +8589,11 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
         (keptCount + nextRuns) * separator.length;
     if (texts[index].length > budget) {
       if (keptCount == 0) {
-        // Too tight for the top entry beside its markers: keep only its head.
         return _startupDiagnosticHead(
           entries[index],
           maxLength - marker.length,
         );
       }
-      // Two capped entries plus markers overflow: cut the final outcome to
-      // what is left instead of dropping it.
       if (index != finalOutcome || budget <= marker.length) {
         continue;
       }

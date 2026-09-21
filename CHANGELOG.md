@@ -1,11 +1,9 @@
 ## Unreleased
 
 - Keep root-cause native startup diagnostics when the buffer or the rendered
-  `startupDiagnostics=[...]` suffix overflows. Teardown noise such as a failed
-  Windows `FreeLibrary` is prefixed `teardown: ` and is evicted and omitted
-  first, repeated entries are recorded once, each entry is capped at 2048
-  characters, the first and last causal entries are kept before any other, and
-  each run of omitted entries renders as `...`
+  `startupDiagnostics=[...]` suffix overflows: teardown entries, now prefixed
+  `teardown: `, are dropped first, duplicates are recorded once, entries are
+  capped at 2048 characters, and each omitted run renders as `...`
   ([#415](https://github.com/leehack/llamadart/issues/415)).
 
 ## 0.8.24
