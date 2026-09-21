@@ -9,6 +9,9 @@ import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
+import '../worker_log_message.dart';
+
+export '../worker_log_message.dart';
 
 /// Base class for all worker requests.
 abstract class WorkerRequest {
@@ -247,6 +250,18 @@ class LogLevelRequest extends WorkerRequest {
 
   /// Creates a new [LogLevelRequest].
   LogLevelRequest(this.logLevel, super.sendPort);
+}
+
+/// Request to set the level the worker's Dart logger forwards from.
+///
+/// Ignored, but still answered with [DoneResponse], when the handshake
+/// carried no log port.
+class DartLogLevelRequest extends WorkerRequest {
+  /// The target log level.
+  final LlamaLogLevel logLevel;
+
+  /// Creates a new [DartLogLevelRequest].
+  DartLogLevelRequest(this.logLevel, super.sendPort);
 }
 
 /// Request to get the actual context size.
@@ -762,6 +777,19 @@ class WorkerHandshake {
   /// Port that receives [DoneResponse] or an initialization [ErrorResponse].
   final SendPort sendPort;
 
+  /// The main isolate's [LlamaLogger] level at spawn; the worker forwards
+  /// only records at or above it.
+  final LlamaLogLevel dartLogLevel;
+
+  /// Port that receives [WorkerLogMessage]s; `null` disables forwarding and
+  /// leaves the worker's logger untouched.
+  final SendPort? logPort;
+
   /// Creates a new [WorkerHandshake].
-  WorkerHandshake(this.initialLogLevel, this.sendPort);
+  WorkerHandshake(
+    this.initialLogLevel,
+    this.sendPort, {
+    this.dartLogLevel = LlamaLogLevel.none,
+    this.logPort,
+  });
 }

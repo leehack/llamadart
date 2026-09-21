@@ -94,6 +94,15 @@ class LlamaEngine {
   /// [level] determines which logs are output.
   /// [handler] is an optional custom callback. If null and level != none,
   /// logs are printed to stdout.
+  ///
+  /// The native llama.cpp and LiteRT-LM backends log from a worker isolate.
+  /// A worker takes [level] when it starts and forwards only records at or
+  /// above it to this isolate, where [handler] receives them with the error
+  /// as its `toString` text and the stack trace rebuilt from text. A later
+  /// call changes [handler] and the level applied here, but not what a
+  /// running worker forwards; [setDartLogLevel] and [setLogLevel] change
+  /// both. An error thrown by [handler] on a forwarded record is printed, not
+  /// thrown.
   static void configureLogging({
     LlamaLogLevel level = LlamaLogLevel.none,
     LlamaLogHandler? handler,
@@ -120,9 +129,16 @@ class LlamaEngine {
   }
 
   /// Sets only the Dart-side logger level.
+  ///
+  /// Applies [level] to this isolate's logger and, when [backend] is a
+  /// [BackendDartLogLevel], to its running worker isolate.
   Future<void> setDartLogLevel(LlamaLogLevel level) async {
     _dartLogLevel = level;
     LlamaLogger.instance.setLevel(level);
+    final candidate = backend;
+    if (candidate is BackendDartLogLevel) {
+      await (candidate as BackendDartLogLevel).setDartLogLevel(level);
+    }
   }
 
   /// Sets only the native backend logger level.

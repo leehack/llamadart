@@ -89,5 +89,11 @@ void main() {
     test('instance returns same singleton', () {
       expect(LlamaLogger.instance, same(LlamaLogger.instance));
     });
+
+    test('level reports the configured level', () {
+      expect(logger.level, LlamaLogLevel.none);
+      logger.setLevel(LlamaLogLevel.info);
+      expect(logger.level, LlamaLogLevel.info);
+    });
   });
 }

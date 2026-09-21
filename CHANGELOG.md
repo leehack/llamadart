@@ -25,6 +25,14 @@
   by asset URI or file name only and loader errors are classified, never
   quoted, so no directory or loader search path reaches the diagnostic
   ([#416](https://github.com/leehack/llamadart/issues/416)).
+- Forward llama.cpp and LiteRT-LM worker-isolate log records to the
+  `LlamaEngine.configureLogging` handler. A worker takes the Dart logger level
+  when it starts and `LlamaEngine.setDartLogLevel`/`setLogLevel` update a
+  running worker; the default `none` sends nothing and `debug` records are
+  capped at 1000 per worker. The LiteRT-LM program-cache pruning warnings are
+  now ordinary `warn` records gated by that level instead of the native log
+  level. Adds `LlamaLogger.level` and the `BackendDartLogLevel` capability
+  ([#567](https://github.com/leehack/llamadart/issues/567)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now

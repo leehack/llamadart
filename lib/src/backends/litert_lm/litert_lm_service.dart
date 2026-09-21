@@ -35,16 +35,12 @@ const String _liteRtLmVideoUnsupportedMessage =
 class LiteRtLmService {
   /// Creates a LiteRT-LM service.
   ///
-  /// [logHandler] receives the service's own log records that pass the level
-  /// set with [setLogLevel]; when omitted they are printed.
-  LiteRtLmService({
-    LiteRtLmRuntimeClient Function()? clientFactory,
-    LlamaLogHandler? logHandler,
-  }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
-       _logHandler = logHandler;
+  /// The service's own log records go through [LlamaLogger.instance] of the
+  /// isolate it runs in; [setLogLevel] controls only the native runtime.
+  LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
+    : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
-  final LlamaLogHandler? _logHandler;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -1370,22 +1366,7 @@ class LiteRtLmService {
   }
 
   void _warn(String message, [Object? error]) {
-    if (_logLevel == LlamaLogLevel.none ||
-        LlamaLogLevel.warn.index < _logLevel.index) {
-      return;
-    }
-    final record = LlamaLogRecord(
-      level: LlamaLogLevel.warn,
-      message: message,
-      time: DateTime.now(),
-      error: error,
-    );
-    final handler = _logHandler;
-    if (handler != null) {
-      handler(record);
-    } else {
-      print(record);
-    }
+    LlamaLogger.instance.warn(message, error);
   }
 
   double _millisecondsFromTps(int tokens, double? tps) {

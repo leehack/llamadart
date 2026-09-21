@@ -9,8 +9,11 @@ import 'dart:isolate';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
-import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/worker.dart';
+import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -544,6 +547,77 @@ void main() {
       },
     );
   }
+
+  group('worker log forwarding', () {
+    final records = <LlamaLogRecord>[];
+
+    setUp(records.clear);
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    test('a worker warning reaches the configureLogging handler', () async {
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.warn,
+        handler: records.add,
+      );
+      final backend = LiteRtLmBackend(workerEntryPoint: _loggingWorkerEntry);
+      try {
+        final name = await backend.getBackendName().timeout(
+          const Duration(seconds: 5),
+        );
+        expect(name, 'logging');
+        await _waitForRecords(records, 1);
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(records.single.message, 'worker warning');
+        expect(records.single.error, 'Bad state: worker detail');
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('nothing is forwarded at level none', () async {
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.none,
+        handler: records.add,
+      );
+      final backend = LiteRtLmBackend(workerEntryPoint: _loggingWorkerEntry);
+      try {
+        await backend.getBackendName().timeout(const Duration(seconds: 5));
+        LlamaLogger.instance.setLevel(LlamaLogLevel.debug);
+        await backend.getBackendName().timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(records, isEmpty);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test(
+      'engine.setDartLogLevel changes what a running worker forwards',
+      () async {
+        LlamaEngine.configureLogging(
+          level: LlamaLogLevel.none,
+          handler: records.add,
+        );
+        final backend = LiteRtLmBackend(workerEntryPoint: _loggingWorkerEntry);
+        final engine = LlamaEngine(backend);
+        try {
+          await backend.getBackendName().timeout(const Duration(seconds: 5));
+          await engine
+              .setDartLogLevel(LlamaLogLevel.warn)
+              .timeout(const Duration(seconds: 5));
+          await backend.getBackendName().timeout(const Duration(seconds: 5));
+          await _waitForRecords(records, 1);
+          expect(records.single.message, 'worker warning');
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+  });
 
   test('worker exit before handshake settles startup', () async {
     final backend = LiteRtLmBackend(workerEntryPoint: _exitBeforeHandshake);
@@ -1311,6 +1385,31 @@ class _FakeLiteRtLmWorker {
 }
 
 void _exitBeforeHandshake(SendPort port) => Isolate.exit();
+
+void _loggingWorkerEntry(SendPort port) {
+  runLiteRtLmWorkerForTesting(port, _LoggingLiteRtLmService());
+}
+
+Future<void> _waitForRecords(List<LlamaLogRecord> records, int count) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (records.length < count && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+class _LoggingLiteRtLmService extends LiteRtLmService {
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  String getActiveBackendName() {
+    LlamaLogger.instance.warn('worker warning', StateError('worker detail'));
+    return 'logging';
+  }
+
+  @override
+  void dispose() {}
+}
 
 void _exitingWorker(SendPort port) => _terminatingWorker(port, crash: false);
 

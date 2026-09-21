@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../core/exceptions.dart';
+import '../../core/llama_logger.dart';
 import '../native_token_stream_batcher.dart';
 import 'llama_cpp_service.dart';
 import 'worker_messages.dart';
@@ -73,6 +74,7 @@ void runLlamaWorkerForTesting(
 
   var isInitialized = false;
   var shuttingDown = false;
+  var forwardsLogs = false;
 
   // Tracks the currently running generation so dispose can wait for it to emit
   // its terminal response (and stop reading the shared native cancel token)
@@ -151,6 +153,11 @@ void runLlamaWorkerForTesting(
 
     // Handshake
     if (message is WorkerHandshake) {
+      final logPort = message.logPort;
+      if (logPort != null) {
+        installWorkerLogForwarding(logPort, message.dartLogLevel);
+        forwardsLogs = true;
+      }
       try {
         service.setLogLevel(message.initialLogLevel);
         if (!isInitialized) {
@@ -201,6 +208,12 @@ void runLlamaWorkerForTesting(
 
           case LogLevelRequest():
             service.setLogLevel(message.logLevel);
+            message.sendPort.send(DoneResponse());
+
+          case DartLogLevelRequest():
+            if (forwardsLogs) {
+              LlamaLogger.instance.setLevel(message.logLevel);
+            }
             message.sendPort.send(DoneResponse());
 
           case ModelFreeRequest():
