@@ -19,6 +19,7 @@ class WebAutoBackend
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendGrammarConstraintsSupport,
+        BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
@@ -76,6 +77,15 @@ class WebAutoBackend
           .supportsGrammarConstraints;
     }
     return true;
+  }
+
+  @override
+  bool get defersEngineCreation {
+    final delegate = _delegate;
+    if (delegate is BackendDeferredEngineCreation) {
+      return (delegate as BackendDeferredEngineCreation).defersEngineCreation;
+    }
+    return false;
   }
 
   @override
