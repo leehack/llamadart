@@ -24,9 +24,7 @@ void main() {
     'Windows smoke retries an earlier DLL after a later dependency loads',
     () {
       final calls = <String>[];
-      final inventory = liteRtLmRequiredLibrariesForAbi(
-        Abi.windowsX64,
-      ).where((name) => name != 'LiteRtLm.dll').toList();
+      final inventory = liteRtLmCompanionLibrariesForAbi(Abi.windowsX64);
       final dependent = inventory.first;
       final dependency = inventory.last;
       var dependencyLoaded = false;
@@ -48,6 +46,36 @@ void main() {
       expect(opened.companions, hasLength(5));
     },
   );
+
+  test('Windows smoke requires the DXC pair without opening it', () {
+    final calls = <String>[];
+    openLiteRtLmSmokeLibrary(
+      directory: directory.path,
+      abi: Abi.windowsX64,
+      openLibrary: (library) {
+        calls.add(path.basename(library));
+        return DynamicLibrary.process();
+      },
+    );
+    expect(calls, isNot(anyElement(isIn(['dxcompiler.dll', 'dxil.dll']))));
+    expect(calls, hasLength(6));
+
+    File(path.join(directory.path, 'dxil.dll')).deleteSync();
+    expect(
+      () => openLiteRtLmSmokeLibrary(
+        directory: directory.path,
+        abi: Abi.windowsX64,
+        openLibrary: (_) => fail('must validate inventory first'),
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('dxil.dll'),
+        ),
+      ),
+    );
+  });
 
   test('missing required DLL fails before opening any libraries', () {
     File(path.join(directory.path, 'libwebgpu_dawn.dll')).deleteSync();

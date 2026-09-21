@@ -393,6 +393,8 @@ void main() {
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.windowsX64), const <String>[
       'LiteRtLm.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
@@ -400,6 +402,61 @@ void main() {
       'libwebgpu_dawn.dll',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
+  });
+
+  test('Windows DXC pair is required but never preloaded', () {
+    expect(
+      liteRtLmNonPreloadedLibrariesForAbi(Abi.windowsX64),
+      unorderedEquals(const ['dxcompiler.dll', 'dxil.dll']),
+    );
+    for (final abi in Abi.values) {
+      expect(
+        liteRtLmRequiredLibrariesForAbi(abi),
+        containsAll(liteRtLmNonPreloadedLibrariesForAbi(abi)),
+        reason: '$abi',
+      );
+      if (abi != Abi.windowsX64) {
+        expect(
+          liteRtLmNonPreloadedLibrariesForAbi(abi),
+          isEmpty,
+          reason: '$abi',
+        );
+      }
+    }
+    expect(liteRtLmCompanionLibrariesForAbi(Abi.windowsX64), const <String>[
+      'libGemmaModelConstraintProvider.dll',
+      'libLiteRt.dll',
+      'libLiteRtTopKWebGpuSampler.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
+    ]);
+  });
+
+  test('companion libraries are the required list minus the primary', () {
+    for (final abi in const [
+      Abi.macosArm64,
+      Abi.macosX64,
+      Abi.linuxArm64,
+      Abi.linuxX64,
+      Abi.windowsX64,
+    ]) {
+      final primary = liteRtLmPrimaryLibraryForAbi(abi)!;
+      final required = liteRtLmRequiredLibrariesForAbi(abi);
+      expect(required, contains(primary), reason: '$abi');
+      expect(
+        liteRtLmCompanionLibrariesForAbi(abi),
+        required
+            .where((library) => library != primary)
+            .where(
+              (library) =>
+                  !liteRtLmNonPreloadedLibrariesForAbi(abi).contains(library),
+            )
+            .toList(),
+        reason: '$abi',
+      );
+    }
+    expect(liteRtLmPrimaryLibraryForAbi(Abi.androidArm64), isNull);
+    expect(liteRtLmCompanionLibrariesForAbi(Abi.androidArm64), isEmpty);
   });
 
   test('macOS LiteRT-LM app framework validation follows runtime ABI', () {

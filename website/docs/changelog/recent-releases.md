@@ -17,6 +17,11 @@ For canonical full release notes, use:
   the native LiteRT-LM backend finishes `loadModel`, since it creates the
   engine lazily
   ([#569](https://github.com/leehack/llamadart/issues/569)).
+- Require `dxcompiler.dll` and `dxil.dll` in the Windows x64 LiteRT-LM runtime
+  cache and desktop validation bundle checks, matching the hook's v0.17.0-6
+  inventory. The runtime does not preload them: Dawn's D3D12 backend loads the
+  pair at GPU engine creation
+  ([#570](https://github.com/leehack/llamadart/issues/570)).
 - Record one startup diagnostic when every candidate of a native backend
   module family fails to load, or when a `ggml`/wrapper symbol is missing from
   both the primary FFI asset and every fallback library. Candidates are named
