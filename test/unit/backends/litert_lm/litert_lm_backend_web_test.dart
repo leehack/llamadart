@@ -108,6 +108,48 @@ void main() {
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
   });
 
+  test('sends greedy top-k 1 to the JS sampler at temperature 0', () async {
+    JSObject? lastConversationConfig;
+    _installFakeEngine(
+      onCreateConversation: (config) {
+        lastConversationConfig = config;
+      },
+      chunks: <JSAny?>[_messageChunk('ok')],
+    );
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+      final contextHandle = await backend.contextCreate(
+        modelHandle,
+        const ModelParams(),
+      );
+      await backend
+          .generate(
+            contextHandle,
+            'Say ok',
+            const GenerationParams(maxTokens: 8, temp: 0, topK: 40, topP: 0.9),
+          )
+          .toList();
+
+      final sessionConfig =
+          lastConversationConfig!.getProperty('sessionConfig'.toJS) as JSObject;
+      final sampler =
+          sessionConfig.getProperty('samplerParams'.toJS) as JSObject;
+      expect((sampler.getProperty('k'.toJS) as JSNumber).toDartInt, 1);
+      expect(
+        (sampler.getProperty('temperature'.toJS) as JSNumber).toDartDouble,
+        0,
+      );
+      expect((sampler.getProperty('p'.toJS) as JSNumber).toDartDouble, 0.9);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('loads cached .litertlm URL through CacheStorage Blob', () async {
     const cacheName = 'llamadart-webgpu-model-cache-v1';
     const modelUrl = 'https://example.com/gemma-web.litertlm?download=true';
