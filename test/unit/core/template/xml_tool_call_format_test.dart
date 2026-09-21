@@ -177,7 +177,6 @@ void main() {
       ),
     ], XmlToolCallFormat.qwen3Coder);
 
-    expect(grammar, isNotNull);
     expect(grammar, contains('qwen3-coder-value ::= raw-text | value'));
     expect(
       grammar,
