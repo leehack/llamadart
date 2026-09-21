@@ -148,6 +148,35 @@ void main() {
       );
     });
 
+    test('caches a detection whose parallel tool-call probe threw', () {
+      const template = '''
+{%- for message in messages %}
+{%- if message.tool_calls and message.tool_calls | length != 1 %}
+{{- raise_exception('single tool-calls only') }}
+{%- endif %}
+{%- for call in message.tool_calls or [] %}{{ call.function.name }}{% endfor %}
+{{- message.content }}
+{%- endfor %}
+{%- for tool in tools %}{{ tool.function.name }}{% endfor %}''';
+
+      final first = TemplateCaps.detect(template);
+      final second = TemplateCaps.detect(template);
+
+      expect(first.supportsTools, isTrue);
+      expect(first.supportsToolCalls, isTrue);
+      expect(first.supportsParallelToolCalls, isFalse);
+      expect(second.toMap(), first.toMap());
+      expect(TemplateCapsCache.shared.length, 1);
+      expect(
+        messages.where(
+          (message) => message.contains(
+            'parallel-tool-calls capability probe failed to render',
+          ),
+        ),
+        hasLength(1),
+      );
+    });
+
     test('does not cache the regex fallback for unparseable source', () {
       const template = "{% if message['role'] == 'system' %}";
 
