@@ -989,8 +989,6 @@ void main() {
       );
     });
 
-    // Was 'truncation keeps the newest text': tail retention let teardown
-    // noise crowd out the root cause (#415).
     test('truncation keeps the root cause and final outcome', () {
       final entries = <String>[
         'root cause',
@@ -1052,6 +1050,34 @@ void main() {
       expect(
         formatted,
         ', startupDiagnostics=[oldest:${'a' * 10}...; newest failure]',
+      );
+    });
+
+    test('two oversized causal entries both keep their heads', () {
+      final buffer = StartupDiagnosticBuffer()
+        ..record('ROOT:${'r' * 5000}')
+        ..record('noise', category: StartupDiagnosticCategory.teardown)
+        ..record('FINAL:${'f' * 5000}');
+
+      final formatted = formatStartupDiagnostics(buffer.entries);
+
+      expect(formatted, startsWith(', startupDiagnostics=[ROOT:rrr'));
+      expect(formatted, contains('rrr...; ...; FINAL:fff'));
+      expect(formatted, endsWith('fff...]'));
+      expect(formatted, hasLength(', startupDiagnostics=[]'.length + 4096));
+    });
+
+    test('cuts never split a surrogate pair', () {
+      final buffer = StartupDiagnosticBuffer()
+        ..record('${'a' * 2044}${'\u{1F600}' * 10}');
+
+      expect(buffer.entries.single, '${'a' * 2044}...');
+      expect(
+        formatStartupDiagnostics(<String>[
+          'a\u{1F600}${'b' * 20}',
+          'c',
+        ], maxLength: 10),
+        ', startupDiagnostics=[a...; c]',
       );
     });
 
@@ -1126,6 +1152,26 @@ void main() {
           for (var i = 0; i < StartupDiagnosticBuffer.pinnedCausalEntries; i++)
             'probe $i',
           for (var i = 24; i < 40; i++) 'probe $i',
+        ]);
+      });
+
+      test('a failed Windows module release records as teardown', () {
+        final service = LlamaCppService();
+        for (final error in <Object?>[null, 'error code 5']) {
+          _invokePrivateForTesting<void>(
+            service,
+            '_recordWindowsBackendModuleReleaseFailure',
+            <Object?>[r'C:\app\ggml-cuda.dll', 'cuda', error],
+          );
+        }
+
+        expect(service.getStartupDiagnostics(), <String>[
+          '${startupTeardownDiagnosticPrefix}Failed to release temporary '
+              r'Windows backend module preload for `C:\app\ggml-cuda.dll` '
+              '(`cuda`).',
+          '${startupTeardownDiagnosticPrefix}Failed to release temporary '
+              r'Windows backend module preload for `C:\app\ggml-cuda.dll` '
+              '(`cuda`): error code 5',
         ]);
       });
 
@@ -1334,8 +1380,6 @@ void main() {
         );
       });
 
-      // Was '... bounded newest tail': the oldest (root-cause) entry is now cut
-      // instead of dropped, and teardown noise is what gets omitted (#415).
       test('draft-model failure uses its label and bounded root cause', () {
         final service = _warmedLoadFailureService(corruptGgufPath);
         _recordStartupDiagnosticForTesting(service, 'oldest:${'a' * 5000}');
@@ -2529,7 +2573,7 @@ void _recordStartupDiagnosticForTesting(
     service,
     '_recordStartupDiagnostic',
     <Object?>[diagnostic],
-    // Causal records take the String-only path the `onDiagnostic:` tear-offs use.
+    // Causal records take the String-only path of `onDiagnostic:` tear-offs.
     category == StartupDiagnosticCategory.causal
         ? const <Symbol, Object?>{}
         : <Symbol, Object?>{#category: category},

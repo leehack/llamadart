@@ -2268,19 +2268,23 @@ class LlamaCppService {
       final freeLibrary = kernel32
           .lookupFunction<_FreeLibraryNative, _FreeLibraryDart>('FreeLibrary');
       if (freeLibrary(handle) == 0) {
-        _recordStartupDiagnostic(
-          'Failed to release temporary Windows backend module preload for '
-          '`$libraryPath` (`$backend`).',
-          category: StartupDiagnosticCategory.teardown,
-        );
+        _recordWindowsBackendModuleReleaseFailure(libraryPath, backend);
       }
     } catch (error) {
-      _recordStartupDiagnostic(
-        'Failed to release temporary Windows backend module preload for '
-        '`$libraryPath` (`$backend`): $error',
-        category: StartupDiagnosticCategory.teardown,
-      );
+      _recordWindowsBackendModuleReleaseFailure(libraryPath, backend, error);
     }
+  }
+
+  void _recordWindowsBackendModuleReleaseFailure(
+    String libraryPath,
+    String backend, [
+    Object? error,
+  ]) {
+    _recordStartupDiagnostic(
+      'Failed to release temporary Windows backend module preload for '
+      '`$libraryPath` (`$backend`)${error == null ? '.' : ': $error'}',
+      category: StartupDiagnosticCategory.teardown,
+    );
   }
 
   void _preloadWindowsBackendDependencies(String backend) {
@@ -8446,7 +8450,7 @@ const String startupTeardownDiagnosticPrefix = 'teardown: ';
 ///   [maxEntryLength]; teardown entries carry
 ///   [startupTeardownDiagnosticPrefix].
 /// - An entry equal to a retained one is dropped, so the first occurrence
-///   keeps its position.
+///   keeps its position and "newest" below means the newest distinct entry.
 /// - When full, the oldest teardown entry is evicted first and a teardown
 ///   entry never displaces a causal one. Among causal entries the first
 ///   [pinnedCausalEntries] (root cause) stay and the oldest later one is
@@ -8481,7 +8485,7 @@ class StartupDiagnosticBuffer {
       entry = '$startupTeardownDiagnosticPrefix$entry';
     }
     if (entry.length > maxEntryLength) {
-      entry = '${entry.substring(0, maxEntryLength - 3)}...';
+      entry = _startupDiagnosticHead(entry, maxEntryLength - 3);
     }
     if (_entries.contains(entry)) {
       return;
@@ -8499,12 +8503,24 @@ class StartupDiagnosticBuffer {
     _entries.add(entry);
   }
 
-  /// Drops every retained entry.
+  /// Drops every retained entry. Test support: the service never resets it.
   void clear() => _entries.clear();
 }
 
 bool _isTeardownStartupDiagnostic(String entry) =>
     entry.startsWith(startupTeardownDiagnosticPrefix);
+
+// First [length] code units of [text] plus `...`; steps back one unit rather
+// than split a surrogate pair.
+String _startupDiagnosticHead(String text, int length) {
+  var end = math.min(length, text.length);
+  if (end > 0 &&
+      end < text.length &&
+      (text.codeUnitAt(end - 1) & 0xFC00) == 0xD800) {
+    end -= 1;
+  }
+  return '${text.substring(0, end)}...';
+}
 
 /// Renders startup diagnostics as a suffix for a load-failure message.
 ///
@@ -8521,8 +8537,9 @@ bool _isTeardownStartupDiagnostic(String entry) =>
 /// entries oldest first, then entries carrying
 /// [startupTeardownDiagnosticPrefix]. Each run of omitted entries renders as
 /// `...`, and an entry longer than half of [maxLength] keeps only its head
-/// followed by `...`. A limit too tight even for that leaves the head of the
-/// first-ranked entry alone.
+/// followed by `...`. The last causal entry is cut further to the remaining
+/// budget rather than omitted. A limit too tight even for that leaves the head
+/// of the first-ranked entry alone.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   if (maxLength < 0) {
     throw RangeError.range(maxLength, 0, null, 'maxLength');
@@ -8551,13 +8568,13 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
     return marker.substring(0, maxLength);
   }
 
-  // Half the budget per entry, so an oversized root cause cannot starve the
+  // Half the budget per entry, so an oversized root cause leaves room for the
   // final outcome.
   final entryCap = math.max(maxLength ~/ 2, marker.length + 1);
   final texts = <String>[
     for (final entry in entries)
       entry.length > entryCap
-          ? '${entry.substring(0, entryCap - marker.length)}$marker'
+          ? _startupDiagnosticHead(entry, entryCap - marker.length)
           : entry,
   ];
   final causal = <int>[
@@ -8571,6 +8588,7 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
     for (var i = 0; i < entries.length; i++)
       if (_isTeardownStartupDiagnostic(entries[i])) i,
   ];
+  final finalOutcome = causal.length > 1 ? causal.last : -1;
 
   // Exact rendered length: kept text plus one marker per omitted run, all
   // joined by the separator. Everything starts omitted, as a single run.
@@ -8583,23 +8601,32 @@ String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
     final splitsRight = index + 1 < entries.length && !kept[index + 1];
     final nextRuns =
         omittedRuns - 1 + (splitsLeft ? 1 : 0) + (splitsRight ? 1 : 0);
-    final nextLength = keptLength + texts[index].length;
-    final rendered =
-        nextLength +
-        nextRuns * marker.length +
+    final budget =
+        maxLength -
+        keptLength -
+        nextRuns * marker.length -
         (keptCount + nextRuns) * separator.length;
-    if (rendered > maxLength) {
+    if (texts[index].length > budget) {
       if (keptCount == 0) {
         // Too tight for the top entry beside its markers: keep only its head.
-        final head = entries[index];
-        final headLength = math.min(head.length, maxLength - marker.length);
-        return '${head.substring(0, headLength)}$marker';
+        return _startupDiagnosticHead(
+          entries[index],
+          maxLength - marker.length,
+        );
       }
-      continue;
+      // Two capped entries plus markers overflow: cut the final outcome to
+      // what is left instead of dropping it.
+      if (index != finalOutcome || budget <= marker.length) {
+        continue;
+      }
+      texts[index] = _startupDiagnosticHead(
+        texts[index],
+        budget - marker.length,
+      );
     }
     kept[index] = true;
     keptCount += 1;
-    keptLength = nextLength;
+    keptLength += texts[index].length;
     omittedRuns = nextRuns;
   }
 
