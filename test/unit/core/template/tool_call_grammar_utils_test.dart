@@ -106,7 +106,7 @@ void main() {
     );
   });
 
-  test('buildWrappedArrayGrammar applies wrappers and id constraints', () {
+  test('buildWrappedArrayGrammar applies wrappers and requires the id key', () {
     final tools = [
       ToolDefinition(
         name: 'weather',
@@ -121,7 +121,6 @@ void main() {
       prefix: '[TOOL_CALLS]',
       suffix: '',
       idKey: 'id',
-      idPattern: r'^[a-z]{3}$',
       allowParallelToolCalls: false,
     );
     final parallel = ToolCallGrammarUtils.buildWrappedArrayGrammar(
@@ -129,16 +128,34 @@ void main() {
       prefix: '[TOOL_CALLS]',
       suffix: '',
       idKey: 'id',
-      idPattern: r'^[a-z]{3}$',
       allowParallelToolCalls: true,
     );
 
-    expect(noParallel, isNotNull);
-    expect(noParallel, contains('root ::= "[TOOL_CALLS]"'));
-    expect(noParallel, contains('weather'));
-    expect(noParallel, contains('id'));
-    expect(parallel, isNotNull);
-    expect(noParallel, isNot(equals(parallel)));
+    expect(
+      noParallel,
+      contains('root ::= "[TOOL_CALLS]" "[" space root-item  "]" space'),
+    );
+    expect(
+      parallel,
+      contains(
+        'root ::= "[TOOL_CALLS]" "[" space root-item ("," space root-item)* '
+        '"]" space',
+      ),
+    );
+    for (final grammar in [noParallel, parallel]) {
+      expect(
+        grammar,
+        contains(
+          'root-item ::= "{" space root-item-name-kv "," space '
+          'root-item-arguments-kv "," space root-item-id-kv "}" space',
+        ),
+      );
+      expect(grammar, contains('root-item-name ::= "\\"weather\\"" space'));
+      expect(
+        grammar,
+        contains('root-item-id-kv ::= "\\"id\\"" space ":" space string'),
+      );
+    }
   });
 
   test('buildWrappedObjectGrammar supports multiple tools and key aliases', () {
@@ -165,7 +182,6 @@ void main() {
       argumentsKey: 'params',
     );
 
-    expect(grammar, isNotNull);
     expect(grammar, contains('root ::= "<tool>"'));
     expect(grammar, contains('"</tool>"'));
     expect(grammar, contains('weather'));
