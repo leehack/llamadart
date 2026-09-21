@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
+  the native clamp
+  ([#548](https://github.com/leehack/llamadart/issues/548)).
 - Forward llama.cpp and LiteRT-LM worker-isolate log records to the
   `LlamaEngine.configureLogging` handler. A worker takes the Dart logger level
   when it starts and `LlamaEngine.setDartLogLevel`/`setLogLevel` update a
