@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature
+  `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
+  text on the LiteRT WebGPU sampler with the default top-k.
 - Keep root-cause native startup diagnostics when the buffer or the rendered
   `startupDiagnostics=[...]` suffix overflows: teardown entries, now prefixed
   `teardown: `, are dropped first, duplicates are recorded once, entries are
