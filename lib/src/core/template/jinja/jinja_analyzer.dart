@@ -22,6 +22,16 @@ class JinjaAnalyzer {
 
   /// Analyzes the [source] template and returns detected [TemplateCaps].
   static TemplateCaps analyze(String source) {
+    return analyzeWithOutcome(source).caps;
+  }
+
+  /// Analyzes the [source] template like [analyze] and reports whether any
+  /// step failed.
+  ///
+  /// `failed` is `true` when analysis threw and the regex fallback
+  /// produced `caps`, when template construction threw, or when any execution
+  /// probe render threw. Otherwise it is `false`.
+  static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(String source) {
     try {
       final lexer = Lexer(source);
       final result = lexer.tokenize();
@@ -32,14 +42,17 @@ class JinjaAnalyzer {
       return _probeWithExecution(source, astCaps);
     } catch (e) {
       // Fallback to regex if parsing fails (e.g. invalid syntax)
-      return TemplateCaps.detectRegex(source);
+      return (caps: TemplateCaps.detectRegex(source), failed: true);
     }
   }
 
-  static TemplateCaps _probeWithExecution(String source, TemplateCaps astCaps) {
+  static ({TemplateCaps caps, bool failed}) _probeWithExecution(
+    String source,
+    TemplateCaps astCaps,
+  ) {
     final template = _createTemplate(source);
     if (template == null) {
-      return astCaps;
+      return (caps: astCaps, failed: true);
     }
 
     var supportsSystemRole = astCaps.supportsSystemRole;
@@ -156,14 +169,21 @@ class JinjaAnalyzer {
       supportsParallelToolCalls = call1Used && call2Used;
     }
 
-    return TemplateCaps(
-      supportsSystemRole: supportsSystemRole,
-      supportsToolCalls: supportsToolCalls,
-      supportsTools: supportsTools,
-      supportsParallelToolCalls: supportsParallelToolCalls,
-      supportsStringContent: supportsStringContent,
-      supportsTypedContent: supportsTypedContent,
-      supportsThinking: astCaps.supportsThinking,
+    return (
+      caps: TemplateCaps(
+        supportsSystemRole: supportsSystemRole,
+        supportsToolCalls: supportsToolCalls,
+        supportsTools: supportsTools,
+        supportsParallelToolCalls: supportsParallelToolCalls,
+        supportsStringContent: supportsStringContent,
+        supportsTypedContent: supportsTypedContent,
+        supportsThinking: astCaps.supportsThinking,
+      ),
+      failed:
+          stringRender == null ||
+          typedRender == null ||
+          systemRender == null ||
+          toolRender == null,
     );
   }
 

@@ -26,6 +26,11 @@ For canonical full release notes, use:
   `LiteRtLmRuntimeClient.createConversation` placeholder, so callers passing
   it compile for Web as they do on native
   ([#549](https://github.com/leehack/llamadart/issues/549)).
+- Cache `TemplateCaps.detect` results in a per-isolate LRU keyed by exact
+  template source and bounded at 16 entries, so repeated chat-template renders
+  skip both Jinja parses and all four capability probes. Detections in which
+  any analysis step failed are not cached and keep logging on every call
+  ([#448](https://github.com/leehack/llamadart/issues/448)).
 
 ## 0.8.24
 
