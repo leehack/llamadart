@@ -181,10 +181,14 @@ class XmlToolCallFormat {
 }
 
 /// Builds a simple XML-style tool-call grammar for [format].
+///
+/// When [parallelToolCalls] is false, the [XmlToolCallFormat.qwen3Coder] root
+/// admits exactly one tool call. Other formats ignore [parallelToolCalls].
 String? buildXmlToolCallGrammar(
   List<ToolDefinition>? tools,
-  XmlToolCallFormat format,
-) {
+  XmlToolCallFormat format, {
+  bool parallelToolCalls = true,
+}) {
   if (tools == null || tools.isEmpty) {
     return null;
   }
@@ -228,8 +232,9 @@ obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? 
     // activation replays that exact trigger text, so whitespace must be valid
     // in the grammar rather than relying on eager constrained decoding to
     // remove it.
+    final toolCalls = parallelToolCalls ? 'tool-call+' : 'tool-call';
     return '''
-root ::= ${_literal(format.scopeStart)} xml-space tool-call+ ${_literal(format.scopeEnd)} xml-space
+root ::= ${_literal(format.scopeStart)} xml-space $toolCalls ${_literal(format.scopeEnd)} xml-space
 tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} qwen3-coder-value ${_literal(format.valEnd)} xml-space
 tool-name ::= $toolNameRule

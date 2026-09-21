@@ -315,4 +315,53 @@ void main() {
     expect(grammar, contains('arguments ::= (param (", " param)*)?'));
     expect(grammar, isNot(contains('arguments ::= (param (", " param)*)? ""')));
   });
+
+  test('parallelToolCalls only changes the qwen3Coder root', () {
+    final tools = <ToolDefinition>[
+      ToolDefinition(
+        name: 'sample',
+        description: 'Samples values.',
+        parameters: <ToolParam>[ToolParam.string('value', required: true)],
+        handler: (_) async => null,
+      ),
+    ];
+
+    for (final format in <XmlToolCallFormat>[
+      XmlToolCallFormat.minicpm5,
+      XmlToolCallFormat.xiaomiMimo,
+      XmlToolCallFormat.generic,
+    ]) {
+      final unset = buildXmlToolCallGrammar(tools, format);
+      expect(unset, contains('tool-call+'));
+      expect(
+        buildXmlToolCallGrammar(tools, format, parallelToolCalls: false),
+        equals(unset),
+      );
+      expect(
+        buildXmlToolCallGrammar(tools, format, parallelToolCalls: true),
+        equals(unset),
+      );
+    }
+
+    final repeated = buildXmlToolCallGrammar(
+      tools,
+      XmlToolCallFormat.qwen3Coder,
+    );
+    expect(
+      buildXmlToolCallGrammar(
+        tools,
+        XmlToolCallFormat.qwen3Coder,
+        parallelToolCalls: true,
+      ),
+      equals(repeated),
+    );
+    expect(
+      buildXmlToolCallGrammar(
+        tools,
+        XmlToolCallFormat.qwen3Coder,
+        parallelToolCalls: false,
+      ),
+      equals(repeated!.replaceFirst('tool-call+', 'tool-call')),
+    );
+  });
 }
