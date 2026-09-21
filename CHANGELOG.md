@@ -1,3 +1,12 @@
+## Unreleased
+
+- Keep root-cause native startup diagnostics when the buffer or the rendered
+  `startupDiagnostics=[...]` suffix overflows. Teardown noise such as a failed
+  Windows `FreeLibrary` is prefixed `teardown: ` and is evicted and omitted
+  first, repeated entries are recorded once, the first and last causal entries
+  render before any other, and each run of omitted entries renders as `...`
+  ([#415](https://github.com/leehack/llamadart/issues/415)).
+
 ## 0.8.24
 
 - Align native `leehack/llamadart-native@v0.4.1` on upstream

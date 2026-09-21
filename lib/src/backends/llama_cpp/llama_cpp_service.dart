@@ -579,7 +579,6 @@ class LlamaCppService {
     'LLAMADART_ANDROID_VULKAN_ALLOW_FLASH_ATTN',
     defaultValue: false,
   );
-  static const int _maxStartupDiagnostics = 32;
   static const int _loadWithAlteredSearchPath = 0x00000008;
   static const int _semFailCriticalErrors = 0x0001;
   static const Map<String, int> _androidCpuVariantPriority = <String, int>{
@@ -668,7 +667,7 @@ class LlamaCppService {
   _TtsApi? _ttsApi;
   Pointer<llama_dart_tts> _activeTts = nullptr;
   int? _activeTtsContextHandle;
-  final List<String> _startupDiagnostics = <String>[];
+  final StartupDiagnosticBuffer _startupDiagnostics = StartupDiagnosticBuffer();
 
   // --- Internal State ---
   final Map<int, _LlamaModelWrapper> _models = {};
@@ -1296,9 +1295,12 @@ class LlamaCppService {
     }
   }
 
-  /// Returns recent best-effort startup diagnostics collected during setup.
+  /// Returns best-effort startup diagnostics collected during setup.
+  ///
+  /// See [StartupDiagnosticBuffer] for the ordering, deduplication, and
+  /// retention semantics.
   List<String> getStartupDiagnostics() {
-    return List<String>.unmodifiable(_startupDiagnostics);
+    return _startupDiagnostics.entries;
   }
 
   /// Returns whether a backend score allows a dynamically loaded module.
@@ -1350,14 +1352,13 @@ class LlamaCppService {
         '`ggml_backend_score`=$score.';
   }
 
-  void _recordStartupDiagnostic(String message) {
-    if (message.isEmpty) {
-      return;
-    }
-    if (_startupDiagnostics.length >= _maxStartupDiagnostics) {
-      _startupDiagnostics.removeAt(0);
-    }
-    _startupDiagnostics.add(message);
+  // [category] stays optional so `onDiagnostic:` tear-offs remain String-only;
+  // unclassified diagnostics default to causal and are never lost to noise.
+  void _recordStartupDiagnostic(
+    String message, {
+    StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
+  }) {
+    _startupDiagnostics.record(message, category: category);
   }
 
   /// Resolves Windows backend-module directory for dynamic backend loading.
@@ -2270,12 +2271,14 @@ class LlamaCppService {
         _recordStartupDiagnostic(
           'Failed to release temporary Windows backend module preload for '
           '`$libraryPath` (`$backend`).',
+          category: StartupDiagnosticCategory.teardown,
         );
       }
     } catch (error) {
       _recordStartupDiagnostic(
         'Failed to release temporary Windows backend module preload for '
         '`$libraryPath` (`$backend`): $error',
+        category: StartupDiagnosticCategory.teardown,
       );
     }
   }
@@ -8423,16 +8426,103 @@ class _LlamaContextWrapper {
   }
 }
 
+/// Retention class of a startup diagnostic.
+enum StartupDiagnosticCategory {
+  /// Library discovery or probe result: a likely root cause or final outcome.
+  causal,
+
+  /// Cleanup noise, such as a failed `FreeLibrary`, that never explains a load
+  /// failure.
+  teardown,
+}
+
+/// Prefix marking a teardown entry; retention and rendering classify by it.
+const String startupTeardownDiagnosticPrefix = 'teardown: ';
+
+/// Bounded startup-diagnostic buffer that keeps root causes under noise.
+///
+/// Semantics callers may rely on:
+/// - [entries] is in recorded order. Entries are stored sanitized and cut to
+///   [maxEntryLength]; teardown entries carry
+///   [startupTeardownDiagnosticPrefix].
+/// - An entry equal to a retained one is dropped, so the first occurrence
+///   keeps its position.
+/// - When full, the oldest teardown entry is evicted first and a teardown
+///   entry never displaces a causal one. Among causal entries the first
+///   [pinnedCausalEntries] (root cause) stay and the oldest later one is
+///   evicted, so the newest (final outcome) survives as well.
+class StartupDiagnosticBuffer {
+  /// Maximum retained entries.
+  static const int maxEntries = 32;
+
+  /// Earliest causal entries that are never evicted.
+  static const int pinnedCausalEntries = 16;
+
+  /// Maximum stored characters per entry.
+  static const int maxEntryLength = 2048;
+
+  final List<String> _entries = <String>[];
+
+  /// Retained entries in recorded order.
+  List<String> get entries => List<String>.unmodifiable(_entries);
+
+  /// Records [message] under [category].
+  void record(
+    String message, {
+    StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
+  }) {
+    // Sanitize before cutting: a cut raw URL could expose partial credentials.
+    var entry = _sanitizeStartupDiagnostic(message);
+    if (entry.isEmpty) {
+      return;
+    }
+    final isTeardown = category == StartupDiagnosticCategory.teardown;
+    if (isTeardown) {
+      entry = '$startupTeardownDiagnosticPrefix$entry';
+    }
+    if (entry.length > maxEntryLength) {
+      entry = '${entry.substring(0, maxEntryLength - 3)}...';
+    }
+    if (_entries.contains(entry)) {
+      return;
+    }
+    if (_entries.length >= maxEntries) {
+      final oldestTeardown = _entries.indexWhere(_isTeardownStartupDiagnostic);
+      if (oldestTeardown != -1) {
+        _entries.removeAt(oldestTeardown);
+      } else if (isTeardown) {
+        return;
+      } else {
+        _entries.removeAt(pinnedCausalEntries);
+      }
+    }
+    _entries.add(entry);
+  }
+
+  /// Drops every retained entry.
+  void clear() => _entries.clear();
+}
+
+bool _isTeardownStartupDiagnostic(String entry) =>
+    entry.startsWith(startupTeardownDiagnosticPrefix);
+
 /// Renders startup diagnostics as a suffix for a load-failure message.
 ///
 /// Returns an empty string when nothing was recorded, so platforms that never
-/// populate the buffer keep their existing message byte for byte. The tail is
-/// kept when truncating: the buffer caps entries, not bytes, and the newest
-/// entries are the ones describing the failure at hand. Control characters are
-/// flattened and credential-bearing HTTP URL components are redacted before the
-/// diagnostics are included in an exception. An entry with a control-split
-/// credentialed URL is replaced entirely rather than guessing whether the
-/// control was part of the URL or a diagnostic boundary.
+/// populate the buffer keep their existing message byte for byte. Control
+/// characters are flattened and credential-bearing HTTP URL components are
+/// redacted before the diagnostics are included in an exception. An entry with
+/// a control-split credentialed URL is replaced entirely rather than guessing
+/// whether the control was part of the URL or a diagnostic boundary.
+///
+/// Entries render in the given order. When they exceed [maxLength], whole
+/// entries are admitted by priority while they fit: the first causal entry
+/// (root cause), the last causal entry (final outcome), the other causal
+/// entries oldest first, then entries carrying
+/// [startupTeardownDiagnosticPrefix]. Each run of omitted entries renders as
+/// `...`, and an entry longer than half of [maxLength] keeps only its head
+/// followed by `...`. A limit too tight even for that leaves the head of the
+/// first-ranked entry alone.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   if (maxLength < 0) {
     throw RangeError.range(maxLength, 0, null, 'maxLength');
@@ -8449,13 +8539,82 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   }
   var joined = sanitizedEntries.join('; ');
   if (joined.length > maxLength) {
-    final ellipsisLength = math.min(3, maxLength);
-    final tailLength = maxLength - ellipsisLength;
-    joined =
-        '${'.' * ellipsisLength}'
-        '${joined.substring(joined.length - tailLength)}';
+    joined = _truncateStartupDiagnostics(sanitizedEntries, maxLength);
   }
   return ', startupDiagnostics=[$joined]';
+}
+
+String _truncateStartupDiagnostics(List<String> entries, int maxLength) {
+  const marker = '...';
+  const separator = '; ';
+  if (maxLength <= marker.length) {
+    return marker.substring(0, maxLength);
+  }
+
+  // Half the budget per entry, so an oversized root cause cannot starve the
+  // final outcome.
+  final entryCap = math.max(maxLength ~/ 2, marker.length + 1);
+  final texts = <String>[
+    for (final entry in entries)
+      entry.length > entryCap
+          ? '${entry.substring(0, entryCap - marker.length)}$marker'
+          : entry,
+  ];
+  final causal = <int>[
+    for (var i = 0; i < entries.length; i++)
+      if (!_isTeardownStartupDiagnostic(entries[i])) i,
+  ];
+  final ranked = <int>[
+    if (causal.isNotEmpty) causal.first,
+    if (causal.length > 1) causal.last,
+    if (causal.length > 2) ...causal.getRange(1, causal.length - 1),
+    for (var i = 0; i < entries.length; i++)
+      if (_isTeardownStartupDiagnostic(entries[i])) i,
+  ];
+
+  // Exact rendered length: kept text plus one marker per omitted run, all
+  // joined by the separator. Everything starts omitted, as a single run.
+  final kept = List<bool>.filled(entries.length, false);
+  var keptCount = 0;
+  var keptLength = 0;
+  var omittedRuns = 1;
+  for (final index in ranked) {
+    final splitsLeft = index > 0 && !kept[index - 1];
+    final splitsRight = index + 1 < entries.length && !kept[index + 1];
+    final nextRuns =
+        omittedRuns - 1 + (splitsLeft ? 1 : 0) + (splitsRight ? 1 : 0);
+    final nextLength = keptLength + texts[index].length;
+    final rendered =
+        nextLength +
+        nextRuns * marker.length +
+        (keptCount + nextRuns) * separator.length;
+    if (rendered > maxLength) {
+      if (keptCount == 0) {
+        // Too tight for the top entry beside its markers: keep only its head.
+        final head = entries[index];
+        final headLength = math.min(head.length, maxLength - marker.length);
+        return '${head.substring(0, headLength)}$marker';
+      }
+      continue;
+    }
+    kept[index] = true;
+    keptCount += 1;
+    keptLength = nextLength;
+    omittedRuns = nextRuns;
+  }
+
+  final parts = <String>[];
+  var inOmittedRun = false;
+  for (var i = 0; i < entries.length; i++) {
+    if (kept[i]) {
+      parts.add(texts[i]);
+      inOmittedRun = false;
+    } else if (!inOmittedRun) {
+      parts.add(marker);
+      inOmittedRun = true;
+    }
+  }
+  return parts.join(separator);
 }
 
 String _sanitizeStartupDiagnostic(String entry) {
