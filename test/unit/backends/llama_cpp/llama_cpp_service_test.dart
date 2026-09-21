@@ -1854,6 +1854,241 @@ void main() {
     });
   });
 
+  group('backend probe failure aggregation', () {
+    test('groups candidates by reason and keeps no directory', () {
+      final failures = BackendProbeFailures();
+      expect(failures.isEmpty, isTrue);
+      expect(failures.describe(), 'no candidates');
+
+      failures
+        ..add('/Users/secret/bundle/libggml-cpu.so', 'not found')
+        ..add('package:llamadart/cpu', 'not found')
+        ..add(
+          'package:llamadart/ggml-cpu',
+          '`ggml_backend_init` returned null',
+        );
+
+      expect(failures.isEmpty, isFalse);
+      expect(
+        failures.describe(),
+        'not found (libggml-cpu.so, package:llamadart/cpu); '
+        '`ggml_backend_init` returned null (package:llamadart/ggml-cpu)',
+      );
+    });
+
+    test('deduplicates the same failure across directories', () {
+      final failures = BackendProbeFailures()
+        ..add('libggml-cpu.so', '`ggml_backend_load` returned null')
+        ..add('/a/libggml-cpu.so', '`ggml_backend_load` returned null')
+        ..add('/b/libggml-cpu.so', '`ggml_backend_load` returned null')
+        ..add('/b/libggml-cpu.so', '`ggml_backend_load` returned null');
+
+      expect(
+        failures.describe(),
+        '`ggml_backend_load` returned null (libggml-cpu.so)',
+      );
+    });
+
+    test('classifies loader errors without quoting them', () {
+      const candidate = '/Users/secret/bundle/libggml-vulkan.so';
+      const cases = <String, String>{
+        "Invalid argument(s): Failed to load dynamic library '$candidate': "
+                'dlopen($candidate, 0x0001): tried: '
+                "'$candidate' (no such file), '/Users/secret/x' (no such file)":
+            'not found',
+        "Failed to load dynamic library '$candidate': $candidate: cannot "
+                'open shared object file: No such file or directory':
+            'not found',
+        "Failed to load dynamic library '$candidate': libvulkan.so.1: cannot "
+                'open shared object file: No such file or directory':
+            'dependency not loaded `libvulkan.so.1`',
+        'The specified module could not be found. (error code: 126)':
+            'not found',
+        "Failed to load dynamic library '$candidate': $candidate: undefined "
+                'symbol: ggml_backend_dev_get_props':
+            'unresolved symbol `ggml_backend_dev_get_props`',
+        'dlopen($candidate, 0x0001): symbol not found in flat namespace '
+                "'_ggml_backend_load'":
+            'unresolved symbol `ggml_backend_load`',
+        'dlopen($candidate): Symbol not found: _ggml_backend_reg_count\n'
+                '  Referenced from: $candidate':
+            'unresolved symbol `ggml_backend_reg_count`',
+        'The specified procedure could not be found. (error code: 127)':
+            'unresolved symbol',
+        'dlopen($candidate): Library not loaded: @rpath/libggml-base.dylib\n'
+                '  Referenced from: $candidate\n  Reason: image not found':
+            'dependency not loaded `libggml-base.dylib`',
+        '$candidate: wrong ELF class: ELFCLASS32': 'incompatible binary',
+        'dlopen($candidate): mach-o file, but is an incompatible architecture '
+                '(have x86_64, need arm64)':
+            'incompatible binary',
+        '%1 is not a valid Win32 application. (error code: 193)':
+            'incompatible binary',
+        'Authorization: Bearer secret-token https://user:pass@example.com/'
+                'lib.so?token=secret':
+            'open failed',
+      };
+
+      cases.forEach((text, expected) {
+        final reason = describeLibraryProbeError(
+          ArgumentError(text),
+          candidate,
+        );
+        expect(reason, expected, reason: text);
+        expect(reason, isNot(contains('/Users/secret')), reason: text);
+        expect(reason, isNot(contains('secret')), reason: text);
+      });
+    });
+
+    test('summaries are sanitized by the startup diagnostic buffer', () {
+      final failures = BackendProbeFailures()
+        ..add('lib ggml\ncpu.so', 'not found')
+        ..add(
+          'https://user:pass@example.com/lib.so?token=secret',
+          describeLibraryProbeError(
+            ArgumentError(
+              'Bearer secret https://user:pass@example.com/x?token=secret',
+            ),
+            'https://user:pass@example.com/lib.so?token=secret',
+          ),
+        );
+      final buffer = StartupDiagnosticBuffer()
+        ..record(
+          'Backend module `cpu` not loaded from any candidate: '
+          '${failures.describe()}.',
+        );
+
+      expect(buffer.entries, <String>[
+        'Backend module `cpu` not loaded from any candidate: '
+            'not found (lib ggml cpu.so); open failed (lib.so?token=secret).',
+      ]);
+      expect(buffer.entries.single, isNot(contains('pass')));
+      expect(buffer.entries.single, isNot(contains('Bearer')));
+    });
+
+    test('a backend family with no usable candidate records one summary', () {
+      final service = LlamaCppService();
+      const backend = 'nonexistent-probe';
+
+      final loaded = _invokePrivateForTesting<bool>(
+        service,
+        '_tryLoadBackendModule',
+        <Object?>[backend],
+      );
+
+      expect(loaded, isFalse);
+      final entries = service.getStartupDiagnostics();
+      expect(entries, hasLength(1));
+      final loaderUnavailable = _readPrivateForTesting<bool>(
+        service,
+        '_backendLoadSymbolUnavailable',
+      );
+      if (loaderUnavailable) {
+        expect(
+          entries.single,
+          startsWith('`ggml_backend_load` is unavailable: the primary FFI '),
+        );
+      } else {
+        expect(
+          entries.single,
+          startsWith(
+            'Backend module `$backend` not loaded from any candidate: ',
+          ),
+        );
+        expect(entries.single, contains('(package:llamadart/$backend'));
+      }
+      expect(
+        entries.single,
+        isNot(contains(path.dirname(Platform.resolvedExecutable))),
+      );
+      expect(entries.single, isNot(contains(Directory.current.path)));
+
+      final retried = _invokePrivateForTesting<bool>(
+        service,
+        '_tryLoadBackendModule',
+        <Object?>[backend],
+      );
+      expect(retried, isFalse);
+      expect(service.getStartupDiagnostics(), entries);
+    });
+
+    test('ggml candidate failures are recorded only for a missing symbol', () {
+      final service = LlamaCppService();
+      _invokePrivateForTesting<void>(
+        service,
+        '_resolveGgmlFallbackFunctions',
+        const <Object?>[],
+      );
+      expect(service.getStartupDiagnostics(), isEmpty);
+
+      for (var i = 0; i < 2; i++) {
+        _invokePrivateForTesting<void>(
+          service,
+          '_recordMissingGgmlSymbol',
+          const <Object?>['`ggml_backend_load`'],
+        );
+      }
+
+      final entries = service.getStartupDiagnostics();
+      expect(entries, hasLength(1));
+      expect(
+        entries.single,
+        startsWith(
+          '`ggml_backend_load` is unavailable: the primary FFI asset does '
+          'not export it and ',
+        ),
+      );
+      expect(entries.single, contains('package:llamadart/ggml'));
+      expect(entries.single, endsWith('.'));
+      expect(
+        entries.single,
+        isNot(contains(path.dirname(Platform.resolvedExecutable))),
+      );
+      expect(entries.single, isNot(contains(Directory.current.path)));
+    });
+
+    test('a ggml candidate that resolves the symbols records nothing', () {
+      final source = _locateGgmlRuntimeLibraryForTesting();
+      if (source == null) {
+        markTestSkipped('no built library exports ggml_backend_load');
+        return;
+      }
+      final tempDir = Directory.systemTemp.createTempSync('ggml_probe_');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      final ggmlFileName = Platform.isWindows
+          ? 'ggml.dll'
+          : Platform.isMacOS
+          ? 'libggml.dylib'
+          : 'libggml.so';
+      final String moduleDir;
+      if (path.basename(source) == ggmlFileName) {
+        moduleDir = path.dirname(source);
+      } else {
+        final copy = path.join(tempDir.path, ggmlFileName);
+        File(source).copySync(copy);
+        if (!_exportsGgmlBackendLoad(copy)) {
+          markTestSkipped('a copy of $source does not load standalone');
+          return;
+        }
+        moduleDir = tempDir.path;
+      }
+
+      final service = LlamaCppService();
+      _writePrivateForTesting(service, '_backendModuleDirectory', moduleDir);
+      _invokePrivateForTesting<void>(
+        service,
+        '_resolveGgmlFallbackFunctions',
+        const <Object?>[],
+      );
+
+      expect(
+        _readPrivateForTesting<Object?>(service, '_ggmlBackendLoadFallback'),
+        isNotNull,
+      );
+      expect(service.getStartupDiagnostics(), isEmpty);
+    });
+  });
+
   group('shouldDisableContextGpuOffload', () {
     test('disables offload for explicit CPU backend', () {
       const params = ModelParams(
@@ -2656,6 +2891,67 @@ T _invokePrivateForTesting<T>(
           )
           .reflectee
       as T;
+}
+
+T _readPrivateForTesting<T>(LlamaCppService service, String field) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(
+        service,
+      ).getField(MirrorSystem.getSymbol(field, owner)).reflectee
+      as T;
+}
+
+void _writePrivateForTesting(
+  LlamaCppService service,
+  String field,
+  Object? value,
+) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  reflect(service).setField(MirrorSystem.getSymbol(field, owner), value);
+}
+
+bool _exportsGgmlBackendLoad(String libraryPath) {
+  try {
+    return DynamicLibrary.open(libraryPath).providesSymbol('ggml_backend_load');
+  } catch (_) {
+    return false;
+  }
+}
+
+String? _locateGgmlRuntimeLibraryForTesting() {
+  final pattern = RegExp(
+    r'^(lib)?(ggml|ggml-base|llama|llamadart)\.(dylib|so|dll)$',
+  );
+  final roots = <Directory>[
+    Directory(path.join(Directory.current.path, '.dart_tool', 'lib')),
+    Directory(
+      path.join(
+        Directory.current.path,
+        '.dart_tool',
+        'llamadart',
+        'native_bundles',
+      ),
+    ),
+  ];
+  for (final root in roots) {
+    if (!root.existsSync()) {
+      continue;
+    }
+    final files =
+        root
+            .listSync(recursive: true, followLinks: false)
+            .whereType<File>()
+            .where((file) => pattern.hasMatch(path.basename(file.path)))
+            .map((file) => file.path)
+            .toList()
+          ..sort();
+    for (final file in files) {
+      if (_exportsGgmlBackendLoad(file)) {
+        return file;
+      }
+    }
+  }
+  return null;
 }
 
 void _createWindowsBundleMarkerFiles(
