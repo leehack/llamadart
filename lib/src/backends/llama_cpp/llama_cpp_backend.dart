@@ -33,7 +33,8 @@ class NativeLlamaBackend
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendTextToSpeech,
-        BackendVideoRuntimeSupport {
+        BackendVideoRuntimeSupport,
+        BackendDartLogLevel {
   Isolate? _isolate;
   SendPort? _sendPort;
   RawReceivePort? _workerLogPort;
@@ -260,6 +261,22 @@ class NativeLlamaBackend
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {
     _currentLogLevel = level;
+    await _sendToRunningWorker(
+      (sendPort) => LogLevelRequest(level, sendPort),
+      'log-level update',
+    );
+  }
+
+  @override
+  Future<void> setDartLogLevel(LlamaLogLevel level) => _sendToRunningWorker(
+    (sendPort) => DartLogLevelRequest(level, sendPort),
+    'Dart log-level update',
+  );
+
+  Future<void> _sendToRunningWorker(
+    WorkerRequest Function(SendPort sendPort) buildRequest,
+    String operation,
+  ) async {
     final activeDispose = _disposeStart;
     if (activeDispose != null) {
       await activeDispose;
@@ -274,8 +291,8 @@ class NativeLlamaBackend
     if (sendPort != null) {
       final rp = ReceivePort();
       try {
-        sendPort.send(LogLevelRequest(level, rp.sendPort));
-        _expectDoneResponse(await rp.first, 'log-level update');
+        sendPort.send(buildRequest(rp.sendPort));
+        _expectDoneResponse(await rp.first, operation);
       } finally {
         rp.close();
       }

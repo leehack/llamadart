@@ -589,6 +589,29 @@ void main() {
         await backend.dispose().timeout(const Duration(seconds: 2));
       }
     });
+
+    test(
+      'engine.setDartLogLevel changes what a running worker forwards',
+      () async {
+        LlamaEngine.configureLogging(
+          level: LlamaLogLevel.none,
+          handler: records.add,
+        );
+        final backend = LiteRtLmBackend(workerEntryPoint: _loggingWorkerEntry);
+        final engine = LlamaEngine(backend);
+        try {
+          await backend.getBackendName().timeout(const Duration(seconds: 5));
+          await engine
+              .setDartLogLevel(LlamaLogLevel.warn)
+              .timeout(const Duration(seconds: 5));
+          await backend.getBackendName().timeout(const Duration(seconds: 5));
+          await _waitForRecords(records, 1);
+          expect(records.single.message, 'worker warning');
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
   });
 
   test('worker exit before handshake settles startup', () async {

@@ -51,6 +51,7 @@ export 'src/backends/backend.dart'
     show
         LlamaBackend,
         BackendAvailability,
+        BackendDartLogLevel,
         BackendGrammarConstraintsSupport,
         BackendGpuEnumeration,
         BackendNativeChatGeneration,

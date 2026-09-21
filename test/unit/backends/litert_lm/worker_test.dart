@@ -287,6 +287,24 @@ void main() {
       }
     });
 
+    test('LiteRtLmDartLogLevelRequest leaves the logger alone without a log '
+        'port', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        _TokenAndLoraLiteRtLmService(),
+      );
+      try {
+        final response = await _sendRequest(
+          worker.sendPort,
+          (sendPort) =>
+              LiteRtLmDartLogLevelRequest(LlamaLogLevel.debug, sendPort),
+        );
+        expect(response, isA<LiteRtLmDoneResponse>());
+        expect(LlamaLogger.instance.level, LlamaLogLevel.none);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test('routes successful detokenize and LoRA service responses', () async {
       final service = _TokenAndLoraLiteRtLmService();
       final worker = await _startWorkerInCurrentIsolate(service);

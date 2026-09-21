@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import '../../core/llama_logger.dart';
 import '../native_token_stream_batcher.dart';
 import 'litert_lm_service.dart';
 import 'worker_messages.dart';
@@ -29,6 +30,7 @@ void runLiteRtLmWorkerForTesting(
   var generationInFlight = false;
   var generationCancelRequested = false;
   var shuttingDown = false;
+  var forwardsLogs = false;
 
   receivePort.listen((message) async {
     if (message is LiteRtLmDisposeRequest) {
@@ -75,6 +77,7 @@ void runLiteRtLmWorkerForTesting(
       final logPort = message.logPort;
       if (logPort != null) {
         installWorkerLogForwarding(logPort, message.dartLogLevel);
+        forwardsLogs = true;
       }
       service.setLogLevel(message.initialLogLevel);
       return;
@@ -283,6 +286,12 @@ void runLiteRtLmWorkerForTesting(
 
           case LiteRtLmLogLevelRequest():
             service.setLogLevel(message.logLevel);
+            message.sendPort.send(LiteRtLmDoneResponse());
+
+          case LiteRtLmDartLogLevelRequest():
+            if (forwardsLogs) {
+              LlamaLogger.instance.setLevel(message.logLevel);
+            }
             message.sendPort.send(LiteRtLmDoneResponse());
 
           case LiteRtLmGetContextSizeRequest():

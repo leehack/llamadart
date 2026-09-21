@@ -17,23 +17,40 @@ class WorkerLogMessage {
   /// The record's error rendered with `toString`, if it had one.
   final String? error;
 
+  /// The record's stack trace rendered with `toString`, if it had one.
+  final String? stackTrace;
+
   /// Creates a forwarded log record.
-  WorkerLogMessage(this.level, this.message, {this.error});
+  WorkerLogMessage(this.level, this.message, {this.error, this.stackTrace});
 
   /// Logs this record through [LlamaLogger.instance] at [level].
+  ///
+  /// [stackTrace] is passed as a [StackTrace] rebuilt from its text. An error
+  /// thrown by the handler is printed instead of propagated, because no
+  /// caller awaits a forwarded record.
   void emit() {
     final logger = LlamaLogger.instance;
-    switch (level) {
-      case LlamaLogLevel.none:
-        return;
-      case LlamaLogLevel.debug:
-        logger.debug(message);
-      case LlamaLogLevel.info:
-        logger.info(message);
-      case LlamaLogLevel.warn:
-        logger.warn(message, error);
-      case LlamaLogLevel.error:
-        logger.error(message, error);
+    final trace = stackTrace == null
+        ? null
+        : StackTrace.fromString(stackTrace!);
+    try {
+      switch (level) {
+        case LlamaLogLevel.none:
+          return;
+        case LlamaLogLevel.debug:
+          logger.debug(message);
+        case LlamaLogLevel.info:
+          logger.info(message);
+        case LlamaLogLevel.warn:
+          logger.warn(message, error, trace);
+        case LlamaLogLevel.error:
+          logger.error(message, error, trace);
+      }
+    } catch (handlerError, handlerTrace) {
+      print(
+        'llamadart: log handler threw on a forwarded ${level.name} record: '
+        '$handlerError\n$handlerTrace',
+      );
     }
   }
 }
@@ -77,6 +94,7 @@ void installWorkerLogForwarding(SendPort logPort, LlamaLogLevel level) {
         record.level,
         record.message,
         error: record.error?.toString(),
+        stackTrace: record.stackTrace?.toString(),
       ),
     );
   });

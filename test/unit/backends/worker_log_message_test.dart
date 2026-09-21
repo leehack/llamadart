@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:isolate';
 
 import 'package:llamadart/src/backends/worker_log_message.dart';
@@ -45,6 +46,31 @@ void main() {
       WorkerLogMessage(LlamaLogLevel.warn, 'w').emit();
       expect(records, isEmpty);
     });
+
+    test('rebuilds the stack trace from its text', () {
+      WorkerLogMessage(
+        LlamaLogLevel.error,
+        'e',
+        error: 'bang',
+        stackTrace: '#0 worker',
+      ).emit();
+      WorkerLogMessage(LlamaLogLevel.warn, 'w').emit();
+      expect(records.first.error, 'bang');
+      expect(records.first.stackTrace.toString(), '#0 worker');
+      expect(records.last.stackTrace, isNull);
+    });
+
+    test('prints instead of throwing when the handler throws', () {
+      LlamaLogger.instance.setHandler((_) => throw StateError('handler'));
+      final printed = <String>[];
+      runZoned(
+        () => WorkerLogMessage(LlamaLogLevel.warn, 'w').emit(),
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printed.add(line),
+        ),
+      );
+      expect(printed.single, contains('warn record: Bad state: handler'));
+    });
   });
 
   group('installWorkerLogForwarding', () {
@@ -67,6 +93,25 @@ void main() {
         expect(received.first.error, 'Bad state: why');
         expect(received.last.error, isNull);
         expect(records, isEmpty);
+      } finally {
+        await sub.cancel();
+        port.close();
+      }
+    });
+
+    test('forwards the stack trace as text', () async {
+      final port = ReceivePort();
+      final received = <WorkerLogMessage>[];
+      final sub = port.listen((m) => received.add(m as WorkerLogMessage));
+      installWorkerLogForwarding(port.sendPort, LlamaLogLevel.error);
+      try {
+        LlamaLogger.instance.error(
+          'traced',
+          StateError('why'),
+          StackTrace.fromString('#0 worker'),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(received.single.stackTrace, '#0 worker');
       } finally {
         await sub.cancel();
         port.close();

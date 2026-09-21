@@ -28,7 +28,8 @@ class LiteRtLmBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddingsSupport,
         BackendStatePersistenceSupport,
-        BackendNativeChatGeneration {
+        BackendNativeChatGeneration,
+        BackendDartLogLevel {
   Isolate? _isolate;
   ReceivePort? _workerLifecyclePort;
   RawReceivePort? _workerLogPort;
@@ -534,6 +535,17 @@ class LiteRtLmBackend
     }
     await _sendRequest(
       (sendPort) => LiteRtLmLogLevelRequest(level, sendPort),
+      ensureIsolate: false,
+    );
+  }
+
+  @override
+  Future<void> setDartLogLevel(LlamaLogLevel level) async {
+    if (_sendPort == null) {
+      return;
+    }
+    await _sendRequest(
+      (sendPort) => LiteRtLmDartLogLevelRequest(level, sendPort),
       ensureIsolate: false,
     );
   }

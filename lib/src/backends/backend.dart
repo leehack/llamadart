@@ -168,6 +168,16 @@ abstract class BackendNativeChatGeneration {
   });
 }
 
+/// Optional backend capability for backends whose worker isolate keeps its
+/// own Dart logger and forwards its records to the main isolate.
+abstract class BackendDartLogLevel {
+  /// Sets the level the worker's Dart logger forwards from.
+  ///
+  /// Does nothing while no worker is running; a worker takes the main
+  /// isolate's logger level when it starts.
+  Future<void> setDartLogLevel(LlamaLogLevel level);
+}
+
 /// Optional backend capability for exposing resolved runtime diagnostics.
 abstract class BackendRuntimeDiagnostics {
   /// Returns resolved GPU layers used for the active model load.

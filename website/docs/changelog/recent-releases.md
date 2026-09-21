@@ -10,12 +10,12 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Forward llama.cpp and LiteRT-LM worker-isolate log records to the
-  `LlamaEngine.configureLogging` handler. Each worker snapshots the logger
-  level when it starts and forwards only records at or above it, so the
-  default `none` sends nothing; `debug` records are capped at 1000 per worker.
-  The LiteRT-LM program-cache pruning warnings are now ordinary `warn` records
-  gated by that level instead of the native log level. Adds
-  `LlamaLogger.level`
+  `LlamaEngine.configureLogging` handler. A worker takes the Dart logger level
+  when it starts and `LlamaEngine.setDartLogLevel`/`setLogLevel` update a
+  running worker; the default `none` sends nothing and `debug` records are
+  capped at 1000 per worker. The LiteRT-LM program-cache pruning warnings are
+  now ordinary `warn` records gated by that level instead of the native log
+  level. Adds `LlamaLogger.level` and the `BackendDartLogLevel` capability
   ([#567](https://github.com/leehack/llamadart/issues/567)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which

@@ -272,6 +272,18 @@ class LiteRtLmLogLevelRequest extends LiteRtLmWorkerRequest {
   LiteRtLmLogLevelRequest(this.logLevel, super.sendPort);
 }
 
+/// Request to set the level the worker's Dart logger forwards from.
+///
+/// Ignored, but still answered with [LiteRtLmDoneResponse], when the
+/// handshake carried no log port.
+class LiteRtLmDartLogLevelRequest extends LiteRtLmWorkerRequest {
+  /// The target log level.
+  final LlamaLogLevel logLevel;
+
+  /// Creates a Dart log level request.
+  LiteRtLmDartLogLevelRequest(this.logLevel, super.sendPort);
+}
+
 /// Request to get the actual context size.
 class LiteRtLmGetContextSizeRequest extends LiteRtLmWorkerRequest {
   /// The context handle.
