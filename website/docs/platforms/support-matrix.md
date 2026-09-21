@@ -244,6 +244,7 @@ default.
 | `litert_lm_engine_settings_set_prefill_chunk_size` | `liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
 | `litert_lm_engine_settings_set_parallel_file_section_loading` | `liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; native default remains parallel loading. |
 | `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need a packaged LiteRT dispatch directory. |
+| `litert_lm_engine_settings_set_cache_dir` | `liteRtLmCacheDir` | Exposed as the runtime cache directory; `null` keeps `llamadart_litert_lm` under the system temporary directory on macOS and Android and passes no directory elsewhere. `liteRtLmMaxProgramCacheBytes` adds an opt-in size cap for GPU program cache files. |
 
 LiteRT-LM web rejects these native-only fields because `@litert-lm/core` does
 not expose equivalent runtime controls.

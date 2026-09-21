@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
@@ -14,6 +15,7 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
+import 'litert_lm_cache.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
@@ -31,10 +33,17 @@ const String _liteRtLmVideoUnsupportedMessage =
 /// llama.cpp backend architecture.
 class LiteRtLmService {
   /// Creates a LiteRT-LM service.
-  LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
-    : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
+  ///
+  /// [logHandler] receives the service's own log records that pass the level
+  /// set with [setLogLevel]; when omitted they are printed.
+  LiteRtLmService({
+    LiteRtLmRuntimeClient Function()? clientFactory,
+    LlamaLogHandler? logHandler,
+  }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _logHandler = logHandler;
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
+  final LlamaLogHandler? _logHandler;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -621,7 +630,10 @@ class LiteRtLmService {
         ? (_workingAudioBackend ?? _visionBackendName(backend))
         : null;
 
+    final cacheDir = _effectiveCacheDir(modelParams);
+
     Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
+      _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
       final client = _clientFactory();
       client.configureResponseThinkingTags(
         startTag: responseThinkingTags.startTag,
@@ -635,7 +647,7 @@ class LiteRtLmService {
           audioBackend: audioBackend,
           maxTokens: modelParams.contextSize,
           maxNumImages: resolvedMaxNumImages,
-          cacheDir: _defaultCacheDir(),
+          cacheDir: cacheDir,
           speculativeDecoding: resolvedSpeculativeDecoding,
           minLogLevel: _liteRtLmMinLogLevel(_logLevel),
           activationDataType: modelParams.liteRtLmActivationDataType,
@@ -966,7 +978,8 @@ class LiteRtLmService {
       'hints, liteRtLmBackend for explicit CPU/GPU/NPU selection, '
       'numberOfThreads, one default-scale initial LoRA adapter, '
       'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
-      'liteRtLmParallelFileSectionLoading, and liteRtLmDispatchLibDir.',
+      'liteRtLmParallelFileSectionLoading, liteRtLmDispatchLibDir, '
+      'liteRtLmCacheDir, and liteRtLmMaxProgramCacheBytes.',
     );
   }
 
@@ -1321,15 +1334,57 @@ class LiteRtLmService {
         part.containsKey('video');
   }
 
-  String? _defaultCacheDir() {
-    if (!Platform.isMacOS && !Platform.isAndroid) {
+  String? _effectiveCacheDir(ModelParams params) {
+    final configured = params.liteRtLmCacheDir;
+    if (configured == null && !Platform.isMacOS && !Platform.isAndroid) {
       return null;
     }
-    final dir = Directory('${Directory.systemTemp.path}/llamadart_litert_lm');
+    final dir = Directory(
+      configured ?? '${Directory.systemTemp.path}/llamadart_litert_lm',
+    );
     if (!dir.existsSync()) {
       dir.createSync(recursive: true);
     }
     return dir.path;
+  }
+
+  void _pruneProgramCaches(String? cacheDir, int? maxBytes) {
+    if (cacheDir == null || maxBytes == null) {
+      return;
+    }
+    pruneLiteRtLmProgramCaches(
+      cacheDir,
+      maxBytes,
+      onDeleted: (path, bytes) => _warn(
+        'Deleted LiteRT-LM GPU program cache $path ($bytes bytes) above '
+        'liteRtLmMaxProgramCacheBytes=$maxBytes; see '
+        'https://github.com/leehack/llamadart/issues/552',
+      ),
+      onError: (path, error) => _warn(
+        'Could not prune LiteRT-LM GPU program cache at $path; see '
+        'https://github.com/leehack/llamadart/issues/552',
+        error,
+      ),
+    );
+  }
+
+  void _warn(String message, [Object? error]) {
+    if (_logLevel == LlamaLogLevel.none ||
+        LlamaLogLevel.warn.index < _logLevel.index) {
+      return;
+    }
+    final record = LlamaLogRecord(
+      level: LlamaLogLevel.warn,
+      message: message,
+      time: DateTime.now(),
+      error: error,
+    );
+    final handler = _logHandler;
+    if (handler != null) {
+      handler(record);
+    } else {
+      print(record);
+    }
   }
 
   double _millisecondsFromTps(int tokens, double? tps) {

@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -1807,6 +1808,218 @@ void main() {
     }
   });
 
+  group('LiteRT-LM cache directory', () {
+    Future<void> createEngine(
+      LiteRtLmService service,
+      _FakeLiteRtLmRuntimeClient client,
+      ModelParams params,
+    ) async {
+      final model = await service.loadModel(modelFile.path, params);
+      final context = service.createContext(model, params);
+      final chunks = service
+          .generate(context, 'hello', const GenerationParams(maxTokens: 1))
+          .toList();
+      await client.generateStarted.future;
+      await client.generated.close();
+      await chunks;
+    }
+
+    File writeCache(Directory dir, String name, int bytes) {
+      return File('${dir.path}/$name')
+        ..writeAsBytesSync(List<int>.filled(bytes, 0));
+    }
+
+    test('default directory is platform specific', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      try {
+        await createEngine(
+          service,
+          client,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu),
+        );
+        if (Platform.isMacOS || Platform.isAndroid) {
+          expect(
+            client.lastCacheDir,
+            '${Directory.systemTemp.path}/llamadart_litert_lm',
+          );
+        } else {
+          expect(client.lastCacheDir, isNull);
+        }
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('configured directory is created and forwarded', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final cacheDir = Directory('${tempDir.path}/nested/cache');
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+          ),
+        );
+        expect(client.lastCacheDir, cacheDir.path);
+        expect(cacheDir.existsSync(), isTrue);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('null cap keeps an oversized program cache', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final records = <LlamaLogRecord>[];
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        logHandler: records.add,
+      );
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+          ),
+        );
+        expect(program.existsSync(), isTrue);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('cap deletes an oversized program cache before engine create and '
+        'logs one warning', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final records = <LlamaLogRecord>[];
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        logHandler: records.add,
+      );
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      final small = writeCache(cacheDir, 'n_1_2_mldrift_program_cache.bin', 8);
+      final weights = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_weight_cache.bin',
+        64,
+      );
+      final xnnpack = writeCache(cacheDir, 'm.litertlm.xnnpack_cache', 64);
+      bool? programExistedAtInitialize;
+      client.onInitialize = () {
+        programExistedAtInitialize = program.existsSync();
+      };
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes: 32,
+          ),
+        );
+        expect(programExistedAtInitialize, isFalse);
+        expect(small.existsSync(), isTrue);
+        expect(weights.existsSync(), isTrue);
+        expect(xnnpack.existsSync(), isTrue);
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(
+          records.single.message,
+          allOf(
+            contains(program.path),
+            contains('64 bytes'),
+            contains('issues/552'),
+          ),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('warning is suppressed above the warn log level', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final records = <LlamaLogRecord>[];
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        logHandler: records.add,
+      )..setLogLevel(LlamaLogLevel.error);
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes: 32,
+          ),
+        );
+        expect(program.existsSync(), isFalse);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('a failed delete does not fail engine create', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final records = <LlamaLogRecord>[];
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        logHandler: records.add,
+      );
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      Process.runSync('chmod', ['a-w', cacheDir.path]);
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes: 32,
+          ),
+        );
+        expect(client.lastCacheDir, cacheDir.path);
+        expect(records, hasLength(1));
+        if (program.existsSync()) {
+          expect(records.single.error, isA<FileSystemException>());
+        }
+      } finally {
+        Process.runSync('chmod', ['u+w', cacheDir.path]);
+        service.dispose();
+      }
+    }, testOn: '!windows');
+  });
+
   test('passes LiteRT-LM runtime tuning options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -3043,6 +3256,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   LiteRtLmRuntimeMetrics? metrics;
   Object? metricsError;
   void Function()? onCreateConversation;
+  void Function()? onInitialize;
   String? lastPromptTemplate;
   int createConversationCount = 0;
   int generateCount = 0;
@@ -3083,6 +3297,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastParallelFileSectionLoading = parallelFileSectionLoading;
     lastDispatchLibDir = dispatchLibDir;
     lastNumberOfThreads = numberOfThreads;
+    onInitialize?.call();
     if (!initializeStarted.isCompleted) {
       initializeStarted.complete();
     }

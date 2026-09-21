@@ -593,6 +593,8 @@ void main() {
             liteRtLmPrefillChunkSize: 128,
             liteRtLmParallelFileSectionLoading: false,
             liteRtLmDispatchLibDir: '/vendor/litert',
+            liteRtLmCacheDir: '/data/litert-cache',
+            liteRtLmMaxProgramCacheBytes: 1024,
           ),
         ),
         throwsA(
@@ -605,6 +607,8 @@ void main() {
               contains('liteRtLmPrefillChunkSize'),
               contains('liteRtLmParallelFileSectionLoading'),
               contains('liteRtLmDispatchLibDir'),
+              contains('liteRtLmCacheDir'),
+              contains('liteRtLmMaxProgramCacheBytes'),
             ),
           ),
         ),

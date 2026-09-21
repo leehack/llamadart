@@ -145,6 +145,8 @@ For `.litertlm` / LiteRT-LM, use:
 - `liteRtLmParallelFileSectionLoading`: native `.litertlm` file-section
   loading override
 - `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory
+- `liteRtLmCacheDir` / `liteRtLmMaxProgramCacheBytes`: native runtime cache
+  directory and opt-in GPU program cache size cap
 - `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
 - `GenerationParams.speculativeDecoding` on native LiteRT-LM only
 - `stopSequences`, enforced by `llamadart`
@@ -166,6 +168,8 @@ LiteRT-LM runtime defaults.
 | `litert_lm_engine_settings_set_prefill_chunk_size` | `ModelParams.liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
 | `litert_lm_engine_settings_set_parallel_file_section_loading` | `ModelParams.liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; `null` keeps the native default parallel loading behavior. |
 | `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `ModelParams.liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need to point LiteRT-LM at a packaged LiteRT dispatch directory; non-empty strings only. |
+| `litert_lm_engine_settings_set_cache_dir` | `ModelParams.liteRtLmCacheDir` | Exposed as the runtime cache directory; non-empty strings only. See [LiteRT-LM Cache Directory](#litert-lm-cache-directory). |
+| none | `ModelParams.liteRtLmMaxProgramCacheBytes` | `llamadart`-side size cap for GPU program cache files; non-negative values only. |
 
 The real-model smoke path can exercise these options:
 
@@ -176,6 +180,49 @@ LITERT_LM_PARALLEL_FILE_SECTION_LOADING=false \
 LITERT_LM_DISPATCH_LIB_DIR=/path/to/dispatch \
 dart run tool/litert_lm_engine_smoke.dart /models/model.litertlm cpu
 ```
+
+## LiteRT-LM Cache Directory
+
+The native LiteRT-LM runtime writes cache files such as
+`*_mldrift_program_cache.bin` (GPU programs), `*_mldrift_weight_cache.bin`
+(GPU weights), and `*.xnnpack_cache`. `llamadart` only chooses the directory:
+
+| `liteRtLmCacheDir` | macOS, Android | Other native platforms |
+| --- | --- | --- |
+| `null` (default) | `llamadart_litert_lm` under `Directory.systemTemp` | no directory is passed; the runtime caches next to the model file |
+| a path | that directory, created when missing | that directory, created when missing |
+
+Known runtime issue
+([#552](https://github.com/leehack/llamadart/issues/552)): with
+Qwen3.5-0.8B on the macOS GPU backend, every engine create appended about
+0.5 GB to `*_mldrift_program_cache.bin`, later creates logged
+`Deserialization failed: DATA_LOSS`, and deleting the file did not slow engine
+create. `llamadart` can create an engine more than once per loaded model:
+lazily on the first generation or tokenization after each context create, and
+again when speculative decoding, vision, audio, or image-count settings
+change.
+
+`liteRtLmMaxProgramCacheBytes` is an opt-in mitigation. `null` (default) never
+deletes anything. Otherwise, before each engine create, `llamadart` deletes
+regular files directly inside the effective cache directory whose name ends
+with `_mldrift_program_cache.bin` and whose size exceeds the cap. Weight and
+XNNPACK caches, subdirectories, and symbolic links are left alone. Each
+deletion logs a warning with the file size, and prune failures log a warning
+without failing the load. The backend worker prints both when the native log
+level (`LlamaEngine.setNativeLogLevel` or `setLogLevel`) is `debug`, `info`,
+or `warn`; the `LlamaEngine` default `none` suppresses them. They do not reach
+a `LlamaEngine.configureLogging` handler. When no directory is passed to the
+runtime (default on platforms other than macOS and Android), nothing is
+pruned; set `liteRtLmCacheDir` to enable pruning there.
+
+```dart
+const params = ModelParams(
+  liteRtLmCacheDir: '/data/app/litert-cache',
+  liteRtLmMaxProgramCacheBytes: 1024 * 1024 * 1024,
+);
+```
+
+LiteRT-LM web rejects both fields.
 
 ## Benchmarking Fairly
 

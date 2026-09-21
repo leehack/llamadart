@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
+  cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
+  deletes `*_mldrift_program_cache.bin` files above the cap before each engine
+  create and logs a warning per deleted file. Defaults are unchanged: the same
+  per-platform directory and no pruning
+  ([#552](https://github.com/leehack/llamadart/issues/552)).
 - Force greedy `topK: 1` for zero-temperature
   `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
   text on the LiteRT WebGPU sampler with the default top-k.

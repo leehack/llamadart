@@ -302,6 +302,46 @@ void main() {
       );
     });
 
+    test('LiteRT-LM cache options default to null', () {
+      const p = ModelParams();
+      expect(p.liteRtLmCacheDir, isNull);
+      expect(p.liteRtLmMaxProgramCacheBytes, isNull);
+      expect(p.validate, returnsNormally);
+    });
+
+    test('blank cache dir throws ArgumentError', () {
+      const p = ModelParams(liteRtLmCacheDir: ' ');
+      expect(
+        p.validate,
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'liteRtLmCacheDir',
+          ),
+        ),
+      );
+    });
+
+    test('negative program cache cap throws ArgumentError', () {
+      const p = ModelParams(liteRtLmMaxProgramCacheBytes: -1);
+      expect(
+        p.validate,
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'liteRtLmMaxProgramCacheBytes',
+          ),
+        ),
+      );
+    });
+
+    test('zero program cache cap is valid', () {
+      const p = ModelParams(liteRtLmMaxProgramCacheBytes: 0);
+      expect(p.validate, returnsNormally);
+    });
+
     test('blank dispatch dir throws ArgumentError', () {
       const p = ModelParams(liteRtLmDispatchLibDir: '  ');
       expect(
@@ -363,6 +403,29 @@ void main() {
         expect(cleared.liteRtLmDispatchLibDir, '/opt/litert');
       },
     );
+
+    test('copyWith sets, keeps, and clears LiteRT-LM cache options', () {
+      final updated = populated.copyWith(
+        liteRtLmCacheDir: '/data/litert-cache',
+        liteRtLmMaxProgramCacheBytes: 1024,
+      );
+      expect(updated.liteRtLmCacheDir, '/data/litert-cache');
+      expect(updated.liteRtLmMaxProgramCacheBytes, 1024);
+
+      final kept = updated.copyWith(contextSize: 128);
+      expect(kept.liteRtLmCacheDir, '/data/litert-cache');
+      expect(kept.liteRtLmMaxProgramCacheBytes, 1024);
+
+      final clearedDir = updated.copyWith(clearLiteRtLmCacheDir: true);
+      expect(clearedDir.liteRtLmCacheDir, isNull);
+      expect(clearedDir.liteRtLmMaxProgramCacheBytes, 1024);
+
+      final clearedCap = updated.copyWith(
+        clearLiteRtLmMaxProgramCacheBytes: true,
+      );
+      expect(clearedCap.liteRtLmCacheDir, '/data/litert-cache');
+      expect(clearedCap.liteRtLmMaxProgramCacheBytes, isNull);
+    });
 
     test('clearLiteRtLmDispatchLibDir: true sets field to null', () {
       final cleared = populated.copyWith(clearLiteRtLmDispatchLibDir: true);
