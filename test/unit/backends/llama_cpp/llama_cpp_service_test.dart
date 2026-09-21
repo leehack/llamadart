@@ -2132,7 +2132,7 @@ void main() {
       ]);
     });
 
-    test('a registry symbol missing everywhere records one entry', () {
+    test('a registry symbol missing everywhere flags the map only', () {
       final service = LlamaCppService();
       final value = _invokePrivateForTesting<Object?>(
         service,
@@ -2148,19 +2148,7 @@ void main() {
         ),
         isTrue,
       );
-      final entries = service.getStartupDiagnostics();
-      expect(entries, hasLength(1));
-      expect(
-        entries.single,
-        startsWith(
-          'A ggml backend registry symbol is unavailable: the primary FFI '
-          'asset does not export it and ',
-        ),
-      );
-      expect(
-        entries.single,
-        isNot(contains(path.dirname(Platform.resolvedExecutable))),
-      );
+      expect(service.getStartupDiagnostics(), isEmpty);
     });
 
     test('a ggml candidate that resolves the symbols records nothing', () {

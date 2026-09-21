@@ -3279,7 +3279,6 @@ class LlamaCppService {
       if (fallbackValue != null) {
         return fallbackValue;
       }
-      _recordMissingGgmlSymbol('A ggml backend registry symbol');
       _backendRegistrySymbolUnavailable = true;
       return fallback;
     }
