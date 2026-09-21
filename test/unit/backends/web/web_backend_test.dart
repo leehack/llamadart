@@ -48,6 +48,18 @@ void main() {
     expect(legacy.supportsGrammarConstraints, isTrue);
   });
 
+  test(
+    'WebAutoBackend forwards deferred engine creation from its delegate',
+    () {
+      final deferred = WebAutoBackend(webBackend: _DeferredEngineBackend());
+      final legacy = WebAutoBackend(webBackend: _NoStateBackend());
+
+      expect(deferred, isA<BackendDeferredEngineCreation>());
+      expect(deferred.defersEngineCreation, isTrue);
+      expect(legacy.defersEngineCreation, isFalse);
+    },
+  );
+
   test('WebAutoBackend rejects strict output for unsupported delegates', () {
     final backend = WebAutoBackend(
       webBackend: _GrammarSupportBackend(supportsGrammarConstraints: false),
@@ -320,6 +332,12 @@ class _EmbeddingSupportBackend
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DeferredEngineBackend extends _NoStateBackend
+    implements BackendDeferredEngineCreation {
+  @override
+  bool get defersEngineCreation => true;
 }
 
 class _GrammarSupportBackend extends _NoStateBackend
