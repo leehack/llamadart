@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
+  the native clamp
+  ([#548](https://github.com/leehack/llamadart/issues/548)).
 - Record one startup diagnostic when every candidate of a native backend
   module family fails to load, or when a `ggml`/wrapper symbol is missing from
   both the primary FFI asset and every fallback library. Candidates are named

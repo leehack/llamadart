@@ -20,6 +20,7 @@ import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
+import 'litert_lm_sampler_params.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
 const String _liteRtLmVideoUnsupportedMessage =
@@ -182,7 +183,7 @@ class LiteRtLmService {
     client.createConversation(
       temperature: params.temp,
       // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
-      topK: params.temp == 0 ? 1 : params.topK,
+      topK: liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK),
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
@@ -316,7 +317,7 @@ class LiteRtLmService {
       extraContext: extraContext,
       temperature: params.temp,
       // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
-      topK: params.temp == 0 ? 1 : params.topK,
+      topK: liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK),
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',

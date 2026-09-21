@@ -18,6 +18,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../backend.dart';
+import 'litert_lm_sampler_params.dart';
 
 /// Web LiteRT-LM backend for `.litertlm` models.
 ///
@@ -571,7 +572,10 @@ class LiteRtLmBackend
 
   JSObject _createConversationConfig(GenerationParams params) {
     final samplerParams = JSObject();
-    samplerParams.setProperty('k'.toJS, params.topK.toJS);
+    samplerParams.setProperty(
+      'k'.toJS,
+      liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK).toJS,
+    );
     samplerParams.setProperty('p'.toJS, params.topP.toJS);
     samplerParams.setProperty('temperature'.toJS, params.temp.toJS);
     samplerParams.setProperty(
