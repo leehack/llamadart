@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
+  the native clamp
+  ([#548](https://github.com/leehack/llamadart/issues/548)).
 - Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
   `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
   native startup diagnostics with `<redacted-secret>`; URL and
