@@ -7,45 +7,55 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.24
 
-- Prevent split MiniMax M3 thinking delimiters from leaking into streamed
-  reasoning while preserving literal text and tool-call parsing.
-
-* Discover Windows backend libraries in standard compiled Dart CLI bundles.
-
-- Render structured typed tool results as JSON text for chat templates while preserving string results and source objects.
-
-- Preserve Qwen XML tool argument types using declared schemas and reject invalid or undeclared calls without exposing executable tool deltas.
-
-- Settle pending LiteRT-LM requests when a worker stops, close their response ports, and report unverified native cleanup as an error.
-
-- Suppress caller stop markers in native GGUF streams, including split markers and speculative decoding.
-
-- Fix encoded audio bytes leaking into string chat-template prompts, restoring native Qwen3-ASR file/bytes transcription parity.
-
-- Explain unavailable native thinking-budget helpers with bounded, path-free loader diagnostics.
-
-- Aligned default WebGPU bridge assets to `v0.1.44` for Web/native
-  llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
-  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
-  manifest: `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
-
-* Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
-
-* Update native LiteRT-LM to `v0.17.0-6` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
-
-* Native LiteRT-LM `v0.17.0-6` bundles the DirectX Shader Compiler pair (`dxil.dll`, `dxcompiler.dll`) in the Windows x64 runtime so explicit GPU selection initializes.
-
-* Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
-
-* Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
-
-* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
-
-
-- Fix fresh macOS Flutter test/build dependency scanning while retaining the
-  Apple companion ABI and local-override guards.
+- Align native `leehack/llamadart-native@v0.4.1` on upstream
+  `b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`, with matching Dart bindings
+  and Apple companion `0.0.19`. This resolves the 0.8.23 grammar limitation:
+  native `{2000}` repetitions are accepted again
+  ([llamadart-native#76](https://github.com/leehack/llamadart-native/issues/76)).
+- Aligned default WebGPU bridge assets to `v0.1.44` for matching
+  Web/native `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
+  Immutable Web asset manifest:
+  `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
+- Update native LiteRT-LM to `v0.17.0-6` with Apple companion `0.0.11`,
+  Qwen3 tokenizer compatibility, corrected Linux loading, and explicit Linux
+  and Windows GPU selection while retaining CPU defaults. The Windows x64
+  runtime bundles `dxil.dll` and `dxcompiler.dll`, which D3D12 GPU engine
+  creation requires
+  ([litert-lm-native#47](https://github.com/leehack/litert-lm-native/issues/47)).
+  Web LiteRT-LM stays at `@litert-lm/core@0.15.0`.
+- Preserve required iOS LiteRT-LM provider and Metal plugins, handle dependency
+  ordering in companion libraries, and exclude metadata/import archives from
+  runtime library inventories.
+- Respect greedy sampling for zero-temperature native LiteRT-LM generation.
+- Restore native Qwen3 chat text when thinking is disabled and preserve plain
+  system instructions when seeding LiteRT-LM conversation history.
+- Settle pending LiteRT-LM requests when a worker stops, close response ports,
+  and report unverified native cleanup as an error.
+- Preserve Unicode when detokenizing native GGUF tokens and suppress caller
+  stop markers across chunk boundaries and speculative decoding.
+- Restore native Qwen3-ASR file/encoded-byte transcription parity by keeping
+  encoded audio out of string chat-template prompts.
+- Render typed tool results as JSON text while preserving string results,
+  validate Qwen XML argument types against schemas, and reject malformed or
+  undeclared tool calls without exposing executable tool deltas.
+- Prevent split MiniMax M3 thinking delimiters from leaking into reasoning.
+- Discover Windows backend libraries in compiled CLI bundles and provide
+  bounded diagnostics for unavailable native thinking-budget helpers.
+- Fix fresh macOS Flutter dependency scanning while retaining Apple ABI and
+  local-override guards.
+- Add locked Gemma 4/Qwen3.5 validation profiles, explicit NPU coverage, and
+  opt-in speech and voice-pipeline diagnostics.
+- Preserve physical iOS speech-test failure-phase diagnostics and keep
+  repository writer checks independent of generated website output.
+- Retain open LiteRT-LM qualification gaps: macOS Qwen3.5 GPU reload latency
+  ([#521](https://github.com/leehack/llamadart/issues/521)), Gemma exact-history
+  behavior ([#513](https://github.com/leehack/llamadart/issues/513)), and
+  Qwen3-0.6B arithmetic on Android CPU and iOS CPU/GPU
+  ([#509](https://github.com/leehack/llamadart/issues/509)). The affected cases
+  remain unqualified; these changes do not resolve the failures or establish
+  their remaining owning layer.
 
 ## 0.8.23
 
