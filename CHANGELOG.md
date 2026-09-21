@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
+  checksums) from `hook/build.dart` into
+  `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
+  rewrites.
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
   deletes `*_mldrift_program_cache.bin` files above the cap before each engine

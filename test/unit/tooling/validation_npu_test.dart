@@ -66,9 +66,11 @@ void main() {
     );
     profileFile.parent.createSync(recursive: true);
     profileFile.writeAsStringSync(jsonEncode(profile));
-    final hook = File(p.join(root.path, 'hook/build.dart'));
-    hook.parent.createSync();
-    hook.writeAsStringSync("const _litertLmVersion = '$npuRuntimeTag';");
+    final pins = File(
+      p.join(root.path, 'lib/src/hook/native_release_pins.dart'),
+    );
+    pins.parent.createSync(recursive: true);
+    pins.writeAsStringSync("const liteRtLmVersion = '$npuRuntimeTag';");
     manifest = {
       'schema_version': 1,
       'target': 'Google_Tensor_G5',
@@ -199,8 +201,8 @@ void main() {
 
   test('runtime pin drift requires a new dependency audit', () async {
     File(
-      p.join(root.path, 'hook/build.dart'),
-    ).writeAsStringSync("const _litertLmVersion = '0.18.0';");
+      p.join(root.path, 'lib/src/hook/native_release_pins.dart'),
+    ).writeAsStringSync("const liteRtLmVersion = '0.18.0';");
     expect(status(await inspect(), 'runtime_pin'), 'NOT_RUN');
   });
 

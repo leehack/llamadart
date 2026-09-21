@@ -49,7 +49,7 @@ String? standaloneLiteRtTarget(Abi abi) => switch (abi) {
     throw const FormatException('Unsupported standalone LiteRT target');
   }
   final match = RegExp(
-    "_LiteRtLmBundleSpec\\(\\s*'$target',\\s*sha256:\\s*'([a-f0-9]{64})',\\s*requiredLibraries:\\s*\\{([^}]+)\\}",
+    "\\bLiteRtLmBundleSpec\\(\\s*'$target',\\s*sha256:\\s*'([a-f0-9]{64})',\\s*requiredLibraries:\\s*\\{([^}]+)\\}",
   ).firstMatch(source);
   if (match == null) {
     throw StateError('Pinned LiteRT archive contract unavailable for $target');
@@ -92,7 +92,9 @@ Future<void> bundleLiteRtRuntime(
   final os = parts.first;
   final arch = parts.last;
   final spec = liteRtArchiveSpec(
-    File(p.join(root, 'hook', 'build.dart')).readAsStringSync(),
+    File(
+      p.join(root, 'lib/src/hook/native_release_pins.dart'),
+    ).readAsStringSync(),
     target,
   );
   final version = provenance['litert_tag'] as String;

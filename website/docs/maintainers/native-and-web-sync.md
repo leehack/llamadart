@@ -39,8 +39,8 @@ bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 
 | Runtime | Core native-assets pin | Apple SPM companion pin |
 | --- | --- | --- |
-| llama.cpp / GGUF | `hook/build.dart` `_llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
-| LiteRT-LM / `.litertlm` | `hook/build.dart` `_litertLmVersion`, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
+| llama.cpp / GGUF | `lib/src/hook/native_release_pins.dart` `llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
+| LiteRT-LM / `.litertlm` | `lib/src/hook/native_release_pins.dart` `liteRtLmReleaseTag` and per-bundle checksums, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
 
 Preferred in-repo workflow:
 
@@ -152,7 +152,7 @@ Use this checklist in native sync PRs:
   `tool/native/fixtures/`; do not add a downstream-only manifest variant.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
   artifacts when companion package pins should move.
-- Update `hook/build.dart` native pins with
+- Update `lib/src/hook/native_release_pins.dart` native pins with
   `.github/workflows/sync_native_bindings.yml` or
   `tool/native/sync_native_release_pins.py`.
 - Update companion package `Package.swift` URL/checksum pins under `packages/`

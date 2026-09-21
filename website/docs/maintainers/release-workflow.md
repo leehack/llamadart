@@ -24,8 +24,9 @@ Ensure migration/changelog docs reflect behavior in the release branch.
 Before publishing a release that changes native runtime pins, verify native
 version alignment:
 
-- `hook/build.dart` native-assets pins and companion package `Package.swift`
-  Apple SPM pins should reference compatible native repo releases.
+- `lib/src/hook/native_release_pins.dart` native-assets pins and companion
+  package `Package.swift` Apple SPM pins should reference compatible native repo
+  releases.
 - Companion package README and CHANGELOG files should name the native repo tags
   they publish.
 - `llamadart-native` owns llama.cpp bridge artifacts for native-assets and

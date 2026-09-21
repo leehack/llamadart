@@ -43,24 +43,27 @@ Future<Map<String, dynamic>> readValidationProvenance(
     throw StateError('Cannot establish source revision and working-tree state');
   }
   final hook = File(p.join(root, 'hook', 'build.dart')).readAsStringSync();
+  final pins = File(
+    p.join(root, 'lib/src/hook/native_release_pins.dart'),
+  ).readAsStringSync();
   String? pin(String key) =>
-      RegExp("const $key = '([^']+)'").firstMatch(hook)?.group(1);
+      RegExp("const $key = '([^']+)'").firstMatch(pins)?.group(1);
   final bridgeScript = File(
     p.join(root, 'scripts', 'fetch_webgpu_bridge_assets.sh'),
   ).readAsStringSync();
   final bridgeTag = RegExp(
     r'WEBGPU_BRIDGE_ASSETS_TAG:-([^}]+)',
   ).firstMatch(bridgeScript)?.group(1);
-  if (pin('_llamaCppTag') == null ||
-      pin('_litertLmVersion') == null ||
+  if (pin('llamaCppTag') == null ||
+      pin('liteRtLmVersion') == null ||
       bridgeTag == null) {
     throw StateError('Cannot establish runtime pins');
   }
   return {
     'source_commit': source,
     'source_dirty': status.output.isNotEmpty,
-    'native_tag': pin('_llamaCppTag'),
-    'litert_tag': pin('_litertLmVersion'),
+    'native_tag': pin('llamaCppTag'),
+    'litert_tag': pin('liteRtLmVersion'),
     'bridge_tag': bridgeTag,
     'hook_sha256': sha256.convert(utf8.encode(hook)).toString(),
   };

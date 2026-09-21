@@ -41,7 +41,7 @@ Directory _fakeRuntimeRepo({
   final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
   addTearDown(() => root.deleteSync(recursive: true));
   final entries = <String, String>{
-    nativeLlamaCppTagPath: "const _llamaCppTag = '$nativeTag';\n",
+    nativeLlamaCppTagPath: "const llamaCppTag = '$nativeTag';\n",
     'example/chat_app/web/index.html':
         "    const defaultBridgeLlamaCppTag = '$bridgeTag';\n",
     'doc/webgpu_bridge.md': parityWording
@@ -272,7 +272,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const _litertLmReleaseTag = 'v0.17.0-6';"),
+        contains("const liteRtLmReleaseTag = 'v0.17.0-6';"),
       );
     },
   );
@@ -769,7 +769,7 @@ void main() {
       expect(
         findBridgeRuntimeDrift(root, 'v0.2.0'),
         contains(
-          '$nativeLlamaCppTagPath: found 0 _llamaCppTag constants, expected '
+          '$nativeLlamaCppTagPath: found 0 llamaCppTag constants, expected '
           'exactly 1; the gate cannot identify the active native pin',
         ),
       );
@@ -778,15 +778,13 @@ void main() {
     test('duplicate native pin constants fail closed', () {
       final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-1');
       File('${root.path}/$nativeLlamaCppTagPath').writeAsStringSync(
-        "const _llamaCppTag = 'v0.2.0-1';\n"
-        "const _llamaCppTag = 'v0.3.0-1';\n",
+        "const llamaCppTag = 'v0.2.0-1';\n"
+        "const llamaCppTag = 'v0.3.0-1';\n",
       );
 
       expect(
         findBridgeRuntimeDrift(root, 'v0.2.0'),
-        contains(
-          contains('found 2 _llamaCppTag constants, expected exactly 1'),
-        ),
+        contains(contains('found 2 llamaCppTag constants, expected exactly 1')),
       );
     });
 

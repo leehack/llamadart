@@ -455,7 +455,7 @@ def _run_schema2_sync(
         )
         shutil.copyfile(source_root / "pubspec.yaml", repo_root / "pubspec.yaml")
     for relative_path in (
-        "hook/build.dart",
+        "lib/src/hook/native_release_pins.dart",
         "lib/src/backends/litert_lm/litert_lm_runtime.dart",
         "tool/macos_litert_lm_prepare_app.sh",
         "README.md",
@@ -472,11 +472,11 @@ def _run_schema2_sync(
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative_path, target)
     # Historical transition fixtures must not follow the checkout's live pin.
-    hook = repo_root / "hook/build.dart"
-    hook.write_text(re.sub(
-        r"const _litertLmReleaseTag = '[^']+';",
-        f"const _litertLmReleaseTag = '{current_litert_tag}';",
-        hook.read_text(),
+    pins = repo_root / "lib/src/hook/native_release_pins.dart"
+    pins.write_text(re.sub(
+        r"const liteRtLmReleaseTag = '[^']+';",
+        f"const liteRtLmReleaseTag = '{current_litert_tag}';",
+        pins.read_text(),
     ))
     swift = repo_root / (
         "packages/llamadart_litert_lm_flutter/darwin/"
@@ -751,7 +751,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             result = _run_schema2_sync(Path(temp), manifest, release,
                 current_litert_tag="v0.15.0-native.2", allow_stable_rebuild_entry=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("v0.15.0-native.2", (Path(temp) / "repo/hook/build.dart").read_text())
+            self.assertIn("v0.15.0-native.2", (Path(temp) / "repo/lib/src/hook/native_release_pins.dart").read_text())
 
     def test_stable_rebuild_entry_opt_in_preserves_other_guards(self) -> None:
         validate_litert_lm_transition(
@@ -1561,8 +1561,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        hook_path = Path(__file__).resolve().parents[2] / "hook" / "build.dart"
-        prepared = hook_path.read_text(encoding="utf-8")
+        pins_path = Path(__file__).resolve().parents[2] / "lib/src/hook/native_release_pins.dart"
+        prepared = pins_path.read_text(encoding="utf-8")
         expected = litert_schema2_bundle_required_libraries(manifest)
         for bundle, libraries in expected.items():
             prepared = replace_litert_lm_bundle_required_libraries(
@@ -1578,7 +1578,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
         self.assertIn("requiredLibraries: {'LiteRtLm.dll'},", prepared)
         for bundle, libraries in expected.items():
-            bundle_start = prepared.index(f"_LiteRtLmBundleSpec(\n    '{bundle}',")
+            bundle_start = prepared.index(f"LiteRtLmBundleSpec(\n    '{bundle}',")
             bundle_end = prepared.index("\n  ),", bundle_start)
             block = prepared[bundle_start:bundle_end]
             required_block = block[block.index("requiredLibraries:") :]
@@ -1991,7 +1991,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 tag=tag,
                 release_json_dir=str(release_dir),
                 required_bundles=litert_lm_bundle_names(
-                    (Path(__file__).resolve().parents[2] / "hook/build.dart").read_text(
+                    (Path(__file__).resolve().parents[2] / "lib/src/hook/native_release_pins.dart").read_text(
                         encoding="utf-8"
                     )
                 ),
@@ -2008,7 +2008,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
     def test_hook_bundle_inventory_rejects_duplicate_specs(self) -> None:
         spec = (
-            "_LiteRtLmBundleSpec('linux-x64', "
+            "LiteRtLmBundleSpec('linux-x64', "
             "sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
             "requiredLibraries: {'libLiteRtLm.so'}),"
         )
@@ -2017,7 +2017,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
     def test_hook_library_sets_follow_dart_formatter_width(self) -> None:
         hook = (
-            "_LiteRtLmBundleSpec(\n"
+            "LiteRtLmBundleSpec(\n"
             "    'linux-x64',\n"
             f"    sha256: '{'a' * 64}',\n"
             "    requiredLibraries: {'old.so'},\n"

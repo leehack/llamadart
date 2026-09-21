@@ -90,10 +90,10 @@ jobs:
           import pathlib
           import re
 
-          text = pathlib.Path("hook/build.dart").read_text()
-          match = re.search(r"const _litertLmVersion = '([^']+)';", text)
+          text = pathlib.Path("lib/src/hook/native_release_pins.dart").read_text()
+          match = re.search(r"const liteRtLmVersion = '([^']+)';", text)
           if not match:
-              raise SystemExit("Could not locate _litertLmVersion")
+              raise SystemExit("Could not locate liteRtLmVersion")
           print(match.group(1))
           PY
           )"

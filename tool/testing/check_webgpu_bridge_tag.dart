@@ -394,9 +394,9 @@ const String bridgeManifestSha256 =
     '8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9';
 
 /// Where the native runtime's llama.cpp build is pinned.
-const String nativeLlamaCppTagPath = 'hook/build.dart';
+const String nativeLlamaCppTagPath = 'lib/src/hook/native_release_pins.dart';
 
-final RegExp _nativeLlamaCppTag = RegExp(r"const _llamaCppTag = '([^']+)';");
+final RegExp _nativeLlamaCppTag = RegExp(r"const llamaCppTag = '([^']+)';");
 
 /// Every site that names the llama.cpp build the bridge assets embed.
 ///
@@ -481,7 +481,8 @@ Map<String, String> get bridgeProvenanceValues => <String, String>{
 
 /// Returns one message per problem with the Web/native llama.cpp relationship.
 ///
-/// `hook/build.dart` and the bridge manifest move in different repositories, so
+/// `lib/src/hook/native_release_pins.dart` and the bridge manifest move in different
+/// repositories, so
 /// nothing else notices when a native pin bump silently ends Web/native parity
 /// and leaves the docs claiming it.
 /// [bridgeTag] is the llama.cpp upstream release tag embedded by the bridge
@@ -497,7 +498,7 @@ List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
   final matches = _nativeLlamaCppTag.allMatches(nativeContents).toList();
   if (matches.length != 1) {
     return <String>[
-      '$nativeLlamaCppTagPath: found ${matches.length} _llamaCppTag constants, '
+      '$nativeLlamaCppTagPath: found ${matches.length} llamaCppTag constants, '
           'expected exactly 1; the gate cannot identify the active native pin',
     ];
   }

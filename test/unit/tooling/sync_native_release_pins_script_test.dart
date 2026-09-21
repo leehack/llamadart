@@ -10,6 +10,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+const _pinsPath = 'lib/src/hook/native_release_pins.dart';
+
 void main() {
   test('sync CLI preserves generated macOS GPU completeness checks', () async {
     final result = await Process.run('python3', [
@@ -183,25 +185,26 @@ else:
     );
     addTearDown(() => root.delete(recursive: true));
 
-    await Directory(path.join(root.path, 'hook')).create(recursive: true);
+    final pinsFile = File(path.join(root.path, _pinsPath));
+    await pinsFile.parent.create(recursive: true);
     final releaseDir = Directory(path.join(root.path, 'releases'))
       ..createSync(recursive: true);
 
-    await File(path.join(root.path, 'hook', 'build.dart')).writeAsString('''
-const _llamaCppTag = 'b9998';
-const _litertLmReleaseTag = 'v1.0.0';
-const _litertLmVersion = '1.0.0';
+    await pinsFile.writeAsString('''
+const llamaCppTag = 'b9998';
+const liteRtLmReleaseTag = 'v1.0.0';
+const liteRtLmVersion = '1.0.0';
 
-const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
-  _LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('android-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('ios-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('ios-arm64-sim', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('linux-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('linux-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('macos-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('macos-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
-  _LiteRtLmBundleSpec('windows-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
+  LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('android-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('ios-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('ios-arm64-sim', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('linux-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('linux-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('macos-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('macos-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  LiteRtLmBundleSpec('windows-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
 ];
 ''');
     final litertRuntimeDart = File(
@@ -350,16 +353,14 @@ paths=(
     expect(result.stdout, contains('llama.cpp -> leehack/llamadart-native'));
     expect(result.stdout, contains('LiteRT-LM -> leehack/litert-lm-native'));
 
-    final hook = await File(
-      path.join(root.path, 'hook', 'build.dart'),
-    ).readAsString();
-    expect(hook, contains("const _llamaCppTag = '$llamaTag';"));
-    expect(hook, contains("const _litertLmReleaseTag = '$litertTag';"));
-    expect(hook, contains("const _litertLmVersion = '9.9.9';"));
-    expect(hook, contains("sha256: '$litertRuntimeChecksum'"));
-    expect(hook, isNot(contains("requiredLibraries: {'runtime'}")));
-    expect(hook, contains("'libLiteRtLm.so'"));
-    expect(hook, contains("'libwebgpu_dawn.so'"));
+    final pins = await pinsFile.readAsString();
+    expect(pins, contains("const llamaCppTag = '$llamaTag';"));
+    expect(pins, contains("const liteRtLmReleaseTag = '$litertTag';"));
+    expect(pins, contains("const liteRtLmVersion = '9.9.9';"));
+    expect(pins, contains("sha256: '$litertRuntimeChecksum'"));
+    expect(pins, isNot(contains("requiredLibraries: {'runtime'}")));
+    expect(pins, contains("'libLiteRtLm.so'"));
+    expect(pins, contains("'libwebgpu_dawn.so'"));
     final litertRuntimeDartText = (await litertRuntimeDart.readAsString())
         .replaceAll('\r\n', '\n');
     expect(
@@ -785,10 +786,8 @@ paths=(
         reason: '${transition.stdout}\n${transition.stderr}',
       );
       expect(
-        await File(
-          path.join(setup.root.path, 'hook', 'build.dart'),
-        ).readAsString(),
-        contains("const _llamaCppTag = 'v0.2.0';"),
+        await File(path.join(setup.root.path, _pinsPath)).readAsString(),
+        contains("const llamaCppTag = 'v0.2.0';"),
       );
       expect(
         await File(path.join(setup.root.path, 'README.md')).readAsString(),
@@ -803,10 +802,8 @@ paths=(
         reason: '${upgrade.stdout}\n${upgrade.stderr}',
       );
       expect(
-        await File(
-          path.join(setup.root.path, 'hook', 'build.dart'),
-        ).readAsString(),
-        contains("const _llamaCppTag = 'v0.2.1';"),
+        await File(path.join(setup.root.path, _pinsPath)).readAsString(),
+        contains("const llamaCppTag = 'v0.2.1';"),
       );
 
       final latestSetup = await _writeLlamaOnlyRepo('b10514');
@@ -1495,10 +1492,11 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
   });
 
   test('keeps LiteRT release identity separate from cache version', () {
+    final pins = File(_pinsPath).readAsStringSync();
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.17.0-6';"));
     final hook = File('hook/build.dart').readAsStringSync();
-    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-6';"));
-    expect(hook, contains(r"'$_litertLmReleaseTag'"));
-    expect(hook, isNot(contains(r"v$_litertLmVersion")));
+    expect(hook, contains(r"'$liteRtLmReleaseTag'"));
+    expect(hook, isNot(contains(r"v$liteRtLmVersion")));
 
     final workflow = File(
       '.github/workflows/sync_native_bindings.yml',
@@ -1849,9 +1847,10 @@ print("parent exited after spawning child", flush=True)
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
   final root = await Directory.systemTemp.createTemp('native_semver_sync_');
-  await Directory(path.join(root.path, 'hook')).create(recursive: true);
-  await File(path.join(root.path, 'hook', 'build.dart')).writeAsString('''
-const _llamaCppTag = '$currentTag';
+  final pinsFile = File(path.join(root.path, _pinsPath));
+  await pinsFile.parent.create(recursive: true);
+  await pinsFile.writeAsString('''
+const llamaCppTag = '$currentTag';
 ''');
   final releaseDir = Directory(path.join(root.path, 'releases'))
     ..createSync(recursive: true);

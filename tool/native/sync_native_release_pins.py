@@ -23,6 +23,7 @@ from typing import Any, NamedTuple
 
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
+DEFAULT_NATIVE_RELEASE_PINS = "lib/src/hook/native_release_pins.dart"
 DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
     "packages/llamadart_llama_cpp_flutter/darwin/"
     "llamadart_llama_cpp_flutter/Package.swift"
@@ -692,7 +693,7 @@ def validate_litert_spm_release_asset_digests(
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
-    hook_path = repo_root / args.hook_build
+    pins_path = repo_root / args.native_pins
     llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
     litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
     litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
@@ -702,7 +703,7 @@ def main() -> int:
         repo_root / relative_path for relative_path in DEFAULT_LLAMA_CPP_PROJECT_DOCS
     ]
 
-    hook_text = hook_path.read_text(encoding="utf-8")
+    pins_text = pins_path.read_text(encoding="utf-8")
     pending_writes: dict[Path, str] = {}
     project_doc_dependency_versions: dict[str, str] = {}
 
@@ -722,7 +723,7 @@ def main() -> int:
         resolved_llama_cpp_tag = validate_resolved_native_release(
             release,
             requested_tag=llama_cpp_tag_input,
-            current_tag=read_hook_native_tag(hook_text),
+            current_tag=read_hook_native_tag(pins_text),
             allow_legacy_tag=args.allow_legacy_tag,
         )
         validate_native_release_manifest(
@@ -730,11 +731,11 @@ def main() -> int:
             resolved_llama_cpp_tag,
             repo=args.llamadart_native_repo,
         )
-        hook_text = replace_one(
-            hook_text,
-            r"const _llamaCppTag = '[^']+';",
-            f"const _llamaCppTag = '{resolved_llama_cpp_tag}';",
-            "hook llama.cpp tag",
+        pins_text = replace_one(
+            pins_text,
+            r"const llamaCppTag = '[^']+';",
+            f"const llamaCppTag = '{resolved_llama_cpp_tag}';",
+            "native pins llama.cpp tag",
         )
         if llama_cpp_package_swift_path.exists():
             checksum = release_asset_checksum(
@@ -790,7 +791,7 @@ def main() -> int:
             args.release_json_dir,
         )
         resolved_litert_lm_tag = release["tag_name"]
-        current_litert_lm_tag = current_litert_lm_release_tag(hook_text)
+        current_litert_lm_tag = current_litert_lm_release_tag(pins_text)
         validate_litert_lm_transition(
             current_litert_lm_tag,
             resolved_litert_lm_tag,
@@ -806,20 +807,20 @@ def main() -> int:
             repo=args.litert_lm_native_repo,
             tag=resolved_litert_lm_tag,
             release_json_dir=args.release_json_dir,
-            required_bundles=litert_lm_bundle_names(hook_text),
+            required_bundles=litert_lm_bundle_names(pins_text),
         )
 
-        hook_text = replace_one(
-            hook_text,
-            r"const _litertLmReleaseTag = '[^']+';",
-            f"const _litertLmReleaseTag = '{resolved_litert_lm_tag}';",
-            "hook LiteRT-LM release tag",
+        pins_text = replace_one(
+            pins_text,
+            r"const liteRtLmReleaseTag = '[^']+';",
+            f"const liteRtLmReleaseTag = '{resolved_litert_lm_tag}';",
+            "native pins LiteRT-LM release tag",
         )
-        hook_text = replace_one(
-            hook_text,
-            r"const _litertLmVersion = '[^']+';",
-            f"const _litertLmVersion = '{litert_version}';",
-            "hook LiteRT-LM version",
+        pins_text = replace_one(
+            pins_text,
+            r"const liteRtLmVersion = '[^']+';",
+            f"const liteRtLmVersion = '{litert_version}';",
+            "native pins LiteRT-LM version",
         )
         if not litert_lm_runtime_dart_path.exists():
             raise ReleaseError(
@@ -874,21 +875,21 @@ def main() -> int:
                     resolved_tag=resolved_litert_lm_tag,
                 )
             pending_writes[litert_lm_macos_prepare_path] = updated_prepare_text
-        for bundle in litert_lm_bundle_names(hook_text):
+        for bundle in litert_lm_bundle_names(pins_text):
             checksum = release_asset_checksum(
                 release,
                 f"litert-lm-native-runtime-{bundle}-{resolved_litert_lm_tag}.tar.gz",
                 repo=args.litert_lm_native_repo,
             )
-            hook_text = replace_litert_lm_bundle_checksum(
-                hook_text,
+            pins_text = replace_litert_lm_bundle_checksum(
+                pins_text,
                 bundle,
                 checksum,
             )
         if schema2_bundle_libraries is not None:
             for bundle, libraries in schema2_bundle_libraries.items():
-                hook_text = replace_litert_lm_bundle_required_libraries(
-                    hook_text,
+                pins_text = replace_litert_lm_bundle_required_libraries(
+                    pins_text,
                     bundle,
                     libraries,
                 )
@@ -937,7 +938,7 @@ def main() -> int:
     if args.dry_run:
         print("Dry run; no files written.")
     else:
-        pending_writes[hook_path] = hook_text
+        pending_writes[pins_path] = pins_text
         atomic_write_many(pending_writes)
 
     for summary in summaries:
@@ -955,8 +956,8 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Update hook/build.dart from published native release asset "
-            "checksums."
+            "Update the native release pins from published native release "
+            "asset checksums."
         )
     )
     parser.add_argument(
@@ -965,9 +966,9 @@ def parse_args() -> argparse.Namespace:
         help="Repository root. Defaults to the current directory.",
     )
     parser.add_argument(
-        "--hook-build",
-        default="hook/build.dart",
-        help="Path to hook/build.dart relative to repo root.",
+        "--native-pins",
+        default=DEFAULT_NATIVE_RELEASE_PINS,
+        help="Path to the native release pins Dart file relative to repo root.",
     )
     parser.add_argument(
         "--llama-cpp-package-swift",
@@ -1227,10 +1228,10 @@ def parse_native_release_tag(tag: str) -> NativeReleaseVersion:
     )
 
 
-def read_hook_native_tag(hook_text: str) -> str:
-    match = re.search(r"const _llamaCppTag = '([^']+)';", hook_text)
+def read_hook_native_tag(pins_text: str) -> str:
+    match = re.search(r"const llamaCppTag = '([^']+)';", pins_text)
     if not match:
-        raise ReleaseError("Could not read hook llama.cpp tag")
+        raise ReleaseError("Could not read pinned llama.cpp tag")
     tag = match.group(1)
     parse_native_release_tag(tag)
     return tag
@@ -1691,15 +1692,17 @@ def normalize_litert_lm_release_tag(tag: str) -> str:
     )
 
 
-def current_litert_lm_release_tag(hook_text: str) -> str:
+def current_litert_lm_release_tag(pins_text: str) -> str:
     release_match = re.search(
-        r"const _litertLmReleaseTag = '([^']+)';", hook_text
+        r"const liteRtLmReleaseTag = '([^']+)';", pins_text
     )
     if release_match is not None:
         return release_match.group(1)
-    match = re.search(r"const _litertLmVersion = '([^']+)';", hook_text)
+    match = re.search(r"const liteRtLmVersion = '([^']+)';", pins_text)
     if match is None:
-        raise ReleaseError("Could not find current LiteRT-LM version in hook/build.dart")
+        raise ReleaseError(
+            f"Could not find current LiteRT-LM version in {DEFAULT_NATIVE_RELEASE_PINS}"
+        )
     version = match.group(1)
     return version if version.startswith("g") else f"v{version}"
 
@@ -2690,29 +2693,33 @@ def atomic_write_many(
             path.unlink(missing_ok=True)
 
 
-def litert_lm_bundle_names(hook_text: str) -> list[str]:
+def litert_lm_bundle_names(pins_text: str) -> list[str]:
     pattern = re.compile(
-        r"_LiteRtLmBundleSpec\(\s*'([^']+)',\s*sha256: '[0-9a-f]+'",
+        r"\bLiteRtLmBundleSpec\(\s*'([^']+)',\s*sha256: '[0-9a-f]+'",
         re.DOTALL,
     )
-    bundles = pattern.findall(hook_text)
+    bundles = pattern.findall(pins_text)
     if not bundles:
-        raise ReleaseError("Could not find LiteRT-LM bundle specs in hook/build.dart")
+        raise ReleaseError(
+            f"Could not find LiteRT-LM bundle specs in {DEFAULT_NATIVE_RELEASE_PINS}"
+        )
     if len(bundles) != len(set(bundles)):
-        raise ReleaseError("hook/build.dart contains duplicate LiteRT-LM bundle specs")
+        raise ReleaseError(
+            f"{DEFAULT_NATIVE_RELEASE_PINS} contains duplicate LiteRT-LM bundle specs"
+        )
     return bundles
 
 
 def replace_litert_lm_bundle_checksum(
-    hook_text: str,
+    pins_text: str,
     bundle: str,
     checksum: str,
 ) -> str:
     pattern = re.compile(
-        rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*sha256: ')[0-9a-f]+(')",
+        rf"(\bLiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*sha256: ')[0-9a-f]+(')",
         re.DOTALL,
     )
-    updated, count = pattern.subn(rf"\g<1>{checksum}\2", hook_text, count=1)
+    updated, count = pattern.subn(rf"\g<1>{checksum}\2", pins_text, count=1)
     if count != 1:
         raise ReleaseError(f"Could not replace LiteRT-LM checksum for {bundle}")
     return updated
@@ -2797,7 +2804,7 @@ def litert_schema2_bundle_required_libraries(
 
 
 def replace_litert_lm_bundle_required_libraries(
-    hook_text: str,
+    pins_text: str,
     bundle: str,
     libraries: tuple[str, ...],
 ) -> str:
@@ -2808,7 +2815,7 @@ def replace_litert_lm_bundle_required_libraries(
         f"      '{library}',\n" for library in libraries
     ) + "    }"
     pattern = re.compile(
-        rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
+        rf"(\bLiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
         r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
         re.DOTALL,
     )
@@ -2822,7 +2829,7 @@ def replace_litert_lm_bundle_required_libraries(
         )
         return f"{match.group(1)}{required_libraries},{match.group(2)}"
 
-    updated, count = pattern.subn(replacement, hook_text, count=1)
+    updated, count = pattern.subn(replacement, pins_text, count=1)
     if count != 1:
         raise ReleaseError(
             f"Could not replace LiteRT-LM required libraries for {bundle}"
