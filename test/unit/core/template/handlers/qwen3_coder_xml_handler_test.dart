@@ -270,6 +270,60 @@ void main() {
     expect(nonThinking.thinkingForcedOpen, isFalse);
     expect(nonThinking.prompt, contains('<think>\n\n</think>'));
   });
+
+  test('grammar root repeats tool calls only with parallel tool calls', () {
+    final handler = Qwen3CoderXmlHandler();
+    final tools = [
+      ToolDefinition(
+        name: 'search',
+        description: 'Search docs',
+        parameters: [ToolParam.string('query', required: true)],
+        handler: _noop,
+      ),
+    ];
+    const qwenTemplate = '{{ messages[0]["content"] }}';
+    const nemotronTemplate =
+        '{% set truncate_history_thinking = true %}'
+        '<tool_call><function><parameters><think>';
+    String rootOf(String grammar) {
+      return grammar
+          .split('\n')
+          .singleWhere((line) => line.startsWith('root ::='));
+    }
+
+    String rootFor(String templateSource, Map<String, String> metadata) {
+      final rendered = handler.render(
+        templateSource: templateSource,
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        metadata: metadata,
+        tools: tools,
+      );
+      return rootOf(rendered.grammar!);
+    }
+
+    const single =
+        'root ::= "<tool_call>" xml-space tool-call "</tool_call>" xml-space';
+    const repeated =
+        'root ::= "<tool_call>" xml-space tool-call+ "</tool_call>" xml-space';
+    for (final templateSource in [qwenTemplate, nemotronTemplate]) {
+      expect(rootFor(templateSource, const {}), equals(single));
+      expect(
+        rootFor(templateSource, const {
+          internalParallelToolCallsMetadataKey: 'false',
+        }),
+        equals(single),
+      );
+      expect(
+        rootFor(templateSource, const {
+          internalParallelToolCallsMetadataKey: 'true',
+        }),
+        equals(repeated),
+      );
+    }
+    expect(rootOf(handler.buildGrammar(tools)!), equals(repeated));
+  });
 }
 
 Future<Object?> _noop(_) async {

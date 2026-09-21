@@ -103,13 +103,18 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final resultFormat = isNemotronV3
         ? ChatFormat.pegConstructed.index
         : format.index;
+    final grammar = buildXmlToolCallGrammar(
+      tools,
+      XmlToolCallFormat.qwen3Coder,
+      parallelToolCalls: parallelToolCalls,
+    );
 
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: resultFormat,
       grammar: isNemotronV3
-          ? (nemotronAllowToolCalls ? buildGrammar(tools) : null)
-          : buildGrammar(tools),
+          ? (nemotronAllowToolCalls ? grammar : null)
+          : grammar,
       grammarLazy: isNemotronV3
           ? (nemotronAllowToolCalls && !toolChoiceRequired)
           : hasTools,

@@ -32,6 +32,10 @@
   parallel tool calls are enabled; it previously always allowed repeats while
   the parser kept only the first call
   ([#559](https://github.com/leehack/llamadart/issues/559)).
+- Limit the Qwen3-Coder XML tool-call grammar to a single tool call unless
+  parallel tool calls are enabled; it previously always allowed repeats, which
+  the Nemotron v3 parser capped at one call
+  ([#562](https://github.com/leehack/llamadart/issues/562)).
 
 ## 0.8.24
 
