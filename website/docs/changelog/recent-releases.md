@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Require `dxcompiler.dll` and `dxil.dll` in the Windows x64 LiteRT-LM runtime
+  cache and desktop validation bundle checks, matching the hook's v0.17.0-6
+  inventory. The runtime does not preload them: Dawn's D3D12 backend loads the
+  pair at GPU engine creation
+  ([#570](https://github.com/leehack/llamadart/issues/570)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
   deletes `*_mldrift_program_cache.bin` files above the cap before each engine

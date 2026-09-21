@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Require `dxcompiler.dll` and `dxil.dll` in the Windows x64 LiteRT-LM runtime
+  cache and desktop validation bundle checks, matching the hook's v0.17.0-6
+  inventory. The runtime does not preload them: Dawn's D3D12 backend loads the
+  pair at GPU engine creation
+  ([#570](https://github.com/leehack/llamadart/issues/570)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now

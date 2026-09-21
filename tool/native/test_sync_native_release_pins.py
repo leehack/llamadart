@@ -2250,5 +2250,70 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
                     pins.normalize_release_tag(tag)
 
 
+class CompanionChangelogUnreleasedTest(unittest.TestCase):
+    repo = "leehack/litert-lm-native"
+    entry = "* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v2`."
+    released = "## 0.0.11\n\n" + entry + "\n\n## 0.0.10\n\n* Older.\n"
+
+    def test_adds_unreleased_entry_for_a_new_pin(self) -> None:
+        updated = pins.update_companion_changelog_unreleased(
+            "## 0.0.11\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/litert-lm-native@v1`.\n",
+            self.entry,
+            self.repo,
+            released_version="0.0.11",
+        )
+        self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.11"))
+
+    def test_replaces_stale_unreleased_pin_entry(self) -> None:
+        updated = pins.update_companion_changelog_unreleased(
+            "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/litert-lm-native@v1`.\n* Kept.\n\n## 0.0.11\n\n* Old.\n",
+            self.entry,
+            self.repo,
+            released_version="0.0.11",
+        )
+        self.assertEqual(
+            updated,
+            f"## Unreleased\n\n{self.entry}\n\n* Kept.\n\n## 0.0.11\n\n* Old.\n",
+        )
+
+    def test_is_a_no_op_when_the_released_section_records_the_pin(self) -> None:
+        self.assertEqual(
+            pins.update_companion_changelog_unreleased(
+                self.released, self.entry, self.repo, released_version="0.0.11"
+            ),
+            self.released,
+        )
+
+    def test_drops_stale_unreleased_pin_already_released(self) -> None:
+        stale = (
+            "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/litert-lm-native@v1`.\n\n" + self.released
+        )
+        self.assertEqual(
+            pins.update_companion_changelog_unreleased(
+                stale, self.entry, self.repo, released_version="0.0.11"
+            ),
+            self.released,
+        )
+        kept = (
+            "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+            "`leehack/litert-lm-native@v1`.\n* Kept.\n\n" + self.released
+        )
+        self.assertEqual(
+            pins.update_companion_changelog_unreleased(
+                kept, self.entry, self.repo, released_version="0.0.11"
+            ),
+            "## Unreleased\n\n* Kept.\n\n" + self.released,
+        )
+
+    def test_without_released_version_keeps_the_previous_behavior(self) -> None:
+        updated = pins.update_companion_changelog_unreleased(
+            self.released, self.entry, self.repo
+        )
+        self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.11"))
+
+
 if __name__ == "__main__":
     unittest.main()
