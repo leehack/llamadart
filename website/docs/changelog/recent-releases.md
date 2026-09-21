@@ -22,6 +22,10 @@ For canonical full release notes, use:
   record a `Failed to preload Windows backend module` startup diagnostic per
   missing candidate
   ([#550](https://github.com/leehack/llamadart/issues/550)).
+- Accept `promptTemplate` on the non-native
+  `LiteRtLmRuntimeClient.createConversation` placeholder, so callers passing
+  it compile for Web as they do on native
+  ([#549](https://github.com/leehack/llamadart/issues/549)).
 - Cache `TemplateCaps.detect` results in a per-isolate LRU keyed by exact
   template source and bounded at 16 entries, so repeated chat-template renders
   skip both Jinja parses and all four capability probes. Detections in which
