@@ -165,6 +165,7 @@ void main() {
           expect(actual, handle);
           events.add('release');
         },
+        exists: (_) => true,
       );
       expect(result, same(library));
       expect(events, ['preload', 'open', 'release']);
@@ -180,6 +181,7 @@ void main() {
           preload: (_) => handle,
           open: (_) => throw failure,
           release: (_, _) => released = true,
+          exists: (_) => true,
         ),
         throwsA(same(failure)),
       );
@@ -201,6 +203,50 @@ void main() {
       });
     }
 
+    test('does not preload a missing absolute candidate', () {
+      final failure = StateError('not found');
+      final checked = <String>[];
+      expect(
+        () => LlamaCppService.openWrapperLibraryWithDependencies(
+          absolute,
+          isWindows: true,
+          preload: (_) => throw StateError('unexpected preload'),
+          open: (_) => throw failure,
+          release: (_, _) => fail('unexpected release'),
+          exists: (candidate) {
+            checked.add(candidate);
+            return false;
+          },
+        ),
+        throwsA(same(failure)),
+      );
+      expect(checked, [absolute]);
+    });
+
+    test('checks the file system by default', () {
+      final directory = Directory.systemTemp.createTempSync('llamadart_wrap_');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final present = path.join(directory.path, 'llamadart.dll');
+      File(present).writeAsBytesSync(const []);
+      final preloaded = <String>[];
+      for (final candidate in [
+        present,
+        path.join(directory.path, 'missing.dll'),
+      ]) {
+        LlamaCppService.openWrapperLibraryWithDependencies(
+          candidate,
+          isWindows: true,
+          preload: (candidate) {
+            preloaded.add(candidate);
+            return nullptr;
+          },
+          open: (_) => DynamicLibrary.process(),
+          release: (_, _) => fail('unexpected release'),
+        );
+      }
+      expect(preloaded, [present]);
+    });
+
     test('does not preload on non-Windows or release a failed preload', () {
       for (final isWindows in [false, true]) {
         LlamaCppService.openWrapperLibraryWithDependencies(
@@ -209,6 +255,7 @@ void main() {
           preload: (_) => nullptr,
           open: (_) => DynamicLibrary.process(),
           release: (_, _) => fail('unexpected release'),
+          exists: (_) => true,
         );
       }
     });

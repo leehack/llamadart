@@ -8,6 +8,11 @@
   `teardown: `, are dropped first, duplicates are recorded once, entries are
   capped at 2048 characters, and each omitted run renders as `...`
   ([#415](https://github.com/leehack/llamadart/issues/415)).
+- Skip the Windows altered-search-path preload for wrapper library candidates
+  whose absolute path does not exist, so lazy wrapper API lookups no longer
+  record a `Failed to preload Windows backend module` startup diagnostic per
+  missing candidate
+  ([#550](https://github.com/leehack/llamadart/issues/550)).
 
 ## 0.8.24
 
