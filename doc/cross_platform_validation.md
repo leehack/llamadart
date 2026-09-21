@@ -252,7 +252,7 @@ initialized and executed the NPU through both adapters, establishing access for
 that exact device/runtime/kit combination. Other targets remain unverified.
 Android host libraries cannot substitute for DSP libraries with the same basename.
 
-For runtimes `0.17.0-3` and `0.17.0-5`, the actual LiteRT dependency is
+For runtimes `0.17.0-3`, `0.17.0-5` and `0.17.0-6`, the actual LiteRT dependency is
 `9fe5be45564c868408e6514c8aabb83e211a0911`. Its dispatch header adds `get_hooks`
 to the nested interface relative to LiteRT v2.2.0 while retaining the same API
 version. The version string alone cannot establish table-layout compatibility.

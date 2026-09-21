@@ -42,12 +42,12 @@ void main() {
     final libraries = liteRtLmRequiredLibrariesForAbi(abi);
     runtimePath = libraries.isEmpty
         ? ''
-        : '.dart_tool/llamadart/litert_lm/0.17.0-5/${liteRtLmCacheDirectoryCandidatesForAbi(abi).singleWhere((candidate) => candidate.contains('/'))}';
+        : '.dart_tool/llamadart/litert_lm/0.17.0-6/${liteRtLmCacheDirectoryCandidatesForAbi(abi).singleWhere((candidate) => candidate.contains('/'))}';
     identity = {
       'target': 'desktop',
       'build_os': Platform.operatingSystem,
       'build_abi': abi.toString(),
-      'litert_tag': '0.17.0-5',
+      'litert_tag': '0.17.0-6',
       'litert_runtime_supported': libraries.isNotEmpty,
       if (libraries.isNotEmpty) 'litert_runtime_layout': runtimePath,
     };

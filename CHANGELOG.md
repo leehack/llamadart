@@ -9,10 +9,13 @@
   Web/native `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
   Immutable Web asset manifest:
   `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
-- Update native LiteRT-LM to `v0.17.0-5` with Apple companion `0.0.11`,
+- Update native LiteRT-LM to `v0.17.0-6` with Apple companion `0.0.11`,
   Qwen3 tokenizer compatibility, corrected Linux loading, and explicit Linux
-  and Windows GPU selection while retaining CPU defaults. Web LiteRT-LM stays
-  at `@litert-lm/core@0.15.0`.
+  and Windows GPU selection while retaining CPU defaults. The Windows x64
+  runtime bundles `dxil.dll` and `dxcompiler.dll`, which D3D12 GPU engine
+  creation requires
+  ([litert-lm-native#47](https://github.com/leehack/litert-lm-native/issues/47)).
+  Web LiteRT-LM stays at `@litert-lm/core@0.15.0`.
 - Preserve required iOS LiteRT-LM provider and Metal plugins, handle dependency
   ordering in companion libraries, and exclude metadata/import archives from
   runtime library inventories.
@@ -44,11 +47,6 @@
   ([#509](https://github.com/leehack/llamadart/issues/509)). The affected cases
   remain unqualified; these changes do not resolve the failures or establish
   their remaining owning layer.
-- Known gap: explicit Windows LiteRT-LM GPU selection fails at engine creation
-  with `v0.17.0-5` because the runtime archive omits `dxil.dll` and
-  `dxcompiler.dll`; CPU is unaffected. Fixed in source for the next native
-  LiteRT-LM release
-  ([litert-lm-native#47](https://github.com/leehack/litert-lm-native/issues/47)).
 
 ## 0.8.23
 
