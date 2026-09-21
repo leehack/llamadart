@@ -80,6 +80,11 @@ Important fields:
   `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
   native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
   runtime defaults; LiteRT-LM web rejects them as native-only.
+- `liteRtLmCacheDir` and `liteRtLmMaxProgramCacheBytes`: native LiteRT-LM
+  runtime cache directory and opt-in size cap for GPU program cache files.
+  Both default to `null`, which keeps the platform default directory and never
+  deletes cache files; LiteRT-LM web rejects them. See
+  [LiteRT-LM Cache Directory](../guides/backend-selection#litert-lm-cache-directory).
 - `numberOfThreads`: honored by native LiteRT-LM; `0` keeps automatic
   selection.
 - `loras`: native LiteRT-LM accepts one default-scale initial text adapter at

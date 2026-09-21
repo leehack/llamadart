@@ -137,6 +137,24 @@ class ModelParams {
   /// `litert_lm_engine_settings_set_litert_dispatch_lib_dir`.
   final String? liteRtLmDispatchLibDir;
 
+  /// Native LiteRT-LM runtime cache directory.
+  ///
+  /// `null` keeps the default: `llamadart_litert_lm` under the system
+  /// temporary directory on macOS and Android, and no directory on other
+  /// platforms, where the runtime writes its caches next to the model file.
+  /// A provided directory is created when missing and forwarded to
+  /// `litert_lm_engine_settings_set_cache_dir`.
+  final String? liteRtLmCacheDir;
+
+  /// Size cap in bytes for native LiteRT-LM GPU program cache files.
+  ///
+  /// `null` never deletes anything. Otherwise, before each native engine
+  /// create, files directly inside the effective cache directory whose name
+  /// ends with `_mldrift_program_cache.bin` and whose size exceeds this value
+  /// are deleted. Nothing is deleted when [liteRtLmCacheDir] is `null` on a
+  /// platform without a default cache directory.
+  final int? liteRtLmMaxProgramCacheBytes;
+
   /// Model tensor distribution strategy across GPU devices.
   ///
   /// This is passed through to llama.cpp `llama_model_params.split_mode`.
@@ -295,6 +313,8 @@ class ModelParams {
     this.liteRtLmPrefillChunkSize,
     this.liteRtLmParallelFileSectionLoading,
     this.liteRtLmDispatchLibDir,
+    this.liteRtLmCacheDir,
+    this.liteRtLmMaxProgramCacheBytes,
     this.splitMode = ModelSplitMode.layer,
     this.mainGpu = 0,
     this.loras = const [],
@@ -340,6 +360,21 @@ class ModelParams {
         'must be non-empty when provided',
       );
     }
+    if (liteRtLmCacheDir != null && liteRtLmCacheDir!.trim().isEmpty) {
+      throw ArgumentError.value(
+        liteRtLmCacheDir,
+        'liteRtLmCacheDir',
+        'must be non-empty when provided',
+      );
+    }
+    if (liteRtLmMaxProgramCacheBytes != null &&
+        liteRtLmMaxProgramCacheBytes! < 0) {
+      throw ArgumentError.value(
+        liteRtLmMaxProgramCacheBytes,
+        'liteRtLmMaxProgramCacheBytes',
+        'must be non-negative when provided',
+      );
+    }
     if (speculativeRollbackTokenMax < 0) {
       throw ArgumentError.value(
         speculativeRollbackTokenMax,
@@ -377,6 +412,10 @@ class ModelParams {
     bool clearLiteRtLmParallelFileSectionLoading = false,
     String? liteRtLmDispatchLibDir,
     bool clearLiteRtLmDispatchLibDir = false,
+    String? liteRtLmCacheDir,
+    bool clearLiteRtLmCacheDir = false,
+    int? liteRtLmMaxProgramCacheBytes,
+    bool clearLiteRtLmMaxProgramCacheBytes = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
     List<LoraAdapterConfig>? loras,
@@ -424,6 +463,12 @@ class ModelParams {
       liteRtLmDispatchLibDir: clearLiteRtLmDispatchLibDir
           ? null
           : (liteRtLmDispatchLibDir ?? this.liteRtLmDispatchLibDir),
+      liteRtLmCacheDir: clearLiteRtLmCacheDir
+          ? null
+          : (liteRtLmCacheDir ?? this.liteRtLmCacheDir),
+      liteRtLmMaxProgramCacheBytes: clearLiteRtLmMaxProgramCacheBytes
+          ? null
+          : (liteRtLmMaxProgramCacheBytes ?? this.liteRtLmMaxProgramCacheBytes),
       splitMode: splitMode ?? this.splitMode,
       mainGpu: mainGpu ?? this.mainGpu,
       loras: loras ?? this.loras,

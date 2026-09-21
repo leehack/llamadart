@@ -1052,6 +1052,12 @@ class LiteRtLmBackend
     if (params.liteRtLmDispatchLibDir != null) {
       unsupported.add('liteRtLmDispatchLibDir');
     }
+    if (params.liteRtLmCacheDir != null) {
+      unsupported.add('liteRtLmCacheDir');
+    }
+    if (params.liteRtLmMaxProgramCacheBytes != null) {
+      unsupported.add('liteRtLmMaxProgramCacheBytes');
+    }
     if (params.numberOfThreads != 0) {
       unsupported.add('numberOfThreads');
     }
