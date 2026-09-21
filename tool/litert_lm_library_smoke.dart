@@ -61,12 +61,13 @@ openLiteRtLmSmokeLibrary({
     }
 
     final companionPaths = [
-      for (final library in runtime.liteRtLmRequiredLibrariesForAbi(abi))
-        if (library != primary) '$envDir/$library',
+      for (final library in runtime.liteRtLmCompanionLibrariesForAbi(abi))
+        '$envDir/$library',
     ];
     // Production discovery can skip absent optional candidates; the smoke
     // must fail if any required inventory entry is missing.
-    for (final file in [...companionPaths, '$envDir/$primary']) {
+    for (final library in runtime.liteRtLmRequiredLibrariesForAbi(abi)) {
+      final file = '$envDir/$library';
       if (!File(file).existsSync()) {
         throw StateError('Required LiteRT-LM smoke library is missing: $file');
       }

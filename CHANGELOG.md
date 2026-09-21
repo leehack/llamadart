@@ -8,6 +8,11 @@
   the native LiteRT-LM backend finishes `loadModel`, since it creates the
   engine lazily
   ([#569](https://github.com/leehack/llamadart/issues/569)).
+- Require `dxcompiler.dll` and `dxil.dll` in the Windows x64 LiteRT-LM runtime
+  cache and desktop validation bundle checks, matching the hook's v0.17.0-6
+  inventory. The runtime does not preload them: Dawn's D3D12 backend loads the
+  pair at GPU engine creation
+  ([#570](https://github.com/leehack/llamadart/issues/570)).
 - Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
   `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
   native startup diagnostics with `<redacted-secret>`; URL and
