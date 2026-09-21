@@ -223,6 +223,8 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
     ],
     Abi.windowsX64 => const <String>[
       'LiteRtLm.dll',
+      'dxcompiler.dll',
+      'dxil.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
@@ -231,6 +233,44 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
     ],
     _ => const <String>[],
   };
+}
+
+/// Members of [liteRtLmRequiredLibrariesForAbi] that must be present but that
+/// the runtime never opens itself: Dawn's D3D12 backend loads the DXC pair at
+/// GPU engine creation.
+Set<String> liteRtLmNonPreloadedLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.windowsX64 => const <String>{'dxcompiler.dll', 'dxil.dll'},
+    _ => const <String>{},
+  };
+}
+
+/// File name of the primary LiteRT-LM library in an extracted cache directory,
+/// or null for ABIs without a hook-managed desktop bundle.
+String? liteRtLmPrimaryLibraryForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => 'libLiteRtLm.dylib',
+    Abi.macosX64 => 'libLiteRtLm.dylib',
+    Abi.linuxArm64 => 'libLiteRtLm.so',
+    Abi.linuxX64 => 'libLiteRtLm.so',
+    Abi.windowsX64 => 'LiteRtLm.dll',
+    _ => null,
+  };
+}
+
+/// [liteRtLmRequiredLibrariesForAbi] minus the primary library and
+/// [liteRtLmNonPreloadedLibrariesForAbi], in the same order. The runtime opens
+/// these before the primary library when it loads a Linux or Windows extracted
+/// cache directory.
+List<String> liteRtLmCompanionLibrariesForAbi(Abi abi) {
+  final primary = liteRtLmPrimaryLibraryForAbi(abi);
+  if (primary == null) {
+    return const <String>[];
+  }
+  final nonPreloaded = liteRtLmNonPreloadedLibrariesForAbi(abi);
+  return liteRtLmRequiredLibrariesForAbi(abi)
+      .where((library) => library != primary && !nonPreloaded.contains(library))
+      .toList(growable: false);
 }
 
 /// Internal helper used by the LiteRT-LM runtime to locate this package's
@@ -1802,14 +1842,9 @@ class LiteRtLmRuntimeClient {
   }
 
   List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
-    final liteRtLm = _liteRtLmLibraryFileNameForAbi(abi);
-    if (liteRtLm == null) {
-      return const <String>[];
-    }
-    return liteRtLmRequiredLibrariesForAbi(abi)
-        .where((library) => library != liteRtLm)
-        .map((library) => '${dir.path}/$library')
-        .toList(growable: false);
+    return liteRtLmCompanionLibrariesForAbi(
+      abi,
+    ).map((library) => '${dir.path}/$library').toList(growable: false);
   }
 
   List<String> _llamadartPackageRootsFromNearestPackageConfigs(
@@ -1833,17 +1868,6 @@ class LiteRtLmRuntimeClient {
       }
     }
     return packageRoots.toList(growable: false);
-  }
-
-  String? _liteRtLmLibraryFileNameForAbi(Abi abi) {
-    return switch (abi) {
-      Abi.macosArm64 => 'libLiteRtLm.dylib',
-      Abi.macosX64 => 'libLiteRtLm.dylib',
-      Abi.linuxArm64 => 'libLiteRtLm.so',
-      Abi.linuxX64 => 'libLiteRtLm.so',
-      Abi.windowsX64 => 'LiteRtLm.dll',
-      _ => null,
-    };
   }
 
   String _macOsFrameworkBinaryPath(Directory frameworksDir, String library) {
