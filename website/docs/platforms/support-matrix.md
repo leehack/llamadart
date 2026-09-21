@@ -196,9 +196,12 @@ used Direct3D 12 with driver 582.53; Linux used Vulkan with driver
 runtime library search-path workarounds. These results do not establish
 support for every GPU, driver, or model. Linux arm64 remains CPU-only.
 
-The pinned v0.17.0-6 Windows x64 runtime also bundles `dxil.dll` and
-`dxcompiler.dll`, which Dawn's D3D12 backend loads at GPU engine creation;
-requalification of the v0.17.0-6 archive is pending.
+Windows x64 GPU needs v0.17.0-6 or later: that archive bundles `dxil.dll` and
+`dxcompiler.dll`, which Dawn's D3D12 backend loads at GPU engine creation. The
+published v0.17.0-5 Windows archive omits them and fails GPU engine creation on
+a clean host. The published v0.17.0-6 archive passed on NVIDIA L4 (driver
+582.53) with Qwen3 0.6B and Gemma 4 E2B: GPU answers matched CPU, and
+cancellation and reuse passed with the runtime directory off `PATH`.
 
 Device qualification is model- and backend-specific. On Pixel 9 Pro, the
 v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression
