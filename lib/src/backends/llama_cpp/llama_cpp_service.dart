@@ -630,6 +630,7 @@ class LlamaCppService {
   String? _linuxPreparedLibraryDirectory;
   bool _ggmlFallbackLookupAttempted = false;
   String? _ggmlFallbackLookupSearchKey;
+  String? _ggmlRuntimeProbeOutcome;
   _GgmlBackendLoadDart? _ggmlBackendLoadFallback;
   _GgmlBackendLoadAllDart? _ggmlBackendLoadAllFallback;
   _GgmlBackendLoadAllFromPathDart? _ggmlBackendLoadAllFromPathFallback;
@@ -650,6 +651,7 @@ class LlamaCppService {
   _GgmlBackendDevMemoryDart? _ggmlBackendDevMemoryFallback;
   bool _logLevelFallbackLookupAttempted = false;
   String? _logLevelFallbackLookupSearchKey;
+  String? _logLevelProbeOutcome;
   _LlamaDartSetLogLevelDart? _llamaDartSetLogLevelFallback;
   LlamaLogLevel _configuredLogLevel = LlamaLogLevel.warn;
   String _activeBackendName = 'CPU';
@@ -864,8 +866,12 @@ class LlamaCppService {
       }
     }
 
-    if (!applied) {
-      // No applicable symbol found for this runtime layout.
+    if (!applied && fallback == null) {
+      _recordStartupDiagnostic(
+        '`llama_dart_set_log_level` is unavailable: the primary FFI asset '
+        'does not export it and no wrapper candidate provided it '
+        '(${_logLevelProbeOutcome ?? 'no wrapper candidate probed'}).',
+      );
     }
 
     // mtmd/clip uses its own logger callback chain; mirror llama logger so
@@ -1233,6 +1239,7 @@ class LlamaCppService {
 
       // Some split bundles don't expose this symbol on the primary FFI asset.
       // Continue with explicit backend-module loading fallback.
+      _recordMissingGgmlSymbol('`ggml_backend_load_all`');
       _backendLoadAllSymbolUnavailable = true;
       return false;
     }
@@ -1256,6 +1263,7 @@ class LlamaCppService {
           return true;
         }
 
+        _recordMissingGgmlSymbol('`ggml_backend_load_all_from_path`');
         _backendLoadAllFromPathSymbolUnavailable = true;
         return false;
       }
@@ -1354,6 +1362,13 @@ class LlamaCppService {
     StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
   }) {
     _startupDiagnostics.record(message, category: category);
+  }
+
+  void _recordMissingGgmlSymbol(String symbol) {
+    _recordStartupDiagnostic(
+      '$symbol is unavailable: the primary FFI asset does not export it and '
+      '${_ggmlRuntimeProbeOutcome ?? 'no ggml runtime candidate was probed'}.',
+    );
   }
 
   /// Resolves Windows backend-module directory for dynamic backend loading.
@@ -2128,8 +2143,13 @@ class LlamaCppService {
 
     _preloadWindowsBackendDependencies(backend);
 
+    final failures = BackendProbeFailures();
+    if (backendModuleDirectory != null && fileNameCandidates.isEmpty) {
+      failures.add(_backendLibraryFileName(backend), 'file missing');
+    }
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
+        failures.add(candidate, 'file missing');
         continue;
       }
 
@@ -2149,12 +2169,14 @@ class LlamaCppService {
             // Optional dynamic-loader symbol can be missing from the primary
             // FFI asset in split bundles. If ggml fallback is unavailable,
             // stop retrying.
+            _recordMissingGgmlSymbol('`ggml_backend_load`');
             _backendLoadSymbolUnavailable = true;
             return false;
           }
           reg = fallback(libraryPathPtr.cast());
         }
         if (reg == nullptr) {
+          failures.add(candidate, '`ggml_backend_load` returned null');
           continue;
         }
 
@@ -2177,11 +2199,15 @@ class LlamaCppService {
       }
     }
 
-    if (_tryRegisterBackendModuleViaAsset(backend)) {
+    if (_tryRegisterBackendModuleViaAsset(backend, failures)) {
       return true;
     }
 
     _failedBackendModules.add(backend);
+    _recordStartupDiagnostic(
+      'Backend module `$backend` not loaded from any candidate: '
+      '${failures.describe()}.',
+    );
     return false;
   }
 
@@ -2404,13 +2430,22 @@ class LlamaCppService {
     return 100;
   }
 
-  bool _tryRegisterBackendModuleViaAsset(String backend) {
+  bool _tryRegisterBackendModuleViaAsset(
+    String backend,
+    BackendProbeFailures failures,
+  ) {
     final assetCandidates = _backendAssetUriCandidates(backend);
     final recordAssetDiagnostics = backend == 'cpu' && Platform.isAndroid;
 
     for (final assetUri in assetCandidates) {
       try {
-        final library = DynamicLibrary.open(assetUri);
+        final DynamicLibrary library;
+        try {
+          library = DynamicLibrary.open(assetUri);
+        } catch (error) {
+          failures.add(assetUri, describeLibraryProbeError(error, assetUri));
+          continue;
+        }
         final score = _lookupBackendAssetScore(library);
         if (!isBackendCandidateScoreSupported(score)) {
           if (recordAssetDiagnostics && score != null) {
@@ -2418,13 +2453,20 @@ class LlamaCppService {
               describeSkippedBackendAssetCandidate(assetUri, score),
             );
           }
+          failures.add(assetUri, '`ggml_backend_score` returned $score');
           continue;
         }
 
-        final init = library
-            .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
-              'ggml_backend_init',
-            );
+        final _GgmlBackendInitDart init;
+        try {
+          init = library
+              .lookupFunction<_GgmlBackendInitNative, _GgmlBackendInitDart>(
+                'ggml_backend_init',
+              );
+        } catch (_) {
+          failures.add(assetUri, 'no `ggml_backend_init` export');
+          continue;
+        }
         final reg = init();
         if (reg == nullptr) {
           if (recordAssetDiagnostics) {
@@ -2433,6 +2475,7 @@ class LlamaCppService {
               '`ggml_backend_init`.',
             );
           }
+          failures.add(assetUri, '`ggml_backend_init` returned null');
           continue;
         }
 
@@ -2447,6 +2490,7 @@ class LlamaCppService {
               'registration.',
             );
           }
+          failures.add(assetUri, '`ggml_backend_register` unavailable');
           continue;
         }
         _loadedBackendLibraries[backend] = library;
@@ -2457,7 +2501,8 @@ class LlamaCppService {
           );
         }
         return true;
-      } catch (_) {
+      } catch (error) {
+        failures.add(assetUri, 'probe threw ${error.runtimeType}');
         continue;
       }
     }
@@ -2485,6 +2530,7 @@ class LlamaCppService {
       _resolveGgmlFallbackFunctions();
       final fallback = _ggmlBackendRegisterFallback;
       if (fallback == null) {
+        _recordMissingGgmlSymbol('`ggml_backend_register`');
         return false;
       }
       try {
@@ -2518,6 +2564,8 @@ class LlamaCppService {
     _ggmlFallbackLookupAttempted = true;
     _ggmlFallbackLookupSearchKey = searchKey;
 
+    final failures = BackendProbeFailures();
+    final opened = <String>{};
     final seen = <String>{};
     for (final candidate in candidates) {
       if (!seen.add(candidate)) {
@@ -2527,9 +2575,11 @@ class LlamaCppService {
       DynamicLibrary library;
       try {
         library = DynamicLibrary.open(candidate);
-      } catch (_) {
+      } catch (error) {
+        failures.add(candidate, describeLibraryProbeError(error, candidate));
         continue;
       }
+      opened.add(probeCandidateIdentity(candidate));
 
       _ggmlBackendLoadFallback ??= _tryBind(
         () => library
@@ -2652,9 +2702,14 @@ class LlamaCppService {
       );
 
       if (_ggmlFallbacksFullyResolved) {
-        return;
+        break;
       }
     }
+    _ggmlRuntimeProbeOutcome = opened.isEmpty
+        ? 'no ggml runtime candidate opened (${failures.describe()})'
+        : 'the opened ggml runtime candidates (${opened.join(', ')}) do not '
+              'export it'
+              '${failures.isEmpty ? '' : '; other candidates: ${failures.describe()}'}';
   }
 
   /// Runs one symbol binding, returning `null` if it fails for any reason so
@@ -2736,13 +2791,20 @@ class LlamaCppService {
     // Keep bare-name fallback last so module-dir resolution wins when present.
     candidates.addAll(fileNameCandidates);
 
+    final failures = BackendProbeFailures();
     final seen = <String>{};
     for (final candidate in candidates) {
       if (!seen.add(candidate)) {
         continue;
       }
+      final DynamicLibrary library;
       try {
-        final library = _openWrapperLibrary(candidate);
+        library = _openWrapperLibrary(candidate);
+      } catch (error) {
+        failures.add(candidate, describeLibraryProbeError(error, candidate));
+        continue;
+      }
+      try {
         _llamaDartSetLogLevelFallback = library
             .lookupFunction<
               _LlamaDartSetLogLevelNative,
@@ -2750,9 +2812,11 @@ class LlamaCppService {
             >('llama_dart_set_log_level');
         return;
       } catch (_) {
+        failures.add(candidate, 'no `llama_dart_set_log_level` export');
         continue;
       }
     }
+    _logLevelProbeOutcome = failures.describe();
   }
 
   _ReasoningBudgetApi _resolveReasoningBudgetApi({
@@ -8502,6 +8566,107 @@ class StartupDiagnosticBuffer {
 
   /// Removes all entries.
   void clear() => _entries.clear();
+}
+
+/// Candidate failures of one native discovery family, grouped by reason.
+///
+/// Candidates are stored as [probeCandidateIdentity] and reasons in
+/// first-seen order; a reason repeated for the same identity is stored once.
+class BackendProbeFailures {
+  final Map<String, Set<String>> _candidatesByReason = <String, Set<String>>{};
+
+  /// Whether nothing was recorded.
+  bool get isEmpty => _candidatesByReason.isEmpty;
+
+  /// Records that [candidate] failed for [reason].
+  void add(String candidate, String reason) {
+    _candidatesByReason
+        .putIfAbsent(reason, () => <String>{})
+        .add(probeCandidateIdentity(candidate));
+  }
+
+  /// Renders `reason (id, id); reason (id)`, or `no candidates` when
+  /// [isEmpty].
+  String describe() {
+    if (isEmpty) {
+      return 'no candidates';
+    }
+    return _candidatesByReason.entries
+        .map((entry) => '${entry.key} (${entry.value.join(', ')})')
+        .join('; ');
+  }
+}
+
+/// The identity a probe summary keeps for [candidate]: a `package:` asset URI
+/// verbatim, otherwise the file name without its directory. Anything from the
+/// first `?` or `#` on is dropped first.
+String probeCandidateIdentity(String candidate) {
+  final bare = candidate.split(RegExp(r'[?#]')).first;
+  if (bare.startsWith('package:')) {
+    return bare;
+  }
+  return path.basename(bare);
+}
+
+/// Classifies a `DynamicLibrary.open` failure for [candidate] as one of
+/// `unresolved symbol \`name\``, `unresolved symbol`, `incompatible binary`,
+/// `dependency not loaded \`name\``, `blocked by namespace`, `not found` or
+/// `open failed`.
+///
+/// The loader text itself is never returned: it can carry the process search
+/// paths and the candidate's directory.
+String describeLibraryProbeError(Object error, String candidate) {
+  final text = error.toString();
+  final symbol = RegExp(
+    r'(?:undefined symbol|symbol not found|cannot locate symbol)'
+    r'(?: in flat namespace)?'
+    r'''[:\s]+['"]?_?([A-Za-z_][A-Za-z0-9_]*)''',
+    caseSensitive: false,
+  ).firstMatch(text);
+  if (symbol != null) {
+    return 'unresolved symbol `${symbol.group(1)}`';
+  }
+  if (RegExp(
+    r'undefined symbol|symbol not found|cannot locate symbol|error code: 127',
+    caseSensitive: false,
+  ).hasMatch(text)) {
+    return 'unresolved symbol';
+  }
+  if (RegExp(
+    r'incompatible architecture|wrong ELF class|invalid ELF header|'
+    r'unexpected e_machine|has bad ELF magic|'
+    r'not a valid Win32 application|error code: 193|cannot execute binary',
+    caseSensitive: false,
+  ).hasMatch(text)) {
+    return 'incompatible binary';
+  }
+  if (text.contains('is not accessible for the namespace')) {
+    return 'blocked by namespace';
+  }
+  final appleDependency = RegExp(
+    r'Library not loaded:\s*(\S+)',
+  ).firstMatch(text);
+  if (appleDependency != null) {
+    return 'dependency not loaded '
+        '`${path.basename(appleDependency.group(1)!)}`';
+  }
+  final missing =
+      RegExp(
+        r'''([^\s"']+): cannot open shared object file''',
+      ).firstMatch(text) ??
+      RegExp(r'library "([^"]+)" not found').firstMatch(text);
+  if (missing != null &&
+      path.basename(missing.group(1)!) != path.basename(candidate)) {
+    return 'dependency not loaded `${path.basename(missing.group(1)!)}`';
+  }
+  if (RegExp(
+    r'no such file|not found|cannot open shared object|could not be found|'
+    r'error code: 126',
+    caseSensitive: false,
+  ).hasMatch(text)) {
+    return 'not found';
+  }
+  return 'open failed';
 }
 
 bool _isTeardownStartupDiagnostic(String entry) =>
