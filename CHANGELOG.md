@@ -28,6 +28,10 @@
   renders a single tool call, and a separate parallel probe clears only
   `supportsParallelToolCalls` when it throws
   ([#557](https://github.com/leehack/llamadart/issues/557)).
+- Limit the Ministral tool-call grammar to a single `[TOOL_CALLS]` block unless
+  parallel tool calls are enabled; it previously always allowed repeats while
+  the parser kept only the first call
+  ([#559](https://github.com/leehack/llamadart/issues/559)).
 
 ## 0.8.24
 
