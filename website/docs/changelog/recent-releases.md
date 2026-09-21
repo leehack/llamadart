@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
+  the native clamp
+  ([#548](https://github.com/leehack/llamadart/issues/548)).
 - Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
   cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
   deletes `*_mldrift_program_cache.bin` files above the cap before each engine

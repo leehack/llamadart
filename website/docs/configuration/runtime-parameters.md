@@ -111,9 +111,9 @@ See [Embeddings](../guides/embeddings) for API usage and benchmark scripts.
 
 ## GenerationParams essentials
 
-For native LiteRT-LM CPU/GPU generation, `temp: 0` selects greedy decoding: llamadart uses
-`topK: 1` regardless of the requested top-k value. Positive temperatures
-retain the requested sampling settings.
+For native LiteRT-LM CPU/GPU and LiteRT-LM Web generation, `temp: 0` selects
+greedy decoding: llamadart uses `topK: 1` regardless of the requested top-k
+value. Positive temperatures retain the requested sampling settings.
 
 ```dart
 const params = GenerationParams(

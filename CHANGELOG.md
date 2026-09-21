@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
+  the native clamp
+  ([#548](https://github.com/leehack/llamadart/issues/548)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
