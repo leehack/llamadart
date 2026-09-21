@@ -140,6 +140,15 @@ C08 compares the same prompt against an uncancelled control; the pinned WASM
 delegate's explicit cancellation AbortError is also recorded as interruption evidence. Merely calling cancel
 is not a pass; missing interruption evidence is NOT_RUN. Case timeouts are 60s;
 disposal has a 10s bound and unresolved work cannot report successful cleanup.
+A LiteRT GPU profile may set `engine_create_case_timeout_ms` (60000 to 180000),
+which replaces the 60s bound only for the cases that include an engine create:
+the first case executed after C01.load (LiteRT defers creation to first use) and
+C09.reload, C09.reload.second, C12.guards and C12.recovery. A timeout there still
+records `case_timeout` with the applied `timeout_ms`. Only `qwen35-litert-gpu`
+sets it, to 120000: on macOS arm64 (M4 Max, LiteRT-LM 0.17.0-6) those cases took
+48.7 to 51.9 s, about 32 s of it WebGPU shader initialization for the one engine
+create, so 120 s is 2.3 times the slowest measured case (#521). The field is part
+of the profile hash.
 Native Flutter model acquisition has a ten-minute deadline within the
 18-minute integration test and 20-minute Test Lab execution limits. CLI downloads
 retain their five-minute default. Download deadline failures report received and

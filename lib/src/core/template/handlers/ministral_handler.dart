@@ -92,7 +92,12 @@ class MinistralHandler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: allowToolCalls ? buildGrammar(tools) : null,
+      grammar: allowToolCalls
+          ? _buildGrammarWithOptions(
+              tools,
+              parallelToolCalls: parallelToolCalls,
+            )
+          : null,
       grammarLazy: allowToolCalls && !toolChoiceRequired,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
@@ -391,6 +396,13 @@ class MinistralHandler extends ChatTemplateHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
+    return _buildGrammarWithOptions(tools, parallelToolCalls: true);
+  }
+
+  String? _buildGrammarWithOptions(
+    List<ToolDefinition>? tools, {
+    required bool parallelToolCalls,
+  }) {
     if (tools == null || tools.isEmpty) {
       return null;
     }
@@ -412,7 +424,9 @@ class MinistralHandler extends ChatTemplateHandler {
 
     final buffer = StringBuffer()
       ..writeln(
-        'root ::= "[TOOL_CALLS]" space tool-call (space "[TOOL_CALLS]" space tool-call)* space',
+        parallelToolCalls
+            ? 'root ::= "[TOOL_CALLS]" space tool-call (space "[TOOL_CALLS]" space tool-call)* space'
+            : 'root ::= "[TOOL_CALLS]" space tool-call space',
       )
       ..writeln('tool-call ::= ${toolRuleNames.join(' | ')}');
 

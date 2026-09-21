@@ -179,6 +179,9 @@ Native `.litertlm` loads expose a small set of LiteRT-LM-specific
 - `liteRtLmParallelFileSectionLoading`: `null` keeps the native default,
   `false` disables parallel `.litertlm` file-section loading for diagnostics.
 - `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory.
+- `liteRtLmCacheDir` and `liteRtLmMaxProgramCacheBytes`: runtime cache
+  directory and opt-in GPU program cache size cap; see
+  [LiteRT-LM Cache Directory](./backend-selection#litert-lm-cache-directory).
 - `numberOfThreads`: generation thread count; `0` keeps LiteRT-LM automatic
   selection.
 - `loras`: one default-scale initial text LoRA adapter for native `.litertlm`

@@ -119,6 +119,7 @@ class LiteRtLmRuntimeClient {
   /// Creates a conversation for generation/token operations.
   void createConversation({
     String? systemMessage,
+    String? promptTemplate,
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,

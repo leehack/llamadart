@@ -9,9 +9,48 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add `ModelParams.liteRtLmCacheDir` to choose the native LiteRT-LM runtime
+  cache directory and opt-in `ModelParams.liteRtLmMaxProgramCacheBytes`, which
+  deletes `*_mldrift_program_cache.bin` files above the cap before each engine
+  create and logs a warning per deleted file. Defaults are unchanged: the same
+  per-platform directory and no pruning
+  ([#552](https://github.com/leehack/llamadart/issues/552)).
 - Force greedy `topK: 1` for zero-temperature
   `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
   text on the LiteRT WebGPU sampler with the default top-k.
+- Keep root-cause native startup diagnostics when the buffer or the rendered
+  `startupDiagnostics=[...]` suffix overflows: teardown entries, now prefixed
+  `teardown: `, are dropped first, duplicates are recorded once, entries are
+  capped at 2048 characters, and each omitted run renders as `...`
+  ([#415](https://github.com/leehack/llamadart/issues/415)).
+- Skip the Windows altered-search-path preload for wrapper library candidates
+  whose absolute path does not exist, so lazy wrapper API lookups no longer
+  record a `Failed to preload Windows backend module` startup diagnostic per
+  missing candidate
+  ([#550](https://github.com/leehack/llamadart/issues/550)).
+- Accept `promptTemplate` on the non-native
+  `LiteRtLmRuntimeClient.createConversation` placeholder, so callers passing
+  it compile for Web as they do on native
+  ([#549](https://github.com/leehack/llamadart/issues/549)).
+- Cache `TemplateCaps.detect` results in a per-isolate LRU keyed by exact
+  template source and bounded at 16 entries, so repeated chat-template renders
+  skip both Jinja parses and all four capability probes. Detections in which
+  any analysis step failed are not cached and keep logging on every call
+  ([#448](https://github.com/leehack/llamadart/issues/448)).
+- Detect `supportsTools` and `supportsToolCalls` for chat templates that
+  reject two tool calls in one assistant message (Llama 3.2) or a user turn
+  directly after a tool call (Ministral 3). The tools capability probe now
+  renders a single tool call, and a separate parallel probe clears only
+  `supportsParallelToolCalls` when it throws
+  ([#557](https://github.com/leehack/llamadart/issues/557)).
+- Limit the Ministral tool-call grammar to a single `[TOOL_CALLS]` block unless
+  parallel tool calls are enabled; it previously always allowed repeats while
+  the parser kept only the first call
+  ([#559](https://github.com/leehack/llamadart/issues/559)).
+- Limit the Nemotron v3 tool-call grammar (Qwen3-Coder XML format) to a single
+  tool call unless parallel tool calls are enabled; it previously always
+  allowed repeats while the parser kept only one call
+  ([#562](https://github.com/leehack/llamadart/issues/562)).
 
 ## 0.8.24
 

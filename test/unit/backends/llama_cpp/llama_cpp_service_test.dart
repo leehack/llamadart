@@ -165,6 +165,7 @@ void main() {
           expect(actual, handle);
           events.add('release');
         },
+        exists: (_) => true,
       );
       expect(result, same(library));
       expect(events, ['preload', 'open', 'release']);
@@ -180,6 +181,7 @@ void main() {
           preload: (_) => handle,
           open: (_) => throw failure,
           release: (_, _) => released = true,
+          exists: (_) => true,
         ),
         throwsA(same(failure)),
       );
@@ -201,6 +203,50 @@ void main() {
       });
     }
 
+    test('does not preload a missing absolute candidate', () {
+      final failure = StateError('not found');
+      final checked = <String>[];
+      expect(
+        () => LlamaCppService.openWrapperLibraryWithDependencies(
+          absolute,
+          isWindows: true,
+          preload: (_) => throw StateError('unexpected preload'),
+          open: (_) => throw failure,
+          release: (_, _) => fail('unexpected release'),
+          exists: (candidate) {
+            checked.add(candidate);
+            return false;
+          },
+        ),
+        throwsA(same(failure)),
+      );
+      expect(checked, [absolute]);
+    });
+
+    test('checks the file system by default', () {
+      final directory = Directory.systemTemp.createTempSync('llamadart_wrap_');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final present = path.join(directory.path, 'llamadart.dll');
+      File(present).writeAsBytesSync(const []);
+      final preloaded = <String>[];
+      for (final candidate in [
+        present,
+        path.join(directory.path, 'missing.dll'),
+      ]) {
+        LlamaCppService.openWrapperLibraryWithDependencies(
+          candidate,
+          isWindows: true,
+          preload: (candidate) {
+            preloaded.add(candidate);
+            return nullptr;
+          },
+          open: (_) => DynamicLibrary.process(),
+          release: (_, _) => fail('unexpected release'),
+        );
+      }
+      expect(preloaded, [present]);
+    });
+
     test('does not preload on non-Windows or release a failed preload', () {
       for (final isWindows in [false, true]) {
         LlamaCppService.openWrapperLibraryWithDependencies(
@@ -209,6 +255,7 @@ void main() {
           preload: (_) => nullptr,
           open: (_) => DynamicLibrary.process(),
           release: (_, _) => fail('unexpected release'),
+          exists: (_) => true,
         );
       }
     });
@@ -989,18 +1036,215 @@ void main() {
       );
     });
 
-    test('truncation keeps the newest text', () {
-      final entries = <String>['a' * 100, 'the failure that actually matters'];
+    test('truncation keeps the root cause and final outcome', () {
+      final entries = <String>[
+        'root cause',
+        'a' * 100,
+        '${startupTeardownDiagnosticPrefix}noise',
+        'final outcome',
+      ];
 
-      final formatted = formatStartupDiagnostics(entries, maxLength: 40);
+      expect(
+        formatStartupDiagnostics(entries, maxLength: 40),
+        ', startupDiagnostics=[root cause; ...; final outcome]',
+      );
+      expect(
+        formatStartupDiagnostics(entries, maxLength: 60),
+        ', startupDiagnostics=['
+        'root cause; ...; ${startupTeardownDiagnosticPrefix}noise; '
+        'final outcome]',
+      );
+    });
 
-      expect(formatted, startsWith(', startupDiagnostics=[...'));
-      expect(formatted, endsWith('that actually matters]'));
-      final contentLength =
-          formatted.length - ', startupDiagnostics=['.length - ']'.length;
-      expect(contentLength, 40);
-      // The oldest entry is dropped, not the newest.
-      expect(formatted, isNot(contains('a' * 50)));
+    test('truncation is bounded for every content limit', () {
+      final entries = <String>[
+        '${startupTeardownDiagnosticPrefix}early noise',
+        'root cause ${'a' * 40}',
+        'middle probe',
+        'final outcome',
+        '${startupTeardownDiagnosticPrefix}late noise',
+      ];
+      final untruncated = entries.join('; ');
+
+      for (var maxLength = 1; maxLength <= untruncated.length; maxLength++) {
+        final formatted = formatStartupDiagnostics(
+          entries,
+          maxLength: maxLength,
+        );
+        final content = formatted.substring(
+          ', startupDiagnostics=['.length,
+          formatted.length - 1,
+        );
+        final reason = 'maxLength=$maxLength';
+        expect(content.length, lessThanOrEqualTo(maxLength), reason: reason);
+        if (maxLength == untruncated.length) {
+          expect(content, untruncated);
+        } else if (maxLength >= 7) {
+          expect(content, contains('root'), reason: reason);
+          expect(content, contains('...'), reason: reason);
+        }
+      }
+    });
+
+    test('an oversized entry keeps its head within half the limit', () {
+      final formatted = formatStartupDiagnostics(<String>[
+        'oldest:${'a' * 100}',
+        'newest failure',
+      ], maxLength: 40);
+
+      expect(
+        formatted,
+        ', startupDiagnostics=[oldest:${'a' * 10}...; newest failure]',
+      );
+    });
+
+    test('two oversized causal entries both keep their heads', () {
+      final buffer = StartupDiagnosticBuffer()
+        ..record('ROOT:${'r' * 5000}')
+        ..record('noise', category: StartupDiagnosticCategory.teardown)
+        ..record('FINAL:${'f' * 5000}');
+
+      final formatted = formatStartupDiagnostics(buffer.entries);
+
+      expect(formatted, startsWith(', startupDiagnostics=[ROOT:rrr'));
+      expect(formatted, contains('rrr...; ...; FINAL:fff'));
+      expect(formatted, endsWith('fff...]'));
+      expect(formatted, hasLength(', startupDiagnostics=[]'.length + 4096));
+    });
+
+    test('cuts never split a surrogate pair', () {
+      final buffer = StartupDiagnosticBuffer()
+        ..record('${'a' * 2044}${'\u{1F600}' * 10}');
+
+      expect(buffer.entries.single, '${'a' * 2044}...');
+      expect(
+        formatStartupDiagnostics(<String>[
+          'a\u{1F600}${'b' * 20}',
+          'c',
+        ], maxLength: 10),
+        ', startupDiagnostics=[a...; c]',
+      );
+    });
+
+    group('buffer retention', () {
+      test('drops repeats and keeps the first position', () {
+        final buffer = StartupDiagnosticBuffer()
+          ..record('first')
+          ..record('second')
+          ..record('first')
+          ..record('')
+          ..record('second', category: StartupDiagnosticCategory.teardown);
+
+        expect(buffer.entries, <String>[
+          'first',
+          'second',
+          '${startupTeardownDiagnosticPrefix}second',
+        ]);
+      });
+
+      test('teardown overflow never evicts the discovery failure', () {
+        final buffer = StartupDiagnosticBuffer();
+        const discovery =
+            'Failed to preload Windows backend dependency '
+            r'`C:\app\cudart64_12.dll` for `cuda`: error code 126';
+        buffer.record(discovery);
+        for (var i = 0; i < 100; i++) {
+          buffer.record(
+            'Failed to release temporary Windows backend module preload for '
+            '`C:\\app\\ggml-cuda-$i.dll` (`cuda`).',
+            category: StartupDiagnosticCategory.teardown,
+          );
+        }
+        const outcome = 'Backend asset `package:llamadart/cuda` failed';
+        buffer.record(outcome);
+
+        final entries = buffer.entries;
+        expect(entries, hasLength(StartupDiagnosticBuffer.maxEntries));
+        expect(entries.first, discovery);
+        expect(entries.last, outcome);
+        expect(entries[1], contains('ggml-cuda-70.dll'));
+        expect(entries[entries.length - 2], contains('ggml-cuda-99.dll'));
+
+        final formatted = formatStartupDiagnostics(entries, maxLength: 512);
+        expect(formatted, contains(discovery));
+        expect(formatted, contains(outcome));
+        expect(
+          formatted.length,
+          lessThanOrEqualTo(', startupDiagnostics=[]'.length + 512),
+        );
+      });
+
+      test('causal overflow evicts teardown, then the unpinned middle', () {
+        final buffer = StartupDiagnosticBuffer();
+        for (var i = 0; i < 4; i++) {
+          buffer.record(
+            'noise $i',
+            category: StartupDiagnosticCategory.teardown,
+          );
+        }
+        for (var i = 0; i < 40; i++) {
+          buffer.record('probe $i');
+        }
+        buffer.record(
+          'late noise',
+          category: StartupDiagnosticCategory.teardown,
+        );
+
+        expect(buffer.entries, <String>[
+          for (var i = 0; i < StartupDiagnosticBuffer.pinnedCausalEntries; i++)
+            'probe $i',
+          for (var i = 24; i < 40; i++) 'probe $i',
+        ]);
+      });
+
+      test('a failed Windows module release records as teardown', () {
+        final service = LlamaCppService();
+        for (final error in <Object?>[null, 'error code 5']) {
+          _invokePrivateForTesting<void>(
+            service,
+            '_recordWindowsBackendModuleReleaseFailure',
+            <Object?>[r'C:\app\ggml-cuda.dll', 'cuda', error],
+          );
+        }
+
+        expect(service.getStartupDiagnostics(), <String>[
+          '${startupTeardownDiagnosticPrefix}Failed to release temporary '
+              r'Windows backend module preload for `C:\app\ggml-cuda.dll` '
+              '(`cuda`).',
+          '${startupTeardownDiagnosticPrefix}Failed to release temporary '
+              r'Windows backend module preload for `C:\app\ggml-cuda.dll` '
+              '(`cuda`): error code 5',
+        ]);
+      });
+
+      test('stores sanitized entries and bounds each one', () {
+        final buffer = StartupDiagnosticBuffer()
+          ..record(
+            'failed at https://user:pass@example.com/lib.so'
+            '?X-Amz-Signature=secret&access_token=bearer-secret#secret',
+          )
+          ..record('control\u0000split\nline')
+          ..record(
+            'https://user:pass@example.com/${'a' * 5000}?token=secret',
+            category: StartupDiagnosticCategory.teardown,
+          );
+
+        final entries = buffer.entries;
+        expect(entries[0], 'failed at https://example.com/lib.so');
+        expect(entries[1], 'control split line');
+        expect(entries[2], startsWith(startupTeardownDiagnosticPrefix));
+        expect(entries[2], endsWith('...'));
+        expect(entries[2], hasLength(StartupDiagnosticBuffer.maxEntryLength));
+        for (final entry in entries) {
+          expect(entry, isNot(contains('pass')));
+          expect(entry, isNot(contains('secret')));
+          expect(entry, isNot(contains('X-Amz')));
+        }
+        expect(
+          formatStartupDiagnostics(entries),
+          ', startupDiagnostics=[${entries.join('; ')}]',
+        );
+      });
     });
 
     test('a zero content limit omits the diagnostic suffix', () {
@@ -1177,9 +1421,16 @@ void main() {
         );
       });
 
-      test('draft-model failure uses its label and bounded newest tail', () {
+      test('draft-model failure uses its label and bounded root cause', () {
         final service = _warmedLoadFailureService(corruptGgufPath);
         _recordStartupDiagnosticForTesting(service, 'oldest:${'a' * 5000}');
+        for (var i = 0; i < 40; i++) {
+          _recordStartupDiagnosticForTesting(
+            service,
+            'FreeLibrary failed for module $i ${'b' * 100}',
+            category: StartupDiagnosticCategory.teardown,
+          );
+        }
         _recordStartupDiagnosticForTesting(service, 'newest failure');
 
         expect(
@@ -1197,9 +1448,11 @@ void main() {
                   'Failed to load speculative draft model '
                   '(size=4 bytes, path=$corruptGgufPath,',
                 ),
-                contains('startupDiagnostics=[...'),
-                endsWith('newest failure]'),
-                isNot(contains('oldest:')),
+                contains('startupDiagnostics=[oldest:aaa'),
+                contains(
+                  'aaa...; ${startupTeardownDiagnosticPrefix}FreeLibrary',
+                ),
+                endsWith('; ...; newest failure]'),
                 predicate<String>((message) {
                   final marker = 'startupDiagnostics=[';
                   final start = message.indexOf(marker);
@@ -1207,7 +1460,7 @@ void main() {
                     start + marker.length,
                     message.length - 1,
                   );
-                  return content.length == 4096;
+                  return content.length <= 4096 && content.length > 3900;
                 }, 'caps rendered diagnostic content at 4096 characters'),
               ),
             ),
@@ -2354,11 +2607,17 @@ LlamaCppService _warmedLoadFailureService(String corruptGgufPath) {
 
 void _recordStartupDiagnosticForTesting(
   LlamaCppService service,
-  String diagnostic,
-) {
-  _invokePrivateForTesting<void>(service, '_recordStartupDiagnostic', <Object?>[
-    diagnostic,
-  ]);
+  String diagnostic, {
+  StartupDiagnosticCategory category = StartupDiagnosticCategory.causal,
+}) {
+  _invokePrivateForTesting<void>(
+    service,
+    '_recordStartupDiagnostic',
+    <Object?>[diagnostic],
+    category == StartupDiagnosticCategory.causal
+        ? const <Symbol, Object?>{}
+        : <Symbol, Object?>{#category: category},
+  );
 }
 
 void _loadDraftModelForTesting(
@@ -2374,12 +2633,12 @@ void _loadDraftModelForTesting(
   );
 }
 
-List<String> _startupDiagnosticsForTesting(LlamaCppService service) {
+StartupDiagnosticBuffer _startupDiagnosticsForTesting(LlamaCppService service) {
   final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
   return reflect(
         service,
       ).getField(MirrorSystem.getSymbol('_startupDiagnostics', owner)).reflectee
-      as List<String>;
+      as StartupDiagnosticBuffer;
 }
 
 T _invokePrivateForTesting<T>(

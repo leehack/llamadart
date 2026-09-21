@@ -22,6 +22,24 @@ class JinjaAnalyzer {
 
   /// Analyzes the [source] template and returns detected [TemplateCaps].
   static TemplateCaps analyze(String source) {
+    return analyzeWithOutcome(source).caps;
+  }
+
+  /// Analyzes the [source] template like [analyze] and reports whether any
+  /// step failed.
+  ///
+  /// `failed` is `true` when analysis threw and the regex fallback
+  /// produced `caps`, when template construction threw, or when the
+  /// string-content, typed-content, system-role or tools execution probe
+  /// produced no render. Otherwise it is `false`.
+  ///
+  /// The tools probe renders a conversation holding one tool call, first with
+  /// tool-result and assistant turns after the call and then without them; it
+  /// produces no render only when both renders throw. The parallel tool-call
+  /// probe renders the conversation that succeeded with a second tool call.
+  /// When that render throws, `caps.supportsParallelToolCalls` is `false` and
+  /// `failed` is unaffected.
+  static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(String source) {
     try {
       final lexer = Lexer(source);
       final result = lexer.tokenize();
@@ -32,14 +50,17 @@ class JinjaAnalyzer {
       return _probeWithExecution(source, astCaps);
     } catch (e) {
       // Fallback to regex if parsing fails (e.g. invalid syntax)
-      return TemplateCaps.detectRegex(source);
+      return (caps: TemplateCaps.detectRegex(source), failed: true);
     }
   }
 
-  static TemplateCaps _probeWithExecution(String source, TemplateCaps astCaps) {
+  static ({TemplateCaps caps, bool failed}) _probeWithExecution(
+    String source,
+    TemplateCaps astCaps,
+  ) {
     final template = _createTemplate(source);
     if (template == null) {
-      return astCaps;
+      return (caps: astCaps, failed: true);
     }
 
     var supportsSystemRole = astCaps.supportsSystemRole;
@@ -97,74 +118,129 @@ class JinjaAnalyzer {
       supportsSystemRole = systemRender.contains(_systemMarker);
     }
 
-    final toolRender = _renderTemplate(
-      template,
-      probe: 'tools',
-      messages: <Map<String, dynamic>>[
-        <String, dynamic>{'role': 'user', 'content': 'hello'},
-        <String, dynamic>{
-          'role': 'assistant',
-          'content': '',
-          'tool_calls': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'id': 'call_1',
-              'type': 'function',
-              'function': <String, dynamic>{
-                'name': _toolCallMarker1,
-                'arguments': <String, dynamic>{'arg': 'value'},
-              },
-            },
-            <String, dynamic>{
-              'id': 'call_2',
-              'type': 'function',
-              'function': <String, dynamic>{
-                'name': _toolCallMarker2,
-                'arguments': <String, dynamic>{'arg': 'value'},
-              },
-            },
-          ],
-        },
-        <String, dynamic>{'role': 'user', 'content': 'continue'},
-      ],
-      tools: <Map<String, dynamic>>[
-        <String, dynamic>{
-          'type': 'function',
-          'function': <String, dynamic>{
-            'name': _toolNameMarker,
-            'description': 'tool',
-            'parameters': <String, dynamic>{
-              'type': 'object',
-              'properties': <String, dynamic>{
-                'arg': <String, dynamic>{'type': 'string'},
-              },
-              'required': <String>['arg'],
-            },
-          },
-        },
-      ],
-    );
+    String? toolRender;
+    var toolResultTurns = true;
+    final toolErrors = <String>{};
+    for (final withResultTurns in const <bool>[true, false]) {
+      final attempt = _tryRender(
+        template,
+        messages: _toolProbeMessages(const <String>[
+          _toolCallMarker1,
+        ], toolResultTurns: withResultTurns),
+        tools: _probeTools,
+      );
+      if (attempt.output != null) {
+        toolRender = attempt.output;
+        toolResultTurns = withResultTurns;
+        break;
+      }
+      toolErrors.add('${attempt.error}');
+    }
 
     if (toolRender == null) {
+      for (final error in toolErrors) {
+        _logProbeFailure('tools', 'skipping this execution probe', error);
+      }
       supportsTools = false;
       supportsToolCalls = false;
       supportsParallelToolCalls = false;
     } else {
       supportsTools = toolRender.contains(_toolNameMarker);
-      final call1Used = toolRender.contains(_toolCallMarker1);
-      final call2Used = toolRender.contains(_toolCallMarker2);
-      supportsToolCalls = call1Used;
-      supportsParallelToolCalls = call1Used && call2Used;
+      supportsToolCalls = toolRender.contains(_toolCallMarker1);
+      supportsParallelToolCalls = false;
+      if (supportsToolCalls) {
+        final parallel = _tryRender(
+          template,
+          messages: _toolProbeMessages(const <String>[
+            _toolCallMarker1,
+            _toolCallMarker2,
+          ], toolResultTurns: toolResultTurns),
+          tools: _probeTools,
+        );
+        final parallelRender = parallel.output;
+        if (parallelRender == null) {
+          _logProbeFailure(
+            'parallel-tool-calls',
+            'the same conversation rendered with a single tool call, so '
+                'treating parallel tool calls as unsupported',
+            parallel.error!,
+          );
+        } else {
+          supportsParallelToolCalls =
+              parallelRender.contains(_toolCallMarker1) &&
+              parallelRender.contains(_toolCallMarker2);
+        }
+      }
     }
 
-    return TemplateCaps(
-      supportsSystemRole: supportsSystemRole,
-      supportsToolCalls: supportsToolCalls,
-      supportsTools: supportsTools,
-      supportsParallelToolCalls: supportsParallelToolCalls,
-      supportsStringContent: supportsStringContent,
-      supportsTypedContent: supportsTypedContent,
-      supportsThinking: astCaps.supportsThinking,
+    return (
+      caps: TemplateCaps(
+        supportsSystemRole: supportsSystemRole,
+        supportsToolCalls: supportsToolCalls,
+        supportsTools: supportsTools,
+        supportsParallelToolCalls: supportsParallelToolCalls,
+        supportsStringContent: supportsStringContent,
+        supportsTypedContent: supportsTypedContent,
+        supportsThinking: astCaps.supportsThinking,
+      ),
+      failed:
+          stringRender == null ||
+          typedRender == null ||
+          systemRender == null ||
+          toolRender == null,
     );
+  }
+
+  static const List<Map<String, dynamic>> _probeTools = <Map<String, dynamic>>[
+    <String, dynamic>{
+      'type': 'function',
+      'function': <String, dynamic>{
+        'name': _toolNameMarker,
+        'description': 'tool',
+        'parameters': <String, dynamic>{
+          'type': 'object',
+          'properties': <String, dynamic>{
+            'arg': <String, dynamic>{'type': 'string'},
+          },
+          'required': <String>['arg'],
+        },
+      },
+    },
+  ];
+
+  static List<Map<String, dynamic>> _toolProbeMessages(
+    List<String> callNames, {
+    required bool toolResultTurns,
+  }) {
+    return <Map<String, dynamic>>[
+      <String, dynamic>{'role': 'user', 'content': 'hello'},
+      <String, dynamic>{
+        'role': 'assistant',
+        'content': '',
+        'tool_calls': <Map<String, dynamic>>[
+          for (var i = 0; i < callNames.length; i++)
+            <String, dynamic>{
+              'id': 'call0000${i + 1}',
+              'type': 'function',
+              'function': <String, dynamic>{
+                'name': callNames[i],
+                'arguments': <String, dynamic>{'arg': 'value'},
+              },
+            },
+        ],
+      },
+      if (toolResultTurns) ...<Map<String, dynamic>>[
+        for (var i = 0; i < callNames.length; i++)
+          <String, dynamic>{
+            'role': 'tool',
+            'name': callNames[i],
+            'content': 'result',
+            'tool_call_id': 'call0000${i + 1}',
+          },
+        <String, dynamic>{'role': 'assistant', 'content': 'done'},
+      ],
+      <String, dynamic>{'role': 'user', 'content': 'continue'},
+    ];
   }
 
   static Template? _createTemplate(String source) {
@@ -191,6 +267,18 @@ class JinjaAnalyzer {
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
   }) {
+    final attempt = _tryRender(template, messages: messages, tools: tools);
+    if (attempt.output == null) {
+      _logProbeFailure(probe, 'skipping this execution probe', attempt.error!);
+    }
+    return attempt.output;
+  }
+
+  static ({String? output, Object? error}) _tryRender(
+    Template template, {
+    required List<Map<String, dynamic>> messages,
+    required List<Map<String, dynamic>> tools,
+  }) {
     try {
       final context = <String, dynamic>{
         'messages': messages,
@@ -203,14 +291,17 @@ class JinjaAnalyzer {
         'date': '',
         'datetime': '',
       };
-      return template.render(context);
+      return (output: template.render(context), error: null);
     } catch (error) {
-      LlamaLogger.instance.debug(
-        'JinjaAnalyzer: $probe capability probe failed to render; skipping '
-        'this execution probe: $error',
-      );
-      return null;
+      return (output: null, error: error);
     }
+  }
+
+  static void _logProbeFailure(String probe, String outcome, Object error) {
+    LlamaLogger.instance.debug(
+      'JinjaAnalyzer: $probe capability probe failed to render; '
+      '$outcome: $error',
+    );
   }
 
   static TemplateCaps _analyzeAST(Program template) {

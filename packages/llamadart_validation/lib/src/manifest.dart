@@ -83,6 +83,18 @@ class ValidationProfile {
         threads > 32) {
       throw const FormatException('Profile exceeds bounded core limits');
     }
+    final reloadTimeout = data['engine_create_case_timeout_ms'];
+    if (data.containsKey('engine_create_case_timeout_ms') &&
+        (reloadTimeout is! int ||
+            reloadTimeout < 60000 ||
+            reloadTimeout > 180000 ||
+            runtime != 'litert' ||
+            backend != 'gpu')) {
+      throw const FormatException(
+        'engine_create_case_timeout_ms requires a LiteRT GPU profile and an '
+        'integer from 60000 to 180000',
+      );
+    }
     if (!const ['quick', 'focused', 'release'].contains(selection)) {
       throw const FormatException(
         'selection must be quick, focused or release',
@@ -178,6 +190,12 @@ class ValidationProfile {
 
   /// Native inference threads.
   int get threads => data['threads'] as int? ?? 4;
+
+  /// Deadline for cases that include an engine create, when overridden.
+  Duration? get engineCreateCaseTimeout {
+    final value = data['engine_create_case_timeout_ms'] as int?;
+    return value == null ? null : Duration(milliseconds: value);
+  }
 
   /// Catalog selection; release includes explicit uncovered obligations.
   String get selection => data['selection'] as String? ?? 'quick';

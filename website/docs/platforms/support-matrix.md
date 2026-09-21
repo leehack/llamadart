@@ -208,6 +208,14 @@ v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression
 observed with Qwen3 0.6B and Gemma 4 E2B. Qwen3.5 0.8B int8 GPU initialization
 still has an observed out-of-memory failure, also reproduced with the previous
 runtime. An OpenCL diagnostic crashed and is not qualified by the Vulkan tests.
+On Galaxy S24 (Adreno 750, WebGPU over Vulkan) with v0.17.0-6, Qwen3 0.6B loads
+on GPU without an error and then generates incoherent text, while CPU on the
+same device is correct. At load Dawn rejects one weight buffer: `Binding size
+(155582464) ... is larger than the maximum storage buffer binding size
+(134217728)`. The runtime reports no failure to the caller, so llamadart cannot
+turn this into a load error; use the CPU backend for this model on adapters with
+a 128 MiB storage-buffer binding limit
+([#553](https://github.com/leehack/llamadart/issues/553)).
 On the ARM64 iOS simulator, Qwen3 and Qwen3.5 CPU/GPU tests passed with
 v0.17.0-2, but Gemma 4 E2B GPU hit a Metal texture-binding limit also present in
 the previous runtime. Simulator evidence does not establish physical iOS GPU
@@ -244,6 +252,7 @@ default.
 | `litert_lm_engine_settings_set_prefill_chunk_size` | `liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
 | `litert_lm_engine_settings_set_parallel_file_section_loading` | `liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; native default remains parallel loading. |
 | `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need a packaged LiteRT dispatch directory. |
+| `litert_lm_engine_settings_set_cache_dir` | `liteRtLmCacheDir` | Exposed as the runtime cache directory; `null` keeps `llamadart_litert_lm` under the system temporary directory on macOS and Android and passes no directory elsewhere. `liteRtLmMaxProgramCacheBytes` adds an opt-in size cap for GPU program cache files. |
 
 LiteRT-LM web rejects these native-only fields because `@litert-lm/core` does
 not expose equivalent runtime controls.

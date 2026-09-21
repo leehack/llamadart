@@ -1,4 +1,5 @@
 import 'jinja/jinja_analyzer.dart';
+import 'template_caps_cache.dart';
 
 /// Template capabilities detected from Jinja template source analysis.
 ///
@@ -43,8 +44,23 @@ class TemplateCaps {
   /// Detects capabilities by scanning the template source string.
   ///
   /// Uses the same approach as llama.cpp (`src.find()` on raw template text).
+  ///
+  /// Results are cached in [TemplateCapsCache.shared], a per-isolate LRU keyed
+  /// by exact [templateSource] and bounded at
+  /// [TemplateCapsCache.sharedCapacity] entries. A detection in which any
+  /// analysis step failed is not cached, so it runs and logs again on every
+  /// call.
   factory TemplateCaps.detect(String templateSource) {
-    return JinjaAnalyzer.analyze(templateSource);
+    final cache = TemplateCapsCache.shared;
+    final cached = cache.lookup(templateSource);
+    if (cached != null) {
+      return cached;
+    }
+    final outcome = JinjaAnalyzer.analyzeWithOutcome(templateSource);
+    if (!outcome.failed) {
+      cache.store(templateSource, outcome.caps);
+    }
+    return outcome.caps;
   }
 
   /// Detects capabilities using regex/string matching (fallback method).
