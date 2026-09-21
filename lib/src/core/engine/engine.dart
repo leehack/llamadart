@@ -94,6 +94,13 @@ class LlamaEngine {
   /// [level] determines which logs are output.
   /// [handler] is an optional custom callback. If null and level != none,
   /// logs are printed to stdout.
+  ///
+  /// The native llama.cpp and LiteRT-LM backends log from a worker isolate.
+  /// Each worker snapshots [level] when it starts (on the first request after
+  /// the backend is created or disposed) and forwards only records at or
+  /// above it to this isolate, where [handler] receives them. A later call
+  /// changes [handler] and the level applied here, but not what an already
+  /// running worker forwards, so configure logging before the first request.
   static void configureLogging({
     LlamaLogLevel level = LlamaLogLevel.none,
     LlamaLogHandler? handler,

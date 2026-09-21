@@ -151,6 +151,10 @@ void runLlamaWorkerForTesting(
 
     // Handshake
     if (message is WorkerHandshake) {
+      final logPort = message.logPort;
+      if (logPort != null) {
+        installWorkerLogForwarding(logPort, message.dartLogLevel);
+      }
       try {
         service.setLogLevel(message.initialLogLevel);
         if (!isInitialized) {

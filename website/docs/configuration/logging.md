@@ -26,6 +26,18 @@ LlamaEngine.configureLogging(
 );
 ```
 
+## Backend worker isolates
+
+The native llama.cpp and LiteRT-LM backends run in a worker isolate. Each
+worker reads the `configureLogging` level when it starts, on the first request
+after the backend is created or disposed, and forwards only records at or
+above that level to the main isolate, where the handler receives them. A later
+`configureLogging` call changes the handler and the main-isolate level, but
+not what a running worker forwards, so configure logging before the first
+request. At the default `none` nothing is forwarded. A worker forwards at most
+1000 `debug` records; records above `debug` are never capped. Web backends run
+on the main isolate and are unaffected.
+
 ## Recommended profiles
 
 - Local debugging: Dart `info`, native `warn`.

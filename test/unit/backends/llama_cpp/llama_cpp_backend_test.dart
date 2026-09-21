@@ -9,7 +9,9 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
+import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -506,6 +508,54 @@ void main() {
     }
   });
 
+  group('worker log forwarding', () {
+    final records = <LlamaLogRecord>[];
+
+    setUp(records.clear);
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    test('a worker warning reaches the configureLogging handler', () async {
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.warn,
+        handler: records.add,
+      );
+      final backend = NativeLlamaBackend(workerEntrypoint: _loggingWorkerEntry);
+      try {
+        final name = await backend.getBackendName().timeout(
+          const Duration(seconds: 5),
+        );
+        expect(name, 'logging');
+        await _waitForRecords(records, 1);
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(records.single.message, 'worker warning');
+        expect(records.single.error, 'Bad state: worker detail');
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('nothing is forwarded at level none', () async {
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.none,
+        handler: records.add,
+      );
+      final backend = NativeLlamaBackend(workerEntrypoint: _loggingWorkerEntry);
+      try {
+        await backend.getBackendName().timeout(const Duration(seconds: 5));
+        LlamaLogger.instance.setLevel(LlamaLogLevel.debug);
+        await backend.getBackendName().timeout(const Duration(seconds: 5));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(records, isEmpty);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+  });
+
   group('worker startup handshake', () {
     test(
       'init failure is typed, diagnostic, retryable, and cleaned up',
@@ -827,6 +877,34 @@ void _failingInitializationWorkerEntry(SendPort initialSendPort) {
     initialSendPort,
     _FailingInitializationLlamaCppService(),
   );
+}
+
+void _loggingWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(initialSendPort, _LoggingLlamaCppService());
+}
+
+Future<void> _waitForRecords(List<LlamaLogRecord> records, int count) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (records.length < count && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+class _LoggingLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  String getActiveBackendName() {
+    LlamaLogger.instance.warn('worker warning', StateError('worker detail'));
+    return 'logging';
+  }
+
+  @override
+  void dispose() {}
 }
 
 void _reusableWorkerEntry(SendPort initialSendPort) {

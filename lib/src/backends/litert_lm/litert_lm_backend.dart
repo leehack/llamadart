@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import '../../core/exceptions.dart';
+import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
@@ -30,6 +31,7 @@ class LiteRtLmBackend
         BackendNativeChatGeneration {
   Isolate? _isolate;
   ReceivePort? _workerLifecyclePort;
+  RawReceivePort? _workerLogPort;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
   Future<void>? _disposeFuture;
@@ -687,6 +689,13 @@ class LiteRtLmBackend
     final tempPort = ReceivePort();
     final lifecyclePort = ReceivePort();
     _workerLifecyclePort = lifecyclePort;
+    final logPort = RawReceivePort((Object? message) {
+      if (message is WorkerLogMessage) {
+        message.emit();
+      }
+    });
+    logPort.keepIsolateAlive = false;
+    _workerLogPort = logPort;
     lifecyclePort.listen((_) {
       if (_disposed || generation != _workerGeneration) return;
       _nativeSettlementUnverified = true;
@@ -709,7 +718,13 @@ class LiteRtLmBackend
           return;
         }
         _sendPort = message;
-        _sendPort!.send(LiteRtLmWorkerHandshake(_currentLogLevel));
+        _sendPort!.send(
+          LiteRtLmWorkerHandshake(
+            _currentLogLevel,
+            dartLogLevel: LlamaLogger.instance.level,
+            logPort: logPort.sendPort,
+          ),
+        );
         tempPort.close();
         unawaited(subscription.cancel());
         if (!completer.isCompleted) {
@@ -746,6 +761,10 @@ class LiteRtLmBackend
       lifecyclePort.close();
       if (identical(_workerLifecyclePort, lifecyclePort)) {
         _workerLifecyclePort = null;
+      }
+      logPort.close();
+      if (identical(_workerLogPort, logPort)) {
+        _workerLogPort = null;
       }
       rethrow;
     }
@@ -804,6 +823,8 @@ class LiteRtLmBackend
     _workerGeneration += 1;
     _workerLifecyclePort?.close();
     _workerLifecyclePort = null;
+    _workerLogPort?.close();
+    _workerLogPort = null;
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _sendPort = null;

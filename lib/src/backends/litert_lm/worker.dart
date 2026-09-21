@@ -72,6 +72,10 @@ void runLiteRtLmWorkerForTesting(
     }
 
     if (message is LiteRtLmWorkerHandshake) {
+      final logPort = message.logPort;
+      if (logPort != null) {
+        installWorkerLogForwarding(logPort, message.dartLogLevel);
+      }
       service.setLogLevel(message.initialLogLevel);
       return;
     }

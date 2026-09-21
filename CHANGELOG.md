@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Forward llama.cpp and LiteRT-LM worker-isolate log records to the
+  `LlamaEngine.configureLogging` handler. Each worker snapshots the logger
+  level when it starts and forwards only records at or above it, so the
+  default `none` sends nothing; `debug` records are capped at 1000 per worker.
+  The LiteRT-LM program-cache pruning warnings are now ordinary `warn` records
+  gated by that level instead of the native log level. Adds
+  `LlamaLogger.level`
+  ([#567](https://github.com/leehack/llamadart/issues/567)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now

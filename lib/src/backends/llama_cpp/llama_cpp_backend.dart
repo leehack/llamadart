@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../backend.dart';
+import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
@@ -35,6 +36,7 @@ class NativeLlamaBackend
         BackendVideoRuntimeSupport {
   Isolate? _isolate;
   SendPort? _sendPort;
+  RawReceivePort? _workerLogPort;
   Future<void>? _isolateStart;
   Future<void>? _disposeStart;
   int _lifecycleEpoch = 0;
@@ -137,12 +139,18 @@ class NativeLlamaBackend
   Future<void> _startIsolate() async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
+    final logPort = _openWorkerLogPort();
     SendPort? workerSendPort;
     tempPort.listen((msg) {
       if (msg is SendPort && workerSendPort == null) {
         workerSendPort = msg;
         workerSendPort!.send(
-          WorkerHandshake(_currentLogLevel, tempPort.sendPort),
+          WorkerHandshake(
+            _currentLogLevel,
+            tempPort.sendPort,
+            dartLogLevel: LlamaLogger.instance.level,
+            logPort: logPort.sendPort,
+          ),
         );
         return;
       }
@@ -206,6 +214,7 @@ class NativeLlamaBackend
       _sendPort = null;
       _isolate?.kill(priority: Isolate.immediate);
       _isolate = null;
+      _closeWorkerLogPort(logPort);
       if (error is LlamaBackendInitializationException) {
         rethrow;
       }
@@ -214,6 +223,24 @@ class NativeLlamaBackend
       );
     } finally {
       tempPort.close();
+    }
+  }
+
+  RawReceivePort _openWorkerLogPort() {
+    final port = RawReceivePort((Object? message) {
+      if (message is WorkerLogMessage) {
+        message.emit();
+      }
+    });
+    port.keepIsolateAlive = false;
+    _workerLogPort = port;
+    return port;
+  }
+
+  void _closeWorkerLogPort(RawReceivePort port) {
+    port.close();
+    if (identical(_workerLogPort, port)) {
+      _workerLogPort = null;
     }
   }
 
@@ -741,6 +768,8 @@ class NativeLlamaBackend
     _isolate = null;
     _sendPort = null;
     _isolateStart = null;
+    _workerLogPort?.close();
+    _workerLogPort = null;
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _activeCancelToken = null;

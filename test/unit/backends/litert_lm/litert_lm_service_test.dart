@@ -1809,6 +1809,19 @@ void main() {
   });
 
   group('LiteRT-LM cache directory', () {
+    final records = <LlamaLogRecord>[];
+
+    setUp(() {
+      records.clear();
+      LlamaLogger.instance.setLevel(LlamaLogLevel.warn);
+      LlamaLogger.instance.setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
     Future<void> createEngine(
       LiteRtLmService service,
       _FakeLiteRtLmRuntimeClient client,
@@ -1873,11 +1886,7 @@ void main() {
 
     test('null cap keeps an oversized program cache', () async {
       final client = _FakeLiteRtLmRuntimeClient();
-      final records = <LlamaLogRecord>[];
-      final service = LiteRtLmService(
-        clientFactory: () => client,
-        logHandler: records.add,
-      );
+      final service = LiteRtLmService(clientFactory: () => client);
       final cacheDir = Directory('${tempDir.path}/cache')..createSync();
       final program = writeCache(
         cacheDir,
@@ -1903,11 +1912,7 @@ void main() {
     test('cap deletes an oversized program cache before engine create and '
         'logs one warning', () async {
       final client = _FakeLiteRtLmRuntimeClient();
-      final records = <LlamaLogRecord>[];
-      final service = LiteRtLmService(
-        clientFactory: () => client,
-        logHandler: records.add,
-      );
+      final service = LiteRtLmService(clientFactory: () => client);
       final cacheDir = Directory('${tempDir.path}/cache')..createSync();
       final program = writeCache(
         cacheDir,
@@ -1954,13 +1959,11 @@ void main() {
       }
     });
 
-    test('warning is suppressed above the warn log level', () async {
+    test('warning is suppressed above the Dart warn log level', () async {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.error);
       final client = _FakeLiteRtLmRuntimeClient();
-      final records = <LlamaLogRecord>[];
-      final service = LiteRtLmService(
-        clientFactory: () => client,
-        logHandler: records.add,
-      )..setLogLevel(LlamaLogLevel.error);
+      final service = LiteRtLmService(clientFactory: () => client)
+        ..setLogLevel(LlamaLogLevel.warn);
       final cacheDir = Directory('${tempDir.path}/cache')..createSync();
       final program = writeCache(
         cacheDir,
@@ -1984,13 +1987,37 @@ void main() {
       }
     });
 
+    test('native log level does not gate the warning', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client)
+        ..setLogLevel(LlamaLogLevel.none);
+      final cacheDir = Directory('${tempDir.path}/cache')..createSync();
+      final program = writeCache(
+        cacheDir,
+        'm_1_2_mldrift_program_cache.bin',
+        64,
+      );
+      try {
+        await createEngine(
+          service,
+          client,
+          ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+            liteRtLmCacheDir: cacheDir.path,
+            liteRtLmMaxProgramCacheBytes: 32,
+          ),
+        );
+        expect(program.existsSync(), isFalse);
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+      } finally {
+        service.dispose();
+      }
+    });
+
     test('a failed delete does not fail engine create', () async {
       final client = _FakeLiteRtLmRuntimeClient();
-      final records = <LlamaLogRecord>[];
-      final service = LiteRtLmService(
-        clientFactory: () => client,
-        logHandler: records.add,
-      );
+      final service = LiteRtLmService(clientFactory: () => client);
       final cacheDir = Directory('${tempDir.path}/cache')..createSync();
       final program = writeCache(
         cacheDir,
