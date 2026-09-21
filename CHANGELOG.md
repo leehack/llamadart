@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Document that Linux llama.cpp loads need the OpenMP runtime
+  (`libgomp.so.1`; `libgomp1` on Ubuntu/Debian, `libgomp` on Fedora and Arch)
+  and that Linux LiteRT-LM GPU needs a hardware Vulkan ICD: with only Mesa
+  llvmpipe the runtime segfaults after model load instead of failing cleanly
+  ([llamadart-native#82](https://github.com/leehack/llamadart-native/issues/82),
+  [#572](https://github.com/leehack/llamadart/issues/572)).
 - Move native release pins (llama.cpp tag, LiteRT-LM tag and per-bundle
   checksums) from `hook/build.dart` into
   `lib/src/hook/native_release_pins.dart`, the only file the pin sync now
