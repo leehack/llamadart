@@ -9,10 +9,6 @@ import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('ChatTemplateHandler type is available', () {
-    expect(ChatTemplateHandler, isNotNull);
-  });
-
   test('renderTemplate injects chat_template_kwargs metadata', () {
     final handler = _FakeHandler();
     final output = handler.renderTemplate(

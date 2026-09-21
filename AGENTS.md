@@ -122,8 +122,14 @@ the exact generated text matters.
 - Keep `LlamaEngine` free of `dart:ffi` and `dart:io` so web support remains
   viable.
 - Use conditional imports for platform-specific backends.
-- Tests should mirror source structure under `test/unit/` or
-  `test/integration/`.
+- Behavior tests under `test/unit/` mirror the source structure of `lib/src/`;
+  a source file with no behavior of its own (bare enum, marker interface,
+  `external` interop declarations) needs no test file and is listed in the
+  `behaviorlessSources` set of
+  `test/unit/test_structure/mirrored_unit_structure_test.dart`. Never assert
+  something that is true by construction (`expect(SomeType, isNotNull)`,
+  `Enum.values` containing a declared member); assert wire values where they
+  are consumed instead. See `test/README.md`.
 
 ### Error Handling
 

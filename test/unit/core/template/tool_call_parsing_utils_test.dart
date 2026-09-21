@@ -32,9 +32,10 @@ void main() {
         '{"name":"get_weather","arguments":{"city":"Seoul"}}',
       );
 
-      expect(decoded, isNotNull);
-      expect(decoded!['name'], 'get_weather');
-      expect((decoded['arguments'] as Map<String, dynamic>)['city'], 'Seoul');
+      expect(decoded, {
+        'name': 'get_weather',
+        'arguments': {'city': 'Seoul'},
+      });
     });
 
     test('coerces dynamic maps to string-keyed maps', () {
@@ -43,9 +44,7 @@ void main() {
         7: true,
       });
 
-      expect(coerced, isNotNull);
-      expect(coerced!['city'], 'Seoul');
-      expect(coerced['7'], isTrue);
+      expect(coerced, {'city': 'Seoul', '7': true});
       expect(ToolCallParsingUtils.coerceMap('nope'), isNull);
     });
 
@@ -135,18 +134,16 @@ void main() {
         0,
       );
 
-      expect(objectSlice, isNotNull);
       expect(objectSlice!.end, 16);
-      expect((objectSlice.value as Map<String, dynamic>)['city'], 'Seoul');
-      expect(scalarSlice, isNotNull);
-      expect(scalarSlice!.value, isTrue);
+      expect(objectSlice.value, {'city': 'Seoul'});
+      expect(scalarSlice!.end, 4);
+      expect(scalarSlice.value, isTrue);
       expect(ToolCallParsingUtils.extractLeadingJsonValue('oops', 0), isNull);
     });
 
     test('extracts a leading JSON null value', () {
       final parsed = ToolCallParsingUtils.extractLeadingJsonValue('null,', 0);
 
-      expect(parsed, isNotNull);
       expect(parsed!.value, isNull);
       expect(parsed.end, 4);
     });
@@ -178,7 +175,6 @@ void main() {
         assignFallbackIds: false,
       );
 
-      expect(parsed, isNotNull);
       expect(parsed, hasLength(1));
       expect(parsed!.single.id, 'abc');
       expect(parsed.single.function?.name, 'get_weather');
@@ -200,7 +196,6 @@ void main() {
         },
       ]);
 
-      expect(parsed, isNotNull);
       expect(parsed, hasLength(1));
       expect(parsed!.single.id, 'call_1');
       expect(parsed.single.type, 'function');
@@ -224,9 +219,9 @@ void main() {
         startIndex: 3,
       );
 
-      expect(parsed, isNotNull);
       expect(parsed, hasLength(1));
       expect(parsed!.single.index, 3);
+      expect(parsed.single.function?.name, 'get_weather');
     });
 
     test('parses single-key tool call arrays', () {
@@ -236,7 +231,6 @@ void main() {
         },
       ]);
 
-      expect(parsed, isNotNull);
       expect(parsed, hasLength(1));
       expect(parsed!.single.function?.name, 'get_weather');
       expect(

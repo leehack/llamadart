@@ -2,6 +2,7 @@
 @Timeout(Duration(minutes: 5))
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -114,26 +115,61 @@ void main() async {
         );
       }
 
-      final stream = engine.create([
-        const LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Long story about a cat',
+      const maxTokens = 100;
+      final stream = engine.create(
+        [
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Long story about a cat',
+          ),
+        ],
+        params: const GenerationParams(
+          maxTokens: maxTokens,
+          streamBatchTokenThreshold: 1,
         ),
-      ], params: const GenerationParams(maxTokens: 100));
+      );
 
-      String accumulated = '';
-      final subscription = stream.listen((chunk) {
-        accumulated += chunk.choices.first.delta.content ?? '';
-        if (accumulated.length > 5) {
-          engine.cancelGeneration();
-        }
-      });
+      var deltas = 0;
+      final firstToken = Completer<void>();
+      final streamDone = Completer<void>();
+      final subscription = stream.listen(
+        (chunk) {
+          if ((chunk.choices.first.delta.content ?? '').isNotEmpty) {
+            deltas++;
+          }
+          if (deltas > 0 && !firstToken.isCompleted) {
+            firstToken.complete();
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!firstToken.isCompleted) {
+            firstToken.completeError(error, stackTrace);
+          }
+          if (!streamDone.isCompleted) {
+            streamDone.completeError(error, stackTrace);
+          }
+        },
+        onDone: () {
+          if (!firstToken.isCompleted) {
+            firstToken.completeError(
+              StateError('Stream closed before the first token'),
+            );
+          }
+          if (!streamDone.isCompleted) {
+            streamDone.complete();
+          }
+        },
+      );
 
-      // Increased timeout to allow generation to start and be cancelled
-      await Future.delayed(const Duration(seconds: 5));
-      await subscription.cancel();
+      try {
+        await firstToken.future.timeout(const Duration(seconds: 60));
+        engine.cancelGeneration();
+        await streamDone.future.timeout(const Duration(seconds: 30));
+      } finally {
+        await subscription.cancel();
+      }
 
-      expect(accumulated, isNotEmpty, reason: 'Generation should have started');
+      expect(deltas, lessThan(maxTokens));
     });
 
     test(
