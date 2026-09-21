@@ -5,7 +5,7 @@ import 'package:llamadart/src/core/speech/text_to_speech_platform_web.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('web platform enables byte-backed typed text-to-speech', () {
+  test('web platform rejects speaker-reference file input', () {
     expect(textToSpeechSupportsFileInput, isFalse);
   });
 }

@@ -6,8 +6,16 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+/// Sources with no behavior of their own. The guard below requires each to
+/// exist under `lib/src` and to have no mirrored file under `test/unit`.
+const Set<String> behaviorlessSources = <String>{
+  'backends/webgpu/interop.dart',
+  'core/models/config/flash_attention.dart',
+  'core/models/config/kv_cache_type.dart',
+};
+
 void main() {
-  test('every lib/src file has a mirrored unit test file', () {
+  test('every behavioral lib/src file has a mirrored unit test file', () {
     final libSrcDir = Directory('lib/src');
     final unitDir = Directory('test/unit');
 
@@ -26,7 +34,10 @@ void main() {
         sourceFile.path,
         from: libSrcDir.path,
       );
-      if (_isGeneratedSource(sourceFile)) {
+      if (_isGeneratedSource(sourceFile) ||
+          behaviorlessSources.contains(
+            p.posix.joinAll(p.split(relativeSourcePath)),
+          )) {
         continue;
       }
 
@@ -46,6 +57,22 @@ void main() {
       isEmpty,
       reason: 'Missing mirrored unit test files:\n${missing.join('\n')}',
     );
+  });
+
+  test('behaviorless source exemptions name existing, untested sources', () {
+    for (final source in behaviorlessSources) {
+      expect(
+        File(p.join('lib/src', source)).existsSync(),
+        isTrue,
+        reason: source,
+      );
+      final testPath = p.join(
+        'test/unit',
+        p.dirname(source),
+        '${p.basenameWithoutExtension(source)}_test.dart',
+      );
+      expect(File(testPath).existsSync(), isFalse, reason: testPath);
+    }
   });
 }
 

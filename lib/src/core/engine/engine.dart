@@ -142,6 +142,15 @@ class LlamaEngine {
   }
 
   /// Sets only the native backend logger level.
+  ///
+  /// On the native LiteRT-LM backend, [LlamaLogLevel.none] is passed to the
+  /// runtime as silent before each engine create and stops the runtime
+  /// library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
+  /// accelerator links its own absl and exports no logging control, so a GPU
+  /// engine create can still write `I0000` info lines to stderr that
+  /// `llamadart` cannot filter. See
+  /// https://llamadart.leehack.com/docs/configuration/logging and
+  /// https://github.com/leehack/llamadart/issues/568.
   Future<void> setNativeLogLevel(LlamaLogLevel level) async {
     _nativeLogLevel = level;
     await backend.setLogLevel(level);

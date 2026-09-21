@@ -2,26 +2,6 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('LlamaBackend interface is available', () {
-    expect(LlamaBackend, isNotNull);
-  });
-
-  test('BackendEmbeddings capability interface is available', () {
-    expect(BackendEmbeddings, isNotNull);
-  });
-
-  test('BackendEmbeddingsSupport capability interface is available', () {
-    expect(BackendEmbeddingsSupport, isNotNull);
-  });
-
-  test('BackendBatchEmbeddings capability interface is available', () {
-    expect(BackendBatchEmbeddings, isNotNull);
-  });
-
-  test('BackendStatePersistence capability interface is available', () {
-    expect(BackendStatePersistence, isNotNull);
-  });
-
   group('BackendPerfContextData', () {
     test('computes speculative acceptance rate when counts are available', () {
       const perf = BackendPerfContextData(
