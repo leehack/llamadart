@@ -13,6 +13,10 @@
   record a `Failed to preload Windows backend module` startup diagnostic per
   missing candidate
   ([#550](https://github.com/leehack/llamadart/issues/550)).
+- Accept `promptTemplate` on the non-native
+  `LiteRtLmRuntimeClient.createConversation` placeholder, so callers passing
+  it compile for Web as they do on native
+  ([#549](https://github.com/leehack/llamadart/issues/549)).
 
 ## 0.8.24
 
