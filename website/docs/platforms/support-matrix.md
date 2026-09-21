@@ -183,7 +183,7 @@ load `.litertlm` models.
 | macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
 | macOS x86_64 | `macos-x64` | `cpu` | Supported; the published x64 bundle does not include the WebGPU companion libraries |
 | Linux arm64 | `linux-arm64` | `cpu` | Supported |
-| Linux x64 | `linux-x64` | `cpu`, explicit `gpu` | CPU default; GPU requires a compatible Vulkan driver |
+| Linux x64 | `linux-x64` | `cpu`, explicit `gpu` | CPU default; GPU requires a hardware Vulkan ICD |
 | Windows x64 | `windows-x64` | `cpu`, explicit `gpu` | CPU default; GPU requires a compatible D3D12 driver |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
@@ -202,6 +202,13 @@ published v0.17.0-5 Windows archive omits them and fails GPU engine creation on
 a clean host. The published v0.17.0-6 archive passed on NVIDIA L4 (driver
 582.53) with Qwen3 0.6B and Gemma 4 E2B: GPU answers matched CPU, and
 cancellation and reuse passed with the runtime directory off `PATH`.
+
+Linux x64 GPU requires a hardware Vulkan ICD. With only Mesa llvmpipe (the
+runtime logs `Selected adapter: llvmpipe ... adapterType=CPU / Software`),
+v0.17.0-6 loads the model and answers the first prompts, then segfaults in
+`libvulkan_lvp.so` and takes the process down; there is no load error to fall
+back from, so headless hosts with Mesa but no vendor ICD must use `cpu`
+([#572](https://github.com/leehack/llamadart/issues/572)).
 
 Device qualification is model- and backend-specific. On Pixel 9 Pro, the
 v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression

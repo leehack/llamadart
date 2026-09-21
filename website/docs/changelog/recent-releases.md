@@ -22,6 +22,12 @@ For canonical full release notes, use:
   inventory. The runtime does not preload them: Dawn's D3D12 backend loads the
   pair at GPU engine creation
   ([#570](https://github.com/leehack/llamadart/issues/570)).
+- Document that Linux llama.cpp loads need the OpenMP runtime
+  (`libgomp.so.1`; `libgomp1` on Ubuntu/Debian, `libgomp` on Fedora and Arch)
+  and that Linux LiteRT-LM GPU needs a hardware Vulkan ICD: with only Mesa
+  llvmpipe the runtime segfaults after model load instead of failing cleanly
+  ([llamadart-native#82](https://github.com/leehack/llamadart-native/issues/82),
+  [#572](https://github.com/leehack/llamadart/issues/572)).
 - Replace the token in `Bearer <token>` and the value in `token=`, `key=`,
   `secret=`, `password=`, `api_key=` and `apikey=<value>` outside HTTP URLs in
   native startup diagnostics with `<redacted-secret>`; URL and
