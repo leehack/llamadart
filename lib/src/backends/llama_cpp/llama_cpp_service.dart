@@ -2920,14 +2920,20 @@ class LlamaCppService {
   /// The temporary handle uses the same altered search path as backend modules.
   /// Keep it alive until [open] acquires its own reference, including on failure.
   /// Injectable operations allow resource-lifetime regression tests on every OS.
+  /// A candidate that takes the altered search path is preloaded only when
+  /// [exists] returns true for it; [exists] defaults to [File.existsSync].
   static DynamicLibrary openWrapperLibraryWithDependencies(
     String candidate, {
     required bool isWindows,
     required Pointer<Void> Function(String) preload,
     required DynamicLibrary Function(String) open,
     required void Function(Pointer<Void>, String) release,
+    bool Function(String)? exists,
   }) {
-    final handle = isWindows && windowsBackendModuleLoadFlags(candidate) != 0
+    final handle =
+        isWindows &&
+            windowsBackendModuleLoadFlags(candidate) != 0 &&
+            (exists ?? _fileExists)(candidate)
         ? preload(candidate)
         : nullptr;
     try {
@@ -2938,6 +2944,8 @@ class LlamaCppService {
       }
     }
   }
+
+  static bool _fileExists(String filePath) => File(filePath).existsSync();
 
   List<String> _llamadartWrapperLibraryCandidates() {
     final candidates = <String>[..._llamadartAssetUriCandidates()];
