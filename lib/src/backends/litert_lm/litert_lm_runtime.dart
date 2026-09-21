@@ -801,6 +801,10 @@ class LiteRtLmRuntimeClient {
   /// preserve model-specific formatting, especially for media. An explicit
   /// override requires the native conversation-template setter; incompatible
   /// runtime overrides fail with [LlamaUnsupportedException].
+  ///
+  /// A [temperature] of `0` decodes greedily: [topK] is forced to `1`, because
+  /// LiteRT GPU samplers otherwise emit incoherent text. [npuBackend] skips
+  /// all sampler overrides.
   void createConversation({
     String? systemMessage,
     String? promptTemplate,
@@ -1995,6 +1999,10 @@ void _setSessionSamplerParams(
   required double temperature,
   required int seed,
 }) {
+  // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+  if (temperature == 0) {
+    topK = 1;
+  }
   final create = bindings.samplerParamsCreate;
   final delete = bindings.samplerParamsDelete;
   if (create != null && delete != null) {

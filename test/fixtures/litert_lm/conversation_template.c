@@ -16,6 +16,23 @@ void* litert_lm_engine_create(void* p) { return (void*)2; }
 void litert_lm_engine_delete(void* p) {}
 void* litert_lm_session_config_create(void) { return (void*)3; }
 void litert_lm_session_config_delete(void* p) {}
+// Mirrors the legacy sampler struct so both sampler paths record the same way.
+typedef struct { int32_t type, top_k; float top_p, temperature; int32_t seed; } sampler_params;
+static sampler_params session_sampler;
+static int32_t sampler_sets;
+int32_t fixture_top_k(void) { return session_sampler.top_k; }
+float fixture_temperature(void) { return session_sampler.temperature; }
+int32_t fixture_sampler_sets(void) { return sampler_sets; }
+void litert_lm_session_config_set_sampler_params(void* p, const void* s) { session_sampler = *(const sampler_params*)s; sampler_sets++; }
+#ifndef OMIT_OPAQUE_SAMPLER
+static sampler_params opaque_sampler;
+void* litert_lm_sampler_params_create(int32_t type) { opaque_sampler = (sampler_params){type}; return &opaque_sampler; }
+void litert_lm_sampler_params_delete(void* p) {}
+void litert_lm_sampler_params_set_top_k(void* p, int32_t k) { ((sampler_params*)p)->top_k = k; }
+void litert_lm_sampler_params_set_top_p(void* p, float v) { ((sampler_params*)p)->top_p = v; }
+void litert_lm_sampler_params_set_temperature(void* p, float v) { ((sampler_params*)p)->temperature = v; }
+void litert_lm_sampler_params_set_seed(void* p, int32_t v) { ((sampler_params*)p)->seed = v; }
+#endif
 void* litert_lm_conversation_config_create(void) { template_text[0] = 0; return (void*)4; }
 void litert_lm_conversation_config_set_session_config(void* p, void* s) {}
 void litert_lm_conversation_config_set_enable_constrained_decoding(void* p, bool b) {}

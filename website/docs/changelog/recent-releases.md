@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Force greedy `topK: 1` for zero-temperature
+  `LiteRtLmRuntimeClient.createConversation` calls, which returned incoherent
+  text on LiteRT GPU samplers with the default top-k.
+
 ## 0.8.24
 
 - Align native `leehack/llamadart-native@v0.4.1` on upstream

@@ -11,21 +11,27 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
+Future<String> _compileFixture(Directory dir, List<String> defines) async {
+  final library = '${dir.path}/fixture.${Platform.isMacOS ? 'dylib' : 'so'}';
+  final result = await Process.run('cc', [
+    '-shared',
+    '-fPIC',
+    ...defines,
+    'test/fixtures/litert_lm/conversation_template.c',
+    '-o',
+    library,
+  ]);
+  expect(result.exitCode, 0, reason: '${result.stderr}');
+  return library;
+}
+
 void main() {
   for (final legacy in [false, true]) {
     test('native conversation template setter, legacy=$legacy', () async {
       final dir = await Directory.systemTemp.createTemp('litert_template_');
-      final library =
-          '${dir.path}/fixture.${Platform.isMacOS ? 'dylib' : 'so'}';
-      final result = await Process.run('cc', [
-        '-shared',
-        '-fPIC',
+      final library = await _compileFixture(dir, [
         if (legacy) '-DOMIT_TEMPLATE_SETTER',
-        'test/fixtures/litert_lm/conversation_template.c',
-        '-o',
-        library,
       ]);
-      expect(result.exitCode, 0, reason: '${result.stderr}');
       final client = LiteRtLmRuntimeClient(libraryPath: library);
       try {
         await client.initialize(modelPath: 'fixture.litertlm', backend: 'cpu');
@@ -70,6 +76,46 @@ void main() {
             '',
           );
         }
+      } finally {
+        client.dispose();
+        await dir.delete(recursive: true);
+      }
+    });
+
+    test('zero temperature clamps sampler top-k, legacy=$legacy', () async {
+      final dir = await Directory.systemTemp.createTemp('litert_sampler_');
+      final library = await _compileFixture(dir, [
+        if (legacy) '-DOMIT_OPAQUE_SAMPLER',
+      ]);
+      final fixture = DynamicLibrary.open(library);
+      final topK = fixture.lookupFunction<Int32 Function(), int Function()>(
+        'fixture_top_k',
+      );
+      final temperature = fixture
+          .lookupFunction<Float Function(), double Function()>(
+            'fixture_temperature',
+          );
+      final samplerSets = fixture
+          .lookupFunction<Int32 Function(), int Function()>(
+            'fixture_sampler_sets',
+          );
+      final client = LiteRtLmRuntimeClient(libraryPath: library);
+      try {
+        await client.initialize(modelPath: 'fixture.litertlm', backend: 'cpu');
+        client.createConversation(temperature: 0);
+        expect(topK(), 1);
+        expect(temperature(), 0);
+        client.createConversation(temperature: 0, topK: 40);
+        expect(topK(), 1);
+        client.createConversation(temperature: 0, topK: 1);
+        expect(topK(), 1);
+        client.createConversation(temperature: 0.8, topK: 40);
+        expect(topK(), 40);
+        expect(temperature(), closeTo(0.8, 1e-6));
+        expect(samplerSets(), 4);
+        // NPU conversations skip sampler overrides.
+        client.createConversation(temperature: 0, topK: 40, npuBackend: true);
+        expect(samplerSets(), 4);
       } finally {
         client.dispose();
         await dir.delete(recursive: true);
