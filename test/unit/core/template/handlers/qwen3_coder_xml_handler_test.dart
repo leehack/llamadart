@@ -271,7 +271,8 @@ void main() {
     expect(nonThinking.prompt, contains('<think>\n\n</think>'));
   });
 
-  test('grammar root repeats tool calls only with parallel tool calls', () {
+  test('Nemotron v3 grammar root repeats tool calls only with parallel tool '
+      'calls', () {
     final handler = Qwen3CoderXmlHandler();
     final tools = [
       ToolDefinition(
@@ -307,21 +308,14 @@ void main() {
         'root ::= "<tool_call>" xml-space tool-call "</tool_call>" xml-space';
     const repeated =
         'root ::= "<tool_call>" xml-space tool-call+ "</tool_call>" xml-space';
-    for (final templateSource in [qwenTemplate, nemotronTemplate]) {
-      expect(rootFor(templateSource, const {}), equals(single));
-      expect(
-        rootFor(templateSource, const {
-          internalParallelToolCallsMetadataKey: 'false',
-        }),
-        equals(single),
-      );
-      expect(
-        rootFor(templateSource, const {
-          internalParallelToolCallsMetadataKey: 'true',
-        }),
-        equals(repeated),
-      );
-    }
+    const parallelOff = {internalParallelToolCallsMetadataKey: 'false'};
+    const parallelOn = {internalParallelToolCallsMetadataKey: 'true'};
+    expect(rootFor(nemotronTemplate, const {}), equals(single));
+    expect(rootFor(nemotronTemplate, parallelOff), equals(single));
+    expect(rootFor(nemotronTemplate, parallelOn), equals(repeated));
+    expect(rootFor(qwenTemplate, const {}), equals(repeated));
+    expect(rootFor(qwenTemplate, parallelOff), equals(repeated));
+    expect(rootFor(qwenTemplate, parallelOn), equals(repeated));
     expect(rootOf(handler.buildGrammar(tools)!), equals(repeated));
   });
 }

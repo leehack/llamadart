@@ -106,7 +106,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
     final grammar = buildXmlToolCallGrammar(
       tools,
       XmlToolCallFormat.qwen3Coder,
-      parallelToolCalls: parallelToolCalls,
+      parallelToolCalls: !isNemotronV3 || parallelToolCalls,
     );
 
     return LlamaChatTemplateResult(
