@@ -1627,20 +1627,20 @@ void main() {
     final service = LiteRtLmService(clientFactory: () => fakeClient);
 
     try {
-      service.setLogLevel(LlamaLogLevel.debug);
+      service.setLogLevel(LlamaLogLevel.none);
       final modelHandle = await service.loadModel(
         modelFile.path,
         const ModelParams(preferredBackend: GpuBackend.cpu),
       );
 
       await service.tokenize(modelHandle, 'hello', false);
-      expect(fakeClient.lastMinLogLevel, 1);
+      expect(fakeClient.lastMinLogLevel, 1000);
+
+      service.setLogLevel(LlamaLogLevel.debug);
+      expect(fakeClient.lastSetMinLogLevel, 1);
 
       service.setLogLevel(LlamaLogLevel.error);
       expect(fakeClient.lastSetMinLogLevel, 4);
-
-      service.setLogLevel(LlamaLogLevel.none);
-      expect(fakeClient.lastSetMinLogLevel, 1000);
     } finally {
       service.dispose();
     }
