@@ -4,7 +4,7 @@ import 'dart:math' as math;
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
-    show BackendVideoRuntimeSupport;
+    show BackendDeferredEngineCreation, BackendVideoRuntimeSupport;
 
 class MockLlamaBackend
     implements
@@ -266,6 +266,14 @@ class MockLlamaBackend
   }) async {
     return messages.map((m) => "${m['role']}: ${m['content']}").join('\n');
   }
+}
+
+class DeferredEngineMockBackend extends MockLlamaBackend
+    implements BackendDeferredEngineCreation {
+  DeferredEngineMockBackend({this.defersEngineCreation = true});
+
+  @override
+  final bool defersEngineCreation;
 }
 
 class UnsupportedTokenizationBackend extends MockLlamaBackend {
@@ -580,6 +588,48 @@ void main() {
     test('loadModel successful', () async {
       await engine.loadModel('qwen-test.gguf');
       expect(engine.isReady, true);
+    });
+
+    test('loadModel log states whether engine creation is deferred', () async {
+      final records = <LlamaLogRecord>[];
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.info,
+        handler: records.add,
+      );
+      addTearDown(LlamaEngine.configureLogging);
+
+      await engine.loadModel('qwen-test.gguf');
+      expect(
+        records.map((record) => record.message),
+        contains(
+          'Model qwen-test.gguf loaded successfully from qwen-test.gguf',
+        ),
+      );
+
+      records.clear();
+      await LlamaEngine(
+        DeferredEngineMockBackend(),
+      ).loadModel('model.litertlm');
+      final messages = records.map((record) => record.message).toList();
+      expect(
+        messages,
+        contains(
+          'Model model.litertlm loaded from model.litertlm; native engine '
+          'creation is deferred until the first generation or tokenizer call',
+        ),
+      );
+      expect(messages, isNot(contains(contains('loaded successfully'))));
+
+      records.clear();
+      await LlamaEngine(
+        DeferredEngineMockBackend(defersEngineCreation: false),
+      ).loadModel('model.litertlm');
+      expect(
+        records.map((record) => record.message),
+        contains(
+          'Model model.litertlm loaded successfully from model.litertlm',
+        ),
+      );
     });
 
     test(
