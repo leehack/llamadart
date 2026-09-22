@@ -48,8 +48,8 @@ _Fixture _fixture() {
   final temp = Directory.systemTemp.createTempSync('format_lcov_test');
   addTearDown(() => temp.deleteSync(recursive: true));
   final root = temp.resolveSymbolicLinksSync();
-  final libDir = '$root/lib';
-  final coverageDir = '$root/coverage/test';
+  final libDir = p.join(root, 'lib');
+  final coverageDir = p.join(root, 'coverage', 'test');
 
   _write('$root/pubspec.yaml', 'name: $_packageName\n');
   _write(
@@ -93,7 +93,7 @@ _Fixture _fixture() {
       'hits': [1, 2, 2, 0],
     },
     {
-      'source': 'file://$root/tool/outside_report_on.dart',
+      'source': '${Uri.file(p.join(root, 'tool', 'outside_report_on.dart'))}',
       'hits': [1, 3],
     },
   ]);
