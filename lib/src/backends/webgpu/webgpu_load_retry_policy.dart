@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
-/// Smallest remote-fetch chunk size the escalation policy will request.
+/// Floor of the chunk-halving restart: it fires only while
+/// [WebGpuLoadEscalation.remoteFetchChunkBytes] exceeds this value, and never
+/// halves below it.
 const int minRemoteFetchChunkBytes = 4 * 1024;
 
 /// Number of chunk-halving restarts the escalation policy allows.
@@ -33,8 +35,9 @@ bool isThreadConstructorFailureText(String loweredErrorText) {
       loweredErrorText.contains('error 138');
 }
 
-/// Whether [runtimeNotes] carries one of the markers the bridge emits when
-/// writing the model into its filesystem failed.
+/// Whether [runtimeNotes] carries 'model_response_nostream',
+/// 'model_fs_write_bigint_error', 'model_fs_write_abort',
+/// 'model_fs_write_arraybuffer_oom', or 'model_fs_write_failed'.
 bool runtimeNotesIndicateModelFsWriteFailure(String runtimeNotes) {
   return runtimeNotes.contains('model_response_nostream') ||
       runtimeNotes.contains('model_fs_write_bigint_error') ||
@@ -129,7 +132,8 @@ class WebGpuLoadEscalation {
   /// notes or 'aborted(native code called abort())' in the error text.
   final bool remoteFetchBackendKnownUnstable;
 
-  /// Whether a wasm64 attempt has failed on BigInt interop during this load.
+  /// Whether the wasm32 retry has fired on a failure whose core variant is
+  /// 'wasm64' and whose error text [isBigIntInteropErrorText] matches.
   final bool wasm64InteropKnownBroken;
 
   /// Returns a copy with the named fields replaced; null keeps the current one.
