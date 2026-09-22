@@ -53,8 +53,8 @@ The `tts` pack meets the budget on Metal and not on CPU. Its 20 Metal
 cancellations, issued 623.8-756.4 ms into syntheses of 1059.3-1510.3 ms,
 completed in 0.717-21.402 ms. Its 20 CPU cancellations, issued
 1143.7-1227.0 ms into syntheses of 2235.0-2450.0 ms, completed in
-30.318-1275.427 ms, with 19 of the 20 above one second — about the synthesis
-time left when they were issued. Cancellation is honoured there, in that no
+30.318-1275.427 ms, with 19 of the 20 above 985 ms — about the synthesis time
+left when they were issued. Cancellation is honoured there, in that no
 audio is emitted and the task completes as cancelled, but on CPU it does not
 shorten the wait. That is a recorded product gap, not a budget to raise.
 
