@@ -672,6 +672,18 @@ class WebGpuLlamaBackend
     return attempts;
   }
 
+  int? _resolveAttemptThreads(int index, int? requestedThreads) {
+    return switch (index) {
+      0 => requestedThreads,
+      1 || 2 => requestedThreads == null ? 4 : math.min(requestedThreads, 4),
+      3 ||
+      4 ||
+      5 ||
+      6 => requestedThreads == null ? 2 : math.min(requestedThreads, 2),
+      _ => 1,
+    };
+  }
+
   ({int? nBatch, int? nUbatch}) _resolveWebBatchSizes({
     required String url,
     required ModelParams params,
@@ -1064,15 +1076,7 @@ class WebGpuLlamaBackend
       );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
-      final attemptThreads = switch (index) {
-        0 => requestedThreads,
-        1 || 2 => requestedThreads == null ? 4 : math.min(requestedThreads, 4),
-        3 ||
-        4 ||
-        5 ||
-        6 => requestedThreads == null ? 2 : math.min(requestedThreads, 2),
-        _ => 1,
-      };
+      final attemptThreads = _resolveAttemptThreads(index, requestedThreads);
 
       try {
         await _activateBridge();
@@ -1335,17 +1339,16 @@ class WebGpuLlamaBackend
 
         if (canRetry) {
           final nextAttempt = loadAttempts[index + 1];
+          final nextThreads = _resolveAttemptThreads(
+            index + 1,
+            requestedThreads,
+          );
           _emitConsoleText(
             LlamaLogLevel.warn,
             'WebGpuLlamaBackend: retrying web model load with reduced '
             'settings (nCtx=${nextAttempt.contextSize}, '
             'nGpuLayers=${nextAttempt.gpuLayers}, '
-            'nThreads=${switch (index + 1) {
-                  0 => requestedThreads,
-                  1 || 2 => requestedThreads == null ? 4 : math.min(requestedThreads, 4),
-                  3 || 4 || 5 || 6 => requestedThreads == null ? 2 : math.min(requestedThreads, 2),
-                  _ => 1,
-                } ?? 'auto'})',
+            'nThreads=${nextThreads ?? 'auto'})',
           );
           continue;
         }
