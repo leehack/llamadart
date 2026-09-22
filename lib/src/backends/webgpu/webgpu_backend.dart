@@ -2083,39 +2083,46 @@ class WebGpuLlamaBackend
       );
     }
 
-    final bridge = _requireBridge();
-    final capabilities = await textToSpeechCapabilities(
-      contextHandle,
-      mmContextHandle,
-    );
-    if (!capabilities.isSupported) {
-      throw LlamaUnsupportedException(
-        capabilities.unsupportedReason ??
-            'Web text-to-speech is not supported by the active runtime.',
-      );
-    }
-
+    // Claimed before the first await so a cancel arriving during the
+    // capability probe aborts this synthesis instead of being dropped.
     final abortController = AbortController();
     _textToSpeechAbortController = abortController;
-    final onProgressCallback = (JSAny? raw) {
-      if (raw == null || !raw.isA<JSObject>()) {
-        return;
-      }
-      final value = raw as JSObject;
-      onProgress?.call(
-        BackendTextToSpeechProgress(
-          phase: _jsIntProperty(value, 'state') == 1
-              ? BackendTextToSpeechPhase.processingPrompt
-              : BackendTextToSpeechPhase.generating,
-          promptTokensRemaining:
-              _jsIntProperty(value, 'promptTokensRemaining') ?? 0,
-          framesGenerated: _jsIntProperty(value, 'framesGenerated') ?? 0,
-          truncated: _jsBoolProperty(value, 'truncated') == true,
-        ),
-      );
-    }.toJS;
-
     try {
+      final bridge = _requireBridge();
+      final capabilities = await textToSpeechCapabilities(
+        contextHandle,
+        mmContextHandle,
+      );
+      if (!capabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          capabilities.unsupportedReason ??
+              'Web text-to-speech is not supported by the active runtime.',
+        );
+      }
+      if (abortController.signal.aborted) {
+        throw LlamaTextToSpeechException(
+          'Text-to-speech synthesis was cancelled.',
+        );
+      }
+
+      final onProgressCallback = (JSAny? raw) {
+        if (raw == null || !raw.isA<JSObject>()) {
+          return;
+        }
+        final value = raw as JSObject;
+        onProgress?.call(
+          BackendTextToSpeechProgress(
+            phase: _jsIntProperty(value, 'state') == 1
+                ? BackendTextToSpeechPhase.processingPrompt
+                : BackendTextToSpeechPhase.generating,
+            promptTokensRemaining:
+                _jsIntProperty(value, 'promptTokensRemaining') ?? 0,
+            framesGenerated: _jsIntProperty(value, 'framesGenerated') ?? 0,
+            truncated: _jsBoolProperty(value, 'truncated') == true,
+          ),
+        );
+      }.toJS;
+
       final raw = await _toFuture(
         bridge.synthesizeSpeech(
           WebGpuTextToSpeechOptions(
