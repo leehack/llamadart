@@ -47,6 +47,7 @@ class NativeLlamaBackend
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
   bool _textToSpeechActive = false;
+  bool _textToSpeechCancelRequested = false;
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -873,13 +874,21 @@ class NativeLlamaBackend
     BackendTextToSpeechRequest request, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
-    await _ensureIsolate();
     if (_textToSpeechActive) {
       throw LlamaStateException(
         'llama.cpp text-to-speech synthesis is already in progress.',
       );
     }
+    // Claimed before the first await so a cancel arriving during isolate
+    // startup is recorded rather than dropped.
     _textToSpeechActive = true;
+    _textToSpeechCancelRequested = false;
+    try {
+      await _ensureIsolate();
+    } catch (_) {
+      _textToSpeechActive = false;
+      rethrow;
+    }
     final rp = ReceivePort();
     final completer = Completer<BackendTextToSpeechResult>();
     _sendPort!.send(
@@ -890,6 +899,9 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
+    if (_textToSpeechCancelRequested) {
+      _sendPort!.send(TextToSpeechCancelRequest());
+    }
 
     late final StreamSubscription<dynamic> subscription;
     subscription = rp.listen((response) {
@@ -936,6 +948,7 @@ class NativeLlamaBackend
     if (!_textToSpeechActive) {
       return;
     }
+    _textToSpeechCancelRequested = true;
     _sendPort?.send(TextToSpeechCancelRequest());
   }
 
