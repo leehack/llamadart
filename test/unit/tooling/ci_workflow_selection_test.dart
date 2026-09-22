@@ -311,9 +311,19 @@ void main() {
       final coverageSteps = jobs['test-linux-coverage']['steps'] as List;
       expect(
         coverageSteps.any(
-          (s) => s['run'] == 'dart pub global activate coverage 1.15.1',
+          (s) => '${s['run']}'.contains(
+            'dart run tool/testing/format_lcov.dart --lcov '
+            '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
+            '--check-ignore',
+          ),
         ),
         isTrue,
+      );
+      expect(
+        coverageSteps.any(
+          (s) => '${s['run']}'.contains('pub global activate coverage'),
+        ),
+        isFalse,
       );
       expect(
         coverageSteps.any(
@@ -327,4 +337,36 @@ void main() {
       );
     },
   );
+
+  test('the coverage formatter version is pinned exactly in pubspec.yaml', () {
+    final pubspec =
+        loadYaml(File('pubspec.yaml').readAsStringSync()) as YamlMap;
+    final constraint =
+        (pubspec['dev_dependencies'] as YamlMap)['coverage'] as String;
+
+    expect(constraint, _pinnedCoverageVersion);
+  });
+
+  test('the resolved coverage version matches the pin', () {
+    final lock = File('pubspec.lock');
+    if (!lock.existsSync()) {
+      markTestSkipped('pubspec.lock is gitignored; run `dart pub get` first.');
+      return;
+    }
+    final packages =
+        (loadYaml(lock.readAsStringSync()) as YamlMap)['packages'] as YamlMap;
+    final resolved = (packages['coverage'] as YamlMap)['version'] as String;
+
+    expect(
+      resolved,
+      _pinnedCoverageVersion,
+      reason:
+          'coverage resolved to $resolved, not the pinned '
+          '$_pinnedCoverageVersion the LCOV formatter was verified against.',
+    );
+  });
 }
+
+/// `coverage` version `pubspec.yaml` pins and the LCOV formatter was verified
+/// against.
+const _pinnedCoverageVersion = '1.15.1';

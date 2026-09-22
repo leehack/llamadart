@@ -187,7 +187,7 @@ To collect and view coverage reports:
 dart test -p vm --coverage=coverage
 
 # 2. Format into LCOV (respects // coverage:ignore-file)
-dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
+dart run tool/testing/format_lcov.dart --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
 
 # 3. Enforce >=70% threshold
 dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
