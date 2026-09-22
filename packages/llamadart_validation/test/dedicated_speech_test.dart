@@ -136,6 +136,25 @@ void main() {
     expect(cancelled['pcm_samples_before_cancel'], lessThan(176000));
     await target.dispose();
   });
+  test('an immediate streaming cancellation pushes no audio', () async {
+    final engine = Recognizer();
+    final target = adapter(engine);
+    await target.load();
+    final cancelled = await target.execute(cancelImmediately: true);
+    expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_immediate'], isTrue);
+    expect(cancelled.containsKey('cancel_in_flight'), isFalse);
+    expect(cancelled['pcm_samples_before_cancel'], 0);
+    expect(engine.session.samples, 0);
+    expect(cancelled['cancel_after_ms'], greaterThanOrEqualTo(0));
+    expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+    expect(engine.session.cancelCalled, isTrue);
+    await expectLater(
+      target.execute(cancel: true, cancelImmediately: true),
+      throwsArgumentError,
+    );
+    await target.dispose();
+  });
   test(
     'invalid sample-rate is exercised through public streaming contract',
     () async {

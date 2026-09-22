@@ -18,8 +18,10 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool failCleanup = false;
   bool reportCancelLatency = true;
   bool reportInFlight = true;
+  bool reportImmediate = true;
   bool skipGenerate = false;
   double cancelLatencyMs = 1;
+  double immediateCancelLatencyMs = 1;
   Object? invalidError;
   @override
   Future<void> load() async {
@@ -36,18 +38,29 @@ class FakeSpeech implements SpeechValidationAdapter {
   @override
   Future<Map<String, Object?>> execute({
     bool cancel = false,
+    bool cancelImmediately = false,
     bool invalid = false,
     bool bytesInput = false,
   }) async {
     calls.add(
       cancel
           ? 'cancel'
+          : cancelImmediately
+          ? 'cancel_immediate'
           : invalid
           ? 'invalid'
           : 'execute',
     );
     if (invalid && !ignoreInvalid) {
       throw invalidError ?? ArgumentError('invalid');
+    }
+    if (cancelImmediately) {
+      return {
+        'cancelled': true,
+        if (reportCancelLatency) 'cancel_latency_ms': immediateCancelLatencyMs,
+        'cancel_after_ms': 0.0,
+        'cancel_immediate': reportImmediate,
+      };
     }
     if (skipGenerate && !cancel && !invalid) {
       return {'skipped': true, if (wrongWords) 'predicate_passed': false};
@@ -279,6 +292,7 @@ void main() {
       expect(adapter.calls, [
         'load',
         'execute',
+        'cancel_immediate',
         'cancel',
         'execute',
         'invalid',
@@ -287,6 +301,7 @@ void main() {
         'load',
         'execute',
         for (var cycle = 0; cycle < speechCleanupCycles; cycle++) ...[
+          'cancel_immediate',
           'cancel',
           'dispose',
           'load',
@@ -380,11 +395,15 @@ void main() {
     },
   );
   test('the latency budget brackets the measured in-flight range', () {
-    expect(speechCancelLatencyBudgetMs, greaterThan(218.102));
-    expect(speechCancelLatencyBudgetMs, lessThan(538.7));
+    expect(speechCancelLatencyBudgetMs, greaterThan(129.741));
+    expect(speechCancelLatencyBudgetMs, lessThan(545.524));
+  });
+  test('the immediate budget brackets a setup wait and a dropped cancel', () {
+    expect(speechImmediateCancelLatencyBudgetMs, greaterThan(216.120));
+    expect(speechImmediateCancelLatencyBudgetMs, lessThan(1234.954));
   });
   test('the growth budget brackets measured growth and a model copy', () {
-    expect(speechPeakRssGrowthBudget, greaterThan(1.013024));
+    expect(speechPeakRssGrowthBudget, greaterThan(1.026633));
     expect(speechPeakRssGrowthBudget, lessThan(1.5));
   });
   test('a cancellation far past the budget fails the run', () async {
@@ -399,6 +418,61 @@ void main() {
     );
     expect(bound['status'], 'FAIL');
     expect(bound['worst_ms'], 4000);
+  });
+  test('an immediate cancellation far past its budget fails the run', () async {
+    final stalled = FakeSpeech()..immediateCancelLatencyMs = 4000;
+    final result = await runSpeechValidation(
+      stalled,
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final checks = result['checks'] as List;
+    final bound = checks.singleWhere(
+      (row) => row['id'] == 'immediate_cancel_latency_bound',
+    );
+    expect(bound['status'], 'FAIL');
+    expect(bound['worst_ms'], 4000);
+    expect(bound['samples_ms'], hasLength(speechCleanupCycles + 1));
+    expect(
+      checks.singleWhere(
+        (row) => row['id'] == 'cancel_latency_bound',
+      )['status'],
+      'PASS',
+    );
+    final reported = (result['bounds'] as Map)['immediate_cancel_latency_ms'];
+    expect(reported['within_budget'], false);
+    expect(reported['budget'], speechImmediateCancelLatencyBudgetMs);
+
+    final atBudget = await runSpeechValidation(
+      FakeSpeech()
+        ..immediateCancelLatencyMs = speechImmediateCancelLatencyBudgetMs,
+      residentBytes: stableResidentBytes,
+    );
+    expect(atBudget['functional_pass'], true);
+    expect(
+      (atBudget['bounds']
+          as Map)['immediate_cancel_latency_ms']['within_budget'],
+      true,
+    );
+  });
+  test('a cancellation not issued on hand-back fails', () async {
+    final waited = FakeSpeech()..reportImmediate = false;
+    final result = await runSpeechValidation(
+      waited,
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final checks = result['checks'] as List;
+    expect(
+      checks.singleWhere((row) => row['id'] == 'cancel_immediate')['status'],
+      'FAIL',
+    );
+    expect(
+      checks.singleWhere(
+        (row) => row['id'] == 'immediate_cancel_latency_bound',
+      )['status'],
+      'FAIL',
+    );
   });
   test('a cancellation that never reached a generation fails', () async {
     final early = FakeSpeech()..reportInFlight = false;
@@ -681,6 +755,7 @@ void main() {
       'load',
       'execute',
       'execute',
+      'cancel_immediate',
       'cancel',
       'execute',
       'invalid',
@@ -690,6 +765,7 @@ void main() {
       'load',
       'execute',
       for (var cycle = 0; cycle < speechCleanupCycles; cycle++) ...[
+        'cancel_immediate',
         'cancel',
         'dispose',
         'load',
@@ -875,6 +951,32 @@ void main() {
       greaterThanOrEqualTo(reference * speechCancelInFlightLeadFraction),
     );
     expect(cancelled['cancel_latency_ms'], isA<double>());
+    expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+  });
+
+  test('the public adapter cancels on hand-back without waiting', () async {
+    final adapter = edgeAdapter(
+      deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans'],
+      tokenDelay: const Duration(milliseconds: 40),
+    );
+    await adapter.load();
+    final unreferenced = await adapter.execute(cancelImmediately: true);
+    expect(unreferenced['cancel_immediate'], isTrue);
+    final generated = await adapter.execute();
+    final reference = generated['elapsed_ms']! as double;
+    final cancelled = await adapter.execute(cancelImmediately: true);
+    await expectLater(
+      adapter.execute(cancel: true, cancelImmediately: true),
+      throwsArgumentError,
+    );
+    await adapter.dispose();
+    expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_immediate'], isTrue);
+    expect(cancelled.containsKey('cancel_in_flight'), isFalse);
+    expect(
+      cancelled['cancel_after_ms'],
+      lessThan(reference * speechCancelInFlightLeadFraction),
+    );
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
   });
 

@@ -66,9 +66,13 @@ abstract interface class SpeechValidationAdapter {
 
   /// With `cancel`, issues the cancellation once the work it cancels is
   /// already running, and reports `cancel_latency_ms`, `cancel_after_ms` and
-  /// `cancel_in_flight`.
+  /// `cancel_in_flight`. With `cancelImmediately`, issues it as soon as the
+  /// task is handed back, without yielding first, and reports
+  /// `cancel_latency_ms`, `cancel_after_ms` and `cancel_immediate`. Setting
+  /// both throws [ArgumentError].
   Future<Map<String, Object?>> execute({
     bool cancel = false,
+    bool cancelImmediately = false,
     bool invalid = false,
     bool bytesInput = false,
   });
@@ -219,10 +223,19 @@ class PublicSpeechValidationAdapter
     };
   }
 
-  Future<({double afterMs, bool inFlight})> _awaitInFlight(
+  Future<Map<String, Object?>> _cancelTask(
     Stopwatch watch,
+    Stopwatch cancelWatch,
     Future<Object?> done,
-  ) async {
+    void Function() cancelTask, {
+    required bool immediately,
+  }) async {
+    if (immediately) {
+      final afterMs = watch.elapsedMicroseconds / 1000;
+      cancelWatch.start();
+      cancelTask();
+      return {'cancel_after_ms': afterMs, 'cancel_immediate': true};
+    }
     final reference = _lastGenerationMs;
     if (reference == null) {
       throw StateError('No measured generation to cancel into');
@@ -240,15 +253,27 @@ class PublicSpeechValidationAdapter
             .round(),
       ),
     );
-    return (afterMs: watch.elapsedMicroseconds / 1000, inFlight: !settled);
+    final afterMs = watch.elapsedMicroseconds / 1000;
+    final inFlight = !settled;
+    cancelWatch.start();
+    cancelTask();
+    return {
+      'cancel_after_ms': afterMs,
+      'cancel_in_flight': inFlight,
+      'reference_generation_ms': reference,
+    };
   }
 
   @override
   Future<Map<String, Object?>> execute({
     bool cancel = false,
+    bool cancelImmediately = false,
     bool invalid = false,
     bool bytesInput = false,
   }) async {
+    if (cancel && cancelImmediately) {
+      throw ArgumentError('cancel and cancelImmediately are exclusive');
+    }
     final engine = _engine ?? (throw StateError('Speech engine is not loaded'));
     final watch = Stopwatch()..start();
     if (pack == 'stt') {
@@ -272,15 +297,18 @@ class PublicSpeechValidationAdapter
         ),
       );
       final cancelWatch = Stopwatch();
-      ({double afterMs, bool inFlight})? lead;
-      if (cancel) {
-        lead = await _awaitInFlight(watch, task.done);
-        cancelWatch.start();
-        task.cancel();
-      }
+      final cancellation = cancel || cancelImmediately
+          ? await _cancelTask(
+              watch,
+              cancelWatch,
+              task.done,
+              task.cancel,
+              immediately: cancelImmediately,
+            )
+          : null;
       final events = await task.events.toList();
       final completion = await task.done;
-      if (cancel) {
+      if (cancellation != null) {
         cancelWatch.stop();
         if (completion.state != SpeechToTextCompletionState.cancelled ||
             events.whereType<SpeechToTextFinalEvent>().isNotEmpty) {
@@ -289,9 +317,7 @@ class PublicSpeechValidationAdapter
         return {
           'cancelled': true,
           'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
-          'cancel_after_ms': lead!.afterMs,
-          'cancel_in_flight': lead.inFlight,
-          'reference_generation_ms': _lastGenerationMs,
+          ...cancellation,
         };
       }
       if (completion.state != SpeechToTextCompletionState.completed ||
@@ -330,12 +356,15 @@ class PublicSpeechValidationAdapter
       ),
     );
     final cancelWatch = Stopwatch();
-    ({double afterMs, bool inFlight})? lead;
-    if (cancel) {
-      lead = await _awaitInFlight(watch, task.done);
-      cancelWatch.start();
-      task.cancel();
-    }
+    final cancellation = cancel || cancelImmediately
+        ? await _cancelTask(
+            watch,
+            cancelWatch,
+            task.done,
+            task.cancel,
+            immediately: cancelImmediately,
+          )
+        : null;
     double? firstAudioMs;
     var finals = 0;
     await for (final event in task.events) {
@@ -345,7 +374,7 @@ class PublicSpeechValidationAdapter
       }
     }
     final completion = await task.done;
-    if (cancel) {
+    if (cancellation != null) {
       cancelWatch.stop();
       if (completion.state != TextToSpeechCompletionState.cancelled ||
           finals != 0) {
@@ -354,9 +383,7 @@ class PublicSpeechValidationAdapter
       return {
         'cancelled': true,
         'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
-        'cancel_after_ms': lead!.afterMs,
-        'cancel_in_flight': lead.inFlight,
-        'reference_generation_ms': _lastGenerationMs,
+        ...cancellation,
       };
     }
     if (completion.state != TextToSpeechCompletionState.completed ||
@@ -383,7 +410,7 @@ class PublicSpeechValidationAdapter
 }
 
 /// Lifecycle checks every [runSpeechValidation] run executes.
-const speechLifecycleCheckCount = 13;
+const speechLifecycleCheckCount = 15;
 
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = 3;
@@ -398,19 +425,37 @@ const speechCleanupCycles = 3;
 /// exhausted, and cancels there.
 const speechCancelInFlightLeadFraction = 0.5;
 
-/// Milliseconds allowed between requesting cancellation and the speech task
-/// reaching a terminal state, enforced on every cancellation a run performs.
+/// Milliseconds allowed between an in-flight cancellation and the speech task
+/// reaching a terminal state, enforced on every in-flight cancellation a run
+/// performs.
 ///
 /// Derived from the `stt` pack on macOS arm64: 80 in-flight cancellations over
-/// 20 runs, 10 on Metal and 10 on CPU, spanned 0.100 ms to 218.102 ms. The
-/// budget is about 2.3x that worst case, which the CPU backend sets on its own:
-/// its 40 cancellations spanned 104.287 ms to 218.102 ms, against 0.100 ms to
-/// 2.576 ms on Metal.
+/// 20 runs, 10 on Metal and 10 on CPU, spanned 0.244 ms to 129.741 ms. The
+/// budget is about 3.9x that worst case, which the CPU backend sets on its own:
+/// its 40 cancellations spanned 98.312 ms to 129.741 ms, against 0.244 ms to
+/// 2.413 ms on Metal.
 ///
 /// It bounds when the task becomes terminal to its caller, not when native
 /// decoding stops, and it exceeds one Metal generation on this host, so it
 /// cannot by itself separate a cancellation from a generation left to finish.
 const speechCancelLatencyBudgetMs = 500.0;
+
+/// Milliseconds allowed between a cancellation issued as soon as the task is
+/// handed back and the task reaching a terminal state, enforced on every such
+/// cancellation a run performs.
+///
+/// Derived from the `tts` pack on macOS arm64. With the worker's check for a
+/// cancellation that arrives before native setup removed, such a cancellation
+/// waited for `llama_dart_tts_start` and took at most 216.120 ms. With the
+/// library changes of [#596](https://github.com/leehack/llamadart/pull/596)
+/// reverted, which drops it as in
+/// [#595](https://github.com/leehack/llamadart/issues/595), it took at least
+/// 1234.954 ms. The budget is about 2.3x the first and 2.5x below the second.
+///
+/// It exceeds a whole `stt` generation on Metal on that host, so on that pack
+/// and backend it cannot by itself separate a cancellation from a generation
+/// left to finish.
+const speechImmediateCancelLatencyBudgetMs = 500.0;
 
 /// Ceiling on the largest resident set sampled after any check that follows
 /// the first generation, as a multiple of the resident set sampled immediately
@@ -427,12 +472,14 @@ const speechPeakRssGrowthBudget = 1.10;
 /// that also implements [SpeechEdgeCaseAdapter]. Runs that pass none keep their
 /// previous check count.
 ///
-/// Every cancellation must report `cancel_in_flight` as true along with
-/// `cancel_latency_ms` and `cancel_after_ms`; a run whose adapter reports
-/// anything else fails that check. [residentBytes] samples whole-process
-/// resident memory after each check. When it yields nothing usable
-/// `peak_memory_bound` records `SKIP` with a reason, and that check is the only
-/// one a passing run may leave unmeasured.
+/// The single-shot checks and every cleanup cycle each cancel twice: once as
+/// soon as the task is handed back, which must report `cancel_immediate` as
+/// true, and once in flight, which must report `cancel_in_flight` as true.
+/// Both must also report `cancel_latency_ms` and `cancel_after_ms`; a run
+/// whose adapter reports anything else fails that check. [residentBytes]
+/// samples whole-process resident memory after each check. When it yields
+/// nothing usable `peak_memory_bound` records `SKIP` with a reason, and that
+/// check is the only one a passing run may leave unmeasured.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
@@ -449,6 +496,8 @@ Future<Map<String, Object?>> runSpeechValidation(
   final results = <Map<String, Object?>>[];
   final cancelLatencies = <double>[];
   final cancelLeads = <double>[];
+  final immediateLatencies = <double>[];
+  final immediateLeads = <double>[];
   final residentSamples = <Map<String, Object?>>[];
   var residentMeasurable = true;
   Future<void> check(
@@ -483,11 +532,17 @@ Future<Map<String, Object?>> runSpeechValidation(
     }
   }
 
-  Map<String, Object?> recordCancellation(Map<String, Object?> result) {
+  Map<String, Object?> recordCancellation(
+    Map<String, Object?> result, {
+    bool immediate = false,
+  }) {
     if (result['cancelled'] != true) {
       throw StateError('Cancellation not confirmed');
     }
-    if (result['cancel_in_flight'] != true) {
+    if (immediate && result['cancel_immediate'] != true) {
+      throw StateError('Cancellation was not issued on hand-back');
+    }
+    if (!immediate && result['cancel_in_flight'] != true) {
       throw StateError('Cancellation did not reach a running generation');
     }
     final latency = result['cancel_latency_ms'];
@@ -495,12 +550,30 @@ Future<Map<String, Object?>> runSpeechValidation(
       throw StateError('Cancellation latency was not measured');
     }
     final lead = result['cancel_after_ms'];
-    if (lead is! num || !lead.isFinite || lead <= 0) {
+    if (lead is! num || !lead.isFinite || lead < 0 || !immediate && lead == 0) {
       throw StateError('Cancellation lead time was not measured');
     }
-    cancelLatencies.add(latency.toDouble());
-    cancelLeads.add(lead.toDouble());
+    (immediate ? immediateLatencies : cancelLatencies).add(latency.toDouble());
+    (immediate ? immediateLeads : cancelLeads).add(lead.toDouble());
     return result;
+  }
+
+  Map<String, Object?> latencyBound(
+    List<double> samples,
+    List<double> leads,
+    double budget,
+  ) {
+    if (samples.length != speechCleanupCycles + 1) {
+      throw StateError('Cancellation latency samples are incomplete');
+    }
+    final worst = samples.reduce(math.max);
+    return {
+      'samples_ms': [...samples],
+      'lead_ms': [...leads],
+      'worst_ms': worst,
+      'budget_ms': budget,
+      'predicate_passed': worst <= budget,
+    };
   }
 
   try {
@@ -513,6 +586,13 @@ Future<Map<String, Object?>> runSpeechValidation(
       if (checkBytes) {
         await check('bytes_input', () => adapter.execute(bytesInput: true));
       }
+      await check(
+        'cancel_immediate',
+        () async => recordCancellation(
+          await adapter.execute(cancelImmediately: true),
+          immediate: true,
+        ),
+      );
       await check(
         'cancel',
         () async => recordCancellation(await adapter.execute(cancel: true)),
@@ -549,6 +629,10 @@ Future<Map<String, Object?>> runSpeechValidation(
       });
       for (var cycle = 1; cycle <= speechCleanupCycles; cycle++) {
         await check('cleanup_cycle_$cycle', () async {
+          final immediate = recordCancellation(
+            await adapter.execute(cancelImmediately: true),
+            immediate: true,
+          );
           final cancelled = recordCancellation(
             await adapter.execute(cancel: true),
           );
@@ -556,26 +640,32 @@ Future<Map<String, Object?>> runSpeechValidation(
           await adapter.load();
           return {
             ...await adapter.execute(),
+            'immediate_cancel_latency_ms': immediate['cancel_latency_ms'],
             'cancel_latency_ms': cancelled['cancel_latency_ms'],
             'cancel_after_ms': cancelled['cancel_after_ms'],
             'cancel_in_flight': cancelled['cancel_in_flight'],
           };
         });
       }
-      await check('cancel_latency_bound', () async {
-        if (cancelLatencies.length != speechCleanupCycles + 1) {
-          throw StateError('Cancellation latency samples are incomplete');
-        }
-        final worst = cancelLatencies.reduce(math.max);
-        return {
-          'samples_ms': [...cancelLatencies],
-          'lead_ms': [...cancelLeads],
+      await check(
+        'cancel_latency_bound',
+        () async => {
+          ...latencyBound(
+            cancelLatencies,
+            cancelLeads,
+            speechCancelLatencyBudgetMs,
+          ),
           'lead_fraction': speechCancelInFlightLeadFraction,
-          'worst_ms': worst,
-          'budget_ms': speechCancelLatencyBudgetMs,
-          'predicate_passed': worst <= speechCancelLatencyBudgetMs,
-        };
-      });
+        },
+      );
+      await check(
+        'immediate_cancel_latency_bound',
+        () async => latencyBound(
+          immediateLatencies,
+          immediateLeads,
+          speechImmediateCancelLatencyBudgetMs,
+        ),
+      );
       await check('peak_memory_bound', () async {
         final baselineIndex = residentSamples.indexWhere(
           (sample) => sample['id'] == 'generate',
@@ -617,6 +707,7 @@ Future<Map<String, Object?>> runSpeechValidation(
     orElse: () => const <String, Object?>{},
   );
   final latencyRow = row('cancel_latency_bound');
+  final immediateRow = row('immediate_cancel_latency_bound');
   final memoryRow = row('peak_memory_bound');
   final memoryMeasured = memoryRow.isNotEmpty && memoryRow['skipped'] != true;
   return {
@@ -642,6 +733,15 @@ Future<Map<String, Object?>> runSpeechValidation(
         'within_budget': latencyRow.isEmpty
             ? null
             : latencyRow['status'] == 'PASS',
+      },
+      'immediate_cancel_latency_ms': {
+        'budget': speechImmediateCancelLatencyBudgetMs,
+        'samples': [...immediateLatencies],
+        'lead': [...immediateLeads],
+        'worst': immediateRow['worst_ms'],
+        'within_budget': immediateRow.isEmpty
+            ? null
+            : immediateRow['status'] == 'PASS',
       },
       'peak_resident_bytes': {
         'measurement': residentSetSource,
@@ -759,9 +859,13 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
   @override
   Future<Map<String, Object?>> execute({
     bool cancel = false,
+    bool cancelImmediately = false,
     bool invalid = false,
     bool bytesInput = false,
   }) async {
+    if (cancel && cancelImmediately) {
+      throw ArgumentError('cancel and cancelImmediately are exclusive');
+    }
     final watch = Stopwatch()..start();
     final recognizer = _recognizer ?? (throw StateError('ASR is not loaded'));
     if (invalid) {
@@ -798,8 +902,9 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
     var pushed = 0;
     var cancelAfterMs = 0.0;
     var cancelInFlight = false;
+    final cancelling = cancel || cancelImmediately;
     try {
-      if (cancel) {
+      if (cancelling) {
         var settled = false;
         unawaited(
           session.done.then<void>(
@@ -809,7 +914,7 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
         );
         for (
           var offset = 0;
-          offset < _pcm.length && partials == 0;
+          !cancelImmediately && offset < _pcm.length && partials == 0;
           offset += 1600
         ) {
           final end = offset + 1600 < _pcm.length ? offset + 1600 : _pcm.length;
@@ -830,7 +935,7 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
       final completion = await session.done;
       await drained.future;
       if (streamError != null) throw streamError!;
-      if (cancel) {
+      if (cancelling) {
         cancelWatch.stop();
         if (completion.state != SpeechToTextCompletionState.cancelled ||
             finals != 0) {
@@ -840,7 +945,10 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
           'cancelled': true,
           'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
           'cancel_after_ms': cancelAfterMs,
-          'cancel_in_flight': cancelInFlight,
+          if (cancelImmediately)
+            'cancel_immediate': true
+          else
+            'cancel_in_flight': cancelInFlight,
           'pcm_samples_before_cancel': pushed,
           'partial_events_before_cancel': partials,
         };
