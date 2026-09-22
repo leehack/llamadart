@@ -952,14 +952,14 @@ void main() {
       return _rejectPromise(error);
     }
 
-    void failLoads({required String message, int? firstAttempts}) {
+    void failLoads({required String message, required int firstAttempts}) {
       var loadCallCount = 0;
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
           loadCallCount += 1;
           recordLoadConfig(config);
-          if (firstAttempts == null || loadCallCount <= firstAttempts) {
+          if (loadCallCount <= firstAttempts) {
             return rejectLoadWith(message);
           }
           return Future<void>.value().toJS;
@@ -1122,7 +1122,7 @@ void main() {
       bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
       bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
           'model_fetch_backend_attempt;model_fetch_backend_abort';
-      failLoads(message: 'bridge model load failed');
+      failLoads(message: 'bridge model load failed', firstAttempts: 11);
 
       await expectLater(
         backend.modelLoadFromUrl(
@@ -1155,7 +1155,7 @@ void main() {
 
     test('gives up with the memory limit error after the last rung', () async {
       bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
-      failLoads(message: 'array buffer allocation failed');
+      failLoads(message: 'array buffer allocation failed', firstAttempts: 2);
 
       await expectLater(
         backend.modelLoadFromUrl(
@@ -1187,7 +1187,7 @@ void main() {
       bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
       bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
           'model_fetch_backend_attempt;model_fetch_backend_abort';
-      failLoads(message: 'bridge model load failed');
+      failLoads(message: 'bridge model load failed', firstAttempts: 4);
 
       await expectLater(
         backend.modelLoadFromUrl(
