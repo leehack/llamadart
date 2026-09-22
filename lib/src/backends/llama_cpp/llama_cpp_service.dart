@@ -26,6 +26,7 @@ import 'load_param_helpers.dart';
 import 'stop_sequence_buffer.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
+import 'mtmd_chunk_eval.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 
@@ -4309,6 +4310,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        cancelToken: Pointer<Int8>.fromAddress(cancelTokenAddress),
       );
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
@@ -4802,6 +4804,7 @@ class LlamaCppService {
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
     required _LlamaCppSpeculativeConfig? speculativeConfig,
+    required Pointer<Int8> cancelToken,
   }) {
     final mediaParts =
         parts
@@ -4819,6 +4822,7 @@ class LlamaCppService {
         prompt,
         mediaParts,
         modelParams,
+        cancelToken,
       );
     } else {
       return _ingestTextPrompt(
@@ -4844,6 +4848,7 @@ class LlamaCppService {
     String prompt,
     List<LlamaContentPart> mediaParts,
     llama_context_params modelParams,
+    Pointer<Int8> cancelToken,
   ) {
     int initialTokens = 0;
     final bitmaps = malloc<Pointer<mtmd_bitmap>>(mediaParts.length);
@@ -4928,16 +4933,29 @@ class LlamaCppService {
       if (res == 0) {
         final newPast = malloc<llama_pos>();
         try {
-          final evalResult = _mtmdHelperEvalChunks(
-            mmCtx,
-            ctx.pointer,
-            chunks,
-            0,
-            0,
-            modelParams.n_batch,
-            true,
-            newPast,
-          );
+          final chunkEvalApi = _mtmdPrimarySymbolsUnavailable
+              ? _resolveMtmdFallbackApi()?.chunkEval
+              : MtmdChunkEvalApi.primary;
+          final evalResult = chunkEvalApi == null
+              ? _mtmdHelperEvalChunks(
+                  mmCtx,
+                  ctx.pointer,
+                  chunks,
+                  0,
+                  0,
+                  modelParams.n_batch,
+                  true,
+                  newPast,
+                )
+              : evalMtmdChunksUntilCancelled(
+                  chunkEvalApi,
+                  mmCtx,
+                  ctx.pointer,
+                  chunks,
+                  modelParams.n_batch,
+                  newPast,
+                  cancelToken,
+                );
           if (evalResult == 0) {
             initialTokens = newPast.value;
           } else {
@@ -7116,6 +7134,31 @@ class LlamaCppService {
     );
   }
 
+  /// Routes every mtmd call through a wrapper library candidate, as when the
+  /// primary asset cannot resolve mtmd, for real-model regression tests.
+  ///
+  /// With [chunkEval] false, the fallback lacks the chunk-level functions.
+  /// Returns false, changing nothing, when no candidate exports mtmd.
+  bool debugUseWrapperMtmdFallbackForTesting({required bool chunkEval}) {
+    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+      final _MtmdApi? api;
+      try {
+        api = _MtmdApi.tryLoad(
+          _openWrapperLibrary(candidate),
+          loadChunkEval: chunkEval,
+        );
+      } catch (_) {
+        continue;
+      }
+      if (api == null) continue;
+      _mtmdPrimarySymbolsUnavailable = true;
+      _mtmdFallbackLookupAttempted = true;
+      _mtmdFallbackApi = api;
+      return true;
+    }
+    return false;
+  }
+
   _MtmdApi? _resolveMtmdFallbackApi() {
     if (_mtmdFallbackLookupAttempted) {
       return _mtmdFallbackApi;
@@ -8312,6 +8355,7 @@ class _MtmdApi {
   final _MtmdBitmapFreeDart bitmapFree;
   final _MtmdTokenizeDart tokenize;
   final _MtmdHelperEvalChunksDart helperEvalChunks;
+  final MtmdChunkEvalApi? chunkEval;
   final _MtmdLogSetDart? logSet;
   final _MtmdLogSetDart? helperLogSet;
 
@@ -8332,11 +8376,15 @@ class _MtmdApi {
     required this.bitmapFree,
     required this.tokenize,
     required this.helperEvalChunks,
+    required this.chunkEval,
     required this.logSet,
     required this.helperLogSet,
   });
 
-  static _MtmdApi? tryLoad(DynamicLibrary library) {
+  static _MtmdApi? tryLoad(
+    DynamicLibrary library, {
+    bool loadChunkEval = true,
+  }) {
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
@@ -8428,6 +8476,7 @@ class _MtmdApi {
               _MtmdHelperEvalChunksNative,
               _MtmdHelperEvalChunksDart
             >('mtmd_helper_eval_chunks'),
+        chunkEval: loadChunkEval ? MtmdChunkEvalApi.tryLoad(library) : null,
         logSet: logSet,
         helperLogSet: helperLogSet,
       );

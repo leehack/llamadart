@@ -3,16 +3,23 @@
 @Timeout(Duration(minutes: 10))
 library;
 
+import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:test/test.dart';
 
 const _modelPathKey = 'LLAMADART_STT_MODEL_PATH';
 const _mmprojPathKey = 'LLAMADART_STT_MMPROJ_PATH';
 const _audioPathKey = 'LLAMADART_STT_AUDIO_PATH';
 const _expectedTextKey = 'LLAMADART_STT_EXPECTED_TEXT';
+const _asrPrompt =
+    '<|im_start|>user\n<__media__>Transcribe this audio accurately.'
+    '<|im_end|>\n<|im_start|>assistant\n';
 
 void main() {
   for (final useBytes in [false, true]) {
@@ -137,6 +144,86 @@ void main() {
           }
         } finally {
           await engine.dispose();
+        }
+      },
+    );
+  }
+
+  for (final (route, chunkEval) in [
+    ('primary mtmd', null),
+    ('wrapper mtmd fallback', true),
+    ('wrapper mtmd fallback without chunk-level functions', false),
+  ]) {
+    test(
+      'an audio generate whose cancel is already set yields nothing ($route)',
+      () async {
+        final modelPath = _requiredFile(_modelPathKey);
+        final mmprojPath = _requiredFile(_mmprojPathKey);
+        final audioPath = _requiredFile(_audioPathKey);
+        final expectedText = _requiredText(_expectedTextKey);
+        if (modelPath == null ||
+            mmprojPath == null ||
+            audioPath == null ||
+            expectedText == null) {
+          return;
+        }
+
+        final service = LlamaCppService()..setLogLevel(LlamaLogLevel.none);
+        final cancelToken = calloc<Int8>();
+        try {
+          service.initializeBackend();
+          if (chunkEval != null) {
+            expect(
+              service.debugUseWrapperMtmdFallbackForTesting(
+                chunkEval: chunkEval,
+              ),
+              isTrue,
+            );
+          }
+          const modelParams = ModelParams(
+            contextSize: 4096,
+            preferredBackend: GpuBackend.cpu,
+            gpuLayers: 0,
+          );
+          final model = service.loadModel(modelPath, modelParams);
+          final context = service.createContext(model, modelParams);
+          service.createMultimodalContext(model, mmprojPath);
+
+          Future<(String, int)> generate({required bool cancelled}) async {
+            cancelToken.value = cancelled ? 1 : 0;
+            final bytes = <int>[];
+            await for (final piece in service.generate(
+              context,
+              _asrPrompt,
+              const GenerationParams(maxTokens: 64, temp: 0, topK: 1, seed: 1),
+              cancelToken.address,
+              parts: [LlamaAudioContent(path: audioPath)],
+            )) {
+              bytes.addAll(piece);
+            }
+            return (
+              utf8.decode(bytes),
+              service.getPerformanceContext(context).promptEvalTokens,
+            );
+          }
+
+          final (transcript, promptTokens) = await generate(cancelled: false);
+          expect(transcript, contains(expectedText));
+          expect(promptTokens, greaterThan(1));
+
+          final (cancelledOutput, cancelledPromptTokens) = await generate(
+            cancelled: true,
+          );
+          expect(cancelledOutput, isEmpty);
+          expect(
+            cancelledPromptTokens,
+            chunkEval == false ? promptTokens : lessThanOrEqualTo(1),
+          );
+
+          expect(await generate(cancelled: false), (transcript, promptTokens));
+        } finally {
+          calloc.free(cancelToken);
+          service.dispose();
         }
       },
     );

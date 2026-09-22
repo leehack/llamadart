@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
@@ -55,6 +56,16 @@ const _b10514BindingSymbols = [
 const _b10514MtmdSymbols = [
   'mtmd_bitmap_set_mergeable',
   'mtmd_input_chunk_get_placeholder',
+];
+
+const _mtmdChunkEvalSymbols = [
+  'mtmd_input_chunks_size',
+  'mtmd_input_chunks_get',
+  'mtmd_input_chunk_get_type',
+  'mtmd_helper_eval_chunk_single',
+  'mtmd_encode_chunk',
+  'mtmd_get_output_embd',
+  'mtmd_helper_decode_image_chunk',
 ];
 
 const _aloraMetadataSymbols = [
@@ -948,6 +959,21 @@ void main() {
         reason: 'Expected a native library exporting mtmd symbols.',
       );
       _expectDynamicLibraryExports(libraryFile!, _b10514MtmdSymbols);
+    });
+
+    test('Verify mtmd chunk-level eval symbols are resolvable', () {
+      final libraryFile =
+          _mtmdFallbackLibraryFile() ?? _llamadartWrapperLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting mtmd symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _mtmdChunkEvalSymbols);
+      expect(
+        MtmdChunkEvalApi.tryLoad(ffi.DynamicLibrary.open(libraryFile.path)),
+        isNotNull,
+      );
     });
 
     test('Verify core llama symbols are resolvable', () {
