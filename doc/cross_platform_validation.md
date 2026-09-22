@@ -981,7 +981,14 @@ Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, immediate cancellation, subsequent request, invalid
-input/recovery, independent reload and cleanup. GGUF STT additionally compares
+input/recovery, independent reload and cleanup. Three further
+cancel/dispose/load/generate cycles then run, and a `bounds` block records the
+measured cancellation latency and peak resident set against the budgets
+documented in `packages/llamadart_validation/assets/speech/README.md`. Exceeding
+either budget fails the run; a host where resident memory cannot be measured
+records the memory bound as `SKIP` with a reason rather than passing. The `tts`
+pack currently fails the latency bound, because cancelling a synthesis costs as
+much as completing it. GGUF STT additionally compares
 file and bytes inputs. TTS rejects silent, nonfinite or truncated output;
 playability is not a listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the

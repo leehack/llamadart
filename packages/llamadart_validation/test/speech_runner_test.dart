@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/src/process_memory.dart';
 import 'package:llamadart_validation/src/speech_edge_fixtures.dart';
 import 'package:llamadart_validation/src/speech_runner.dart';
 import 'package:test/test.dart';
@@ -15,6 +16,8 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool wrongWords = false;
   bool failLoad = false;
   bool failCleanup = false;
+  bool reportCancelLatency = true;
+  double cancelLatencyMs = 1;
   Object? invalidError;
   @override
   Future<void> load() async {
@@ -44,7 +47,11 @@ class FakeSpeech implements SpeechValidationAdapter {
     if (invalid && !ignoreInvalid) {
       throw invalidError ?? ArgumentError('invalid');
     }
-    return {'predicate_passed': !wrongWords, if (cancel) 'cancelled': true};
+    return {
+      'predicate_passed': !wrongWords,
+      if (cancel) 'cancelled': true,
+      if (cancel && reportCancelLatency) 'cancel_latency_ms': cancelLatencyMs,
+    };
   }
 }
 
@@ -140,6 +147,9 @@ class FakeSpeechEngine implements LlamaEngine {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Keeps runs that assert lifecycle outcomes independent of real process memory.
+int stableResidentBytes() => 1000;
+
 void main() {
   test(
     'speech input rejection accepts contract errors, not inference failures',
@@ -151,7 +161,10 @@ void main() {
         LlamaInferenceException('Generation failed.'),
       ]) {
         final adapter = FakeSpeech()..invalidError = error;
-        final result = await runSpeechValidation(adapter);
+        final result = await runSpeechValidation(
+          adapter,
+          residentBytes: stableResidentBytes,
+        );
         final checks = result['checks'] as List;
         final rejection = checks.singleWhere(
           (item) => item['id'] == 'invalid_input',
@@ -244,7 +257,10 @@ void main() {
     'successful lifecycle includes cancellation, rejection and independent reload',
     () async {
       final adapter = FakeSpeech();
-      final result = await runSpeechValidation(adapter);
+      final result = await runSpeechValidation(
+        adapter,
+        residentBytes: stableResidentBytes,
+      );
       expect(result['functional_pass'], true);
       expect(result['qualified'], false);
       expect(adapter.calls, [
@@ -257,6 +273,12 @@ void main() {
         'dispose',
         'load',
         'execute',
+        for (var cycle = 0; cycle < speechCleanupCycles; cycle++) ...[
+          'cancel',
+          'dispose',
+          'load',
+          'execute',
+        ],
         'dispose',
       ]);
     },
@@ -266,7 +288,13 @@ void main() {
       FakeSpeech()..wrongWords = true,
       FakeSpeech()..ignoreInvalid = true,
     ]) {
-      expect((await runSpeechValidation(adapter))['functional_pass'], false);
+      expect(
+        (await runSpeechValidation(
+          adapter,
+          residentBytes: stableResidentBytes,
+        ))['functional_pass'],
+        false,
+      );
       expect(adapter.calls.last, 'dispose');
     }
   });
@@ -275,9 +303,124 @@ void main() {
       FakeSpeech()..failLoad = true,
       FakeSpeech()..failCleanup = true,
     ]) {
-      expect((await runSpeechValidation(adapter))['functional_pass'], false);
+      expect(
+        (await runSpeechValidation(
+          adapter,
+          residentBytes: stableResidentBytes,
+        ))['functional_pass'],
+        false,
+      );
       expect(adapter.calls.last, 'dispose');
     }
+  });
+  test(
+    'unmeasured or over-budget cancellation latency fails the run',
+    () async {
+      final silent = FakeSpeech()..reportCancelLatency = false;
+      final unmeasured = await runSpeechValidation(
+        silent,
+        residentBytes: stableResidentBytes,
+      );
+      expect(unmeasured['functional_pass'], false);
+      final unmeasuredChecks = unmeasured['checks'] as List;
+      expect(
+        unmeasuredChecks.singleWhere((row) => row['id'] == 'cancel')['status'],
+        'FAIL',
+      );
+      expect(
+        unmeasuredChecks.singleWhere(
+          (row) => row['id'] == 'cancel_latency_bound',
+        )['status'],
+        'FAIL',
+      );
+
+      final slow = FakeSpeech()
+        ..cancelLatencyMs = speechCancelLatencyBudgetMs + 1;
+      final overBudget = await runSpeechValidation(
+        slow,
+        residentBytes: stableResidentBytes,
+      );
+      expect(overBudget['functional_pass'], false);
+      final bound = (overBudget['checks'] as List).singleWhere(
+        (row) => row['id'] == 'cancel_latency_bound',
+      );
+      expect(bound['status'], 'FAIL');
+      expect(bound['worst_ms'], speechCancelLatencyBudgetMs + 1);
+      expect(bound['samples_ms'], hasLength(speechCleanupCycles + 1));
+      final reported = overBudget['bounds'] as Map;
+      expect(reported['cancel_latency_ms']['within_budget'], false);
+      expect(
+        reported['cancel_latency_ms']['budget'],
+        speechCancelLatencyBudgetMs,
+      );
+
+      final fast = FakeSpeech()..cancelLatencyMs = speechCancelLatencyBudgetMs;
+      final withinBudget = await runSpeechValidation(
+        fast,
+        residentBytes: stableResidentBytes,
+      );
+      expect(withinBudget['functional_pass'], true);
+      expect(
+        (withinBudget['bounds'] as Map)['cancel_latency_ms']['within_budget'],
+        true,
+      );
+    },
+  );
+  test('resident growth past the budget fails the run', () async {
+    var sample = 1000;
+    final growing = await runSpeechValidation(
+      FakeSpeech(),
+      residentBytes: () => sample += 200,
+    );
+    expect(growing['functional_pass'], false);
+    final bound = (growing['checks'] as List).singleWhere(
+      (row) => row['id'] == 'peak_memory_bound',
+    );
+    expect(bound['status'], 'FAIL');
+    expect(bound['peak_rss_growth'], greaterThan(speechPeakRssGrowthBudget));
+    expect(bound['growth_budget'], speechPeakRssGrowthBudget);
+    expect((growing['bounds'] as Map)['peak_resident_bytes']['measured'], true);
+
+    final flat = await runSpeechValidation(
+      FakeSpeech(),
+      residentBytes: stableResidentBytes,
+    );
+    expect(flat['functional_pass'], true);
+    final measured = (flat['bounds'] as Map)['peak_resident_bytes'] as Map;
+    expect(measured['baseline'], 1000);
+    expect(measured['peak'], 1000);
+    expect(measured['growth'], 1);
+    expect(measured['within_budget'], true);
+    expect(measured['measurement'], residentSetSource);
+  });
+  test('an unmeasurable resident set skips the bound with a reason', () async {
+    final result = await runSpeechValidation(
+      FakeSpeech(),
+      residentBytes: () => null,
+    );
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'peak_memory_bound',
+    );
+    expect(bound['status'], 'SKIP');
+    expect(bound['skip_reason'], 'Resident set size was not measurable');
+    expect(bound['measurement'], residentSetSource);
+    expect(bound.containsKey('peak_rss_bytes'), isFalse);
+    expect(result['functional_pass'], true);
+    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    expect(reported['measured'], false);
+    expect(reported['within_budget'], isNull);
+    expect(reported['peak'], isNull);
+    expect(reported['skip_reason'], 'Resident set size was not measurable');
+  });
+  test('the default resident probe measures this platform', () async {
+    final result = await runSpeechValidation(FakeSpeech());
+    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    expect(residentSetBytes(), isNotNull);
+    expect(reported['measured'], true);
+    expect(reported['measurement'], 'dart:io ProcessInfo.currentRss');
+    expect(reported['baseline'], isPositive);
+    expect(reported['peak'], isPositive);
+    expect(reported['within_budget'], true);
   });
   test('edge fixtures describe the inputs they encode', () {
     final source = File('assets/speech/jfk.wav').readAsBytesSync();
@@ -432,7 +575,10 @@ void main() {
     final fixtures = buildSpeechEdgeFixtures(
       Uint8List.fromList(File('assets/speech/jfk.wav').readAsBytesSync()),
     );
-    final lifecycleOnly = await runSpeechValidation(FakeEdgeSpeech());
+    final lifecycleOnly = await runSpeechValidation(
+      FakeEdgeSpeech(),
+      residentBytes: stableResidentBytes,
+    );
     expect(lifecycleOnly['expected_checks'], speechLifecycleCheckCount);
     expect(lifecycleOnly['edge_fixture_ids'], isEmpty);
     expect(lifecycleOnly['functional_pass'], true);
@@ -441,6 +587,7 @@ void main() {
       adapter,
       checkBytes: true,
       edgeFixtures: fixtures,
+      residentBytes: stableResidentBytes,
     );
     expect(
       withEdges['expected_checks'],
@@ -463,6 +610,12 @@ void main() {
       'dispose',
       'load',
       'execute',
+      for (var cycle = 0; cycle < speechCleanupCycles; cycle++) ...[
+        'cancel',
+        'dispose',
+        'load',
+        'execute',
+      ],
       'dispose',
     ]);
   });
@@ -481,6 +634,7 @@ void main() {
           runSpeechValidation(
             FakeEdgeSpeech(failEdge: fixture.id),
             edgeFixtures: fixtures,
+            residentBytes: stableResidentBytes,
           ).then((result) {
             final checks = result['checks'] as List;
             return [
@@ -615,6 +769,15 @@ void main() {
     expect(reproduced['wer'], 0);
   });
 
+  test('the public adapter times its own cancellations', () async {
+    final adapter = edgeAdapter(deltas: [edgeReference]);
+    await adapter.load();
+    final cancelled = await adapter.execute(cancel: true);
+    await adapter.dispose();
+    expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_latency_ms'], isA<double>());
+    expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+  });
   test('edge measurement reports the fixture and guards its pack', () async {
     final byId = edgeFixturesById();
     final stereo = byId['edge_stereo_44100']!;

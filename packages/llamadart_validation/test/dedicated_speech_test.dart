@@ -104,6 +104,17 @@ void main() {
       }
     },
   );
+  test('streaming cancellation reports its own measured latency', () async {
+    final engine = Recognizer();
+    final target = adapter(engine);
+    await target.load();
+    final cancelled = await target.execute(cancel: true);
+    expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_latency_ms'], isA<double>());
+    expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+    expect(engine.session.cancelCalled, isTrue);
+    await target.dispose();
+  });
   test(
     'invalid sample-rate is exercised through public streaming contract',
     () async {

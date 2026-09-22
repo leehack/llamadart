@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 
+import 'process_memory.dart';
 import 'runner.dart' show redactDiagnostic;
 import 'speech_edge_fixtures.dart';
 
@@ -240,15 +242,23 @@ class PublicSpeechValidationAdapter
           maxOutputTokens: 512,
         ),
       );
-      if (cancel) task.cancel();
+      final cancelWatch = Stopwatch();
+      if (cancel) {
+        cancelWatch.start();
+        task.cancel();
+      }
       final events = await task.events.toList();
       final completion = await task.done;
       if (cancel) {
+        cancelWatch.stop();
         if (completion.state != SpeechToTextCompletionState.cancelled ||
             events.whereType<SpeechToTextFinalEvent>().isNotEmpty) {
           throw StateError('STT cancellation emitted a final result');
         }
-        return {'cancelled': true};
+        return {
+          'cancelled': true,
+          'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+        };
       }
       if (completion.state != SpeechToTextCompletionState.completed ||
           events.whereType<SpeechToTextFinalEvent>().length != 1) {
@@ -284,7 +294,11 @@ class PublicSpeechValidationAdapter
         seed: 1,
       ),
     );
-    if (cancel) task.cancel();
+    final cancelWatch = Stopwatch();
+    if (cancel) {
+      cancelWatch.start();
+      task.cancel();
+    }
     double? firstAudioMs;
     var finals = 0;
     await for (final event in task.events) {
@@ -295,11 +309,15 @@ class PublicSpeechValidationAdapter
     }
     final completion = await task.done;
     if (cancel) {
+      cancelWatch.stop();
       if (completion.state != TextToSpeechCompletionState.cancelled ||
           finals != 0) {
         throw StateError('TTS cancellation emitted a final result');
       }
-      return {'cancelled': true};
+      return {
+        'cancelled': true,
+        'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+      };
     }
     if (completion.state != TextToSpeechCompletionState.completed ||
         finals != 1) {
@@ -324,7 +342,34 @@ class PublicSpeechValidationAdapter
 }
 
 /// Lifecycle checks every [runSpeechValidation] run executes.
-const speechLifecycleCheckCount = 8;
+const speechLifecycleCheckCount = 13;
+
+/// Cancel/dispose/load/generate cycles run after the single-shot checks.
+const speechCleanupCycles = 3;
+
+/// Milliseconds allowed between requesting cancellation and the speech task
+/// reaching a terminal state, enforced on every cancellation a run performs.
+///
+/// Derived from the `stt` pack on macOS arm64: 80 cancellations over 20 runs,
+/// 10 on Metal and 10 on CPU, spanned 0.259 ms to 1.587 ms. The budget is about
+/// 31x that worst case, which absorbs host scheduling jitter while staying far
+/// below one generation on the same host, measured at 201 ms to 633 ms. A
+/// cancellation that waits for in-flight inference therefore cannot pass.
+///
+/// The `tts` pack does not meet this budget. Its cancellations measured
+/// 1245-1278 ms on Metal and 2231-2565 ms on CPU, which over 30 cleanup cycles
+/// was 93% to 104% of the generation that followed them in the same run. The
+/// same ratio for `stt` is 0.04% to 0.31%.
+const speechCancelLatencyBudgetMs = 50.0;
+
+/// Resident set ceiling after the first generation, as a multiple of the
+/// resident set measured at that point.
+///
+/// Derived from 30 runs on macOS arm64 across both packs and both backends:
+/// observed growth spanned 1.0002x to 1.0111x, retaining 1.2 MiB to 26.1 MiB
+/// against baselines of 1.86 GiB to 5.31 GiB. The budget allows about 9x the
+/// worst observed excess over 1.0x.
+const speechPeakRssGrowthBudget = 1.10;
 
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
 ///
@@ -332,11 +377,17 @@ const speechLifecycleCheckCount = 8;
 /// that also implements [SpeechEdgeCaseAdapter]. Runs that pass none keep their
 /// previous check count.
 ///
+/// Every cancellation must report `cancel_latency_ms`; a run whose adapter does
+/// not measure it fails. [residentBytes] samples whole-process resident memory
+/// after each check. When it yields nothing usable the memory bound records
+/// `SKIP` with a reason instead of passing.
+///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
   SpeechValidationAdapter adapter, {
   bool checkBytes = false,
   List<SpeechEdgeFixture> edgeFixtures = const [],
+  int? Function() residentBytes = residentSetBytes,
 }) async {
   if (edgeFixtures.isNotEmpty && adapter is! SpeechEdgeCaseAdapter) {
     throw ArgumentError('Adapter cannot execute speech edge fixtures');
@@ -344,6 +395,9 @@ Future<Map<String, Object?>> runSpeechValidation(
   final expectedChecks =
       speechLifecycleCheckCount + (checkBytes ? 1 : 0) + edgeFixtures.length;
   final results = <Map<String, Object?>>[];
+  final cancelLatencies = <double>[];
+  final residentSamples = <Map<String, Object?>>[];
+  var residentMeasurable = true;
   Future<void> check(
     String id,
     Future<Map<String, Object?>> Function() action,
@@ -352,7 +406,11 @@ Future<Map<String, Object?>> runSpeechValidation(
       final result = await action();
       results.add({
         'id': id,
-        'status': result['predicate_passed'] == false ? 'FAIL' : 'PASS',
+        'status': result['skipped'] == true
+            ? 'SKIP'
+            : result['predicate_passed'] == false
+            ? 'FAIL'
+            : 'PASS',
         ...result,
       });
     } catch (error) {
@@ -364,6 +422,24 @@ Future<Map<String, Object?>> runSpeechValidation(
         'message': redactDiagnostic('$error'),
       });
     }
+    final sampled = residentBytes();
+    if (sampled == null) {
+      residentMeasurable = false;
+    } else {
+      residentSamples.add({'id': id, 'rss_bytes': sampled});
+    }
+  }
+
+  Map<String, Object?> recordCancellation(Map<String, Object?> result) {
+    if (result['cancelled'] != true) {
+      throw StateError('Cancellation not confirmed');
+    }
+    final latency = result['cancel_latency_ms'];
+    if (latency is! num || !latency.isFinite || latency < 0) {
+      throw StateError('Cancellation latency was not measured');
+    }
+    cancelLatencies.add(latency.toDouble());
+    return result;
   }
 
   try {
@@ -376,13 +452,10 @@ Future<Map<String, Object?>> runSpeechValidation(
       if (checkBytes) {
         await check('bytes_input', () => adapter.execute(bytesInput: true));
       }
-      await check('cancel', () async {
-        final result = await adapter.execute(cancel: true);
-        if (result['cancelled'] != true) {
-          throw StateError('Cancellation not confirmed');
-        }
-        return result;
-      });
+      await check(
+        'cancel',
+        () async => recordCancellation(await adapter.execute(cancel: true)),
+      );
       await check('after_cancel', () => adapter.execute());
       await check('invalid_input', () async {
         try {
@@ -413,6 +486,60 @@ Future<Map<String, Object?>> runSpeechValidation(
         await adapter.load();
         return await adapter.execute();
       });
+      for (var cycle = 1; cycle <= speechCleanupCycles; cycle++) {
+        await check('cleanup_cycle_$cycle', () async {
+          final cancelled = recordCancellation(
+            await adapter.execute(cancel: true),
+          );
+          await adapter.dispose();
+          await adapter.load();
+          return {
+            ...await adapter.execute(),
+            'cancel_latency_ms': cancelled['cancel_latency_ms'],
+          };
+        });
+      }
+      await check('cancel_latency_bound', () async {
+        if (cancelLatencies.length != speechCleanupCycles + 1) {
+          throw StateError('Cancellation latency samples are incomplete');
+        }
+        final worst = cancelLatencies.reduce(math.max);
+        return {
+          'samples_ms': [...cancelLatencies],
+          'worst_ms': worst,
+          'budget_ms': speechCancelLatencyBudgetMs,
+          'predicate_passed': worst <= speechCancelLatencyBudgetMs,
+        };
+      });
+      await check('peak_memory_bound', () async {
+        final baselineIndex = residentSamples.indexWhere(
+          (sample) => sample['id'] == 'generate',
+        );
+        if (!residentMeasurable || baselineIndex < 0) {
+          return {
+            'skipped': true,
+            'measurement': residentSetSource,
+            'skip_reason': 'Resident set size was not measurable',
+          };
+        }
+        final baseline = residentSamples[baselineIndex]['rss_bytes']! as int;
+        final later = residentSamples.skip(baselineIndex + 1);
+        if (later.isEmpty) {
+          throw StateError('No resident samples follow the first generation');
+        }
+        final peak = later
+            .map((sample) => sample['rss_bytes']! as int)
+            .reduce(math.max);
+        return {
+          'measurement': residentSetSource,
+          'baseline_rss_bytes': baseline,
+          'peak_rss_bytes': peak,
+          'peak_rss_growth': peak / baseline,
+          'growth_budget': speechPeakRssGrowthBudget,
+          'samples': [...residentSamples],
+          'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
+        };
+      });
     }
   } finally {
     await check('dispose', () async {
@@ -420,14 +547,42 @@ Future<Map<String, Object?>> runSpeechValidation(
       return {};
     });
   }
+  Map<String, Object?> row(String id) => results.firstWhere(
+    (entry) => entry['id'] == id,
+    orElse: () => const <String, Object?>{},
+  );
+  final latencyRow = row('cancel_latency_bound');
+  final memoryRow = row('peak_memory_bound');
+  final memoryMeasured = memoryRow.isNotEmpty && memoryRow['skipped'] != true;
   return {
     'schema_version': 1,
     'kind': 'speech_validation',
     'functional_pass':
         results.length == expectedChecks &&
-        results.every((row) => row['status'] == 'PASS'),
+        results.every((entry) => entry['status'] != 'FAIL'),
     'expected_checks': expectedChecks,
     'edge_fixture_ids': [for (final fixture in edgeFixtures) fixture.id],
+    'bounds': {
+      'cleanup_cycles': speechCleanupCycles,
+      'cancel_latency_ms': {
+        'budget': speechCancelLatencyBudgetMs,
+        'samples': [...cancelLatencies],
+        'worst': latencyRow['worst_ms'],
+        'within_budget': latencyRow.isEmpty
+            ? null
+            : latencyRow['status'] == 'PASS',
+      },
+      'peak_resident_bytes': {
+        'measurement': residentSetSource,
+        'measured': memoryMeasured,
+        'skip_reason': memoryRow['skip_reason'],
+        'baseline': memoryRow['baseline_rss_bytes'],
+        'peak': memoryRow['peak_rss_bytes'],
+        'growth': memoryRow['peak_rss_growth'],
+        'growth_budget': speechPeakRssGrowthBudget,
+        'within_budget': memoryMeasured ? memoryRow['status'] == 'PASS' : null,
+      },
+    },
     'qualified': false,
     'qualification_reason':
         'Requires reference, platform/accelerator and perceptual evidence; see individual cases.',
@@ -568,8 +723,10 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
       },
       onDone: drained.complete,
     );
+    final cancelWatch = Stopwatch();
     try {
       if (cancel) {
+        cancelWatch.start();
         await session.cancel();
       } else {
         for (var offset = 0; offset < _pcm.length; offset += 1600) {
@@ -582,11 +739,15 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
       await drained.future;
       if (streamError != null) throw streamError!;
       if (cancel) {
+        cancelWatch.stop();
         if (completion.state != SpeechToTextCompletionState.cancelled ||
             finals != 0) {
           throw StateError('ASR cancellation did not complete cleanly');
         }
-        return {'cancelled': true};
+        return {
+          'cancelled': true,
+          'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+        };
       }
       if (completion.state != SpeechToTextCompletionState.completed ||
           completion.result == null ||
