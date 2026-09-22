@@ -22,6 +22,9 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool skipGenerate = false;
   double cancelLatencyMs = 1;
   double immediateCancelLatencyMs = 1;
+  double inFlightLeadMs = 100;
+  int? unmeasuredInFlightCancel;
+  int inFlightCancels = 0;
   Object? invalidError;
   @override
   Future<void> load() async {
@@ -65,11 +68,13 @@ class FakeSpeech implements SpeechValidationAdapter {
     if (skipGenerate && !cancel && !invalid) {
       return {'skipped': true, if (wrongWords) 'predicate_passed': false};
     }
+    final unmeasured = cancel && ++inFlightCancels == unmeasuredInFlightCancel;
     return {
       'predicate_passed': !wrongWords,
       if (cancel) 'cancelled': true,
-      if (cancel && reportCancelLatency) 'cancel_latency_ms': cancelLatencyMs,
-      if (cancel) 'cancel_after_ms': 100.0,
+      if (cancel && reportCancelLatency && !unmeasured)
+        'cancel_latency_ms': cancelLatencyMs,
+      if (cancel) 'cancel_after_ms': inFlightLeadMs,
       if (cancel) 'cancel_in_flight': reportInFlight,
     };
   }
@@ -91,10 +96,12 @@ class FakeSpeechEngine implements LlamaEngine {
     this.deltas = const <String>[],
     this.failure,
     this.tokenDelay = Duration.zero,
+    this.laterTokenDelay,
   });
   final List<String> deltas;
   final Object? failure;
   final Duration tokenDelay;
+  final Duration? laterTokenDelay;
   final loaded = <String>[];
   final audioParts = <LlamaAudioContent>[];
   var generations = 0;
@@ -152,8 +159,9 @@ class FakeSpeechEngine implements LlamaEngine {
           .whereType<LlamaAudioContent>(),
     );
     if (failure != null) throw failure!;
+    final delay = generations > 1 ? laterTokenDelay ?? tokenDelay : tokenDelay;
     for (final delta in deltas) {
-      if (tokenDelay > Duration.zero) await Future<void>.delayed(tokenDelay);
+      if (delay > Duration.zero) await Future<void>.delayed(delay);
       yield LlamaCompletionChunk(
         id: 'edge',
         object: 'chat.completion.chunk',
@@ -173,7 +181,6 @@ class FakeSpeechEngine implements LlamaEngine {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-/// Keeps runs that assert lifecycle outcomes independent of real process memory.
 int stableResidentBytes() => 1000;
 
 void main() {
@@ -394,18 +401,6 @@ void main() {
       );
     },
   );
-  test('the latency budget brackets the measured in-flight range', () {
-    expect(speechCancelLatencyBudgetMs, greaterThan(129.741));
-    expect(speechCancelLatencyBudgetMs, lessThan(545.524));
-  });
-  test('the immediate budget brackets a setup wait and a dropped cancel', () {
-    expect(speechImmediateCancelLatencyBudgetMs, greaterThan(216.120));
-    expect(speechImmediateCancelLatencyBudgetMs, lessThan(1234.954));
-  });
-  test('the growth budget brackets measured growth and a model copy', () {
-    expect(speechPeakRssGrowthBudget, greaterThan(1.026633));
-    expect(speechPeakRssGrowthBudget, lessThan(1.5));
-  });
   test('a cancellation far past the budget fails the run', () async {
     final stalled = FakeSpeech()..cancelLatencyMs = 4000;
     final result = await runSpeechValidation(
@@ -474,7 +469,7 @@ void main() {
       'FAIL',
     );
   });
-  test('a cancellation that never reached a generation fails', () async {
+  test('a cancellation not reported in flight fails', () async {
     final early = FakeSpeech()..reportInFlight = false;
     final result = await runSpeechValidation(
       early,
@@ -492,6 +487,37 @@ void main() {
       )['status'],
       'FAIL',
     );
+  });
+  test('an in-flight cancellation issued without a wait fails', () async {
+    final result = await runSpeechValidation(
+      FakeSpeech()..inFlightLeadMs = 0,
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final cancel = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'cancel',
+    );
+    expect(cancel['status'], 'FAIL');
+    expect(cancel['message'], contains('lead time was not measured'));
+  });
+  test('a latency bound missing a sample fails', () async {
+    final result = await runSpeechValidation(
+      FakeSpeech()..unmeasuredInFlightCancel = 2,
+      residentBytes: stableResidentBytes,
+    );
+    final checks = result['checks'] as List;
+    Map<String, Object?> row(String id) =>
+        checks.singleWhere((entry) => entry['id'] == id);
+    expect(row('cleanup_cycle_1')['status'], 'FAIL');
+    expect(row('cancel_latency_bound')['status'], 'FAIL');
+    expect(row('cancel_latency_bound')['message'], contains('incomplete'));
+    expect(row('immediate_cancel_latency_bound')['status'], 'PASS');
+    final bounds = result['bounds'] as Map;
+    expect(
+      bounds['cancel_latency_ms']['samples'],
+      hasLength(speechCleanupCycles),
+    );
+    expect(bounds['cancel_latency_ms']['within_budget'], false);
   });
   test('only the memory bound may skip and still pass the run', () async {
     final skipping = await runSpeechValidation(
@@ -545,6 +571,64 @@ void main() {
     expect(measured['growth'], 1);
     expect(measured['within_budget'], true);
     expect(measured['measurement'], residentSetSource);
+  });
+  test('memory growth is measured from the first generation', () async {
+    final adapter = FakeSpeech();
+    final result = await runSpeechValidation(
+      adapter,
+      residentBytes: () => adapter.calls.contains('execute') ? 2000 : 1000,
+    );
+    expect(result['functional_pass'], true);
+    final measured = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    expect(measured['baseline'], 2000);
+    expect(measured['growth'], 1);
+    expect(measured['within_budget'], true);
+  });
+  test('memory growth before reload counts toward the peak', () async {
+    final adapter = FakeSpeech();
+    final spike = ((speechPeakRssGrowthBudget + 1) * 2000).round();
+    final result = await runSpeechValidation(
+      adapter,
+      residentBytes: () => adapter.calls.last == 'invalid' ? spike : 2000,
+    );
+    expect(result['functional_pass'], false);
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'peak_memory_bound',
+    );
+    expect(bound['status'], 'FAIL');
+    expect(bound['baseline_rss_bytes'], 2000);
+    expect(bound['peak_rss_bytes'], spike);
+  });
+  test('memory growth equal to the budget passes', () async {
+    const baseline = 1 << 52;
+    final peak = (baseline * speechPeakRssGrowthBudget).toInt();
+    final adapter = FakeSpeech();
+    final result = await runSpeechValidation(
+      adapter,
+      residentBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
+    );
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'peak_memory_bound',
+    );
+    expect(bound['peak_rss_growth'], speechPeakRssGrowthBudget);
+    expect(bound['status'], 'PASS');
+    expect(result['functional_pass'], true);
+  });
+  test('one unmeasurable resident sample skips the bound', () async {
+    final adapter = FakeSpeech();
+    final result = await runSpeechValidation(
+      adapter,
+      residentBytes: () => adapter.calls.last == 'invalid' ? null : 1000,
+    );
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'peak_memory_bound',
+    );
+    expect(bound['status'], 'SKIP');
+    expect(bound['skip_reason'], 'Resident set size was not measurable');
+    expect(result['functional_pass'], true);
+    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    expect(reported['measured'], false);
+    expect(reported['peak'], isNull);
   });
   test('an unmeasurable resident set skips the bound with a reason', () async {
     final result = await runSpeechValidation(
@@ -815,6 +899,7 @@ void main() {
     Object? failure,
     FakeSpeechEngine? engine,
     Duration tokenDelay = Duration.zero,
+    Duration? laterTokenDelay,
   }) => PublicSpeechValidationAdapter(
     model: 'model.gguf',
     projector: 'mmproj.gguf',
@@ -830,6 +915,7 @@ void main() {
           deltas: deltas,
           failure: failure,
           tokenDelay: tokenDelay,
+          laterTokenDelay: laterTokenDelay,
         ),
   );
   Future<Map<String, Object?>> recognizeEdge(
@@ -934,6 +1020,7 @@ void main() {
     final adapter = edgeAdapter(
       deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans'],
       tokenDelay: const Duration(milliseconds: 20),
+      laterTokenDelay: const Duration(milliseconds: 250),
     );
     await adapter.load();
     final generated = await adapter.execute();

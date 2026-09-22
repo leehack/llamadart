@@ -23,6 +23,26 @@ class Recognizer implements SpeechToTextEngine {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+class PartialOnListen extends Stream<SpeechToTextEvent> {
+  PartialOnListen(this.source);
+  final Stream<SpeechToTextEvent> source;
+  @override
+  StreamSubscription<SpeechToTextEvent> listen(
+    void Function(SpeechToTextEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) {
+    onData?.call(const SpeechToTextPartialEvent('partial'));
+    return source.listen(
+      onData,
+      onError: onError,
+      onDone: onDone,
+      cancelOnError: cancelOnError,
+    );
+  }
+}
+
 class Session implements SpeechToTextStreamingSession {
   final controller = StreamController<SpeechToTextEvent>();
   final completion = Completer<SpeechToTextCompletion>();
@@ -32,8 +52,10 @@ class Session implements SpeechToTextStreamingSession {
   bool emitError = false;
   bool cancelCalled = false;
   int? partialAfterSamples;
+  bool partialOnListen = false;
   @override
-  Stream<SpeechToTextEvent> get events => controller.stream;
+  Stream<SpeechToTextEvent> get events =>
+      partialOnListen ? PartialOnListen(controller.stream) : controller.stream;
   @override
   Future<SpeechToTextCompletion> get done => completion.future;
   @override
@@ -136,6 +158,22 @@ void main() {
     expect(cancelled['pcm_samples_before_cancel'], lessThan(176000));
     await target.dispose();
   });
+  test(
+    'a cancellation before any audio is accepted is not in flight',
+    () async {
+      final engine = Recognizer();
+      engine.session.partialOnListen = true;
+      final target = adapter(engine);
+      await target.load();
+      final cancelled = await target.execute(cancel: true);
+      expect(cancelled['cancelled'], isTrue);
+      expect(cancelled['partial_events_before_cancel'], 1);
+      expect(cancelled['pcm_samples_before_cancel'], 0);
+      expect(engine.session.samples, 0);
+      expect(cancelled['cancel_in_flight'], isFalse);
+      await target.dispose();
+    },
+  );
   test('an immediate streaming cancellation pushes no audio', () async {
     final engine = Recognizer();
     final target = adapter(engine);
