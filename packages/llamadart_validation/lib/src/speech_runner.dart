@@ -63,6 +63,10 @@ Map<String, Object?> inspectSpeechAudio(TextToSpeechResult result) {
 abstract interface class SpeechValidationAdapter {
   Future<void> load();
   Future<void> dispose();
+
+  /// With `cancel`, issues the cancellation once the generation it cancels is
+  /// already running, and reports `cancel_latency_ms`, `cancel_after_ms` and
+  /// `cancel_in_flight`.
   Future<Map<String, Object?>> execute({
     bool cancel = false,
     bool invalid = false,
@@ -106,6 +110,7 @@ class PublicSpeechValidationAdapter
   final Future<void> Function(Uint8List) saveAudio;
   final LlamaEngine Function() _createEngine;
   LlamaEngine? _engine;
+  double? _lastGenerationMs;
 
   /// Public diagnostics are selector hints, not accelerator execution proof.
   Map<String, Object?> observedRuntime = {};
@@ -214,6 +219,30 @@ class PublicSpeechValidationAdapter
     };
   }
 
+  Future<({double afterMs, bool inFlight})> _awaitInFlight(
+    Stopwatch watch,
+    Future<Object?> done,
+  ) async {
+    final reference = _lastGenerationMs;
+    if (reference == null) {
+      throw StateError('No measured generation to cancel into');
+    }
+    var settled = false;
+    unawaited(
+      done.then<void>(
+        (_) => settled = true,
+        onError: (Object _) => settled = true,
+      ),
+    );
+    await Future<void>.delayed(
+      Duration(
+        microseconds: (reference * speechCancelInFlightLeadFraction * 1000)
+            .round(),
+      ),
+    );
+    return (afterMs: watch.elapsedMicroseconds / 1000, inFlight: !settled);
+  }
+
   @override
   Future<Map<String, Object?>> execute({
     bool cancel = false,
@@ -243,7 +272,9 @@ class PublicSpeechValidationAdapter
         ),
       );
       final cancelWatch = Stopwatch();
+      ({double afterMs, bool inFlight})? lead;
       if (cancel) {
+        lead = await _awaitInFlight(watch, task.done);
         cancelWatch.start();
         task.cancel();
       }
@@ -258,6 +289,9 @@ class PublicSpeechValidationAdapter
         return {
           'cancelled': true,
           'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+          'cancel_after_ms': lead!.afterMs,
+          'cancel_in_flight': lead.inFlight,
+          'reference_generation_ms': _lastGenerationMs,
         };
       }
       if (completion.state != SpeechToTextCompletionState.completed ||
@@ -266,12 +300,13 @@ class PublicSpeechValidationAdapter
       }
       final transcript = completion.result!.text;
       final wer = speechWordErrorRate(reference!, transcript);
+      final elapsedMs = _lastGenerationMs = watch.elapsedMicroseconds / 1000;
       return {
         'transcript': transcript,
         'reference': reference,
         'wer': wer,
         'predicate_passed': wer == 0,
-        'elapsed_ms': watch.elapsedMicroseconds / 1000,
+        'elapsed_ms': elapsedMs,
         'audio_seconds': audioSeconds,
         'real_time_factor': watch.elapsedMicroseconds / 1e6 / audioSeconds!,
         'first_partial_ms': null,
@@ -295,7 +330,9 @@ class PublicSpeechValidationAdapter
       ),
     );
     final cancelWatch = Stopwatch();
+    ({double afterMs, bool inFlight})? lead;
     if (cancel) {
+      lead = await _awaitInFlight(watch, task.done);
       cancelWatch.start();
       task.cancel();
     }
@@ -317,6 +354,9 @@ class PublicSpeechValidationAdapter
       return {
         'cancelled': true,
         'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+        'cancel_after_ms': lead!.afterMs,
+        'cancel_in_flight': lead.inFlight,
+        'reference_generation_ms': _lastGenerationMs,
       };
     }
     if (completion.state != TextToSpeechCompletionState.completed ||
@@ -324,6 +364,7 @@ class PublicSpeechValidationAdapter
       throw StateError('TTS did not emit exactly one completed result');
     }
     watch.stop();
+    _lastGenerationMs = watch.elapsedMicroseconds / 1000;
     final result = completion.result!;
     final metrics = inspectSpeechAudio(result);
     await saveAudio(result.toWavBytes());
@@ -347,28 +388,32 @@ const speechLifecycleCheckCount = 13;
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = 3;
 
+/// Fraction of the run's most recent completed generation that a public
+/// adapter lets elapse before it cancels, so the cancellation reaches a
+/// generation that is already running rather than one that has not begun.
+const speechCancelInFlightLeadFraction = 0.5;
+
 /// Milliseconds allowed between requesting cancellation and the speech task
 /// reaching a terminal state, enforced on every cancellation a run performs.
 ///
-/// Derived from the `stt` pack on macOS arm64: 80 cancellations over 20 runs,
-/// 10 on Metal and 10 on CPU, spanned 0.259 ms to 1.587 ms. The budget is about
-/// 31x that worst case, which absorbs host scheduling jitter while staying far
-/// below one generation on the same host, measured at 201 ms to 633 ms. A
-/// cancellation that waits for in-flight inference therefore cannot pass.
+/// Derived from the `stt` pack on macOS arm64: 80 in-flight cancellations over
+/// 20 runs, 10 on Metal and 10 on CPU, spanned 0.100 ms to 218.102 ms. The
+/// budget is about 2.3x that worst case, which the CPU backend sets on its own:
+/// its 40 cancellations spanned 104.287 ms to 218.102 ms, against 0.100 ms to
+/// 2.576 ms on Metal.
 ///
-/// The `tts` pack does not meet this budget. Its cancellations measured
-/// 1245-1278 ms on Metal and 2231-2565 ms on CPU, which over 30 cleanup cycles
-/// was 93% to 104% of the generation that followed them in the same run. The
-/// same ratio for `stt` is 0.04% to 0.31%.
-const speechCancelLatencyBudgetMs = 50.0;
+/// It bounds when the task becomes terminal to its caller, not when native
+/// decoding stops, and it exceeds one Metal generation on this host, so it
+/// cannot by itself separate a cancellation from a generation left to finish.
+const speechCancelLatencyBudgetMs = 500.0;
 
-/// Resident set ceiling after the first generation, as a multiple of the
-/// resident set measured at that point.
+/// Ceiling on the largest resident set sampled after any check that follows
+/// the first generation, as a multiple of the resident set sampled immediately
+/// after that generation.
 ///
-/// Derived from 30 runs on macOS arm64 across both packs and both backends:
-/// observed growth spanned 1.0002x to 1.0111x, retaining 1.2 MiB to 26.1 MiB
-/// against baselines of 1.86 GiB to 5.31 GiB. The budget allows about 9x the
-/// worst observed excess over 1.0x.
+/// Every later check contributes a sample, whatever phase it exercised, so the
+/// peak is the maximum over heterogeneous phases rather than over generations
+/// alone.
 const speechPeakRssGrowthBudget = 1.10;
 
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
@@ -377,10 +422,12 @@ const speechPeakRssGrowthBudget = 1.10;
 /// that also implements [SpeechEdgeCaseAdapter]. Runs that pass none keep their
 /// previous check count.
 ///
-/// Every cancellation must report `cancel_latency_ms`; a run whose adapter does
-/// not measure it fails. [residentBytes] samples whole-process resident memory
-/// after each check. When it yields nothing usable the memory bound records
-/// `SKIP` with a reason instead of passing.
+/// Every cancellation must report `cancel_in_flight` as true along with
+/// `cancel_latency_ms` and `cancel_after_ms`; a run whose adapter reports
+/// anything else fails that check. [residentBytes] samples whole-process
+/// resident memory after each check. When it yields nothing usable
+/// `peak_memory_bound` records `SKIP` with a reason, and that check is the only
+/// one a passing run may leave unmeasured.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
@@ -396,6 +443,7 @@ Future<Map<String, Object?>> runSpeechValidation(
       speechLifecycleCheckCount + (checkBytes ? 1 : 0) + edgeFixtures.length;
   final results = <Map<String, Object?>>[];
   final cancelLatencies = <double>[];
+  final cancelLeads = <double>[];
   final residentSamples = <Map<String, Object?>>[];
   var residentMeasurable = true;
   Future<void> check(
@@ -406,10 +454,10 @@ Future<Map<String, Object?>> runSpeechValidation(
       final result = await action();
       results.add({
         'id': id,
-        'status': result['skipped'] == true
-            ? 'SKIP'
-            : result['predicate_passed'] == false
+        'status': result['predicate_passed'] == false
             ? 'FAIL'
+            : result['skipped'] == true
+            ? 'SKIP'
             : 'PASS',
         ...result,
       });
@@ -434,11 +482,19 @@ Future<Map<String, Object?>> runSpeechValidation(
     if (result['cancelled'] != true) {
       throw StateError('Cancellation not confirmed');
     }
+    if (result['cancel_in_flight'] != true) {
+      throw StateError('Cancellation did not reach a running generation');
+    }
     final latency = result['cancel_latency_ms'];
     if (latency is! num || !latency.isFinite || latency < 0) {
       throw StateError('Cancellation latency was not measured');
     }
+    final lead = result['cancel_after_ms'];
+    if (lead is! num || !lead.isFinite || lead <= 0) {
+      throw StateError('Cancellation lead time was not measured');
+    }
     cancelLatencies.add(latency.toDouble());
+    cancelLeads.add(lead.toDouble());
     return result;
   }
 
@@ -496,6 +552,8 @@ Future<Map<String, Object?>> runSpeechValidation(
           return {
             ...await adapter.execute(),
             'cancel_latency_ms': cancelled['cancel_latency_ms'],
+            'cancel_after_ms': cancelled['cancel_after_ms'],
+            'cancel_in_flight': cancelled['cancel_in_flight'],
           };
         });
       }
@@ -506,6 +564,8 @@ Future<Map<String, Object?>> runSpeechValidation(
         final worst = cancelLatencies.reduce(math.max);
         return {
           'samples_ms': [...cancelLatencies],
+          'lead_ms': [...cancelLeads],
+          'lead_fraction': speechCancelInFlightLeadFraction,
           'worst_ms': worst,
           'budget_ms': speechCancelLatencyBudgetMs,
           'predicate_passed': worst <= speechCancelLatencyBudgetMs,
@@ -559,7 +619,11 @@ Future<Map<String, Object?>> runSpeechValidation(
     'kind': 'speech_validation',
     'functional_pass':
         results.length == expectedChecks &&
-        results.every((entry) => entry['status'] != 'FAIL'),
+        results.every(
+          (entry) =>
+              entry['status'] == 'PASS' ||
+              (entry['id'] == 'peak_memory_bound' && entry['status'] == 'SKIP'),
+        ),
     'expected_checks': expectedChecks,
     'edge_fixture_ids': [for (final fixture in edgeFixtures) fixture.id],
     'bounds': {
@@ -567,6 +631,8 @@ Future<Map<String, Object?>> runSpeechValidation(
       'cancel_latency_ms': {
         'budget': speechCancelLatencyBudgetMs,
         'samples': [...cancelLatencies],
+        'lead': [...cancelLeads],
+        'lead_fraction': speechCancelInFlightLeadFraction,
         'worst': latencyRow['worst_ms'],
         'within_budget': latencyRow.isEmpty
             ? null
@@ -724,8 +790,29 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
       onDone: drained.complete,
     );
     final cancelWatch = Stopwatch();
+    var pushed = 0;
+    var cancelAfterMs = 0.0;
+    var cancelInFlight = false;
     try {
       if (cancel) {
+        var settled = false;
+        unawaited(
+          session.done.then<void>(
+            (_) => settled = true,
+            onError: (Object _) => settled = true,
+          ),
+        );
+        for (
+          var offset = 0;
+          offset < _pcm.length && partials == 0;
+          offset += 1600
+        ) {
+          final end = offset + 1600 < _pcm.length ? offset + 1600 : _pcm.length;
+          await session.addPcm(Float32List.sublistView(_pcm, offset, end));
+          pushed = end;
+        }
+        cancelAfterMs = watch.elapsedMicroseconds / 1000;
+        cancelInFlight = pushed > 0 && !settled;
         cancelWatch.start();
         await session.cancel();
       } else {
@@ -747,6 +834,10 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
         return {
           'cancelled': true,
           'cancel_latency_ms': cancelWatch.elapsedMicroseconds / 1000,
+          'cancel_after_ms': cancelAfterMs,
+          'cancel_in_flight': cancelInFlight,
+          'pcm_samples_before_cancel': pushed,
+          'partial_events_before_cancel': partials,
         };
       }
       if (completion.state != SpeechToTextCompletionState.completed ||

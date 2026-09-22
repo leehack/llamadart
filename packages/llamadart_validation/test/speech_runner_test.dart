@@ -17,6 +17,8 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool failLoad = false;
   bool failCleanup = false;
   bool reportCancelLatency = true;
+  bool reportInFlight = true;
+  bool skipGenerate = false;
   double cancelLatencyMs = 1;
   Object? invalidError;
   @override
@@ -47,10 +49,13 @@ class FakeSpeech implements SpeechValidationAdapter {
     if (invalid && !ignoreInvalid) {
       throw invalidError ?? ArgumentError('invalid');
     }
+    if (skipGenerate && !cancel && !invalid) return {'skipped': true};
     return {
       'predicate_passed': !wrongWords,
       if (cancel) 'cancelled': true,
       if (cancel && reportCancelLatency) 'cancel_latency_ms': cancelLatencyMs,
+      if (cancel) 'cancel_after_ms': 100.0,
+      if (cancel) 'cancel_in_flight': reportInFlight,
     };
   }
 }
@@ -67,9 +72,14 @@ class FakeEdgeSpeech extends FakeSpeech implements SpeechEdgeCaseAdapter {
 }
 
 class FakeSpeechEngine implements LlamaEngine {
-  FakeSpeechEngine({this.deltas = const <String>[], this.failure});
+  FakeSpeechEngine({
+    this.deltas = const <String>[],
+    this.failure,
+    this.tokenDelay = Duration.zero,
+  });
   final List<String> deltas;
   final Object? failure;
+  final Duration tokenDelay;
   final loaded = <String>[];
   final audioParts = <LlamaAudioContent>[];
   var generations = 0;
@@ -128,6 +138,7 @@ class FakeSpeechEngine implements LlamaEngine {
     );
     if (failure != null) throw failure!;
     for (final delta in deltas) {
+      if (tokenDelay > Duration.zero) await Future<void>.delayed(tokenDelay);
       yield LlamaCompletionChunk(
         id: 'edge',
         object: 'chat.completion.chunk',
@@ -366,6 +377,57 @@ void main() {
       );
     },
   );
+  test('the latency budget brackets the measured in-flight range', () {
+    expect(speechCancelLatencyBudgetMs, greaterThan(218.102));
+    expect(speechCancelLatencyBudgetMs, lessThan(538.7));
+  });
+  test('the growth budget brackets measured growth and a model copy', () {
+    expect(speechPeakRssGrowthBudget, greaterThan(1.013024));
+    expect(speechPeakRssGrowthBudget, lessThan(1.5));
+  });
+  test('a cancellation far past the budget fails the run', () async {
+    final stalled = FakeSpeech()..cancelLatencyMs = 4000;
+    final result = await runSpeechValidation(
+      stalled,
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'cancel_latency_bound',
+    );
+    expect(bound['status'], 'FAIL');
+    expect(bound['worst_ms'], 4000);
+  });
+  test('a cancellation that never reached a generation fails', () async {
+    final early = FakeSpeech()..reportInFlight = false;
+    final result = await runSpeechValidation(
+      early,
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final checks = result['checks'] as List;
+    expect(
+      checks.singleWhere((row) => row['id'] == 'cancel')['status'],
+      'FAIL',
+    );
+    expect(
+      checks.singleWhere(
+        (row) => row['id'] == 'cancel_latency_bound',
+      )['status'],
+      'FAIL',
+    );
+  });
+  test('only the memory bound may skip and still pass the run', () async {
+    final skipping = await runSpeechValidation(
+      FakeSpeech()..skipGenerate = true,
+      residentBytes: stableResidentBytes,
+    );
+    final generate = (skipping['checks'] as List).singleWhere(
+      (row) => row['id'] == 'generate',
+    );
+    expect(generate['status'], 'SKIP');
+    expect(skipping['functional_pass'], false);
+  });
   test('resident growth past the budget fails the run', () async {
     var sample = 1000;
     final growing = await runSpeechValidation(
@@ -659,6 +721,7 @@ void main() {
     List<String> deltas = const <String>[],
     Object? failure,
     FakeSpeechEngine? engine,
+    Duration tokenDelay = Duration.zero,
   }) => PublicSpeechValidationAdapter(
     model: 'model.gguf',
     projector: 'mmproj.gguf',
@@ -669,7 +732,12 @@ void main() {
     reference: edgeReference,
     saveAudio: (_) async {},
     createEngine: () =>
-        engine ?? FakeSpeechEngine(deltas: deltas, failure: failure),
+        engine ??
+        FakeSpeechEngine(
+          deltas: deltas,
+          failure: failure,
+          tokenDelay: tokenDelay,
+        ),
   );
   Future<Map<String, Object?>> recognizeEdge(
     SpeechEdgeFixture fixture, {
@@ -769,14 +837,33 @@ void main() {
     expect(reproduced['wer'], 0);
   });
 
-  test('the public adapter times its own cancellations', () async {
-    final adapter = edgeAdapter(deltas: [edgeReference]);
+  test('the public adapter cancels a generation that is running', () async {
+    final adapter = edgeAdapter(
+      deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans'],
+      tokenDelay: const Duration(milliseconds: 20),
+    );
     await adapter.load();
+    final generated = await adapter.execute();
+    expect(generated['predicate_passed'], isTrue);
+    final reference = generated['elapsed_ms']! as double;
     final cancelled = await adapter.execute(cancel: true);
     await adapter.dispose();
     expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_in_flight'], isTrue);
+    expect(cancelled['reference_generation_ms'], reference);
+    expect(
+      cancelled['cancel_after_ms'],
+      greaterThanOrEqualTo(reference * speechCancelInFlightLeadFraction),
+    );
     expect(cancelled['cancel_latency_ms'], isA<double>());
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
+  });
+
+  test('a cancellation with no generation to cancel is refused', () async {
+    final adapter = edgeAdapter(deltas: const [edgeReference]);
+    await adapter.load();
+    await expectLater(adapter.execute(cancel: true), throwsStateError);
+    await adapter.dispose();
   });
   test('edge measurement reports the fixture and guards its pack', () async {
     final byId = edgeFixturesById();

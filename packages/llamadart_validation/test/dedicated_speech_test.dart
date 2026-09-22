@@ -31,6 +31,7 @@ class Session implements SpeechToTextStreamingSession {
   bool omitFinal = false;
   bool emitError = false;
   bool cancelCalled = false;
+  int? partialAfterSamples;
   @override
   Stream<SpeechToTextEvent> get events => controller.stream;
   @override
@@ -39,6 +40,11 @@ class Session implements SpeechToTextStreamingSession {
   Future<void> addPcm(Float32List pcm) async {
     samples += pcm.length;
     if (pcm.length > largestPush) largestPush = pcm.length;
+    final threshold = partialAfterSamples;
+    if (threshold != null && samples >= threshold && !controller.isClosed) {
+      partialAfterSamples = null;
+      controller.add(const SpeechToTextPartialEvent('partial'));
+    }
   }
 
   @override
@@ -104,15 +110,30 @@ void main() {
       }
     },
   );
-  test('streaming cancellation reports its own measured latency', () async {
+  test('streaming cancellation is issued after audio is pushed', () async {
     final engine = Recognizer();
     final target = adapter(engine);
     await target.load();
     final cancelled = await target.execute(cancel: true);
     expect(cancelled['cancelled'], isTrue);
+    expect(cancelled['cancel_in_flight'], isTrue);
+    expect(cancelled['pcm_samples_before_cancel'], 176000);
+    expect(cancelled['partial_events_before_cancel'], 0);
+    expect(cancelled['cancel_after_ms'], greaterThan(0));
     expect(cancelled['cancel_latency_ms'], isA<double>());
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
     expect(engine.session.cancelCalled, isTrue);
+    await target.dispose();
+  });
+  test('a first partial stops the push and cancels there', () async {
+    final engine = Recognizer();
+    engine.session.partialAfterSamples = 16000;
+    final target = adapter(engine);
+    await target.load();
+    final cancelled = await target.execute(cancel: true);
+    expect(cancelled['cancel_in_flight'], isTrue);
+    expect(cancelled['partial_events_before_cancel'], 1);
+    expect(cancelled['pcm_samples_before_cancel'], lessThan(176000));
     await target.dispose();
   });
   test(
