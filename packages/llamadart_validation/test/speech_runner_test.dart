@@ -59,6 +59,81 @@ class FakeEdgeSpeech extends FakeSpeech implements SpeechEdgeCaseAdapter {
   }
 }
 
+class FakeSpeechEngine implements LlamaEngine {
+  FakeSpeechEngine({this.deltas = const <String>[], this.failure});
+  final List<String> deltas;
+  final Object? failure;
+  final loaded = <String>[];
+  var generations = 0;
+  var disposals = 0;
+
+  @override
+  bool get isReady => true;
+
+  @override
+  Future<bool> get supportsAudio async => true;
+
+  @override
+  Future<String> getBackendName() async => 'cpu';
+
+  @override
+  Future<int?> getResolvedGpuLayers() async => 0;
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+
+  @override
+  Future<void> loadModel(
+    String path, {
+    ModelParams modelParams = const ModelParams(),
+  }) async => loaded.add(path);
+
+  @override
+  Future<void> loadMultimodalProjector(String mmProjPath) async =>
+      loaded.add(mmProjPath);
+
+  @override
+  void cancelGeneration() {}
+
+  @override
+  Future<void> dispose() async => disposals++;
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    generations++;
+    if (failure != null) throw failure!;
+    for (final delta in deltas) {
+      yield LlamaCompletionChunk(
+        id: 'edge',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'fake',
+        choices: [
+          LlamaCompletionChunkChoice(
+            index: 0,
+            delta: LlamaCompletionChunkDelta(content: delta),
+          ),
+        ],
+      );
+    }
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   test(
     'speech input rejection accepts contract errors, not inference failures',
@@ -412,6 +487,164 @@ void main() {
       }
     },
   );
+  const edgeReference = 'and so my fellow americans';
+  Map<String, SpeechEdgeFixture> edgeFixturesById() => {
+    for (final fixture in buildSpeechEdgeFixtures(
+      Uint8List.fromList(File('assets/speech/jfk.wav').readAsBytesSync()),
+    ))
+      fixture.id: fixture,
+  };
+  PublicSpeechValidationAdapter edgeAdapter({
+    String pack = 'stt',
+    List<String> deltas = const <String>[],
+    Object? failure,
+  }) => PublicSpeechValidationAdapter(
+    model: 'model.gguf',
+    projector: 'mmproj.gguf',
+    backend: GpuBackend.cpu,
+    pack: pack,
+    audio: Uint8List(44),
+    audioSeconds: 1,
+    reference: edgeReference,
+    saveAudio: (_) async {},
+    createEngine: () => FakeSpeechEngine(deltas: deltas, failure: failure),
+  );
+  Future<Map<String, Object?>> recognizeEdge(
+    SpeechEdgeFixture fixture, {
+    List<String> deltas = const <String>[],
+    Object? failure,
+  }) async {
+    final adapter = edgeAdapter(deltas: deltas, failure: failure);
+    await adapter.load();
+    try {
+      return await adapter.executeEdge(fixture);
+    } finally {
+      await adapter.dispose();
+    }
+  }
+
+  test('edge recognition scores the repeats the fixture demands', () async {
+    final byId = edgeFixturesById();
+    final stereo = byId['edge_stereo_44100']!;
+    final long = byId['edge_long_boundary']!;
+    expect(stereo.referenceRepeats, 1);
+    expect(long.referenceRepeats, greaterThanOrEqualTo(2));
+
+    final single = await recognizeEdge(stereo, deltas: [edgeReference]);
+    expect(single['predicate_passed'], isTrue);
+    expect(single['wer'], 0);
+    expect(single['transcript'], edgeReference);
+    expect(single['reference_repeats'], 1);
+
+    final wrongWords = await recognizeEdge(stereo, deltas: ['ask not why']);
+    expect(wrongWords['predicate_passed'], isFalse);
+    expect(wrongWords['wer'], greaterThan(0));
+
+    final repeated = await recognizeEdge(
+      long,
+      deltas: [List.filled(long.referenceRepeats, edgeReference).join(' ')],
+    );
+    expect(repeated['predicate_passed'], isTrue);
+    expect(repeated['wer'], 0);
+    expect(repeated['reference_repeats'], long.referenceRepeats);
+
+    for (final repeats in [1, long.referenceRepeats + 1]) {
+      final mismatched = await recognizeEdge(
+        long,
+        deltas: [List.filled(repeats, edgeReference).join(' ')],
+      );
+      expect(mismatched['predicate_passed'], isFalse);
+      expect(mismatched['wer'], greaterThan(0));
+    }
+  });
+
+  test('edge rejection credits only the outcome the contract names', () async {
+    final byId = edgeFixturesById();
+    final silence = byId['edge_silence']!;
+    final truncated = byId['edge_truncated_riff']!;
+
+    final empty = await recognizeEdge(silence);
+    expect(empty['predicate_passed'], isTrue);
+    expect(empty['rejected_with'], 'LlamaSpeechException');
+    expect(empty['message'], silence.rejectionMessage);
+    expect(empty.containsKey('transcript'), isFalse);
+    expect(empty.containsKey('wer'), isFalse);
+
+    final otherFailure = await recognizeEdge(
+      silence,
+      failure: LlamaSpeechException('Speech recognition failed.'),
+    );
+    expect(otherFailure['predicate_passed'], isFalse);
+    expect(otherFailure['rejected_with'], 'LlamaSpeechException');
+    expect(otherFailure['message'], 'Speech recognition failed.');
+
+    final transcribedSilence = await recognizeEdge(
+      silence,
+      deltas: [edgeReference],
+    );
+    expect(transcribedSilence['predicate_passed'], isFalse);
+    expect(transcribedSilence['transcript'], edgeReference);
+
+    final formatRejection = await recognizeEdge(
+      truncated,
+      failure: LlamaAudioFormatException('Unsupported RIFF header.'),
+    );
+    expect(formatRejection['predicate_passed'], isTrue);
+    expect(formatRejection['rejected_with'], 'LlamaAudioFormatException');
+
+    final plainRejection = await recognizeEdge(
+      truncated,
+      failure: LlamaSpeechException('Speech recognition failed.'),
+    );
+    expect(plainRejection['predicate_passed'], isFalse);
+
+    final unrelated = await recognizeEdge(truncated, deltas: ['Answer.']);
+    expect(unrelated['predicate_passed'], isTrue);
+    expect(unrelated['wer'], greaterThan(0));
+
+    final reproduced = await recognizeEdge(truncated, deltas: [edgeReference]);
+    expect(reproduced['predicate_passed'], isFalse);
+    expect(reproduced['wer'], 0);
+  });
+
+  test('edge measurement reports the fixture and guards its pack', () async {
+    final byId = edgeFixturesById();
+    final stereo = byId['edge_stereo_44100']!;
+    final measured = await recognizeEdge(stereo, deltas: [edgeReference]);
+    expect(measured['contract'], stereo.contract.name);
+    expect(measured['rationale'], stereo.rationale);
+    expect(measured['fixture_bytes'], stereo.bytes.length);
+    expect(measured['sample_rate_hz'], 44100);
+    expect(measured['channels'], 2);
+    expect(measured['audio_seconds'], stereo.seconds);
+    expect(measured['elapsed_ms'], isA<double>());
+
+    await expectLater(
+      edgeAdapter().executeEdge(stereo),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Speech engine is not loaded',
+        ),
+      ),
+    );
+
+    final tts = edgeAdapter(pack: 'tts');
+    await tts.load();
+    await expectLater(
+      tts.executeEdge(stereo),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Speech edge fixtures require the STT pack',
+        ),
+      ),
+    );
+    await tts.dispose();
+  });
+
   test(
     'existing output directory is never modified on CLI rejection',
     () async {
