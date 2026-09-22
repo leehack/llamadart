@@ -577,6 +577,32 @@ void main() {
       expect(await backend.getContextSize(1), 4096);
     });
 
+    test('forwards bridge load progress to onProgress', () async {
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          final callback = config?.getProperty('progressCallback'.toJS);
+          if (callback.isA<JSFunction>()) {
+            final fraction = JSObject()
+              ..setProperty('loaded'.toJS, 25.toJS)
+              ..setProperty('total'.toJS, 100.toJS);
+            (callback as JSFunction).callAsFunction(null, fraction);
+            callback.callAsFunction(null, 0.75.toJS);
+          }
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+      final progress = <double>[];
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/progress-model.gguf',
+        const ModelParams(),
+        onProgress: progress.add,
+      );
+
+      expect(progress, <double>[0.25, 0.75]);
+    });
+
     test('requires explicit prompt speech runtime capability', () async {
       expect(backend.supportsPromptSpeechToText, isFalse);
       expect(backend.promptSpeechToTextUnsupportedReason, contains('v0.1.30'));
@@ -1210,6 +1236,44 @@ void main() {
         4 * 1024,
       ]);
     });
+
+    test(
+      'surfaces the memory limit error after an opted-in wasm64 staging failure',
+      () async {
+        globalContext.setProperty(
+          '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+          true.toJS,
+        );
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'model_fs_write_arraybuffer_oom';
+        failLoads(message: 'array buffer allocation failed', firstAttempts: 2);
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/opted-in-staging-model.gguf',
+            const ModelParams(
+              contextSize: 4096,
+              gpuLayers: 99,
+              preferMemory64: true,
+            ),
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              startsWith('Model loading exceeded browser memory limits.'),
+            ),
+          ),
+        );
+
+        expect(requestedForceRemoteFetchBackends, <bool?>[null, true]);
+        expect(requestedRemoteFetchChunkBytes, <int?>[
+          4 * 1024 * 1024,
+          128 * 1024,
+        ]);
+      },
+    );
 
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(
