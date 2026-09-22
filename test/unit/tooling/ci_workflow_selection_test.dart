@@ -311,9 +311,19 @@ void main() {
       final coverageSteps = jobs['test-linux-coverage']['steps'] as List;
       expect(
         coverageSteps.any(
-          (s) => s['run'] == 'dart pub global activate coverage 1.15.1',
+          (s) => '${s['run']}'.contains(
+            'dart run tool/testing/format_lcov.dart --lcov '
+            '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
+            '--check-ignore',
+          ),
         ),
         isTrue,
+      );
+      expect(
+        coverageSteps.any(
+          (s) => '${s['run']}'.contains('pub global activate coverage'),
+        ),
+        isFalse,
       );
       expect(
         coverageSteps.any(
