@@ -2627,5 +2627,53 @@ void main() {
         await expectLater(active, throwsA(isA<LlamaTextToSpeechException>()));
       },
     );
+
+    test(
+      'honours cancellation requested before the capability probe resolves',
+      () async {
+        final capabilityProbe = Completer<JSObject>();
+        var synthesizeCallCount = 0;
+        bridge.setProperty(
+          'getTextToSpeechCapabilities'.toJS,
+          (() => capabilityProbe.future.toJS).toJS,
+        );
+        bridge.setProperty(
+          'synthesizeSpeech'.toJS,
+          ((JSObject options) {
+            synthesizeCallCount += 1;
+            return Completer<JSAny?>().future.toJS;
+          }).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        final mmHandle = await backend.multimodalContextCreate(
+          1,
+          'https://example.com/mmproj.gguf',
+        );
+
+        final active = backend.synthesizeTextToSpeech(
+          1,
+          mmHandle!,
+          const BackendTextToSpeechRequest(text: 'Cancel me.'),
+        );
+        backend.cancelTextToSpeech();
+        expect(cancelCallCount, 1);
+
+        capabilityProbe.complete(
+          JSObject()
+            ..setProperty('apiVersion'.toJS, 1.toJS)
+            ..setProperty('supported'.toJS, true.toJS)
+            ..setProperty('modelType'.toJS, 1.toJS)
+            ..setProperty('supportsLanguage'.toJS, true.toJS)
+            ..setProperty('supportsSpeakerReference'.toJS, true.toJS)
+            ..setProperty('sampleRate'.toJS, 24000.toJS)
+            ..setProperty('channels'.toJS, 1.toJS),
+        );
+        await expectLater(active, throwsA(isA<LlamaTextToSpeechException>()));
+        expect(synthesizeCallCount, 0);
+      },
+    );
   });
 }

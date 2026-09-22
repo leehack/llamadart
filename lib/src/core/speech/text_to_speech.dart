@@ -579,9 +579,11 @@ class TextToSpeechEngine {
     TextToSpeechRequest request,
     String? normalizedLanguage,
   ) async {
+    TextToSpeechCompletion? outcome;
     try {
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _closeCancelledEvents(task);
+        outcome = const TextToSpeechCompletion.cancelled();
         return;
       }
       final speakerReference = request.speakerReference;
@@ -623,7 +625,8 @@ class TextToSpeechEngine {
       );
 
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _closeCancelledEvents(task);
+        outcome = const TextToSpeechCompletion.cancelled();
         return;
       }
       final result = TextToSpeechResult(
@@ -635,10 +638,11 @@ class TextToSpeechEngine {
       );
       task._eventsController.add(TextToSpeechFinalEvent(result));
       unawaited(task._eventsController.close());
-      task._doneCompleter.complete(TextToSpeechCompletion.completed(result));
+      outcome = TextToSpeechCompletion.completed(result);
     } catch (error, stackTrace) {
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _closeCancelledEvents(task);
+        outcome = const TextToSpeechCompletion.cancelled();
         return;
       }
       final speechError = error is LlamaException
@@ -646,9 +650,14 @@ class TextToSpeechEngine {
           : LlamaTextToSpeechException('Speech synthesis failed.', error);
       task._eventsController.addError(speechError, stackTrace);
       unawaited(task._eventsController.close());
-      task._doneCompleter.complete(TextToSpeechCompletion.failed(speechError));
+      outcome = TextToSpeechCompletion.failed(speechError);
     } finally {
+      // The lease must be free before `done` completes, otherwise a caller
+      // that awaits it cannot start the next task.
       _engineLease.release(_leaseOwner);
+      if (outcome != null && !task._doneCompleter.isCompleted) {
+        task._doneCompleter.complete(outcome);
+      }
     }
   }
 
@@ -670,12 +679,9 @@ class TextToSpeechEngine {
     return normalized;
   }
 
-  Future<void> _completeCancelled(TextToSpeechTask task) async {
+  void _closeCancelledEvents(TextToSpeechTask task) {
     if (!task._eventsController.isClosed) {
       unawaited(task._eventsController.close());
-    }
-    if (!task._doneCompleter.isCompleted) {
-      task._doneCompleter.complete(const TextToSpeechCompletion.cancelled());
     }
   }
 }

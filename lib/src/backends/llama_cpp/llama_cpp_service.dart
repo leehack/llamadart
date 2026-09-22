@@ -668,6 +668,7 @@ class LlamaCppService {
   bool _ttsApiLookupAttempted = false;
   _TtsApi? _ttsApi;
   Pointer<llama_dart_tts> _activeTts = nullptr;
+  bool _ttsCancelPending = false;
   int? _activeTtsContextHandle;
   final StartupDiagnosticBuffer _startupDiagnostics = StartupDiagnosticBuffer();
 
@@ -7655,6 +7656,9 @@ class LlamaCppService {
         'Cannot start text-to-speech while generation is active.',
       );
     }
+    // A cancel for this synthesis is only sent after its synthesize request,
+    // so anything latched here belongs to a run that already ended.
+    _ttsCancelPending = false;
 
     final api = _resolveTtsApi();
     final textBytes = utf8.encode(request.text);
@@ -7704,6 +7708,15 @@ class LlamaCppService {
     _activeTtsContextHandle = contextHandle;
     llama_set_embeddings(context.pointer, true);
     try {
+      // Yields so a cancel already queued for this synthesis can be processed
+      // before the native task setup, which cannot be interrupted.
+      await Future<void>.delayed(Duration.zero);
+      if (_ttsCancelPending) {
+        _ttsCancelPending = false;
+        throw LlamaTextToSpeechException(
+          'Text-to-speech synthesis was cancelled.',
+        );
+      }
       task = api.init(context.pointer, mtmd, initStatus);
       if (task == nullptr) {
         _throwForTtsStatus(
@@ -7715,6 +7728,10 @@ class LlamaCppService {
         );
       }
       _activeTts = task;
+      if (_ttsCancelPending) {
+        _ttsCancelPending = false;
+        api.cancel(task);
+      }
 
       requestPointer.ref = api.requestDefault();
       requestPointer.ref.text = text.cast();
@@ -7840,6 +7857,7 @@ class LlamaCppService {
         api.free(task);
       }
       _activeTts = nullptr;
+      _ttsCancelPending = false;
       _activeTtsContextHandle = null;
       _generatingContexts.remove(contextHandle);
       llama_set_embeddings(context.pointer, false);
@@ -7856,6 +7874,7 @@ class LlamaCppService {
   void cancelTextToSpeech() {
     final task = _activeTts;
     if (task == nullptr) {
+      _ttsCancelPending = true;
       return;
     }
     _resolveTtsApi().cancel(task);
