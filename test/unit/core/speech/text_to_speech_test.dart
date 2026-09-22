@@ -211,6 +211,27 @@ void main() {
       expect(await task.events.toList(), isEmpty);
     });
 
+    test('frees the engine lease before the task reports done', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      backend.blockSynthesis = true;
+      final cancelled = await speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Cancel me.'),
+      );
+      await backend.synthesisStarted.future;
+
+      cancelled.cancel();
+      expect(
+        (await cancelled.done).state,
+        TextToSpeechCompletionState.cancelled,
+      );
+
+      backend.blockSynthesis = false;
+      final next = await speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Next.'),
+      );
+      expect((await next.done).state, TextToSpeechCompletionState.completed);
+    });
+
     test('validates input and sampling before capability lookup', () async {
       await _loadTextToSpeechModel(llamaEngine);
 
