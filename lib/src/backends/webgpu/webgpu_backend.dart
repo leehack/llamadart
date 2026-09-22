@@ -979,12 +979,17 @@ class WebGpuLlamaBackend
     return modelLoadFromUrl(path, params);
   }
 
-  @override
-  Future<int> modelLoadFromUrl(
+  ({
+    int requestedGpuLayers,
+    int? requestedThreads,
+    bool remoteFetchBackendOptedIn,
+    JSFunction? progressCallback,
+  })
+  _prepareUrlLoad(
     String url,
-    ModelParams params, {
+    ModelParams params,
     Function(double progress)? onProgress,
-  }) async {
+  ) {
     params.validate();
     // Seed the mem64 preference from the public ModelParams (explicit flag or a
     // size hint at/above the wasm32 ceiling) so large models load into the
@@ -1050,9 +1055,24 @@ class WebGpuLlamaBackend
             }
           }.toJS;
 
+    return (
+      requestedGpuLayers: requestedGpuLayers,
+      requestedThreads: requestedThreads,
+      remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+      progressCallback: progressCallback,
+    );
+  }
+
+  @override
+  Future<int> modelLoadFromUrl(
+    String url,
+    ModelParams params, {
+    Function(double progress)? onProgress,
+  }) async {
+    final setup = _prepareUrlLoad(url, params, onProgress);
     final loadAttempts = _buildLoadAttempts(
       requestedContextSize: params.contextSize,
-      requestedGpuLayers: requestedGpuLayers,
+      requestedGpuLayers: setup.requestedGpuLayers,
     );
     final cachedWebModel = await _isModelResponseCachedForUrl(url);
     Object? lastError;
@@ -1076,7 +1096,10 @@ class WebGpuLlamaBackend
       );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
-      final attemptThreads = _resolveAttemptThreads(index, requestedThreads);
+      final attemptThreads = _resolveAttemptThreads(
+        index,
+        setup.requestedThreads,
+      );
 
       try {
         await _activateBridge();
@@ -1115,7 +1138,7 @@ class WebGpuLlamaBackend
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
             modelBytesHint: params.modelBytesHint,
-            progressCallback: progressCallback,
+            progressCallback: setup.progressCallback,
           ),
         );
 
@@ -1200,7 +1223,7 @@ class WebGpuLlamaBackend
             remoteFetchAborted;
         final shouldRetryWithSmallerRemoteFetchChunks =
             remoteFetchChunkRetryCount < 10 &&
-            remoteFetchBackendOptedIn &&
+            setup.remoteFetchBackendOptedIn &&
             remoteFetchAttempted &&
             remoteFetchAborted &&
             forceRemoteFetchRequested &&
@@ -1285,7 +1308,7 @@ class WebGpuLlamaBackend
           retriedWithWasm64 = true;
           _preferMemory64Override = true;
           final retryWithRemoteFetchBackend =
-              remoteFetchBackendOptedIn &&
+              setup.remoteFetchBackendOptedIn &&
               !remoteFetchAttempted &&
               !remoteFetchBackendKnownUnstable;
           _forceRemoteFetchBackendOverride = retryWithRemoteFetchBackend;
@@ -1307,7 +1330,7 @@ class WebGpuLlamaBackend
         }
 
         if (fsWriteFailed && coreVariant == 'wasm64') {
-          if (remoteFetchBackendOptedIn &&
+          if (setup.remoteFetchBackendOptedIn &&
               !retriedAfterFsWriteFailureWithRemote) {
             retriedAfterFsWriteFailureWithRemote = true;
             _forceRemoteFetchBackendOverride = true;
@@ -1327,7 +1350,7 @@ class WebGpuLlamaBackend
 
           _emitConsoleText(
             LlamaLogLevel.warn,
-            remoteFetchBackendOptedIn
+            setup.remoteFetchBackendOptedIn
                 ? 'WebGpuLlamaBackend: wasm64 model staging failed; skipping '
                       'fallback ladder because additional nCtx/GPU/thread '
                       'reductions are unlikely to recover FS write failures.'
@@ -1341,7 +1364,7 @@ class WebGpuLlamaBackend
           final nextAttempt = loadAttempts[index + 1];
           final nextThreads = _resolveAttemptThreads(
             index + 1,
-            requestedThreads,
+            setup.requestedThreads,
           );
           _emitConsoleText(
             LlamaLogLevel.warn,
@@ -1356,7 +1379,7 @@ class WebGpuLlamaBackend
         final normalized = _normalizeBridgeRuntimeError(
           e,
           runtimeHints: runtimeHints,
-          remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+          remoteFetchBackendOptedIn: setup.remoteFetchBackendOptedIn,
         );
         if (normalized != null) {
           throw normalized;
@@ -1369,7 +1392,7 @@ class WebGpuLlamaBackend
       final normalized = _normalizeBridgeRuntimeError(
         lastError,
         runtimeHints: lastRuntimeHints,
-        remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+        remoteFetchBackendOptedIn: setup.remoteFetchBackendOptedIn,
       );
       if (normalized != null) {
         throw normalized;
