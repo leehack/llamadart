@@ -967,10 +967,6 @@ class WebGpuLlamaBackend
     Function(double progress)? onProgress,
   ) {
     params.validate();
-    // Seed the mem64 preference from the public ModelParams (explicit flag or a
-    // size hint at/above the wasm32 ceiling) so large models load into the
-    // 64-bit core up front instead of relying on a post-OOM retry. The reactive
-    // escalation paths below can still flip this to true as a last resort.
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
     final remoteFetchBackendOptedIn = _isRemoteFetchBackendOptedIn();

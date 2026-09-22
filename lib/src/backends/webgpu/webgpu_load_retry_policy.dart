@@ -9,9 +9,9 @@ const int maxRemoteFetchChunkRestarts = 10;
 /// Chunk size ceiling applied when retrying after a wasm64 FS write failure.
 const int fsWriteRetryChunkBytes = 128 * 1024;
 
-/// Whether [loweredErrorText] carries a phrase the policy treats as memory
-/// pressure: an allocation failure, an out-of-bounds access, a bad_alloc, or
-/// a native abort.
+/// Whether [loweredErrorText] carries 'array buffer allocation failed',
+/// 'out of memory', 'memory access out of bounds', 'bad_alloc', or
+/// 'aborted(native code called abort())'.
 bool isMemoryPressureErrorText(String loweredErrorText) {
   return loweredErrorText.contains('array buffer allocation failed') ||
       loweredErrorText.contains('out of memory') ||
@@ -122,7 +122,11 @@ class WebGpuLoadEscalation {
   /// Whether the post-FS-write forced fetch retry has already fired.
   final bool retriedAfterFsWriteFailureWithRemote;
 
-  /// Whether a remote-fetch attempt has aborted during this load.
+  /// Whether this load has seen a fetch-backend abort. Latched when the
+  /// runtime notes carry 'model_fetch_backend_abort', which needs no
+  /// 'model_fetch_backend_attempt' marker, or when they carry
+  /// 'model_fetch_backend_attempt' together with either 'core_abort' in the
+  /// notes or 'aborted(native code called abort())' in the error text.
   final bool remoteFetchBackendKnownUnstable;
 
   /// Whether a wasm64 attempt has failed on BigInt interop during this load.
