@@ -64,7 +64,7 @@ abstract interface class SpeechValidationAdapter {
   Future<void> load();
   Future<void> dispose();
 
-  /// With `cancel`, issues the cancellation once the generation it cancels is
+  /// With `cancel`, issues the cancellation once the work it cancels is
   /// already running, and reports `cancel_latency_ms`, `cancel_after_ms` and
   /// `cancel_in_flight`.
   Future<Map<String, Object?>> execute({
@@ -388,9 +388,14 @@ const speechLifecycleCheckCount = 13;
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = 3;
 
-/// Fraction of the run's most recent completed generation that a public
-/// adapter lets elapse before it cancels, so the cancellation reaches a
-/// generation that is already running rather than one that has not begun.
+/// Fraction of the run's most recent completed generation that
+/// [PublicSpeechValidationAdapter] lets elapse before it cancels, so the
+/// cancellation reaches a generation that is already running rather than one
+/// that has not begun.
+///
+/// [PublicDedicatedSpeechAdapter] does not use it: that adapter pushes PCM
+/// until the first partial transcript arrives, or until the fixture is
+/// exhausted, and cancels there.
 const speechCancelInFlightLeadFraction = 0.5;
 
 /// Milliseconds allowed between requesting cancellation and the speech task

@@ -32,11 +32,13 @@ repeated calls rather than one. `speech-results.json` reports them under
 `bounds`, and `cancel_latency_bound` and `peak_memory_bound` are ordinary checks
 that fail the run when a budget is exceeded.
 
-Every cancellation is issued into a generation that is already running. The
-adapter waits half of the run's most recent completed generation, records that
-wait as `cancel_after_ms`, and sets `cancel_in_flight` only when the task had
-not reached a terminal state at that moment; the cancelled task must also emit
-no result. A run whose adapter reports otherwise fails, so a cancellation timed
+Every cancellation is issued into work that is already running. The GGUF adapter
+these packs use waits half of the run's most recent completed generation; the
+dedicated LiteRT adapter instead pushes PCM until the first partial transcript
+arrives, or until the fixture is exhausted. Both record that wait as
+`cancel_after_ms` and set `cancel_in_flight` only when the task had not reached
+a terminal state at that moment, and the cancelled task must also emit no
+result. A run whose adapter reports otherwise fails, so a cancellation timed
 before its generation started cannot be reported as one.
 
 Cancellation latency is the interval from `cancel()` to the task's terminal
