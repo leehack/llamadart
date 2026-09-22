@@ -7134,10 +7134,10 @@ class LlamaCppService {
     );
   }
 
-  /// Routes every mtmd call through a wrapper library candidate, as when the
-  /// primary asset cannot resolve mtmd, for real-model regression tests.
+  /// Makes the service resolve mtmd from a wrapper library candidate, as it
+  /// does when the primary asset lacks mtmd, for real-model regression tests.
   ///
-  /// With [chunkEval] false, the fallback lacks the chunk-level functions.
+  /// With [chunkEval] false, that fallback lacks the chunk-level functions.
   /// Returns false, changing nothing, when no candidate exports mtmd.
   bool debugUseWrapperMtmdFallbackForTesting({required bool chunkEval}) {
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
