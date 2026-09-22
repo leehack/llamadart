@@ -9,7 +9,9 @@ const int maxRemoteFetchChunkRestarts = 10;
 /// Chunk size ceiling applied when retrying after a wasm64 FS write failure.
 const int fsWriteRetryChunkBytes = 128 * 1024;
 
-/// Whether [loweredErrorText] names a browser or core memory exhaustion.
+/// Whether [loweredErrorText] carries a phrase the policy treats as memory
+/// pressure: an allocation failure, an out-of-bounds access, a bad_alloc, or
+/// a native abort.
 bool isMemoryPressureErrorText(String loweredErrorText) {
   return loweredErrorText.contains('array buffer allocation failed') ||
       loweredErrorText.contains('out of memory') ||
@@ -18,19 +20,21 @@ bool isMemoryPressureErrorText(String loweredErrorText) {
       loweredErrorText.contains('aborted(native code called abort())');
 }
 
-/// Whether [loweredErrorText] names a BigInt conversion failure.
+/// Whether [loweredErrorText] carries both 'cannot convert' and 'bigint'.
 bool isBigIntInteropErrorText(String loweredErrorText) {
   return loweredErrorText.contains('cannot convert') &&
       loweredErrorText.contains('bigint');
 }
 
-/// Whether [loweredErrorText] names a worker thread creation failure.
+/// Whether [loweredErrorText] carries 'thread constructor failed' or
+/// 'error 138'.
 bool isThreadConstructorFailureText(String loweredErrorText) {
   return loweredErrorText.contains('thread constructor failed') ||
       loweredErrorText.contains('error 138');
 }
 
-/// Whether [runtimeNotes] reports that model staging failed before load.
+/// Whether [runtimeNotes] carries one of the markers the bridge emits when
+/// writing the model into its filesystem failed.
 bool runtimeNotesIndicateModelFsWriteFailure(String runtimeNotes) {
   return runtimeNotes.contains('model_response_nostream') ||
       runtimeNotes.contains('model_fs_write_bigint_error') ||
@@ -70,7 +74,7 @@ class WebGpuLoadFailure {
   /// Total number of ladder rungs.
   final int attemptCount;
 
-  /// Lower-cased text of the thrown error.
+  /// Text of the thrown error, already lower-cased for the predicates above.
   final String errorText;
 
   /// Bridge `llamadart.webgpu.core_variant` hint, or null when absent.
@@ -82,7 +86,7 @@ class WebGpuLoadFailure {
   /// Whether the failed attempt asked the bridge for the remote fetch backend.
   final bool forceRemoteFetchRequested;
 
-  /// Whether the host page opted into automatic remote-fetch loading.
+  /// Whether the host page opted into fetch-backed loading.
   final bool remoteFetchBackendOptedIn;
 }
 
