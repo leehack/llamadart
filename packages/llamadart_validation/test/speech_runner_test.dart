@@ -64,6 +64,7 @@ class FakeSpeechEngine implements LlamaEngine {
   final List<String> deltas;
   final Object? failure;
   final loaded = <String>[];
+  final audioParts = <LlamaAudioContent>[];
   var generations = 0;
   var disposals = 0;
 
@@ -113,6 +114,11 @@ class FakeSpeechEngine implements LlamaEngine {
     DateTime? templateNow,
   }) async* {
     generations++;
+    audioParts.addAll(
+      messages
+          .expand((message) => message.parts)
+          .whereType<LlamaAudioContent>(),
+    );
     if (failure != null) throw failure!;
     for (final delta in deltas) {
       yield LlamaCompletionChunk(
@@ -498,16 +504,18 @@ void main() {
     String pack = 'stt',
     List<String> deltas = const <String>[],
     Object? failure,
+    FakeSpeechEngine? engine,
   }) => PublicSpeechValidationAdapter(
     model: 'model.gguf',
     projector: 'mmproj.gguf',
     backend: GpuBackend.cpu,
     pack: pack,
-    audio: Uint8List(44),
+    audio: Uint8List.fromList(List.filled(44, 7)),
     audioSeconds: 1,
     reference: edgeReference,
     saveAudio: (_) async {},
-    createEngine: () => FakeSpeechEngine(deltas: deltas, failure: failure),
+    createEngine: () =>
+        engine ?? FakeSpeechEngine(deltas: deltas, failure: failure),
   );
   Future<Map<String, Object?>> recognizeEdge(
     SpeechEdgeFixture fixture, {
@@ -610,7 +618,14 @@ void main() {
   test('edge measurement reports the fixture and guards its pack', () async {
     final byId = edgeFixturesById();
     final stereo = byId['edge_stereo_44100']!;
-    final measured = await recognizeEdge(stereo, deltas: [edgeReference]);
+    final engine = FakeSpeechEngine(deltas: [edgeReference]);
+    final recorded = edgeAdapter(engine: engine);
+    await recorded.load();
+    final measured = await recorded.executeEdge(stereo);
+    await recorded.dispose();
+    expect(engine.audioParts, hasLength(1));
+    expect(engine.audioParts.single.bytes, stereo.bytes);
+    expect(engine.audioParts.single.path, isNull);
     expect(measured['contract'], stereo.contract.name);
     expect(measured['rationale'], stereo.rationale);
     expect(measured['fixture_bytes'], stereo.bytes.length);
