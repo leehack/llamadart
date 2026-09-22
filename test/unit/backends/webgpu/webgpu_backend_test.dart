@@ -32,6 +32,11 @@ void main() {
     late List<int> requestedContextSizes;
     late List<int> requestedBatchSizes;
     late List<int> requestedMicroBatchSizes;
+    late List<int?> requestedThreadCounts;
+    late List<int?> requestedGpuLayerCounts;
+    late List<bool?> requestedForceRemoteFetchBackends;
+    late List<int?> requestedRemoteFetchChunkBytes;
+    late Map<String, String> bridgeRuntimeHints;
     int? lastRequestedSeqMax;
     int? lastRequestedFlashAttention;
     int? lastRequestedCacheTypeK;
@@ -94,10 +99,19 @@ void main() {
         requestedContextSizes.add((nCtx as JSNumber).toDartInt);
       }
 
+      final nThreads = config.getProperty('nThreads'.toJS);
+      requestedThreadCounts.add(
+        nThreads.isA<JSNumber>() ? (nThreads as JSNumber).toDartInt : null,
+      );
+
       final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
-      if (nGpuLayers.isA<JSNumber>()) {
-        lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
+      final nGpuLayersValue = nGpuLayers.isA<JSNumber>()
+          ? (nGpuLayers as JSNumber).toDartInt
+          : null;
+      if (nGpuLayersValue != null) {
+        lastRequestedGpuLayers = nGpuLayersValue;
       }
+      requestedGpuLayerCounts.add(nGpuLayersValue);
 
       final modelBytesHint = config.getProperty('modelBytesHint'.toJS);
       if (modelBytesHint.isA<JSNumber>()) {
@@ -152,7 +166,21 @@ void main() {
       if (forceRemoteFetchBackend.isA<JSBoolean>()) {
         lastRequestedForceRemoteFetchBackend =
             (forceRemoteFetchBackend as JSBoolean).toDart;
+        requestedForceRemoteFetchBackends.add(
+          lastRequestedForceRemoteFetchBackend,
+        );
+      } else {
+        requestedForceRemoteFetchBackends.add(null);
       }
+
+      final remoteFetchChunkBytes = config.getProperty(
+        'remoteFetchChunkBytes'.toJS,
+      );
+      requestedRemoteFetchChunkBytes.add(
+        remoteFetchChunkBytes.isA<JSNumber>()
+            ? (remoteFetchChunkBytes as JSNumber).toDartInt
+            : null,
+      );
 
       final kvUnified = config.getProperty('kvUnified'.toJS);
       if (kvUnified.isA<JSBoolean>()) {
@@ -198,6 +226,11 @@ void main() {
       requestedContextSizes = <int>[];
       requestedBatchSizes = <int>[];
       requestedMicroBatchSizes = <int>[];
+      requestedThreadCounts = <int?>[];
+      requestedGpuLayerCounts = <int?>[];
+      requestedForceRemoteFetchBackends = <bool?>[];
+      requestedRemoteFetchChunkBytes = <int?>[];
+      bridgeRuntimeHints = <String, String>{};
       lastRequestedSeqMax = null;
       lastRequestedFlashAttention = null;
       lastRequestedCacheTypeK = null;
@@ -489,6 +522,9 @@ void main() {
             'llamadart.webgpu.n_threads'.toJS,
             runtimeThreads.toString().toJS,
           );
+          for (final entry in bridgeRuntimeHints.entries) {
+            meta.setProperty(entry.key.toJS, entry.value.toJS);
+          }
           return meta;
         }).toJS,
       );
@@ -891,6 +927,207 @@ void main() {
       expect(requestedBatchSizes, <int>[512, 512]);
       expect(requestedMicroBatchSizes, <int>[512, 512]);
       expect(lastRequestedGpuLayers, 0);
+    });
+
+    JSPromise<JSAny?> rejectLoadWith(String message) {
+      final error = JSObject();
+      error.setProperty('message'.toJS, message.toJS);
+      return _rejectPromise(error);
+    }
+
+    void failLoads({required String message, int? firstAttempts}) {
+      var loadCallCount = 0;
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          loadCallCount += 1;
+          recordLoadConfig(config);
+          if (firstAttempts == null || loadCallCount <= firstAttempts) {
+            return rejectLoadWith(message);
+          }
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+    }
+
+    List<String> captureConsoleWarnings() {
+      final messages = <String>[];
+      final consoleObject =
+          globalContext.getProperty('console'.toJS) as JSObject;
+      final original = consoleObject.getProperty('warn'.toJS) as JSFunction;
+      consoleObject.setProperty(
+        'warn'.toJS,
+        ((JSAny? message) {
+          messages.add(message?.toString() ?? '');
+          original.callAsFunction(consoleObject, message);
+        }).toJS,
+      );
+      addTearDown(() {
+        consoleObject.setProperty('warn'.toJS, original);
+      });
+      return messages;
+    }
+
+    test(
+      'advances the fallback ladder with descending attempt limits',
+      () async {
+        final warnings = captureConsoleWarnings();
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+        failLoads(message: 'array buffer allocation failed', firstAttempts: 4);
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/ladder-model.gguf',
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            numberOfThreads: 8,
+            preferMemory64: true,
+          ),
+        );
+
+        expect(requestedContextSizes, <int>[4096, 4096, 2048, 2048, 1024]);
+        expect(requestedGpuLayerCounts, <int?>[99, 0, 99, 0, 99]);
+        expect(requestedThreadCounts, <int?>[8, 4, 4, 2, 2]);
+        expect(
+          warnings
+              .where((message) => message.contains('reduced settings'))
+              .toList(),
+          <String>[
+            'WebGpuLlamaBackend: retrying web model load with reduced settings '
+                '(nCtx=4096, nGpuLayers=0, nThreads=4)',
+            'WebGpuLlamaBackend: retrying web model load with reduced settings '
+                '(nCtx=2048, nGpuLayers=99, nThreads=4)',
+            'WebGpuLlamaBackend: retrying web model load with reduced settings '
+                '(nCtx=2048, nGpuLayers=0, nThreads=2)',
+            'WebGpuLlamaBackend: retrying web model load with reduced settings '
+                '(nCtx=1024, nGpuLayers=99, nThreads=2)',
+          ],
+        );
+      },
+    );
+
+    test(
+      'restarts the ladder on wasm32 after a wasm64 BigInt failure',
+      () async {
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+        failLoads(
+          message: 'Cannot convert a BigInt value to a number',
+          firstAttempts: 1,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/bigint-model.gguf',
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            numberOfThreads: 8,
+            preferMemory64: true,
+          ),
+        );
+
+        expect(requestedContextSizes, <int>[4096, 4096]);
+        expect(requestedGpuLayerCounts, <int?>[99, 99]);
+        expect(requestedThreadCounts, <int?>[8, 8]);
+        expect(requestedForceRemoteFetchBackends, <bool?>[null, false]);
+        expect(capturedPreferMemory64(), isFalse);
+      },
+    );
+
+    test('restarts without the remote fetch backend after an abort', () async {
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'model_fetch_backend_attempt;model_fetch_backend_abort';
+      failLoads(message: 'bridge model load failed', firstAttempts: 1);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/fetch-abort-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99, numberOfThreads: 8),
+      );
+
+      expect(requestedContextSizes, <int>[4096, 4096]);
+      expect(requestedGpuLayerCounts, <int?>[99, 99]);
+      expect(requestedThreadCounts, <int?>[8, 8]);
+      expect(requestedForceRemoteFetchBackends, <bool?>[null, false]);
+      expect(capturedPreferMemory64(), isTrue);
+    });
+
+    test('caps forced remote fetch chunk halving at ten restarts', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      globalContext.setProperty(
+        '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+        (16 * 1024 * 1024).toJS,
+      );
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'model_fetch_backend_attempt;model_fetch_backend_abort';
+      failLoads(message: 'bridge model load failed');
+
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/forced-fetch-model.gguf',
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            numberOfThreads: 8,
+          ),
+        ),
+        throwsA(anything),
+      );
+
+      expect(requestedContextSizes, List<int>.filled(11, 4096));
+      expect(requestedForceRemoteFetchBackends, List<bool?>.filled(11, true));
+      expect(requestedRemoteFetchChunkBytes, <int?>[
+        16 * 1024 * 1024,
+        8 * 1024 * 1024,
+        4 * 1024 * 1024,
+        2 * 1024 * 1024,
+        1024 * 1024,
+        512 * 1024,
+        256 * 1024,
+        128 * 1024,
+        64 * 1024,
+        32 * 1024,
+        16 * 1024,
+      ]);
+    });
+
+    test('stops forced remote fetch chunk halving at the minimum', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      globalContext.setProperty(
+        '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+        (20 * 1024).toJS,
+      );
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'model_fetch_backend_attempt;model_fetch_backend_abort';
+      failLoads(message: 'bridge model load failed');
+
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/min-chunk-model.gguf',
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            numberOfThreads: 8,
+          ),
+        ),
+        throwsA(anything),
+      );
+
+      expect(requestedContextSizes, List<int>.filled(4, 4096));
+      expect(requestedForceRemoteFetchBackends, List<bool?>.filled(4, true));
+      expect(requestedRemoteFetchChunkBytes, <int?>[
+        20 * 1024,
+        10 * 1024,
+        5 * 1024,
+        4 * 1024,
+      ]);
     });
 
     test('streams generated tokens from bridge callback', () async {
