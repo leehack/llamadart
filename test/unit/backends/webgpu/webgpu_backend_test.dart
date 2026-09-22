@@ -1060,6 +1060,38 @@ void main() {
       },
     );
 
+    test('restarts from the first rung after the ladder advanced', () async {
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      final errors = <String>[
+        'array buffer allocation failed',
+        'Cannot convert a BigInt value to a number',
+      ];
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          recordLoadConfig(config);
+          if (errors.isEmpty) {
+            return Future<void>.value().toJS;
+          }
+          return rejectLoadWith(errors.removeAt(0));
+        }).toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/restart-rung-model.gguf',
+        const ModelParams(
+          contextSize: 4096,
+          gpuLayers: 99,
+          numberOfThreads: 8,
+          preferMemory64: true,
+        ),
+      );
+
+      expect(requestedContextSizes, <int>[4096, 4096, 4096]);
+      expect(requestedGpuLayerCounts, <int?>[99, 0, 99]);
+      expect(requestedThreadCounts, <int?>[8, 4, 8]);
+    });
+
     test('restarts without the remote fetch backend after an abort', () async {
       bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
       bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
