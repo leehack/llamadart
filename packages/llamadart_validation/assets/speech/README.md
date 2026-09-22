@@ -122,6 +122,12 @@ rather than after load because the model pages in lazily: on `tts` the resident
 set rose from 2.41-2.42 GiB after load to 3.49-3.82 GiB after the first
 synthesis on Metal, and from 3.04-3.05 GiB to 5.30-5.31 GiB on CPU.
 
+The dedicated LiteRT ASR pack fails this budget on the same host:
+1.2567x-1.2654x over three runs, with resident memory rising from
+448.2-449.6 MiB after the first transcription to 565.0-567.6 MiB. Run once
+without the immediate cancellations, it measured 1.2009x. That is a recorded
+finding, not a budget to raise.
+
 Resident memory comes from `dart:io` `ProcessInfo.currentRss`. It counts native
 and Dart allocations together, what it counts is platform dependent, and it does
 not exist without `dart:io`. When the probe reports nothing usable, the memory

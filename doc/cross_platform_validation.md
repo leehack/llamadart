@@ -999,7 +999,8 @@ resident memory cannot be measured records the memory bound as `SKIP` with a
 reason, and that is the only check a passing run may leave unmeasured. On macOS
 arm64 the `tts` pack meets both latency bounds on Metal and fails the in-flight
 bound on CPU, where that cancellation arrives during the final native synthesis
-step and waits for it. GGUF STT additionally compares file and bytes inputs.
+step and waits for it, and the dedicated LiteRT ASR pack fails the memory bound.
+GGUF STT additionally compares file and bytes inputs.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the
