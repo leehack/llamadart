@@ -19,15 +19,18 @@ class _Fixture {
   final String libDir;
   final String coverageDir;
 
+  String get toolDir => p.join(root, 'tool');
+
   format_lcov.FormatLcovOptions options({
     required bool checkIgnore,
     String? input,
     String? output,
+    List<String>? reportOn,
   }) {
     return format_lcov.FormatLcovOptions(
       input: input ?? coverageDir,
       output: output,
-      reportOn: [libDir],
+      reportOn: reportOn ?? [libDir],
       checkIgnore: checkIgnore,
       packagePath: root,
     );
@@ -119,6 +122,7 @@ Iterable<File> _inputFiles(String dir) => Directory(dir)
 Future<String> _referenceLcov(
   _Fixture fixture, {
   required bool checkIgnore,
+  List<String>? reportOn,
 }) async {
   final hitmap = await HitMap.parseFiles(
     _inputFiles(fixture.coverageDir),
@@ -126,7 +130,7 @@ Future<String> _referenceLcov(
     packagePath: fixture.root,
   );
   final resolver = await Resolver.create(packagePath: fixture.root);
-  return hitmap.formatLcov(resolver, reportOn: [fixture.libDir]);
+  return hitmap.formatLcov(resolver, reportOn: reportOn ?? [fixture.libDir]);
 }
 
 void main() {
@@ -196,6 +200,67 @@ void main() {
     expect(options.reportOn, ['lib']);
     expect(options.checkIgnore, isTrue);
     expect(options.packagePath, '.');
+  });
+
+  test('--report-on splits on commas and accumulates across repeats', () {
+    expect(
+      format_lcov.parseFormatLcovArgs([
+        '--lcov',
+        '--in=x',
+        '--report-on=lib,tool',
+      ]).reportOn,
+      ['lib', 'tool'],
+    );
+    expect(
+      format_lcov.parseFormatLcovArgs([
+        '--lcov',
+        '--in=x',
+        '--report-on=lib',
+        '--report-on=tool,hook',
+      ]).reportOn,
+      ['lib', 'tool', 'hook'],
+    );
+    expect(
+      format_lcov.parseFormatLcovArgs([
+        '--lcov',
+        '--in=x',
+        '--report-on=lib,',
+      ]).reportOn,
+      ['lib', ''],
+    );
+  });
+
+  test('a comma-separated --report-on covers both directories', () async {
+    final fixture = _fixture();
+    final options = format_lcov.parseFormatLcovArgs([
+      '--lcov',
+      '--in=${fixture.coverageDir}',
+      '--report-on=${fixture.libDir},${fixture.toolDir}',
+      '--check-ignore',
+      '--package=${fixture.root}',
+    ]);
+
+    final actual = await format_lcov.formatLcovReport(options);
+
+    expect(
+      actual,
+      await _referenceLcov(
+        fixture,
+        checkIgnore: true,
+        reportOn: [fixture.libDir, fixture.toolDir],
+      ),
+    );
+    expect(actual, contains('SF:${p.join(fixture.libDir, 'kept.dart')}'));
+    expect(
+      actual,
+      contains('SF:${p.join(fixture.toolDir, 'outside_report_on.dart')}'),
+    );
+    expect(
+      actual,
+      isNot(
+        await format_lcov.formatLcovReport(fixture.options(checkIgnore: true)),
+      ),
+    );
   });
 
   test('--out=stdout means stdout, and unreported flags are rejected', () {

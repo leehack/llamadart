@@ -90,13 +90,6 @@
   ten-restart cap and its 4 KiB minimum chunk, then collapse the duplicated
   attempt thread-count switch into one helper
   ([#361](https://github.com/leehack/llamadart/issues/361)).
-- Format CI coverage with `tool/testing/format_lcov.dart`, which shares one
-  `Resolver` and one ignored-lines cache across every coverage JSON file
-  instead of rebuilding both per file as `coverage:format_coverage` does. LCOV
-  output, `--report-on=lib` scoping, `// coverage:ignore-*` handling and the
-  70% threshold are unchanged; `coverage` moves from a globally activated CI
-  tool to a dev_dependency
-  ([#384](https://github.com/leehack/llamadart/issues/384)).
 
 ## 0.8.24
 

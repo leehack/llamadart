@@ -5,7 +5,7 @@ import 'package:coverage/coverage.dart';
 
 const _usage = '''
 Usage: dart run tool/testing/format_lcov.dart --lcov --in=<dir-or-file> \\
-    --out=<file|stdout> [--report-on=<path>]... [--check-ignore] \\
+    --out=<file|stdout> [--report-on=<path>[,<path>...]]... [--check-ignore] \\
     [--package=<dir>]
 
 Formats Dart VM coverage JSON as LCOV. Produces the same output as
@@ -56,6 +56,9 @@ class FormatLcovUsageException implements Exception {
 /// Parses [args], accepting `--lcov`, `--in=`, `--out=`, `--report-on=`,
 /// `--check-ignore` and `--package=`.
 ///
+/// `--report-on=` may be repeated and splits its value on commas, matching the
+/// `addMultiOption` `format_coverage` declares it with.
+///
 /// Throws [FormatLcovUsageException] for anything else, including every
 /// `format_coverage` short alias, the `--pretty-print` modes and `--workers`.
 FormatLcovOptions parseFormatLcovArgs(List<String> args) {
@@ -76,7 +79,7 @@ FormatLcovOptions parseFormatLcovArgs(List<String> args) {
     } else if (arg.startsWith('--out=')) {
       output = arg.substring('--out='.length);
     } else if (arg.startsWith('--report-on=')) {
-      reportOn.add(arg.substring('--report-on='.length));
+      reportOn.addAll(arg.substring('--report-on='.length).split(','));
     } else if (arg.startsWith('--package=')) {
       packagePath = arg.substring('--package='.length);
     } else {
