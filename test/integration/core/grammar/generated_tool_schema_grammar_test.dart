@@ -9,8 +9,10 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/grammar/tool_grammar_generator.dart'
     as grammar;
+import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:test/test.dart';
 
 import '../../../test_helper.dart';
@@ -115,6 +117,49 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('compiled Mistral grammar enforces the tool-call id pattern', () {
+    final mistralGrammar = MistralHandler().buildGrammar([tool])!;
+
+    expect(
+      _compiledGrammarAccepts(
+        nativeModel!,
+        mistralGrammar,
+        '[TOOL_CALLS][{"name":"ping","arguments":{},"id":"abc123XYZ"}]',
+      ),
+      isTrue,
+    );
+    for (final invalidId in ['abc', 'abc123XYZ0', 'abc12_XYZ']) {
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          mistralGrammar,
+          '[TOOL_CALLS][{"name":"ping","arguments":{},"id":"$invalidId"}]',
+        ),
+        isFalse,
+        reason: 'id "$invalidId" must not satisfy the generated grammar.',
+      );
+    }
+  });
+
+  test('compiled pattern grammar never admits a JSON-invalid string', () {
+    final spanningRange = JsonSchemaConverter.convert({
+      'type': 'string',
+      'pattern': r'^[ -~]+$',
+    });
+
+    expect(
+      _compiledGrammarAccepts(nativeModel!, spanningRange, '"abc"'),
+      isTrue,
+    );
+    for (final invalid in [r'"ab"cd"', r'"ab\cd"', r'"ab\"']) {
+      expect(
+        _compiledGrammarAccepts(nativeModel!, spanningRange, invalid),
+        isFalse,
+        reason: '$invalid is not valid JSON and must not satisfy the grammar.',
+      );
+    }
   });
 
   test('compiled grammar rejects an incomplete valid prefix at EOG', () {

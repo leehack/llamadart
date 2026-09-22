@@ -69,6 +69,23 @@ void main() {
       equals('[{"name":"get_weather","arguments":{"city":"Seoul"}}]'),
     );
   });
+
+  test('grammar constrains the tool-call id to 9 alphanumerics', () {
+    final grammar = MagistralHandler().buildGrammar([
+      ToolDefinition(
+        name: 'search',
+        description: 'Search docs',
+        parameters: [ToolParam.string('query', required: true)],
+        handler: _noop,
+      ),
+    ]);
+
+    expect(
+      grammar,
+      contains('root-item-id ::= "\\"" (root-item-id-1{9,9}) "\\"" space'),
+    );
+    expect(grammar, contains('root-item-id-1 ::= [a-zA-Z0-9]'));
+  });
 }
 
 Future<Object?> _noop(_) async {

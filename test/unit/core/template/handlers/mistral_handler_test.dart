@@ -79,6 +79,26 @@ void main() {
     final plain = handler.parse('plain text', parseToolCalls: false);
     expect(plain.content, equals('plain text'));
   });
+
+  test(
+    'MistralHandler grammar constrains the tool-call id to 9 alphanumerics',
+    () {
+      final grammar = MistralHandler().buildGrammar([
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city', required: true)],
+          handler: _noop,
+        ),
+      ]);
+
+      expect(
+        grammar,
+        contains('root-item-id ::= "\\"" (root-item-id-1{9,9}) "\\"" space'),
+      );
+      expect(grammar, contains('root-item-id-1 ::= [a-zA-Z0-9]'));
+    },
+  );
 }
 
 Future<Object?> _noop(_) async {

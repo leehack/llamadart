@@ -204,7 +204,7 @@ class JsonSchemaConverter {
 
   /// Visit a JSON Schema node and generate GBNF rules for it.
   String visit(Map<String, dynamic> schema, String name) {
-    final schemaType = schema['type'];
+    var schemaType = schema['type'];
     final ruleName = _reservedNames.contains(name) && name != 'root'
         ? '$name-'
         : (name.isEmpty ? 'root' : name);
@@ -327,6 +327,13 @@ class JsonSchemaConverter {
       }
     }
 
+    if ((schemaType == null || schemaType == 'string') &&
+        schema['pattern'] is String) {
+      final patternRule = _visitPattern(schema['pattern'] as String, ruleName);
+      if (patternRule != null) return patternRule;
+      schemaType = 'string';
+    }
+
     // string with minLength/maxLength
     if (schemaType == 'string' &&
         (schema.containsKey('minLength') || schema.containsKey('maxLength'))) {
@@ -363,6 +370,18 @@ class JsonSchemaConverter {
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  String? _visitPattern(String pattern, String ruleName) {
+    final snapshot = Map<String, String>.from(_rules);
+    final expr = _PatternGrammarBuilder(_addRule, ruleName).build(pattern);
+    if (expr == null) {
+      _rules
+        ..clear()
+        ..addAll(snapshot);
+      return null;
+    }
+    return _addRule(ruleName, '"\\"" ($expr) "\\"" space');
+  }
 
   String _generateUnionRule(String name, List alts) {
     return alts
@@ -464,6 +483,286 @@ class JsonSchemaConverter {
 
     rule += ' "}" space';
     return rule;
+  }
+}
+
+/// Compiles the supported subset of JSON Schema `pattern` regexes into a GBNF
+/// expression.
+///
+/// The subset is anchored `^...$` patterns whose body is a single sequence of
+/// literal characters, positive character classes of plain characters and
+/// ranges, `(...)` and `(?:...)` groups, and `*`, `+`, `?` or `{n}` / `{m,}` /
+/// `{m,n}` repetition with counts up to [_maxRepetitionCount]. Alternation is
+/// supported inside a group; a top-level `|` is not, because ECMA-262 gives it
+/// lower precedence than the anchors.
+///
+/// [build] returns `null` for anything else, and in particular for every
+/// construct that could admit `"`, `\`, or a control character inside the JSON
+/// string, so the caller can fall back to a length-bounded or unconstrained
+/// string.
+class _PatternGrammarBuilder {
+  _PatternGrammarBuilder(this._addRule, this._name);
+
+  static const _maxRepetitionCount = 1024;
+
+  /// Maximum nesting depth of `(...)` groups the parser descends into.
+  ///
+  /// The parser recurses once per nested group, so an unbounded pattern would
+  /// exhaust the Dart stack. Patterns nested deeper than this are unsupported,
+  /// so [build] returns `null` for them as it does for any other unsupported
+  /// construct.
+  static const _maxGroupDepth = 32;
+
+  static const _metaCharacters = <String>{
+    '.',
+    '^',
+    r'$',
+    '*',
+    '+',
+    '?',
+    '(',
+    ')',
+    '[',
+    ']',
+    '{',
+    '}',
+    '|',
+  };
+  static const _classSpecials = <String>{'"', '\\', '[', ']', '^', '-'};
+
+  final String Function(String name, String rule) _addRule;
+  final String _name;
+  final Map<String, String> _subRuleIds = {};
+
+  String _source = '';
+  int _pos = 0;
+  int _groupDepth = 0;
+
+  /// Returns the GBNF expression for [pattern], or `null` if it is outside the
+  /// supported subset.
+  String? build(String pattern) {
+    if (!pattern.startsWith('^') || !pattern.endsWith(r'$')) {
+      return null;
+    }
+    _source = pattern.substring(1, pattern.length - 1);
+    _pos = 0;
+    final branches = _alternationBranches();
+    if (branches == null || branches.length != 1 || _pos != _source.length) {
+      return null;
+    }
+    return branches.single;
+  }
+
+  String? _alternation() {
+    final branches = _alternationBranches();
+    if (branches == null) return null;
+    return branches.join(' | ');
+  }
+
+  List<String>? _alternationBranches() {
+    final branches = <String>[];
+    while (true) {
+      final branch = _sequence();
+      if (branch == null) return null;
+      branches.add(branch);
+      if (_pos < _source.length && _source[_pos] == '|') {
+        _pos++;
+        continue;
+      }
+      return branches;
+    }
+  }
+
+  String? _sequence() {
+    final parts = <String>[];
+    while (_pos < _source.length) {
+      final char = _source[_pos];
+      if (char == '|' || char == ')') break;
+      String? atom;
+      if (char == '(') {
+        atom = _group();
+      } else if (char == '[') {
+        atom = _characterClass();
+      } else if (_isQuantifierStart(char) ||
+          char == '.' ||
+          char == '^' ||
+          char == r'$') {
+        return null;
+      } else {
+        atom = _literalRun();
+      }
+      if (atom == null) return null;
+      final quantified = _quantified(atom);
+      if (quantified == null) return null;
+      parts.add(quantified);
+    }
+    if (parts.isEmpty) return null;
+    return parts.join(' ');
+  }
+
+  String? _group() {
+    if (_groupDepth >= _maxGroupDepth) return null;
+    var next = _pos + 1;
+    if (next < _source.length && _source[next] == '?') {
+      if (next + 1 < _source.length && _source[next + 1] == ':') {
+        next += 2;
+      } else {
+        return null;
+      }
+    }
+    _pos = next;
+    _groupDepth++;
+    final inner = _alternation();
+    _groupDepth--;
+    if (inner == null) return null;
+    if (_pos >= _source.length || _source[_pos] != ')') return null;
+    _pos++;
+    return '($inner)';
+  }
+
+  String? _characterClass() {
+    var next = _pos + 1;
+    final buffer = StringBuffer('[');
+    var items = 0;
+    while (true) {
+      if (next >= _source.length) return null;
+      final char = _source[next];
+      if (char == ']') {
+        next++;
+        break;
+      }
+      if (char == '-' &&
+          next + 1 < _source.length &&
+          _source[next + 1] == ']') {
+        buffer.write('-');
+        next++;
+        items++;
+        continue;
+      }
+      if (!_isClassChar(char)) return null;
+      if (next + 2 < _source.length &&
+          _source[next + 1] == '-' &&
+          _source[next + 2] != ']') {
+        final end = _source[next + 2];
+        if (!_isClassChar(end) ||
+            !_isSafeRange(char.codeUnitAt(0), end.codeUnitAt(0))) {
+          return null;
+        }
+        buffer.write('$char-$end');
+        next += 3;
+      } else {
+        buffer.write(char);
+        next++;
+      }
+      items++;
+    }
+    if (items == 0) return null;
+    buffer.write(']');
+    _pos = next;
+    return buffer.toString();
+  }
+
+  String? _literalRun() {
+    final chars = <String>[];
+    final starts = <int>[];
+    while (_pos < _source.length) {
+      final start = _pos;
+      final char = _literalChar();
+      if (char == null) break;
+      chars.add(char);
+      starts.add(start);
+    }
+    if (chars.isEmpty) return null;
+    if (chars.length > 1 &&
+        _pos < _source.length &&
+        _isQuantifierStart(_source[_pos])) {
+      _pos = starts.last;
+      chars.removeLast();
+    }
+    return '"${chars.join()}"';
+  }
+
+  String? _literalChar() {
+    final char = _source[_pos];
+    if (char == '\\') {
+      if (_pos + 1 >= _source.length) return null;
+      final escaped = _source[_pos + 1];
+      if (!_metaCharacters.contains(escaped) && escaped != '/') return null;
+      _pos += 2;
+      return escaped;
+    }
+    if (!_isLiteralChar(char)) return null;
+    _pos++;
+    return char;
+  }
+
+  String? _quantified(String atom) {
+    if (_pos >= _source.length) return atom;
+    final char = _source[_pos];
+    if (char == '*' || char == '+' || char == '?') {
+      _pos++;
+      if (_pos < _source.length && _isQuantifierStart(_source[_pos])) {
+        return null;
+      }
+      return '$atom$char';
+    }
+    if (char != '{') return atom;
+    final closing = _source.indexOf('}', _pos);
+    if (closing == -1) return null;
+    final bounds = _source.substring(_pos + 1, closing).split(',');
+    if (bounds.length > 2) return null;
+    final min = _parseCount(bounds.first);
+    if (min == null) return null;
+    int? max;
+    if (bounds.length == 1) {
+      max = min;
+    } else if (bounds[1].isNotEmpty) {
+      max = _parseCount(bounds[1]);
+      if (max == null) return null;
+    }
+    if (max != null && (max == 0 || max < min)) return null;
+    _pos = closing + 1;
+    if (_pos < _source.length && _isQuantifierStart(_source[_pos])) return null;
+    return _buildRepetition(_subRule(atom), min, max);
+  }
+
+  String _subRule(String atom) => _subRuleIds.putIfAbsent(
+    atom,
+    () => _addRule('$_name-${_subRuleIds.length + 1}', atom),
+  );
+
+  static bool _isQuantifierStart(String char) =>
+      char == '*' || char == '+' || char == '?' || char == '{';
+
+  static bool _isLiteralChar(String char) {
+    final code = char.codeUnitAt(0);
+    if (code < 0x20 || code > 0x7E) return false;
+    return char != '"' && char != '\\' && !_metaCharacters.contains(char);
+  }
+
+  static bool _isClassChar(String char) {
+    final code = char.codeUnitAt(0);
+    if (code < 0x20 || code > 0x7E) return false;
+    return !_classSpecials.contains(char);
+  }
+
+  /// Whether [end] is not below [start] and the inclusive range between them
+  /// excludes the two code units a GBNF character class must never admit
+  /// inside a JSON string: `"` (0x22) and `\` (0x5C).
+  static bool _isSafeRange(int start, int end) {
+    if (end < start) return false;
+    if (start <= 0x22 && 0x22 <= end) return false;
+    if (start <= 0x5C && 0x5C <= end) return false;
+    return true;
+  }
+
+  static int? _parseCount(String value) {
+    if (value.isEmpty || value.length > 4) return null;
+    for (final unit in value.codeUnits) {
+      if (unit < 0x30 || unit > 0x39) return null;
+    }
+    final count = int.parse(value);
+    return count > _maxRepetitionCount ? null : count;
   }
 }
 
