@@ -158,6 +158,35 @@ void main() {
     }
   });
 
+  test('buildWrappedArrayGrammar constrains the id key with idPattern', () {
+    final tools = [
+      ToolDefinition(
+        name: 'weather',
+        description: 'Weather lookup',
+        parameters: [ToolParam.string('city', required: true)],
+        handler: _noop,
+      ),
+    ];
+
+    final grammar = ToolCallGrammarUtils.buildWrappedArrayGrammar(
+      tools: tools,
+      prefix: '[TOOL_CALLS]',
+      suffix: '',
+      idKey: 'id',
+      idPattern: r'^[a-zA-Z0-9]{9}$',
+    );
+
+    expect(
+      grammar,
+      contains('root-item-id ::= "\\"" (root-item-id-1{9,9}) "\\"" space'),
+    );
+    expect(grammar, contains('root-item-id-1 ::= [a-zA-Z0-9]'));
+    expect(
+      grammar,
+      contains('root-item-id-kv ::= "\\"id\\"" space ":" space root-item-id'),
+    );
+  });
+
   test('buildWrappedObjectGrammar supports multiple tools and key aliases', () {
     final tools = [
       ToolDefinition(

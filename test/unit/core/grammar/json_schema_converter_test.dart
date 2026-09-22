@@ -1,6 +1,8 @@
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
+const _maxCount = 1024;
+
 void main() {
   group('JsonSchemaConverter', () {
     test('converts simple string schema', () {
@@ -159,6 +161,196 @@ void main() {
       });
       expect(grammar, contains('root ::='));
       expect(grammar, contains('char'));
+    });
+
+    test('converts an anchored character-class repetition pattern', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'string',
+        'pattern': r'^[a-zA-Z0-9]{9}$',
+      });
+
+      expect(
+        grammar,
+        equals(
+          'root ::= "\\"" (root-1{9,9}) "\\"" space\n'
+          'root-1 ::= [a-zA-Z0-9]\n'
+          '${r'space ::= | " " | "\n"{1,2} [ \t]{0,20}'}\n',
+        ),
+      );
+    });
+
+    test('converts pattern groups, alternation and quantifiers', () {
+      String rootOf(String pattern) => JsonSchemaConverter.convert({
+        'type': 'string',
+        'pattern': pattern,
+      }).split('\n').first;
+
+      expect(rootOf(r'^abc$'), equals('root ::= "\\"" ("abc") "\\"" space'));
+      expect(
+        rootOf(r'^(foo|bar)$'),
+        equals('root ::= "\\"" (("foo" | "bar")) "\\"" space'),
+      );
+      expect(
+        rootOf(r'^x(?:y|z)w$'),
+        equals('root ::= "\\"" ("x" ("y" | "z") "w") "\\"" space'),
+      );
+      expect(
+        rootOf(r'^ab+c$'),
+        equals('root ::= "\\"" ("a" "b"+ "c") "\\"" space'),
+      );
+      expect(
+        rootOf(r'^a?b*$'),
+        equals('root ::= "\\"" ("a"? "b"*) "\\"" space'),
+      );
+      expect(rootOf(r'^a\.b$'), equals('root ::= "\\"" ("a.b") "\\"" space'));
+      expect(
+        rootOf(r'^[a-z0-9-]+$'),
+        equals('root ::= "\\"" ([a-z0-9-]+) "\\"" space'),
+      );
+      expect(
+        rootOf(r'^[ -!]+$'),
+        equals('root ::= "\\"" ([ -!]+) "\\"" space'),
+      );
+      expect(
+        rootOf('^a{$_maxCount}\$'),
+        equals('root ::= "\\"" (root-1{$_maxCount,$_maxCount}) "\\"" space'),
+      );
+      expect(
+        rootOf(r'^[0-9]{2}$'),
+        equals('root ::= "\\"" (root-1{2,2}) "\\"" space'),
+      );
+      expect(
+        rootOf(r'^[0-9]{2,}$'),
+        equals('root ::= "\\"" (root-1{2,}) "\\"" space'),
+      );
+      expect(
+        rootOf(r'^(?:ab){2,3}$'),
+        equals('root ::= "\\"" (root-1{2,3}) "\\"" space'),
+      );
+    });
+
+    test('falls back to the plain string rule for unsupported patterns', () {
+      final plain = JsonSchemaConverter.convert({'type': 'string'});
+
+      const unsupported = [
+        '[a-z]+',
+        r'^[a-z]+',
+        r'\d{3}$',
+        r'^\d{3}$',
+        r'^\w+$',
+        r'^\s$',
+        r'^a\bb$',
+        r'^.{3}$',
+        r'^[^"]+$',
+        r'^[\x00-\x1f]$',
+        r'^(?=x)a$',
+        r'^(a)\1$',
+        r'^a\\b$',
+        r'^"$',
+        r'^a{3,2}$',
+        r'^a{0}$',
+        r'^a{}$',
+        r'^a{2$',
+        r'^a**$',
+        r'^*a$',
+        r'^(ab$',
+        r'^ab)$',
+        r'^[a-z$',
+        r'^[]$',
+        r'^()$',
+        r'^a|$',
+        r'^$',
+        r'^é$',
+        r'^a|b$',
+        r'^(a|b)|c$',
+        r'^[ -~]+$',
+        r'^[!-~]+$',
+        r'^[A-_]$',
+        r'^[X-a]+$',
+        r'^[ -~]{2}$',
+        r'^[a-z]{2}\d$',
+        r'^(?:ab){2}\d$',
+        '^a{${_maxCount + 1}}\$',
+        r'^a{10000}$',
+      ];
+
+      for (final pattern in unsupported) {
+        expect(
+          JsonSchemaConverter.convert({'type': 'string', 'pattern': pattern}),
+          equals(plain),
+          reason: 'pattern $pattern must not constrain the string rule',
+        );
+      }
+    });
+
+    test('applies pattern in preference to minLength/maxLength', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'string',
+        'pattern': r'^[a-z]{2}$',
+        'minLength': 5,
+        'maxLength': 8,
+      });
+
+      expect(grammar, startsWith('root ::= "\\"" (root-1{2,2}) "\\"" space'));
+      expect(grammar, contains('root-1 ::= [a-z]'));
+      expect(grammar, isNot(contains('char')));
+    });
+
+    test('applies pattern to a schema without an explicit type', () {
+      final grammar = JsonSchemaConverter.convert({'pattern': r'^[a-z]{2}$'});
+
+      expect(grammar, startsWith('root ::= "\\"" (root-1{2,2}) "\\"" space'));
+    });
+
+    test('keeps minLength/maxLength when the pattern is unsupported', () {
+      expect(
+        JsonSchemaConverter.convert({
+          'type': 'string',
+          'pattern': r'^\d+$',
+          'minLength': 5,
+          'maxLength': 8,
+        }),
+        equals(
+          JsonSchemaConverter.convert({
+            'type': 'string',
+            'minLength': 5,
+            'maxLength': 8,
+          }),
+        ),
+      );
+    });
+
+    test('falls back without leaving hoisted sub-rules behind', () {
+      final plain = JsonSchemaConverter.convert({'type': 'string'});
+
+      expect(
+        JsonSchemaConverter.convert({
+          'type': 'string',
+          'pattern': r'^[a-z]{2}\d$',
+        }),
+        equals(plain),
+      );
+      expect(JsonSchemaConverter.convert({'pattern': r'^\d+$'}), equals(plain));
+    });
+
+    test('constrains a pattern-bearing object property', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'pattern': r'^[a-zA-Z0-9]{9}$'},
+        },
+        'required': ['id'],
+      });
+
+      expect(
+        grammar,
+        contains('root-id ::= "\\"" (root-id-1{9,9}) "\\"" space'),
+      );
+      expect(grammar, contains('root-id-1 ::= [a-zA-Z0-9]'));
+      expect(
+        grammar,
+        contains('root-id-kv ::= "\\"id\\"" space ":" space root-id'),
+      );
     });
 
     test(r'handles $ref resolution', () {
