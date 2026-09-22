@@ -625,6 +625,23 @@ void main() {
       expect(lastModelBytesHint, 3 * 1024 * 1024 * 1024);
     });
 
+    test('the size hint ceiling that auto-enables mem64 is 2 GiB', () async {
+      const ceiling = 2 * 1024 * 1024 * 1024;
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(modelBytesHint: ceiling - 1),
+      );
+      expect(capturedPreferMemory64(), isNull);
+
+      await backend.dispose();
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(modelBytesHint: ceiling),
+      );
+      expect(capturedPreferMemory64(), isTrue);
+    });
+
     test('leaves mem64 unset for a sub-ceiling size hint', () async {
       // Selection is size-driven, not model-name based: a known-large model
       // name with a small/absent hint must NOT force mem64.

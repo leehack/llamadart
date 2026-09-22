@@ -252,6 +252,52 @@ void main() {
     });
   });
 
+  group('remote fetch abort detection', () {
+    test('a core abort note during a fetch attempt counts as an abort', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm32',
+          errorText: 'out of memory',
+          runtimeNotes: 'model_fetch_backend_attempt;core_abort',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+      expect(decision.escalation.retriedWithoutRemoteFetchBackend, isTrue);
+      expect(decision.forceRemoteFetchBackend, isFalse);
+      expect(decision.logMessages, <String>[
+        'WebGpuLlamaBackend: fetch-backed model loading aborted on '
+            'wasm32; retrying with wasm64 core and streamed '
+            'network loading.',
+      ]);
+    });
+
+    test('a native abort error during a fetch attempt counts as an abort', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm32',
+          errorText: 'aborted(native code called abort())',
+          runtimeNotes: 'model_fetch_backend_attempt',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+      expect(decision.escalation.retriedWithoutRemoteFetchBackend, isTrue);
+      expect(decision.forceRemoteFetchBackend, isFalse);
+      expect(decision.logMessages, <String>[
+        'WebGpuLlamaBackend: fetch-backed model loading aborted on '
+            'wasm32; retrying with wasm64 core and streamed '
+            'network loading.',
+      ]);
+    });
+  });
+
   group('wasm32 restart after a wasm64 interop failure', () {
     test('latches the broken interop and clears both overrides', () {
       final decision = classifyWebGpuLoadFailure(
