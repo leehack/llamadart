@@ -2,6 +2,9 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 
 const _maxCount = 1024;
+const _maxGroupDepth = 32;
+
+String _nestedGroups(int depth) => '^${'(' * depth}a${')' * depth}\$';
 
 void main() {
   group('JsonSchemaConverter', () {
@@ -294,6 +297,50 @@ void main() {
       expect(grammar, startsWith('root ::= "\\"" (root-1{2,2}) "\\"" space'));
       expect(grammar, contains('root-1 ::= [a-z]'));
       expect(grammar, isNot(contains('char')));
+    });
+
+    test('a supported pattern discards minLength/maxLength', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'string',
+        'pattern': r'^[a-z]+$',
+        'maxLength': 10,
+      });
+
+      expect(grammar, startsWith('root ::= "\\"" ([a-z]+) "\\"" space'));
+      expect(
+        grammar,
+        equals(
+          JsonSchemaConverter.convert({
+            'type': 'string',
+            'pattern': r'^[a-z]+$',
+          }),
+        ),
+      );
+    });
+
+    test('compiles group nesting up to the depth bound', () {
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'string',
+        'pattern': _nestedGroups(_maxGroupDepth),
+      });
+
+      expect(grammar, contains('"a"'));
+      expect(grammar, isNot(contains('char')));
+    });
+
+    test('falls back past the group depth bound instead of overflowing', () {
+      final plain = JsonSchemaConverter.convert({'type': 'string'});
+
+      for (final depth in [_maxGroupDepth + 1, 512, 20000]) {
+        expect(
+          JsonSchemaConverter.convert({
+            'type': 'string',
+            'pattern': _nestedGroups(depth),
+          }),
+          equals(plain),
+          reason: '$depth nested groups must fall back, not throw',
+        );
+      }
     });
 
     test('applies pattern to a schema without an explicit type', () {

@@ -505,6 +505,13 @@ class _PatternGrammarBuilder {
 
   static const _maxRepetitionCount = 1024;
 
+  /// Maximum nesting depth of `(...)` groups the parser descends into.
+  ///
+  /// The parser recurses once per nested group, so an unbounded pattern would
+  /// exhaust the Dart stack. Patterns nested deeper than this are unsupported
+  /// and fall back to the unconstrained rule.
+  static const _maxGroupDepth = 32;
+
   static const _metaCharacters = <String>{
     '.',
     '^',
@@ -528,6 +535,7 @@ class _PatternGrammarBuilder {
 
   String _source = '';
   int _pos = 0;
+  int _groupDepth = 0;
 
   /// Returns the GBNF expression for [pattern], or `null` if it is outside the
   /// supported subset.
@@ -592,6 +600,7 @@ class _PatternGrammarBuilder {
   }
 
   String? _group() {
+    if (_groupDepth >= _maxGroupDepth) return null;
     var next = _pos + 1;
     if (next < _source.length && _source[next] == '?') {
       if (next + 1 < _source.length && _source[next + 1] == ':') {
@@ -601,7 +610,9 @@ class _PatternGrammarBuilder {
       }
     }
     _pos = next;
+    _groupDepth++;
     final inner = _alternation();
+    _groupDepth--;
     if (inner == null) return null;
     if (_pos >= _source.length || _source[_pos] != ')') return null;
     _pos++;

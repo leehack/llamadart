@@ -91,13 +91,16 @@
   attempt thread-count switch into one helper
   ([#361](https://github.com/leehack/llamadart/issues/361)).
 - Apply the JSON Schema `pattern` keyword when generating GBNF, for anchored
-  patterns built from literals, positive character classes, groups, grouped
-  alternation and `*`/`+`/`?`/`{m,n}` repetition; any other pattern falls back
-  to the rule the schema would have produced without it, so `minLength` and
-  `maxLength` still apply. A schema carrying `pattern` but no explicit `type`
-  now yields a string rule instead of throwing `Unrecognized schema`. Mistral
-  Nemo and Magistral tool-call ids are now grammar-constrained to exactly nine
-  alphanumerics
+  patterns built from literals, positive character classes, `(...)` groups
+  nested at most 32 deep, grouped alternation and `*`/`+`/`?`/`{m,n}`
+  repetition; any other pattern, including deeper nesting, falls back to the
+  rule the schema would have produced without it, so `minLength` and
+  `maxLength` still apply there. An applied pattern replaces
+  `minLength`/`maxLength` as it does in llama.cpp, so a schema carrying both
+  `pattern` and `maxLength` is no longer length-bounded. A schema carrying
+  `pattern` but no explicit `type` now yields a string rule instead of
+  throwing `Unrecognized schema`. Mistral Nemo and Magistral tool-call ids are
+  now grammar-constrained to exactly nine alphanumerics
   ([#582](https://github.com/leehack/llamadart/issues/582)).
 
 ## 0.8.24
