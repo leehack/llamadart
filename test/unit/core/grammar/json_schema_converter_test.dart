@@ -343,6 +343,19 @@ void main() {
       }
     });
 
+    test('keeps maxLength when nesting exceeds the group depth bound', () {
+      expect(
+        JsonSchemaConverter.convert({
+          'type': 'string',
+          'pattern': _nestedGroups(_maxGroupDepth + 1),
+          'maxLength': 10,
+        }),
+        equals(
+          JsonSchemaConverter.convert({'type': 'string', 'maxLength': 10}),
+        ),
+      );
+    });
+
     test('applies pattern to a schema without an explicit type', () {
       final grammar = JsonSchemaConverter.convert({'pattern': r'^[a-z]{2}$'});
 

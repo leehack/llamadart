@@ -508,8 +508,9 @@ class _PatternGrammarBuilder {
   /// Maximum nesting depth of `(...)` groups the parser descends into.
   ///
   /// The parser recurses once per nested group, so an unbounded pattern would
-  /// exhaust the Dart stack. Patterns nested deeper than this are unsupported
-  /// and fall back to the unconstrained rule.
+  /// exhaust the Dart stack. Patterns nested deeper than this are unsupported,
+  /// so [build] returns `null` for them as it does for any other unsupported
+  /// construct.
   static const _maxGroupDepth = 32;
 
   static const _metaCharacters = <String>{
