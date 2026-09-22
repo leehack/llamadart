@@ -224,9 +224,6 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Install Coverage tool
-        run: dart pub global activate coverage 1.15.1
-
       - name: Cache tiny GGUF test model
         id: tiny-gguf-cache
         uses: actions/cache@v6
@@ -276,7 +273,7 @@ jobs:
 
       - name: Format coverage
         run: |
-          dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
+          dart run tool/testing/format_lcov.dart --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
           dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 
       - name: Import Codecov uploader verification key

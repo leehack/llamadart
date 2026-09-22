@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:llamadart_validation/src/runtime_environment.dart';
+import 'package:llamadart_validation/src/speech_edge_fixtures.dart';
 import 'package:llamadart_validation/src/speech_runner.dart';
 import 'package:path/path.dart' as p;
 
@@ -104,11 +105,29 @@ Future<void> main(List<String> args) async {
         ).writeAsBytes(bytes);
       },
     );
+    final edgeFixtures = audio == null
+        ? const <SpeechEdgeFixture>[]
+        : buildSpeechEdgeFixtures(audio);
     final result = await runSpeechValidation(
       adapter,
       checkBytes: pack == 'stt',
+      edgeFixtures: edgeFixtures,
     );
     result.addAll({
+      'edge_fixtures': [
+        for (final fixture in edgeFixtures)
+          {
+            'id': fixture.id,
+            'bytes': fixture.bytes.length,
+            'sha256': sha256.convert(fixture.bytes).toString(),
+            'sample_rate_hz': fixture.sampleRateHz,
+            'channels': fixture.channelCount,
+            'audio_seconds': fixture.seconds,
+            'contract': fixture.contract.name,
+            'reference_repeats': fixture.referenceRepeats,
+            'rationale': fixture.rationale,
+          },
+      ],
       'pack': pack,
       'requested_backend': backend.name,
       'accelerator_execution_verified': false,

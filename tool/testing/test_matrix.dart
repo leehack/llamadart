@@ -126,7 +126,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers: '>=70% line coverage for maintainable lib/ code',
     command:
         'dart test -p vm --coverage=coverage; '
-        'dart pub global run coverage:format_coverage --lcov '
+        'dart run tool/testing/format_lcov.dart --lcov '
         '--in=coverage/test --out=coverage/lcov.info --report-on=lib '
         '--check-ignore; '
         'dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70',
