@@ -359,6 +359,28 @@ void main() {
       expect(backend.cancelGenerationCalls, 1);
     });
 
+    test('frees the engine lease before the task reports done', () async {
+      backend.blockGeneration = true;
+      await _loadSpeechModel(llamaEngine);
+
+      final cancelled = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      await backend.generationStarted.future;
+      cancelled.cancel();
+      backend.releaseGeneration();
+      expect(
+        (await cancelled.done).state,
+        SpeechToTextCompletionState.cancelled,
+      );
+
+      backend.blockGeneration = false;
+      final next = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      expect((await next.done).state, SpeechToTextCompletionState.completed);
+    });
+
     test(
       'keeps cancellation authoritative when backend cancel throws',
       () async {
