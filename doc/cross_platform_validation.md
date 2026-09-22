@@ -985,14 +985,18 @@ input/recovery, independent reload and cleanup. Three further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
 measured cancellation latency and peak resident set against the budgets
 documented in `packages/llamadart_validation/assets/speech/README.md`. Each
-cancellation is issued once the generation it cancels is already running, after
-half of the run's most recent completed generation has elapsed; a run whose
-adapter reports otherwise fails. Exceeding either budget fails the run; a host
-where resident memory cannot be measured records the memory bound as `SKIP`
-with a reason, and that is the only check a passing run may leave unmeasured.
-The `tts` pack fails the latency bound. GGUF STT additionally compares
-file and bytes inputs. TTS rejects silent, nonfinite or truncated output;
-playability is not a listening-quality assertion. Its first playable audio is
+adapter times its cancellation to land in running work: the GGUF adapter waits
+half of the run's most recent completed generation, while the dedicated LiteRT
+adapter pushes PCM until the first partial transcript arrives or the fixture is
+exhausted. A run fails unless every cancellation reports `cancel_in_flight`,
+which records that the task had not reached a terminal state at that moment,
+not that its generation had begun. Exceeding either budget fails the run; a
+host where resident memory cannot be measured records the memory bound as
+`SKIP` with a reason, and that is the only check a passing run may leave
+unmeasured. The `tts` pack meets the latency bound on Metal and fails it on
+CPU. GGUF STT additionally compares file and bytes inputs. TTS rejects silent,
+nonfinite or truncated output; playability is not a listening-quality
+assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the
 transcript and chat response and writes the synthesized response WAV.
 
