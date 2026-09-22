@@ -91,6 +91,12 @@
   tool call unless parallel tool calls are enabled; it previously always
   allowed repeats while the parser kept only one call
   ([#562](https://github.com/leehack/llamadart/issues/562)).
+- Pin the WebGPU model-load retry ladder with browser tests for the ladder
+  advance, the wasm64 BigInt restart on wasm32, the restart without the remote
+  fetch backend, and forced remote-fetch chunk halving stopping on both its
+  ten-restart cap and its 4 KiB minimum chunk, then collapse the duplicated
+  attempt thread-count switch into one helper
+  ([#361](https://github.com/leehack/llamadart/issues/361)).
 
 ## 0.8.24
 
