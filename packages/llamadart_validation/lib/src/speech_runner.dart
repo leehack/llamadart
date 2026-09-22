@@ -64,12 +64,12 @@ abstract interface class SpeechValidationAdapter {
   Future<void> load();
   Future<void> dispose();
 
-  /// With `cancel`, issues the cancellation once the work it cancels is
-  /// already running, and reports `cancel_latency_ms`, `cancel_after_ms` and
-  /// `cancel_in_flight`. With `cancelImmediately`, issues it as soon as the
-  /// task is handed back, without yielding first, and reports
-  /// `cancel_latency_ms`, `cancel_after_ms` and `cancel_immediate`. Setting
-  /// both throws [ArgumentError].
+  /// With `cancel`, cancels after a wait and reports `cancel_latency_ms`,
+  /// `cancel_after_ms` and `cancel_in_flight`, which is true only if the
+  /// adapter had not seen the task finish when it cancelled. With
+  /// `cancelImmediately`, cancels as soon as the task is handed back, without
+  /// yielding first, and reports `cancel_latency_ms`, `cancel_after_ms` and
+  /// `cancel_immediate`. Setting both throws [ArgumentError].
   Future<Map<String, Object?>> execute({
     bool cancel = false,
     bool cancelImmediately = false,
@@ -415,55 +415,37 @@ const speechLifecycleCheckCount = 15;
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = 3;
 
-/// Fraction of the run's most recent completed generation that
-/// [PublicSpeechValidationAdapter] lets elapse before it cancels, so the
-/// cancellation reaches a generation that is already running rather than one
-/// that has not begun.
+/// How long [PublicSpeechValidationAdapter] waits before cancelling with
+/// `cancel`, as a fraction of the elapsed time of its most recent completed
+/// generation.
 ///
 /// [PublicDedicatedSpeechAdapter] does not use it: that adapter pushes PCM
 /// until the first partial transcript arrives, or until the fixture is
 /// exhausted, and cancels there.
 const speechCancelInFlightLeadFraction = 0.5;
 
-/// Milliseconds allowed between an in-flight cancellation and the speech task
-/// reaching a terminal state, enforced on every in-flight cancellation a run
-/// performs.
-///
-/// Derived from the `stt` pack on macOS arm64: 80 in-flight cancellations over
-/// 20 runs, 10 on Metal and 10 on CPU, spanned 0.244 ms to 129.741 ms. The
-/// budget is about 3.9x that worst case, which the CPU backend sets on its own:
-/// its 40 cancellations spanned 98.312 ms to 129.741 ms, against 0.244 ms to
-/// 2.413 ms on Metal.
+/// Milliseconds allowed from a `cancel` cancellation to the speech task's
+/// terminal state.
 ///
 /// It bounds when the task becomes terminal to its caller, not when native
-/// decoding stops, and it exceeds one Metal generation on this host, so it
-/// cannot by itself separate a cancellation from a generation left to finish.
+/// work stops, so a cancellation honoured only after the generation finishes
+/// can still pass it.
 const speechCancelLatencyBudgetMs = 500.0;
 
-/// Milliseconds allowed between a cancellation issued as soon as the task is
-/// handed back and the task reaching a terminal state, enforced on every such
-/// cancellation a run performs.
+/// Milliseconds allowed from a `cancelImmediately` cancellation to the speech
+/// task's terminal state.
 ///
-/// Derived from the `tts` pack on macOS arm64. With the worker's check for a
-/// cancellation that arrives before native setup removed, such a cancellation
-/// waited for `llama_dart_tts_start` and took at most 216.120 ms. With the
-/// library changes of [#596](https://github.com/leehack/llamadart/pull/596)
-/// reverted, which drops it as in
-/// [#595](https://github.com/leehack/llamadart/issues/595), it took at least
-/// 1234.954 ms. The budget is about 2.3x the first and 2.5x below the second.
-///
-/// It exceeds a whole `stt` generation on Metal on that host, so on that pack
-/// and backend it cannot by itself separate a cancellation from a generation
-/// left to finish.
+/// As with [speechCancelLatencyBudgetMs], a cancellation honoured only after
+/// the generation finishes can still pass it.
 const speechImmediateCancelLatencyBudgetMs = 500.0;
 
-/// Ceiling on the largest resident set sampled after any check that follows
-/// the first generation, as a multiple of the resident set sampled immediately
-/// after that generation.
+/// Ceiling on the largest resident set sampled after the checks between
+/// `generate` and `peak_memory_bound`, as a multiple of the resident set
+/// sampled right after `generate`. Growth equal to it passes.
 ///
-/// Every later check contributes a sample, whatever phase it exercised, so the
-/// peak is the maximum over heterogeneous phases rather than over generations
-/// alone.
+/// Every check in that span contributes a sample, whatever phase it exercised,
+/// so the peak is the maximum over heterogeneous phases rather than over
+/// generations alone.
 const speechPeakRssGrowthBudget = 1.10;
 
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
@@ -472,14 +454,17 @@ const speechPeakRssGrowthBudget = 1.10;
 /// that also implements [SpeechEdgeCaseAdapter]. Runs that pass none keep their
 /// previous check count.
 ///
-/// The single-shot checks and every cleanup cycle each cancel twice: once as
-/// soon as the task is handed back, which must report `cancel_immediate` as
-/// true, and once in flight, which must report `cancel_in_flight` as true.
-/// Both must also report `cancel_latency_ms` and `cancel_after_ms`; a run
-/// whose adapter reports anything else fails that check. [residentBytes]
-/// samples whole-process resident memory after each check. When it yields
-/// nothing usable `peak_memory_bound` records `SKIP` with a reason, and that
-/// check is the only one a passing run may leave unmeasured.
+/// The single-shot checks and every cleanup cycle each call
+/// [SpeechValidationAdapter.execute] once with `cancelImmediately`, which must
+/// report `cancel_immediate` as true, and once with `cancel`, which must report
+/// `cancel_in_flight` as true. Each must report `cancelled` as true and a
+/// finite, non-negative `cancel_latency_ms` and `cancel_after_ms`, and the
+/// second a nonzero `cancel_after_ms`; otherwise that check fails.
+///
+/// [residentBytes] is called after each check. If any call made before
+/// `peak_memory_bound` runs returns null, that check records `SKIP` with a
+/// reason. It is the only check that may `SKIP` in a run whose
+/// `functional_pass` is true.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(

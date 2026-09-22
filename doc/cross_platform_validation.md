@@ -981,25 +981,18 @@ Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
-input/recovery, independent reload and cleanup. Three further
+input/recovery, independent reload and cleanup. Further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
 measured cancellation latency and peak resident set against the budgets
-documented in `packages/llamadart_validation/assets/speech/README.md`. The
-single-shot checks and every cycle each cancel twice. The immediate
-cancellation is issued as soon as the task is handed back, the window where
-[#595](https://github.com/leehack/llamadart/issues/595) dropped `tts`
-cancellations until [#596](https://github.com/leehack/llamadart/pull/596). The
-in-flight one lands in running work: the GGUF adapter waits half of the run's
-most recent completed generation, while the dedicated LiteRT adapter pushes PCM
-until the first partial transcript arrives or the fixture is exhausted. A run
-fails unless every in-flight cancellation reports `cancel_in_flight`, which
-records that the task had not reached a terminal state at that moment, not that
-its generation had begun. Exceeding any budget fails the run; a host where
-resident memory cannot be measured records the memory bound as `SKIP` with a
-reason, and that is the only check a passing run may leave unmeasured. On macOS
-arm64 the `tts` pack meets both latency bounds on Metal and fails the in-flight
-bound on CPU, where that cancellation arrives during the final native synthesis
-step and waits for it, and the dedicated LiteRT ASR pack fails the memory bound.
+described in `packages/llamadart_validation/assets/speech/README.md`. The
+single-shot checks and every cycle each cancel twice: once as soon as the task
+is handed back, the window in which `tts` cancellations were dropped until
+[#596](https://github.com/leehack/llamadart/pull/596), and once after a wait.
+The second must report `cancel_in_flight`, which is true only if the adapter
+had not seen the task finish when it cancelled; it cannot show that the
+generation had begun. Exceeding any budget fails the run; if resident memory
+cannot be sampled, the memory bound records `SKIP` with a reason, and that is
+the only check a passing run may leave unmeasured.
 GGUF STT additionally compares file and bytes inputs.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
