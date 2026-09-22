@@ -71,6 +71,3 @@ and Dart allocations together, what it counts is platform dependent, and it does
 not exist without `dart:io`. If any sample taken before `peak_memory_bound` is
 unavailable, that check records `SKIP` with a reason and
 `bounds.peak_resident_bytes.measured` is `false`; it never passes silently.
-
-A run that exceeds a budget is a finding to investigate, not a reason to raise
-the budget.
