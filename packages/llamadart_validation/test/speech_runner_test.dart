@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/src/speech_edge_fixtures.dart';
 import 'package:llamadart_validation/src/speech_runner.dart';
 import 'package:test/test.dart';
 
@@ -44,6 +45,17 @@ class FakeSpeech implements SpeechValidationAdapter {
       throw invalidError ?? ArgumentError('invalid');
     }
     return {'predicate_passed': !wrongWords, if (cancel) 'cancelled': true};
+  }
+}
+
+class FakeEdgeSpeech extends FakeSpeech implements SpeechEdgeCaseAdapter {
+  FakeEdgeSpeech({this.failEdge});
+  final String? failEdge;
+
+  @override
+  Future<Map<String, Object?>> executeEdge(SpeechEdgeFixture fixture) async {
+    calls.add('edge:${fixture.id}');
+    return {'predicate_passed': fixture.id != failEdge};
   }
 }
 
@@ -186,6 +198,220 @@ void main() {
       expect(adapter.calls.last, 'dispose');
     }
   });
+  test('edge fixtures describe the inputs they encode', () {
+    final source = File('assets/speech/jfk.wav').readAsBytesSync();
+    final fixtures = buildSpeechEdgeFixtures(Uint8List.fromList(source));
+    expect(fixtures.map((fixture) => fixture.id), [
+      'edge_silence',
+      'edge_truncated_riff',
+      'edge_stereo_44100',
+      'edge_long_boundary',
+    ]);
+    for (final fixture in fixtures) {
+      expect(fixture.bytes.length, lessThanOrEqualTo(speechFixtureByteCap));
+      expect(String.fromCharCodes(fixture.bytes.sublist(0, 4)), 'RIFF');
+      expect(String.fromCharCodes(fixture.bytes.sublist(8, 12)), 'WAVE');
+      expect(
+        fixture.rejectionMessage != null,
+        fixture.contract == SpeechEdgeContract.typedRejection,
+      );
+    }
+    final byId = {for (final fixture in fixtures) fixture.id: fixture};
+    expect(
+      byId['edge_silence']!.rejectionMessage,
+      'Speech recognition produced an empty transcript.',
+    );
+    expect(
+      byId['edge_truncated_riff']!.contract,
+      SpeechEdgeContract.unrelatedTranscriptOrFormatRejection,
+    );
+    expect(
+      speechFixtureSeconds(byId['edge_silence']!.bytes),
+      byId['edge_silence']!.seconds,
+    );
+    expect(
+      speechFixtureSeconds(byId['edge_long_boundary']!.bytes),
+      byId['edge_long_boundary']!.seconds,
+    );
+    expect(byId['edge_long_boundary']!.seconds, greaterThan(30));
+    expect(
+      byId['edge_long_boundary']!.referenceRepeats,
+      greaterThanOrEqualTo(2),
+    );
+    for (final id in ['edge_stereo_44100', 'edge_truncated_riff']) {
+      expect(
+        () => speechFixtureSeconds(byId[id]!.bytes),
+        throwsFormatException,
+      );
+    }
+    final silence = byId['edge_silence']!.bytes;
+    expect(silence.sublist(44).every((byte) => byte == 0), isTrue);
+    final truncated = byId['edge_truncated_riff']!.bytes;
+    expect(truncated, source.sublist(0, truncated.length));
+    expect(
+      ByteData.sublistView(truncated).getUint32(4, Endian.little) + 8,
+      greaterThan(truncated.length),
+    );
+    final stereo = ByteData.sublistView(byId['edge_stereo_44100']!.bytes);
+    expect(stereo.getUint16(22, Endian.little), 2);
+    expect(stereo.getUint32(24, Endian.little), 44100);
+    for (var frame = 0; frame < 2000; frame++) {
+      expect(
+        stereo.getInt16(44 + frame * 4, Endian.little),
+        stereo.getInt16(46 + frame * 4, Endian.little),
+      );
+    }
+  });
+  test('edge contracts credit exactly the outcome they name', () {
+    SpeechEdgeFixture fixtureFor(
+      SpeechEdgeContract contract, {
+      String? rejectionMessage,
+    }) => SpeechEdgeFixture(
+      id: contract.name,
+      bytes: Uint8List(0),
+      sampleRateHz: 16000,
+      channelCount: 1,
+      seconds: 1,
+      contract: contract,
+      referenceRepeats: 1,
+      rationale: 'table',
+      rejectionMessage: rejectionMessage,
+    );
+    const expectedMessage = 'Speech recognition produced an empty transcript.';
+    final rejecting = fixtureFor(
+      SpeechEdgeContract.typedRejection,
+      rejectionMessage: expectedMessage,
+    );
+    final unrelated = fixtureFor(SpeechEdgeContract.unrelatedTranscript);
+    final tolerant = fixtureFor(
+      SpeechEdgeContract.unrelatedTranscriptOrFormatRejection,
+    );
+    final repeated = fixtureFor(SpeechEdgeContract.repeatedReference);
+
+    expect(speechEdgeTranscriptHolds(rejecting, 0), isFalse);
+    expect(speechEdgeTranscriptHolds(rejecting, 1), isFalse);
+    expect(speechEdgeTranscriptHolds(unrelated, 0), isFalse);
+    expect(speechEdgeTranscriptHolds(unrelated, 0.25), isTrue);
+    expect(speechEdgeTranscriptHolds(tolerant, 0), isFalse);
+    expect(speechEdgeTranscriptHolds(tolerant, 0.25), isTrue);
+    expect(speechEdgeTranscriptHolds(repeated, 0), isTrue);
+    expect(speechEdgeTranscriptHolds(repeated, 0.25), isFalse);
+
+    bool rejectionHolds(
+      SpeechEdgeFixture fixture, {
+      required String message,
+      required bool isAudioFormat,
+    }) => speechEdgeRejectionHolds(
+      fixture,
+      message: message,
+      isAudioFormat: isAudioFormat,
+    );
+    expect(
+      rejectionHolds(rejecting, message: expectedMessage, isAudioFormat: false),
+      isTrue,
+    );
+    expect(
+      rejectionHolds(
+        rejecting,
+        message: 'Speech recognition failed.',
+        isAudioFormat: false,
+      ),
+      isFalse,
+    );
+    expect(
+      rejectionHolds(
+        rejecting,
+        message: 'Speech recognition failed.',
+        isAudioFormat: true,
+      ),
+      isFalse,
+    );
+    expect(
+      rejectionHolds(tolerant, message: 'bad header', isAudioFormat: true),
+      isTrue,
+    );
+    expect(
+      rejectionHolds(tolerant, message: 'bad header', isAudioFormat: false),
+      isFalse,
+    );
+    for (final fixture in [unrelated, repeated]) {
+      for (final isAudioFormat in [true, false]) {
+        expect(
+          rejectionHolds(
+            fixture,
+            message: expectedMessage,
+            isAudioFormat: isAudioFormat,
+          ),
+          isFalse,
+        );
+      }
+    }
+  });
+  test('edge fixtures are opt-in and deliberately counted', () async {
+    final fixtures = buildSpeechEdgeFixtures(
+      Uint8List.fromList(File('assets/speech/jfk.wav').readAsBytesSync()),
+    );
+    final lifecycleOnly = await runSpeechValidation(FakeEdgeSpeech());
+    expect(lifecycleOnly['expected_checks'], speechLifecycleCheckCount);
+    expect(lifecycleOnly['edge_fixture_ids'], isEmpty);
+    expect(lifecycleOnly['functional_pass'], true);
+    final adapter = FakeEdgeSpeech();
+    final withEdges = await runSpeechValidation(
+      adapter,
+      checkBytes: true,
+      edgeFixtures: fixtures,
+    );
+    expect(
+      withEdges['expected_checks'],
+      speechLifecycleCheckCount + 1 + fixtures.length,
+    );
+    expect(withEdges['functional_pass'], true);
+    expect(
+      (withEdges['checks'] as List),
+      hasLength(withEdges['expected_checks']),
+    );
+    expect(adapter.calls, [
+      'load',
+      'execute',
+      'execute',
+      'cancel',
+      'execute',
+      'invalid',
+      'execute',
+      for (final fixture in fixtures) 'edge:${fixture.id}',
+      'dispose',
+      'load',
+      'execute',
+      'dispose',
+    ]);
+  });
+  test(
+    'a failing edge fixture cannot pass, and unsupported adapters throw',
+    () {
+      final fixtures = buildSpeechEdgeFixtures(
+        Uint8List.fromList(File('assets/speech/jfk.wav').readAsBytesSync()),
+      );
+      expect(
+        () => runSpeechValidation(FakeSpeech(), edgeFixtures: fixtures),
+        throwsArgumentError,
+      );
+      for (final fixture in fixtures) {
+        expectLater(
+          runSpeechValidation(
+            FakeEdgeSpeech(failEdge: fixture.id),
+            edgeFixtures: fixtures,
+          ).then((result) {
+            final checks = result['checks'] as List;
+            return [
+              result['functional_pass'],
+              checks.singleWhere((row) => row['id'] == fixture.id)['status'],
+            ];
+          }),
+          completion([false, 'FAIL']),
+        );
+      }
+    },
+  );
   test(
     'existing output directory is never modified on CLI rejection',
     () async {

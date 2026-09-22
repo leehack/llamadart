@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Extend the GGUF speech-to-text validation pack with four synthetic edge
+  fixtures built in-process, so no extra audio is stored: digital silence, plus
+  a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second concatenation
+  crossing the 30-second preprocessing boundary, all derived from the locked
+  `jfk.wav`. The checks are opt-in, so LiteRT-ASR and TTS runs keep their
+  existing check count
+  ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).
