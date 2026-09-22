@@ -7708,8 +7708,8 @@ class LlamaCppService {
     _activeTtsContextHandle = contextHandle;
     llama_set_embeddings(context.pointer, true);
     try {
-      // Yield once so a cancel already queued for this synthesis is observed
-      // before the uninterruptible native task setup begins.
+      // Yields so a cancel already queued for this synthesis can be processed
+      // before the native task setup, which cannot be interrupted.
       await Future<void>.delayed(Duration.zero);
       if (_ttsCancelPending) {
         _ttsCancelPending = false;
@@ -7874,7 +7874,6 @@ class LlamaCppService {
   void cancelTextToSpeech() {
     final task = _activeTts;
     if (task == nullptr) {
-      // No native task yet; latch so the starting synthesis honours it.
       _ttsCancelPending = true;
       return;
     }
