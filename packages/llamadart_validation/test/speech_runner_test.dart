@@ -49,7 +49,9 @@ class FakeSpeech implements SpeechValidationAdapter {
     if (invalid && !ignoreInvalid) {
       throw invalidError ?? ArgumentError('invalid');
     }
-    if (skipGenerate && !cancel && !invalid) return {'skipped': true};
+    if (skipGenerate && !cancel && !invalid) {
+      return {'skipped': true, if (wrongWords) 'predicate_passed': false};
+    }
     return {
       'predicate_passed': !wrongWords,
       if (cancel) 'cancelled': true,
@@ -427,6 +429,21 @@ void main() {
     );
     expect(generate['status'], 'SKIP');
     expect(skipping['functional_pass'], false);
+  });
+  test('a failed predicate outranks skipped in the status ladder', () async {
+    final hiding = await runSpeechValidation(
+      FakeSpeech()
+        ..skipGenerate = true
+        ..wrongWords = true,
+      residentBytes: stableResidentBytes,
+    );
+    final generate = (hiding['checks'] as List).singleWhere(
+      (row) => row['id'] == 'generate',
+    );
+    expect(generate['skipped'], isTrue);
+    expect(generate['predicate_passed'], isFalse);
+    expect(generate['status'], 'FAIL');
+    expect(hiding['functional_pass'], false);
   });
   test('resident growth past the budget fails the run', () async {
     var sample = 1000;
@@ -851,6 +868,8 @@ void main() {
     expect(cancelled['cancelled'], isTrue);
     expect(cancelled['cancel_in_flight'], isTrue);
     expect(cancelled['reference_generation_ms'], reference);
+    expect(speechCancelInFlightLeadFraction, greaterThan(0));
+    expect(speechCancelInFlightLeadFraction, lessThan(1));
     expect(
       cancelled['cancel_after_ms'],
       greaterThanOrEqualTo(reference * speechCancelInFlightLeadFraction),
