@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:llamadart/llamadart.dart';
 
 import 'runner.dart' show redactDiagnostic;
+import 'speech_edge_fixtures.dart';
 
 /// Word edit distance divided by reference words; insertions can exceed 1.0.
 /// Normalization ignores case and ASCII punctuation, preserving Unicode words.
@@ -67,8 +68,16 @@ abstract interface class SpeechValidationAdapter {
   });
 }
 
+/// Opt-in synthetic edge-case recognition; adapters without it keep their
+/// existing check count.
+abstract interface class SpeechEdgeCaseAdapter {
+  /// Recognizes one synthetic fixture and reports the measured outcome.
+  Future<Map<String, Object?>> executeEdge(SpeechEdgeFixture fixture);
+}
+
 /// Public GGUF speech adapter used by the portable speech runner.
-class PublicSpeechValidationAdapter implements SpeechValidationAdapter {
+class PublicSpeechValidationAdapter
+    implements SpeechValidationAdapter, SpeechEdgeCaseAdapter {
   PublicSpeechValidationAdapter({
     required this.model,
     required this.projector,
@@ -136,6 +145,71 @@ class PublicSpeechValidationAdapter implements SpeechValidationAdapter {
     final engine = _engine;
     _engine = null;
     await engine?.dispose();
+  }
+
+  @override
+  Future<Map<String, Object?>> executeEdge(SpeechEdgeFixture fixture) async {
+    if (pack != 'stt') {
+      throw StateError('Speech edge fixtures require the STT pack');
+    }
+    final engine = _engine ?? (throw StateError('Speech engine is not loaded'));
+    final measured = <String, Object?>{
+      'contract': fixture.contract.name,
+      'rationale': fixture.rationale,
+      'fixture_bytes': fixture.bytes.length,
+      'sample_rate_hz': fixture.sampleRateHz,
+      'channels': fixture.channelCount,
+      'audio_seconds': fixture.seconds,
+    };
+    final recognizer = SpeechToTextEngine(
+      engine,
+      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+    );
+    final watch = Stopwatch()..start();
+    final String transcript;
+    try {
+      final task = await recognizer.transcribe(
+        SpeechToTextRequest(
+          audio: SpeechAudioBytesInput(
+            fixture.bytes,
+            format: const SpeechAudioFormat(encoding: 'wav'),
+          ),
+          maxOutputTokens: 512,
+        ),
+      );
+      final events = await task.events.toList();
+      final completion = await task.done;
+      if (completion.state != SpeechToTextCompletionState.completed ||
+          events.whereType<SpeechToTextFinalEvent>().length != 1) {
+        throw StateError('Edge fixture did not emit one completed result');
+      }
+      transcript = completion.result!.text;
+    } on LlamaSpeechException catch (error) {
+      return {
+        ...measured,
+        'rejected_with': '${error.runtimeType}',
+        'message': redactDiagnostic(error.message),
+        'elapsed_ms': watch.elapsedMicroseconds / 1000,
+        'predicate_passed': speechEdgeRejectionHolds(
+          fixture,
+          message: error.message,
+          isAudioFormat: error is LlamaAudioFormatException,
+        ),
+      };
+    }
+    final expected = List.filled(
+      fixture.referenceRepeats < 1 ? 1 : fixture.referenceRepeats,
+      reference!,
+    ).join(' ');
+    final wer = speechWordErrorRate(expected, transcript);
+    return {
+      ...measured,
+      'transcript': transcript,
+      'reference_repeats': fixture.referenceRepeats,
+      'wer': wer,
+      'elapsed_ms': watch.elapsedMicroseconds / 1000,
+      'predicate_passed': speechEdgeTranscriptHolds(fixture, wer),
+    };
   }
 
   @override
@@ -249,13 +323,26 @@ class PublicSpeechValidationAdapter implements SpeechValidationAdapter {
   }
 }
 
+/// Lifecycle checks every [runSpeechValidation] run executes.
+const speechLifecycleCheckCount = 8;
+
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
+///
+/// [edgeFixtures] adds one check per synthetic fixture and requires an adapter
+/// that also implements [SpeechEdgeCaseAdapter]. Runs that pass none keep their
+/// previous check count.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
   SpeechValidationAdapter adapter, {
   bool checkBytes = false,
+  List<SpeechEdgeFixture> edgeFixtures = const [],
 }) async {
+  if (edgeFixtures.isNotEmpty && adapter is! SpeechEdgeCaseAdapter) {
+    throw ArgumentError('Adapter cannot execute speech edge fixtures');
+  }
+  final expectedChecks =
+      speechLifecycleCheckCount + (checkBytes ? 1 : 0) + edgeFixtures.length;
   final results = <Map<String, Object?>>[];
   Future<void> check(
     String id,
@@ -315,6 +402,12 @@ Future<Map<String, Object?>> runSpeechValidation(
         throw StateError('Invalid input did not produce a typed rejection');
       });
       await check('after_invalid', () => adapter.execute());
+      for (final fixture in edgeFixtures) {
+        await check(
+          fixture.id,
+          () => (adapter as SpeechEdgeCaseAdapter).executeEdge(fixture),
+        );
+      }
       await check('reload', () async {
         await adapter.dispose();
         await adapter.load();
@@ -331,8 +424,10 @@ Future<Map<String, Object?>> runSpeechValidation(
     'schema_version': 1,
     'kind': 'speech_validation',
     'functional_pass':
-        results.length == (checkBytes ? 9 : 8) &&
+        results.length == expectedChecks &&
         results.every((row) => row['status'] == 'PASS'),
+    'expected_checks': expectedChecks,
+    'edge_fixture_ids': [for (final fixture in edgeFixtures) fixture.id],
     'qualified': false,
     'qualification_reason':
         'Requires reference, platform/accelerator and perceptual evidence; see individual cases.',
@@ -346,7 +441,7 @@ double speechFixtureSeconds(Uint8List bytes) {
   String tag(int start) =>
       String.fromCharCodes(bytes.sublist(start, start + 4));
   if (bytes.length < 44 ||
-      bytes.length > 5000000 ||
+      bytes.length > speechFixtureByteCap ||
       tag(0) != 'RIFF' ||
       tag(8) != 'WAVE' ||
       data.getUint32(4, Endian.little) + 8 != bytes.length) {
