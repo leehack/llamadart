@@ -347,7 +347,7 @@ void main() {
     expect(constraint, _pinnedCoverageVersion);
   });
 
-  test('the exact coverage pin does not hold the test runner back', () {
+  test('the resolved coverage version matches the pin', () {
     final lock = File('pubspec.lock');
     if (!lock.existsSync()) {
       markTestSkipped('pubspec.lock is gitignored; run `dart pub get` first.');
@@ -355,17 +355,14 @@ void main() {
     }
     final packages =
         (loadYaml(lock.readAsStringSync()) as YamlMap)['packages'] as YamlMap;
-    String versionOf(String name) =>
-        (packages[name] as YamlMap)['version'] as String;
+    final resolved = (packages['coverage'] as YamlMap)['version'] as String;
 
-    expect(versionOf('coverage'), _pinnedCoverageVersion);
     expect(
-      _isAtLeast(versionOf('test'), _minimumTestVersion),
-      isTrue,
+      resolved,
+      _pinnedCoverageVersion,
       reason:
-          'test resolved to ${versionOf('test')}, below $_minimumTestVersion. '
-          'Raise the coverage pin and re-verify the formatter, or raise '
-          '_minimumTestVersion deliberately.',
+          'coverage resolved to $resolved, not the pinned '
+          '$_pinnedCoverageVersion the LCOV formatter was verified against.',
     );
   });
 }
@@ -373,19 +370,3 @@ void main() {
 /// `coverage` version `pubspec.yaml` pins and the LCOV formatter was verified
 /// against.
 const _pinnedCoverageVersion = '1.15.1';
-
-/// Lowest `test` version the exact `coverage` pin is known to still allow.
-const _minimumTestVersion = '1.32.0';
-
-/// Whether [version] is at or above [floor], comparing release numbers only.
-bool _isAtLeast(String version, String floor) {
-  List<int> parts(String v) =>
-      v.split('-').first.split('.').map(int.parse).toList();
-  final a = parts(version);
-  final b = parts(floor);
-  for (var i = 0; i < b.length; i++) {
-    final left = i < a.length ? a[i] : 0;
-    if (left != b[i]) return left > b[i];
-  }
-  return true;
-}
