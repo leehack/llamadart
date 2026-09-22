@@ -84,6 +84,12 @@
   tool call unless parallel tool calls are enabled; it previously always
   allowed repeats while the parser kept only one call
   ([#562](https://github.com/leehack/llamadart/issues/562)).
+- Pin the WebGPU model-load retry ladder with browser tests for the ladder
+  advance, the wasm64 BigInt restart on wasm32, the restart without the remote
+  fetch backend, and forced remote-fetch chunk halving stopping on both its
+  ten-restart cap and its 4 KiB minimum chunk, then collapse the duplicated
+  attempt thread-count switch into one helper
+  ([#361](https://github.com/leehack/llamadart/issues/361)).
 - Format CI coverage with `tool/testing/format_lcov.dart`, which shares one
   `Resolver` and one ignored-lines cache across every coverage JSON file
   instead of rebuilding both per file as `coverage:format_coverage` does. LCOV
