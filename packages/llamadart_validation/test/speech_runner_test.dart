@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -22,9 +23,13 @@ class FakeSpeech implements SpeechValidationAdapter {
   bool skipGenerate = false;
   double cancelLatencyMs = 1;
   double immediateCancelLatencyMs = 1;
+  List<double>? cancelLatenciesMs;
+  List<double>? immediateCancelLatenciesMs;
+  Map<String, Object?> inFlightReport = {};
   double inFlightLeadMs = 100;
   int? unmeasuredInFlightCancel;
   int inFlightCancels = 0;
+  int immediateCancels = 0;
   Object? invalidError;
   @override
   Future<void> load() async {
@@ -58,9 +63,12 @@ class FakeSpeech implements SpeechValidationAdapter {
       throw invalidError ?? ArgumentError('invalid');
     }
     if (cancelImmediately) {
+      final index = immediateCancels++;
       return {
         'cancelled': true,
-        if (reportCancelLatency) 'cancel_latency_ms': immediateCancelLatencyMs,
+        if (reportCancelLatency)
+          'cancel_latency_ms':
+              immediateCancelLatenciesMs?[index] ?? immediateCancelLatencyMs,
         'cancel_after_ms': 0.0,
         'cancel_immediate': reportImmediate,
       };
@@ -73,9 +81,11 @@ class FakeSpeech implements SpeechValidationAdapter {
       'predicate_passed': !wrongWords,
       if (cancel) 'cancelled': true,
       if (cancel && reportCancelLatency && !unmeasured)
-        'cancel_latency_ms': cancelLatencyMs,
+        'cancel_latency_ms':
+            cancelLatenciesMs?[inFlightCancels - 1] ?? cancelLatencyMs,
       if (cancel) 'cancel_after_ms': inFlightLeadMs,
       if (cancel) 'cancel_in_flight': reportInFlight,
+      if (cancel) ...inFlightReport,
     };
   }
 }
@@ -162,23 +172,110 @@ class FakeSpeechEngine implements LlamaEngine {
     final delay = generations > 1 ? laterTokenDelay ?? tokenDelay : tokenDelay;
     for (final delta in deltas) {
       if (delay > Duration.zero) await Future<void>.delayed(delay);
-      yield LlamaCompletionChunk(
-        id: 'edge',
-        object: 'chat.completion.chunk',
-        created: 0,
-        model: 'fake',
-        choices: [
-          LlamaCompletionChunkChoice(
-            index: 0,
-            delta: LlamaCompletionChunkDelta(content: delta),
-          ),
-        ],
-      );
+      yield completionChunk(delta);
     }
   }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+LlamaCompletionChunk completionChunk(String delta) => LlamaCompletionChunk(
+  id: 'edge',
+  object: 'chat.completion.chunk',
+  created: 0,
+  model: 'fake',
+  choices: [
+    LlamaCompletionChunkChoice(
+      index: 0,
+      delta: LlamaCompletionChunkDelta(content: delta),
+    ),
+  ],
+);
+
+class CancellableSpeechEngine extends FakeSpeechEngine {
+  CancellableSpeechEngine({
+    required this.completedTokenDelays,
+    this.cancelAckDelay = Duration.zero,
+  }) : super(deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans']);
+  final List<Duration> completedTokenDelays;
+  final Duration cancelAckDelay;
+  Completer<void>? _running;
+
+  Future<bool> _awaitToken(int generation) async {
+    if (generation >= completedTokenDelays.length) {
+      await (_running = Completer<void>()).future;
+      return false;
+    }
+    final delay = completedTokenDelays[generation];
+    if (delay > Duration.zero) await Future<void>.delayed(delay);
+    return true;
+  }
+
+  void _acknowledgeCancel() {
+    final running = _running;
+    if (running == null) return;
+    Future<void>.delayed(cancelAckDelay, () {
+      if (!running.isCompleted) running.complete();
+    });
+  }
+
+  @override
+  void cancelGeneration() => _acknowledgeCancel();
+
+  @override
+  void cancelTextToSpeechBackend() => _acknowledgeCancel();
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    final generation = generations++;
+    for (final delta in deltas) {
+      if (!await _awaitToken(generation)) return;
+      yield completionChunk(delta);
+    }
+  }
+
+  @override
+  Future<BackendTextToSpeechCapabilities>
+  get backendTextToSpeechCapabilities async =>
+      const BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: 24000,
+        channelCount: 1,
+        supportsLanguage: true,
+        supportsCancellation: true,
+      );
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    final generation = generations++;
+    for (var frame = 0; frame < deltas.length; frame++) {
+      if (!await _awaitToken(generation)) break;
+    }
+    return BackendTextToSpeechResult(
+      samples: Float32List.fromList([.25, -.25]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: deltas.length,
+      truncated: false,
+    );
+  }
 }
 
 int stableResidentBytes() => 1000;
@@ -518,6 +615,51 @@ void main() {
       hasLength(speechCleanupCycles),
     );
     expect(bounds['cancel_latency_ms']['within_budget'], false);
+  });
+  test('one over-budget cancellation among in-budget ones fails', () async {
+    List<double> oneOver(double budget, int at) => List.generate(
+      speechCleanupCycles + 1,
+      (index) => index == at ? budget + 1 : 1,
+    );
+    final result = await runSpeechValidation(
+      FakeSpeech()
+        ..cancelLatenciesMs = oneOver(speechCancelLatencyBudgetMs, 1)
+        ..immediateCancelLatenciesMs = oneOver(
+          speechImmediateCancelLatencyBudgetMs,
+          2,
+        ),
+      residentBytes: stableResidentBytes,
+    );
+    expect(result['functional_pass'], false);
+    final checks = result['checks'] as List;
+    for (final (id, budget) in [
+      ('cancel_latency_bound', speechCancelLatencyBudgetMs),
+      ('immediate_cancel_latency_bound', speechImmediateCancelLatencyBudgetMs),
+    ]) {
+      final bound = checks.singleWhere((row) => row['id'] == id);
+      expect(bound['status'], 'FAIL', reason: id);
+      expect(bound['worst_ms'], budget + 1, reason: id);
+    }
+  });
+  test('a cancellation reporting an invalid measurement fails', () async {
+    for (final (report, message) in <(Map<String, Object?>, String)>[
+      ({'cancelled': false}, 'Cancellation not confirmed'),
+      ({'cancel_latency_ms': double.infinity}, 'latency was not measured'),
+      ({'cancel_latency_ms': -1.0}, 'latency was not measured'),
+      ({'cancel_after_ms': double.nan}, 'lead time was not measured'),
+      ({'cancel_after_ms': -1.0}, 'lead time was not measured'),
+    ]) {
+      final result = await runSpeechValidation(
+        FakeSpeech()..inFlightReport = report,
+        residentBytes: stableResidentBytes,
+      );
+      expect(result['functional_pass'], false, reason: '$report');
+      final cancel = (result['checks'] as List).singleWhere(
+        (row) => row['id'] == 'cancel',
+      );
+      expect(cancel['status'], 'FAIL', reason: '$report');
+      expect(cancel['message'], contains(message), reason: '$report');
+    }
   });
   test('only the memory bound may skip and still pass the run', () async {
     final skipping = await runSpeechValidation(
@@ -1066,6 +1208,61 @@ void main() {
     );
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
   });
+
+  test('the public adapter cancels into its latest generation', () async {
+    const cancelAck = Duration(milliseconds: 100);
+    for (final pack in ['stt', 'tts']) {
+      final adapter = edgeAdapter(
+        pack: pack,
+        engine: CancellableSpeechEngine(
+          completedTokenDelays: const [
+            Duration(milliseconds: 40),
+            Duration.zero,
+          ],
+          cancelAckDelay: cancelAck,
+        ),
+      );
+      await adapter.load();
+      await adapter.execute();
+      final latestWatch = Stopwatch()..start();
+      final latest = await adapter.execute();
+      latestWatch.stop();
+      final cancelled = await adapter.execute(cancel: true);
+      await adapter.dispose();
+      final reference = latest['elapsed_ms']! as double;
+      expect(
+        reference,
+        lessThanOrEqualTo(latestWatch.elapsedMicroseconds / 1000),
+        reason: pack,
+      );
+      expect(cancelled['reference_generation_ms'], reference, reason: pack);
+      expect(cancelled['cancel_in_flight'], isTrue, reason: pack);
+      expect(
+        cancelled['cancel_latency_ms'],
+        greaterThan(cancelAck.inMilliseconds / 2),
+        reason: pack,
+      );
+    }
+  });
+
+  test(
+    'the public adapter cancels before an instant generation ends',
+    () async {
+      for (final pack in ['stt', 'tts']) {
+        final adapter = edgeAdapter(
+          pack: pack,
+          engine: CancellableSpeechEngine(
+            completedTokenDelays: [Duration.zero],
+          ),
+        );
+        await adapter.load();
+        final cancelled = await adapter.execute(cancelImmediately: true);
+        await adapter.dispose();
+        expect(cancelled['cancelled'], isTrue, reason: pack);
+        expect(cancelled['cancel_immediate'], isTrue, reason: pack);
+      }
+    },
+  );
 
   test('a cancellation with no generation to cancel is refused', () async {
     final adapter = edgeAdapter(deltas: const [edgeReference]);

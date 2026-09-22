@@ -53,6 +53,9 @@ class Session implements SpeechToTextStreamingSession {
   bool cancelCalled = false;
   int? partialAfterSamples;
   bool partialOnListen = false;
+  int? endAfterSamples;
+  Duration? cancelAckDelay;
+  bool finalOnCancel = false;
   @override
   Stream<SpeechToTextEvent> get events =>
       partialOnListen ? PartialOnListen(controller.stream) : controller.stream;
@@ -66,6 +69,11 @@ class Session implements SpeechToTextStreamingSession {
     if (threshold != null && samples >= threshold && !controller.isClosed) {
       partialAfterSamples = null;
       controller.add(const SpeechToTextPartialEvent('partial'));
+    }
+    final end = endAfterSamples;
+    if (end != null && samples >= end) {
+      endAfterSamples = null;
+      await _end();
     }
   }
 
@@ -84,10 +92,21 @@ class Session implements SpeechToTextStreamingSession {
   @override
   Future<void> cancel() async {
     cancelCalled = true;
-    if (!completion.isCompleted) {
-      completion.complete(const SpeechToTextCompletion.cancelled());
-      await controller.close();
+    final delay = cancelAckDelay;
+    if (delay == null) return _end();
+    cancelAckDelay = null;
+    unawaited(Future<void>.delayed(delay, _end));
+  }
+
+  Future<void> _end() async {
+    if (completion.isCompleted) return;
+    if (finalOnCancel) {
+      controller.add(
+        const SpeechToTextFinalEvent(SpeechToTextResult(text: 'expected')),
+      );
     }
+    completion.complete(const SpeechToTextCompletion.cancelled());
+    await controller.close();
   }
 }
 
@@ -174,6 +193,48 @@ void main() {
       await target.dispose();
     },
   );
+  test('streaming cancellation latency runs until the session ends', () async {
+    const cancelAck = Duration(milliseconds: 100);
+    for (final immediately in [false, true]) {
+      final engine = Recognizer();
+      engine.session.cancelAckDelay = cancelAck;
+      final target = adapter(engine);
+      await target.load();
+      final cancelled = await target.execute(
+        cancel: !immediately,
+        cancelImmediately: immediately,
+      );
+      await target.dispose();
+      expect(cancelled['cancelled'], isTrue);
+      expect(
+        cancelled['cancel_latency_ms'],
+        greaterThan(cancelAck.inMilliseconds / 2),
+        reason: 'immediately: $immediately',
+      );
+    }
+  });
+  test(
+    'a stream that ended before the cancellation is not in flight',
+    () async {
+      final engine = Recognizer();
+      engine.session.endAfterSamples = 16000;
+      final target = adapter(engine);
+      await target.load();
+      final cancelled = await target.execute(cancel: true);
+      await target.dispose();
+      expect(cancelled['cancelled'], isTrue);
+      expect(cancelled['pcm_samples_before_cancel'], greaterThan(0));
+      expect(cancelled['cancel_in_flight'], isFalse);
+    },
+  );
+  test('a cancelled stream that emitted a final result fails', () async {
+    final engine = Recognizer();
+    engine.session.finalOnCancel = true;
+    final target = adapter(engine);
+    await target.load();
+    await expectLater(target.execute(cancel: true), throwsStateError);
+    await target.dispose();
+  });
   test('an immediate streaming cancellation pushes no audio', () async {
     final engine = Recognizer();
     final target = adapter(engine);
