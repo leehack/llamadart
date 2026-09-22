@@ -1026,6 +1026,7 @@ void main() {
     test(
       'restarts the ladder on wasm32 after a wasm64 BigInt failure',
       () async {
+        final warnings = captureConsoleWarnings();
         bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
         failLoads(
           message: 'Cannot convert a BigInt value to a number',
@@ -1047,6 +1048,15 @@ void main() {
         expect(requestedThreadCounts, <int?>[8, 8]);
         expect(requestedForceRemoteFetchBackends, <bool?>[null, false]);
         expect(capturedPreferMemory64(), isFalse);
+        expect(
+          warnings
+              .where((message) => message.contains('retrying with wasm32'))
+              .toList(),
+          <String>[
+            'WebGpuLlamaBackend: wasm64 BigInt interop failure detected; '
+                'retrying with wasm32 core.',
+          ],
+        );
       },
     );
 
@@ -1109,6 +1119,28 @@ void main() {
         32 * 1024,
         16 * 1024,
       ]);
+    });
+
+    test('gives up with the memory limit error after the last rung', () async {
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      failLoads(message: 'array buffer allocation failed');
+
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/exhausted-model.gguf',
+          const ModelParams(contextSize: 512, gpuLayers: 99),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            startsWith('Model loading exceeded browser memory limits.'),
+          ),
+        ),
+      );
+
+      expect(requestedContextSizes, <int>[512, 512]);
+      expect(requestedGpuLayerCounts, <int?>[99, 0]);
     });
 
     test('stops forced remote fetch chunk halving at the minimum', () async {
