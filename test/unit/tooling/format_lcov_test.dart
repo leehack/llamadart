@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:coverage/coverage.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../../tool/testing/format_lcov.dart' as format_lcov;
@@ -138,7 +139,7 @@ void main() {
       );
 
       expect(actual, await _referenceLcov(fixture, checkIgnore: true));
-      expect(actual, contains('SF:${fixture.libDir}/kept.dart'));
+      expect(actual, contains('SF:${p.join(fixture.libDir, 'kept.dart')}'));
       expect(actual, isNot(contains('whole_file_ignored.dart')));
       expect(actual, isNot(contains('outside_report_on.dart')));
       expect(actual, contains('DA:1,3'));
@@ -160,7 +161,10 @@ void main() {
 
       expect(actual, await _referenceLcov(fixture, checkIgnore: false));
       expect(actual, contains('DA:3,0'));
-      expect(actual, contains('SF:${fixture.libDir}/whole_file_ignored.dart'));
+      expect(
+        actual,
+        contains('SF:${p.join(fixture.libDir, 'whole_file_ignored.dart')}'),
+      );
     },
   );
 
