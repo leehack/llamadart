@@ -1,14 +1,18 @@
 import 'dart:math' as math;
 
-/// Floor of the chunk-halving restart: it fires only while
-/// [WebGpuLoadEscalation.remoteFetchChunkBytes] exceeds this value, and never
-/// halves below it.
+/// Floor of the restart that warns 'retrying with smaller fetch chunks': it
+/// fires only while [WebGpuLoadEscalation.remoteFetchChunkBytes] exceeds this
+/// value, and never sets that field below this value.
 const int minRemoteFetchChunkBytes = 4 * 1024;
 
-/// Number of chunk-halving restarts the escalation policy allows.
+/// Cap on the restart that warns 'retrying with smaller fetch chunks': it
+/// fires only while [WebGpuLoadEscalation.remoteFetchChunkRetryCount] is below
+/// this value.
 const int maxRemoteFetchChunkRestarts = 10;
 
-/// Chunk size ceiling applied when retrying after a wasm64 FS write failure.
+/// Ceiling of the restart that warns 'retrying with forced fetch-backed
+/// loading': it sets [WebGpuLoadEscalation.remoteFetchChunkBytes] to the
+/// smaller of that field and this value.
 const int fsWriteRetryChunkBytes = 128 * 1024;
 
 /// Whether [loweredErrorText] carries 'array buffer allocation failed',
@@ -77,7 +81,8 @@ class WebGpuLoadFailure {
   /// Total number of ladder rungs.
   final int attemptCount;
 
-  /// Text of the thrown error, already lower-cased for the predicates above.
+  /// Lower-cased text of the thrown error; the classifier does not lower-case
+  /// it.
   final String errorText;
 
   /// Bridge `llamadart.webgpu.core_variant` hint, or null when absent.
@@ -110,30 +115,36 @@ class WebGpuLoadEscalation {
   /// Chunk size passed to the bridge for the next attempt.
   final int remoteFetchChunkBytes;
 
-  /// Whether the wasm32 retry has already fired.
+  /// Whether the restart that warns 'wasm64 BigInt interop failure detected'
+  /// has fired.
   final bool retriedWithWasm32;
 
-  /// Whether the wasm64 retry has already fired.
+  /// Whether the restart that warns 'wasm32 memory pressure detected' has
+  /// fired.
   final bool retriedWithWasm64;
 
-  /// Whether the streamed-loading retry has already fired.
+  /// Whether the restart that warns 'fetch-backed model loading aborted' and
+  /// sets [WebGpuRetryDecision.forceRemoteFetchBackend] to false has fired.
   final bool retriedWithoutRemoteFetchBackend;
 
-  /// How many chunk-halving restarts have fired.
+  /// How many restarts that warn 'retrying with smaller fetch chunks' have
+  /// fired.
   final int remoteFetchChunkRetryCount;
 
-  /// Whether the post-FS-write forced fetch retry has already fired.
+  /// Whether the restart that warns 'retrying with forced fetch-backed
+  /// loading' has fired.
   final bool retriedAfterFsWriteFailureWithRemote;
 
-  /// Whether this load has seen a fetch-backend abort. Latched when the
-  /// runtime notes carry 'model_fetch_backend_abort', which needs no
-  /// 'model_fetch_backend_attempt' marker, or when they carry
+  /// Latched by [classifyWebGpuLoadFailure] when a failure's runtime notes
+  /// carry 'model_fetch_backend_abort', which needs no
+  /// 'model_fetch_backend_attempt' marker, or carry
   /// 'model_fetch_backend_attempt' together with either 'core_abort' in the
   /// notes or 'aborted(native code called abort())' in the error text.
   final bool remoteFetchBackendKnownUnstable;
 
-  /// Whether the wasm32 retry has fired on a failure whose core variant is
-  /// 'wasm64' and whose error text [isBigIntInteropErrorText] matches.
+  /// Whether the restart that warns 'wasm64 BigInt interop failure detected'
+  /// has fired on a failure whose error text [isBigIntInteropErrorText]
+  /// matches.
   final bool wasm64InteropKnownBroken;
 
   /// Returns a copy with the named fields replaced; null keeps the current one.
