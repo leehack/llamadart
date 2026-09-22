@@ -7656,6 +7656,9 @@ class LlamaCppService {
         'Cannot start text-to-speech while generation is active.',
       );
     }
+    // A cancel for this synthesis is only sent after its synthesize request,
+    // so anything latched here belongs to a run that already ended.
+    _ttsCancelPending = false;
 
     final api = _resolveTtsApi();
     final textBytes = utf8.encode(request.text);

@@ -48,6 +48,7 @@ class NativeLlamaBackend
   void Function()? _activeFreeToken;
   bool _textToSpeechActive = false;
   bool _textToSpeechCancelRequested = false;
+  bool _textToSpeechRequestSent = false;
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -883,6 +884,7 @@ class NativeLlamaBackend
     // startup is recorded rather than dropped.
     _textToSpeechActive = true;
     _textToSpeechCancelRequested = false;
+    _textToSpeechRequestSent = false;
     try {
       await _ensureIsolate();
     } catch (_) {
@@ -899,6 +901,7 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
+    _textToSpeechRequestSent = true;
     if (_textToSpeechCancelRequested) {
       _sendPort!.send(TextToSpeechCancelRequest());
     }
@@ -949,7 +952,9 @@ class NativeLlamaBackend
       return;
     }
     _textToSpeechCancelRequested = true;
-    _sendPort?.send(TextToSpeechCancelRequest());
+    if (_textToSpeechRequestSent) {
+      _sendPort?.send(TextToSpeechCancelRequest());
+    }
   }
 
   @override
