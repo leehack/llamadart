@@ -20,8 +20,9 @@ dart test -p chrome --exclude-tags local-only
 - Use the Flutter SDK in `.flutter-version`; other SDKs format differently from
   CI. A pin bump is its own PR that updates `.flutter-version`, every workflow
   `flutter-version:`, and the reformat it causes.
-- The root gates skip `packages/`: companion packages keep their own
-  dependency, analyze, test, SwiftPM and publish-validation lanes (`ci.yml`).
+- Root preparation, analysis and tests skip `packages/` (root format does
+  not): companion packages keep their own dependency, analyze, test, SwiftPM
+  and publish-validation lanes (`ci.yml`).
 - Chat app changes: `(cd example/chat_app && flutter test)`, plus
   `flutter test --platform chrome test/chat_generation_service_test.dart` there
   for Web-only paths such as LiteRT-LM generation settings.
@@ -50,10 +51,13 @@ dart test -p chrome --exclude-tags local-only
   only when correctness or maintainability needs it.
 - Order imports SDK, package, then relative, with a blank line between groups.
   Avoid `show`/`hide` on imports unless resolving a name clash.
+- Names: `PascalCase` types; `lowerCamelCase` members, variables and
+  constants; `snake_case` files and directories.
 - No new TODO/FIXME comments in maintained Dart or workflow code.
 - Export new public API from `lib/llamadart.dart` with explicit parameter,
-  return and field types (locals may infer), and test it; implementation stays
-  in `lib/src/`.
+  return and field types (locals may infer), useful `///` Dartdoc, and tests;
+  implementation stays in `lib/src/`. Select platform-specific backends with
+  conditional imports or exports.
 - Throw the `LlamaException` hierarchy (`lib/src/core/exceptions.dart`). An
   unsupported platform or option combination throws `LlamaUnsupportedException`
   (or a typed subtype) naming the missing capability, the platform/runtime
