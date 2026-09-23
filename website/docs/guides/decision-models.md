@@ -23,7 +23,7 @@ ticket questions below from the command line, as
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
-| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (decision API 1), which the default pin includes; older assets report unsupported. See [Web](#web) |
+| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (apiVersion 1), which the default pin includes; checked only in headless Chromium on macOS. Older assets report unsupported. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
@@ -439,14 +439,16 @@ models report unsupported too.
 - A bridge that restarts its runtime, for example when its worker fails during
   a call, frees its heads. Calls then throw `LlamaStateException`; load the
   `DecisionEngine` again.
-- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` misses the parity
-  test's 0.05 probability tolerance: its worst difference from Laya over the
-  24-question fixture is PENDING_V047_Q8_CPU_PROB, on
-  PENDING_V047_Q8_CPU_ROWS of the questions, with the same top option. The
-  drift comes from the bridge's WASM CPU Q8_0 kernels. An F16 backbone, or GPU
-  layers with either backbone, stays within the tolerance. The design doc's
+- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` differs from Laya by
+  more than 0.05 in probability and 0.10 in score (0.0628 and 0.1224) on one of
+  the 24 questions in Laya's parity fixture, with the same top option. The
+  bridge's own smoke gets the same worst logit difference, so the drift comes
+  from the bridge's WASM CPU Q8_0 path, not llamadart. On the same fixture, a
+  locally converted F16 backbone, or GPU layers with either backbone, stays
+  within those bounds; [Accuracy and speed](#accuracy-and-speed) shows native
+  Q8_0 changing decisions on 187 random questions. The design doc's
   [Web check](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#web-check)
-  has the Web numbers; [Accuracy and speed](#accuracy-and-speed) is native.
+  has the Web accuracy numbers.
 
 ## Accuracy and speed
 

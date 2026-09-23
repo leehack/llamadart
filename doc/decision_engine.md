@@ -324,7 +324,7 @@ JSON-like (null, bool, num, String, List, Map with String keys).
 | Linux | CPU, Vulkan, CUDA | expected, untested |
 | Windows | CPU, Vulkan, CUDA | expected through the `ggml-base` twins, untested |
 | Native LiteRT-LM | - | `LlamaUnsupportedException` |
-| Web (WebGPU bridge) | WebGPU or CPU (WASM) | bridge assets `v0.1.47+` (decision API 1), the default pin among them; older assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
+| Web (WebGPU bridge) | WebGPU or CPU (WASM) | bridge assets `v0.1.47+` (apiVersion 1), the default pin among them; older assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
 | LiteRT-LM Web | - | `LlamaUnsupportedException` |
 
 Real-model evidence is macOS only. The CPU head unit tests carry no
@@ -391,15 +391,16 @@ and markers matched on every row.
 
 | Backbone | Bridge runtime | Head device | Logit diff | Probability diff | Score diff |
 | --- | --- | --- | --- | --- | --- |
-| `laya-Q8_0.gguf` | WebGPU; worker and main thread on wasm64, worker on wasm32 | WebGPU | PENDING_V047_Q8_GPU_LOGIT | PENDING_V047_Q8_GPU_PROB | PENDING_V047_Q8_GPU_SCORE |
-| F16 (local conversion) | WebGPU; worker and main thread | WebGPU | PENDING_V047_F16_GPU_LOGIT | PENDING_V047_F16_GPU_PROB | PENDING_V047_F16_GPU_SCORE |
-| F16 (local conversion) | WASM CPU; worker | CPU | PENDING_V047_F16_CPU_LOGIT | PENDING_V047_F16_CPU_PROB | PENDING_V047_F16_CPU_SCORE |
-| `laya-Q8_0.gguf` | WASM CPU; worker | CPU | PENDING_V047_Q8_CPU_LOGIT | PENDING_V047_Q8_CPU_PROB | PENDING_V047_Q8_CPU_SCORE |
+| `laya-Q8_0.gguf` | WebGPU; worker and main thread on wasm64 and wasm32 | WebGPU | 0.1636 | 0.0436 | 0.0247 |
+| F16 (local conversion) | WebGPU; worker and main thread on wasm64 | WebGPU | 0.0169 | 0.0046 | 0.0013 |
+| F16 (local conversion) | WASM CPU; worker and main thread on wasm64 | CPU | 0.0149 | 0.0039 | 0.0028 |
+| `laya-Q8_0.gguf` | WASM CPU; worker and main thread on wasm64 | CPU | 0.2326 | 0.0628 | 0.1224 |
 
-Q8_0 on the WASM CPU misses the 0.05 probability tolerance on
-PENDING_V047_Q8_CPU_ROWS of the rows, with the same top option. The bridge's own
-smoke, which calls the bridge directly, gets the same worst logit difference,
-so the drift comes from the bridge's WASM CPU Q8_0 path rather than llamadart.
+Q8_0 on the WASM CPU misses the probability and score tolerances on one row,
+`plain_text/urgency5`, with the same top option. The bridge's own smoke, which
+calls the bridge directly, gets the same worst logit difference on wasm32 and
+wasm64 in both bridge modes, so the drift comes from the bridge's WASM CPU
+Q8_0 path rather than llamadart.
 Typed key reads with the question identity check, sequence validation
 messages, error mapping, URL redaction, `<base href>` resolution, and heads
 freed or bridges disposed behind the engine's back were checked against the

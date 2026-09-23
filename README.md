@@ -38,7 +38,8 @@ models through LiteRT-LM.
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
   encoder GGUF and a safetensors head, one encoder pass per question; validated
   on macOS (Metal, CPU), other native platforms untested. Web runs it through
-  WebGPU bridge assets `v0.1.47+`, which the default Web pin includes.
+  WebGPU bridge assets `v0.1.47+`, which the default Web pin includes; checked
+  only in headless Chromium on macOS.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for

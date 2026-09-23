@@ -34,7 +34,8 @@ Experimental Laya-style decision models run on native llama.cpp and WebGPU:
 [`DecisionEngine`](../guides/decision-models) pairs a ModernBERT encoder GGUF
 with a safetensors decision head. It is validated on macOS (Metal, CPU); other
 native platforms are untested. WebGPU needs bridge assets `v0.1.47+`, which the
-default pin includes. On native LiteRT-LM and LiteRT-LM Web,
+default pin includes; it was checked only in headless Chromium on macOS. On
+native LiteRT-LM and LiteRT-LM Web,
 `DecisionEngine.load` throws `LlamaUnsupportedException`.
 
 Available override tags are published on the
