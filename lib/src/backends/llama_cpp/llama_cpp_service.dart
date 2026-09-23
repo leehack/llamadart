@@ -6877,10 +6877,6 @@ class LlamaCppService {
   }
 
   /// Creates a multimodal context (projector) for the model.
-  ///
-  /// Throws [LlamaModelException] when [mmProjPath] is not an existing file or
-  /// native mtmd rejects the projector, and [LlamaUnsupportedException] when
-  /// this runtime lacks the mtmd functions projector loading needs.
   int createMultimodalContext(int modelHandle, String mmProjPath) {
     final model = _models[modelHandle];
     if (model == null) {
@@ -7645,9 +7641,6 @@ class LlamaCppService {
   }
 
   /// Returns whether the active multimodal projector supports audio input.
-  ///
-  /// Throws [LlamaUnsupportedException] when this runtime cannot run
-  /// `mtmd_support_audio`.
   bool supportsAudio(int mmContextHandle) {
     final mmCtx = _mtmdContexts[mmContextHandle];
     if (mmCtx == null) {
