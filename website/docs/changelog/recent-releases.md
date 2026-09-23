@@ -30,6 +30,9 @@ For canonical full release notes, use:
 - Add `example/laya_tetris`, a Flutter app in which a Laya decision model
   plays real-time Tetris through `DecisionEngine`
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add a notebook in `example/laya_tetris/training/` that fine-tunes a Laya
+  decision head for the Tetris example and exports it for `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second
