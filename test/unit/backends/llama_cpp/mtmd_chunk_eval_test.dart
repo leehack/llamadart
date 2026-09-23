@@ -141,7 +141,7 @@ void main() {
     calloc.free(newNPast);
   });
 
-  int eval(_FakeMtmd fake) => evalMtmdChunksUntilCancelled(
+  MtmdChunkEvalFailure? eval(_FakeMtmd fake) => evalMtmdChunksUntilCancelled(
     fake.api,
     _ctx,
     _lctx,
@@ -154,7 +154,7 @@ void main() {
   test('makes the calls of mtmd_helper_eval_chunks when not cancelled', () {
     final fake = _FakeMtmd(_asrPrompt, cancelToken);
 
-    expect(eval(fake), 0);
+    expect(eval(fake), isNull);
     expect(fake.calls, _asrPromptCalls);
     expect(newNPast.value, 172);
   });
@@ -166,7 +166,7 @@ void main() {
       _FakeChunk(_image, 64),
     ], cancelToken);
 
-    expect(eval(fake), 0);
+    expect(eval(fake), isNull);
     expect(fake.calls, [
       'size',
       'get 0',
@@ -190,7 +190,7 @@ void main() {
     final fake = _FakeMtmd(_asrPrompt, cancelToken);
     cancelToken.value = 1;
 
-    expect(eval(fake), 0);
+    expect(eval(fake), isNull);
     expect(fake.calls, ['size']);
     expect(newNPast.value, 0);
   });
@@ -199,7 +199,7 @@ void main() {
     final fake = _FakeMtmd(_asrPrompt, cancelToken)
       ..cancelDuring.add(_asrPromptCalls[3]);
 
-    expect(eval(fake), 0);
+    expect(eval(fake), isNull);
     expect(fake.calls, _asrPromptCalls.take(4));
     expect(newNPast.value, 10);
   });
@@ -208,7 +208,7 @@ void main() {
     final fake = _FakeMtmd(_asrPrompt, cancelToken)
       ..cancelDuring.add(_asrPromptCalls[8]);
 
-    expect(eval(fake), 0);
+    expect(eval(fake), isNull);
     expect(fake.calls, _asrPromptCalls.take(9));
     expect(newNPast.value, 114);
   });
@@ -219,20 +219,43 @@ void main() {
       final fake = _FakeMtmd(_asrPrompt, cancelToken)
         ..cancelDuring.add(_asrPromptCalls[encodeCall]);
 
-      expect(eval(fake), 0);
+      expect(eval(fake), isNull);
       expect(fake.calls, _asrPromptCalls.take(encodeCall + 1));
       expect(newNPast.value, completed);
     });
   }
 
-  for (final (failingCall, result) in [(3, -1), (6, 1), (8, 2), (16, 2)]) {
+  for (final (failingCall, result, failure) in [
+    (3, -1, 'failed to eval chunk 0'),
+    (6, 1, 'failed to encode audio chunk 1'),
+    (8, 2, 'failed to decode audio chunk 1'),
+    (16, 2, 'failed to eval chunk 3'),
+  ]) {
     test('returns $result from ${_asrPromptCalls[failingCall]} '
         'without further calls', () {
       final fake = _FakeMtmd(_asrPrompt, cancelToken)
         ..results[_asrPromptCalls[failingCall]] = result;
 
-      expect(eval(fake), result);
+      final returned = eval(fake);
+      expect((returned?.result, '$returned'), (result, failure));
       expect(fake.calls, _asrPromptCalls.take(failingCall + 1));
+    });
+  }
+
+  for (final (failingCall, failure) in [
+    ('encode 2', 'failed to encode image chunk 2'),
+    ('decode 0 nPast=0 seq=0 batch=512', 'failed to decode image chunk 0'),
+  ]) {
+    test('names the image chunk when $failingCall fails', () {
+      final fake = _FakeMtmd(const [
+        _FakeChunk(_image, 64),
+        _FakeChunk(_text, 3),
+        _FakeChunk(_image, 64),
+      ], cancelToken)..results[failingCall] = 1;
+
+      final returned = eval(fake);
+      expect((returned?.result, '$returned'), (1, failure));
+      expect(fake.calls.last, failingCall);
     });
   }
 

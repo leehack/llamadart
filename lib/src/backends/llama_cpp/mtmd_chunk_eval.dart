@@ -175,15 +175,63 @@ final class MtmdChunkEvalApi {
   decodeImageChunk;
 }
 
+/// The native call that failed for one prompt chunk.
+enum MtmdChunkEvalStage {
+  /// `mtmd_encode_chunk` on an image or audio chunk.
+  encode,
+
+  /// `mtmd_helper_decode_image_chunk` on an image or audio chunk.
+  decode,
+
+  /// `mtmd_helper_eval_chunk_single` on any other chunk.
+  eval,
+}
+
+/// A nonzero native result for one prompt chunk.
+final class MtmdChunkEvalFailure {
+  /// Creates a failure of [stage] on chunk [chunkIndex].
+  const MtmdChunkEvalFailure({
+    required this.stage,
+    required this.chunkIndex,
+    required this.chunkType,
+    required this.result,
+  });
+
+  /// The call that returned [result].
+  final MtmdChunkEvalStage stage;
+
+  /// The chunk's index in the prompt.
+  final int chunkIndex;
+
+  /// The chunk's raw `mtmd_input_chunk_type` value.
+  final int chunkType;
+
+  /// The nonzero native result.
+  final int result;
+
+  /// Names the failed call and the chunk, as `failed to decode image chunk 7`
+  /// or `failed to eval chunk 3`.
+  @override
+  String toString() => stage == MtmdChunkEvalStage.eval
+      ? 'failed to eval chunk $chunkIndex'
+      : 'failed to ${stage.name} $_media chunk $chunkIndex';
+
+  String get _media =>
+      chunkType == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value
+      ? 'image'
+      : 'audio';
+}
+
 /// Evaluates [chunks] as `mtmd_helper_eval_chunks` does for `n_past` 0,
 /// `seq_id` 0 and `logits_last` true, but stops early once [cancelToken]
 /// reads 1.
 ///
 /// The token is read before each chunk. An image or audio chunk's encode and
 /// embedding decode are separate calls, and the token is read between them.
-/// Returns the first nonzero native result, otherwise 0. After a 0,
-/// [newNPast] holds the position after the last fully evaluated chunk.
-int evalMtmdChunksUntilCancelled(
+/// Returns the first nonzero native result as an [MtmdChunkEvalFailure],
+/// otherwise `null`. After a `null`, [newNPast] holds the position after the
+/// last fully evaluated chunk.
+MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
   MtmdChunkEvalApi api,
   Pointer<mtmd_context> ctx,
   Pointer<llama_context> lctx,
@@ -198,12 +246,15 @@ int evalMtmdChunksUntilCancelled(
     if (cancelToken.value == 1) break;
     final chunk = api.chunksGet(chunks, i);
     final type = api.chunkType(chunk);
+    MtmdChunkEvalStage stage;
     int result;
     if (type == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value ||
         type == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_AUDIO.value) {
+      stage = MtmdChunkEvalStage.encode;
       result = api.encodeChunk(ctx, chunk);
       if (result == 0) {
         if (cancelToken.value == 1) break;
+        stage = MtmdChunkEvalStage.decode;
         result = api.decodeImageChunk(
           ctx,
           lctx,
@@ -218,6 +269,7 @@ int evalMtmdChunksUntilCancelled(
         );
       }
     } else {
+      stage = MtmdChunkEvalStage.eval;
       newNPast.value = nPast;
       result = api.evalChunkSingle(
         ctx,
@@ -230,9 +282,16 @@ int evalMtmdChunksUntilCancelled(
         newNPast,
       );
     }
-    if (result != 0) return result;
+    if (result != 0) {
+      return MtmdChunkEvalFailure(
+        stage: stage,
+        chunkIndex: i,
+        chunkType: type,
+        result: result,
+      );
+    }
     nPast = newNPast.value;
   }
   newNPast.value = nPast;
-  return 0;
+  return null;
 }

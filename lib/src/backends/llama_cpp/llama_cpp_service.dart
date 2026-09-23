@@ -4936,31 +4936,37 @@ class LlamaCppService {
           final chunkEvalApi = _mtmdPrimarySymbolsUnavailable
               ? _resolveMtmdFallbackApi()?.chunkEval
               : MtmdChunkEvalApi.primary;
-          final evalResult = chunkEvalApi == null
-              ? _mtmdHelperEvalChunks(
-                  mmCtx,
-                  ctx.pointer,
-                  chunks,
-                  0,
-                  0,
-                  modelParams.n_batch,
-                  true,
-                  newPast,
-                )
-              : evalMtmdChunksUntilCancelled(
-                  chunkEvalApi,
-                  mmCtx,
-                  ctx.pointer,
-                  chunks,
-                  modelParams.n_batch,
-                  newPast,
-                  cancelToken,
-                );
+          final int evalResult;
+          MtmdChunkEvalFailure? chunkFailure;
+          if (chunkEvalApi == null) {
+            evalResult = _mtmdHelperEvalChunks(
+              mmCtx,
+              ctx.pointer,
+              chunks,
+              0,
+              0,
+              modelParams.n_batch,
+              true,
+              newPast,
+            );
+          } else {
+            chunkFailure = evalMtmdChunksUntilCancelled(
+              chunkEvalApi,
+              mmCtx,
+              ctx.pointer,
+              chunks,
+              modelParams.n_batch,
+              newPast,
+              cancelToken,
+            );
+            evalResult = chunkFailure?.result ?? 0;
+          }
           if (evalResult == 0) {
             initialTokens = newPast.value;
           } else {
             throw Exception(
-              'Multimodal prompt evaluation failed: $evalResult. '
+              'Multimodal prompt evaluation failed: $evalResult'
+              '${chunkFailure == null ? '' : ' ($chunkFailure)'}. '
               'The active context window may be too small for this image and conversation history.',
             );
           }

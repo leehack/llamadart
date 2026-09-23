@@ -157,76 +157,152 @@ void main() {
     test(
       'an audio generate whose cancel is already set yields nothing ($route)',
       () async {
-        final modelPath = _requiredFile(_modelPathKey);
-        final mmprojPath = _requiredFile(_mmprojPathKey);
-        final audioPath = _requiredFile(_audioPathKey);
-        final expectedText = _requiredText(_expectedTextKey);
-        if (modelPath == null ||
-            mmprojPath == null ||
-            audioPath == null ||
-            expectedText == null) {
-          return;
-        }
-
-        final service = LlamaCppService()..setLogLevel(LlamaLogLevel.none);
-        final cancelToken = calloc<Int8>();
-        try {
-          service.initializeBackend();
-          if (chunkEval != null) {
-            expect(
-              service.debugUseWrapperMtmdFallbackForTesting(
-                chunkEval: chunkEval,
-              ),
-              isTrue,
-            );
-          }
-          const modelParams = ModelParams(
-            contextSize: 4096,
-            preferredBackend: GpuBackend.cpu,
-            gpuLayers: 0,
-          );
-          final model = service.loadModel(modelPath, modelParams);
-          final context = service.createContext(model, modelParams);
-          service.createMultimodalContext(model, mmprojPath);
-
-          Future<(String, int)> generate({required bool cancelled}) async {
-            cancelToken.value = cancelled ? 1 : 0;
-            final bytes = <int>[];
-            await for (final piece in service.generate(
-              context,
-              _asrPrompt,
-              const GenerationParams(maxTokens: 64, temp: 0, topK: 1, seed: 1),
-              cancelToken.address,
-              parts: [LlamaAudioContent(path: audioPath)],
-            )) {
-              bytes.addAll(piece);
+        await _withSpeechContext(chunkEval, 4096, (
+          service,
+          context,
+          audioPath,
+          expectedText,
+        ) async {
+          final cancelToken = calloc<Int8>();
+          try {
+            Future<(String, int)> generate({required bool cancelled}) async {
+              cancelToken.value = cancelled ? 1 : 0;
+              final bytes = <int>[];
+              await for (final piece in service.generate(
+                context,
+                _asrPrompt,
+                const GenerationParams(
+                  maxTokens: 64,
+                  temp: 0,
+                  topK: 1,
+                  seed: 1,
+                ),
+                cancelToken.address,
+                parts: [LlamaAudioContent(path: audioPath)],
+              )) {
+                bytes.addAll(piece);
+              }
+              return (
+                utf8.decode(bytes),
+                service.getPerformanceContext(context).promptEvalTokens,
+              );
             }
-            return (
-              utf8.decode(bytes),
-              service.getPerformanceContext(context).promptEvalTokens,
+
+            final (transcript, promptTokens) = await generate(cancelled: false);
+            expect(transcript, contains(expectedText));
+            expect(promptTokens, greaterThan(1));
+
+            final (cancelledOutput, cancelledPromptTokens) = await generate(
+              cancelled: true,
             );
+            expect(cancelledOutput, isEmpty);
+            expect(
+              cancelledPromptTokens,
+              chunkEval == false ? promptTokens : lessThanOrEqualTo(1),
+            );
+
+            expect(await generate(cancelled: false), (
+              transcript,
+              promptTokens,
+            ));
+          } finally {
+            calloc.free(cancelToken);
           }
-
-          final (transcript, promptTokens) = await generate(cancelled: false);
-          expect(transcript, contains(expectedText));
-          expect(promptTokens, greaterThan(1));
-
-          final (cancelledOutput, cancelledPromptTokens) = await generate(
-            cancelled: true,
-          );
-          expect(cancelledOutput, isEmpty);
-          expect(
-            cancelledPromptTokens,
-            chunkEval == false ? promptTokens : lessThanOrEqualTo(1),
-          );
-
-          expect(await generate(cancelled: false), (transcript, promptTokens));
-        } finally {
-          calloc.free(cancelToken);
-          service.dispose();
-        }
+        });
       },
     );
+
+    test(
+      'an audio prompt larger than the context names the failed chunk ($route)',
+      () async {
+        await _withSpeechContext(chunkEval, 256, (
+          service,
+          context,
+          audioPath,
+          _,
+        ) async {
+          final cancelToken = calloc<Int8>();
+          try {
+            await expectLater(
+              service
+                  .generate(
+                    context,
+                    _asrPrompt.replaceFirst(
+                      '<__media__>',
+                      '<__media__><__media__>',
+                    ),
+                    const GenerationParams(maxTokens: 8, temp: 0, topK: 1),
+                    cancelToken.address,
+                    parts: [
+                      LlamaAudioContent(path: audioPath),
+                      LlamaAudioContent(path: audioPath),
+                    ],
+                  )
+                  .drain<void>(),
+              throwsA(
+                isA<Exception>().having(
+                  (error) => '$error',
+                  'message',
+                  contains(
+                    chunkEval == false
+                        ? 'Multimodal prompt evaluation failed: 1. '
+                        : 'Multimodal prompt evaluation failed: 1 '
+                              '(failed to decode audio chunk 4). ',
+                  ),
+                ),
+              ),
+            );
+          } finally {
+            calloc.free(cancelToken);
+          }
+        });
+      },
+    );
+  }
+}
+
+Future<void> _withSpeechContext(
+  bool? chunkEval,
+  int contextSize,
+  Future<void> Function(
+    LlamaCppService service,
+    int context,
+    String audioPath,
+    String expectedText,
+  )
+  body,
+) async {
+  final modelPath = _requiredFile(_modelPathKey);
+  final mmprojPath = _requiredFile(_mmprojPathKey);
+  final audioPath = _requiredFile(_audioPathKey);
+  final expectedText = _requiredText(_expectedTextKey);
+  if (modelPath == null ||
+      mmprojPath == null ||
+      audioPath == null ||
+      expectedText == null) {
+    return;
+  }
+
+  final service = LlamaCppService()..setLogLevel(LlamaLogLevel.none);
+  try {
+    service.initializeBackend();
+    if (chunkEval != null) {
+      expect(
+        service.debugUseWrapperMtmdFallbackForTesting(chunkEval: chunkEval),
+        isTrue,
+      );
+    }
+    final modelParams = ModelParams(
+      contextSize: contextSize,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    final model = service.loadModel(modelPath, modelParams);
+    final context = service.createContext(model, modelParams);
+    service.createMultimodalContext(model, mmprojPath);
+    await body(service, context, audioPath, expectedText);
+  } finally {
+    service.dispose();
   }
 }
 
