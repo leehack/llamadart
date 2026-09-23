@@ -198,9 +198,10 @@ unsupported with or without a model.
 ## Lifecycle
 
 - A `DecisionEngine` belongs to the model that was loaded when it was created.
-  Unloading or replacing that model, or disposing the engine, frees the head;
-  later calls, and calls still running at the time, throw
-  `LlamaStateException`. Load a new `DecisionEngine` after loading a model.
+  Unloading or replacing that model, or disposing the engine, frees the head.
+  Later calls throw `LlamaStateException`, and so do calls running at the time
+  unless their sequences already reached the backend; those finish on the old
+  model. Load a new `DecisionEngine` after loading a model.
 - `dispose()` frees the head once in-flight calls finish. It is idempotent,
   keeps the `LlamaEngine` and its model loaded, and later calls throw
   `LlamaStateException`.
@@ -245,6 +246,8 @@ question.
 | `laya-Q8_0.gguf` | CPU, `CPU` | 0.142 | 0.036 | 85.6 |
 | F32 GGUF (local conversion) | Metal, `MTL0` | 0.012 | 0.003 | 15.4 |
 | F32 GGUF (local conversion) | CPU, `CPU` | 0.013 | 0.003 | 187 |
+| F16 GGUF (local conversion) | Metal, `MTL0` | 0.012 | 0.003 | 14.0 |
+| F16 GGUF (local conversion) | CPU, `CPU` | 0.052 | 0.012 | 115 |
 
 The official checkpoint with `configPath` measured the same differences as
 `laya-head.safetensors` on the F32 CPU and Q8_0 Metal rows. On these 24
@@ -254,8 +257,9 @@ Longer, more varied inputs move further. On 187 random questions (mean 327
 tokens), the F32 backbone stayed within 0.0085 of Laya's probabilities and
 changed no decision. `laya-Q8_0.gguf` differed by up to 0.24 on CPU, where it
 turned a clear yes/no answer (0.69) into a no (0.46), and it flipped near-ties
-on both CPU and Metal. Use an F32 backbone when answers must match Laya. Other
-platforms and GPU backends have not been measured yet.
+on both CPU and Metal. An F16 conversion matched F32 on Metal and flipped two
+near-ties on CPU. Use an F32 backbone, or F16 on Metal, when answers must match
+Laya. Other platforms and GPU backends have not been measured yet.
 
 ## Known limits
 
@@ -282,8 +286,8 @@ platforms and GPU backends have not been measured yet.
 - **Quantization.** The community Q8_0 backbone moves option logits 6 to 14
   times further from the PyTorch reference than an F32 conversion does in the
   measured sets, and can change decisions; see
-  [Accuracy and speed](#accuracy-and-speed). The published `laya-F16.gguf` was
-  not measured.
+  [Accuracy and speed](#accuracy-and-speed). A local F16 conversion was
+  measured; the published `laya-F16.gguf` was not.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
   `LlamaDecisionException`, because native tokenization would cut the text
   there. A state that is not a `String` is sent as JSON, which escapes it.

@@ -306,6 +306,8 @@ PyTorch reference; time is `systemOne` wall time per question.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | F32 (local conversion) | `laya-head.safetensors` | CPU | CPU | 0.0129 | 0.0029 | 0.0019 | 187 |
 | F32 (local conversion) | `laya-head.safetensors` | Metal | MTL0 | 0.0118 | 0.0030 | 0.0031 | 15.4 |
+| F16 (local conversion) | `laya-head.safetensors` | CPU | CPU | 0.0518 | 0.0115 | 0.0097 | 115 |
+| F16 (local conversion) | `laya-head.safetensors` | Metal | MTL0 | 0.0118 | 0.0030 | 0.0031 | 14.0 |
 | `laya-Q8_0.gguf` | `laya-head.safetensors` | CPU | CPU | 0.1422 | 0.0356 | 0.0609 | 85.6 |
 | `laya-Q8_0.gguf` | `laya-head.safetensors` | Metal | MTL0 | 0.1642 | 0.0436 | 0.0253 | 14.4 |
 | F32 (local conversion) | official `model.safetensors` + config | CPU | CPU | 0.0129 | 0.0029 | 0.0019 | 188 |
@@ -324,14 +326,17 @@ these worst differences:
 | --- | --- | --- | --- | --- |
 | F32 (local conversion) | CPU | 0.102 | 0.0065 | none |
 | F32 (local conversion) | Metal | 0.100 | 0.0085 | none |
+| F16 (local conversion) | CPU | 0.204 | 0.0189 | two choices with reference top-2 gaps of 0.00015 and 0.0003 |
+| F16 (local conversion) | Metal | 0.100 | 0.0085 | none |
 | `laya-Q8_0.gguf` | CPU | 1.905 | 0.237 | a noul from 0.694 to 0.457 (also with 1 and 4 threads); a choice with a reference top-2 gap of 0.00015; a noul from 0.4997 to 0.5004 |
 | `laya-Q8_0.gguf` | Metal | 2.935 | 0.066 | two choices with reference top-2 gaps of 0.00015 and 0.0014; a noul from 0.4997 to 0.5010 |
 
 On this set the median Q8_0 difference is about 6 times the F32 one for logits
 and 8 times for probabilities; on the fixture the worst is 11 (CPU) to 14
-(Metal) times. Q8_0 can change clear decisions, so use an F32 backbone
-when answers must match Laya; the published `laya-F16.gguf` has not been
-measured.
+(Metal) times. Q8_0 can change clear decisions. An F16 conversion matched F32
+on Metal and flipped only near-ties on CPU. Use an F32 backbone, or F16 on
+Metal, when answers must match Laya; the published `laya-F16.gguf` has not
+been measured.
 
 On Metal, disposing the engine with a head still loaded exits cleanly; skipping
 the head frees in `freeModel` and `dispose` makes the same exit abort in

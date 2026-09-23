@@ -7655,28 +7655,18 @@ class LlamaCppService {
     );
 
     final ctxParams = llama_context_default_params();
-    ctxParams.n_ctx = maxTokens;
-    ctxParams.n_batch = maxTokens;
-    ctxParams.n_ubatch = maxTokens;
-    ctxParams.n_seq_max = 1;
-    ctxParams.embeddings = true;
-    ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
-    if (params.numberOfThreads > 0) {
-      ctxParams.n_threads = params.numberOfThreads;
-    }
-    if (params.numberOfThreadsBatch > 0) {
-      ctxParams.n_threads_batch = params.numberOfThreadsBatch;
-    }
-    if (runsOnCpu) {
-      ctxParams.offload_kqv = false;
-      ctxParams.op_offload = false;
-      ctxParams.flash_attn_typeAsInt =
-          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value;
-    } else if (shouldUseConservativeAndroidVulkanContextConfig(
+    applyDecisionContextParams(
+      ctxParams,
       params,
-      resolvedGpuLayers: resolvedGpuLayers,
-      isAndroid: Platform.isAndroid,
-    )) {
+      maxTokens: maxTokens,
+      runsOnCpu: runsOnCpu,
+    );
+    if (!runsOnCpu &&
+        shouldUseConservativeAndroidVulkanContextConfig(
+          params,
+          resolvedGpuLayers: resolvedGpuLayers,
+          isAndroid: Platform.isAndroid,
+        )) {
       _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
     }
 

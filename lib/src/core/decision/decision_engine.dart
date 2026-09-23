@@ -209,8 +209,9 @@ class DecisionEngine {
   /// [LlamaDecisionException] for invalid questions and for text that
   /// contains U+0000, which the llama.cpp tokenizer would cut off there; JSON
   /// encoding escapes it in non-string states. Throws [LlamaStateException]
-  /// after [dispose] or once the engine's model is unloaded, including an
-  /// unload while the call runs.
+  /// after [dispose] or once the engine's model is unloaded. A call running
+  /// during an unload throws it too, unless its sequences already reached the
+  /// backend; that call returns answers from the unloaded model.
   Future<DecisionResult> systemOne({
     required Object? state,
     required Map<String, DecisionQuestion> questions,
