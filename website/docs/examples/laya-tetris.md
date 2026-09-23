@@ -80,7 +80,7 @@ wait until it finishes.
 The published tuned head,
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head),
 is the base head fine-tuned with the recipe in
-[Fine-tune the head](#fine-tune-the-head), except 8 epochs instead of 12.
+[Fine-tune the head](#fine-tune-the-head).
 
 The app loads the first tuned head it finds:
 
@@ -133,7 +133,8 @@ a run; `--help` lists every option.
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
 backbone. The tuned rows use the published tuned head from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`.
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6` (validation accuracy
+0.757).
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
 over three runs:
@@ -165,12 +166,9 @@ random pick. The tuned player asks in the format the tuned head was trained
 on; with the base head, that format also plays like a random pick (36 pieces,
 1 line). With "3 best + 3 random", the tuned head asks one question instead
 of the checklist's twelve, reaches the 150-piece cap in every game, and clears
-48 lines to the checklist's 35. Heads from five 8-epoch notebook runs played
-97 to 147 pieces with 3 best + 3 random and 107 to 146 with all legal moves;
-the lowest came from the run that reached 0.705 accuracy, the only run behind
-the checklist's 120 pieces. A head from a 12-epoch run (accuracy 0.757) played
-150 pieces with 3 best + 3 random, every game reaching the cap, and 135 with
-all legal moves.
+48 lines to the checklist's 35. Heads from five runs with 8 epochs instead of
+12 played 97 to 147 pieces with "3 best + 3 random" and 107 to 146 with all
+legal moves; the lowest came from the run that reached 0.705 accuracy.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:

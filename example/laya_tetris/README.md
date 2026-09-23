@@ -65,7 +65,7 @@ on-screen keys.
 
 The published tuned head is the base head fine-tuned on the heuristic-labelled
 choice examples that `bin/make_dataset.dart` writes, with the recipe of the
-notebook in [`training/`](training/README.md), except 8 epochs instead of 12.
+notebook in [`training/`](training/README.md).
 The app loads the first tuned head it finds:
 
 1. The URL from `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
