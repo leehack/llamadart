@@ -248,6 +248,11 @@ and reports which as `deviceName`.
   unsupported and a load throws `LlamaStateException`, as native does for an
   unloaded model. A malformed head description or output is
   `LlamaDecisionException`, like native's unexpected worker responses.
+- Numbers: Web numbers cannot tell `30.0` from `30`, so `pythonJsonDumps`
+  writes an integral double in a non-`String` state, instructions, criteria or
+  levels as an int (`30` where Python writes `30.0`). The tokens then differ
+  from native and Laya; the guide's Web section tells users to pass such
+  values as `String`s when parity matters.
 - The bridge serializes decision calls with its other operations and cannot
   cancel a run. When its worker fails during a run, it reloads the model on the
   main thread and rejects the run; the engine keeps its model, and the

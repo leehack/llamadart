@@ -427,6 +427,12 @@ assets, `capabilitiesFor` reports unsupported and `DecisionEngine.load` throws
   `LlamaModelException`.
 - The head runs on WebGPU when the model loaded with GPU layers and on the
   bridge CPU otherwise.
+- Web numbers cannot tell `30.0` from `30`. In a state, instructions, criteria,
+  levels or descriptions that are not a `String`, an integral `double` is
+  written as an `int`: `{'seats': 30.0}` becomes `{"seats": 30}`, where native
+  and Laya write `{"seats": 30.0}`. The model reads different tokens, so
+  answers can differ from native. When that matters, pass the value as a
+  `String` you encode yourself.
 - A bridge that restarts its runtime, for example when its worker fails during
   a call, frees its heads. Calls then throw `LlamaStateException`; load the
   `DecisionEngine` again.
@@ -476,3 +482,5 @@ not been measured.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
   `LlamaDecisionException`, because native tokenization would cut the text
   there. A state that is not a `String` is sent as JSON, which escapes it.
+- **Web numbers.** On Web, an integral `double` in JSON text, such as `30.0`,
+  is written as `30`, unlike native and Laya; see [Web](#web).
