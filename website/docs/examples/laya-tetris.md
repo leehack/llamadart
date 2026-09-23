@@ -182,7 +182,9 @@ until the stack topped out:
 | Laya choice (Tetris-tuned) | all | 0, 13 | 89 to 95 ms |
 
 Two games per row are too few to rank players: over six games, the tuned
-player with all candidates cleared 0 to 72 lines per game.
+player with all candidates cleared 0 to 72 lines per game (mean 36.2), and
+12 to 73 (mean 47.2) with the earlier 8-epoch head (revision `83794e0b`);
+each head cleared more lines in three of the six games.
 
 ## Test
 
