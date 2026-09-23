@@ -55,9 +55,9 @@ dart test -p chrome --exclude-tags local-only
   constants; `snake_case` files and directories.
 - No new TODO/FIXME comments in maintained source or workflow code.
 - Export new public API from `lib/llamadart.dart` with explicit parameter,
-  return and field types (locals may infer), useful `///` Dartdoc, and tests;
-  implementation stays in `lib/src/`. Select platform-specific backends with
-  conditional imports or exports.
+  return and field types (locals may infer when the type is obvious), useful
+  `///` Dartdoc, and tests; implementation stays in `lib/src/`. Select
+  platform-specific backends with conditional imports or exports.
 - Throw the `LlamaException` hierarchy (`lib/src/core/exceptions.dart`). An
   unsupported platform or option combination throws `LlamaUnsupportedException`
   (or a typed subtype) naming the missing capability, the platform/runtime
