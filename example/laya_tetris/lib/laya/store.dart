@@ -5,12 +5,12 @@ import 'package:path_provider/path_provider.dart';
 
 import 'models.dart';
 
-/// Download URL for the Tetris-tuned head, from
+/// Download URL that replaces the Tetris-tuned head, from
 /// `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
 const String tunedHeadUrlDefine = String.fromEnvironment('LAYA_TUNED_HEAD_URL');
 
-/// The app's model folder: downloads are cached here, and the Tetris-tuned
-/// head is read from here.
+/// The app's model folder: downloads are cached here, and a Tetris-tuned head
+/// saved here replaces the published one.
 class ModelStore {
   /// Creates a store rooted at [directory].
   ModelStore(this.directory, {this.tunedHeadUrl = tunedHeadUrlDefine})
@@ -37,34 +37,43 @@ class ModelStore {
   /// Download manager caching into [directory].
   final ModelDownloadManager downloads;
 
-  /// Download URL for the tuned head, or empty to look in [directory].
+  /// Download URL for the tuned head, or empty for the file at
+  /// [tunedHeadPath] or the published head.
   final String tunedHeadUrl;
 
-  /// Where the app looks for the Tetris-tuned head.
+  /// A Tetris-tuned head saved here replaces the published one, unless
+  /// [tunedHeadUrl] is set.
   String get tunedHeadPath =>
       '$directory${Platform.pathSeparator}$tunedHeadFile';
 
   /// The tuned head: [tunedHeadUrl] when set, else the file at
-  /// [tunedHeadPath] when present, else null.
-  ModelSource? tunedHead() {
+  /// [tunedHeadPath] when present, else [publishedTunedHead].
+  ModelSource tunedHead() {
     if (tunedHeadUrl.isNotEmpty) {
       return ModelSource.url(Uri.parse(tunedHeadUrl), fileName: tunedHeadFile);
     }
     return File(tunedHeadPath).existsSync()
         ? ModelSource.path(tunedHeadPath)
-        : null;
+        : publishedTunedHead;
   }
 
-  /// Explains how to provide a missing tuned head. An iOS app's folder is
-  /// in its sandbox, so there it has to be downloaded.
-  String get tunedHeadHelp =>
-      'Tetris-tuned head not found. Fine-tune the base head on the data from '
-      'bin/make_dataset.dart, then '
-      '${Platform.isIOS ? '' : 'save it as $tunedHeadPath and reload the models, or '}'
-      'build with --dart-define=LAYA_TUNED_HEAD_URL=<url>.';
+  /// How to recover when the tuned head from [source] fails to load. On iOS,
+  /// where [directory] is inside the app sandbox, it does not suggest saving
+  /// a file there.
+  String tunedHeadHelp(ModelSource source) => switch (source.kind) {
+    ModelSourceKind.path =>
+      'Replace $tunedHeadPath, or delete it to use the published head, then '
+          'tap Reload models.',
+    ModelSourceKind.http =>
+      'Tap Reload models to try again, or rebuild with a different '
+          'LAYA_TUNED_HEAD_URL.',
+    ModelSourceKind.huggingFace =>
+      'Tap Reload models to try again'
+          '${Platform.isIOS ? '' : ', or save a tuned head as $tunedHeadPath'}.',
+  };
 
-  /// The published [backbone] and base head, the tuned head when available,
-  /// and the runtime settings.
+  /// The published [backbone] and base head, the tuned head from
+  /// [tunedHead], and the runtime settings.
   LayaSetup setup(
     LayaBackbone backbone, {
     required GpuBackend backend,

@@ -12,15 +12,27 @@ void main() {
   tearDown(() => dir.deleteSync(recursive: true));
 
   group('ModelStore.tunedHead', () {
-    test('is null without a URL or a file', () {
-      expect(ModelStore(dir.path, tunedHeadUrl: '').tunedHead(), isNull);
+    test('is the published head without a URL or a file', () {
+      final source = ModelStore(dir.path, tunedHeadUrl: '').tunedHead();
+      expect(source.kind, ModelSourceKind.huggingFace);
+      expect(source.repoId, tunedHeadRepoId);
+      expect(source.revision, tunedHeadRevision);
+      expect(source.filePath, tunedHeadFile);
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/leehack/laya-tetris-head/resolve/'
+          '83794e0bdd5526420997279a5d3dc9810a445217/'
+          'laya-head-tetris.safetensors?download=true',
+        ),
+      );
     });
 
-    test('reads the file in the folder', () {
+    test('prefers the file in the folder over the published head', () {
       final store = ModelStore(dir.path, tunedHeadUrl: '');
       File(store.tunedHeadPath).writeAsBytesSync([0]);
 
-      final source = store.tunedHead()!;
+      final source = store.tunedHead();
       expect(source.kind, ModelSourceKind.path);
       expect(source.path, store.tunedHeadPath);
     });
@@ -32,7 +44,7 @@ void main() {
       );
       File(store.tunedHeadPath).writeAsBytesSync([0]);
 
-      final source = store.tunedHead()!;
+      final source = store.tunedHead();
       expect(source.kind, ModelSourceKind.http);
       expect(
         source.url,
@@ -40,6 +52,29 @@ void main() {
       );
       expect(source.fileName, tunedHeadFile);
     });
+  });
+
+  test('ModelStore.tunedHeadHelp names the recovery for each source', () {
+    final store = ModelStore(dir.path, tunedHeadUrl: '');
+    expect(
+      store.tunedHeadHelp(publishedTunedHead),
+      allOf(
+        contains('Tap Reload models to try again'),
+        contains(store.tunedHeadPath),
+        isNot(contains('LAYA_TUNED_HEAD_URL')),
+      ),
+    );
+    expect(
+      store.tunedHeadHelp(ModelSource.url(Uri.parse('https://example.com/h'))),
+      allOf(
+        contains('Tap Reload models to try again'),
+        contains('LAYA_TUNED_HEAD_URL'),
+      ),
+    );
+    expect(
+      store.tunedHeadHelp(ModelSource.path(store.tunedHeadPath)),
+      allOf(contains('delete it'), isNot(contains('try again'))),
+    );
   });
 
   test('ModelStore.setup pins the published files', () {
@@ -57,7 +92,7 @@ void main() {
       expect(source.revision, layaRevision);
       expect(source.filePath, file);
     }
-    expect(setup.tunedHead, isNull);
+    expect(setup.tunedHead, same(publishedTunedHead));
     expect(setup.backend, GpuBackend.cpu);
     expect(setup.threads, 3);
   });
