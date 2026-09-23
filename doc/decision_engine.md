@@ -370,6 +370,8 @@ scripts beside it from the pinned official checkpoint on CPU in FP32.
 
 ## Delivery
 
-The delivery plan and remaining work, including the examples, head fine-tuning
-and the Web decision module, are tracked in
-[#604](https://github.com/leehack/llamadart/issues/604).
+The delivery plan and remaining work, including head fine-tuning and the Web
+decision module, are tracked in
+[#604](https://github.com/leehack/llamadart/issues/604). The Tetris-tuned head
+is published as
+[leehack/laya-tetris-head](https://huggingface.co/leehack/laya-tetris-head).

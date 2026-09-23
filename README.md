@@ -201,6 +201,7 @@ bindings, runtime behavior, and docs have been validated together.
 
 - [Basic Dart CLI](https://github.com/leehack/llamadart/tree/main/example/basic_app)
 - [Flutter chat app](https://github.com/leehack/llamadart/tree/main/example/chat_app)
+- [Laya Tetris, a Flutter game played by a decision model](https://github.com/leehack/llamadart/tree/main/example/laya_tetris)
 - [HTTP server example](https://github.com/leehack/llamadart/tree/main/example/llamadart_server)
 - [TUI coding agent example](https://github.com/leehack/llamadart/tree/main/example/tui_coding_agent)
 
