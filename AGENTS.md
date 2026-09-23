@@ -88,7 +88,8 @@ This repo only consumes them: native hook/config/bindings, and bridge tag
 pinning, fetch and runtime wiring
 (`website/docs/maintainers/runtime-ownership.md`). Checkouts often keep them as
 siblings in `..`; verify the path first. Change and release the owning repo
-first, then update pins, hooks, docs and tests here.
+first, then update pins, hooks, docs and tests here, and run analyze and the
+relevant tests before the final commit.
 
 - A WebGPU bridge change is verified across the pinned tag/manifest, direct and
   worker paths, Dart interop, public API, docs and examples together; capability
@@ -109,6 +110,9 @@ first, then update pins, hooks, docs and tests here.
   `Unreleased` into a version only in an explicit release task.
 - One short user-facing bullet per change; implementation detail and migration
   notes go in the PR or maintainer docs.
+- Before release prep or a change to current install snippets, run
+  `dart run tool/testing/verify_release_docs_versions.dart`, then again with
+  `--release-prep`; resolve pending companion bumps in the release-prep PR.
 - Never push release tags by hand unless release automation is disabled,
   blocked or being repaired. Give each new release-sensitive path a
   `.github/CODEOWNERS` entry. Release work follows
