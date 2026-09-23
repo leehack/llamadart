@@ -128,15 +128,15 @@ backbone. The tuned rows use the published tuned head from
 at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`.
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
-over three runs:
+over three back-to-back runs:
 
 | Device | ms per question |
 | --- | --- |
-| Metal | 20 to 21 |
-| CPU, 2 threads | 330 to 336 |
-| CPU, 4 threads | 166 to 174 |
-| CPU, 6 threads | 114 to 118 |
-| CPU, 8 threads | 88 to 111 |
+| Metal | 19.6 to 19.7 |
+| CPU, 2 threads | 306.3 to 312.5 |
+| CPU, 4 threads | 157.9 to 159.0 |
+| CPU, 6 threads | 108.4 to 110.8 |
+| CPU, 8 threads | 83.5 to 85.2 |
 
 Turn-based games on Metal, means over 5 seeds of up to 150 pieces:
 
@@ -170,8 +170,8 @@ until the stack topped out:
 | Laya choice (Tetris-tuned) | 3 best + 3 random | 20, 92 | 26 ms |
 | Laya choice (Tetris-tuned) | all | 0, 13 | 89 to 95 ms |
 
-Two games vary widely: over six games, the tuned player with all candidates
-cleared 0 to 72 lines per game.
+Two games per row are too few to rank players: over six games, the tuned
+player with all candidates cleared 0 to 72 lines per game.
 
 ## Test
 
