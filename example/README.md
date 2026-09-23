@@ -11,6 +11,7 @@ A simple console application showing:
 - Tokenization
 - Text generation
 - Embedding generation
+- Decision-model answers with `DecisionEngine`
 - Resource cleanup
 
 **Best for:** Understanding the core API
@@ -29,6 +30,9 @@ dart run bin/llamadart_sqlite_vector_example.dart \
   -q "How do I improve embedding throughput?" \
   -d "Increase maxParallelSequences for wider embedding batches." \
   -d "Tune batchSize and ubatchSize together."
+
+# Decision model demo (Laya ticket triage)
+dart run bin/llamadart_decision_example.dart --json
 ```
 
 ### 2. Chat App (`chat_app/`)
