@@ -295,7 +295,7 @@ WAV inputs as bytes:
 | 3 s of digital silence | `LlamaSpeechException` with the message `Speech recognition produced an empty transcript.` |
 | The first 20,044 bytes of `jfk.wav`, whose RIFF header declares more audio than the bytes carry | A non-empty transcript that is not the reference, or `LlamaAudioFormatException`. Every recorded run returned a short transcript and no error. |
 | `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
-| `jfk.wav` three times (33 s), crossing the projector's 30-second audio chunk | The reference three times |
+| `jfk.wav` three times (33 s) | The reference three times |
 
 Each run then repeats three cancel/dispose/load/generate cycles. It fails if
 either budget is exceeded:

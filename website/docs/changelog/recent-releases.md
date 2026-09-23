@@ -30,10 +30,9 @@ For canonical full release notes, use:
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second
-  concatenation crossing the 30-second preprocessing boundary, the last three
-  derived from the locked `jfk.wav`. Every GGUF STT pack run executes the four
-  checks and each one gates `functional_pass`; the LiteRT-ASR and TTS packs
-  pass no edge fixtures
+  concatenation, the last three derived from the locked `jfk.wav`. Every GGUF
+  STT pack run executes the four checks and each one gates `functional_pass`;
+  the LiteRT-ASR and TTS packs pass no edge fixtures
   ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Raise every `stt`, `tts` and `litert-asr` speech validation pack run from 8
   to 15 lifecycle checks: an immediate cancel, three
