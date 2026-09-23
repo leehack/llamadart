@@ -13,6 +13,9 @@ For canonical full release notes, use:
   ModernBERT encoder GGUF plus a safetensors head) on native llama.cpp, with
   typed `ChoiceKey`, `ScoreKey` and `NoulKey` questions
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add `example/basic_app/bin/llamadart_decision_example.dart`, a console demo
+  that triages a support ticket with `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second
