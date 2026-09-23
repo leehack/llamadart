@@ -198,6 +198,58 @@ void main() {
 
       expect(decision.escalation.remoteFetchChunkRetryCount, 0);
     });
+
+    test('halves a chunk one byte above the floor down to the floor', () {
+      final decision = classifyWebGpuLoadFailure(
+        abortedForcedFetch(),
+        _escalation(remoteFetchChunkBytes: minRemoteFetchChunkBytes + 1),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(
+        decision.escalation.remoteFetchChunkBytes,
+        minRemoteFetchChunkBytes,
+      );
+    });
+
+    test('does not fire when the notes report a thread failure', () {
+      for (final note in <String>[
+        'thread_constructor_failed',
+        'threads_capped_no_coi',
+      ]) {
+        final decision = classifyWebGpuLoadFailure(
+          _failure(
+            runtimeNotes:
+                'model_fetch_backend_attempt;model_fetch_backend_abort;$note',
+            coreVariant: 'wasm32',
+            forceRemoteFetchRequested: true,
+            remoteFetchBackendOptedIn: true,
+          ),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.giveUp, reason: note);
+      }
+    });
+
+    test('needs both the attempt and the abort note', () {
+      for (final notes in <String>[
+        'model_fetch_backend_attempt',
+        'model_fetch_backend_abort',
+      ]) {
+        final decision = classifyWebGpuLoadFailure(
+          _failure(
+            runtimeNotes: notes,
+            coreVariant: 'wasm32',
+            forceRemoteFetchRequested: true,
+            remoteFetchBackendOptedIn: true,
+          ),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.giveUp, reason: notes);
+      }
+    });
   });
 
   group('streamed loading restart', () {
@@ -295,6 +347,27 @@ void main() {
             'wasm32; retrying with wasm64 core and streamed '
             'network loading.',
       ]);
+    });
+
+    test('neither abort marker counts without a fetch attempt', () {
+      for (final failure in <WebGpuLoadFailure>[
+        _failure(
+          coreVariant: 'wasm32',
+          errorText: 'out of memory',
+          runtimeNotes: 'core_abort',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _failure(
+          coreVariant: 'wasm32',
+          errorText: 'aborted(native code called abort())',
+          remoteFetchBackendOptedIn: true,
+        ),
+      ]) {
+        final decision = classifyWebGpuLoadFailure(failure, _escalation());
+
+        expect(decision.escalation.remoteFetchBackendKnownUnstable, isFalse);
+        expect(decision.forceRemoteFetchBackend, isTrue);
+      }
     });
   });
 
@@ -471,6 +544,33 @@ void main() {
       expect(decision.action, WebGpuRetryAction.restart);
       expect(decision.preferMemory64, isTrue);
     });
+
+    test('a wasm32 staging failure advances once the restart is spent', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm32',
+          runtimeNotes: 'model_fs_write_failed',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation().copyWith(retriedWithWasm64: true),
+      );
+
+      expect(decision.action, WebGpuRetryAction.advance);
+      expect(decision.forceRemoteFetchBackend, isNull);
+      expect(decision.logMessages, isEmpty);
+    });
+
+    test(
+      'a staging failure without the wasm32 core is not memory pressure',
+      () {
+        final decision = classifyWebGpuLoadFailure(
+          _failure(runtimeNotes: 'model_fs_write_failed'),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.giveUp);
+      },
+    );
 
     test('a skipped small fetch suppresses the restart', () {
       final decision = classifyWebGpuLoadFailure(
@@ -652,6 +752,34 @@ void main() {
       expect(decision.action, WebGpuRetryAction.giveUp);
       expect(decision.forceRemoteFetchBackend, isNull);
       expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+    });
+  });
+
+  group('escalation state', () {
+    List<Object> fieldsOf(WebGpuLoadEscalation state) => <Object>[
+      state.remoteFetchChunkBytes,
+      state.retriedWithWasm32,
+      state.retriedWithWasm64,
+      state.retriedWithoutRemoteFetchBackend,
+      state.remoteFetchChunkRetryCount,
+      state.retriedAfterFsWriteFailureWithRemote,
+      state.remoteFetchBackendKnownUnstable,
+      state.wasm64InteropKnownBroken,
+    ];
+
+    test('copyWith keeps every field it is not given', () {
+      const fired = WebGpuLoadEscalation(
+        remoteFetchChunkBytes: 5120,
+        retriedWithWasm32: true,
+        retriedWithWasm64: true,
+        retriedWithoutRemoteFetchBackend: true,
+        remoteFetchChunkRetryCount: 3,
+        retriedAfterFsWriteFailureWithRemote: true,
+        remoteFetchBackendKnownUnstable: true,
+        wasm64InteropKnownBroken: true,
+      );
+
+      expect(fieldsOf(fired.copyWith()), fieldsOf(fired));
     });
   });
 }
