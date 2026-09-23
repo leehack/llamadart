@@ -11,7 +11,7 @@
   progress first. This needs llamadart-native v0.4.1-1 or later; older
   runtimes keep the previous behaviour
   ([llamadart-native#86](https://github.com/leehack/llamadart-native/issues/86),
-  [#325](https://github.com/leehack/llamadart/issues/325)).
+  [#322](https://github.com/leehack/llamadart/issues/322)).
 - Add an experimental `DecisionEngine` for Laya-style decision models (a
   ModernBERT encoder GGUF plus a safetensors head) on native llama.cpp, with
   typed `ChoiceKey`, `ScoreKey` and `NoulKey` questions
