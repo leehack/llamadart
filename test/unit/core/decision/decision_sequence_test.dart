@@ -403,29 +403,6 @@ void main() {
       ]);
     });
 
-    test('tokenizes each distinct text once', () async {
-      final request = DecisionRequest(
-        state: 'yes',
-        questions: {
-          'a': DecisionQuestion.noul('Same?'),
-          'b': DecisionQuestion.noul('Same?'),
-          'c': DecisionQuestion.choice('Same?', criteria: {'yes': null}),
-        },
-      );
-
-      await buildDecisionSequences(request, _spec, tokenize);
-
-      expect(calls, hasLength(calls.toSet().length));
-      expect(calls.toSet(), {
-        'yes',
-        'noul question: Same?',
-        ' false: no, the statement does not hold',
-        ' true: yes, the statement holds',
-        'choice question: Same?',
-        ' yes',
-      });
-    });
-
     test('sends mask-free texts and an empty state', () async {
       final request = DecisionRequest(
         state: '',

@@ -10,6 +10,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -583,7 +584,7 @@ void main() {
       final sequence = BackendDecisionSequence(
         tokens: Int32List.fromList([1, 2]),
         markers: Int32List.fromList([1]),
-        questionType: 1,
+        questionType: DecisionQuestionType.score,
       );
       final outputs = await backend.decisionRun(77, [sequence]);
       expect(outputs.single.logits, [0.25]);

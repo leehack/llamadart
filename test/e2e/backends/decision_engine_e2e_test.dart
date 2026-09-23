@@ -21,6 +21,7 @@ const _configPathKey = 'LLAMADART_DECISION_CONFIG_PATH';
 const _backendKey = 'LLAMADART_DECISION_BACKEND';
 const _logitToleranceKey = 'LLAMADART_DECISION_LOGIT_TOLERANCE';
 const _probToleranceKey = 'LLAMADART_DECISION_PROB_TOLERANCE';
+const _gpuBackendNames = {'Metal', 'CUDA', 'HIP', 'Vulkan', 'OpenCL'};
 
 void main() {
   test('matches the Laya 0.3.5 reference on every fixture row', () async {
@@ -97,7 +98,7 @@ void main() {
           BackendDecisionSequence(
             tokens: Int32List.fromList(row.ids),
             markers: Int32List.fromList(row.markers),
-            questionType: DecisionQuestion.fromJson(row.question).type.index,
+            questionType: DecisionQuestion.fromJson(row.question).type,
           ),
       ];
       await engine.runDecisionBackend(head.handle, inputs.sublist(0, 1));
@@ -188,11 +189,25 @@ void main() {
         }
       }
 
+      if (backend != GpuBackend.cpu &&
+          backend != GpuBackend.auto &&
+          !(capabilities.backendName ?? '').toLowerCase().contains(
+            backend.name,
+          )) {
+        failures.add(
+          'requested ${backend.name}, but the model runs on '
+          '${capabilities.backendName}',
+        );
+      }
       if (backend == GpuBackend.cpu &&
           decisionEngine.info.deviceName != 'CPU') {
         failures.add(
           'head device ${decisionEngine.info.deviceName} for a CPU model',
         );
+      }
+      if (_gpuBackendNames.contains(capabilities.backendName) &&
+          decisionEngine.info.deviceName == 'CPU') {
+        failures.add('head device CPU for a ${capabilities.backendName} model');
       }
       final questions = fixture.rows.length;
       print(
@@ -266,6 +281,54 @@ void main() {
     } finally {
       await decisions?.dispose();
       await engine.dispose();
+    }
+  });
+
+  test('rejects a config longer than the encoder was trained for', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final headPath = _requiredFile(_headPathKey);
+    if (modelPath == null || headPath == null) {
+      return;
+    }
+    final engine = LlamaEngine(LlamaBackend());
+    final tempDir = Directory.systemTemp.createTempSync(
+      'decision_long_config_',
+    );
+    try {
+      await engine.loadModel(
+        modelPath,
+        modelParams: ModelParams(
+          contextSize: 512,
+          preferredBackend: _backend(),
+          gpuLayers: 0,
+        ),
+      );
+      final head = await engine.loadDecisionHeadBackend(
+        headPath,
+        configPath: _optionalFile(_configPathKey),
+      );
+      final config = jsonDecode(head.configJson) as Map<String, Object?>;
+      await engine.freeDecisionHeadBackend(head.handle);
+      final longConfig = File('${tempDir.path}/rl_agent_config.json')
+        ..writeAsStringSync(jsonEncode({...config, 'max_len': 1 << 20}));
+
+      await expectLater(
+        DecisionEngine.load(
+          engine,
+          headPath: headPath,
+          configPath: longConfig.path,
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('but the loaded encoder was trained for'),
+          ),
+        ),
+      );
+    } finally {
+      await engine.dispose();
+      tempDir.deleteSync(recursive: true);
     }
   });
 

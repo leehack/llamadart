@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../../core/decision/decision_decoder.dart';
+import '../../core/decision/decision_question.dart';
 import '../../core/exceptions.dart';
 import '../backend.dart';
 import 'bindings.dart';
@@ -13,7 +14,11 @@ import 'safetensors.dart';
 
 const double _layerNormEpsilon = 1e-5;
 
-/// Decision-head weights read from a safetensors file, converted to F32.
+/// The shape-checked head tensors of a safetensors file.
+///
+/// The type embedding and the act MLP are read into memory as F32. The other
+/// tensors stay in the file until [DecisionHeadRuntime.create] uploads them,
+/// so the file must stay open until then.
 final class DecisionHeadWeights {
   DecisionHeadWeights._({
     required this.hiddenSize,
@@ -22,30 +27,34 @@ final class DecisionHeadWeights {
     required this.ffnSize,
     required this.actHiddenSize,
     required this.actClasses,
+    required SafetensorsFile file,
     required Float32List typeEmbedding,
-    required List<_LayerWeights> layerWeights,
-    required _ScorerWeights scorer,
     required _ActWeights act,
-  }) : _typeEmbedding = typeEmbedding,
-       _layerWeights = layerWeights,
-       _scorer = scorer,
+  }) : _file = file,
+       _typeEmbedding = typeEmbedding,
        _act = act;
 
-  /// Reads the head tensors of [file] for an encoder of width [hiddenSize].
+  /// Checks the head tensors of [file] for an encoder of width [hiddenSize]
+  /// and reads the type embedding and act MLP.
   ///
-  /// [config] is the head's Laya config; its `head_layers` (default 2) sets
-  /// how many transformer layers are read. Tensors outside the head, such as
-  /// `encoder.*` and `temperature`, are ignored. Throws [LlamaModelException]
-  /// when `head_layers` is not a positive integer, when [hiddenSize] is not
-  /// positive or not divisible by [heads], when the file has tensors for more
-  /// head layers than `head_layers`, when a head tensor is missing (naming
-  /// it) or mis-shaped (naming it with the expected and found shapes), and
-  /// when [SafetensorsFile.readFloat32] cannot read one.
+  /// [layers] is the head's transformer layer count, the config's
+  /// [DecisionHeadConfig.headLayers]. Tensors outside the head, such as
+  /// `encoder.*` and `temperature`, are ignored. `type_emb.weight` is the
+  /// first shape checked, and its error names the encoder's hidden size.
+  /// Throws [ArgumentError] when [layers] is below 1, and
+  /// [LlamaModelException] when [hiddenSize] is not positive or not
+  /// divisible by [heads], when the file has tensors for more head layers
+  /// than [layers], when a head tensor is missing (naming it) or mis-shaped
+  /// (naming it with the expected and found shapes), and when
+  /// [SafetensorsFile.readFloat32] cannot read one of the tensors read here.
   static DecisionHeadWeights read(
     SafetensorsFile file, {
     required int hiddenSize,
-    required Map<String, Object?> config,
+    required int layers,
   }) {
+    if (layers < 1) {
+      throw ArgumentError.value(layers, 'layers', 'must be at least 1');
+    }
     final d = hiddenSize;
     if (d < 1) {
       throw LlamaModelException(
@@ -59,13 +68,6 @@ final class DecisionHeadWeights {
         'attention heads.',
       );
     }
-    final layers = config['head_layers'] ?? 2;
-    if (layers is! int || layers < 1) {
-      throw LlamaModelException(
-        'Decision head config "head_layers" must be a positive integer, got '
-        '$layers.',
-      );
-    }
     final extraLayer = 'head.layers.$layers.';
     if (file.tensors.keys.any((name) => name.startsWith(extraLayer))) {
       throw LlamaModelException(
@@ -75,8 +77,14 @@ final class DecisionHeadWeights {
     }
 
     final shapes = _ShapeCheck(file);
+    shapes.expect(
+      'type_emb.weight',
+      [3, d],
+      advice:
+          ' The encoder has hidden size $d; use the head trained for this '
+          'encoder.',
+    );
     final ffn = shapes.rows('head.layers.0.linear1.weight', d, 'ffn');
-    shapes.expect('type_emb.weight', [3, d]);
     for (var i = 0; i < layers; i++) {
       final p = 'head.layers.$i';
       shapes
@@ -105,7 +113,6 @@ final class DecisionHeadWeights {
     final actClasses = shapes.rows('act_head.2.weight', actHidden, 'classes');
     shapes.expect('act_head.2.bias', [actClasses]);
 
-    final read = file.readFloat32;
     return DecisionHeadWeights._(
       hiddenSize: d,
       heads: heads,
@@ -113,12 +120,9 @@ final class DecisionHeadWeights {
       ffnSize: ffn,
       actHiddenSize: actHidden,
       actClasses: actClasses,
-      typeEmbedding: read('type_emb.weight'),
-      layerWeights: [
-        for (var i = 0; i < layers; i++) _LayerWeights(read, 'head.layers.$i'),
-      ],
-      scorer: _ScorerWeights(read),
-      act: _ActWeights(read),
+      file: file,
+      typeEmbedding: file.readFloat32('type_emb.weight'),
+      act: _ActWeights(file.readFloat32),
     );
   }
 
@@ -140,9 +144,8 @@ final class DecisionHeadWeights {
   /// Number of act-head outputs.
   final int actClasses;
 
+  final SafetensorsFile _file;
   final Float32List _typeEmbedding;
-  final List<_LayerWeights> _layerWeights;
-  final _ScorerWeights _scorer;
   final _ActWeights _act;
 }
 
@@ -161,7 +164,7 @@ final class _ShapeCheck {
     return tensor.shape;
   }
 
-  void expect(String name, List<int> expected) {
+  void expect(String name, List<int> expected, {String advice = ''}) {
     final found = _shape(name);
     if (found.length != expected.length ||
         Iterable<int>.generate(
@@ -169,7 +172,7 @@ final class _ShapeCheck {
         ).any((i) => found[i] != expected[i])) {
       throw LlamaModelException(
         'Decision head tensor "$name" in "${file.path}" has shape $found; '
-        'expected $expected.',
+        'expected $expected.$advice',
       );
     }
   }
@@ -184,52 +187,6 @@ final class _ShapeCheck {
     }
     return found[0];
   }
-}
-
-final class _LayerWeights {
-  _LayerWeights(Float32List Function(String) read, String p)
-    : inProjWeight = read('$p.self_attn.in_proj_weight'),
-      inProjBias = read('$p.self_attn.in_proj_bias'),
-      outProjWeight = read('$p.self_attn.out_proj.weight'),
-      outProjBias = read('$p.self_attn.out_proj.bias'),
-      linear1Weight = read('$p.linear1.weight'),
-      linear1Bias = read('$p.linear1.bias'),
-      linear2Weight = read('$p.linear2.weight'),
-      linear2Bias = read('$p.linear2.bias'),
-      norm1Weight = read('$p.norm1.weight'),
-      norm1Bias = read('$p.norm1.bias'),
-      norm2Weight = read('$p.norm2.weight'),
-      norm2Bias = read('$p.norm2.bias');
-
-  final Float32List inProjWeight;
-  final Float32List inProjBias;
-  final Float32List outProjWeight;
-  final Float32List outProjBias;
-  final Float32List linear1Weight;
-  final Float32List linear1Bias;
-  final Float32List linear2Weight;
-  final Float32List linear2Bias;
-  final Float32List norm1Weight;
-  final Float32List norm1Bias;
-  final Float32List norm2Weight;
-  final Float32List norm2Bias;
-}
-
-final class _ScorerWeights {
-  _ScorerWeights(Float32List Function(String) read)
-    : normWeight = read('scorer.0.weight'),
-      normBias = read('scorer.0.bias'),
-      hiddenWeight = read('scorer.1.weight'),
-      hiddenBias = read('scorer.1.bias'),
-      outWeight = read('scorer.3.weight'),
-      outBias = read('scorer.3.bias');
-
-  final Float32List normWeight;
-  final Float32List normBias;
-  final Float32List hiddenWeight;
-  final Float32List hiddenBias;
-  final Float32List outWeight;
-  final Float32List outBias;
 }
 
 final class _ActWeights {
@@ -268,17 +225,19 @@ final class DecisionHeadRuntime {
 
   /// Uploads [weights] to a backend buffer and creates a scheduler.
   ///
-  /// With [device] null or the CPU device the head runs on the CPU only.
-  /// Otherwise its weights live on [device], and the scheduler lists [device]
-  /// first and the CPU backend last. [cpuThreads] sets the CPU backend's
-  /// thread count when that backend exposes `ggml_backend_set_n_threads`;
-  /// [opOffload] is passed to `ggml_backend_sched_new`. [api] is the ggml
-  /// function table the head calls, [GgmlGraphApi.current] by default. What
-  /// was created before a failure is freed. Throws [ArgumentError] when
-  /// [cpuThreads] is below 1, [LlamaUnsupportedException] when the native
-  /// library does not export a ggml function the head calls, and
-  /// [LlamaModelException] when a backend, the weights buffer or the
-  /// scheduler cannot be created or filled.
+  /// The tensors [DecisionHeadWeights.read] left in the file are read from it
+  /// here, one at a time through a staging buffer. With [device] null or the
+  /// CPU device the head runs on the CPU only. Otherwise its weights live on
+  /// [device], and the scheduler lists [device] first and the CPU backend
+  /// last. [cpuThreads] sets the CPU backend's thread count when that backend
+  /// exposes `ggml_backend_set_n_threads`; [opOffload] is passed to
+  /// `ggml_backend_sched_new`. [api] is the ggml function table the head
+  /// calls, [GgmlGraphApi.current] by default. What was created before a
+  /// failure is freed. Throws [ArgumentError] when [cpuThreads] is below 1,
+  /// [LlamaUnsupportedException] when the native library does not export a
+  /// ggml function the head calls, [LlamaModelException] when a backend, the
+  /// weights buffer or the scheduler cannot be created or filled, and
+  /// [LlamaStateException] when the file of [weights] has been closed.
   static DecisionHeadRuntime create(
     DecisionHeadWeights weights, {
     ggml_backend_dev_t? device,
@@ -358,104 +317,97 @@ final class DecisionHeadRuntime {
     final primary = _deviceBackend != nullptr ? _deviceBackend : _cpuBackend;
     _deviceName = api.backendName(primary).cast<Utf8>().toDartString();
 
-    final uploads = <(Pointer<ggml_tensor>, Float32List)>[];
+    final uploads = <(String, List<Pointer<ggml_tensor>>, int)>[];
     final tensorCount = 16 * weights.layers + 6;
     _weightsContext = _newContext(api.tensorOverhead() * tensorCount);
-    Pointer<ggml_tensor> vector(Float32List data) {
-      final tensor = api.newTensor1d(
-        _weightsContext,
-        ggml_type.GGML_TYPE_F32.value,
-        data.length,
-      );
-      uploads.add((tensor, data));
-      return tensor;
+    List<Pointer<ggml_tensor>> load(
+      String name,
+      int parts,
+      int columns, [
+      int? rows,
+    ]) {
+      final f32 = ggml_type.GGML_TYPE_F32.value;
+      final tensors = [
+        for (var i = 0; i < parts; i++)
+          rows == null
+              ? api.newTensor1d(_weightsContext, f32, columns)
+              : api.newTensor2d(_weightsContext, f32, columns, rows),
+      ];
+      uploads.add((name, tensors, columns * (rows ?? 1)));
+      return tensors;
     }
 
-    Pointer<ggml_tensor> matrix(Float32List data, int columns) {
-      final tensor = api.newTensor2d(
-        _weightsContext,
-        ggml_type.GGML_TYPE_F32.value,
-        columns,
-        data.length ~/ columns,
-      );
-      uploads.add((tensor, data));
-      return tensor;
-    }
+    Pointer<ggml_tensor> vector(String name, int size) =>
+        load(name, 1, size).single;
+    Pointer<ggml_tensor> matrix(String name, int columns, int rows) =>
+        load(name, 1, columns, rows).single;
 
     final d = _hiddenSize;
-    for (final layer in weights._layerWeights) {
-      Float32List part(Float32List data, int index, int size) =>
-          Float32List.sublistView(data, index * size, (index + 1) * size);
-      final inWeight = layer.inProjWeight;
-      final inBias = layer.inProjBias;
+    final ffn = weights.ffnSize;
+    for (var i = 0; i < weights.layers; i++) {
+      final p = 'head.layers.$i';
+      final [queryWeight, keyWeight, valueWeight] = load(
+        '$p.self_attn.in_proj_weight',
+        3,
+        d,
+        d,
+      );
+      final [queryBias, keyBias, valueBias] = load(
+        '$p.self_attn.in_proj_bias',
+        3,
+        d,
+      );
       _layers.add(
         _LayerTensors()
-          ..norm1Weight = vector(layer.norm1Weight)
-          ..norm1Bias = vector(layer.norm1Bias)
-          ..queryWeight = matrix(part(inWeight, 0, d * d), d)
-          ..keyWeight = matrix(part(inWeight, 1, d * d), d)
-          ..valueWeight = matrix(part(inWeight, 2, d * d), d)
-          ..queryBias = vector(part(inBias, 0, d))
-          ..keyBias = vector(part(inBias, 1, d))
-          ..valueBias = vector(part(inBias, 2, d))
-          ..outWeight = matrix(layer.outProjWeight, d)
-          ..outBias = vector(layer.outProjBias)
-          ..norm2Weight = vector(layer.norm2Weight)
-          ..norm2Bias = vector(layer.norm2Bias)
-          ..linear1Weight = matrix(layer.linear1Weight, d)
-          ..linear1Bias = vector(layer.linear1Bias)
-          ..linear2Weight = matrix(layer.linear2Weight, weights.ffnSize)
-          ..linear2Bias = vector(layer.linear2Bias),
+          ..norm1Weight = vector('$p.norm1.weight', d)
+          ..norm1Bias = vector('$p.norm1.bias', d)
+          ..queryWeight = queryWeight
+          ..keyWeight = keyWeight
+          ..valueWeight = valueWeight
+          ..queryBias = queryBias
+          ..keyBias = keyBias
+          ..valueBias = valueBias
+          ..outWeight = matrix('$p.self_attn.out_proj.weight', d, d)
+          ..outBias = vector('$p.self_attn.out_proj.bias', d)
+          ..norm2Weight = vector('$p.norm2.weight', d)
+          ..norm2Bias = vector('$p.norm2.bias', d)
+          ..linear1Weight = matrix('$p.linear1.weight', d, ffn)
+          ..linear1Bias = vector('$p.linear1.bias', ffn)
+          ..linear2Weight = matrix('$p.linear2.weight', ffn, d)
+          ..linear2Bias = vector('$p.linear2.bias', d),
       );
     }
-    final scorer = weights._scorer;
-    _scorerNormWeight = vector(scorer.normWeight);
-    _scorerNormBias = vector(scorer.normBias);
-    _scorerHiddenWeight = matrix(scorer.hiddenWeight, d);
-    _scorerHiddenBias = vector(scorer.hiddenBias);
-    _scorerOutWeight = matrix(scorer.outWeight, d);
-    _scorerOutBias = vector(scorer.outBias);
+    _scorerNormWeight = vector('scorer.0.weight', d);
+    _scorerNormBias = vector('scorer.0.bias', d);
+    _scorerHiddenWeight = matrix('scorer.1.weight', d, d);
+    _scorerHiddenBias = vector('scorer.1.bias', d);
+    _scorerOutWeight = matrix('scorer.3.weight', d, 1);
+    _scorerOutBias = vector('scorer.3.bias', 1);
 
-    final bufferType = api.defaultBufferType(primary);
-    final alignment = api.buftGetAlignment(bufferType);
-    int align(int offset) => (offset + alignment - 1) ~/ alignment * alignment;
-    var total = 0;
-    for (final (tensor, _) in uploads) {
-      total = align(total) + api.buftGetAllocSize(bufferType, tensor);
-    }
-    total = align(total);
-    _weightsBuffer = api.buftAllocBuffer(bufferType, total);
+    _weightsBuffer = api.allocCtxTensors(_weightsContext, primary);
     if (_weightsBuffer == nullptr) {
       throw LlamaModelException(
-        'Could not allocate $total bytes for decision head weights on '
-        '$_deviceName.',
+        'Could not allocate decision head weights on $_deviceName.',
       );
     }
     api.bufferSetUsage(
       _weightsBuffer,
       ggml_backend_buffer_usage.GGML_BACKEND_BUFFER_USAGE_WEIGHTS.value,
     );
-    final base = api.bufferGetBase(_weightsBuffer).address;
-    var offset = 0;
-    final largest = uploads.fold(0, (size, e) => math.max(size, e.$2.length));
-    final staging = malloc<Float>(math.max(1, largest));
+    final largest = uploads.fold(
+      0,
+      (count, e) => math.max(count, e.$2.length * e.$3),
+    );
+    final staging = malloc<Float>(largest);
     try {
-      for (final (tensor, data) in uploads) {
-        offset = align(offset);
-        final status = api.tensorAlloc(
-          _weightsBuffer,
-          tensor,
-          Pointer.fromAddress(base + offset),
+      for (final (name, tensors, size) in uploads) {
+        weights._file.readFloat32Into(
+          name,
+          staging.asTypedList(tensors.length * size),
         );
-        if (status != ggml_status.GGML_STATUS_SUCCESS.value) {
-          throw LlamaModelException(
-            'Could not place a decision head tensor in its $_deviceName '
-            'buffer (ggml status $status).',
-          );
+        for (final (index, tensor) in tensors.indexed) {
+          api.tensorSet(tensor, (staging + index * size).cast(), 0, size * 4);
         }
-        offset += api.buftGetAllocSize(bufferType, tensor);
-        staging.asTypedList(data.length).setAll(0, data);
-        api.tensorSet(tensor, staging.cast(), 0, data.lengthInBytes);
       }
     } finally {
       malloc.free(staging);
@@ -519,17 +471,17 @@ final class DecisionHeadRuntime {
   /// Runs the head on the encoder output of one sequence.
   ///
   /// [hidden] is the encoder's last hidden state, row-major
-  /// `[tokenCount, hiddenSize]`. [questionType] (0 choice, 1 score, 2 noul)
-  /// selects the `type_emb` row, and [markers] holds at least one option
-  /// position in `[0, tokenCount)`. Returns one raw logit per marker and the
-  /// act-head logits. Throws [ArgumentError] for inputs outside these bounds,
+  /// `[tokenCount, hiddenSize]`. [questionType] selects the `type_emb` row
+  /// by its index, and [markers] holds at least one option position in
+  /// `[0, tokenCount)`. Returns one raw logit per marker and the act-head
+  /// logits. Throws [ArgumentError] for inputs outside these bounds,
   /// [LlamaInferenceException] when the graph cannot be allocated or computed,
   /// [LlamaUnsupportedException] when the native library does not export a
   /// ggml function the head calls, and [LlamaStateException] after [dispose].
   BackendDecisionOutput run(
     Float32List hidden,
     int tokenCount,
-    int questionType,
+    DecisionQuestionType questionType,
     Int32List markers,
   ) {
     if (_disposed) {
@@ -541,9 +493,6 @@ final class DecisionHeadRuntime {
         'tokens of width $_hiddenSize.',
       );
     }
-    if (questionType < 0 || questionType > 2) {
-      throw ArgumentError.value(questionType, 'questionType', 'must be 0..2');
-    }
     if (markers.isEmpty || markers.any((m) => m < 0 || m >= tokenCount)) {
       throw ArgumentError.value(
         markers,
@@ -552,7 +501,7 @@ final class DecisionHeadRuntime {
       );
     }
     final (logits, cls) = withGgmlGraphSymbols(
-      () => _computeGraph(hidden, tokenCount, questionType, markers),
+      () => _computeGraph(hidden, tokenCount, questionType.index, markers),
     );
     return BackendDecisionOutput(
       logits: logits,
@@ -590,8 +539,8 @@ final class DecisionHeadRuntime {
         Pointer<ggml_tensor> weight,
         Pointer<ggml_tensor> bias,
       ) => api.add(g, api.mulMat(g, weight, x), bias);
-      Pointer<ggml_tensor> splitHeads(Pointer<ggml_tensor> x) =>
-          api.permute(g, api.reshape3d(g, x, headSize, _heads, n), 0, 2, 1, 3);
+      Pointer<ggml_tensor> splitHeads(Pointer<ggml_tensor> x, int rows) => api
+          .permute(g, api.reshape3d(g, x, headSize, _heads, rows), 0, 2, 1, 3);
 
       final f32 = ggml_type.GGML_TYPE_F32.value;
       final hiddenInput = api.newTensor2d(g, f32, d, n);
@@ -606,11 +555,21 @@ final class DecisionHeadRuntime {
       }
 
       var x = api.add(g, hiddenInput, typeInput);
-      for (final layer in _layers) {
+      for (final (index, layer) in _layers.indexed) {
         final a = norm(x, layer.norm1Weight, layer.norm1Bias);
-        final q = splitHeads(linear(a, layer.queryWeight, layer.queryBias));
-        final k = splitHeads(linear(a, layer.keyWeight, layer.keyBias));
-        final v = splitHeads(linear(a, layer.valueWeight, layer.valueBias));
+        var queries = a;
+        var queryRows = n;
+        if (index == _layers.length - 1) {
+          queries = api.getRows(g, a, rowsInput);
+          x = api.getRows(g, x, rowsInput);
+          queryRows = rowCount;
+        }
+        final q = splitHeads(
+          linear(queries, layer.queryWeight, layer.queryBias),
+          queryRows,
+        );
+        final k = splitHeads(linear(a, layer.keyWeight, layer.keyBias), n);
+        final v = splitHeads(linear(a, layer.valueWeight, layer.valueBias), n);
         final scores = api.softMaxExt(
           g,
           api.mulMat(g, k, q),
@@ -627,7 +586,7 @@ final class DecisionHeadRuntime {
           g,
           api.permute(g, attended, 0, 2, 1, 3),
           d,
-          n,
+          queryRows,
         );
         x = api.add(g, x, linear(merged, layer.outWeight, layer.outBias));
         final ff = norm(x, layer.norm2Weight, layer.norm2Bias);
@@ -641,7 +600,7 @@ final class DecisionHeadRuntime {
           ),
         );
       }
-      final rows = api.getRows(g, x, rowsInput);
+      final rows = x;
       api.setOutput(rows);
       var scores = norm(rows, _scorerNormWeight, _scorerNormBias);
       scores = api.geluErf(
@@ -766,156 +725,15 @@ final class DecisionHeadRuntime {
   }
 }
 
-/// The error function, ported from fdlibm's `s_erf.c`.
+/// The error function by Abramowitz and Stegun 7.1.26, within 1.4e-7 of the
+/// exact value; NaN stays NaN.
 double decisionErf(double x) {
-  _erfBits.setFloat64(0, x);
-  final high = _erfBits.getInt32(0);
-  final ix = high & 0x7fffffff;
-  if (ix >= 0x7ff00000) {
-    if (x.isNaN) return x;
-    return x > 0 ? 1.0 : -1.0;
-  }
-  if (ix < 0x3feb0000) {
-    if (ix < 0x3e300000) {
-      if (ix < 0x00800000) return 0.125 * (8.0 * x + _efx8 * x);
-      return x + _efx * x;
-    }
-    final z = x * x;
-    final r = _pp0 + z * (_pp1 + z * (_pp2 + z * (_pp3 + z * _pp4)));
-    final s =
-        1.0 + z * (_qq1 + z * (_qq2 + z * (_qq3 + z * (_qq4 + z * _qq5))));
-    return x + x * (r / s);
-  }
-  if (ix < 0x3ff40000) {
-    final s = x.abs() - 1.0;
-    final p =
-        _pa0 +
-        s *
-            (_pa1 +
-                s * (_pa2 + s * (_pa3 + s * (_pa4 + s * (_pa5 + s * _pa6)))));
-    final q =
-        1.0 +
-        s *
-            (_qa1 +
-                s * (_qa2 + s * (_qa3 + s * (_qa4 + s * (_qa5 + s * _qa6)))));
-    return high >= 0 ? _erx + p / q : -_erx - p / q;
-  }
-  if (ix >= 0x40180000) return high >= 0 ? 1.0 - _tiny : _tiny - 1.0;
-  final ax = x.abs();
-  final s = 1.0 / (ax * ax);
-  final double r;
-  final double t;
-  if (ix < 0x4006db6e) {
-    r =
-        _ra0 +
-        s *
-            (_ra1 +
-                s *
-                    (_ra2 +
-                        s *
-                            (_ra3 +
-                                s *
-                                    (_ra4 +
-                                        s * (_ra5 + s * (_ra6 + s * _ra7))))));
-    t =
-        1.0 +
-        s *
-            (_sa1 +
-                s *
-                    (_sa2 +
-                        s *
-                            (_sa3 +
-                                s *
-                                    (_sa4 +
-                                        s *
-                                            (_sa5 +
-                                                s *
-                                                    (_sa6 +
-                                                        s *
-                                                            (_sa7 +
-                                                                s * _sa8)))))));
-  } else {
-    r =
-        _rb0 +
-        s *
-            (_rb1 +
-                s * (_rb2 + s * (_rb3 + s * (_rb4 + s * (_rb5 + s * _rb6)))));
-    t =
-        1.0 +
-        s *
-            (_sb1 +
-                s *
-                    (_sb2 +
-                        s *
-                            (_sb3 +
-                                s *
-                                    (_sb4 +
-                                        s * (_sb5 + s * (_sb6 + s * _sb7))))));
-  }
-  _erfBits
-    ..setFloat64(0, ax)
-    ..setUint32(4, 0);
-  final z = _erfBits.getFloat64(0);
-  final e = math.exp(-z * z - 0.5625) * math.exp((z - ax) * (z + ax) + r / t);
-  return high >= 0 ? 1.0 - e / ax : e / ax - 1.0;
+  final t = 1 / (1 + 0.3275911 * x.abs());
+  final polynomial =
+      0.254829592 +
+      t *
+          (-0.284496736 +
+              t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)));
+  final y = 1 - t * polynomial * math.exp(-x * x);
+  return x < 0 ? -y : y;
 }
-
-final ByteData _erfBits = ByteData(8);
-
-const double _tiny = 1e-300;
-const double _erx = 8.45062911510467529297e-01;
-const double _efx = 1.28379167095512586316e-01;
-const double _efx8 = 1.02703333676410069053e+00;
-const double _pp0 = 1.28379167095512558561e-01;
-const double _pp1 = -3.25042107247001499370e-01;
-const double _pp2 = -2.84817495755985104766e-02;
-const double _pp3 = -5.77027029648944159157e-03;
-const double _pp4 = -2.37630166566501626084e-05;
-const double _qq1 = 3.97917223959155352819e-01;
-const double _qq2 = 6.50222499887672944485e-02;
-const double _qq3 = 5.08130628187576562776e-03;
-const double _qq4 = 1.32494738004321644526e-04;
-const double _qq5 = -3.96022827877536812320e-06;
-const double _pa0 = -2.36211856075265944077e-03;
-const double _pa1 = 4.14856118683748331666e-01;
-const double _pa2 = -3.72207876035701323847e-01;
-const double _pa3 = 3.18346619901161753674e-01;
-const double _pa4 = -1.10894694282396677476e-01;
-const double _pa5 = 3.54783043256182359371e-02;
-const double _pa6 = -2.16637559486879084300e-03;
-const double _qa1 = 1.06420880400844228286e-01;
-const double _qa2 = 5.40397917702171048937e-01;
-const double _qa3 = 7.18286544141962662868e-02;
-const double _qa4 = 1.26171219808761642112e-01;
-const double _qa5 = 1.36370839120290507362e-02;
-const double _qa6 = 1.19844998467991074170e-02;
-const double _ra0 = -9.86494403484714822705e-03;
-const double _ra1 = -6.93858572707181764372e-01;
-const double _ra2 = -1.05586262253232909814e+01;
-const double _ra3 = -6.23753324503260060396e+01;
-const double _ra4 = -1.62396669462573470355e+02;
-const double _ra5 = -1.84605092906711035994e+02;
-const double _ra6 = -8.12874355063065934246e+01;
-const double _ra7 = -9.81432934416914548592e+00;
-const double _sa1 = 1.96512716674392571292e+01;
-const double _sa2 = 1.37657754143519042600e+02;
-const double _sa3 = 4.34565877475229228821e+02;
-const double _sa4 = 6.45387271733267880336e+02;
-const double _sa5 = 4.29008140027567833386e+02;
-const double _sa6 = 1.08635005541779435134e+02;
-const double _sa7 = 6.57024977031928170135e+00;
-const double _sa8 = -6.04244152148580987438e-02;
-const double _rb0 = -9.86494292470009928597e-03;
-const double _rb1 = -7.99283237680523006574e-01;
-const double _rb2 = -1.77579549177547519889e+01;
-const double _rb3 = -1.60636384855821916062e+02;
-const double _rb4 = -6.37566443368389627722e+02;
-const double _rb5 = -1.02509513161107724954e+03;
-const double _rb6 = -4.83519191608651397019e+02;
-const double _sb1 = 3.03380607434824582924e+01;
-const double _sb2 = 3.25792512996573918826e+02;
-const double _sb3 = 1.53672958608443695994e+03;
-const double _sb4 = 3.19985821950859553908e+03;
-const double _sb5 = 2.55305040643316442583e+03;
-const double _sb6 = 4.74528541206955367215e+02;
-const double _sb7 = -2.24409524465858183362e+01;

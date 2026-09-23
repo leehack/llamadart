@@ -7,14 +7,16 @@ description: Answer typed choice, score, and yes/no questions about a state with
 decision model: a ModernBERT encoder GGUF, run by llama.cpp, plus a small
 decision head stored as safetensors. Each question takes one encoder pass and
 generates no text. Requests and responses follow the `system_one` format of
-[Laya](https://huggingface.co/convaiinnovations/laya), so questions written for
-Laya carry over unchanged.
+[Laya](https://huggingface.co/convaiinnovations/laya), so most questions
+written for Laya carry over unchanged; [Laya wire format](#laya-wire-format)
+and [Known limits](#known-limits) list the exceptions.
 
 Use it for classification-style decisions where a chat model would be slow or
 would need output parsing: routing a ticket, rating urgency, or checking a
 yes/no condition. The
 [Basic App decision example](../examples/basic-app#decision-model) runs the
-ticket questions below from the command line, and the
+ticket questions below from the command line, as
+[typed keys](#typed-questions), and the
 [Laya Tetris example](../examples/laya-tetris) plays real-time Tetris with it
 in a Flutter app.
 
@@ -22,14 +24,14 @@ in a Flutter app.
 
 | Runtime | `DecisionEngine` |
 | --- | --- |
-| Native llama.cpp / GGUF | Supported: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head |
+| Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
 | WebGPU / GGUF | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
-The head runs on the model's device: on CPU when the model is loaded on CPU,
-otherwise on the model's GPU. `decisions.info.deviceName` names that device,
-such as `CPU` or `MTL0`.
+The head runs on CPU when the model is loaded on CPU, and on the model's GPU
+when a device of its backend is available, otherwise on CPU.
+`decisions.info.deviceName` names that device, such as `CPU` or `MTL0`.
 
 ## Load a decision model
 
@@ -60,10 +62,6 @@ final head = await engine.modelDownloadManager.ensureModel(
   ),
 );
 
-final capabilities = await DecisionEngine.capabilitiesFor(engine);
-if (!capabilities.isSupported) {
-  throw StateError(capabilities.unsupportedReason!);
-}
 final decisions = await DecisionEngine.load(engine, headPath: head.filePath);
 ```
 
@@ -129,11 +127,12 @@ maximum; noul confidence is `max(noul, 1 - noul)`. Values are unrounded
 doubles; Laya rounds its JSON to 4 decimals.
 
 The state is sent as text when it is a `String`, and as JSON text otherwise.
-States, criteria, levels and descriptions must be JSON-like: `null`, `bool`,
-`num`, `String`, or a `List` or `Map` with `String` keys of such values. A
-request needs at least one question, question ids must be non-empty, and score
-levels must be non-empty. Invalid questions throw `LlamaDecisionException`
-before the model runs.
+Instructions are text, or a JSON-like value sent as Laya's
+`json.dumps(value, ensure_ascii=True)` text. States, criteria, levels and
+descriptions must be JSON-like: `null`, `bool`, `num`, `String`, or a `List`
+or `Map` with `String` keys of such values. A request needs at least one
+question, question ids must be non-empty, and score levels must be non-empty.
+Invalid questions throw `LlamaDecisionException` before the model runs.
 
 ## Laya wire format
 
@@ -188,6 +187,172 @@ for (final result in results) {
 `usage.inputTokens` counts the encoded tokens of each request;
 `usage.outputTokens` is always 0.
 
+## Typed questions
+
+With string ids, each read looks up an id, as in
+`result.choices['department']!`, and a choice comes back as its label. A typed
+key holds a question with its id, and reading an answer through the key gives
+a typed value, such as an enum. Build a request's questions from keys with
+`DecisionKey.questionsOf`, then read each answer with `answerOf`:
+
+```dart
+enum Department { billing, technical, other }
+
+final department = ChoiceKey.enumOf(
+  'department',
+  'Which department should handle this request?',
+  criteria: {
+    Department.billing: 'invoices, payments, refunds',
+    Department.technical: 'bugs, outages, system errors',
+    Department.other: null,
+  },
+);
+final urgency = ScoreKey.of(
+  'urgency',
+  'How urgent is this request?',
+  levels: ['not urgent', 'soon', 'critical'],
+);
+final refund = NoulKey.of('refund', 'Does the user request a refund?');
+
+final result = await decisions.systemOne(
+  state: 'We were billed twice for March. Please refund the duplicate.',
+  questions: DecisionKey.questionsOf([department, urgency, refund]),
+);
+final Department route = result.answerOf(department).value;
+print('$route ${result.answerOf(urgency).score} ${result.answerOf(refund).noul}');
+```
+
+Keys build ordinary questions, so the model sees the same sequences as with
+string ids, and `answers`, `choices`, `scores`, `nouls` and `toJson` still
+work on the result. `questionsOf` keeps the order of the keys and throws
+`LlamaDecisionException` when two keys share an id.
+
+| Key | Built from | `answerOf` gives |
+| --- | --- | --- |
+| `ChoiceKey.enumOf` | enum values mapped to descriptions; the model sees `Enum.name`, or `label(value)` when given | `ChoiceOf<E>` |
+| `ChoiceKey.of` | a list of any values, with `label(value, index)` and an optional `describe(value)` | `ChoiceOf<T>` |
+| `ChoiceKey.labels` | labels mapped to descriptions | `ChoiceOf<String>` |
+| `ChoiceKey(id, question, value: ...)` | a `ChoiceQuestion` and a function from label to value | `ChoiceOf<T>` |
+| `ScoreKey.of` or `ScoreKey(id, question)` | levels, or a `ScoreQuestion` | `ScoreAnswer` |
+| `NoulKey.of` or `NoulKey(id, question)` | optional true and false descriptions, or a `NoulQuestion` | `NoulAnswer` |
+
+`ScoreAnswer.levelProbabilities` lists the level probabilities from level 0.
+
+With values of more than one enum type, `ChoiceKey.enumOf` infers a shared
+supertype such as `Enum`, with no diagnostic. Write the type argument, as in
+`ChoiceKey.enumOf<Department>(...)`, to make a value of another type a compile
+error.
+
+### Choice values
+
+`ChoiceKey.of` takes its options as a list of values of any type.
+`label(value, index)` gives the text the model sees for each option, and
+`describe(value)` its description. `ChoiceKey.labels` keeps the labels
+themselves as the values:
+
+```dart
+final plans = [
+  (name: 'Starter', seats: 5),
+  (name: 'Team', seats: 50),
+  (name: 'Enterprise', seats: 1000),
+];
+final plan = ChoiceKey.of(
+  'plan',
+  'Which plan fits this customer?',
+  options: plans,
+  label: (plan, _) => plan.name,
+  describe: (plan) => 'up to ${plan.seats} seats',
+);
+final tone = ChoiceKey.labels(
+  'tone',
+  'What is the tone of the message?',
+  criteria: {'positive': null, 'neutral': null, 'negative': null},
+);
+
+final result = await decisions.systemOne(
+  state: 'We are 30 people and want to move the whole team over.',
+  questions: DecisionKey.questionsOf([plan, tone]),
+);
+final chosen = result.answerOf(plan);
+print('${chosen.value.seats} seats, option ${chosen.index}');
+print(chosen.optionProbabilities);
+final String toneLabel = result.answerOf(tone).value;
+print(toneLabel);
+```
+
+`ChoiceOf` has the chosen option's `value`, `label` and `index`, its position
+among the options, and `optionProbabilities` in option order. Options with
+equal values stay separate, and `index` tells them apart. `ChoiceKey.of` and
+`ChoiceKey.enumOf` throw `LlamaDecisionException` when two options get the same
+label.
+
+For a question parsed from JSON, pass it to a key with a value function:
+
+```dart
+final parsed = DecisionQuestion.fromJson({
+  'type': 'choice',
+  'instructions': 'Which department should handle this request?',
+  'criteria': ['billing', 'technical', 'other'],
+});
+final department = ChoiceKey(
+  'department',
+  parsed as ChoiceQuestion,
+  value: Department.values.byName,
+);
+```
+
+The value function runs for every label when the key is built, so a label
+that names no enum value throws `ArgumentError` before the model runs.
+`ScoreKey` and `NoulKey` wrap a parsed `ScoreQuestion` or `NoulQuestion` the
+same way.
+
+### Reading answers
+
+`answerOf` never returns `null`, and there is no `tryAnswerOf`. A result from
+`DecisionEngine` answers every question of its request, so reading it with a
+key that built the request always finds its answer. For a result that may
+lack an answer, such as one built by hand, check
+`result.answers.containsKey(key.id)` first.
+
+Read each result with the key object that built its request. A result from
+`DecisionEngine` records its questions, and `answerOf` throws
+`LlamaDecisionException` when the question under the key's id is not that
+key's own question object. That happens with a key whose question built
+another request of a batch, a key built again (for example by a getter), a
+question parsed back from JSON, and a result sent to another isolate without
+its keys; send the keys and the result in one message, or read the result
+before sending it. One key can build several requests of a batch and read
+each of their results. Keys that wrap one shared question object read each
+other's results, so give each key its own question when their values differ.
+A `DecisionResult` built without `questions`, such as a typical test fake,
+records none; `answerOf` then checks only that the answer exists, its kind,
+and its labels or levels.
+
+### When to keep string ids
+
+Keys are optional, and both paths send the same sequences. String ids and
+`DecisionQuestion` fit better when:
+
+- questions and answers are only data, such as a question set read with
+  `DecisionQuestion.fromJson` whose answers leave through `toJson()`, and no
+  code reads a particular answer;
+- code treats every answer alike, for logging or display;
+- the code that reads a result has the result but not the keys that built its
+  request.
+
+A switch over the sealed answer types covers every kind:
+
+```dart
+for (final MapEntry(key: id, value: answer) in result.answers.entries) {
+  final text = switch (answer) {
+    ChoiceAnswer(:final choice) => choice,
+    ScoreAnswer(:final score) => score.toStringAsFixed(2),
+    NoulAnswer(:final noul) => noul.toStringAsFixed(2),
+  };
+  print('$id: $text');
+}
+```
+
 ## Capabilities and model info
 
 `DecisionEngine.capabilitiesFor(engine)` reports whether a head can load on the
@@ -237,33 +402,18 @@ final official = await DecisionEngine.load(
 
 ## Accuracy and speed
 
-Measured with the `decision-model-smoke` scenario on an Apple M4 Max (macOS)
-over Laya's 24-question parity fixture (sequences of 31 to 512 tokens, mean
-90), with `ModelParams(contextSize: 512)`, default CPU threads and
-`laya-head.safetensors`. Differences are the worst over the 24 questions
-against the Laya 0.3.5 PyTorch reference; time is `systemOne` wall time per
-question.
-
-| Backbone | Backend and head device | Option logit diff | Probability diff | ms per question |
-| --- | --- | --- | --- | --- |
-| `laya-Q8_0.gguf` | Metal, `MTL0` | 0.164 | 0.044 | 14.4 |
-| `laya-Q8_0.gguf` | CPU, `CPU` | 0.142 | 0.036 | 85.6 |
-| F32 GGUF (local conversion) | Metal, `MTL0` | 0.012 | 0.003 | 15.4 |
-| F32 GGUF (local conversion) | CPU, `CPU` | 0.013 | 0.003 | 187 |
-| F16 GGUF (local conversion) | Metal, `MTL0` | 0.012 | 0.003 | 14.0 |
-| F16 GGUF (local conversion) | CPU, `CPU` | 0.052 | 0.012 | 115 |
-
-The official checkpoint with `configPath` measured the same differences as
-`laya-head.safetensors` on the F32 CPU and Q8_0 Metal rows. On these 24
-questions no choice answer changed in any run.
-
-Longer, more varied inputs move further. On 187 random questions (mean 327
-tokens), the F32 backbone stayed within 0.0085 of Laya's probabilities and
-changed no decision. `laya-Q8_0.gguf` differed by up to 0.24 on CPU, where it
-turned a clear yes/no answer (0.69) into a no (0.46), and it flipped near-ties
-on both CPU and Metal. An F16 conversion matched F32 on Metal and flipped two
-near-ties on CPU. Use an F32 backbone, or F16 on Metal, when answers must match
-Laya. Other platforms and GPU backends have not been measured yet.
+On an Apple M4 Max (macOS), over Laya's 24-question parity fixture with
+`laya-head.safetensors`, `systemOne` took 14.0 to 15.4 ms per question on Metal
+and 85.6 ms (`laya-Q8_0.gguf`) to 187 ms (F32 backbone) on the CPU. On 187
+random questions, an F32 backbone stayed within 0.0086 of the probabilities of
+Laya's PyTorch reference and changed no decision. `laya-Q8_0.gguf` differed by
+up to 0.24 in probability and changed decisions on both CPU and Metal,
+including a yes/no answer that went from 0.694 to 0.457 on the CPU. An F16
+conversion matched F32 on Metal and flipped two near-ties on the CPU. Use an
+F32 backbone, or F16 on Metal, when answers must match Laya. The design doc's
+[Measured](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#measured)
+section has the full tables and method. Other platforms and GPU backends have
+not been measured.
 
 ## Known limits
 
@@ -287,11 +437,9 @@ Laya. Other platforms and GPU backends have not been measured yet.
 - **English only.** Parity is validated only for the English Laya checkpoint.
   Other ModernBERT-family checkpoints load if the checks pass, but have no
   parity evidence.
-- **Quantization.** The community Q8_0 backbone moves option logits 6 to 14
-  times further from the PyTorch reference than an F32 conversion does in the
-  measured sets, and can change decisions; see
-  [Accuracy and speed](#accuracy-and-speed). A local F16 conversion was
-  measured; the published `laya-F16.gguf` was not.
+- **Quantization.** `laya-Q8_0.gguf` can change decisions, including clear
+  ones; see [Accuracy and speed](#accuracy-and-speed). A local F16 conversion
+  was measured; the published `laya-F16.gguf` was not.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
   `LlamaDecisionException`, because native tokenization would cut the text
   there. A state that is not a `String` is sent as JSON, which escapes it.

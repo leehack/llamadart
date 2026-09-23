@@ -22,6 +22,10 @@ it falls.
 - Yes/no (`noul`) and `choice` questions sent as one `systemOneBatch` call per
   piece, or per knockout round, from the UI isolate while the llama.cpp worker
   isolate does the work.
+- A typed [`ChoiceKey.of`](../guides/decision-models#choice-values) over the
+  candidate placements in the base-head choice player, read back with
+  `answerOf` as the chosen candidate's `index` and the `optionProbabilities`.
+  The yes/no players and the knockout keep string ids.
 - Switching between GPU and CPU, backbones and thread counts at runtime by
   disposing the engine and loading a new one.
 
@@ -39,7 +43,7 @@ On first launch the app downloads `laya-Q8_0.gguf` (421 MB) and
 revision `ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, and the Tetris-tuned head
 `laya-head-tetris.safetensors` (106 MB) from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `83794e0bdd5526420997279a5d3dc9810a445217`. The files are cached in a
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`. The files are cached in a
 `laya/` folder in the app's cache directory, which iOS leaves out of backups
 and may clear when storage runs low (the app then downloads again), or on
 Android in the app's external files directory. The **Backbone** picker also
@@ -129,8 +133,7 @@ a run; `--help` lists every option.
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
 backbone. The tuned rows use the published tuned head from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `83794e0bdd5526420997279a5d3dc9810a445217`, from an 8-epoch run of
-the [fine-tuning recipe](#fine-tune-the-head) (validation accuracy 0.750).
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`.
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
 over three runs:
@@ -154,19 +157,20 @@ Turn-based games on Metal, means over 5 seeds of up to 150 pieces:
 | Laya yes/no: good move? | 3 best + 3 random | 86 | 18 | 5.9 |
 | Laya yes/no: good move? | all | 53 | 6 | 21.3 |
 | Laya choice (A-F) | 3 best + 3 random | 33 | 1 | 1 |
-| Laya choice (Tetris-tuned) | 3 best + 3 random | 122 | 34 | 1 |
-| Laya choice (Tetris-tuned) | all | 134 | 40 | 5 |
+| Laya choice (Tetris-tuned) | 3 best + 3 random | 150 | 48 | 1 |
+| Laya choice (Tetris-tuned) | all | 135 | 40 | 4.8 |
 
 The base head asked to choose among six candidates plays about as well as a
 random pick. The tuned player asks in the format the tuned head was trained
 on; with the base head, that format also plays like a random pick (36 pieces,
-1 line), while the tuned head keeps up with the checklist and asks one
-question instead of twelve. Heads from five 8-epoch notebook runs played 97
-to 147 pieces with 3 best + 3 random and 107 to 146 with all legal moves; the
-lowest came from the run that reached 0.705 accuracy, the only run behind the
-checklist's 120 pieces. A head from a 12-epoch run (accuracy 0.757) played 150
-pieces with 3 best + 3 random, every game reaching the cap, and 135 with all
-legal moves.
+1 line). With "3 best + 3 random", the tuned head asks one question instead
+of the checklist's twelve, reaches the 150-piece cap in every game, and clears
+48 lines to the checklist's 35. Heads from five 8-epoch notebook runs played
+97 to 147 pieces with 3 best + 3 random and 107 to 146 with all legal moves;
+the lowest came from the run that reached 0.705 accuracy, the only run behind
+the checklist's 120 pieces. A head from a 12-epoch run (accuracy 0.757) played
+150 pieces with 3 best + 3 random, every game reaching the cap, and 135 with
+all legal moves.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:
@@ -176,8 +180,11 @@ until the stack topped out:
 | Heuristic bot | all | 127, 161 | 0 ms |
 | Laya yes/no checklist | 3 best + 3 random | 17, 50 | 161 ms |
 | Laya yes/no checklist | all | 23, 23 | 573 to 677 ms |
-| Laya choice (Tetris-tuned) | 3 best + 3 random | 12, 85 | 30 to 31 ms |
-| Laya choice (Tetris-tuned) | all | 73, 57 | 101 to 124 ms |
+| Laya choice (Tetris-tuned) | 3 best + 3 random | 20, 92 | 26 ms |
+| Laya choice (Tetris-tuned) | all | 0, 13 | 89 to 95 ms |
+
+Two games vary widely: over six games, the tuned player with all candidates
+cleared 0 to 72 lines per game.
 
 ## Test
 

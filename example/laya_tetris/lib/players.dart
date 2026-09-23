@@ -268,24 +268,23 @@ Future<LayaVerdict> chooseWithLaya(
       'A choice question takes at most $shortlistSize candidates',
     );
   }
+  final move = ChoiceKey.of(
+    'move',
+    layaInstructions,
+    options: options,
+    label: (_, i) => optionLabels[i],
+    describe: (p) => p.describe(),
+  );
   final rs = await decide([
     DecisionRequest(
       state: boardState,
-      questions: {
-        'move': DecisionQuestion.choice(
-          layaInstructions,
-          criteria: {
-            for (var i = 0; i < options.length; i++)
-              optionLabels[i]: options[i].describe(),
-          },
-        ),
-      },
+      questions: DecisionKey.questionsOf([move]),
     ),
   ]);
-  final answer = rs.single.choices['move']!;
+  final answer = rs.single.answerOf(move);
   return LayaVerdict(
-    chosen: optionLabels.indexOf(answer.choice),
-    scores: answer.probabilities.values.toList(),
+    chosen: answer.index,
+    scores: answer.optionProbabilities,
     tokens: _tokens(rs),
     questions: _questions(rs),
   );

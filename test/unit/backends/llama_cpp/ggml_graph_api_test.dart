@@ -98,20 +98,12 @@ void main() {
 
     final weights = context(1);
     final weight = api.newTensor2d(weights, f32, 3, 2);
-    final bufferType = api.defaultBufferType(backend);
-    final alignment = api.buftGetAlignment(bufferType);
-    final size = api.buftGetAllocSize(bufferType, weight);
-    expect(size, greaterThanOrEqualTo(24));
-    final buffer = api.buftAllocBuffer(bufferType, size + alignment);
+    final buffer = api.allocCtxTensors(weights, backend);
     expect(buffer, isNot(nullptr));
     addTearDown(() => api.bufferFree(buffer));
     api.bufferSetUsage(
       buffer,
       ggml_backend_buffer_usage.GGML_BACKEND_BUFFER_USAGE_WEIGHTS.value,
-    );
-    expect(
-      api.tensorAlloc(buffer, weight, api.bufferGetBase(buffer)),
-      ggml_status.GGML_STATUS_SUCCESS.value,
     );
     upload(weight, w);
 

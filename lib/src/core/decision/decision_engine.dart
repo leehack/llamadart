@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
 import 'decision_decoder.dart';
+import 'decision_key.dart';
 import 'decision_question.dart';
 import 'decision_result.dart';
 import 'decision_sequence.dart';
@@ -154,6 +155,9 @@ class DecisionEngine {
     final BackendDecisionHeadInfo head;
     try {
       final capabilities = await engine.backendDecisionCapabilities;
+      if (modelHandle != null && !_hasModel(engine, modelHandle)) {
+        throw LlamaStateException(_loadInterruptedMessage);
+      }
       if (!capabilities.isSupported) {
         throw LlamaUnsupportedException(_unsupportedReason(capabilities));
       }
@@ -166,11 +170,7 @@ class DecisionEngine {
     } catch (error, stackTrace) {
       if (modelHandle != null && !_hasModel(engine, modelHandle)) {
         Error.throwWithStackTrace(
-          LlamaStateException(
-            'The model was unloaded while the DecisionEngine was loading. '
-            'Load the model and the DecisionEngine again.',
-            error,
-          ),
+          LlamaStateException(_loadInterruptedMessage, error),
           stackTrace,
         );
       }
@@ -186,7 +186,7 @@ class DecisionEngine {
       return DecisionEngine._(
         engine,
         head,
-        DecisionHeadConfig.fromJson(decodeDecisionHeadConfig(head.configJson)),
+        decodeDecisionHeadConfig(head.configJson),
         modelHandle,
       );
     } catch (error, stackTrace) {
@@ -212,6 +212,10 @@ class DecisionEngine {
   /// after [dispose] or once the engine's model is unloaded. A call running
   /// during an unload throws it too, unless its sequences already reached the
   /// backend; that call returns answers from the unloaded model.
+  ///
+  /// To read answers as typed values, build [questions] with
+  /// [DecisionKey.questionsOf] and read them with
+  /// [DecisionResultKeys.answerOf].
   Future<DecisionResult> systemOne({
     required Object? state,
     required Map<String, DecisionQuestion> questions,
@@ -225,10 +229,13 @@ class DecisionEngine {
   /// Answers every request in [requests], in order.
   ///
   /// All questions are validated and tokenized before the model runs, and
-  /// all sequences run in one backend call. An empty [requests] gives an
-  /// empty list. Throws like [systemOne].
-  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) =>
-      _track(() => _answer(requests));
+  /// all sequences run in one backend call. The call answers [requests] as
+  /// they are when it starts; later changes to the list do not affect it. An
+  /// empty [requests] gives an empty list. Throws like [systemOne].
+  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) {
+    final snapshot = List<DecisionRequest>.unmodifiable(requests);
+    return _track(() => _answer(snapshot));
+  }
 
   /// Frees the decision head after in-flight calls finish.
   ///
@@ -262,15 +269,6 @@ class DecisionEngine {
   }
 
   Future<List<DecisionResult>> _answer(List<DecisionRequest> requests) async {
-    for (final request in requests) {
-      for (final id in request.questions.keys) {
-        if (id.isEmpty) {
-          throw LlamaDecisionException(
-            'Decision question ids must be non-empty.',
-          );
-        }
-      }
-    }
     if (requests.isEmpty) return const <DecisionResult>[];
     if (!_hasModel(_engine, _modelHandle)) {
       throw LlamaStateException(_modelUnloadedMessage);
@@ -319,7 +317,7 @@ class DecisionEngine {
           BackendDecisionSequence(
             tokens: Int32List.fromList(sequences[r][q].tokens),
             markers: Int32List.fromList(sequences[r][q].markers),
-            questionType: question.type.index,
+            questionType: question.type,
           ),
     ];
     final outputs = await _engine.runDecisionBackend(_head.handle, inputs);
@@ -348,6 +346,7 @@ class DecisionEngine {
         DecisionResult(
           model: decisionResponseModel,
           answers: answers,
+          questions: requests[r].questions,
           usage: DecisionUsage(
             inputTokens: sequences[r].fold(
               0,
@@ -360,6 +359,10 @@ class DecisionEngine {
     }
     return results;
   }
+
+  static const String _loadInterruptedMessage =
+      'The model was unloaded while the DecisionEngine was loading. Load the '
+      'model and the DecisionEngine again.';
 
   static const String _modelUnloadedMessage =
       'The model this DecisionEngine was loaded for was unloaded. Load the '
