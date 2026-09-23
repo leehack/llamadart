@@ -58,8 +58,8 @@ class ModelStore {
   /// Explains how to provide a missing tuned head. An iOS app's folder is
   /// in its sandbox, so there it has to be downloaded.
   String get tunedHeadHelp =>
-      'Tetris-tuned head not found. Fine-tune the base head on the data from '
-      'bin/make_dataset.dart, then '
+      'Tetris-tuned head not found. Fine-tune one as training/README.md '
+      'describes, then '
       '${Platform.isIOS ? '' : 'save it as $tunedHeadPath and reload the models, or '}'
       'build with --dart-define=LAYA_TUNED_HEAD_URL=<url>.';
 

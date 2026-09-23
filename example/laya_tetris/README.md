@@ -60,17 +60,11 @@ on-screen keys.
 
 ## Tetris-tuned head
 
-The tuned head is not published. `bin/make_dataset.dart` writes the
-heuristic-labelled choice examples it is fine-tuned on:
-
-```bash
-dart run bin/make_dataset.dart dataset 16000 2000
-```
-
-A notebook that fine-tunes the head on this data is planned
-([#604](https://github.com/leehack/llamadart/issues/604)). Save the result as
-`laya-head-tetris.safetensors` in the app's `laya/` folder (the app shows the
-full path) and tap **Reload models**, or build with
+The tuned head is not published. [`training/`](training/README.md) builds it:
+`bin/make_dataset.dart` writes heuristic-labelled choice questions, and the
+notebook `training/laya_head_tuning.ipynb` fine-tunes the head on them. Save
+the result as `laya-head-tetris.safetensors` in the app's `laya/` folder (the
+app shows the full path) and tap **Reload models**, or build with
 `--dart-define=LAYA_TUNED_HEAD_URL=<url>` to download it. On iOS the folder is
 inside the app sandbox, so use the URL. Without a loaded tuned head the tuned
 player is disabled.

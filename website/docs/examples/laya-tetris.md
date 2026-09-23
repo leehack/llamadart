@@ -70,21 +70,25 @@ wait until it finishes.
 
 ## Tetris-tuned head
 
-The tuned head is not published. `bin/make_dataset.dart` writes the
-heuristic-labelled choice examples it is fine-tuned on (`train.jsonl` and
-`val.jsonl` in the Laya request format, with target probabilities):
+The tuned head is not published; [Fine-tune the head](#fine-tune-the-head)
+builds it. Save it as `laya-head-tetris.safetensors` in the app's `laya/`
+folder, whose full path the app shows, and tap **Reload models**.
+Alternatively, build with `--dart-define=LAYA_TUNED_HEAD_URL=<url>` to
+download it; on iOS, where the folder is inside the app sandbox, this is the
+only way. Without a loaded tuned head the tuned player is disabled.
 
-```bash
-dart run bin/make_dataset.dart dataset 16000 2000
-```
+## Fine-tune the head
 
-A notebook that fine-tunes the head on this data is planned
-([#604](https://github.com/leehack/llamadart/issues/604)). Save the result as
-`laya-head-tetris.safetensors` in the app's `laya/` folder, whose full path the
-app shows, and tap **Reload models**. Alternatively, build with
-`--dart-define=LAYA_TUNED_HEAD_URL=<url>` to download it; on iOS, where the
-folder is inside the app sandbox, this is the only way. Without a loaded tuned
-head the tuned player is disabled.
+`bin/make_dataset.dart` writes heuristic-labelled choice questions
+(`train.jsonl` and `val.jsonl` in the Laya request format, with target
+probabilities and heuristic values), and the notebook
+`training/laya_head_tuning.ipynb` fine-tunes Laya's head on them with the
+encoder frozen. On an Apple M4 Max a run takes about 15 minutes and raises
+the head's validation accuracy from 0.305 to about 0.75 (0.705 in one of
+five runs).
+[`training/README.md`](https://github.com/leehack/llamadart/blob/main/example/laya_tetris/training/README.md)
+has the Python setup, the steps, and a recipe that builds the backbone GGUF
+from the official checkpoint.
 
 ## Headless runs
 
@@ -109,8 +113,9 @@ a run; `--help` lists every option.
 ## Measured
 
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
-backbone. The tuned rows use a local fine-tune of the head, which is not
-published.
+backbone. The tuned rows use the head from an earlier run of the
+[fine-tuning recipe](#fine-tune-the-head) (validation accuracy 0.750), which is
+not published.
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
 over three runs:
@@ -141,7 +146,10 @@ The base head asked to choose among six candidates plays about as well as a
 random pick. The tuned player asks in the format the tuned head was trained
 on; with the base head, that format also plays like a random pick (36 pieces,
 1 line), while the tuned head keeps up with the checklist and asks one
-question instead of twelve.
+question instead of twelve. Heads from five notebook runs played 97 to 147
+pieces with 3 best + 3 random and 107 to 146 with all legal moves; the lowest
+came from the run that reached 0.705 accuracy, the only run behind the
+checklist's 120 pieces.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:

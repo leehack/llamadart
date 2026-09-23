@@ -46,3 +46,10 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Head fine-tuning data and outputs
+/dataset/
+laya-encoder/
+*.safetensors
+.ipynb_checkpoints/
+.venv/
