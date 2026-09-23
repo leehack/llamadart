@@ -824,6 +824,29 @@ void main() {
       expect(lastRequestedKvUnified, isTrue);
     });
 
+    test(
+      'omits unset batch threads and floors sequence slots at one',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(maxParallelSequences: 0),
+        );
+
+        expect(lastRequestedThreadsBatch, isNull);
+        expect(lastRequestedSeqMax, 1);
+      },
+    );
+
+    test('forwards a single batch thread and sequence slot', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(numberOfThreadsBatch: 1),
+      );
+
+      expect(lastRequestedThreadsBatch, 1);
+      expect(lastRequestedSeqMax, 1);
+    });
+
     test('validates KV cache and flash attention combinations', () async {
       await expectLater(
         backend.modelLoadFromUrl(
@@ -1038,6 +1061,22 @@ void main() {
       );
     }
 
+    void failLoadsInOrder(List<(String, String, String)> failures) {
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          recordLoadConfig(config);
+          if (failures.isEmpty) {
+            return Future<void>.value().toJS;
+          }
+          final (coreVariant, runtimeNotes, message) = failures.removeAt(0);
+          bridgeRuntimeHints['llamadart.webgpu.core_variant'] = coreVariant;
+          bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] = runtimeNotes;
+          return rejectLoadWith(message);
+        }).toJS,
+      );
+    }
+
     List<String> captureConsole(String method) {
       final messages = <String>[];
       final consoleObject =
@@ -1154,6 +1193,75 @@ void main() {
               'for stable browser output.',
         ],
       );
+    });
+
+    test('logs no layer cap for other models', () async {
+      final logs = captureConsole('log');
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(gpuLayers: 99),
+      );
+
+      expect(logs.where((message) => message.contains('Capping')), isEmpty);
+    });
+
+    test('logs no Qwen layer cap when Safari forces the CPU', () async {
+      final logs = captureConsole('log');
+      globalContext.setProperty(
+        '__llamadartBridgeUserAgent'.toJS,
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 '
+                '(KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+            .toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf',
+        const ModelParams(gpuLayers: 99),
+      );
+
+      expect(lastRequestedGpuLayers, 0);
+      expect(logs.where((message) => message.contains('Capping')), isEmpty);
+    });
+
+    test('logs no fallback warning when the first rung loads', () async {
+      final warnings = captureConsoleWarnings();
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      expect(
+        warnings.where((message) => message.contains('after fallback')),
+        isEmpty,
+      );
+    });
+
+    test('caps the first rung context at 32768', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/long-context-model.gguf',
+        const ModelParams(contextSize: 131072),
+      );
+
+      expect(requestedContextSizes, <int>[32768]);
+    });
+
+    test('falls back to a CPU rung from a single GPU layer', () async {
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+          'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+          'model_network_stream;model_response_stream;model_load_ccall_failed';
+      failLoads(message: 'memory access out of bounds', firstAttempts: 1);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/one-layer-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 1),
+      );
+
+      expect(requestedContextSizes, <int>[4096, 4096]);
+      expect(requestedGpuLayerCounts, <int?>[1, 0]);
     });
 
     test(
@@ -1403,6 +1511,284 @@ void main() {
           4 * 1024 * 1024,
           128 * 1024,
         ]);
+      },
+    );
+
+    test(
+      'warns before giving up on wasm64 staging without the opt-in',
+      () async {
+        final warnings = captureConsoleWarnings();
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+            'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+            'model_network_stream;model_response_stream;'
+            'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom';
+        failLoads(message: 'Array buffer allocation failed', firstAttempts: 1);
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/staging-model.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+
+        expect(
+          warnings,
+          contains(
+            'WebGpuLlamaBackend: wasm64 model staging failed; fetch-backed '
+            'recovery requires explicit opt-in, so no unsafe remote-fetch retry '
+            'will be attempted.',
+          ),
+        );
+      },
+    );
+
+    test(
+      'reports staging failures on pages without cross-origin isolation',
+      () async {
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+            'thread_pool_size:4;threads_capped_no_coi;threads_batch:1;'
+            'model_network_stream;model_response_stream;'
+            'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom';
+        failLoads(message: 'Array buffer allocation failed', firstAttempts: 1);
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/no-coi-model.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              startsWith(
+                'Web model staging failed before the GGUF could be loaded '
+                'safely.',
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('logs the runtime hints before disposing the failed bridge', () async {
+      final events = captureConsoleWarnings();
+      bridge.setProperty(
+        'dispose'.toJS,
+        (() {
+          events.add('<dispose>');
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+          'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+          'model_network_stream;model_response_stream;model_load_ccall_failed';
+      failLoads(message: 'memory access out of bounds', firstAttempts: 1);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/hints-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      final hints = events.indexWhere(
+        (event) => event.startsWith('WebGpuLlamaBackend: bridge runtime hints'),
+      );
+      expect(hints, isNonNegative);
+      expect(hints, lessThan(events.indexOf('<dispose>')));
+    });
+
+    test('walks every ladder rung with its thread cap', () async {
+      final warnings = captureConsoleWarnings();
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm64';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+          'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+          'model_network_stream;model_response_stream;model_load_ccall_failed';
+      failLoads(message: 'memory access out of bounds', firstAttempts: 9);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/full-ladder-model.gguf',
+        const ModelParams(
+          contextSize: 4096,
+          gpuLayers: 99,
+          preferMemory64: true,
+        ),
+      );
+
+      expect(requestedContextSizes, <int>[
+        4096,
+        4096,
+        2048,
+        2048,
+        1024,
+        1024,
+        768,
+        768,
+        512,
+        512,
+      ]);
+      expect(requestedGpuLayerCounts, <int?>[
+        99,
+        0,
+        99,
+        0,
+        99,
+        0,
+        99,
+        0,
+        99,
+        0,
+      ]);
+      expect(requestedThreadCounts, <int?>[null, 4, 4, 2, 2, 2, 2, 1, 1, 1]);
+      expect(
+        warnings
+            .where((message) => message.contains('reduced settings'))
+            .skip(4)
+            .toList(),
+        <String>[
+          'WebGpuLlamaBackend: retrying web model load with reduced settings '
+              '(nCtx=1024, nGpuLayers=0, nThreads=2)',
+          'WebGpuLlamaBackend: retrying web model load with reduced settings '
+              '(nCtx=768, nGpuLayers=99, nThreads=2)',
+          'WebGpuLlamaBackend: retrying web model load with reduced settings '
+              '(nCtx=768, nGpuLayers=0, nThreads=1)',
+          'WebGpuLlamaBackend: retrying web model load with reduced settings '
+              '(nCtx=512, nGpuLayers=99, nThreads=1)',
+          'WebGpuLlamaBackend: retrying web model load with reduced settings '
+              '(nCtx=512, nGpuLayers=0, nThreads=1)',
+        ],
+      );
+      expect(
+        warnings
+            .where((message) => message.contains('loaded after fallback'))
+            .toList(),
+        <String>[
+          'WebGpuLlamaBackend: model loaded after fallback '
+              '(nCtx=512, nGpuLayers=0, nThreads=1)',
+        ],
+      );
+    });
+
+    test(
+      'keeps an explicit mem64 preference when the ladder advances',
+      () async {
+        failLoadsInOrder([
+          (
+            'wasm64',
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+                'model_network_stream;model_response_stream;'
+                'model_load_ccall_failed',
+            'memory access out of bounds',
+          ),
+        ]);
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/mem64-advance-model.gguf',
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            preferMemory64: true,
+          ),
+        );
+
+        expect(requestedGpuLayerCounts, <int?>[99, 0]);
+        expect(capturedPreferMemory64(), isTrue);
+      },
+    );
+
+    test('keeps the forced fetch retry when the ladder advances', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      failLoadsInOrder([
+        (
+          'wasm64',
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+              'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+              'model_fetch_backend_failed;model_network_stream;'
+              'model_response_stream;model_fs_write_loaded:0;'
+              'model_fs_write_arraybuffer_oom',
+          'Array buffer allocation failed',
+        ),
+        (
+          'wasm64',
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+              'model_fetch_backend_attempt;model_fetch_chunk:131072',
+          'memory access out of bounds',
+        ),
+      ]);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/staging-advance-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(requestedGpuLayerCounts, <int?>[99, 99, 0]);
+      expect(requestedForceRemoteFetchBackends, <bool?>[null, true, true]);
+      expect(requestedRemoteFetchChunkBytes, <int?>[
+        4 * 1024 * 1024,
+        128 * 1024,
+        128 * 1024,
+      ]);
+    });
+
+    test(
+      'keeps a core abort from an advanced attempt for the wasm64 restart',
+      () async {
+        final warnings = captureConsoleWarnings();
+        globalContext.setProperty(
+          '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+          true.toJS,
+        );
+        globalContext.setProperty(
+          '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+          4096.toJS,
+        );
+        failLoadsInOrder([
+          (
+            'wasm64',
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+                'model_fetch_backend_attempt;model_fetch_chunk:16384;core_abort',
+            'memory access out of bounds',
+          ),
+          (
+            'wasm32',
+            'core_mem64_attempt;core_mem64_unavailable;core_wasm32_active;'
+                'core_pthreads:1;threads_capped_pool:4;thread_pool_size:4;'
+                'threads_batch:4;model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+        ]);
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/abort-advance-model.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        );
+
+        expect(requestedGpuLayerCounts, <int?>[99, 0, 99]);
+        expect(requestedForceRemoteFetchBackends, <bool?>[true, true, false]);
+        expect(capturedPreferMemory64(), isTrue);
+        expect(
+          warnings
+              .where((message) => message.contains('wasm32 memory pressure'))
+              .toList(),
+          <String>[
+            'WebGpuLlamaBackend: wasm32 memory pressure detected; '
+                'retrying with wasm64 core and streamed network loading.',
+          ],
+        );
       },
     );
 

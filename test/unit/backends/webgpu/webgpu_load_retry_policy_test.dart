@@ -635,6 +635,27 @@ void main() {
       expect(decision.logMessages.single, contains('64 KiB chunks'));
     });
 
+    test('rounds a chunk size that is not whole KiB down in the warning', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm64',
+          errorText: 'array buffer allocation failed',
+          runtimeNotes:
+              'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+              'model_fetch_backend_attempt;model_fetch_chunk:16384;'
+              'model_fetch_backend_failed;model_network_stream;'
+              'model_response_stream;model_fs_write_loaded:0;'
+              'model_fs_write_arraybuffer_oom',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(remoteFetchChunkBytes: 5 * 1024 - 1),
+      );
+
+      expect(decision.escalation.remoteFetchChunkBytes, 5 * 1024 - 1);
+      expect(decision.logMessages.single, contains(' 4 KiB chunks'));
+    });
+
     test('gives up with the skip warning once the retry is spent', () {
       final first = classifyWebGpuLoadFailure(stagingFailure(), _escalation());
       final second = classifyWebGpuLoadFailure(
@@ -752,6 +773,121 @@ void main() {
       expect(decision.action, WebGpuRetryAction.giveUp);
       expect(decision.forceRemoteFetchBackend, isNull);
       expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+    });
+  });
+
+  group('restart precedence on published bridge failures', () {
+    test('a forced fetch that traps after a core abort halves the chunk', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm32',
+          errorText: 'memory access out of bounds',
+          runtimeNotes:
+              'core_wasm32_active;core_pthreads:1;threads_capped_pool:4;'
+              'thread_pool_size:4;threads_batch:4;model_fetch_backend_attempt;'
+              'model_fetch_chunk:4194304;core_abort',
+          forceRemoteFetchRequested: true,
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.remoteFetchChunkBytes, 2 * 1024 * 1024);
+      expect(decision.escalation.retriedWithWasm64, isFalse);
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+      expect(decision.forceRemoteFetchBackend, isTrue);
+      expect(decision.preferMemory64, isNull);
+      expect(decision.logMessages, <String>[
+        'WebGpuLlamaBackend: fetch-backed model loading aborted; '
+            'retrying with smaller fetch chunks '
+            '(2048 KiB, attempt #1).',
+      ]);
+    });
+
+    test(
+      'a forced fetch that aborts before a BigInt failure halves the chunk',
+      () {
+        final decision = classifyWebGpuLoadFailure(
+          _failure(
+            coreVariant: 'wasm64',
+            errorText: 'cannot convert a bigint value to a number',
+            runtimeNotes:
+                'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+                'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+                'core_abort;model_fetch_backend_failed;model_network_stream;'
+                'model_response_stream;model_fs_write_loaded:0;'
+                'model_fs_write_bigint_error',
+            forceRemoteFetchRequested: true,
+            remoteFetchBackendOptedIn: true,
+          ),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.restart);
+        expect(decision.escalation.remoteFetchChunkBytes, 2 * 1024 * 1024);
+        expect(decision.escalation.retriedWithWasm32, isFalse);
+        expect(decision.escalation.wasm64InteropKnownBroken, isFalse);
+        expect(decision.forceRemoteFetchBackend, isTrue);
+        expect(decision.preferMemory64, isNull);
+      },
+    );
+
+    test('an aborted automatic fetch prefers streamed loading to wasm32', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm64',
+          errorText: 'cannot convert a bigint value to a number',
+          runtimeNotes:
+              'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+              'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+              'core_abort;model_fetch_backend_failed;model_network_stream;'
+              'model_response_stream;model_fs_write_loaded:0;'
+              'model_fs_write_bigint_error',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.retriedWithoutRemoteFetchBackend, isTrue);
+      expect(decision.escalation.retriedWithWasm32, isFalse);
+      expect(decision.forceRemoteFetchBackend, isFalse);
+      expect(decision.preferMemory64, isNull);
+      expect(decision.logMessages, <String>[
+        'WebGpuLlamaBackend: fetch-backed model loading aborted; '
+            'retrying with streamed network loading.',
+      ]);
+    });
+
+    test('a skipped small fetch prefers wasm32 to the forced fetch retry', () {
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          coreVariant: 'wasm64',
+          errorText: 'array buffer allocation failed',
+          runtimeNotes:
+              'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'threads_capped_pool:4;thread_pool_size:4;threads_batch:4;'
+              'model_fetch_backend_skipped_small;model_network_stream;'
+              'model_response_stream;model_fs_write_loaded:0;'
+              'model_fs_write_arraybuffer_oom',
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.retriedWithWasm32, isTrue);
+      expect(decision.escalation.retriedAfterFsWriteFailureWithRemote, isFalse);
+      expect(decision.escalation.remoteFetchChunkBytes, _fourMiB);
+      expect(decision.preferMemory64, isFalse);
+      expect(decision.forceRemoteFetchBackend, isFalse);
+      expect(decision.logMessages, <String>[
+        'WebGpuLlamaBackend: wasm64 BigInt interop failure detected; '
+            'retrying with wasm32 core.',
+      ]);
     });
   });
 
