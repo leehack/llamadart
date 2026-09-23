@@ -154,8 +154,8 @@ single-subscription stream: runtime failure is emitted as a stream error and
 the same terminal condition is available through `task.done`.
 
 Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Only WAV is
-validated with a real model; MP3 and FLAC tests check only that the adapter
-accepts the formats, and no test decodes them. Raw PCM remains unsupported for
+validated with a real model; native tests check only that the adapter accepts
+MP3 and FLAC, and no test decodes them. Raw PCM remains unsupported for
 that prompt adapter because projector sample rates are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
 complete mono 16 kHz float buffer, or the incremental session shown above.
 
