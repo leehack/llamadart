@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Add `DecisionEngine` for Laya-style decision models (a ModernBERT encoder
+  GGUF plus a safetensors head) on native llama.cpp; WebGPU and LiteRT-LM
+  throw `LlamaUnsupportedException`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second

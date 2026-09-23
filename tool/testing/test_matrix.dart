@@ -415,6 +415,26 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app synthesis changes.',
   ),
   TestMatrixRow(
+    id: 'decision-model-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real native ModernBERT GGUF plus Laya decision head: exact fixture '
+        'token ids and markers from the engine tokenizer, raw marker logits '
+        'and DecisionEngine answers within the tolerances of '
+        'doc/testing_matrix.md against the Laya 0.3.5 reference, CPU head '
+        'placement without offloaded layers, and a clean exit after engine '
+        'dispose with a head loaded',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'decision-model-smoke --model-path <laya.gguf> '
+        '--head-path <laya-head.safetensors> '
+        '[--config-path <rl_agent_config.json>] [--backend cpu]',
+    useWhen:
+        'Decision engine, decision sequence or decoder, native decision head, '
+        'safetensors reader, or llama.cpp encoder changes.',
+  ),
+  TestMatrixRow(
     id: 'web-text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',

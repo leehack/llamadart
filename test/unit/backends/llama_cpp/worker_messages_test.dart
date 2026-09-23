@@ -1,10 +1,13 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:isolate';
-import 'package:test/test.dart';
-import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
+import 'dart:typed_data';
+
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
+import 'package:test/test.dart';
 
 void main() {
   final rp = ReceivePort();
@@ -203,6 +206,62 @@ void main() {
     });
   });
 
+  test('decision messages keep typed lists across isolates', () async {
+    final replies = ReceivePort();
+    final isolate = await Isolate.spawn(_echoDecisionRun, replies.sendPort);
+    try {
+      final responses = StreamIterator<Object?>(replies);
+      expect(await responses.moveNext(), isTrue);
+      final worker = responses.current! as SendPort;
+
+      final answer = ReceivePort();
+      worker.send(
+        DecisionRunRequest(3, [
+          BackendDecisionSequence(
+            tokens: Int32List.fromList([50281, 7, 50282]),
+            markers: Int32List.fromList([1]),
+            questionType: 2,
+          ),
+        ], answer.sendPort),
+      );
+      final response = await answer.first as DecisionRunResponse;
+      answer.close();
+
+      final output = response.outputs.single;
+      expect(output.logits, isA<Float32List>());
+      expect(output.logits, [50281.0, 7.0, 50282.0]);
+      expect(output.actLogits, isA<Float32List>());
+      expect(output.actLogits, [1.0, 3.0]);
+      await responses.cancel();
+    } finally {
+      replies.close();
+      isolate.kill(priority: Isolate.immediate);
+    }
+  });
+
   // Close the port to avoid hanging
   rp.close();
+}
+
+void _echoDecisionRun(SendPort replies) {
+  final requests = ReceivePort();
+  replies.send(requests.sendPort);
+  requests.listen((message) {
+    final request = message as DecisionRunRequest;
+    final sequence = request.sequences.single;
+    request.sendPort.send(
+      DecisionRunResponse([
+        BackendDecisionOutput(
+          logits: Float32List.fromList(
+            sequence.tokens.map((token) => token.toDouble()).toList(),
+          ),
+          actLogits: Float32List.fromList([
+            sequence.markers.single.toDouble(),
+            request.headHandle.toDouble(),
+          ]),
+        ),
+      ]),
+    );
+    requests.close();
+  });
 }

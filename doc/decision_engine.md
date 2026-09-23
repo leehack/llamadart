@@ -18,10 +18,9 @@ Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 | Head | same repo, `laya-head.safetensors` (106 MB, F32) | 36 tensors under the PyTorch names; `__metadata__["laya.config"]` holds `rl_agent_config.json` |
 | Official checkpoint | `convaiinnovations/laya/model.safetensors` + `rl_agent_config.json` | also accepted as a head file: `encoder.*` tensors are ignored, config comes from `configPath` |
 
-Measured error of the whole pipeline against the PyTorch reference over the 24
-fixture rows: worst marker-logit difference 0.012-0.014 with a locally
-converted F32 GGUF, 0.164 with the community Q8_0. Q4_0 was both slower and less
-accurate on every device tried.
+Measured error and speed per backbone, head file and device are under
+[Measured](#measured). Q4_0 was both slower and less accurate on every device
+tried.
 
 ## Public API
 
@@ -81,7 +80,8 @@ Types, all in `lib/src/core/decision/` and pure Dart:
 - `DecisionEngine`: `load`, `capabilitiesFor(engine)`, `info` (limits and the
   head's device), `systemOne`, `systemOneBatch`, `dispose`.
 - `LlamaDecisionException` for invalid questions and model-dependent failures
-  such as an option list that does not fit the head budget.
+  such as an option list that does not fit the head budget, and for text that
+  contains U+0000 (see [Known limits](#known-limits)).
 
 Values are unrounded doubles; upstream rounds to 4 decimals in its JSON.
 
@@ -110,7 +110,7 @@ hidden states across the isolate boundary; only logits cross it.
 | `decision_result.dart` | answer types, `DecisionUsage`, `DecisionResult` |
 | `decision_sequence.dart` | option rendering, tokenizer input texts, sequence assembly |
 | `decision_decoder.dart` | temperature selection and clamping, softmax, confidence, act features, answer decoding |
-| `decision_engine.dart` | facade and `DecisionCapabilities` |
+| `decision_engine.dart` | facade, `DecisionCapabilities` and `DecisionModelInfo` |
 
 The core must not import `dart:io`/`dart:ffi`, directly or transitively.
 
@@ -144,19 +144,38 @@ module, so the engine hook reports unsupported and `DecisionEngine.load` throws
 
 Plain public methods documented as low-level integration hooks, like the TTS
 trio. The capabilities hook checks `is! BackendDecision` before readiness, so
-Web reports a stable reason without a model. The engine records live head
-handles and forgets them in `_unloadModel`; a run or free with a forgotten
-handle throws `LlamaStateException` ("load the DecisionEngine again") instead of
-reaching a possibly reused native handle. No engine lease: the head uses its own
-llama context, and the worker serializes native work.
+Web reports a stable reason without a model.
+
+Backend handles are not unique over an engine's life: the worker numbers
+handles from 1, and a new worker starts after `LlamaEngine.dispose` followed by
+`loadModel`, or when a GGUF load follows a `.litertlm` load (which replaces the
+llama.cpp delegate even if it fails), so the first head after a restart gets
+the previous head's number. `loadDecisionHeadBackend` therefore returns the
+head with an engine handle from a counter that never resets, mapped to the
+backend handle. `_unloadModel` forgets every mapping. A
+run with an unmapped engine handle throws `LlamaStateException` ("load the
+DecisionEngine again") and a free does nothing, so a stale `DecisionEngine`
+can reach neither a later head nor its backend handle. No engine lease: the
+head uses its own llama context, and the worker serializes native work.
+
+`DecisionEngine` also checks the engine's model handle before tokenizing. If
+the model is unloaded while a call or `load` is in flight, the failure it
+causes, such as `LlamaContextException` from tokenization, is rethrown as
+`LlamaStateException`.
 
 ### Native (`lib/src/backends/llama_cpp/`)
 
 - Worker messages `DecisionCapabilitiesRequest`, `DecisionHeadLoadRequest`,
   `DecisionRunRequest`, `DecisionHeadFreeRequest`, handled synchronously. Every
-  request gets a reply. Errors reuse the existing `WorkerErrorKind`s: bad head
-  file or model mismatch is `model`, unknown handle is `state`, compute failure
-  is `inference`, missing symbols are `unsupported`.
+  request sent before `DisposeRequest` gets a reply; the worker drops requests
+  that arrive after it, so the client's `decisionHeadFree` sends nothing once
+  disposal has started. Errors reuse the existing `WorkerErrorKind`s: a model
+  that `decisionModelUnsupportedReason` rejects, and missing ggml symbols, are
+  `unsupported`; an unreadable or malformed head file or
+  config, or a head that does not fit the encoder, is `model`; an encoder
+  context that cannot be created or fails its checks is `context`; an invalid
+  sequence or a failed encoder or head pass is `inference`; an unknown model or
+  head handle is `state`.
 - `safetensors.dart`: header parse with bounds checks; reads only the needed
   byte ranges through `RandomAccessFile`; F32, F16 and BF16 convert to F32.
 - `decision_head.dart`: weights in one backend buffer, the head graph through
@@ -164,7 +183,9 @@ llama context, and the worker serializes native work.
 - Service state: `Map<int, _DecisionHead>` keyed by `_getHandle()`, holding the
   model handle, a private `llama_context` (n_ctx = n_batch = n_ubatch =
   `max_len`, `n_seq_max` 1, `embeddings` true, pooling NONE, threads and offload
-  knobs from the model's load params), backends, sched, weights. Kept out of
+  knobs from the model's load params), backends, sched, weights, and the
+  encoder call (`llama_encode` plus `llama_get_embeddings`; unit tests
+  substitute it because the null test context would abort). Kept out of
   `_contexts` so generate, embed and state persistence cannot reach it.
   `freeModel` frees the model's heads before `llama_model_free`; `dispose` frees
   all heads first.
@@ -173,19 +194,35 @@ llama context, and the worker serializes native work.
   Metal buffer at process exit trips `ggml_metal_rsets_free`'s assert.
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
-resolved GPU layers <= 0), with `op_offload` false. Otherwise the model's GPU
-device, with the CPU backend last in the sched (required by
-`ggml_backend_sched_new`). Never `ggml_backend_init_best`, which would start a
-GPU backend in explicit CPU mode. CPU threads come from the private context
-(`llama_n_threads`) through the CPU registry's `ggml_backend_set_n_threads`.
+resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU
+device whose registry and device names match the model's backend (`mainGpu`
+picks among several; none matching means CPU), with the CPU backend last in
+the sched (required by `ggml_backend_sched_new`). Never
+`ggml_backend_init_best`, which would start a GPU backend in explicit CPU mode.
 
-Load-time checks, each failing with a typed exception: architecture reported by
-`general.architecture` is `modern-bert`; `llama_vocab_cls`/`sep`/`mask` exist;
-`n_embd` equals the head width; `n_ctx_train >= max_len`; every tensor is
-present with the exact shape implied by `hidden`, `head_layers` and the act
-rows; `nhead = max(1, hidden ~/ 64)` divides `hidden`. The run path rejects a
-sequence longer than `llama_n_ubatch` before `llama_encode`, whose
-`GGML_ASSERT` would abort the process.
+CPU threads: `llama_encode` uses the private context's `n_threads_batch` for
+every sequence of more than one token, and the head passes the same count
+(`llama_n_threads_batch`) to the CPU registry's `ggml_backend_set_n_threads`.
+So `ModelParams.numberOfThreadsBatch` sets the CPU threads of both, and
+llama.cpp's default (4) applies when it is 0. `numberOfThreads` only reaches
+one-token encoder passes, which `DecisionEngine` never builds.
+
+Load-time checks, each failing with a typed exception and each decided by a
+static helper that unit tests cover:
+
+- `decisionModelUnsupportedReason` (also the capability probe):
+  `general.architecture` is `modern-bert`; the CLS (`llama_vocab_bos`), SEP and
+  MASK tokens are in the vocabulary; the MASK token has text; `n_embd_out` is 0
+  or `n_embd`.
+- `checkDecisionHeadFitsEncoder`: the head's `type_emb.weight` width equals
+  `n_embd`; `n_ctx_train >= max_len`.
+- `checkDecisionEncoderContext`: pooling is NONE; `n_ubatch >= max_len`.
+- `DecisionHeadWeights.read`: every tensor is present with the exact shape
+  implied by `hidden`, `head_layers` and the act rows; `nhead = max(1, hidden
+  ~/ 64)` divides `hidden`.
+
+The run path rejects a sequence longer than `llama_n_ubatch` before
+`llama_encode`, whose `GGML_ASSERT` would abort the process.
 
 Windows: `llama.dll` exports no `ggml_*` graph symbols; they live in
 `ggml-base.dll` (ops, graph, sched, buffers) and `ggml.dll` (registry). The head
@@ -243,15 +280,62 @@ JSON-like (null, bool, num, String, List, Map with String keys).
 
 | Platform | Path | Status |
 | --- | --- | --- |
-| macOS, iOS | Metal or CPU | supported |
-| Android | CPU (recommended, 6 threads on Pixel 9 Pro) or Vulkan | supported; Mali Vulkan was slower than CPU |
-| Linux | CPU, Vulkan, CUDA | supported |
-| Windows | CPU, Vulkan, CUDA | supported through the `ggml-base` twins |
+| macOS | Metal or CPU | validated with a real model ([Measured](#measured)) |
+| iOS | Metal or CPU | expected, untested |
+| Android | CPU or Vulkan | expected, untested through `DecisionEngine` |
+| Linux | CPU, Vulkan, CUDA | expected, untested |
+| Windows | CPU, Vulkan, CUDA | expected through the `ggml-base` twins, untested |
 | Native LiteRT-LM | - | `LlamaUnsupportedException` |
 | Web (WebGPU bridge) | - | `LlamaUnsupportedException` until the bridge module ships |
 
-Measured per question (512-token window, Q8_0): about 12 ms on an M4 Max with
-Metal; about 2.1 s on a Pixel 9 Pro with 6 CPU threads.
+Real-model evidence is macOS only. The CPU head unit tests are meant to run in
+the Linux, macOS and Windows CI jobs; until this PR's Linux and Windows jobs
+pass, they have run on macOS only. iOS, Vulkan and CUDA have no run at all.
+Android numbers come from the prototype that preceded this implementation, not
+from `DecisionEngine`: about 2.1 s per question (512-token window, Q8_0) on a
+Pixel 9 Pro with 6 CPU threads, and Mali Vulkan was slower than the CPU there.
+
+### Measured
+
+`decision-model-smoke` on an Apple M4 Max (16 cores, macOS), 24 fixture rows of
+31 to 512 tokens (mean 90), `ModelParams(contextSize: 512)`, default threads
+(llama.cpp's 4). Differences are the worst over all rows against the Laya 0.3.5
+PyTorch reference; time is `systemOne` wall time per question.
+
+| Backbone | Head file | Backend | Head device | Logit diff | Probability diff | Score diff | ms per question |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| F32 (local conversion) | `laya-head.safetensors` | CPU | CPU | 0.0129 | 0.0029 | 0.0019 | 187 |
+| F32 (local conversion) | `laya-head.safetensors` | Metal | MTL0 | 0.0118 | 0.0030 | 0.0031 | 15.4 |
+| `laya-Q8_0.gguf` | `laya-head.safetensors` | CPU | CPU | 0.1422 | 0.0356 | 0.0609 | 85.6 |
+| `laya-Q8_0.gguf` | `laya-head.safetensors` | Metal | MTL0 | 0.1642 | 0.0436 | 0.0253 | 14.4 |
+| F32 (local conversion) | official `model.safetensors` + config | CPU | CPU | 0.0129 | 0.0029 | 0.0019 | 188 |
+| `laya-Q8_0.gguf` | official `model.safetensors` + config | Metal | MTL0 | 0.1642 | 0.0436 | 0.0253 | 14.2 |
+
+The official checkpoint's F16 head tensors give the same differences as the F32
+head file. On these 24 fixture rows, in every configuration, no choice changed,
+no noul crossed 0.5 and no score rounded to a different level.
+
+The fixture's short sequences understate the error. A broader review set of
+187 questions in 62 random requests (seed 20260922, mean 327 tokens, 73
+sequences at the 512-token cap), compared with Laya 0.3.5 on CPU in FP32, gave
+these worst differences:
+
+| Backbone | Backend | Logit diff | Probability diff | Changed decisions |
+| --- | --- | --- | --- | --- |
+| F32 (local conversion) | CPU | 0.102 | 0.0065 | none |
+| F32 (local conversion) | Metal | 0.100 | 0.0085 | none |
+| `laya-Q8_0.gguf` | CPU | 1.905 | 0.237 | a noul from 0.694 to 0.457 (also with 1 and 4 threads); a choice with a reference top-2 gap of 0.00015; a noul from 0.4997 to 0.5004 |
+| `laya-Q8_0.gguf` | Metal | 2.935 | 0.066 | two choices with reference top-2 gaps of 0.00015 and 0.0014; a noul from 0.4997 to 0.5010 |
+
+On this set the median Q8_0 difference is about 6 times the F32 one for logits
+and 8 times for probabilities; on the fixture the worst is 11 (CPU) to 14
+(Metal) times. Q8_0 can change clear decisions, so use an F32 backbone
+when answers must match Laya; the published `laya-F16.gguf` has not been
+measured.
+
+On Metal, disposing the engine with a head still loaded exits cleanly; skipping
+the head frees in `freeModel` and `dispose` makes the same exit abort in
+`ggml_metal_rsets_free`.
 
 ## Known limits
 
@@ -264,6 +348,11 @@ Metal; about 2.1 s on a Pixel 9 Pro with 6 CPU threads.
   load if the checks pass but have no parity evidence.
 - `contextSize: 512` is recommended for the engine's own context, which the
   decision path does not use.
+- Text containing U+0000 is rejected with `LlamaDecisionException`: native
+  tokenization passes the text's C-string length to `llama_tokenize`, so it
+  would cut the text at the NUL while Laya tokenizes all of it. A non-string
+  state is JSON-encoded, which escapes U+0000.
+- Q8_0 backbones can change decisions; see [Measured](#measured).
 
 ## Testing
 
@@ -276,13 +365,28 @@ Metal; about 2.1 s on a Pixel 9 Pro with 6 CPU threads.
   recorded raw logits to the recorded answers within 6e-5 (Laya rounds to 4
   decimals and decodes in float32; worst measured deviation 4.96e-5).
 - Unit (VM): safetensors parsing and malformed-file errors on synthetic files;
-  the ggml head on a tiny synthetic head against a pure-Dart reference; worker,
-  backend-client and router routing with fakes; engine hooks and facade with a
-  fake backend; Web unsupported path under `@TestOn('browser')`.
+  the ggml head on a tiny synthetic head against a pure-Dart reference, and
+  through a recording ggml function table that checks every create has its
+  free, the teardown order, the thread count and the scheduler's backend
+  order; the service's load-time check helpers, sequence validation, and run
+  order through a substituted encoder; worker, backend-client and router
+  routing with fakes; engine hooks and facade with a fake backend; Web
+  unsupported path under `@TestOn('browser')`.
+- Integration (VM, CI's `stories15M.gguf`): a llama-architecture model is
+  reported unsupported and `DecisionEngine.load` fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
-  and head, the 24 fixture rows, exact token ids, logits within tolerance.
-  Runner scenario `decision-model-smoke` (`--model-path`, `--head-path`) and
-  test-matrix row of the same id.
+  and head, the 24 fixture rows, exact token ids and markers from the engine
+  tokenizer, raw logits and `systemOne` answers within tolerance (see
+  `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
+  the model offloads no layers; and an engine disposed with a head still
+  loaded, whose process must then exit cleanly (on Metal a leaked buffer
+  aborts the exit, which fails the runner). Runner scenario
+  `decision-model-smoke` (`--model-path`, `--head-path`, optional
+  `--config-path` and `--backend`) and test-matrix row of the same id.
+- No test reaches the service's `llama_free` of the encoder context after a
+  failed head load, its `op_offload` and `mainGpu` choices, or its order of
+  head and context teardown; that needs fault injection or several GPUs. The
+  PR's high-risk block records them as residual risk.
 
 Fixture: `test/fixtures/decision/laya_0_3_5_reference.json`, produced by the
 scripts beside it from the pinned official checkpoint on CPU in FP32.
@@ -292,9 +396,13 @@ scripts beside it from the pinned official checkpoint on CPU in FP32.
 Stacked PRs, each merged only with maintainer approval:
 
 1. Design doc and the pure-Dart core with the parity fixture (standard risk).
-2. Native backend, engine hooks, facade, export, E2E, docs (high risk: backend
-   routing and a new export; needs the independent audit and readiness
-   evidence).
+2. Native backend, engine hooks, facade, export, E2E, docs. High risk:
+   `classify_high_risk_changes.dart` reports `backendRuntime`,
+   `regressionPolicy` (the test-matrix row and its docs) and `structuredOutput`
+   (`lib/llamadart.dart` brings in all three structured-output v2 axes by
+   default). The readiness evidence must justify excluding each
+   structured-output axis from inspected production call sites, alongside the
+   regression-policy evidence and the independent audit.
 3. `example/basic_app` decision example.
 4. `example/laya_tetris` Flutter example: real-time Tetris played through
    `DecisionEngine`, with the base and a Tetris-tuned head.

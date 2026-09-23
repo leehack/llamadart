@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import '../exceptions.dart';
@@ -70,6 +71,27 @@ class DecisionHeadConfig {
         temperatureByOptions[decisionTemperatureBucket(type, optionCount)] ??
             temperature[type.index],
       );
+}
+
+/// Decodes decision head config [text], Laya's `rl_agent_config.json`.
+///
+/// Returns the JSON object after checking it with
+/// [DecisionHeadConfig.fromJson]. Throws [LlamaDecisionException] when [text]
+/// is not a JSON object or its fields fail that check.
+Map<String, Object?> decodeDecisionHeadConfig(String text) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException catch (error) {
+    throw LlamaDecisionException(
+      'Decision head config is not valid JSON: ${error.message}',
+    );
+  }
+  if (decoded is! Map<String, Object?>) {
+    throw LlamaDecisionException('Decision head config is not a JSON object.');
+  }
+  DecisionHeadConfig.fromJson(decoded);
+  return decoded;
 }
 
 /// A usable temperature, as Laya's `clamp_temperature`.

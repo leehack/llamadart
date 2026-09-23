@@ -403,6 +403,116 @@ abstract class BackendTextToSpeech {
   void cancelTextToSpeech();
 }
 
+/// Runtime support for an optional backend decision-model path.
+class BackendDecisionCapabilities {
+  /// Whether decision heads can run on the loaded model.
+  final bool isSupported;
+
+  /// Actionable reason when [isSupported] is false.
+  final String? unsupportedReason;
+
+  /// Creates a backend capability snapshot.
+  const BackendDecisionCapabilities({
+    required this.isSupported,
+    this.unsupportedReason,
+  });
+}
+
+/// A decision head loaded by a backend.
+class BackendDecisionHeadInfo {
+  /// Backend handle of the head.
+  final int handle;
+
+  /// Hidden size shared by the encoder and the head.
+  final int hiddenSize;
+
+  /// Token that starts every sequence.
+  final int clsToken;
+
+  /// Token that separates sequence parts.
+  final int sepToken;
+
+  /// Token placed before each option.
+  final int maskToken;
+
+  /// Text of [maskToken].
+  final String maskText;
+
+  /// The head's configuration as JSON text (Laya `rl_agent_config.json`).
+  final String configJson;
+
+  /// Name of the device the head runs on.
+  final String deviceName;
+
+  /// Creates a head description.
+  const BackendDecisionHeadInfo({
+    required this.handle,
+    required this.hiddenSize,
+    required this.clsToken,
+    required this.sepToken,
+    required this.maskToken,
+    required this.maskText,
+    required this.configJson,
+    required this.deviceName,
+  });
+}
+
+/// Encoder input for one question.
+class BackendDecisionSequence {
+  /// Token ids.
+  final Int32List tokens;
+
+  /// Position in [tokens] of each option's mask token.
+  final Int32List markers;
+
+  /// Question type: 0 choice, 1 score, 2 noul.
+  final int questionType;
+
+  /// Creates an encoder input.
+  const BackendDecisionSequence({
+    required this.tokens,
+    required this.markers,
+    required this.questionType,
+  });
+}
+
+/// Raw head outputs for one sequence.
+class BackendDecisionOutput {
+  /// One logit per marker, before temperature scaling.
+  final Float32List logits;
+
+  /// Action-head logits.
+  final Float32List actLogits;
+
+  /// Creates head outputs.
+  const BackendDecisionOutput({required this.logits, required this.actLogits});
+}
+
+/// Optional backend capability for encoder-plus-head decision models.
+abstract class BackendDecision {
+  /// Reports whether the model [modelHandle] can run decision heads.
+  Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle);
+
+  /// Loads the head at [headPath] for the model [modelHandle].
+  ///
+  /// [configPath] names a JSON config for head files without `laya.config`
+  /// metadata.
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  });
+
+  /// Runs [sequences] through the encoder and head, in order.
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  );
+
+  /// Frees the head [headHandle]; unknown handles are ignored.
+  Future<void> decisionHeadFree(int headHandle);
+}
+
 /// Optional backend capability for exposing loaded model file type metadata.
 ///
 /// Backends that can identify the loaded model's native file type or

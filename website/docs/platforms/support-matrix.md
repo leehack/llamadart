@@ -30,6 +30,11 @@ supports experimental CPU-only streaming ASR through
 isolate. LiteRT-LM Web does not expose typed speech. See the
 [speech recognition support matrix](../guides/speech-to-text#current-support-matrix).
 
+Laya-style decision models run only on native llama.cpp:
+[`DecisionEngine`](../guides/decision-models) pairs a ModernBERT encoder GGUF
+with a safetensors decision head. On WebGPU, native LiteRT-LM, and LiteRT-LM
+Web, `DecisionEngine.load` throws `LlamaUnsupportedException`.
+
 Available override tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
 or via `gh release list --repo leehack/llamadart-native --limit 20`.

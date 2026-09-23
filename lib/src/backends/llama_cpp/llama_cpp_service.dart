@@ -9,6 +9,7 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../backend.dart';
+import '../../core/decision/decision_decoder.dart';
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -22,7 +23,9 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
+import 'decision_head.dart';
 import 'load_param_helpers.dart';
+import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
@@ -697,6 +700,8 @@ class LlamaCppService {
   final Map<int, int> _modelToMtmd = {};
   final Map<int, Pointer<mtmd_context>> _mtmdContexts = {};
   final Map<int, bool> _modelToMtmdUseGpu = {};
+
+  final Map<int, _DecisionHead> _decisionHeads = <int, _DecisionHead>{};
 
   int _getHandle() => _nextHandle++;
 
@@ -3560,8 +3565,9 @@ class LlamaCppService {
 
   /// Frees the model associated with [modelHandle].
   ///
-  /// This also frees all contexts and LoRA adapters associated with the model.
+  /// This also frees the model's decision heads, contexts and LoRA adapters.
   void freeModel(int modelHandle) {
+    _freeDecisionHeadsWhere((head) => head.modelHandle == modelHandle);
     final model = _models.remove(modelHandle);
     _modelToMtmdUseGpu.remove(modelHandle);
     if (model != null) {
@@ -3660,22 +3666,7 @@ class LlamaCppService {
       resolvedGpuLayers: resolvedModelGpuLayers,
       isAndroid: Platform.isAndroid,
     )) {
-      if (!_androidVulkanAllowKqvOffload) {
-        final modelArchitecture = _getModelMetadataValue(
-          modelHandle,
-          'general.architecture',
-        );
-        if (!shouldKeepAndroidVulkanKqvOffloadEnabled(modelArchitecture)) {
-          ctxParams.offload_kqv = false;
-        }
-      }
-      if (!_androidVulkanAllowOpOffload) {
-        ctxParams.op_offload = false;
-      }
-      if (!_androidVulkanAllowFlashAttn) {
-        ctxParams.flash_attn_typeAsInt =
-            llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value;
-      }
+      _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
     }
 
     params.validate();
@@ -3703,6 +3694,28 @@ class LlamaCppService {
     _batches[handle] = llama_batch_init(resolvedBatchSizes.batchSize, 0, 1);
 
     return handle;
+  }
+
+  void _applyConservativeAndroidVulkanContextConfig(
+    llama_context_params ctxParams,
+    int modelHandle,
+  ) {
+    if (!_androidVulkanAllowKqvOffload) {
+      final modelArchitecture = _getModelMetadataValue(
+        modelHandle,
+        'general.architecture',
+      );
+      if (!shouldKeepAndroidVulkanKqvOffloadEnabled(modelArchitecture)) {
+        ctxParams.offload_kqv = false;
+      }
+    }
+    if (!_androidVulkanAllowOpOffload) {
+      ctxParams.op_offload = false;
+    }
+    if (!_androidVulkanAllowFlashAttn) {
+      ctxParams.flash_attn_typeAsInt =
+          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value;
+    }
   }
 
   /// Frees the context associated with [contextHandle].
@@ -6798,6 +6811,7 @@ class LlamaCppService {
 
   /// Disposes of all resources managed by the service.
   void dispose() {
+    _freeDecisionHeadsWhere((_) => true);
     for (final c in _contexts.values) {
       c.dispose();
     }
@@ -7551,6 +7565,525 @@ class LlamaCppService {
 
     final fallback = _resolveMtmdFallbackApi();
     return fallback?.supportsVideo(mmCtx) ?? false;
+  }
+
+  /// Reports whether the model [modelHandle] can run decision heads.
+  ///
+  /// Supported models are loaded ModernBERT encoders (`general.architecture`
+  /// `modern-bert`) with CLS, SEP and MASK tokens.
+  BackendDecisionCapabilities decisionCapabilities(int modelHandle) {
+    final reason = _decisionUnsupportedReason(modelHandle);
+    return BackendDecisionCapabilities(
+      isSupported: reason == null,
+      unsupportedReason: reason,
+    );
+  }
+
+  /// Loads the decision head at [headPath] for the model [modelHandle] and
+  /// returns its description.
+  ///
+  /// The head's config is the [configPath] file when given, else the head's
+  /// `laya.config` metadata. The head gets a private encoder context of the
+  /// config's `max_len` tokens, whose batch thread count also drives the
+  /// head's CPU work. It runs on a GPU device of the model's backend
+  /// (`mainGpu` picks among several), or on the CPU when the model runs there
+  /// or no such device exists. Throws [LlamaStateException] for an unknown
+  /// model, [LlamaUnsupportedException] for a model [decisionCapabilities]
+  /// rejects, [LlamaModelException] for a head or config that does not fit
+  /// the model, and [LlamaContextException] when the encoder context cannot
+  /// be created or fails [checkDecisionEncoderContext].
+  BackendDecisionHeadInfo loadDecisionHead(
+    int modelHandle,
+    String headPath,
+    String? configPath,
+  ) {
+    final model = _models[modelHandle];
+    if (model == null) {
+      throw LlamaStateException(
+        'No model is loaded for handle $modelHandle. Load the decision '
+        'encoder before its head.',
+      );
+    }
+    final unsupportedReason = _decisionUnsupportedReason(modelHandle);
+    if (unsupportedReason != null) {
+      throw LlamaUnsupportedException(unsupportedReason);
+    }
+    final vocab = llama_model_get_vocab(model.pointer);
+    final clsToken = llama_vocab_bos(vocab);
+    final sepToken = llama_vocab_sep(vocab);
+    final maskToken = llama_vocab_mask(vocab);
+    final hiddenSize = llama_model_n_embd(model.pointer);
+
+    final String configText;
+    final int maxTokens;
+    final DecisionHeadWeights weights;
+    final file = SafetensorsFile.open(headPath);
+    try {
+      configText = resolveDecisionHeadConfigText(
+        headPath: headPath,
+        configPath: configPath,
+        metadata: file.metadata,
+      );
+      final parsed = parseDecisionHeadConfig(
+        configText,
+        source: configPath ?? '$headPath (laya.config metadata)',
+      );
+      maxTokens = parsed.maxTokens;
+      checkDecisionHeadFitsEncoder(
+        headPath: headPath,
+        typeEmbeddingShape: file.tensors['type_emb.weight']?.shape,
+        hiddenSize: hiddenSize,
+        trainedContext: llama_model_n_ctx_train(model.pointer),
+        maxTokens: maxTokens,
+      );
+      weights = DecisionHeadWeights.read(
+        file,
+        hiddenSize: hiddenSize,
+        config: parsed.config,
+      );
+    } finally {
+      file.close();
+    }
+
+    final params = _modelLoadParams[modelHandle] ?? const ModelParams();
+    final resolvedGpuLayers =
+        _modelResolvedGpuLayers[modelHandle] ??
+        resolveGpuLayersForLoad(params, isAndroid: Platform.isAndroid);
+    final runsOnCpu = decisionHeadRunsOnCpu(
+      modelBackendName: _modelBackendNames[modelHandle],
+      resolvedGpuLayers: resolvedGpuLayers,
+    );
+
+    final ctxParams = llama_context_default_params();
+    ctxParams.n_ctx = maxTokens;
+    ctxParams.n_batch = maxTokens;
+    ctxParams.n_ubatch = maxTokens;
+    ctxParams.n_seq_max = 1;
+    ctxParams.embeddings = true;
+    ctxParams.pooling_type = llama_pooling_type.LLAMA_POOLING_TYPE_NONE;
+    if (params.numberOfThreads > 0) {
+      ctxParams.n_threads = params.numberOfThreads;
+    }
+    if (params.numberOfThreadsBatch > 0) {
+      ctxParams.n_threads_batch = params.numberOfThreadsBatch;
+    }
+    if (runsOnCpu) {
+      ctxParams.offload_kqv = false;
+      ctxParams.op_offload = false;
+      ctxParams.flash_attn_typeAsInt =
+          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value;
+    } else if (shouldUseConservativeAndroidVulkanContextConfig(
+      params,
+      resolvedGpuLayers: resolvedGpuLayers,
+      isAndroid: Platform.isAndroid,
+    )) {
+      _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
+    }
+
+    final context = llama_init_from_model(model.pointer, ctxParams);
+    if (context == nullptr) {
+      throw LlamaContextException(
+        'Failed to create the decision encoder context of $maxTokens tokens.',
+      );
+    }
+    final DecisionHeadRuntime runtime;
+    final int tokenLimit;
+    try {
+      tokenLimit = llama_n_ubatch(context);
+      checkDecisionEncoderContext(
+        poolingType: llama_pooling_type$1(context).value,
+        tokenLimit: tokenLimit,
+        maxTokens: maxTokens,
+      );
+      final device = runsOnCpu ? null : _decisionHeadDevice(modelHandle);
+      runtime = DecisionHeadRuntime.create(
+        weights,
+        device: device,
+        cpuThreads: llama_n_threads_batch(context),
+        opOffload: device != null && ctxParams.op_offload,
+      );
+    } catch (_) {
+      llama_free(context);
+      rethrow;
+    }
+
+    final handle = _getHandle();
+    _decisionHeads[handle] = _DecisionHead(
+      modelHandle: modelHandle,
+      context: context,
+      runtime: runtime,
+      hiddenSize: hiddenSize,
+      tokenLimit: tokenLimit,
+      vocabSize: llama_vocab_n_tokens(vocab),
+      encode: _encodeDecisionBatch,
+    );
+    return BackendDecisionHeadInfo(
+      handle: handle,
+      hiddenSize: hiddenSize,
+      clsToken: clsToken,
+      sepToken: sepToken,
+      maskToken: maskToken,
+      maskText: _vocabTokenText(vocab, maskToken),
+      configJson: configText,
+      deviceName: runtime.deviceName,
+    );
+  }
+
+  /// Runs [sequences] through the encoder and the decision head [headHandle]
+  /// and returns one output per sequence, in order.
+  ///
+  /// Throws [LlamaStateException] for an unknown head and
+  /// [LlamaInferenceException] when a sequence fails
+  /// [validateDecisionSequences] or the encoder pass fails; no sequence runs
+  /// unless all are valid.
+  List<BackendDecisionOutput> runDecision(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) {
+    final head = _decisionHeads[headHandle];
+    if (head == null) {
+      throw LlamaStateException(
+        'Decision head $headHandle is not loaded; it was freed or its model '
+        'was unloaded. Load the decision head again.',
+      );
+    }
+    validateDecisionSequences(
+      sequences,
+      tokenLimit: head.tokenLimit,
+      vocabSize: head.vocabSize,
+    );
+    final batch = llama_batch_init(head.tokenLimit, 0, 1);
+    try {
+      return <BackendDecisionOutput>[
+        for (final sequence in sequences)
+          _runDecisionSequence(head, batch, sequence),
+      ];
+    } finally {
+      llama_batch_free(batch);
+    }
+  }
+
+  /// Frees the decision head [headHandle]; unknown handles are ignored.
+  void freeDecisionHead(int headHandle) {
+    _decisionHeads.remove(headHandle)?.dispose();
+  }
+
+  /// Checks [sequences] against a decision head's limits.
+  ///
+  /// Each sequence needs 1 to [tokenLimit] tokens, each in `[0, vocabSize)`,
+  /// at least one marker, every marker a position in its tokens, and a
+  /// question type of 0, 1 or 2. Throws [LlamaInferenceException] naming the
+  /// first sequence that fails.
+  static void validateDecisionSequences(
+    List<BackendDecisionSequence> sequences, {
+    required int tokenLimit,
+    required int vocabSize,
+  }) {
+    for (var i = 0; i < sequences.length; i++) {
+      final sequence = sequences[i];
+      final tokens = sequence.tokens;
+      if (tokens.isEmpty || tokens.length > tokenLimit) {
+        throw LlamaInferenceException(
+          'Decision sequence $i has ${tokens.length} tokens; the decision '
+          'encoder accepts 1 to $tokenLimit.',
+        );
+      }
+      for (final token in tokens) {
+        if (token < 0 || token >= vocabSize) {
+          throw LlamaInferenceException(
+            'Decision sequence $i contains token $token, outside the '
+            'encoder vocabulary of $vocabSize tokens.',
+          );
+        }
+      }
+      if (sequence.markers.isEmpty) {
+        throw LlamaInferenceException(
+          'Decision sequence $i has no option markers.',
+        );
+      }
+      for (final marker in sequence.markers) {
+        if (marker < 0 || marker >= tokens.length) {
+          throw LlamaInferenceException(
+            'Decision sequence $i has marker $marker outside its '
+            '${tokens.length} tokens.',
+          );
+        }
+      }
+      if (sequence.questionType < 0 || sequence.questionType > 2) {
+        throw LlamaInferenceException(
+          'Decision sequence $i has question type ${sequence.questionType}; '
+          'expected 0 (choice), 1 (score) or 2 (noul).',
+        );
+      }
+    }
+  }
+
+  /// Returns the Laya config text of the decision head at [headPath].
+  ///
+  /// Reads the [configPath] file when given, else returns the `laya.config`
+  /// entry of the head's [metadata]. Throws [LlamaModelException] when the
+  /// file cannot be read or neither source exists.
+  static String resolveDecisionHeadConfigText({
+    required String headPath,
+    required String? configPath,
+    required Map<String, String> metadata,
+  }) {
+    if (configPath != null) {
+      try {
+        return File(configPath).readAsStringSync();
+      } on FileSystemException catch (error) {
+        throw LlamaModelException(
+          'Cannot read the decision head config at $configPath.',
+          error.osError?.message ?? error.message,
+        );
+      }
+    }
+    final text = metadata['laya.config'];
+    if (text == null) {
+      throw LlamaModelException(
+        'The decision head at $headPath has no "laya.config" metadata. Pass '
+        'configPath with the head\'s rl_agent_config.json.',
+      );
+    }
+    return text;
+  }
+
+  /// Parses decision head config [text] read from [source].
+  ///
+  /// Returns the JSON object and its `max_len` (512 when absent). Throws
+  /// [LlamaModelException] naming [source] when [decodeDecisionHeadConfig]
+  /// rejects [text].
+  static ({Map<String, Object?> config, int maxTokens}) parseDecisionHeadConfig(
+    String text, {
+    required String source,
+  }) {
+    try {
+      final config = decodeDecisionHeadConfig(text);
+      return (
+        config: config,
+        maxTokens: DecisionHeadConfig.fromJson(config).maxTokens,
+      );
+    } on LlamaDecisionException catch (error) {
+      throw LlamaModelException(
+        'The decision head config in $source is invalid: ${error.message}',
+      );
+    }
+  }
+
+  /// Returns why a model cannot run decision heads, or null when it can.
+  ///
+  /// The model needs [architecture] `modern-bert`; [clsToken], [sepToken]
+  /// and [maskToken] within `[0, vocabSize)`; a non-empty [maskText]; and an
+  /// [outputSize] of 0 or equal to [hiddenSize], so the encoder returns its
+  /// last hidden state.
+  static String? decisionModelUnsupportedReason({
+    required String? architecture,
+    required int vocabSize,
+    required int clsToken,
+    required int sepToken,
+    required int maskToken,
+    required String maskText,
+    required int hiddenSize,
+    required int outputSize,
+  }) {
+    if (architecture != _decisionEncoderArchitecture) {
+      final reported = architecture == null
+          ? 'no architecture'
+          : 'architecture "$architecture"';
+      return 'Decision heads need a ModernBERT encoder GGUF '
+          '(general.architecture "$_decisionEncoderArchitecture"); the loaded '
+          'model reports $reported.';
+    }
+    for (final (name, token) in <(String, int)>[
+      ('CLS', clsToken),
+      ('SEP', sepToken),
+      ('MASK', maskToken),
+    ]) {
+      if (token < 0 || token >= vocabSize) {
+        return 'The loaded encoder has no $name token, which decision '
+            'sequences need. Convert the GGUF with its tokenizer\'s special '
+            'tokens.';
+      }
+    }
+    if (maskText.isEmpty) {
+      return 'The loaded encoder\'s MASK token has no text, which decision '
+          'prompts need to strip it from user text.';
+    }
+    if (outputSize > 0 && outputSize != hiddenSize) {
+      return 'The encoder outputs $outputSize values per token but its hidden '
+          'size is $hiddenSize; decision heads need the last hidden state.';
+    }
+    return null;
+  }
+
+  /// Checks that the decision head at [headPath] fits the loaded encoder.
+  ///
+  /// Throws [LlamaModelException] when the head's `type_emb.weight`
+  /// [typeEmbeddingShape] is two-dimensional with a width other than
+  /// [hiddenSize], or when the config's [maxTokens] exceeds the encoder's
+  /// [trainedContext].
+  static void checkDecisionHeadFitsEncoder({
+    required String headPath,
+    required List<int>? typeEmbeddingShape,
+    required int hiddenSize,
+    required int trainedContext,
+    required int maxTokens,
+  }) {
+    if (typeEmbeddingShape != null &&
+        typeEmbeddingShape.length == 2 &&
+        typeEmbeddingShape[1] != hiddenSize) {
+      throw LlamaModelException(
+        'The decision head at $headPath is ${typeEmbeddingShape[1]} wide but '
+        'the loaded encoder has hidden size $hiddenSize. Use the head '
+        'trained for this encoder.',
+      );
+    }
+    if (trainedContext < maxTokens) {
+      throw LlamaModelException(
+        'The decision head config sets max_len $maxTokens, but the loaded '
+        'encoder was trained for $trainedContext tokens.',
+      );
+    }
+  }
+
+  /// Checks a decision encoder context for a head config's [maxTokens].
+  ///
+  /// Throws [LlamaContextException] when [poolingType] is not
+  /// `LLAMA_POOLING_TYPE_NONE`, so the context would not return per-token
+  /// hidden states, or when its [tokenLimit] (`n_ubatch`) is below
+  /// [maxTokens].
+  static void checkDecisionEncoderContext({
+    required int poolingType,
+    required int tokenLimit,
+    required int maxTokens,
+  }) {
+    if (poolingType != llama_pooling_type.LLAMA_POOLING_TYPE_NONE.value) {
+      throw LlamaContextException(
+        'The decision encoder context does not return per-token hidden '
+        'states (pooling is not NONE).',
+      );
+    }
+    if (tokenLimit < maxTokens) {
+      throw LlamaContextException(
+        'The decision encoder context accepts $tokenLimit tokens per pass, '
+        'fewer than the head config max_len $maxTokens.',
+      );
+    }
+  }
+
+  /// Returns whether a decision head for a model runs on the CPU.
+  ///
+  /// True when the model loaded on the CPU backend ([modelBackendName]
+  /// `CPU`) or offloads no layers ([resolvedGpuLayers] <= 0).
+  static bool decisionHeadRunsOnCpu({
+    required String? modelBackendName,
+    required int resolvedGpuLayers,
+  }) {
+    return modelBackendName == _backendDisplayName('cpu') ||
+        resolvedGpuLayers <= 0;
+  }
+
+  String? _decisionUnsupportedReason(int modelHandle) {
+    final model = _models[modelHandle];
+    if (model == null) {
+      return 'No llama.cpp model is loaded for handle $modelHandle. Load a '
+          'ModernBERT encoder GGUF first.';
+    }
+    final vocab = llama_model_get_vocab(model.pointer);
+    final vocabSize = llama_vocab_n_tokens(vocab);
+    final maskToken = llama_vocab_mask(vocab);
+    return decisionModelUnsupportedReason(
+      architecture: _getModelMetadataValue(modelHandle, 'general.architecture'),
+      vocabSize: vocabSize,
+      clsToken: llama_vocab_bos(vocab),
+      sepToken: llama_vocab_sep(vocab),
+      maskToken: maskToken,
+      maskText: maskToken >= 0 && maskToken < vocabSize
+          ? _vocabTokenText(vocab, maskToken)
+          : '',
+      hiddenSize: llama_model_n_embd(model.pointer),
+      outputSize: llama_model_n_embd_out(model.pointer),
+    );
+  }
+
+  static const String _decisionEncoderArchitecture = 'modern-bert';
+
+  String _vocabTokenText(Pointer<llama_vocab> vocab, int token) {
+    final text = llama_vocab_get_text(vocab, token);
+    return text == nullptr ? '' : text.cast<Utf8>().toDartString();
+  }
+
+  ggml_backend_dev_t? _decisionHeadDevice(int modelHandle) {
+    final backendName = _modelBackendNames[modelHandle];
+    final backend = GpuBackend.values.where(
+      (candidate) =>
+          candidate != GpuBackend.auto &&
+          candidate != GpuBackend.cpu &&
+          _backendDisplayName(candidate.name) == backendName,
+    );
+    if (backend.isEmpty) {
+      return null;
+    }
+    final devices = <ggml_backend_dev_t>[];
+    final count = _ggmlBackendDevCount();
+    for (var i = 0; i < count; i++) {
+      final device = _ggmlBackendDevGet(i);
+      if (device == nullptr || !_isGpuClassDevice(device)) {
+        continue;
+      }
+      final reg = _ggmlBackendDevBackendReg(device);
+      final label =
+          '${reg == nullptr ? '' : _utf8OrEmpty(_ggmlBackendRegName(reg))} '
+          '${_utf8OrEmpty(_ggmlBackendDevName(device))}';
+      if (_backendInfoContainsBackendMarker(label, backend.first)) {
+        devices.add(device);
+      }
+    }
+    if (devices.isEmpty) {
+      return null;
+    }
+    final mainGpu = _modelLoadParams[modelHandle]?.mainGpu ?? 0;
+    return mainGpu >= 0 && mainGpu < devices.length
+        ? devices[mainGpu]
+        : devices.first;
+  }
+
+  bool _isGpuClassDevice(ggml_backend_dev_t device) {
+    final type = _ggmlBackendDevType(device);
+    return type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
+        type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
+  }
+
+  BackendDecisionOutput _runDecisionSequence(
+    _DecisionHead head,
+    llama_batch batch,
+    BackendDecisionSequence sequence,
+  ) {
+    final tokens = sequence.tokens;
+    batch.n_tokens = tokens.length;
+    for (var i = 0; i < tokens.length; i++) {
+      batch.token[i] = tokens[i];
+      batch.pos[i] = i;
+      batch.n_seq_id[i] = 1;
+      batch.seq_id[i][0] = 0;
+      batch.logits[i] = 1;
+    }
+    return head.runtime.run(
+      head.encode(head.context, batch, tokens.length * head.hiddenSize),
+      tokens.length,
+      sequence.questionType,
+      sequence.markers,
+    );
+  }
+
+  void _freeDecisionHeadsWhere(bool Function(_DecisionHead head) test) {
+    final handles = <int>[
+      for (final MapEntry(:key, :value) in _decisionHeads.entries)
+        if (test(value)) key,
+    ];
+    for (final handle in handles) {
+      _decisionHeads.remove(handle)!.dispose();
+    }
   }
 
   /// Discovers dedicated native text-to-speech support.
@@ -8445,6 +8978,60 @@ class _LlamaLoraWrapper {
   void dispose() {
     llama_adapter_lora_free(pointer);
   }
+}
+
+class _DecisionHead {
+  _DecisionHead({
+    required this.modelHandle,
+    required this.context,
+    required this.runtime,
+    required this.hiddenSize,
+    required this.tokenLimit,
+    required this.vocabSize,
+    required this.encode,
+  });
+
+  final int modelHandle;
+  final Pointer<llama_context> context;
+  final DecisionHeadRuntime runtime;
+  final int hiddenSize;
+  final int tokenLimit;
+  final int vocabSize;
+  final Float32List Function(
+    Pointer<llama_context> context,
+    llama_batch batch,
+    int valueCount,
+  )
+  encode;
+
+  void dispose() {
+    try {
+      runtime.dispose();
+    } finally {
+      llama_free(context);
+    }
+  }
+}
+
+Float32List _encodeDecisionBatch(
+  Pointer<llama_context> context,
+  llama_batch batch,
+  int valueCount,
+) {
+  final status = llama_encode(context, batch);
+  if (status != 0) {
+    throw LlamaInferenceException(
+      'The decision encoder pass failed.',
+      'llama_encode returned $status',
+    );
+  }
+  final embeddings = llama_get_embeddings(context);
+  if (embeddings == nullptr) {
+    throw LlamaInferenceException(
+      'The decision encoder returned no per-token hidden states.',
+    );
+  }
+  return Float32List.fromList(embeddings.asTypedList(valueCount));
 }
 
 class _LlamaModelWrapper {

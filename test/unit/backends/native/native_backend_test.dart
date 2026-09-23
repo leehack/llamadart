@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
@@ -560,6 +561,94 @@ void main() {
       }
     },
   );
+
+  test('forwards decision calls to a llama.cpp delegate', () async {
+    final llama = _DecisionFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await backend.modelLoad('/models/laya-Q8_0.gguf', const ModelParams());
+
+      final capabilities = await backend.decisionCapabilities(11);
+      expect(capabilities.isSupported, isTrue);
+      final head = await backend.decisionHeadLoad(
+        11,
+        'head.safetensors',
+        configPath: 'config.json',
+      );
+      expect(head.handle, 77);
+      final sequence = BackendDecisionSequence(
+        tokens: Int32List.fromList([1, 2]),
+        markers: Int32List.fromList([1]),
+        questionType: 1,
+      );
+      final outputs = await backend.decisionRun(77, [sequence]);
+      expect(outputs.single.logits, [0.25]);
+      await backend.decisionHeadFree(77);
+
+      expect(llama.decisionCalls, [
+        'capabilities 11',
+        'load 11 head.safetensors config.json',
+        'run 77 1',
+        'free 77',
+      ]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('reports decision models unsupported on LiteRT-LM', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _DecisionFakeBackend(handle: 11),
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+
+      final capabilities = await backend.decisionCapabilities(22);
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('ModernBERT'));
+      expect(
+        () => backend.decisionHeadLoad(22, 'head.safetensors'),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(
+        () => backend.decisionRun(1, const []),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await backend.decisionHeadFree(1);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('rejects decision calls before a model load', () async {
+    final llama = _DecisionFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      expect(() => backend.decisionCapabilities(1), throwsStateError);
+      expect(
+        () => backend.decisionHeadLoad(1, 'head.safetensors'),
+        throwsStateError,
+      );
+      expect(() => backend.decisionRun(1, const []), throwsStateError);
+      await backend.decisionHeadFree(1);
+      expect(llama.decisionCalls, isEmpty);
+    } finally {
+      await backend.dispose();
+    }
+  });
 
   test('updates an existing pre-load diagnostic delegate log level', () async {
     final llama = _FakeBackend(handle: 11)..gpuSupported = true;
@@ -1312,6 +1401,58 @@ class _CapabilityFakeBackend extends _FakeBackend
     int tokenCapacity,
   ) async {
     return const StateLoadResult(tokens: [3]);
+  }
+}
+
+class _DecisionFakeBackend extends _FakeBackend implements BackendDecision {
+  _DecisionFakeBackend({required super.handle});
+
+  final List<String> decisionCalls = <String>[];
+
+  @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(
+    int modelHandle,
+  ) async {
+    decisionCalls.add('capabilities $modelHandle');
+    return const BackendDecisionCapabilities(isSupported: true);
+  }
+
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) async {
+    decisionCalls.add('load $modelHandle $headPath $configPath');
+    return const BackendDecisionHeadInfo(
+      handle: 77,
+      hiddenSize: 4,
+      clsToken: 1,
+      sepToken: 2,
+      maskToken: 3,
+      maskText: '[MASK]',
+      configJson: '{}',
+      deviceName: 'CPU',
+    );
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) async {
+    decisionCalls.add('run $headHandle ${sequences.length}');
+    return [
+      BackendDecisionOutput(
+        logits: Float32List.fromList([0.25]),
+        actLogits: Float32List.fromList([0.0, 0.0]),
+      ),
+    ];
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) async {
+    decisionCalls.add('free $headHandle');
   }
 }
 

@@ -40,6 +40,11 @@ export 'src/core/engine/chat_session.dart' show ChatSession;
 export 'src/core/speech/speech_to_text.dart';
 export 'src/core/speech/text_to_speech.dart';
 
+// Decision models
+export 'src/core/decision/decision_engine.dart';
+export 'src/core/decision/decision_question.dart';
+export 'src/core/decision/decision_result.dart';
+
 // Template APIs
 export 'src/core/template/chat_format.dart' show ChatFormat;
 export 'src/core/template/chat_parse_result.dart' show ChatParseResult;
@@ -52,6 +57,11 @@ export 'src/backends/backend.dart'
         LlamaBackend,
         BackendAvailability,
         BackendDartLogLevel,
+        BackendDecision,
+        BackendDecisionCapabilities,
+        BackendDecisionHeadInfo,
+        BackendDecisionOutput,
+        BackendDecisionSequence,
         BackendGrammarConstraintsSupport,
         BackendGpuEnumeration,
         BackendNativeChatGeneration,

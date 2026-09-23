@@ -34,6 +34,9 @@ models through LiteRT-LM.
   16 kHz PCM input and partial transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
+- Laya-style decision models on native llama.cpp through `DecisionEngine`:
+  typed choice, score, and yes/no answers from a ModernBERT encoder GGUF and a
+  safetensors head, one encoder pass per question.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
@@ -186,6 +189,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
 | Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
+| Answer typed questions with a decision model | [Decision models](https://llamadart.leehack.com/docs/guides/decision-models) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |

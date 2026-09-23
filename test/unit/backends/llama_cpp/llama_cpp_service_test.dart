@@ -4,10 +4,14 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:mirrors';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
@@ -15,6 +19,8 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
+
+import '../../../support/safetensors_writer.dart';
 
 void main() {
   test('preserved template tokens remain excluded from native text stops', () {
@@ -1726,6 +1732,544 @@ void main() {
     });
   });
 
+  group('decision heads', () {
+    late LlamaCppService service;
+
+    setUp(() {
+      service = LlamaCppService();
+    });
+
+    test('unknown models and heads fail with typed errors', () {
+      final capabilities = service.decisionCapabilities(-1);
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('handle -1'));
+      expect(
+        () => service.loadDecisionHead(-1, 'head.safetensors', null),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(
+        () => service.runDecision(-1, const []),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('Load the decision head again'),
+          ),
+        ),
+      );
+      service.freeDecisionHead(-1);
+    });
+
+    group('head lifecycle', () {
+      late Directory tempDir;
+
+      setUpAll(() => LlamaCppService().initializeBackend());
+
+      setUp(() {
+        tempDir = Directory.systemTemp.createTempSync('decision_lifecycle_');
+      });
+
+      tearDown(() {
+        service.dispose();
+        tempDir.deleteSync(recursive: true);
+      });
+
+      DecisionHeadRuntime tinyRuntime() {
+        final file = SafetensorsFile.open(_writeTinyDecisionHead(tempDir).path);
+        try {
+          return DecisionHeadRuntime.create(
+            DecisionHeadWeights.read(
+              file,
+              hiddenSize: 4,
+              config: const {'head_layers': 1},
+            ),
+            cpuThreads: 1,
+            opOffload: false,
+          );
+        } finally {
+          file.close();
+        }
+      }
+
+      BackendDecisionOutput runDirect(DecisionHeadRuntime runtime) =>
+          runtime.run(Float32List(8), 2, 0, Int32List.fromList([1]));
+
+      test('freeModel and dispose free the heads they own', () {
+        final first = tinyRuntime();
+        final second = tinyRuntime();
+        final firstHandle = _registerDecisionHead(service, 7, first);
+        final secondHandle = _registerDecisionHead(service, 8, second);
+        expect(runDirect(first).logits, hasLength(1));
+
+        service.freeModel(7);
+        expect(
+          () => service.runDecision(firstHandle, const []),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(() => runDirect(first), throwsA(isA<LlamaStateException>()));
+        expect(service.runDecision(secondHandle, const []), isEmpty);
+        expect(runDirect(second).logits, hasLength(1));
+
+        service.dispose();
+        expect(
+          () => service.runDecision(secondHandle, const []),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(() => runDirect(second), throwsA(isA<LlamaStateException>()));
+      });
+
+      test('freeDecisionHead frees only that head', () {
+        final first = tinyRuntime();
+        final second = tinyRuntime();
+        final firstHandle = _registerDecisionHead(service, 7, first);
+        _registerDecisionHead(service, 7, second);
+
+        service.freeDecisionHead(firstHandle);
+        service.freeDecisionHead(firstHandle);
+        expect(() => runDirect(first), throwsA(isA<LlamaStateException>()));
+        expect(
+          () => service.runDecision(firstHandle, const []),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(runDirect(second).logits, hasLength(1));
+      });
+
+      test('runDecision encodes and answers sequences in order', () {
+        final runtime = tinyRuntime();
+        final encoder = _EncoderSpy(fail: false);
+        final handle = _registerDecisionHead(
+          service,
+          7,
+          runtime,
+          encoder: encoder,
+        );
+        final sequences = [
+          for (final (tokens, markers, type) in [
+            ([1, 2, 3], [1], 0),
+            ([4, 5], [0, 1], 2),
+            ([6, 7, 8, 9], [3, 1, 2], 1),
+          ])
+            BackendDecisionSequence(
+              tokens: Int32List.fromList(tokens),
+              markers: Int32List.fromList(markers),
+              questionType: type,
+            ),
+        ];
+
+        final outputs = service.runDecision(handle, sequences);
+
+        expect(encoder.batches, [
+          [1, 2, 3],
+          [4, 5],
+          [6, 7, 8, 9],
+        ]);
+        expect(encoder.batchErrors, isEmpty);
+        expect(outputs, hasLength(3));
+        for (final (i, sequence) in sequences.indexed) {
+          final expected = runtime.run(
+            _EncoderSpy.hiddenFor(sequence.tokens),
+            sequence.tokens.length,
+            sequence.questionType,
+            sequence.markers,
+          );
+          expect(outputs[i].logits, expected.logits, reason: 'sequence $i');
+          expect(outputs[i].actLogits, expected.actLogits);
+        }
+      });
+
+      test('runDecision validates every sequence before encoding', () {
+        final encoder = _EncoderSpy();
+        final handle = _registerDecisionHead(
+          service,
+          7,
+          tinyRuntime(),
+          encoder: encoder,
+        );
+        final valid = BackendDecisionSequence(
+          tokens: Int32List.fromList([1, 2]),
+          markers: Int32List.fromList([1]),
+          questionType: 0,
+        );
+        final tooLong = BackendDecisionSequence(
+          tokens: Int32List.fromList([1, 2, 3, 4, 5]),
+          markers: Int32List.fromList([1]),
+          questionType: 0,
+        );
+        expect(
+          () => service.runDecision(handle, [valid, tooLong]),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              contains('sequence 1 has 5 tokens'),
+            ),
+          ),
+        );
+        expect(encoder.batches, isEmpty);
+      });
+    });
+
+    group('validateDecisionSequences', () {
+      BackendDecisionSequence sequence({
+        List<int> tokens = const [1, 4, 2, 3, 5, 2],
+        List<int> markers = const [2, 3],
+        int questionType = 0,
+      }) => BackendDecisionSequence(
+        tokens: Int32List.fromList(tokens),
+        markers: Int32List.fromList(markers),
+        questionType: questionType,
+      );
+
+      void validate(List<BackendDecisionSequence> sequences) =>
+          LlamaCppService.validateDecisionSequences(
+            sequences,
+            tokenLimit: 6,
+            vocabSize: 10,
+          );
+
+      Matcher rejects(String fragment) => throwsA(
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          contains(fragment),
+        ),
+      );
+
+      test('accepts sequences within the head limits', () {
+        validate([
+          sequence(),
+          sequence(tokens: const [9], markers: const [0], questionType: 2),
+        ]);
+      });
+
+      test('rejects empty and over-long sequences', () {
+        expect(
+          () => validate([sequence(tokens: const [], markers: const [])]),
+          rejects('0 tokens'),
+        );
+        expect(
+          () => validate([
+            sequence(),
+            sequence(tokens: const [1, 1, 1, 1, 1, 1, 1]),
+          ]),
+          rejects('sequence 1 has 7 tokens'),
+        );
+      });
+
+      test('rejects tokens outside the vocabulary', () {
+        expect(
+          () => validate([
+            sequence(tokens: const [1, 10]),
+          ]),
+          rejects('token 10'),
+        );
+        expect(
+          () => validate([
+            sequence(tokens: const [-1, 2]),
+          ]),
+          rejects('token -1'),
+        );
+      });
+
+      test('rejects missing and out-of-range markers', () {
+        expect(
+          () => validate([sequence(markers: const [])]),
+          rejects('no option markers'),
+        );
+        expect(
+          () => validate([
+            sequence(markers: const [2, 6]),
+          ]),
+          rejects('marker 6'),
+        );
+        expect(
+          () => validate([
+            sequence(markers: const [-1]),
+          ]),
+          rejects('marker -1'),
+        );
+      });
+
+      test('rejects unknown question types', () {
+        expect(
+          () => validate([sequence(questionType: 3)]),
+          rejects('question type 3'),
+        );
+        expect(
+          () => validate([sequence(questionType: -1)]),
+          rejects('question type -1'),
+        );
+      });
+    });
+
+    group('resolveDecisionHeadConfigText', () {
+      late Directory tempDir;
+
+      setUp(() {
+        tempDir = Directory.systemTemp.createTempSync('decision_config_');
+      });
+
+      tearDown(() {
+        tempDir.deleteSync(recursive: true);
+      });
+
+      test('prefers the config file over head metadata', () {
+        final config = File(path.join(tempDir.path, 'rl_agent_config.json'))
+          ..writeAsStringSync('{"max_len": 256}');
+        expect(
+          LlamaCppService.resolveDecisionHeadConfigText(
+            headPath: 'head.safetensors',
+            configPath: config.path,
+            metadata: const {'laya.config': '{"max_len": 512}'},
+          ),
+          '{"max_len": 256}',
+        );
+      });
+
+      test('falls back to the laya.config metadata', () {
+        expect(
+          LlamaCppService.resolveDecisionHeadConfigText(
+            headPath: 'head.safetensors',
+            configPath: null,
+            metadata: const {'laya.config': '{"max_len": 512}'},
+          ),
+          '{"max_len": 512}',
+        );
+      });
+
+      test('reports a missing config source as a model error', () {
+        expect(
+          () => LlamaCppService.resolveDecisionHeadConfigText(
+            headPath: 'head.safetensors',
+            configPath: null,
+            metadata: const {},
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              contains('Pass configPath'),
+            ),
+          ),
+        );
+        expect(
+          () => LlamaCppService.resolveDecisionHeadConfigText(
+            headPath: 'head.safetensors',
+            configPath: path.join(tempDir.path, 'missing.json'),
+            metadata: const {'laya.config': '{}'},
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              contains('missing.json'),
+            ),
+          ),
+        );
+      });
+    });
+
+    group('parseDecisionHeadConfig', () {
+      test('reads max_len and keeps the config object', () {
+        final parsed = LlamaCppService.parseDecisionHeadConfig(
+          '{"max_len": 256, "head_layers": 1}',
+          source: 'config.json',
+        );
+        expect(parsed.maxTokens, 256);
+        expect(parsed.config['head_layers'], 1);
+        expect(
+          LlamaCppService.parseDecisionHeadConfig(
+            '{}',
+            source: 'config.json',
+          ).maxTokens,
+          512,
+        );
+      });
+
+      test('rejects malformed configs as model errors', () {
+        for (final text in ['{', '[1, 2]', '{"max_len": 0}']) {
+          expect(
+            () => LlamaCppService.parseDecisionHeadConfig(
+              text,
+              source: 'config.json',
+            ),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => error.message,
+                'message',
+                contains('config.json'),
+              ),
+            ),
+            reason: text,
+          );
+        }
+      });
+    });
+
+    group('decisionModelUnsupportedReason', () {
+      String? reason({
+        String? architecture = 'modern-bert',
+        int clsToken = 1,
+        int sepToken = 2,
+        int maskToken = 3,
+        String maskText = '[MASK]',
+        int outputSize = 0,
+      }) => LlamaCppService.decisionModelUnsupportedReason(
+        architecture: architecture,
+        vocabSize: 10,
+        clsToken: clsToken,
+        sepToken: sepToken,
+        maskToken: maskToken,
+        maskText: maskText,
+        hiddenSize: 8,
+        outputSize: outputSize,
+      );
+
+      test('accepts a ModernBERT encoder with its special tokens', () {
+        expect(reason(), isNull);
+        expect(reason(outputSize: 8), isNull);
+      });
+
+      test('names another or a missing architecture', () {
+        expect(reason(architecture: 'llama'), contains('architecture "llama"'));
+        expect(reason(architecture: null), contains('no architecture'));
+      });
+
+      test('rejects missing CLS, SEP and MASK tokens', () {
+        expect(reason(clsToken: -1), contains('no CLS token'));
+        expect(reason(sepToken: 10), contains('no SEP token'));
+        expect(reason(maskToken: -1), contains('no MASK token'));
+      });
+
+      test('rejects a MASK token without text', () {
+        expect(reason(maskText: ''), contains('MASK token has no text'));
+      });
+
+      test('rejects an encoder whose output is not its hidden state', () {
+        expect(reason(outputSize: 4), contains('outputs 4 values per token'));
+      });
+    });
+
+    group('checkDecisionHeadFitsEncoder', () {
+      void check({
+        List<int>? typeEmbeddingShape = const [3, 8],
+        int trainedContext = 512,
+      }) => LlamaCppService.checkDecisionHeadFitsEncoder(
+        headPath: 'head.safetensors',
+        typeEmbeddingShape: typeEmbeddingShape,
+        hiddenSize: 8,
+        trainedContext: trainedContext,
+        maxTokens: 512,
+      );
+
+      Matcher rejects(String fragment) => throwsA(
+        isA<LlamaModelException>().having(
+          (error) => error.message,
+          'message',
+          contains(fragment),
+        ),
+      );
+
+      test('accepts a head that fits', () {
+        check();
+        check(typeEmbeddingShape: null);
+        check(typeEmbeddingShape: const [8]);
+        check(trainedContext: 8192);
+      });
+
+      test('rejects a head of another width', () {
+        expect(
+          () => check(typeEmbeddingShape: const [3, 16]),
+          rejects('is 16 wide but the loaded encoder has hidden size 8'),
+        );
+      });
+
+      test('rejects a max_len past the encoder training context', () {
+        expect(
+          () => check(trainedContext: 511),
+          rejects('trained for 511 tokens'),
+        );
+      });
+    });
+
+    group('checkDecisionEncoderContext', () {
+      final none = llama_pooling_type.LLAMA_POOLING_TYPE_NONE.value;
+
+      test('accepts per-token output with room for max_len', () {
+        LlamaCppService.checkDecisionEncoderContext(
+          poolingType: none,
+          tokenLimit: 512,
+          maxTokens: 512,
+        );
+      });
+
+      test('rejects pooled output', () {
+        expect(
+          () => LlamaCppService.checkDecisionEncoderContext(
+            poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_CLS.value,
+            tokenLimit: 512,
+            maxTokens: 512,
+          ),
+          throwsA(
+            isA<LlamaContextException>().having(
+              (error) => error.message,
+              'message',
+              contains('pooling is not NONE'),
+            ),
+          ),
+        );
+      });
+
+      test('rejects a micro-batch below max_len', () {
+        expect(
+          () => LlamaCppService.checkDecisionEncoderContext(
+            poolingType: none,
+            tokenLimit: 511,
+            maxTokens: 512,
+          ),
+          throwsA(
+            isA<LlamaContextException>().having(
+              (error) => error.message,
+              'message',
+              contains('accepts 511 tokens per pass'),
+            ),
+          ),
+        );
+      });
+    });
+
+    test('decisionHeadRunsOnCpu follows the model placement', () {
+      expect(
+        LlamaCppService.decisionHeadRunsOnCpu(
+          modelBackendName: 'CPU',
+          resolvedGpuLayers: 99,
+        ),
+        isTrue,
+      );
+      expect(
+        LlamaCppService.decisionHeadRunsOnCpu(
+          modelBackendName: 'Metal',
+          resolvedGpuLayers: 0,
+        ),
+        isTrue,
+      );
+      expect(
+        LlamaCppService.decisionHeadRunsOnCpu(
+          modelBackendName: 'Metal',
+          resolvedGpuLayers: 99,
+        ),
+        isFalse,
+      );
+      expect(
+        LlamaCppService.decisionHeadRunsOnCpu(
+          modelBackendName: null,
+          resolvedGpuLayers: 99,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('resolveGpuLayersForLoad', () {
     test('prefers CPU for Android auto mode', () {
       const params = ModelParams(
@@ -3240,4 +3784,109 @@ void _createLinuxBundleMarkerFiles(
   for (final fileName in markerFiles) {
     File(path.join(directoryPath, fileName)).writeAsStringSync('');
   }
+}
+
+int _registerDecisionHead(
+  LlamaCppService service,
+  int modelHandle,
+  DecisionHeadRuntime runtime, {
+  _EncoderSpy? encoder,
+}) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  final headClass =
+      owner.declarations[MirrorSystem.getSymbol('_DecisionHead', owner)]
+          as ClassMirror;
+  final head = headClass.newInstance(Symbol.empty, const [], {
+    #modelHandle: modelHandle,
+    #context: nullptr,
+    #runtime: runtime,
+    #hiddenSize: 4,
+    #tokenLimit: 4,
+    #vocabSize: 10,
+    #encode: (encoder ?? _EncoderSpy()).call,
+  }).reflectee;
+  final handle = _invokePrivateForTesting<int>(service, '_getHandle', []);
+  _readPrivateForTesting<Map<Object?, Object?>>(
+    service,
+    '_decisionHeads',
+  )[handle] = head;
+  return handle;
+}
+
+/// Stands in for `llama_encode`, which would abort on the null test context.
+final class _EncoderSpy {
+  _EncoderSpy({this.fail = true});
+
+  final bool fail;
+  final List<List<int>> batches = [];
+  final List<String> batchErrors = [];
+
+  static Float32List hiddenFor(List<int> tokens) => Float32List.fromList([
+    for (final token in tokens)
+      for (var j = 0; j < 4; j++) ((token * 7 + j * 3) % 11 - 5) / 5,
+  ]);
+
+  Float32List call(
+    Pointer<llama_context> context,
+    llama_batch batch,
+    int valueCount,
+  ) {
+    final tokens = [for (var i = 0; i < batch.n_tokens; i++) batch.token[i]];
+    batches.add(tokens);
+    for (var i = 0; i < tokens.length; i++) {
+      if (batch.pos[i] != i ||
+          batch.n_seq_id[i] != 1 ||
+          batch.seq_id[i][0] != 0 ||
+          batch.logits[i] != 1) {
+        batchErrors.add('token $i');
+      }
+    }
+    if (fail) {
+      throw LlamaInferenceException('The encoder spy refuses to encode.');
+    }
+    expect(valueCount, tokens.length * 4);
+    return hiddenFor(tokens);
+  }
+}
+
+File _writeTinyDecisionHead(Directory dir) {
+  const d = 4;
+  const ffn = 8;
+  const actHidden = 3;
+  var seed = 0;
+  TestTensor tensor(List<int> shape, {double? fill}) {
+    final count = shape.fold(1, (a, b) => a * b);
+    return TestTensor.f32(shape, [
+      for (var i = 0; i < count; i++) fill ?? (((seed++ * 7) % 11) - 5) / 10,
+    ]);
+  }
+
+  return writeSafetensors(
+    path.join(dir.path, 'head_${dir.listSync().length}.safetensors'),
+    {
+      'type_emb.weight': tensor([3, d]),
+      'head.layers.0.self_attn.in_proj_weight': tensor([3 * d, d]),
+      'head.layers.0.self_attn.in_proj_bias': tensor([3 * d]),
+      'head.layers.0.self_attn.out_proj.weight': tensor([d, d]),
+      'head.layers.0.self_attn.out_proj.bias': tensor([d]),
+      'head.layers.0.linear1.weight': tensor([ffn, d]),
+      'head.layers.0.linear1.bias': tensor([ffn]),
+      'head.layers.0.linear2.weight': tensor([d, ffn]),
+      'head.layers.0.linear2.bias': tensor([d]),
+      'head.layers.0.norm1.weight': tensor([d], fill: 1),
+      'head.layers.0.norm1.bias': tensor([d], fill: 0),
+      'head.layers.0.norm2.weight': tensor([d], fill: 1),
+      'head.layers.0.norm2.bias': tensor([d], fill: 0),
+      'scorer.0.weight': tensor([d], fill: 1),
+      'scorer.0.bias': tensor([d], fill: 0),
+      'scorer.1.weight': tensor([d, d]),
+      'scorer.1.bias': tensor([d]),
+      'scorer.3.weight': tensor([1, d]),
+      'scorer.3.bias': tensor([1]),
+      'act_head.0.weight': tensor([actHidden, d + 4]),
+      'act_head.0.bias': tensor([actHidden]),
+      'act_head.2.weight': tensor([2, actHidden]),
+      'act_head.2.bias': tensor([2]),
+    },
+  );
 }

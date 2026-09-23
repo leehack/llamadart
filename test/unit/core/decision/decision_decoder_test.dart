@@ -136,6 +136,25 @@ void main() {
       }
     });
 
+    test('decodeDecisionHeadConfig returns the checked JSON object', () {
+      expect(decodeDecisionHeadConfig('{"max_len": 256, "head_layers": 1}'), {
+        'max_len': 256,
+        'head_layers': 1,
+      });
+      for (final (text, fragment) in [
+        ('{', 'not valid JSON'),
+        ('[512]', 'not a JSON object'),
+        ('"config"', 'not a JSON object'),
+        ('{"max_len": 0}', '"max_len" must be a positive integer'),
+      ]) {
+        expect(
+          () => decodeDecisionHeadConfig(text),
+          _decisionError(fragment),
+          reason: text,
+        );
+      }
+    });
+
     test('temperatureFor prefers the bucket, then the type, clamped', () {
       const config = DecisionHeadConfig(
         temperature: [1.5, 0.2, 9.0],
