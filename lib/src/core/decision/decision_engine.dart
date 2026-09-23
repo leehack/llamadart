@@ -160,6 +160,9 @@ class DecisionEngine {
     final BackendDecisionHeadInfo head;
     try {
       final capabilities = await engine.backendDecisionCapabilities;
+      if (modelHandle != null && !_hasModel(engine, modelHandle)) {
+        throw LlamaStateException(_loadInterruptedMessage);
+      }
       if (!capabilities.isSupported) {
         throw LlamaUnsupportedException(_unsupportedReason(capabilities));
       }
@@ -172,11 +175,7 @@ class DecisionEngine {
     } catch (error, stackTrace) {
       if (modelHandle != null && !_hasModel(engine, modelHandle)) {
         Error.throwWithStackTrace(
-          LlamaStateException(
-            'The model was unloaded while the DecisionEngine was loading. '
-            'Load the model and the DecisionEngine again.',
-            error,
-          ),
+          LlamaStateException(_loadInterruptedMessage, error),
           stackTrace,
         );
       }
@@ -237,10 +236,13 @@ class DecisionEngine {
   /// Answers every request in [requests], in order.
   ///
   /// All questions are validated and tokenized before the model runs, and
-  /// all sequences run in one backend call. An empty [requests] gives an
-  /// empty list. Throws like [systemOne].
-  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) =>
-      _track(() => _answer(requests));
+  /// all sequences run in one backend call. The call answers [requests] as
+  /// they are when it starts; later changes to the list do not affect it. An
+  /// empty [requests] gives an empty list. Throws like [systemOne].
+  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) {
+    final snapshot = List<DecisionRequest>.unmodifiable(requests);
+    return _track(() => _answer(snapshot));
+  }
 
   /// Frees the decision head after in-flight calls finish.
   ///
@@ -364,6 +366,10 @@ class DecisionEngine {
     }
     return results;
   }
+
+  static const String _loadInterruptedMessage =
+      'The model was unloaded while the DecisionEngine was loading. Load the '
+      'model and the DecisionEngine again.';
 
   static const String _modelUnloadedMessage =
       'The model this DecisionEngine was loaded for was unloaded. Load the '
