@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -29,6 +30,7 @@ void main() {
     expect(backend, isA<BackendStatePersistenceSupport>());
     expect(backend, isA<BackendPromptSpeechToTextSupport>());
     expect(backend, isA<BackendTextToSpeech>());
+    expect(backend, isA<BackendDecision>());
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
   });
@@ -177,6 +179,82 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('WebAutoBackend forwards decision calls to its delegate', () async {
+    final delegate = _DecisionBackend();
+    final backend = WebAutoBackend(webBackend: delegate);
+    final sequence = BackendDecisionSequence(
+      tokens: Int32List.fromList([1, 3, 2]),
+      markers: Int32List.fromList([1]),
+      questionType: DecisionQuestionType.noul,
+    );
+
+    final capabilities = await backend.decisionCapabilities(1);
+    final head = await backend.decisionHeadLoad(
+      1,
+      'laya-head.safetensors',
+      configPath: 'rl_agent_config.json',
+    );
+    final outputs = await backend.decisionRun(head.handle, [sequence]);
+    await backend.decisionHeadFree(head.handle);
+
+    expect(capabilities.isSupported, isTrue);
+    expect(outputs.single.logits, [0.5]);
+    expect(delegate.calls, [
+      'capabilities 1',
+      'load 1 laya-head.safetensors rl_agent_config.json',
+      'run 9 1',
+      'free 9',
+    ]);
+  });
+
+  test('WebAutoBackend reports decision models unsupported on LiteRT-LM '
+      'Web', () async {
+    const reason =
+        'The active Web runtime does not run decision models. Load a '
+        'ModernBERT encoder GGUF, which uses the llama.cpp WebGPU bridge.';
+    final liteRtLm = _RecordingBackend('litert');
+    final backend = WebAutoBackend(
+      webGpuFactory: _DecisionBackend.new,
+      liteRtLmFactory: () => liteRtLm,
+    );
+    await backend.modelLoadFromUrl(
+      'https://example.com/gemma-4-E2B-it-web.litertlm',
+      const ModelParams(),
+    );
+
+    final capabilities = await backend.decisionCapabilities(1);
+
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, reason);
+    expect(
+      () => backend.decisionHeadLoad(1, 'laya-head.safetensors'),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          reason,
+        ),
+      ),
+    );
+    expect(
+      () => backend.decisionRun(1, const []),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    await backend.decisionHeadFree(1);
+  });
+
+  test('WebAutoBackend rejects decision calls before a model load', () async {
+    final backend = WebAutoBackend(webGpuFactory: _DecisionBackend.new);
+
+    expect(() => backend.decisionCapabilities(1), throwsStateError);
+    expect(
+      () => backend.decisionHeadLoad(1, 'laya-head.safetensors'),
+      throwsStateError,
+    );
+    expect(() => backend.decisionRun(1, const []), throwsStateError);
+    await backend.decisionHeadFree(1);
   });
 
   test('WebAutoBackend routes .litertlm URLs to LiteRT-LM delegate', () async {
@@ -384,5 +462,55 @@ class _TextToSpeechBackend extends _NoStateBackend
   @override
   void cancelTextToSpeech() {
     cancelCalls += 1;
+  }
+}
+
+class _DecisionBackend extends _NoStateBackend implements BackendDecision {
+  final List<String> calls = <String>[];
+
+  @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(
+    int modelHandle,
+  ) async {
+    calls.add('capabilities $modelHandle');
+    return const BackendDecisionCapabilities(isSupported: true);
+  }
+
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) async {
+    calls.add('load $modelHandle $headPath $configPath');
+    return const BackendDecisionHeadInfo(
+      handle: 9,
+      hiddenSize: 4,
+      clsToken: 1,
+      sepToken: 2,
+      maskToken: 3,
+      maskText: '[MASK]',
+      configJson: '{}',
+      deviceName: 'WebGPU',
+    );
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) async {
+    calls.add('run $headHandle ${sequences.length}');
+    return [
+      BackendDecisionOutput(
+        logits: Float32List.fromList([0.5]),
+        actLogits: Float32List.fromList([1, 0]),
+      ),
+    ];
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) async {
+    calls.add('free $headHandle');
   }
 }

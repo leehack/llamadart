@@ -5,9 +5,9 @@ import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
-  const reason = 'The active backend does not expose decision models.';
+  const reason = 'Load a model first.';
 
-  test('the Web backend reports decision models as unsupported', () async {
+  test('the Web backend asks for a model before probing', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);
 
@@ -17,7 +17,7 @@ void main() {
     expect(capabilities.unsupportedReason, reason);
   });
 
-  test('load throws LlamaUnsupportedException on Web', () async {
+  test('load without a model throws LlamaUnsupportedException', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);
 

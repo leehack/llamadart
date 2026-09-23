@@ -7859,8 +7859,10 @@ class LlamaCppService {
   /// Checks [sequences] against a decision head's limits.
   ///
   /// Each sequence needs 1 to [tokenLimit] tokens, each in `[0, vocabSize)`,
-  /// at least one marker, and every marker a position in its tokens. Throws
-  /// [LlamaInferenceException] naming the first sequence that fails.
+  /// 1 to token-count markers, and every marker a position in its tokens.
+  /// Throws [LlamaInferenceException] naming the first sequence that fails.
+  /// The llama-web-bridge decision core runs these checks with the same
+  /// messages, so both runtimes reject the same sequences.
   static void validateDecisionSequences(
     List<BackendDecisionSequence> sequences, {
     required int tokenLimit,
@@ -7886,6 +7888,13 @@ class LlamaCppService {
       if (sequence.markers.isEmpty) {
         throw LlamaInferenceException(
           'Decision sequence $i has no option markers.',
+        );
+      }
+      if (sequence.markers.length > tokens.length) {
+        throw LlamaInferenceException(
+          'Decision sequence $i has ${sequence.markers.length} markers for '
+          'its ${tokens.length} tokens; a sequence holds at most one marker '
+          'per token.',
         );
       }
       for (final marker in sequence.markers) {

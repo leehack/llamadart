@@ -2000,6 +2000,26 @@ void main() {
           rejects('marker -1'),
         );
       });
+
+      test('rejects more markers than tokens, as the Web bridge does', () {
+        validate([
+          sequence(tokens: const [1, 2], markers: const [0, 1]),
+        ]);
+        expect(
+          () => validate([
+            sequence(),
+            sequence(tokens: const [1, 4, 2], markers: const [0, 1, 2, 1]),
+          ]),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'Decision sequence 1 has 4 markers for its 3 tokens; a '
+                  'sequence holds at most one marker per token.',
+            ),
+          ),
+        );
+      });
     });
 
     group('resolveDecisionHeadConfigText', () {

@@ -1,6 +1,6 @@
 ---
 title: Decision Models
-description: Answer typed choice, score, and yes/no questions about a state with Laya-style encoder decision models on native llama.cpp.
+description: Answer typed choice, score, and yes/no questions about a state with Laya-style encoder decision models on llama.cpp.
 ---
 
 `DecisionEngine` answers typed questions about a state with a Laya-style
@@ -25,13 +25,14 @@ in a Flutter app.
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
-| WebGPU / GGUF | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
+| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (apiVersion 1), which the default pin includes; checked only in headless Chromium on macOS. Older assets report unsupported. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
 The head runs on CPU when the model is loaded on CPU, and on the model's GPU
 when a device of its backend is available, otherwise on CPU.
-`decisions.info.deviceName` names that device, such as `CPU` or `MTL0`.
+`decisions.info.deviceName` names that device, such as `CPU` or `MTL0`; on Web,
+the bridge reports its own device name.
 
 ## Load a decision model
 
@@ -39,8 +40,8 @@ The reference assets are the community GGUF conversion
 [`fr0stbit3/laya-gguf`](https://huggingface.co/fr0stbit3/laya-gguf): the
 `laya-Q8_0.gguf` backbone (421 MB) and the `laya-head.safetensors` head
 (106 MB, F32). Load the backbone into a `LlamaEngine`, fetch the head through
-the engine's model download manager, then load the head with
-`DecisionEngine.load`:
+the engine's model download manager (native only; on Web, pass a URL as shown
+in [Web](#web)), then load the head with `DecisionEngine.load`:
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
@@ -356,9 +357,10 @@ for (final MapEntry(key: id, value: answer) in result.answers.entries) {
 ## Capabilities and model info
 
 `DecisionEngine.capabilitiesFor(engine)` reports whether a head can load on the
-engine now. Probe it after the backbone is loaded: without a model, native
-llama.cpp reports that a model must be loaded first. Web backends report
-unsupported with or without a model.
+engine now. Probe it after the backbone is loaded: without a model, it reports
+that a model must be loaded first. With a model on Web, bridge assets without
+the decision API, or with another decision API version, report unsupported and
+name the assets needed.
 
 `decisions.info` describes the loaded model: `hiddenSize`, the sequence limit
 `maxTokens`, the question-and-options budget `headMaxTokens`, and the
@@ -400,6 +402,56 @@ final official = await DecisionEngine.load(
 );
 ```
 
+## Web
+
+On Web, `DecisionEngine` runs through the decision API (apiVersion 1) of the
+llama.cpp WebGPU bridge, which `llama-web-bridge-assets` `v0.1.47+` and the
+default pin include. With older assets, `capabilitiesFor` reports unsupported
+and `DecisionEngine.load` throws `LlamaUnsupportedException`. LiteRT-LM Web
+models report unsupported too.
+
+- `headPath` and `configPath` are URLs, resolved against the document base
+  URL, so a `<base href>` applies. The engine's model download manager is not
+  available on Web; pass the head's URL instead:
+
+  ```dart
+  final head = ModelSource.huggingFace(
+    repoId: 'fr0stbit3/laya-gguf',
+    revision: 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c',
+    filePath: 'laya-head.safetensors',
+  );
+  final decisions = await DecisionEngine.load(
+    engine,
+    headPath: head.resolvedUri!.toString(),
+  );
+  ```
+
+- The bridge downloads the head into its in-memory file system, so peak memory
+  includes the whole head file. The page fetches `configPath` and passes its
+  text to the bridge; a config that cannot be fetched throws
+  `LlamaModelException`.
+- The head runs on WebGPU when the model loaded with GPU layers and on the
+  bridge CPU otherwise.
+- Web numbers cannot tell `30.0` from `30`. In a state, instructions, criteria,
+  levels or descriptions that are not a `String`, an integral `double` is
+  written as an `int`: `{'seats': 30.0}` becomes `{"seats": 30}`, where native
+  and Laya write `{"seats": 30.0}`. The model reads different tokens, so
+  answers can differ from native. When that matters, pass the value as a
+  `String` you encode yourself.
+- A bridge that restarts its runtime, for example when its worker fails during
+  a call, frees its heads. Calls then throw `LlamaStateException`; load the
+  `DecisionEngine` again.
+- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` differs from Laya by
+  more than 0.05 in probability and 0.10 in score (0.0628 and 0.1224) on one of
+  the 24 questions in Laya's parity fixture, with the same top option. The
+  bridge's own smoke gets the same worst logit difference, so the drift comes
+  from the bridge's WASM CPU Q8_0 path, not llamadart. On the same fixture, a
+  locally converted F16 backbone, or GPU layers with either backbone, stays
+  within those bounds; [Accuracy and speed](#accuracy-and-speed) shows native
+  Q8_0 changing decisions on 187 random questions. The design doc's
+  [Web check](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#web-check)
+  has the Web accuracy numbers.
+
 ## Accuracy and speed
 
 On an Apple M4 Max (macOS), over Laya's 24-question parity fixture with
@@ -412,8 +464,8 @@ including a yes/no answer that went from 0.694 to 0.457 on the CPU. An F16
 conversion matched F32 on Metal and flipped two near-ties on the CPU. Use an
 F32 backbone, or F16 on Metal, when answers must match Laya. The design doc's
 [Measured](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#measured)
-section has the full tables and method. Other platforms and GPU backends have
-not been measured.
+section has the full tables and method. Other native platforms and GPU
+backends have not been measured; [Web](#web) covers the bridge.
 
 ## Known limits
 
@@ -443,3 +495,5 @@ not been measured.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
   `LlamaDecisionException`, because native tokenization would cut the text
   there. A state that is not a `String` is sent as JSON, which escapes it.
+- **Web numbers.** On Web, an integral `double` in JSON text, such as `30.0`,
+  is written as `30`, unlike native and Laya; see [Web](#web).
