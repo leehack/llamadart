@@ -27,9 +27,13 @@ List<Placement> synthetic(int n) => [
 int bumpinessOf(Object? description) =>
     int.parse(RegExp(r'bumpiness (\d+)').firstMatch('$description')!.group(1)!);
 
-DecisionResult result(Map<String, DecisionAnswer> answers) => DecisionResult(
+DecisionResult result(
+  Map<String, DecisionAnswer> answers, {
+  Map<String, DecisionQuestion>? questions,
+}) => DecisionResult(
   model: 'fake',
   answers: answers,
+  questions: questions,
   usage: DecisionUsage(inputTokens: 10 * answers.length, outputTokens: 0),
 );
 
@@ -50,7 +54,7 @@ NoulAnswer noulAnswer(double p) =>
     NoulAnswer(noul: p, confidence: math.max(p, 1 - p), actProbability: 0);
 
 /// Records every batch and answers choice questions in favour of the lowest
-/// bumpiness.
+/// bumpiness, keeping each request's questions as `DecisionEngine` does.
 class FakeLaya {
   final batches = <List<DecisionRequest>>[];
 
@@ -71,7 +75,7 @@ class FakeLaya {
               }(),
               _ => noulAnswer(0.5),
             },
-        }),
+        }, questions: r.questions),
     ];
   }
 }
@@ -266,7 +270,13 @@ void main() {
         pick.placement.bumpiness,
         pick.options.map((o) => o.bumpiness).reduce(math.min),
       );
-      expect(pick.verdict!.scores, hasLength(shortlistSize));
+      final weights = [
+        for (final o in pick.options) math.exp(-o.bumpiness.toDouble()),
+      ];
+      final sum = weights.reduce((a, b) => a + b);
+      expect(pick.verdict!.scores, [
+        for (final w in weights) closeTo(w / sum, 1e-12),
+      ]);
     });
 
     test('the tuned player uses only the tuned head', () async {
