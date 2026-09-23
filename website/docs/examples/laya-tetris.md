@@ -166,9 +166,13 @@ random pick. The tuned player asks in the format the tuned head was trained
 on; with the base head, that format also plays like a random pick (36 pieces,
 1 line). With "3 best + 3 random", the tuned head asks one question instead
 of the checklist's twelve, reaches the 150-piece cap in every game, and clears
-48 lines to the checklist's 35. Heads from five runs with 8 epochs instead of
-12 played 97 to 147 pieces with "3 best + 3 random" and 107 to 146 with all
-legal moves; the lowest came from the run that reached 0.705 accuracy.
+48 lines to the checklist's 35. Over 40 seeds of up to 500 pieces, the tuned
+player cleared a mean of 70.8 lines with "3 best + 3 random" and 73.6 with all
+candidates, to 60.9 and 55.2 for the earlier 8-epoch head (revision
+`83794e0b`); only the all-candidates gap is significant (Wilcoxon p = 0.033).
+Heads from five runs with 8 epochs instead of 12 played 97 to 147 pieces with
+"3 best + 3 random" and 107 to 146 with all legal moves in the 5-seed games;
+the lowest came from the run that reached 0.705 accuracy.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:
@@ -181,10 +185,11 @@ until the stack topped out:
 | Laya choice (Tetris-tuned) | 3 best + 3 random | 20, 92 | 26 ms |
 | Laya choice (Tetris-tuned) | all | 0, 13 | 89 to 95 ms |
 
-Two games per row are too few to rank players: over six games, the tuned
-player with all candidates cleared 0 to 72 lines per game (mean 36.2), and
-12 to 73 (mean 47.2) with the earlier 8-epoch head (revision `83794e0b`);
-each head cleared more lines in three of the six games.
+Two games per row are too few to rank players. Over 40 games per row, the
+tuned player cleared a mean of 52.3 lines with "3 best + 3 random" and 51.5
+with all candidates, and every answer arrived before its piece locked. The
+earlier 8-epoch head cleared 49.7 and 48.6 on the same seeds; 40 games per row
+cannot resolve a gap that small.
 
 ## Test
 
