@@ -68,6 +68,11 @@ const _mtmdChunkEvalSymbols = [
   'mtmd_helper_decode_image_chunk',
 ];
 
+const _ttsCancelSymbols = [
+  'llama_dart_tts_eval_callback',
+  'llama_dart_tts_set_cancel_flag',
+];
+
 const _aloraMetadataSymbols = [
   'llama_adapter_get_alora_n_invocation_tokens',
   'llama_adapter_get_alora_invocation_tokens',
@@ -975,6 +980,39 @@ void main() {
           ffi.DynamicLibrary.open(libraryFile.path),
         ),
         isTrue,
+      );
+    });
+
+    test('the TTS API has both cancel exports and mtmd contexts get its eval '
+        'callback', () {
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      final service = LlamaCppService();
+      final exports = service.debugTtsCancelExportsForTesting();
+      final address = service.debugMtmdEvalCallbackAddressForTesting();
+      expect(service.getStartupDiagnostics(), isEmpty);
+
+      if (!_fileContainsAscii(wrapper!, 'llama_dart_tts_step')) {
+        expect(exports, isNull);
+        expect(address, 0);
+        return;
+      }
+      expect(
+        _ttsCancelSymbols
+            .where((symbol) => _fileContainsAscii(wrapper, symbol))
+            .toList(),
+        _ttsCancelSymbols,
+      );
+      expect(exports, (evalCallback: true, setCancelFlag: true));
+      expect(
+        address,
+        ffi.DynamicLibrary.open(
+          wrapper.path,
+        ).lookup<ffi.Void>('llama_dart_tts_eval_callback').address,
       );
     });
 

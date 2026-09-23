@@ -170,7 +170,10 @@ authentication/publication/ruleset boundaries below are unchanged.
 High-risk evidence requires an audit whose head and base exactly match the PR
 context, whose decision is `accepted`, and whose known PR-caused P1 regression
 and unresolved-thread counts are both zero. The auditor must differ from the PR
-author and must not use a retired `qa` identity.
+author and must not use a retired `qa` identity. A Codex session records
+`audit_kind: codex-adversarial`; an operator or any other fresh agent session
+records `operator-owned`. `auditor_identity` and `summary` name the reviewer
+that actually ran.
 
 These repository-local checks establish internal consistency only. They do not
 authenticate the auditor. That requires the missing external boundary described

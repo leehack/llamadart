@@ -2,9 +2,12 @@
 library;
 
 import 'dart:async';
+import 'dart:ffi';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
@@ -339,6 +342,164 @@ void main() {
       },
     );
 
+    test(
+      'a cancel before the request is sent is already in its flag',
+      () async {
+        harness.holdTextToSpeech = true;
+        final pending = backend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Cancel early.'),
+        );
+        backend.cancelTextToSpeech();
+        await harness.textToSpeechStarted.future;
+        await Future<void>.delayed(Duration.zero);
+        expect(harness.cancelFlagAtRequest, 1);
+        expect(
+          harness.received.whereType<TextToSpeechCancelRequest>(),
+          hasLength(1),
+        );
+        harness.finishHeldTextToSpeech();
+        await pending;
+      },
+    );
+
+    test(
+      'frees the cancel flag on the terminal response, not on cancel',
+      () async {
+        final allocator = _RecordingAllocator();
+        addTearDown(allocator.release);
+        final flagBackend = NativeLlamaBackend(
+          initialSendPort: harness.sendPort,
+          textToSpeechCancelFlagAllocator: allocator,
+        );
+        harness.holdTextToSpeech = true;
+        final pending = flagBackend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Hold.'),
+        );
+        await harness.textToSpeechStarted.future;
+        final address = harness.received
+            .whereType<TextToSpeechSynthesizeRequest>()
+            .last
+            .cancelFlagAddress;
+        expect(allocator.allocated, [address]);
+        expect(harness.cancelFlagAtRequest, 0);
+
+        flagBackend.cancelTextToSpeech();
+        await Future<void>.delayed(Duration.zero);
+        expect(Pointer<Int8>.fromAddress(address).value, 1);
+        expect(allocator.freed, isEmpty);
+
+        harness.finishHeldTextToSpeech();
+        await pending;
+        expect(allocator.freed, [address]);
+        await flagBackend.dispose();
+        expect(allocator.freed, [address]);
+      },
+    );
+
+    test(
+      'dispose frees a running synthesis cancel flag after the worker acks',
+      () async {
+        final allocator = _RecordingAllocator();
+        addTearDown(allocator.release);
+        final flagBackend = NativeLlamaBackend(
+          initialSendPort: harness.sendPort,
+          textToSpeechCancelFlagAllocator: allocator,
+        );
+        harness.holdTextToSpeech = true;
+        final pending = flagBackend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Hold.'),
+        );
+        await harness.textToSpeechStarted.future;
+        final flag = Pointer<Int8>.fromAddress(
+          harness.received
+              .whereType<TextToSpeechSynthesizeRequest>()
+              .last
+              .cancelFlagAddress,
+        );
+
+        harness.holdNextDispose = true;
+        final disposed = flagBackend.dispose();
+        await harness.disposeReceived.future;
+        expect(flag.value, 1);
+        expect(allocator.freed, isEmpty);
+
+        harness.acknowledgeHeldDispose();
+        await disposed;
+        expect(allocator.freed, [flag.address]);
+
+        flag.value = 0;
+        flagBackend.cancelTextToSpeech();
+        expect(flag.value, 0);
+
+        harness.finishHeldTextToSpeech();
+        await pending;
+        expect(allocator.freed, [flag.address]);
+      },
+    );
+
+    test('a failed worker startup frees the cancel flag', () async {
+      final allocator = _RecordingAllocator();
+      addTearDown(allocator.release);
+      final flagBackend = NativeLlamaBackend(
+        workerEntrypoint: _failingInitializationWorkerEntry,
+        textToSpeechCancelFlagAllocator: allocator,
+      );
+      addTearDown(flagBackend.dispose);
+
+      await expectLater(
+        flagBackend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Never sent.'),
+        ),
+        throwsA(isA<LlamaBackendInitializationException>()),
+      );
+      expect(allocator.allocated, hasLength(1));
+      expect(allocator.freed, allocator.allocated);
+    });
+
+    test(
+      'dispose keeps the cancel flag of a synthesis claimed during it',
+      () async {
+        final allocator = _RecordingAllocator();
+        addTearDown(allocator.release);
+        final flagBackend = NativeLlamaBackend(
+          workerEntrypoint: _delayedTextToSpeechRejectingWorkerEntry,
+          textToSpeechCancelFlagAllocator: allocator,
+        );
+        addTearDown(flagBackend.dispose);
+        final startup = flagBackend.modelLoad(
+          'never.gguf',
+          const ModelParams(),
+        );
+        final disposed = flagBackend.dispose();
+        final synthesis = flagBackend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Next worker.'),
+        );
+        await expectLater(
+          startup,
+          throwsA(isA<LlamaBackendInitializationException>()),
+        );
+        await disposed;
+        expect(allocator.allocated, hasLength(1));
+        expect(allocator.freed, isEmpty);
+
+        await expectLater(
+          synthesis,
+          throwsA(isA<LlamaTextToSpeechException>()),
+        );
+        expect(allocator.freed, allocator.allocated);
+      },
+    );
+
     test('preserves speech error subtypes from the worker', () async {
       await expectLater(
         backend.synthesizeTextToSpeech(
@@ -595,6 +756,41 @@ void main() {
       expect(backend.isReady, isTrue);
     });
   });
+
+  test(
+    'cancel reaches a worker blocked in a native step through the flag',
+    () async {
+      final events = ReceivePort();
+      final eventQueue = StreamIterator<Object?>(events);
+      final isolate = await Isolate.spawn(_flagPollingWorker, events.sendPort);
+      addTearDown(() {
+        isolate.kill(priority: Isolate.immediate);
+        events.close();
+      });
+      expect(await eventQueue.moveNext(), isTrue);
+      final backend = NativeLlamaBackend(
+        initialSendPort: eventQueue.current as SendPort,
+      );
+      final pending = backend.synthesizeTextToSpeech(
+        22,
+        33,
+        const BackendTextToSpeechRequest(text: 'Blocked.'),
+      );
+      expect(await eventQueue.moveNext(), isTrue);
+      expect(eventQueue.current, 'in-step');
+      backend.cancelTextToSpeech();
+      await expectLater(
+        pending,
+        throwsA(
+          isA<LlamaTextToSpeechException>().having(
+            (error) => error.message,
+            'message',
+            'flag observed',
+          ),
+        ),
+      );
+    },
+  );
 
   test('modelFree and contextFree are no-op without worker port', () async {
     final backend = NativeLlamaBackend();
@@ -1031,6 +1227,26 @@ void main() {
   });
 }
 
+void _delayedTextToSpeechRejectingWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    switch (message) {
+      case WorkerHandshake():
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        message.sendPort.send(DoneResponse());
+      case TextToSpeechSynthesizeRequest():
+        message.sendPort.send(
+          ErrorResponse('rejected', kind: WorkerErrorKind.textToSpeech),
+        );
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
+}
+
 void _failingInitializationWorkerEntry(SendPort initialSendPort) {
   runLlamaWorkerForTesting(
     initialSendPort,
@@ -1221,6 +1437,9 @@ class _FakeWorkerHarness {
   DisposeRequest? _heldDispose;
   Completer<void> textToSpeechStarted = Completer<void>();
   TextToSpeechSynthesizeRequest? _heldTextToSpeech;
+  int? cancelFlagAtRequest;
+  bool holdNextDispose = false;
+  final Completer<void> disposeReceived = Completer<void>();
 
   _FakeWorkerHarness() {
     _port.listen((message) {
@@ -1386,6 +1605,9 @@ class _FakeWorkerHarness {
             ),
           );
         case TextToSpeechSynthesizeRequest():
+          cancelFlagAtRequest = Pointer<Int8>.fromAddress(
+            message.cancelFlagAddress,
+          ).value;
           if (!textToSpeechStarted.isCompleted) {
             textToSpeechStarted.complete();
           }
@@ -1537,7 +1759,11 @@ class _FakeWorkerHarness {
             message.sendPort.send(DoneResponse());
           }
         case DisposeRequest():
-          if (holdDispose) {
+          if (holdNextDispose) {
+            holdNextDispose = false;
+            _heldDispose = message;
+            disposeReceived.complete();
+          } else if (holdDispose) {
             _heldDispose = message;
           } else {
             message.sendPort.send(DoneResponse());
@@ -1549,6 +1775,11 @@ class _FakeWorkerHarness {
   }
 
   SendPort get sendPort => _port.sendPort;
+
+  void acknowledgeHeldDispose() {
+    _heldDispose?.sendPort.send(DoneResponse());
+    _heldDispose = null;
+  }
 
   void releaseDispose() {
     holdDispose = false;
@@ -1589,5 +1820,49 @@ class _FakeWorkerHarness {
 
   void dispose() {
     _port.close();
+  }
+}
+
+void _flagPollingWorker(SendPort events) {
+  final requests = ReceivePort();
+  events.send(requests.sendPort);
+  requests.listen((message) {
+    if (message is! TextToSpeechSynthesizeRequest) {
+      return;
+    }
+    final flag = Pointer<Int8>.fromAddress(message.cancelFlagAddress);
+    events.send('in-step');
+    final watch = Stopwatch()..start();
+    while (flag.value == 0 && watch.elapsed < const Duration(seconds: 10)) {
+      sleep(const Duration(milliseconds: 1));
+    }
+    message.sendPort.send(
+      ErrorResponse(
+        flag.value == 0 ? 'flag never observed' : 'flag observed',
+        kind: WorkerErrorKind.textToSpeech,
+      ),
+    );
+  });
+}
+
+final class _RecordingAllocator implements Allocator {
+  final List<int> allocated = <int>[];
+  final List<int> freed = <int>[];
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    final pointer = malloc.allocate<Uint8>(byteCount, alignment: alignment);
+    pointer.asTypedList(byteCount).fillRange(0, byteCount, 0x5a);
+    allocated.add(pointer.address);
+    return pointer.cast<T>();
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) => freed.add(pointer.address);
+
+  void release() {
+    for (final address in allocated) {
+      malloc.free(Pointer<Uint8>.fromAddress(address));
+    }
   }
 }

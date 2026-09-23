@@ -352,11 +352,19 @@ class TextToSpeechSynthesizeRequest extends WorkerRequest {
   /// Synthesis inputs and sampling parameters.
   final BackendTextToSpeechRequest request;
 
+  /// Address of the one-byte cancel flag the sender owns.
+  ///
+  /// The sender sets the byte to nonzero to cancel and keeps it allocated
+  /// until this request's terminal response arrives or the worker acknowledges
+  /// a [DisposeRequest].
+  final int cancelFlagAddress;
+
   /// Creates a TTS synthesis request.
   TextToSpeechSynthesizeRequest(
     this.contextHandle,
     this.mmContextHandle,
     this.request,
+    this.cancelFlagAddress,
     super.sendPort,
   );
 }
