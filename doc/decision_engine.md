@@ -129,9 +129,10 @@ abstract class BackendDecision {
 
 - `BackendDecisionHeadInfo`: `handle`, `hiddenSize`, `clsToken`, `sepToken`,
   `maskToken`, `maskText`, `configJson` (the Laya config text; the core reads
-  `max_len`, `head_max_len` and temperatures from it) and `deviceName`.
+  and validates `max_len`, `head_max_len`, `head_layers` and temperatures from
+  it) and `deviceName`.
 - `BackendDecisionSequence`: `tokens`, `markers` (`Int32List`) and
-  `questionType` (0 choice, 1 score, 2 noul), one per question.
+  `questionType` (`DecisionQuestionType`), one per question.
 - `BackendDecisionOutput`: per sequence, raw marker `logits` and raw
   `actLogits` (`Float32List`).
 
@@ -177,9 +178,15 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   sequence or a failed encoder or head pass is `inference`; an unknown model or
   head handle is `state`.
 - `safetensors.dart`: header parse with bounds checks; reads only the needed
-  byte ranges through `RandomAccessFile`; F32, F16 and BF16 convert to F32.
-- `decision_head.dart`: weights in one backend buffer, the head graph through
-  `ggml_backend_sched`, and the act MLP in Dart.
+  byte ranges through `RandomAccessFile`, into a Dart list or a caller's
+  buffer such as native memory; F32, F16 and BF16 convert to F32.
+- `decision_head.dart`: the type embedding and act MLP read into Dart, and
+  every other head tensor read from the file into a staging buffer just before
+  its upload into one backend buffer (`ggml_backend_alloc_ctx_tensors`), so the
+  head file stays open until the runtime exists; the head graph through
+  `ggml_backend_sched`, with the last layer's queries, attention output and
+  feed-forward computed only for the CLS and marker rows (keys and values use
+  every token); and the act MLP in Dart.
 - Service state: `Map<int, _DecisionHead>` keyed by `_getHandle()`, holding the
   model handle, a private `llama_context` (n_ctx = n_batch = n_ubatch =
   `max_len`, `n_seq_max` 1, `embeddings` true, pooling NONE, threads and offload
@@ -195,10 +202,11 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
 resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU
-device whose registry and device names match the model's backend (`mainGpu`
-picks among several; none matching means CPU), with the CPU backend last in
-the sched (required by `ggml_backend_sched_new`). Never
-`ggml_backend_init_best`, which would start a GPU backend in explicit CPU mode.
+device whose registry maps to the model's backend (`mainGpu` picks among
+several; none matching means CPU; `decisionHeadDeviceIndex` decides), with the
+CPU backend last in the sched (required by `ggml_backend_sched_new`). Never
+`ggml_backend_init_best`, which would start a GPU backend in explicit CPU
+mode.
 
 CPU threads: `llama_encode` uses the private context's `n_threads_batch` for
 every sequence of more than one token, and the head passes the same count
@@ -214,22 +222,24 @@ static helper that unit tests cover:
   `general.architecture` is `modern-bert`; the CLS (`llama_vocab_bos`), SEP and
   MASK tokens are in the vocabulary; the MASK token has text; `n_embd_out` is 0
   or `n_embd`.
-- `checkDecisionHeadFitsEncoder`: the head's `type_emb.weight` width equals
-  `n_embd`; `n_ctx_train >= max_len`.
+- `checkDecisionHeadFitsEncoder`: `n_ctx_train >= max_len`.
 - `checkDecisionEncoderContext`: pooling is NONE; `n_ubatch >= max_len`.
 - `DecisionHeadWeights.read`: every tensor is present with the exact shape
-  implied by `hidden`, `head_layers` and the act rows; `nhead = max(1, hidden
-  ~/ 64)` divides `hidden`.
+  implied by `hidden`, `head_layers` and the act rows, starting with
+  `type_emb.weight`, whose error names the encoder's hidden size; `nhead =
+  max(1, hidden ~/ 64)` divides `hidden`.
 
 The run path rejects a sequence longer than `llama_n_ubatch` before
 `llama_encode`, whose `GGML_ASSERT` would abort the process.
 
 Windows: `llama.dll` exports no `ggml_*` graph symbols; they live in
 `ggml-base.dll` (ops, graph, sched, buffers) and `ggml.dll` (registry). The head
-calls ggml through a small function table that uses the generated bindings on
-other platforms and `@Native` twins with `assetId:
-'package:llamadart/ggml-base'`/`'package:llamadart/ggml'` on Windows (precedent:
-`test/unit/backends/llama_cpp/native_precision_bindings_test.dart`). Generated
+calls ggml through a small function table that uses `@Native` twins with
+`assetId: 'package:llamadart/ggml-base'`/`'package:llamadart/ggml'` on Windows
+(precedent: `test/unit/backends/llama_cpp/native_precision_bindings_test.dart`)
+and the generated bindings on other platforms. The bindings leave out
+`ggml-alloc.h`, so `ggml_backend_alloc_ctx_tensors` has a hand-written `@Native`
+on their default asset, `package:llamadart/llamadart`, there too. Generated
 bindings are not edited.
 
 ## Parity rules
@@ -373,25 +383,26 @@ the head frees in `freeModel` and `dispose` makes the same exit abort in
   the ggml head on a tiny synthetic head against a pure-Dart reference, and
   through a recording ggml function table that checks every create has its
   free, the teardown order, the thread count and the scheduler's backend
-  order; the service's load-time check helpers, sequence validation, and run
-  order through a substituted encoder; worker, backend-client and router
-  routing with fakes; engine hooks and facade with a fake backend; Web
-  unsupported path under `@TestOn('browser')`.
+  order; the service's load-time check helpers, head device choice, sequence
+  validation, and run order through a substituted encoder; worker,
+  backend-client and router routing with fakes; engine hooks and facade with a
+  fake backend; Web unsupported path under `@TestOn('browser')`.
 - Integration (VM, CI's `stories15M.gguf`): a llama-architecture model is
   reported unsupported and `DecisionEngine.load` fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
   and head, the 24 fixture rows, exact token ids and markers from the engine
   tokenizer, raw logits and `systemOne` answers within tolerance (see
   `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
-  the model offloads no layers; and an engine disposed with a head still
-  loaded, whose process must then exit cleanly (on Metal a leaked buffer
-  aborts the exit, which fails the runner). Runner scenario
-  `decision-model-smoke` (`--model-path`, `--head-path`, optional
-  `--config-path` and `--backend`) and test-matrix row of the same id.
+  the model offloads no layers, and off it for a model on a GPU backend; and
+  an engine disposed with a head still loaded, whose process must then exit
+  cleanly (on Metal a leaked buffer aborts the exit, which fails the runner).
+  Runner scenario `decision-model-smoke` (`--model-path`, `--head-path`,
+  optional `--config-path` and `--backend`) and test-matrix row of the same
+  id.
 - No test reaches the service's `llama_free` of the encoder context after a
-  failed head load, its `op_offload` and `mainGpu` choices, or its order of
-  head and context teardown; that needs fault injection or several GPUs. The
-  PR's high-risk block records them as residual risk.
+  failed head load, its `op_offload` choice, or its order of head and context
+  teardown; that needs fault injection or a GPU device. The PR's high-risk
+  block records them as residual risk.
 
 Fixture: `test/fixtures/decision/laya_0_3_5_reference.json`, produced by the
 scripts beside it from the pinned official checkpoint on CPU in FP32.

@@ -186,7 +186,7 @@ class DecisionEngine {
       return DecisionEngine._(
         engine,
         head,
-        DecisionHeadConfig.fromJson(decodeDecisionHeadConfig(head.configJson)),
+        decodeDecisionHeadConfig(head.configJson),
         modelHandle,
       );
     } catch (error, stackTrace) {
@@ -319,7 +319,7 @@ class DecisionEngine {
           BackendDecisionSequence(
             tokens: Int32List.fromList(sequences[r][q].tokens),
             markers: Int32List.fromList(sequences[r][q].markers),
-            questionType: question.type.index,
+            questionType: question.type,
           ),
     ];
     final outputs = await _engine.runDecisionBackend(_head.handle, inputs);

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import '../core/decision/decision_question.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/tool_choice.dart';
@@ -420,7 +421,7 @@ class BackendDecisionCapabilities {
 
 /// A decision head loaded by a backend.
 class BackendDecisionHeadInfo {
-  /// Backend handle of the head.
+  /// Handle of the head, valid with the API that returned it.
   final int handle;
 
   /// Hidden size shared by the encoder and the head.
@@ -465,8 +466,8 @@ class BackendDecisionSequence {
   /// Position in [tokens] of each option's mask token.
   final Int32List markers;
 
-  /// Question type: 0 choice, 1 score, 2 noul.
-  final int questionType;
+  /// Type of the question the sequence asks.
+  final DecisionQuestionType questionType;
 
   /// Creates an encoder input.
   const BackendDecisionSequence({

@@ -12,6 +12,7 @@ import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
@@ -20,7 +21,7 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
-import '../../../support/safetensors_writer.dart';
+import '../../../support/synthetic_decision_head.dart';
 
 void main() {
   test('preserved template tokens remain excluded from native text stops', () {
@@ -1775,14 +1776,15 @@ void main() {
       });
 
       DecisionHeadRuntime tinyRuntime() {
-        final file = SafetensorsFile.open(_writeTinyDecisionHead(tempDir).path);
+        final headPath = path.join(
+          tempDir.path,
+          'head_${tempDir.listSync().length}.safetensors',
+        );
+        SyntheticDecisionHead(d: 4, layers: 1, seed: 0).write(headPath);
+        final file = SafetensorsFile.open(headPath);
         try {
           return DecisionHeadRuntime.create(
-            DecisionHeadWeights.read(
-              file,
-              hiddenSize: 4,
-              config: const {'head_layers': 1},
-            ),
+            DecisionHeadWeights.read(file, hiddenSize: 4, layers: 1),
             cpuThreads: 1,
             opOffload: false,
           );
@@ -1792,7 +1794,12 @@ void main() {
       }
 
       BackendDecisionOutput runDirect(DecisionHeadRuntime runtime) =>
-          runtime.run(Float32List(8), 2, 0, Int32List.fromList([1]));
+          runtime.run(
+            Float32List(8),
+            2,
+            DecisionQuestionType.choice,
+            Int32List.fromList([1]),
+          );
 
       test('freeModel and dispose free the heads they own', () {
         final first = tinyRuntime();
@@ -1845,9 +1852,9 @@ void main() {
         );
         final sequences = [
           for (final (tokens, markers, type) in [
-            ([1, 2, 3], [1], 0),
-            ([4, 5], [0, 1], 2),
-            ([6, 7, 8, 9], [3, 1, 2], 1),
+            ([1, 2, 3], [1], DecisionQuestionType.choice),
+            ([4, 5], [0, 1], DecisionQuestionType.noul),
+            ([6, 7, 8, 9], [3, 1, 2], DecisionQuestionType.score),
           ])
             BackendDecisionSequence(
               tokens: Int32List.fromList(tokens),
@@ -1888,12 +1895,12 @@ void main() {
         final valid = BackendDecisionSequence(
           tokens: Int32List.fromList([1, 2]),
           markers: Int32List.fromList([1]),
-          questionType: 0,
+          questionType: DecisionQuestionType.choice,
         );
         final tooLong = BackendDecisionSequence(
           tokens: Int32List.fromList([1, 2, 3, 4, 5]),
           markers: Int32List.fromList([1]),
-          questionType: 0,
+          questionType: DecisionQuestionType.choice,
         );
         expect(
           () => service.runDecision(handle, [valid, tooLong]),
@@ -1913,7 +1920,7 @@ void main() {
       BackendDecisionSequence sequence({
         List<int> tokens = const [1, 4, 2, 3, 5, 2],
         List<int> markers = const [2, 3],
-        int questionType = 0,
+        DecisionQuestionType questionType = DecisionQuestionType.choice,
       }) => BackendDecisionSequence(
         tokens: Int32List.fromList(tokens),
         markers: Int32List.fromList(markers),
@@ -1938,7 +1945,11 @@ void main() {
       test('accepts sequences within the head limits', () {
         validate([
           sequence(),
-          sequence(tokens: const [9], markers: const [0], questionType: 2),
+          sequence(
+            tokens: const [9],
+            markers: const [0],
+            questionType: DecisionQuestionType.noul,
+          ),
         ]);
       });
 
@@ -1987,17 +1998,6 @@ void main() {
             sequence(markers: const [-1]),
           ]),
           rejects('marker -1'),
-        );
-      });
-
-      test('rejects unknown question types', () {
-        expect(
-          () => validate([sequence(questionType: 3)]),
-          rejects('question type 3'),
-        );
-        expect(
-          () => validate([sequence(questionType: -1)]),
-          rejects('question type -1'),
         );
       });
     });
@@ -2070,24 +2070,22 @@ void main() {
     });
 
     group('parseDecisionHeadConfig', () {
-      test('reads max_len and keeps the config object', () {
-        final parsed = LlamaCppService.parseDecisionHeadConfig(
+      test('returns the parsed config', () {
+        final config = LlamaCppService.parseDecisionHeadConfig(
           '{"max_len": 256, "head_layers": 1}',
           source: 'config.json',
         );
-        expect(parsed.maxTokens, 256);
-        expect(parsed.config['head_layers'], 1);
-        expect(
-          LlamaCppService.parseDecisionHeadConfig(
-            '{}',
-            source: 'config.json',
-          ).maxTokens,
-          512,
-        );
+        expect(config.maxTokens, 256);
+        expect(config.headLayers, 1);
       });
 
       test('rejects malformed configs as model errors', () {
-        for (final text in ['{', '[1, 2]', '{"max_len": 0}']) {
+        for (final text in [
+          '{',
+          '[1, 2]',
+          '{"max_len": 0}',
+          '{"head_layers": 0}',
+        ]) {
           expect(
             () => LlamaCppService.parseDecisionHeadConfig(
               text,
@@ -2151,43 +2149,27 @@ void main() {
     });
 
     group('checkDecisionHeadFitsEncoder', () {
-      void check({
-        List<int>? typeEmbeddingShape = const [3, 8],
-        int trainedContext = 512,
-      }) => LlamaCppService.checkDecisionHeadFitsEncoder(
-        headPath: 'head.safetensors',
-        typeEmbeddingShape: typeEmbeddingShape,
-        hiddenSize: 8,
-        trainedContext: trainedContext,
-        maxTokens: 512,
-      );
+      void check({required int trainedContext}) =>
+          LlamaCppService.checkDecisionHeadFitsEncoder(
+            trainedContext: trainedContext,
+            maxTokens: 512,
+          );
 
-      Matcher rejects(String fragment) => throwsA(
-        isA<LlamaModelException>().having(
-          (error) => error.message,
-          'message',
-          contains(fragment),
-        ),
-      );
-
-      test('accepts a head that fits', () {
-        check();
-        check(typeEmbeddingShape: null);
-        check(typeEmbeddingShape: const [8]);
+      test('accepts a max_len within the encoder training context', () {
+        check(trainedContext: 512);
         check(trainedContext: 8192);
-      });
-
-      test('rejects a head of another width', () {
-        expect(
-          () => check(typeEmbeddingShape: const [3, 16]),
-          rejects('is 16 wide but the loaded encoder has hidden size 8'),
-        );
       });
 
       test('rejects a max_len past the encoder training context', () {
         expect(
           () => check(trainedContext: 511),
-          rejects('trained for 511 tokens'),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              contains('trained for 511 tokens'),
+            ),
+          ),
         );
       });
     });
@@ -2267,6 +2249,36 @@ void main() {
         ),
         isFalse,
       );
+    });
+
+    test('decisionHeadDeviceIndex picks a device of the model backend', () {
+      int? index(
+        String? modelBackendName,
+        List<GpuBackend> deviceBackends, {
+        int mainGpu = 0,
+      }) => LlamaCppService.decisionHeadDeviceIndex(
+        modelBackendName: modelBackendName,
+        deviceBackends: deviceBackends,
+        mainGpu: mainGpu,
+      );
+      const devices = [
+        GpuBackend.vulkan,
+        GpuBackend.cuda,
+        GpuBackend.vulkan,
+        GpuBackend.cuda,
+      ];
+
+      expect(index('Metal', [GpuBackend.metal]), 0);
+      expect(index('HIP', [GpuBackend.vulkan, GpuBackend.hip]), 1);
+      expect(index('CUDA', devices), 1);
+      expect(index('CUDA', devices, mainGpu: 1), 3);
+      expect(index('Vulkan', devices, mainGpu: 1), 2);
+      expect(index('CUDA', devices, mainGpu: 2), 1);
+      expect(index('CUDA', devices, mainGpu: -1), 1);
+      expect(index('BLAS', devices), isNull);
+      expect(index('CPU', [GpuBackend.cpu]), isNull);
+      expect(index(null, [GpuBackend.auto]), isNull);
+      expect(index('Unknown', [GpuBackend.auto]), isNull);
     });
   });
 
@@ -3847,46 +3859,4 @@ final class _EncoderSpy {
     expect(valueCount, tokens.length * 4);
     return hiddenFor(tokens);
   }
-}
-
-File _writeTinyDecisionHead(Directory dir) {
-  const d = 4;
-  const ffn = 8;
-  const actHidden = 3;
-  var seed = 0;
-  TestTensor tensor(List<int> shape, {double? fill}) {
-    final count = shape.fold(1, (a, b) => a * b);
-    return TestTensor.f32(shape, [
-      for (var i = 0; i < count; i++) fill ?? (((seed++ * 7) % 11) - 5) / 10,
-    ]);
-  }
-
-  return writeSafetensors(
-    path.join(dir.path, 'head_${dir.listSync().length}.safetensors'),
-    {
-      'type_emb.weight': tensor([3, d]),
-      'head.layers.0.self_attn.in_proj_weight': tensor([3 * d, d]),
-      'head.layers.0.self_attn.in_proj_bias': tensor([3 * d]),
-      'head.layers.0.self_attn.out_proj.weight': tensor([d, d]),
-      'head.layers.0.self_attn.out_proj.bias': tensor([d]),
-      'head.layers.0.linear1.weight': tensor([ffn, d]),
-      'head.layers.0.linear1.bias': tensor([ffn]),
-      'head.layers.0.linear2.weight': tensor([d, ffn]),
-      'head.layers.0.linear2.bias': tensor([d]),
-      'head.layers.0.norm1.weight': tensor([d], fill: 1),
-      'head.layers.0.norm1.bias': tensor([d], fill: 0),
-      'head.layers.0.norm2.weight': tensor([d], fill: 1),
-      'head.layers.0.norm2.bias': tensor([d], fill: 0),
-      'scorer.0.weight': tensor([d], fill: 1),
-      'scorer.0.bias': tensor([d], fill: 0),
-      'scorer.1.weight': tensor([d, d]),
-      'scorer.1.bias': tensor([d]),
-      'scorer.3.weight': tensor([1, d]),
-      'scorer.3.bias': tensor([1]),
-      'act_head.0.weight': tensor([actHidden, d + 4]),
-      'act_head.0.bias': tensor([actHidden]),
-      'act_head.2.weight': tensor([2, actHidden]),
-      'act_head.2.bias': tensor([2]),
-    },
-  );
 }

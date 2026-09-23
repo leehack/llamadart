@@ -8,23 +8,25 @@ import 'decision_result.dart';
 /// Model name reported in decision responses, as Laya reports it.
 const String decisionResponseModel = 'laya-rl-agent';
 
-/// Sequence limits and calibration temperatures of a decision head.
+/// Sequence limits, layer count and calibration temperatures of a decision
+/// head.
 class DecisionHeadConfig {
   /// Creates a config.
   const DecisionHeadConfig({
     this.maxTokens = 512,
     this.headMaxTokens = 192,
+    this.headLayers = 2,
     this.temperature = const [1.0, 1.0, 1.0],
     this.temperatureByOptions = const {},
   });
 
   /// Reads Laya's `rl_agent_config.json` fields.
   ///
-  /// `max_len` and `head_max_len` must be positive integers, `temperature` a
-  /// list of at least 3 values and `temperature_by_options` a map; missing or
-  /// `null` fields take the defaults. Temperatures are stored clamped by
-  /// [clampDecisionTemperature]. Throws [LlamaDecisionException] for other
-  /// shapes.
+  /// `max_len`, `head_max_len` and `head_layers` must be positive integers,
+  /// `temperature` a list of at least 3 values and `temperature_by_options` a
+  /// map; missing or `null` fields take the defaults. Temperatures are stored
+  /// clamped by [clampDecisionTemperature]. Throws [LlamaDecisionException]
+  /// for other shapes.
   factory DecisionHeadConfig.fromJson(Map<String, Object?> json) {
     final temperature = json['temperature'] ?? const [1.0, 1.0, 1.0];
     if (temperature is! List || temperature.length < 3) {
@@ -43,6 +45,7 @@ class DecisionHeadConfig {
     return DecisionHeadConfig(
       maxTokens: _positiveInt(json, 'max_len', 512),
       headMaxTokens: _positiveInt(json, 'head_max_len', 192),
+      headLayers: _positiveInt(json, 'head_layers', 2),
       temperature: List.unmodifiable(temperature.map(clampDecisionTemperature)),
       temperatureByOptions: Map.unmodifiable({
         for (final MapEntry(:key, :value) in byOptions.entries)
@@ -56,6 +59,9 @@ class DecisionHeadConfig {
 
   /// Token budget for the question text and options, Laya's `head_max_len`.
   final int headMaxTokens;
+
+  /// Transformer layers of the head, Laya's `head_layers`.
+  final int headLayers;
 
   /// Temperature per [DecisionQuestionType.index].
   final List<double> temperature;
@@ -75,10 +81,9 @@ class DecisionHeadConfig {
 
 /// Decodes decision head config [text], Laya's `rl_agent_config.json`.
 ///
-/// Returns the JSON object after checking it with
-/// [DecisionHeadConfig.fromJson]. Throws [LlamaDecisionException] when [text]
-/// is not a JSON object or its fields fail that check.
-Map<String, Object?> decodeDecisionHeadConfig(String text) {
+/// Throws [LlamaDecisionException] when [text] is not a JSON object or
+/// [DecisionHeadConfig.fromJson] rejects it.
+DecisionHeadConfig decodeDecisionHeadConfig(String text) {
   final Object? decoded;
   try {
     decoded = jsonDecode(text);
@@ -90,8 +95,7 @@ Map<String, Object?> decodeDecisionHeadConfig(String text) {
   if (decoded is! Map<String, Object?>) {
     throw LlamaDecisionException('Decision head config is not a JSON object.');
   }
-  DecisionHeadConfig.fromJson(decoded);
-  return decoded;
+  return DecisionHeadConfig.fromJson(decoded);
 }
 
 /// A usable temperature, as Laya's `clamp_temperature`.

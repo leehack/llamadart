@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -244,9 +245,9 @@ void main() {
           worker.sendPort,
           (sendPort) => DecisionRunRequest(9, [
             for (final (markers, type) in [
-              ([1, 2], 2),
-              ([0], 0),
-              ([2, 0, 1], 1),
+              ([1, 2], DecisionQuestionType.noul),
+              ([0], DecisionQuestionType.choice),
+              ([2, 0, 1], DecisionQuestionType.score),
             ])
               BackendDecisionSequence(
                 tokens: Int32List.fromList([1, 2, 3]),
@@ -273,7 +274,11 @@ void main() {
         expect(received.$2.first.tokens, [1, 2, 3]);
         expect(
           [for (final sequence in received.$2) sequence.questionType],
-          [2, 0, 1],
+          [
+            DecisionQuestionType.noul,
+            DecisionQuestionType.choice,
+            DecisionQuestionType.score,
+          ],
         );
 
         final free = await _sendRequest(

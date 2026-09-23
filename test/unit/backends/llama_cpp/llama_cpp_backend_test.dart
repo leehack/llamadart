@@ -9,6 +9,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -377,7 +378,7 @@ void main() {
         BackendDecisionSequence(
           tokens: Int32List.fromList([5, 6, 7, 8]),
           markers: Int32List.fromList([1, 3]),
-          questionType: 0,
+          questionType: DecisionQuestionType.choice,
         ),
       ]);
       expect(outputs.single.logits, [1.0, 3.0]);
@@ -412,7 +413,7 @@ void main() {
           BackendDecisionSequence(
             tokens: Int32List(8),
             markers: Int32List.fromList(positions),
-            questionType: 0,
+            questionType: DecisionQuestionType.choice,
           ),
       ]);
 
@@ -468,7 +469,7 @@ void main() {
           BackendDecisionSequence(
             tokens: Int32List(0),
             markers: Int32List(0),
-            questionType: 0,
+            questionType: DecisionQuestionType.choice,
           ),
         ]),
         throwsA(isA<LlamaInferenceException>()),
