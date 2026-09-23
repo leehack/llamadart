@@ -12,7 +12,7 @@ const int webGpuDecisionApiVersion = 1;
 
 /// Bridge assets that [WebGpuDecisionHeads] needs, as named in errors.
 const String webGpuDecisionBridgeRequirement =
-    'llama-web-bridge assets with the decision API '
+    'llama-web-bridge assets v0.1.47+ with the decision API '
     '(apiVersion $webGpuDecisionApiVersion)';
 
 /// Decision heads loaded through the llama.cpp WebGPU bridge.

@@ -70,8 +70,9 @@ void main() {
         expect(capabilities.isSupported, isFalse);
         expect(
           capabilities.unsupportedReason,
-          'Web decision models need llama-web-bridge assets with the '
-          'decision API (apiVersion 1); the loaded bridge does not expose it.',
+          'Web decision models need llama-web-bridge assets v0.1.47+ with '
+          'the decision API (apiVersion 1); the loaded bridge does not expose '
+          'it.',
         );
       }
       expect(partial.calls, isEmpty);
@@ -88,7 +89,7 @@ void main() {
       expect(
         skewed.unsupportedReason,
         'The Web bridge implements decision API version 2; llamadart needs '
-        'llama-web-bridge assets with the decision API (apiVersion 1).',
+        'llama-web-bridge assets v0.1.47+ with the decision API (apiVersion 1).',
       );
       expect(unversioned.isSupported, isFalse);
       expect(unversioned.unsupportedReason, contains('version unknown'));
@@ -478,7 +479,7 @@ void main() {
         heads.load(fake.bridge, 'laya-head.safetensors'),
         throwsTyped<LlamaUnsupportedException>(
           'The Web bridge implements decision API version 2; llamadart needs '
-          'llama-web-bridge assets with the decision API (apiVersion 1).',
+          'llama-web-bridge assets v0.1.47+ with the decision API (apiVersion 1).',
         ),
       );
       expect(fake.calls.last, 'free 7');

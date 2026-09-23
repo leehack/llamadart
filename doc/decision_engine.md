@@ -211,12 +211,12 @@ head on WebGPU when the model loaded with GPU layers and on the CPU otherwise,
 and reports which as `deviceName`.
 
 - Capability probe: a bridge object without all four methods reports
-  unsupported with "Web decision models need llama-web-bridge assets with the
-  decision API (apiVersion 1)", from the `webGpuDecisionBridgeRequirement`
-  constant. A capability or head response with an `apiVersion` other than 1 is
-  unsupported too, and such a head is freed first. The currently pinned assets
-  predate the API, so Web reports unsupported until the asset pin moves to a
-  tag that has it.
+  unsupported with "Web decision models need llama-web-bridge assets v0.1.47+
+  with the decision API (apiVersion 1)", from the
+  `webGpuDecisionBridgeRequirement` constant. A capability or head response
+  with an `apiVersion` other than 1 is unsupported too, and such a head is
+  freed first. Bridge assets `v0.1.47+`, the default pin among them, have the
+  API.
 - Paths are URLs, resolved in Dart against `document.baseURI` before any
   fetch, so a page's `<base href>` applies to both in both bridge modes. The
   bridge fetches `headPath`. It takes the config only as text, so `configPath`
@@ -324,7 +324,7 @@ JSON-like (null, bool, num, String, List, Map with String keys).
 | Linux | CPU, Vulkan, CUDA | expected, untested |
 | Windows | CPU, Vulkan, CUDA | expected through the `ggml-base` twins, untested |
 | Native LiteRT-LM | - | `LlamaUnsupportedException` |
-| Web (WebGPU bridge) | WebGPU or CPU (WASM) | needs bridge assets with the decision API (apiVersion 1), which no published asset tag has yet; the currently pinned assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
+| Web (WebGPU bridge) | WebGPU or CPU (WASM) | bridge assets `v0.1.47+` (decision API 1), the default pin among them; older assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
 | LiteRT-LM Web | - | `LlamaUnsupportedException` |
 
 Real-model evidence is macOS only. The CPU head unit tests carry no
@@ -384,26 +384,27 @@ the head frees in `freeModel` and `dispose` makes the same exit abort in
 ### Web check
 
 Local only, not in CI: `DecisionEngine` through `LlamaEngine(LlamaBackend())`
-in Playwright's headless Chromium on the same machine, with an unpublished
-local build of the llama-web-bridge decision API, the 24 fixture rows,
+in Playwright's headless Chromium on the same machine, with the pinned bridge
+assets (bridge source `64ba8250`), the 24 fixture rows,
 `laya-head.safetensors` and the tolerances of `decision-model-smoke`. Token ids
 and markers matched on every row.
 
 | Backbone | Bridge runtime | Head device | Logit diff | Probability diff | Score diff |
 | --- | --- | --- | --- | --- | --- |
-| `laya-Q8_0.gguf` | WebGPU; worker and main thread on wasm64, worker on wasm32 | WebGPU | 0.1636 | 0.0436 | 0.0247 |
-| F16 (local conversion) | WebGPU; worker and main thread | WebGPU | 0.0169 | 0.0046 | 0.0013 |
-| F16 (local conversion) | WASM CPU; worker | CPU | 0.0149 | 0.0039 | 0.0028 |
-| `laya-Q8_0.gguf` | WASM CPU; worker | CPU | 0.2326 | 0.0628 | 0.1224 |
+| `laya-Q8_0.gguf` | WebGPU; worker and main thread on wasm64, worker on wasm32 | WebGPU | PENDING_V047_Q8_GPU_LOGIT | PENDING_V047_Q8_GPU_PROB | PENDING_V047_Q8_GPU_SCORE |
+| F16 (local conversion) | WebGPU; worker and main thread | WebGPU | PENDING_V047_F16_GPU_LOGIT | PENDING_V047_F16_GPU_PROB | PENDING_V047_F16_GPU_SCORE |
+| F16 (local conversion) | WASM CPU; worker | CPU | PENDING_V047_F16_CPU_LOGIT | PENDING_V047_F16_CPU_PROB | PENDING_V047_F16_CPU_SCORE |
+| `laya-Q8_0.gguf` | WASM CPU; worker | CPU | PENDING_V047_Q8_CPU_LOGIT | PENDING_V047_Q8_CPU_PROB | PENDING_V047_Q8_CPU_SCORE |
 
-Q8_0 on the WASM CPU misses the 0.05 probability tolerance on one row, with the
-same top option. The bridge's own smoke, which calls the bridge directly, gets
-the same worst logit difference, so the drift comes from the bridge's WASM CPU
-Q8_0 path rather than llamadart. The currently pinned assets reported
-unsupported with the actionable reason in both bridge modes. Typed key reads
-with the question identity check, sequence validation messages, error mapping,
-URL redaction, `<base href>` resolution, and heads freed or bridges disposed
-behind the engine's back were checked against the same build.
+Q8_0 on the WASM CPU misses the 0.05 probability tolerance on
+PENDING_V047_Q8_CPU_ROWS of the rows, with the same top option. The bridge's own
+smoke, which calls the bridge directly, gets the same worst logit difference,
+so the drift comes from the bridge's WASM CPU Q8_0 path rather than llamadart.
+Typed key reads with the question identity check, sequence validation
+messages, error mapping, URL redaction, `<base href>` resolution, and heads
+freed or bridges disposed behind the engine's back were checked against the
+same assets. The previous pin, `v0.1.44`, which lacks the API, reported
+unsupported with the actionable reason in both bridge modes.
 
 ## Known limits
 

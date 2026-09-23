@@ -165,8 +165,8 @@ void main() {
     expect(capabilities.isSupported, isFalse);
     expect(
       capabilities.unsupportedReason,
-      'Web decision models need llama-web-bridge assets with the decision API '
-      '(apiVersion 1); the loaded bridge does not expose it.',
+      'Web decision models need llama-web-bridge assets v0.1.47+ with the '
+      'decision API (apiVersion 1); the loaded bridge does not expose it.',
     );
     await expectLater(
       DecisionEngine.load(engine, headPath: 'laya-head.safetensors'),

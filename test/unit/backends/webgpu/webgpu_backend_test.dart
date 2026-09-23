@@ -3690,7 +3690,8 @@ void main() {
       expect(
         capabilities.unsupportedReason,
         contains(
-          'llama-web-bridge assets with the decision API (apiVersion 1)',
+          'llama-web-bridge assets v0.1.47+ with the decision API '
+          '(apiVersion 1)',
         ),
       );
       await expectLater(

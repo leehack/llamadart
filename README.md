@@ -37,8 +37,8 @@ models through LiteRT-LM.
 - Experimental Laya-style decision models on native llama.cpp through
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
   encoder GGUF and a safetensors head, one encoder pass per question; validated
-  on macOS (Metal, CPU), other native platforms untested. Web needs WebGPU
-  bridge assets with the decision API, which no published asset tag has yet.
+  on macOS (Metal, CPU), other native platforms untested. Web runs it through
+  WebGPU bridge assets `v0.1.47+`, which the default Web pin includes.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
@@ -159,7 +159,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.4.1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-6` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.44` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.47` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve

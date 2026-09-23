@@ -23,7 +23,7 @@ ticket questions below from the command line, as
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
-| WebGPU / GGUF | Experimental, with bridge assets that include the decision API (apiVersion 1); no published asset tag has it yet, so the currently pinned assets report unsupported and `DecisionEngine.load` throws `LlamaUnsupportedException`. See [Web](#web) |
+| WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (decision API 1), which the default pin includes; older assets report unsupported. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
@@ -402,11 +402,11 @@ final official = await DecisionEngine.load(
 
 ## Web
 
-On Web, `DecisionEngine` runs through the llama.cpp WebGPU bridge when its
-assets include the decision API (apiVersion 1). No published
-`llama-web-bridge-assets` tag includes it yet: with the currently pinned
-assets, `capabilitiesFor` reports unsupported and `DecisionEngine.load` throws
-`LlamaUnsupportedException`. LiteRT-LM Web models report unsupported too.
+On Web, `DecisionEngine` runs through the decision API (apiVersion 1) of the
+llama.cpp WebGPU bridge, which `llama-web-bridge-assets` `v0.1.47+` and the
+default pin include. With older assets, `capabilitiesFor` reports unsupported
+and `DecisionEngine.load` throws `LlamaUnsupportedException`. LiteRT-LM Web
+models report unsupported too.
 
 - `headPath` and `configPath` are URLs, resolved against the document base
   URL, so a `<base href>` applies. The engine's model download manager is not
@@ -439,8 +439,14 @@ assets, `capabilitiesFor` reports unsupported and `DecisionEngine.load` throws
 - A bridge that restarts its runtime, for example when its worker fails during
   a call, frees its heads. Calls then throw `LlamaStateException`; load the
   `DecisionEngine` again.
-- Web accuracy and speed have not been measured with published bridge assets
-  yet; [Accuracy and speed](#accuracy-and-speed) is native.
+- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` misses the parity
+  test's 0.05 probability tolerance: its worst difference from Laya over the
+  24-question fixture is PENDING_V047_Q8_CPU_PROB, on
+  PENDING_V047_Q8_CPU_ROWS of the questions, with the same top option. The
+  drift comes from the bridge's WASM CPU Q8_0 kernels. An F16 backbone, or GPU
+  layers with either backbone, stays within the tolerance. The design doc's
+  [Web check](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#web-check)
+  has the Web numbers; [Accuracy and speed](#accuracy-and-speed) is native.
 
 ## Accuracy and speed
 
@@ -454,8 +460,8 @@ including a yes/no answer that went from 0.694 to 0.457 on the CPU. An F16
 conversion matched F32 on Metal and flipped two near-ties on the CPU. Use an
 F32 backbone, or F16 on Metal, when answers must match Laya. The design doc's
 [Measured](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#measured)
-section has the full tables and method. Other platforms and GPU backends have
-not been measured.
+section has the full tables and method. Other native platforms and GPU
+backends have not been measured; [Web](#web) covers the bridge.
 
 ## Known limits
 
