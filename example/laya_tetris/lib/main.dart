@@ -89,6 +89,7 @@ class _GamePageState extends State<GamePage>
 
   ModelStore? _store;
   LayaModels? _models;
+  LayaSetup? _setup;
   Future<void> _modelWork = Future.value();
   ModelDownloadCancelToken? _cancel;
   int _loadGeneration = 0;
@@ -169,6 +170,7 @@ class _GamePageState extends State<GamePage>
     final old = _models;
     setState(() {
       _models = null;
+      _setup = null;
       _layaStatus = 'Loading Laya…';
       _progress = null;
       _loadFailed = false;
@@ -206,16 +208,16 @@ class _GamePageState extends State<GamePage>
         }
         update(() {
           _models = models;
+          _setup = setup;
           _progress = null;
           _layaStatus =
               '${_backbone.fileName} on ${models.backendName} '
               '(${models.deviceName}) · loaded in '
               '${models.loadMillis} ms';
-          _tunedStatus = setup.tunedHead == null
-              ? store.tunedHeadHelp
-              : models.tunedError == null
+          _tunedStatus = models.tuned != null
               ? 'Tetris-tuned head loaded'
-              : 'Tetris-tuned head failed: ${models.tunedError}';
+              : 'Tetris-tuned head failed: ${models.tunedError}\n'
+                    '${store.tunedHeadHelp(setup.tunedHead!)}';
         });
       } catch (e) {
         update(() {
@@ -227,14 +229,18 @@ class _GamePageState extends State<GamePage>
     });
   }
 
-  /// Times one six-option choice on the best device and at several CPU
+  /// Times one six-option choice with the loaded models' tuned head when it
+  /// loaded, else their base head, on the best device and at several CPU
   /// thread counts, each in a fresh engine.
   Future<void> _benchmark() async {
-    final store = _store;
-    if (_benching || store == null) return;
+    final store = _store, loaded = _setup;
+    if (_benching || store == null || loaded == null) return;
     final backbone = _backbone;
-    final setup = store.setup(backbone, backend: _backend, threads: _threads);
-    final head = setup.tunedHead == null ? 'base head' : 'tuned head';
+    final tuned = _models?.tuned != null;
+    final setup = tuned
+        ? loaded
+        : LayaSetup(backbone: loaded.backbone, head: loaded.head);
+    final head = tuned ? 'tuned head' : 'base head';
     setState(() {
       _benching = true;
       _benchResult = 'Benchmarking ${backbone.fileName} with the $head…';

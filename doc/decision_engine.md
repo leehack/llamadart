@@ -416,5 +416,6 @@ Stacked PRs, each merged only with maintainer approval:
    same graph on WebGPU), asset publication, then `WebGpuLlamaBackend`
    implementing `BackendDecision` in this repo.
 
-Model hosting for the Tetris-tuned head, and publishing new bridge assets, need
-maintainer approval before they happen.
+The Tetris-tuned head is published as
+[leehack/laya-tetris-head](https://huggingface.co/leehack/laya-tetris-head).
+Publishing new bridge assets needs maintainer approval before it happens.

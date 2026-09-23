@@ -61,10 +61,11 @@ the first cell and run all cells again.
 
 ## Use the head
 
-- **App:** copy `laya-head-tetris.safetensors` into the app's `laya/` folder,
-  whose path the app shows while the tuned head is missing, and tap
-  **Reload models**. On iOS, host the file and build with
-  `--dart-define=LAYA_TUNED_HEAD_URL=<url>` so the app downloads it.
+- **App:** copy `laya-head-tetris.safetensors` into the app's `laya/` folder
+  and relaunch the app; a file there takes precedence over the published head.
+  The folder is in the app's cache directory, or on Android in its external
+  files directory, which `adb push` can reach. On iOS, host the file and build
+  with `--dart-define=LAYA_TUNED_HEAD_URL=<url>` so the app downloads it.
 - **Headless:** from `example/laya_tetris`,
 
   ```bash

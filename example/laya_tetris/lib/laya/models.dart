@@ -11,7 +11,13 @@ const String layaRevision = 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c';
 /// File name of the published base head.
 const String baseHeadFile = 'laya-head.safetensors';
 
-/// File name of the Tetris-tuned head, which is not published.
+/// Hugging Face repository with the Tetris-tuned head.
+const String tunedHeadRepoId = 'leehack/laya-tetris-head';
+
+/// Pinned revision of [tunedHeadRepoId].
+const String tunedHeadRevision = '83794e0bdd5526420997279a5d3dc9810a445217';
+
+/// File name of the Tetris-tuned head.
 const String tunedHeadFile = 'laya-head-tetris.safetensors';
 
 /// A file of [layaRepoId] at [layaRevision].
@@ -19,6 +25,14 @@ ModelSource layaSource(String filePath) => ModelSource.huggingFace(
   repoId: layaRepoId,
   revision: layaRevision,
   filePath: filePath,
+);
+
+/// The published Tetris-tuned head: [tunedHeadFile] of [tunedHeadRepoId] at
+/// [tunedHeadRevision].
+final ModelSource publishedTunedHead = ModelSource.huggingFace(
+  repoId: tunedHeadRepoId,
+  revision: tunedHeadRevision,
+  filePath: tunedHeadFile,
 );
 
 /// Published Laya backbones.
@@ -56,7 +70,7 @@ class LayaSetup {
   /// The base head.
   final ModelSource head;
 
-  /// The Tetris-tuned head, when available.
+  /// The Tetris-tuned head, or null to load only [head].
   final ModelSource? tunedHead;
 
   /// [GpuBackend.auto] for the best available device, or [GpuBackend.cpu].

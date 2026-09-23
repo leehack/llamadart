@@ -1,6 +1,6 @@
 ---
 title: Laya Tetris Example
-description: A Flutter app in which a Laya decision model plays real-time Tetris through DecisionEngine, with first-launch model downloads and an optional fine-tuned head.
+description: A Flutter app in which a Laya decision model plays real-time Tetris through DecisionEngine, with first-launch model downloads and a published fine-tuned head.
 ---
 
 Path: `example/laya_tetris`
@@ -14,8 +14,8 @@ it falls.
 ## What it demonstrates
 
 - One `LlamaEngine` holding the backbone GGUF with
-  `ModelParams(contextSize: 512)`, shared by two `DecisionEngine`s: the
-  published base head and an optional Tetris-tuned head.
+  `ModelParams(contextSize: 512)`, shared by two `DecisionEngine`s: the base
+  head and a Tetris-tuned head.
 - First-launch downloads through the engine's model download manager:
   `loadModelSource` for the backbone and `ensureModel` for the heads, with
   progress in the UI and a cache that later launches reuse.
@@ -36,7 +36,10 @@ flutter run -d macos   # or an iOS or Android device
 On first launch the app downloads `laya-Q8_0.gguf` (421 MB) and
 `laya-head.safetensors` (106 MB) from
 [`fr0stbit3/laya-gguf`](https://huggingface.co/fr0stbit3/laya-gguf) at
-revision `ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`. The files are cached in a
+revision `ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, and the Tetris-tuned head
+`laya-head-tetris.safetensors` (106 MB) from
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
+at revision `83794e0bdd5526420997279a5d3dc9810a445217`. The files are cached in a
 `laya/` folder in the app's cache directory, which iOS leaves out of backups
 and may clear when storage runs low (the app then downloads again), or on
 Android in the app's external files directory. The **Backbone** picker also
@@ -70,12 +73,23 @@ wait until it finishes.
 
 ## Tetris-tuned head
 
-The tuned head is not published; [Fine-tune the head](#fine-tune-the-head)
-builds it. Save it as `laya-head-tetris.safetensors` in the app's `laya/`
-folder, whose full path the app shows, and tap **Reload models**.
-Alternatively, build with `--dart-define=LAYA_TUNED_HEAD_URL=<url>` to
-download it; on iOS, where the folder is inside the app sandbox, this is the
-only way. Without a loaded tuned head the tuned player is disabled.
+The published tuned head,
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head),
+is the base head fine-tuned with the recipe in
+[Fine-tune the head](#fine-tune-the-head).
+
+The app loads the first tuned head it finds:
+
+1. The URL from `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
+2. `laya-head-tetris.safetensors` in the app's `laya/` folder, such as a
+   fine-tune of your own from [Fine-tune the head](#fine-tune-the-head). The
+   app looks for it at launch and whenever it reloads the models. On iOS,
+   where the folder is inside the app sandbox, use the URL instead.
+3. The published head.
+
+If the tuned head fails to load, for example because its download failed, the
+app shows the error, how to recover, and a **Reload models** button, and the
+tuned player is disabled.
 
 ## Fine-tune the head
 
@@ -113,9 +127,10 @@ a run; `--help` lists every option.
 ## Measured
 
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
-backbone. The tuned rows use the head from an earlier run of the
-[fine-tuning recipe](#fine-tune-the-head) (validation accuracy 0.750), which is
-not published.
+backbone. The tuned rows use the published tuned head from
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
+at revision `83794e0bdd5526420997279a5d3dc9810a445217`, from an earlier run of
+the [fine-tuning recipe](#fine-tune-the-head) (validation accuracy 0.750).
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
 over three runs:

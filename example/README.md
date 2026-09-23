@@ -121,12 +121,12 @@ dart run bin/tui_coding_agent.dart
 A Flutter app (macOS, iOS, Android) in which a Laya decision model plays
 real-time Tetris through `DecisionEngine`:
 
-- One backbone GGUF in a `LlamaEngine` shared by two heads: the published base
-  head and an optional Tetris-tuned head
+- One backbone GGUF in a `LlamaEngine` shared by two heads: the base head and
+  a Tetris-tuned head
 - Yes/no, choice, and knockout players, each piece's questions sent in one
   `systemOneBatch` call while gravity keeps running
-- First-launch downloads of the pinned `fr0stbit3/laya-gguf` files with
-  progress, cached across launches
+- First-launch downloads of the pinned `fr0stbit3/laya-gguf` and
+  `leehack/laya-tetris-head` files with progress, cached across launches
 - `bin/bench.dart` for headless games with local model files, and
   `bin/make_dataset.dart` for the tuned head's training data
 

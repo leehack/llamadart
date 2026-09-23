@@ -99,11 +99,13 @@ class FakeLoader {
     int n, {
     LayaDecide base = unused,
     bool tuned = false,
+    String? tunedError,
     Future<void>? disposal,
   }) => _loads[n].complete(
     LayaModels(
       base: base,
       tuned: tuned ? unused : null,
+      tunedError: tunedError,
       backendName: 'Fake',
       deviceName: 'fake$n',
       loadMillis: 1,
@@ -216,21 +218,41 @@ void main() {
   testWidgets('the tuned player needs a loaded tuned head', (tester) async {
     await pumpWithModels(tester);
     expect(tunedSelectable(tester), isFalse);
+    expect(loader.setups[0].tunedHead, same(publishedTunedHead));
 
-    loader.finish(0);
+    loader.finish(0, tunedError: 'download failed');
     await settle(tester);
     expect(tunedSelectable(tester), isFalse);
-    expect(find.textContaining('Tetris-tuned head not found'), findsOneWidget);
+    expect(
+      find.textContaining('Tetris-tuned head failed: download failed'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('Tap Reload models to try again'),
+      findsOneWidget,
+    );
     expect(find.textContaining(store.tunedHeadPath), findsOneWidget);
 
     File(store.tunedHeadPath).writeAsBytesSync([0]);
     await tester.tap(find.text('Reload models'));
     await settle(tester);
     expect(loader.setups[1].tunedHead?.path, store.tunedHeadPath);
-    loader.finish(1, tuned: true);
+    loader.finish(1, tunedError: 'bad file');
+    await settle(tester);
+    expect(tunedSelectable(tester), isFalse);
+    expect(
+      find.textContaining('Tetris-tuned head failed: bad file'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('delete it'), findsOneWidget);
+
+    await tester.tap(find.text('Reload models'));
+    await settle(tester);
+    loader.finish(2, tuned: true);
     await settle(tester);
     expect(tunedSelectable(tester), isTrue);
     expect(find.text('Tetris-tuned head loaded'), findsOneWidget);
+    expect(find.text('Reload models'), findsNothing);
 
     await choose(
       tester,
@@ -239,7 +261,8 @@ void main() {
     );
     File(store.tunedHeadPath).deleteSync();
     await choose(tester, 'GPU (auto)', 'CPU');
-    loader.finish(2);
+    expect(loader.setups[3].tunedHead, same(publishedTunedHead));
+    loader.finish(3, tunedError: 'download failed');
     await settle(tester);
     expect(startButton(tester).onPressed, isNull);
     expect(find.textContaining('needs the Tetris-tuned head'), findsOneWidget);
@@ -266,11 +289,26 @@ void main() {
     expect(find.textContaining('Last decision failed'), findsNothing);
   });
 
+  testWidgets('the benchmark times the tuned head that loaded', (tester) async {
+    await pumpWithModels(tester);
+    loader.finish(0, tuned: true);
+    await settle(tester);
+    File(store.tunedHeadPath).writeAsBytesSync([0]);
+
+    await tester.tap(find.text('Benchmark'));
+    await settle(tester);
+    expect(
+      find.text('Benchmarking laya-Q8_0.gguf with the tuned head…'),
+      findsOneWidget,
+    );
+    expect(loader.setups[1].head, same(publishedTunedHead));
+  });
+
   testWidgets('the benchmark holds the game and the model settings', (
     tester,
   ) async {
     await pumpWithModels(tester);
-    loader.finish(0);
+    loader.finish(0, tunedError: 'download failed');
     await settle(tester);
 
     await tester.tap(find.text('Benchmark'));
@@ -291,6 +329,7 @@ void main() {
         ];
     for (var n = 1; n <= 5; n++) {
       expect(loader.setups, hasLength(n + 1));
+      expect(loader.setups[n].head.fileName, baseHeadFile);
       loader.finish(n, base: timed);
       await settle(tester);
     }

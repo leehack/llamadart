@@ -17,11 +17,14 @@ flutter run -d macos   # or an iOS or Android device
 On first launch the app downloads `laya-Q8_0.gguf` (421 MB) and
 `laya-head.safetensors` (106 MB) from
 [`fr0stbit3/laya-gguf`](https://huggingface.co/fr0stbit3/laya-gguf) at revision
-`ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c` and shows the progress. Files are
-cached in a `laya/` folder, and later launches load them from there. The
-folder is in the app's cache directory, which iOS leaves out of backups and
-may clear when storage runs low (the app then downloads again), or on Android
-in the app's external files directory
+`ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, and the Tetris-tuned head
+`laya-head-tetris.safetensors` (106 MB) from
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
+at revision `83794e0bdd5526420997279a5d3dc9810a445217`, and shows the
+progress. Files are cached in a `laya/` folder, and later launches load them
+from there. The folder is in the app's cache directory, which iOS leaves out
+of backups and may clear when storage runs low (the app then downloads again),
+or on Android in the app's external files directory
 (`Android/data/com.example.laya_tetris_example/files/laya`).
 The **Backbone** picker also offers `laya-F16.gguf` (791 MB), downloaded when
 first selected.
@@ -60,14 +63,21 @@ on-screen keys.
 
 ## Tetris-tuned head
 
-The tuned head is not published. [`training/`](training/README.md) builds it:
-`bin/make_dataset.dart` writes heuristic-labelled choice questions, and the
-notebook `training/laya_head_tuning.ipynb` fine-tunes the head on them. Save
-the result as `laya-head-tetris.safetensors` in the app's `laya/` folder (the
-app shows the full path) and tap **Reload models**, or build with
-`--dart-define=LAYA_TUNED_HEAD_URL=<url>` to download it. On iOS the folder is
-inside the app sandbox, so use the URL. Without a loaded tuned head the tuned
-player is disabled.
+The published tuned head is the base head fine-tuned on the heuristic-labelled
+choice examples that `bin/make_dataset.dart` writes, with the recipe that the
+notebook in [`training/`](training/README.md) implements. The app loads the
+first tuned head it finds:
+
+1. The URL from `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
+2. `laya-head-tetris.safetensors` in the app's `laya/` folder, such as a
+   fine-tune of your own. The app looks for it at launch and whenever it
+   reloads the models. On iOS the folder is inside the app sandbox, so use the
+   URL.
+3. The published head.
+
+If the tuned head fails to load, for example because its download failed, the
+app shows the error, how to recover, and a **Reload models** button, and the
+tuned player is disabled.
 
 ## Headless runs
 
