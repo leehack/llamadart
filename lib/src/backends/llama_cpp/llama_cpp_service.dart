@@ -23,6 +23,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
+import '../../hook/native_release_pins.dart';
 import 'decision_head.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
@@ -6876,10 +6877,17 @@ class LlamaCppService {
   }
 
   /// Creates a multimodal context (projector) for the model.
+  ///
+  /// Throws [LlamaModelException] when [mmProjPath] is not an existing file or
+  /// native mtmd rejects the projector, and [LlamaUnsupportedException] when
+  /// this runtime lacks the mtmd functions projector loading needs.
   int createMultimodalContext(int modelHandle, String mmProjPath) {
     final model = _models[modelHandle];
     if (model == null) {
       throw Exception("Invalid model handle");
+    }
+    if (!File(mmProjPath).existsSync()) {
+      throw LlamaModelException('Multimodal projector file not found.');
     }
     _applyConfiguredLogLevel();
 
@@ -6896,7 +6904,12 @@ class LlamaCppService {
     }
 
     if (mmCtx == nullptr) {
-      throw Exception("Failed to load multimodal projector");
+      throw LlamaModelException(
+        'The native runtime could not load the multimodal projector for the '
+        'loaded model. It may be for a different model family, use a '
+        'projector type this runtime does not support, or not be a projector '
+        'file.',
+      );
     }
 
     final handle = _getHandle();
@@ -6966,7 +6979,9 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_context_params_default'));
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_context_params_default'),
+      );
     }
     return fallback.contextParamsDefault();
   }
@@ -6985,7 +7000,9 @@ class LlamaCppService {
     }
     final fallback = _resolveMtmdFallbackApi();
     if (fallback == null) {
-      throw Exception(_mtmdUnavailableMessage('mtmd_init_from_file'));
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_init_from_file'),
+      );
     }
     return fallback.initFromFile(mmProjPath, model, ctxParams);
   }
@@ -7300,8 +7317,11 @@ class LlamaCppService {
   }
 
   String _mtmdUnavailableMessage(String symbol) {
-    return 'Multimodal support is unavailable in this native runtime bundle '
-        '(missing `$symbol` in both primary and mtmd libraries).';
+    return 'Multimodal support is unavailable in this native runtime: the '
+        'llamadart library lacks an mtmd function this package calls, and the '
+        'fallback mtmd library is missing or incomplete, so `$symbol` cannot '
+        'run. Use the llamadart-native runtime this package pins '
+        '($llamaCppTag) or an ABI-compatible build.';
   }
 
   // --- Helper Getters ---
@@ -7625,6 +7645,9 @@ class LlamaCppService {
   }
 
   /// Returns whether the active multimodal projector supports audio input.
+  ///
+  /// Throws [LlamaUnsupportedException] when this runtime cannot run
+  /// `mtmd_support_audio`.
   bool supportsAudio(int mmContextHandle) {
     final mmCtx = _mtmdContexts[mmContextHandle];
     if (mmCtx == null) {
@@ -7640,7 +7663,12 @@ class LlamaCppService {
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsAudio(mmCtx) ?? false;
+    if (fallback == null) {
+      throw LlamaUnsupportedException(
+        _mtmdUnavailableMessage('mtmd_support_audio'),
+      );
+    }
+    return fallback.supportsAudio(mmCtx);
   }
 
   /// Returns whether the active native mtmd build and projector report video.

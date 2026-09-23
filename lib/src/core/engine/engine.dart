@@ -370,6 +370,11 @@ class LlamaEngine {
   }
 
   /// Loads a multimodal projector model for vision/audio support.
+  ///
+  /// On the native llama.cpp backend, throws [LlamaModelException] when
+  /// [mmProjPath] is not an existing file or the runtime rejects the projector
+  /// for the loaded model, and [LlamaUnsupportedException] when the runtime
+  /// lacks the mtmd functions projector loading needs.
   Future<void> loadMultimodalProjector(String mmProjPath) {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
@@ -1185,6 +1190,9 @@ class LlamaEngine {
         "0";
     return int.tryParse(ctx) ?? 0;
   }
+
+  /// Whether a multimodal projector is loaded.
+  bool get hasMultimodalProjector => _mmContextHandle != null;
 
   /// Whether the loaded model supports vision.
   Future<bool> get supportsVision async =>

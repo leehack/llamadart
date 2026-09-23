@@ -119,17 +119,30 @@ void main() {
         );
         await engine.clearLoras();
 
-        // 9. Multimodal failure test
+        // 9. Projector load failures are typed
         await expectLater(
           engine.loadMultimodalProjector('non_existent_path.gguf'),
           throwsA(
-            isA<Exception>().having(
-              (e) => e.toString(),
-              'toString()',
-              contains('Failed to load multimodal projector'),
+            isA<LlamaModelException>().having(
+              (e) => e.message,
+              'message',
+              'Multimodal projector file not found.',
             ),
           ),
         );
+        await expectLater(
+          engine.loadMultimodalProjector(modelFile.path),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (e) => e.message,
+              'message',
+              startsWith(
+                'The native runtime could not load the multimodal projector',
+              ),
+            ),
+          ),
+        );
+        expect(engine.hasMultimodalProjector, isFalse);
 
         await engine.dispose();
         print('SMOKE TEST SUCCESS');
