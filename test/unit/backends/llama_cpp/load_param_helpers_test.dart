@@ -395,4 +395,98 @@ void main() {
       }
     });
   });
+
+  group('applyDecisionContextParams', () {
+    Pointer<llama_context_params> gpuDefaults() {
+      final c = calloc<llama_context_params>();
+      c.ref.offload_kqv = true;
+      c.ref.op_offload = true;
+      c.ref.flash_attn_typeAsInt =
+          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_AUTO.value;
+      c.ref.pooling_typeAsInt =
+          llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value;
+      c.ref.n_threads = 3;
+      c.ref.n_threads_batch = 3;
+      return c;
+    }
+
+    test('sizes one sequence per ubatch with unpooled embeddings', () {
+      final c = gpuDefaults();
+      try {
+        applyDecisionContextParams(
+          c.ref,
+          const ModelParams(numberOfThreads: 2, numberOfThreadsBatch: 6),
+          maxTokens: 512,
+          runsOnCpu: false,
+        );
+        expect(
+          [c.ref.n_ctx, c.ref.n_batch, c.ref.n_ubatch, c.ref.n_seq_max],
+          [512, 512, 512, 1],
+        );
+        expect(c.ref.embeddings, isTrue);
+        expect(
+          c.ref.pooling_typeAsInt,
+          llama_pooling_type.LLAMA_POOLING_TYPE_NONE.value,
+        );
+        expect([c.ref.n_threads, c.ref.n_threads_batch], [2, 6]);
+      } finally {
+        calloc.free(c);
+      }
+    });
+
+    test('keeps default threads when none are set', () {
+      final c = gpuDefaults();
+      try {
+        applyDecisionContextParams(
+          c.ref,
+          const ModelParams(numberOfThreads: 0, numberOfThreadsBatch: 0),
+          maxTokens: 64,
+          runsOnCpu: false,
+        );
+        expect([c.ref.n_threads, c.ref.n_threads_batch], [3, 3]);
+      } finally {
+        calloc.free(c);
+      }
+    });
+
+    test('keeps offload on a GPU model', () {
+      final c = gpuDefaults();
+      try {
+        applyDecisionContextParams(
+          c.ref,
+          const ModelParams(),
+          maxTokens: 512,
+          runsOnCpu: false,
+        );
+        expect(c.ref.offload_kqv, isTrue);
+        expect(c.ref.op_offload, isTrue);
+        expect(
+          c.ref.flash_attn_typeAsInt,
+          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_AUTO.value,
+        );
+      } finally {
+        calloc.free(c);
+      }
+    });
+
+    test('disables offload and flash attention on the CPU', () {
+      final c = gpuDefaults();
+      try {
+        applyDecisionContextParams(
+          c.ref,
+          const ModelParams(),
+          maxTokens: 512,
+          runsOnCpu: true,
+        );
+        expect(c.ref.offload_kqv, isFalse);
+        expect(c.ref.op_offload, isFalse);
+        expect(
+          c.ref.flash_attn_typeAsInt,
+          llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_DISABLED.value,
+        );
+      } finally {
+        calloc.free(c);
+      }
+    });
+  });
 }

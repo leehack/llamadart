@@ -311,6 +311,31 @@ void runLlamaWorkerForTesting(
             activeTextToSpeech = synthesisFuture;
             await synthesisFuture;
 
+          case DecisionCapabilitiesRequest():
+            final capabilities = service.decisionCapabilities(
+              message.modelHandle,
+            );
+            message.sendPort.send(DecisionCapabilitiesResponse(capabilities));
+
+          case DecisionHeadLoadRequest():
+            final head = service.loadDecisionHead(
+              message.modelHandle,
+              message.headPath,
+              message.configPath,
+            );
+            message.sendPort.send(DecisionHeadLoadResponse(head));
+
+          case DecisionRunRequest():
+            final outputs = service.runDecision(
+              message.headHandle,
+              message.sequences,
+            );
+            message.sendPort.send(DecisionRunResponse(outputs));
+
+          case DecisionHeadFreeRequest():
+            service.freeDecisionHead(message.headHandle);
+            message.sendPort.send(DoneResponse());
+
           case EmbedRequest():
             final embedding = service.embed(
               message.contextHandle,

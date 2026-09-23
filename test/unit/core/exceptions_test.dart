@@ -62,5 +62,12 @@ void main() {
       expect(ex.message, 'Not loaded');
       expect(ex.toString(), contains('Not loaded'));
     });
+
+    test('LlamaDecisionException properties', () {
+      final ex = LlamaDecisionException('Too many options', 'plan');
+      expect(ex.message, 'Too many options');
+      expect(ex.details, 'plan');
+      expect(ex.toString(), 'LlamaException: Too many options (plan)');
+    });
   });
 }

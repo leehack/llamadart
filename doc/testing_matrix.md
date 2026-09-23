@@ -149,6 +149,7 @@ Pick targeted rows based on the touched surface:
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
+| Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
@@ -173,11 +174,11 @@ The matrix is designed to cover these essential axes:
 
 | Axis | Covered by |
 | --- | --- |
-| llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke` |
+| llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke`, `decision-model-smoke` |
 | llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `web-text-to-speech-smoke`, `gemma4-webgpu-mem64` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
-| Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio |
+| Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio, Laya ModernBERT decision encoder and head |
 | Feature paths | load/generate, prompt reuse, chat templates, streaming, tool calls, thinking, multimodal image/audio, model cache, native hook packaging |
 | Platforms | See `dart run tool/testing/test_matrix.dart --tier platform`; each supported family/architecture is marked as CI, local, manual/device, or hook-only. |
 
@@ -281,6 +282,21 @@ dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-web-text-to-speech-smoke \
   [--audio-path /path/to/speaker-reference.wav]
+
+# Runs the 24 Laya 0.3.5 fixture rows: exact token ids and markers, raw
+# marker logits within LLAMADART_DECISION_LOGIT_TOLERANCE (default 0.25), and
+# probabilities, confidence, act probability and noul within
+# LLAMADART_DECISION_PROB_TOLERANCE (default 0.05). Scores may differ by twice
+# that tolerance, and a choice may differ from Laya's when Laya's top two
+# probabilities are within the tolerance. It also checks that the head runs on
+# the CPU when the model offloads no layers, and disposes an engine with a head
+# still loaded; a leaked Metal buffer then aborts the exit and fails the run.
+# The E2E uses CPU unless --backend is given. For the official checkpoint, pass
+# its model.safetensors as --head-path and rl_agent_config.json as
+# --config-path.
+dart run tool/testing/run_local_e2e.dart --scenario decision-model-smoke \
+  --model-path /path/to/laya-Q8_0.gguf \
+  --head-path /path/to/laya-head.safetensors
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 

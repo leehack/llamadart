@@ -9,6 +9,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -357,6 +358,132 @@ void main() {
       );
     });
 
+    test('decision requests route through the worker', () async {
+      final capabilities = await backend.decisionCapabilities(11);
+      expect(capabilities.isSupported, isTrue);
+
+      final head = await backend.decisionHeadLoad(
+        11,
+        'head.safetensors',
+        configPath: 'config.json',
+      );
+      expect(head.handle, 44);
+      expect(head.deviceName, 'Metal');
+      final load = harness.received.whereType<DecisionHeadLoadRequest>().single;
+      expect(load.modelHandle, 11);
+      expect(load.headPath, 'head.safetensors');
+      expect(load.configPath, 'config.json');
+
+      final outputs = await backend.decisionRun(44, [
+        BackendDecisionSequence(
+          tokens: Int32List.fromList([5, 6, 7, 8]),
+          markers: Int32List.fromList([1, 3]),
+          questionType: DecisionQuestionType.choice,
+        ),
+      ]);
+      expect(outputs.single.logits, [1.0, 3.0]);
+      expect(outputs.single.actLogits, [0.5, -0.5]);
+      final run = harness.received.whereType<DecisionRunRequest>().single;
+      expect(run.headHandle, 44);
+      expect(run.sequences.single.tokens, [5, 6, 7, 8]);
+
+      await backend.decisionHeadFree(44);
+      expect(
+        harness.received.whereType<DecisionHeadFreeRequest>().single.headHandle,
+        44,
+      );
+    });
+
+    test('decision capabilities pass an unsupported reply through', () async {
+      final capabilities = await backend.decisionCapabilities(12);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, 'not modern-bert');
+    });
+
+    test('decision outputs keep the order of their sequences', () async {
+      final markers = [
+        [1],
+        [2, 3],
+        [4, 5, 6],
+      ];
+
+      final outputs = await backend.decisionRun(44, [
+        for (final positions in markers)
+          BackendDecisionSequence(
+            tokens: Int32List(8),
+            markers: Int32List.fromList(positions),
+            questionType: DecisionQuestionType.choice,
+          ),
+      ]);
+
+      expect([for (final output in outputs) output.logits], markers);
+    });
+
+    test('an unexpected decision reply is a decision error', () async {
+      await expectLater(
+        backend.decisionRun(45, const []),
+        throwsA(
+          isA<LlamaDecisionException>().having(
+            (error) => error.message,
+            'message',
+            contains('Unexpected llama.cpp worker response (DoneResponse)'),
+          ),
+        ),
+      );
+    });
+
+    test('decisionHeadFree during dispose returns without a request', () async {
+      harness.holdDispose = true;
+      final disposing = backend.dispose();
+      await pumpEventQueue();
+
+      await backend.decisionHeadFree(3).timeout(const Duration(seconds: 2));
+
+      expect(harness.received.whereType<DecisionHeadFreeRequest>(), isEmpty);
+      harness.releaseDispose();
+      await disposing;
+    });
+
+    test('decision errors keep the worker error kind', () async {
+      await expectLater(
+        backend.decisionHeadLoad(11, 'bad.safetensors'),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('type_emb.weight'),
+          ),
+        ),
+      );
+      await expectLater(
+        backend.decisionHeadLoad(11, 'unsupported.safetensors'),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        backend.decisionRun(-1, const []),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await expectLater(
+        backend.decisionRun(44, [
+          BackendDecisionSequence(
+            tokens: Int32List(0),
+            markers: Int32List(0),
+            questionType: DecisionQuestionType.choice,
+          ),
+        ]),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await expectLater(
+        backend.decisionCapabilities(-1),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await expectLater(
+        backend.decisionHeadFree(-1),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
+
     test('chat template and lora methods map responses and errors', () async {
       expect(
         await backend.applyChatTemplate(1, const <Map<String, dynamic>>[]),
@@ -477,6 +604,17 @@ void main() {
     expect(await backend.getContextSize(1), 0);
 
     await backend.dispose();
+    expect(backend.isReady, isFalse);
+  });
+
+  test('decisionHeadFree does not start a worker', () async {
+    final backend = NativeLlamaBackend();
+
+    await backend.decisionHeadFree(1);
+    expect(backend.isReady, isFalse);
+
+    await backend.dispose();
+    await backend.decisionHeadFree(1);
     expect(backend.isReady, isFalse);
   });
 
@@ -1079,6 +1217,8 @@ class _FakeWorkerHarness {
   final ReceivePort _port = ReceivePort();
   final List<Object> received = <Object>[];
   bool holdTextToSpeech = false;
+  bool holdDispose = false;
+  DisposeRequest? _heldDispose;
   Completer<void> textToSpeechStarted = Completer<void>();
   TextToSpeechSynthesizeRequest? _heldTextToSpeech;
 
@@ -1270,6 +1410,90 @@ class _FakeWorkerHarness {
           }
         case TextToSpeechCancelRequest():
           break;
+        case DecisionCapabilitiesRequest():
+          if (message.modelHandle < 0) {
+            message.sendPort.send(
+              ErrorResponse('no model', kind: WorkerErrorKind.state),
+            );
+          } else if (message.modelHandle == 12) {
+            message.sendPort.send(
+              DecisionCapabilitiesResponse(
+                const BackendDecisionCapabilities(
+                  isSupported: false,
+                  unsupportedReason: 'not modern-bert',
+                ),
+              ),
+            );
+          } else {
+            message.sendPort.send(
+              DecisionCapabilitiesResponse(
+                const BackendDecisionCapabilities(isSupported: true),
+              ),
+            );
+          }
+        case DecisionHeadLoadRequest():
+          if (message.headPath == 'bad.safetensors') {
+            message.sendPort.send(
+              ErrorResponse(
+                'type_emb.weight has shape [3, 768], expected [3, 1024]',
+                kind: WorkerErrorKind.model,
+              ),
+            );
+          } else if (message.headPath == 'unsupported.safetensors') {
+            message.sendPort.send(
+              ErrorResponse(
+                'not a ModernBERT encoder',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else {
+            message.sendPort.send(
+              DecisionHeadLoadResponse(
+                const BackendDecisionHeadInfo(
+                  handle: 44,
+                  hiddenSize: 4,
+                  clsToken: 1,
+                  sepToken: 2,
+                  maskToken: 3,
+                  maskText: '[MASK]',
+                  configJson: '{}',
+                  deviceName: 'Metal',
+                ),
+              ),
+            );
+          }
+        case DecisionRunRequest():
+          if (message.headHandle < 0) {
+            message.sendPort.send(
+              ErrorResponse('head not loaded', kind: WorkerErrorKind.state),
+            );
+          } else if (message.headHandle == 45) {
+            message.sendPort.send(DoneResponse());
+          } else if (message.sequences.any((s) => s.tokens.isEmpty)) {
+            message.sendPort.send(
+              ErrorResponse('empty sequence', kind: WorkerErrorKind.inference),
+            );
+          } else {
+            message.sendPort.send(
+              DecisionRunResponse([
+                for (final sequence in message.sequences)
+                  BackendDecisionOutput(
+                    logits: Float32List.fromList([
+                      for (final marker in sequence.markers) marker.toDouble(),
+                    ]),
+                    actLogits: Float32List.fromList([0.5, -0.5]),
+                  ),
+              ]),
+            );
+          }
+        case DecisionHeadFreeRequest():
+          if (message.headHandle < 0) {
+            message.sendPort.send(
+              ErrorResponse('free failed', kind: WorkerErrorKind.state),
+            );
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case GetContextSizeRequest():
           message.sendPort.send(GetContextSizeResponse(2048));
         case ChatTemplateRequest():
@@ -1313,7 +1537,11 @@ class _FakeWorkerHarness {
             message.sendPort.send(DoneResponse());
           }
         case DisposeRequest():
-          message.sendPort.send(DoneResponse());
+          if (holdDispose) {
+            _heldDispose = message;
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case WorkerHandshake():
         // Not expected in these tests.
       }
@@ -1321,6 +1549,12 @@ class _FakeWorkerHarness {
   }
 
   SendPort get sendPort => _port.sendPort;
+
+  void releaseDispose() {
+    holdDispose = false;
+    _heldDispose?.sendPort.send(DoneResponse());
+    _heldDispose = null;
+  }
 
   void finishHeldTextToSpeech() {
     final request = _heldTextToSpeech;

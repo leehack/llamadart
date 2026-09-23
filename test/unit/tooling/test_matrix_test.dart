@@ -3,6 +3,7 @@ library;
 
 import 'package:test/test.dart';
 
+import '../../../tool/testing/run_local_e2e.dart';
 import '../../../tool/testing/test_matrix.dart';
 
 void main() {
@@ -52,6 +53,24 @@ void main() {
       expect(ids, contains('webgpu-multimodal-regression'));
       expect(ids, contains('gemma4-webgpu-mem64'));
       expect(ids, contains('physical-ios-speech-e2e'));
+      expect(ids, contains('decision-model-smoke'));
+    });
+
+    test('rows name local E2E scenarios that the runner defines', () {
+      final scenarios = buildLocalE2eScenarios().map((s) => s.name).toSet();
+      final referenced = <String>{};
+      for (final row in testMatrixRows) {
+        if (!row.command.contains('run_local_e2e.dart')) continue;
+        final names = RegExp(
+          r'--scenario\s+([a-z0-9-]+)',
+        ).allMatches(row.command).map((match) => match.group(1)!);
+        expect(names, isNotEmpty, reason: row.id);
+        for (final name in names) {
+          expect(scenarios, contains(name), reason: row.id);
+          referenced.add(name);
+        }
+      }
+      expect(referenced, contains('decision-model-smoke'));
     });
 
     test('includes targeted physical iOS speech E2E row', () {

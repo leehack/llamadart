@@ -67,3 +67,9 @@ class LlamaStateException extends LlamaException {
   /// Creates a new [LlamaStateException].
   LlamaStateException(super.message, [super.details]);
 }
+
+/// Exception thrown when a decision-model request is invalid or cannot be answered.
+class LlamaDecisionException extends LlamaException {
+  /// Creates a new [LlamaDecisionException].
+  LlamaDecisionException(super.message, [super.details]);
+}

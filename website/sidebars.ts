@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
         'guides/multimodal',
         'guides/speech-to-text',
         'guides/text-to-speech',
+        'guides/decision-models',
         'guides/lora-adapters'
       ]
     },
