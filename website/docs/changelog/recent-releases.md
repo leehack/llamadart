@@ -9,9 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Add `DecisionEngine` for Laya-style decision models (a ModernBERT encoder
-  GGUF plus a safetensors head) on native llama.cpp; WebGPU and LiteRT-LM
-  throw `LlamaUnsupportedException`
+- Add an experimental `DecisionEngine` for Laya-style decision models (a
+  ModernBERT encoder GGUF plus a safetensors head) on native llama.cpp, with
+  typed `ChoiceKey`, `ScoreKey` and `NoulKey` questions
   ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Add `example/basic_app/bin/llamadart_decision_example.dart`, a console demo
   that triages a support ticket with `DecisionEngine`

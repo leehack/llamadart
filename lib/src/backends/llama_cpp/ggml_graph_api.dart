@@ -24,7 +24,9 @@ T withGgmlGraphSymbols<T>(T Function() body) {
 /// Enum arguments and results are their integer values. Windows bundles export
 /// these functions from `ggml-base.dll` and `ggml.dll` rather than the default
 /// `llama.dll` asset, so [current] binds `@Native` declarations to those assets
-/// on Windows and uses the generated bindings elsewhere.
+/// on Windows. Elsewhere it uses the generated bindings, plus one `@Native` on
+/// their default asset for `ggml_backend_alloc_ctx_tensors`, which the bindings
+/// leave out with the rest of `ggml-alloc.h`.
 final class GgmlGraphApi {
   const GgmlGraphApi._({
     required this.init,
@@ -57,14 +59,9 @@ final class GgmlGraphApi {
     required this.devBackendReg,
     required this.regGetProcAddress,
     required this.backendFree,
-    required this.defaultBufferType,
-    required this.buftGetAlignment,
-    required this.buftGetAllocSize,
-    required this.buftAllocBuffer,
+    required this.allocCtxTensors,
     required this.bufferSetUsage,
-    required this.bufferGetBase,
     required this.bufferFree,
-    required this.tensorAlloc,
     required this.tensorSet,
     required this.tensorGet,
     required this.schedNew,
@@ -258,43 +255,18 @@ final class GgmlGraphApi {
   /// `ggml_backend_free`.
   final void Function(ggml_backend_t backend) backendFree;
 
-  /// `ggml_backend_get_default_buffer_type`.
-  final ggml_backend_buffer_type_t Function(ggml_backend_t backend)
-  defaultBufferType;
-
-  /// `ggml_backend_buft_get_alignment`.
-  final int Function(ggml_backend_buffer_type_t buft) buftGetAlignment;
-
-  /// `ggml_backend_buft_get_alloc_size`.
-  final int Function(
-    ggml_backend_buffer_type_t buft,
-    Pointer<ggml_tensor> tensor,
-  )
-  buftGetAllocSize;
-
-  /// `ggml_backend_buft_alloc_buffer`.
+  /// `ggml_backend_alloc_ctx_tensors`.
   final ggml_backend_buffer_t Function(
-    ggml_backend_buffer_type_t buft,
-    int size,
+    Pointer<ggml_context> ctx,
+    ggml_backend_t backend,
   )
-  buftAllocBuffer;
+  allocCtxTensors;
 
   /// `ggml_backend_buffer_set_usage`.
   final void Function(ggml_backend_buffer_t buffer, int usage) bufferSetUsage;
 
-  /// `ggml_backend_buffer_get_base`.
-  final Pointer<Void> Function(ggml_backend_buffer_t buffer) bufferGetBase;
-
   /// `ggml_backend_buffer_free`.
   final void Function(ggml_backend_buffer_t buffer) bufferFree;
-
-  /// `ggml_backend_tensor_alloc`.
-  final int Function(
-    ggml_backend_buffer_t buffer,
-    Pointer<ggml_tensor> tensor,
-    Pointer<Void> address,
-  )
-  tensorAlloc;
 
   /// `ggml_backend_tensor_set`.
   final void Function(
@@ -377,18 +349,12 @@ final GgmlGraphApi _bindingsApi = GgmlGraphApi._(
   devBackendReg: ggml_backend_dev_backend_reg,
   regGetProcAddress: ggml_backend_reg_get_proc_address,
   backendFree: ggml_backend_free,
-  defaultBufferType: ggml_backend_get_default_buffer_type,
-  buftGetAlignment: ggml_backend_buft_get_alignment,
-  buftGetAllocSize: ggml_backend_buft_get_alloc_size,
-  buftAllocBuffer: ggml_backend_buft_alloc_buffer,
+  allocCtxTensors: _allocCtxTensors,
   bufferSetUsage: (buffer, usage) => ggml_backend_buffer_set_usage(
     buffer,
     ggml_backend_buffer_usage.fromValue(usage),
   ),
-  bufferGetBase: ggml_backend_buffer_get_base,
   bufferFree: ggml_backend_buffer_free,
-  tensorAlloc: (buffer, tensor, address) =>
-      ggml_backend_tensor_alloc(buffer, tensor, address).value,
   tensorSet: ggml_backend_tensor_set,
   tensorGet: ggml_backend_tensor_get,
   schedNew: ggml_backend_sched_new,
@@ -431,14 +397,9 @@ final GgmlGraphApi _windowsApi = GgmlGraphApi._(
   devBackendReg: _windowsDevBackendReg,
   regGetProcAddress: _windowsRegGetProcAddress,
   backendFree: _windowsBackendFree,
-  defaultBufferType: _windowsDefaultBufferType,
-  buftGetAlignment: _windowsBuftGetAlignment,
-  buftGetAllocSize: _windowsBuftGetAllocSize,
-  buftAllocBuffer: _windowsBuftAllocBuffer,
+  allocCtxTensors: _windowsAllocCtxTensors,
   bufferSetUsage: _windowsBufferSetUsage,
-  bufferGetBase: _windowsBufferGetBase,
   bufferFree: _windowsBufferFree,
-  tensorAlloc: _windowsTensorAlloc,
   tensorSet: _windowsTensorSet,
   tensorGet: _windowsTensorGet,
   schedNew: _windowsSchedNew,
@@ -449,8 +410,18 @@ final GgmlGraphApi _windowsApi = GgmlGraphApi._(
   schedFree: _windowsSchedFree,
 );
 
+const _llamadartAsset = 'package:llamadart/llamadart';
 const _ggmlBaseAsset = 'package:llamadart/ggml-base';
 const _ggmlAsset = 'package:llamadart/ggml';
+
+@Native<ggml_backend_buffer_t Function(Pointer<ggml_context>, ggml_backend_t)>(
+  assetId: _llamadartAsset,
+  symbol: 'ggml_backend_alloc_ctx_tensors',
+)
+external ggml_backend_buffer_t _allocCtxTensors(
+  Pointer<ggml_context> ctx,
+  ggml_backend_t backend,
+);
 
 @Native<Pointer<ggml_context> Function(ggml_init_params)>(
   assetId: _ggmlBaseAsset,
@@ -744,36 +715,13 @@ external Pointer<Void> _windowsRegGetProcAddress(
 )
 external void _windowsBackendFree(ggml_backend_t backend);
 
-@Native<ggml_backend_buffer_type_t Function(ggml_backend_t)>(
+@Native<ggml_backend_buffer_t Function(Pointer<ggml_context>, ggml_backend_t)>(
   assetId: _ggmlBaseAsset,
-  symbol: 'ggml_backend_get_default_buffer_type',
+  symbol: 'ggml_backend_alloc_ctx_tensors',
 )
-external ggml_backend_buffer_type_t _windowsDefaultBufferType(
+external ggml_backend_buffer_t _windowsAllocCtxTensors(
+  Pointer<ggml_context> ctx,
   ggml_backend_t backend,
-);
-
-@Native<Size Function(ggml_backend_buffer_type_t)>(
-  assetId: _ggmlBaseAsset,
-  symbol: 'ggml_backend_buft_get_alignment',
-)
-external int _windowsBuftGetAlignment(ggml_backend_buffer_type_t buft);
-
-@Native<Size Function(ggml_backend_buffer_type_t, Pointer<ggml_tensor>)>(
-  assetId: _ggmlBaseAsset,
-  symbol: 'ggml_backend_buft_get_alloc_size',
-)
-external int _windowsBuftGetAllocSize(
-  ggml_backend_buffer_type_t buft,
-  Pointer<ggml_tensor> tensor,
-);
-
-@Native<ggml_backend_buffer_t Function(ggml_backend_buffer_type_t, Size)>(
-  assetId: _ggmlBaseAsset,
-  symbol: 'ggml_backend_buft_alloc_buffer',
-)
-external ggml_backend_buffer_t _windowsBuftAllocBuffer(
-  ggml_backend_buffer_type_t buft,
-  int size,
 );
 
 @Native<Void Function(ggml_backend_buffer_t, UnsignedInt)>(
@@ -782,26 +730,11 @@ external ggml_backend_buffer_t _windowsBuftAllocBuffer(
 )
 external void _windowsBufferSetUsage(ggml_backend_buffer_t buffer, int usage);
 
-@Native<Pointer<Void> Function(ggml_backend_buffer_t)>(
-  assetId: _ggmlBaseAsset,
-  symbol: 'ggml_backend_buffer_get_base',
-)
-external Pointer<Void> _windowsBufferGetBase(ggml_backend_buffer_t buffer);
-
 @Native<Void Function(ggml_backend_buffer_t)>(
   assetId: _ggmlBaseAsset,
   symbol: 'ggml_backend_buffer_free',
 )
 external void _windowsBufferFree(ggml_backend_buffer_t buffer);
-
-@Native<
-  Int Function(ggml_backend_buffer_t, Pointer<ggml_tensor>, Pointer<Void>)
->(assetId: _ggmlBaseAsset, symbol: 'ggml_backend_tensor_alloc')
-external int _windowsTensorAlloc(
-  ggml_backend_buffer_t buffer,
-  Pointer<ggml_tensor> tensor,
-  Pointer<Void> address,
-);
 
 @Native<Void Function(Pointer<ggml_tensor>, Pointer<Void>, Size, Size)>(
   assetId: _ggmlBaseAsset,

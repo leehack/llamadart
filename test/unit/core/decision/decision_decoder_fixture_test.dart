@@ -7,26 +7,6 @@ import 'package:test/test.dart';
 
 import '../../../support/decision_fixture.dart';
 
-// Laya rounds answers to 4 decimals and decodes in float32.
-const _tolerance = 6e-5;
-
-void _expectJsonClose(Object? actual, Object? expected, String path) {
-  switch (expected) {
-    case num():
-      expect(actual, isA<num>(), reason: path);
-      expect(actual as num, closeTo(expected, _tolerance), reason: path);
-    case Map():
-      expect(actual, isA<Map>(), reason: path);
-      final map = actual as Map;
-      expect(map.keys, orderedEquals(expected.keys), reason: path);
-      for (final key in expected.keys) {
-        _expectJsonClose(map[key], expected[key], '$path.$key');
-      }
-    default:
-      expect(actual, expected, reason: path);
-  }
-}
-
 void main() {
   final fixture = DecisionFixture.load();
   final config = DecisionHeadConfig(
@@ -67,7 +47,7 @@ void main() {
         config,
       );
 
-      _expectJsonClose(answer.toJson(), row.answer, row.id);
+      expectDecisionJsonClose(answer.toJson(), row.answer, row.id);
     });
   }
 }

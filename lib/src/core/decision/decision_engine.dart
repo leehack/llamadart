@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
 import 'decision_decoder.dart';
+import 'decision_key.dart';
 import 'decision_question.dart';
 import 'decision_result.dart';
 import 'decision_sequence.dart';
@@ -186,7 +187,7 @@ class DecisionEngine {
       return DecisionEngine._(
         engine,
         head,
-        DecisionHeadConfig.fromJson(decodeDecisionHeadConfig(head.configJson)),
+        decodeDecisionHeadConfig(head.configJson),
         modelHandle,
       );
     } catch (error, stackTrace) {
@@ -212,6 +213,10 @@ class DecisionEngine {
   /// after [dispose] or once the engine's model is unloaded. A call running
   /// during an unload throws it too, unless its sequences already reached the
   /// backend; that call returns answers from the unloaded model.
+  ///
+  /// To read answers as typed values, build [questions] with
+  /// [DecisionKey.questionsOf] and read them with
+  /// [DecisionResultKeys.answerOf].
   Future<DecisionResult> systemOne({
     required Object? state,
     required Map<String, DecisionQuestion> questions,
@@ -262,15 +267,6 @@ class DecisionEngine {
   }
 
   Future<List<DecisionResult>> _answer(List<DecisionRequest> requests) async {
-    for (final request in requests) {
-      for (final id in request.questions.keys) {
-        if (id.isEmpty) {
-          throw LlamaDecisionException(
-            'Decision question ids must be non-empty.',
-          );
-        }
-      }
-    }
     if (requests.isEmpty) return const <DecisionResult>[];
     if (!_hasModel(_engine, _modelHandle)) {
       throw LlamaStateException(_modelUnloadedMessage);
@@ -319,7 +315,7 @@ class DecisionEngine {
           BackendDecisionSequence(
             tokens: Int32List.fromList(sequences[r][q].tokens),
             markers: Int32List.fromList(sequences[r][q].markers),
-            questionType: question.type.index,
+            questionType: question.type,
           ),
     ];
     final outputs = await _engine.runDecisionBackend(_head.handle, inputs);
@@ -348,6 +344,7 @@ class DecisionEngine {
         DecisionResult(
           model: decisionResponseModel,
           answers: answers,
+          questions: requests[r].questions,
           usage: DecisionUsage(
             inputTokens: sequences[r].fold(
               0,

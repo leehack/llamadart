@@ -34,9 +34,10 @@ models through LiteRT-LM.
   16 kHz PCM input and partial transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
-- Laya-style decision models on native llama.cpp through `DecisionEngine`:
-  typed choice, score, and yes/no answers from a ModernBERT encoder GGUF and a
-  safetensors head, one encoder pass per question.
+- Experimental Laya-style decision models on native llama.cpp through
+  `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
+  encoder GGUF and a safetensors head, one encoder pass per question; validated
+  on macOS (Metal, CPU), other native platforms untested.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for

@@ -1,8 +1,37 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:test/test.dart';
+
 // Laya 0.3.5 reference rows; provenance is in fixtures/decision/README.md.
 const decisionFixturePath = 'test/fixtures/decision/laya_0_3_5_reference.json';
+
+// Laya rounds answers to 4 decimals and decodes in float32.
+const decisionAnswerTolerance = 6e-5;
+
+/// Expects the JSON-like [actual] to equal [expected], with map keys in the
+/// same order and numbers outside lists within [decisionAnswerTolerance];
+/// lists must be equal. [path] names the value in failure messages.
+void expectDecisionJsonClose(Object? actual, Object? expected, String path) {
+  switch (expected) {
+    case num():
+      expect(actual, isA<num>(), reason: path);
+      expect(
+        actual as num,
+        closeTo(expected, decisionAnswerTolerance),
+        reason: path,
+      );
+    case Map():
+      expect(actual, isA<Map>(), reason: path);
+      final map = actual as Map;
+      expect(map.keys, orderedEquals(expected.keys), reason: path);
+      for (final key in expected.keys) {
+        expectDecisionJsonClose(map[key], expected[key], '$path.$key');
+      }
+    default:
+      expect(actual, expected, reason: path);
+  }
+}
 
 final class DecisionFixture {
   DecisionFixture._(Map<String, Object?> json)

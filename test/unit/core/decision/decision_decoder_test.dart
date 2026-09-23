@@ -87,6 +87,7 @@ void main() {
         {
           'max_len': null,
           'head_max_len': null,
+          'head_layers': null,
           'temperature': null,
           'temperature_by_options': null,
         },
@@ -94,6 +95,7 @@ void main() {
         final config = DecisionHeadConfig.fromJson(json);
         expect(config.maxTokens, 512);
         expect(config.headMaxTokens, 192);
+        expect(config.headLayers, 2);
         expect(config.temperature, [1.0, 1.0, 1.0]);
         expect(config.temperatureByOptions, isEmpty);
       }
@@ -103,12 +105,14 @@ void main() {
       final config = DecisionHeadConfig.fromJson({
         'max_len': 1024,
         'head_max_len': 256,
+        'head_layers': 3,
         'temperature': [0.1, '2.5', 'x', 9],
         'temperature_by_options': {'choice:11+': 0.10058280825614929},
       });
 
       expect(config.maxTokens, 1024);
       expect(config.headMaxTokens, 256);
+      expect(config.headLayers, 3);
       expect(config.temperature, [0.5, 2.5, 1.0, 5.0]);
       expect(config.temperatureByOptions, {'choice:11+': 0.5});
     });
@@ -119,6 +123,8 @@ void main() {
         ({'max_len': '512'}, '"max_len" must be a positive integer'),
         ({'head_max_len': -1}, '"head_max_len" must be a positive integer'),
         ({'head_max_len': 1.5}, '"head_max_len" must be a positive integer'),
+        ({'head_layers': 0}, '"head_layers" must be a positive integer'),
+        ({'head_layers': '2'}, '"head_layers" must be a positive integer'),
         ({'temperature': 1.0}, '"temperature" must be a list'),
         (
           {
@@ -136,11 +142,12 @@ void main() {
       }
     });
 
-    test('decodeDecisionHeadConfig returns the checked JSON object', () {
-      expect(decodeDecisionHeadConfig('{"max_len": 256, "head_layers": 1}'), {
-        'max_len': 256,
-        'head_layers': 1,
-      });
+    test('decodeDecisionHeadConfig returns the parsed config', () {
+      final config = decodeDecisionHeadConfig(
+        '{"max_len": 256, "head_layers": 1}',
+      );
+      expect(config.maxTokens, 256);
+      expect(config.headLayers, 1);
       for (final (text, fragment) in [
         ('{', 'not valid JSON'),
         ('[512]', 'not a JSON object'),
@@ -155,17 +162,17 @@ void main() {
       }
     });
 
-    test('temperatureFor prefers the bucket, then the type, clamped', () {
+    test('temperatureFor prefers the bucket, then the type', () {
       const config = DecisionHeadConfig(
-        temperature: [1.5, 0.2, 9.0],
-        temperatureByOptions: {'choice:3-5': 2.5, 'score:2': 0.1},
+        temperature: [1.5, 0.7, 9.0],
+        temperatureByOptions: {'choice:3-5': 2.5, 'score:2': 0.6},
       );
 
       expect(config.temperatureFor(DecisionQuestionType.choice, 4), 2.5);
       expect(config.temperatureFor(DecisionQuestionType.choice, 2), 1.5);
-      expect(config.temperatureFor(DecisionQuestionType.score, 2), 0.5);
-      expect(config.temperatureFor(DecisionQuestionType.score, 3), 0.5);
-      expect(config.temperatureFor(DecisionQuestionType.noul, 2), 5.0);
+      expect(config.temperatureFor(DecisionQuestionType.score, 2), 0.6);
+      expect(config.temperatureFor(DecisionQuestionType.score, 3), 0.7);
+      expect(config.temperatureFor(DecisionQuestionType.noul, 2), 9.0);
     });
   });
 

@@ -2,9 +2,12 @@
 library;
 
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
@@ -50,7 +53,6 @@ void main() {
     expect(file.path, path);
     expect(file.metadata, {'laya.config': '{"head_layers": 2}'});
     expect(file.tensors.keys, ['a', 'b']);
-    expect(file.tensors['a']!.name, 'a');
     expect(file.tensors['a']!.dtype, 'F32');
     expect(file.tensors['a']!.shape, [2, 3]);
     expect(file.readFloat32('b'), [-1.5, 0.25]);
@@ -103,6 +105,47 @@ void main() {
     expect(openFile(path).readFloat32('h'), [1.0, -3.140625, double.infinity]);
   });
 
+  test('reads into a view of native memory', () {
+    final path = pathOf('into.safetensors');
+    writeSafetensors(path, {
+      'f32': TestTensor.f32([3], [1.5, -2, 0.25]),
+      'f16': TestTensor.bits16('F16', [2], [0x3c00, 0xc000]),
+      'bf16': TestTensor.bits16('BF16', [2], [0x3f80, 0xc049]),
+    });
+    final file = openFile(path);
+    final native = malloc<Float>(4);
+    addTearDown(() => malloc.free(native));
+    final values = native.asTypedList(4)..fillRange(0, 4, 9);
+
+    file.readFloat32Into('f32', Float32List.sublistView(values, 1));
+    expect(values, [9, 1.5, -2, 0.25]);
+    file.readFloat32Into('f16', Float32List.sublistView(values, 2));
+    expect(values, [9, 1.5, 1, -2]);
+    file.readFloat32Into('bf16', Float32List.sublistView(values, 1, 3));
+    expect(values, [9, 1, -3.140625, -2]);
+    expect(
+      () => file.readFloat32Into('f32', values),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('"f32" has 3 elements'), contains('has 4')),
+        ),
+      ),
+    );
+    expect(
+      () => file.readFloat32Into('f32', Float32List.sublistView(values, 0, 2)),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          contains('has 2'),
+        ),
+      ),
+    );
+    expect(values, [9, 1, -3.140625, -2]);
+  });
+
   test('has empty metadata when the header has none', () {
     final path = pathOf('plain.safetensors');
     writeSafetensors(path, {
@@ -153,6 +196,49 @@ void main() {
       ),
     );
   });
+
+  test('ignores a failed close', () {
+    final path = pathOf('close_fails.safetensors');
+    writeSafetensors(path, {
+      'a': TestTensor.f32([1], [3]),
+    });
+    final opened = _CloseFails(File(path).openSync());
+    final file = IOOverrides.runZoned(
+      () => SafetensorsFile.open(path),
+      createFile: (_) => _OpensTo(opened),
+    );
+    expect(file.readFloat32('a'), [3]);
+
+    file.close();
+
+    expect(opened.closed, isTrue);
+    expect(() => file.readFloat32('a'), throwsA(isA<LlamaStateException>()));
+  });
+
+  test(
+    'reports a file that shrinks after open',
+    () async {
+      final path = pathOf('shrunk.safetensors');
+      writeSafetensors(path, {
+        'a': TestTensor.f32([4], [1, 2, 3, 4]),
+      });
+      final reply = ReceivePort();
+      addTearDown(reply.close);
+      final reader = await Isolate.spawn(_readAfterShrinking, (
+        path,
+        reply.sendPort,
+      ));
+      addTearDown(() => reader.kill(priority: Isolate.immediate));
+
+      expect(
+        await reply.first.timeout(const Duration(seconds: 20)),
+        allOf(contains(path), contains('ended 8 bytes into a 16-byte read')),
+      );
+    },
+    skip: Platform.isWindows
+        ? 'Windows file sharing can block rewriting a file that is open.'
+        : false,
+  );
 
   group('rejects malformed files', () {
     final tensor = jsonEncode({
@@ -219,19 +305,30 @@ void main() {
 
     test('tensor entries without a dtype, shape or offsets', () {
       final cases = {
-        'entry': '{"a": 1}',
-        'dtype': '{"a": {"shape": [], "data_offsets": [0, 0]}}',
-        'shape':
-            '{"a": {"dtype": "F32", "shape": [-1], "data_offsets": [0, 0]}}',
-        'offsets': '{"a": {"dtype": "F32", "shape": [], "data_offsets": [0]}}',
-        'offset types':
-            '{"a": {"dtype": "F32", "shape": [1], "data_offsets": ["0", 4]}}',
+        'entry': ('{"a": 1}', 'tensor "a" is not a JSON object'),
+        'dtype': (
+          '{"a": {"shape": [], "data_offsets": [0, 0]}}',
+          'tensor "a" has no string dtype',
+        ),
+        'shape': (
+          '{"a": {"dtype": "F32", "shape": [-1, -1], "data_offsets": [0, 4]}}',
+          'tensor "a" shape [-1, -1] is not a list of sizes',
+        ),
+        'offsets': (
+          '{"a": {"dtype": "F32", "shape": [], "data_offsets": [0]}}',
+          'tensor "a" data_offsets [0] is not [begin, end]',
+        ),
+        'offset types': (
+          '{"a": {"dtype": "F32", "shape": [1], "data_offsets": ["0", 4]}}',
+          'tensor "a" data_offsets [0, 4] is not [begin, end]',
+        ),
       };
-      for (final MapEntry(key: name, value: header) in cases.entries) {
+      for (final MapEntry(key: name, value: (header, reason))
+          in cases.entries) {
         final path = pathOf('$name.safetensors');
-        writeRawSafetensors(path, header, const []);
+        writeRawSafetensors(path, header, Uint8List(4));
 
-        expectMalformed(path, ['"a"']);
+        expectMalformed(path, [reason]);
       }
     });
 
@@ -328,4 +425,58 @@ void main() {
           : false,
     );
   });
+}
+
+void _readAfterShrinking((String, SendPort) message) {
+  final (path, reply) = message;
+  final file = SafetensorsFile.open(path);
+  try {
+    final bytes = File(path).readAsBytesSync();
+    File(path).writeAsBytesSync(bytes.sublist(0, bytes.length - 8));
+    file.readFloat32('a');
+    reply.send('read the whole tensor');
+  } on LlamaModelException catch (error) {
+    reply.send(error.message);
+  } finally {
+    file.close();
+  }
+}
+
+final class _OpensTo implements File {
+  _OpensTo(this._opened);
+
+  final RandomAccessFile _opened;
+
+  @override
+  RandomAccessFile openSync({FileMode mode = FileMode.read}) => _opened;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _CloseFails implements RandomAccessFile {
+  _CloseFails(this._file);
+
+  final RandomAccessFile _file;
+  bool closed = false;
+
+  @override
+  int lengthSync() => _file.lengthSync();
+
+  @override
+  void setPositionSync(int position) => _file.setPositionSync(position);
+
+  @override
+  int readIntoSync(List<int> buffer, [int start = 0, int? end]) =>
+      _file.readIntoSync(buffer, start, end);
+
+  @override
+  void closeSync() {
+    _file.closeSync();
+    closed = true;
+    throw const FileSystemException('Injected close failure');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
