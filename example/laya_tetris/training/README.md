@@ -19,7 +19,7 @@ app keeps its backbone GGUF and only the head changes.
     numpy==2.5.3
   ```
 
-- Memory: a default run peaked at 10.9 GB on an Apple M4 Max, 5.3 GB of it
+- Memory: a default run peaked at 11.0 GB on an Apple M4 Max, 5.3 GB of it
   the encoder's hidden states, which the notebook keeps.
 
 The first run downloads the official checkpoint (846 MB) into the Hugging Face
@@ -43,21 +43,27 @@ Then open `training/laya_head_tuning.ipynb` with the environment above and run
 all cells. The first code cell holds the settings, including `OUT_PATH` and
 `OUT_DTYPE`: `"F32"` (106 MB) or `"F16"` (53 MB).
 
-With the defaults on an Apple M4 Max (MPS), encoding took 3 to 4 minutes and
-the 8 epochs 11. On the 2,000 validation questions:
+With the defaults on an Apple M4 Max (MPS), encoding took 3 to 6 minutes and
+the 12 epochs 17 to 24, depending on other load. On the 2,000 validation
+questions:
 
-| Head | Accuracy | Mean regret |
-| --- | --- | --- |
-| Base (`laya-head.safetensors`) | 0.305 | 1.621 |
-| Tuned, 4 of 5 runs | 0.749 to 0.756 | 0.236 to 0.260 |
-| Tuned, 1 of 5 runs | 0.705 | 0.383 |
+| Head | Runs | Accuracy | Mean regret |
+| --- | --- | --- | --- |
+| Base (`laya-head.safetensors`) | | 0.305 | 1.621 |
+| Tuned, 12 epochs (default) | 8 | 0.755 to 0.785 | 0.157 to 0.242 |
+| Tuned, 8 epochs | 10 | 0.705 to 0.780 | 0.214 to 0.388 |
 
 A question counts as right when the head's top option is one of the
 heuristic-best options; a random pick scores 0.275. Regret is the heuristic
-value lost against the best option. Training on MPS is not bit-for-bit
-repeatable, so the kept head differs between runs. The **Train** cell prints
-the kept head's scores; if its accuracy is well below 0.75, change `SEED` in
-the first cell and run all cells again.
+value lost against the best option.
+
+Training on MPS is not bit-for-bit repeatable, even with the same `SEED`, so
+the kept head differs between runs. In some runs the training loss stays near
+its starting value for about two epochs before it falls. With 8 epochs too few
+steps were left after that, and 2 of 10 runs stopped at 0.705 and 0.707, still
+improving. With 12, the two runs whose loss fell latest reached 0.755 and
+0.773. The **Train** cell prints the kept head's scores; if its accuracy is
+well below 0.75, change `SEED` in the first cell and run all cells again.
 
 ## Use the head
 

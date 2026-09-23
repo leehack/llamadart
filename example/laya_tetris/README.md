@@ -64,9 +64,9 @@ on-screen keys.
 ## Tetris-tuned head
 
 The published tuned head is the base head fine-tuned on the heuristic-labelled
-choice examples that `bin/make_dataset.dart` writes, with the recipe that the
-notebook in [`training/`](training/README.md) implements. The app loads the
-first tuned head it finds:
+choice examples that `bin/make_dataset.dart` writes, with the recipe of the
+notebook in [`training/`](training/README.md), except 8 epochs instead of 12.
+The app loads the first tuned head it finds:
 
 1. The URL from `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
 2. `laya-head-tetris.safetensors` in the app's `laya/` folder, such as a

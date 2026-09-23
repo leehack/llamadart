@@ -76,7 +76,7 @@ wait until it finishes.
 The published tuned head,
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head),
 is the base head fine-tuned with the recipe in
-[Fine-tune the head](#fine-tune-the-head).
+[Fine-tune the head](#fine-tune-the-head), except 8 epochs instead of 12.
 
 The app loads the first tuned head it finds:
 
@@ -97,9 +97,9 @@ tuned player is disabled.
 (`train.jsonl` and `val.jsonl` in the Laya request format, with target
 probabilities and heuristic values), and the notebook
 `training/laya_head_tuning.ipynb` fine-tunes Laya's head on them with the
-encoder frozen. On an Apple M4 Max a run takes about 15 minutes and raises
-the head's validation accuracy from 0.305 to about 0.75 (0.705 in one of
-five runs).
+encoder frozen, for 12 epochs. On an Apple M4 Max a run takes about 25
+minutes; eight runs raised the head's validation accuracy from 0.305 to
+between 0.755 and 0.785.
 [`training/README.md`](https://github.com/leehack/llamadart/blob/main/example/laya_tetris/training/README.md)
 has the Python setup, the steps, and a recipe that builds the backbone GGUF
 from the official checkpoint.
@@ -129,7 +129,7 @@ a run; `--help` lists every option.
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
 backbone. The tuned rows use the published tuned head from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `83794e0bdd5526420997279a5d3dc9810a445217`, from an earlier run of
+at revision `83794e0bdd5526420997279a5d3dc9810a445217`, from an 8-epoch run of
 the [fine-tuning recipe](#fine-tune-the-head) (validation accuracy 0.750).
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
@@ -161,10 +161,12 @@ The base head asked to choose among six candidates plays about as well as a
 random pick. The tuned player asks in the format the tuned head was trained
 on; with the base head, that format also plays like a random pick (36 pieces,
 1 line), while the tuned head keeps up with the checklist and asks one
-question instead of twelve. Heads from five notebook runs played 97 to 147
-pieces with 3 best + 3 random and 107 to 146 with all legal moves; the lowest
-came from the run that reached 0.705 accuracy, the only run behind the
-checklist's 120 pieces.
+question instead of twelve. Heads from five 8-epoch notebook runs played 97
+to 147 pieces with 3 best + 3 random and 107 to 146 with all legal moves; the
+lowest came from the run that reached 0.705 accuracy, the only run behind the
+checklist's 120 pieces. A head from a 12-epoch run (accuracy 0.757) played 150
+pieces with 3 best + 3 random, every game reaching the cap, and 135 with all
+legal moves.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:
