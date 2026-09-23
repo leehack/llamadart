@@ -14,7 +14,9 @@ Use it for classification-style decisions where a chat model would be slow or
 would need output parsing: routing a ticket, rating urgency, or checking a
 yes/no condition. The
 [Basic App decision example](../examples/basic-app#decision-model) runs the
-ticket questions below from the command line.
+ticket questions below from the command line, and the
+[Laya Tetris example](../examples/laya-tetris) plays real-time Tetris with it
+in a Flutter app.
 
 ## Current support matrix
 

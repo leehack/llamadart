@@ -117,6 +117,28 @@ dart pub get
 dart run bin/tui_coding_agent.dart
 ```
 
+### 6. Laya Tetris (`laya_tetris/`)
+A Flutter app (macOS, iOS, Android) in which a Laya decision model plays
+real-time Tetris through `DecisionEngine`:
+
+- One backbone GGUF in a `LlamaEngine` shared by two heads: the published base
+  head and an optional Tetris-tuned head
+- Yes/no, choice, and knockout players, each piece's questions sent in one
+  `systemOneBatch` call while gravity keeps running
+- First-launch downloads of the pinned `fr0stbit3/laya-gguf` files with
+  progress, cached across launches
+- `bin/bench.dart` for headless games with local model files, and
+  `bin/make_dataset.dart` for the tuned head's training data
+
+**Best for:** Decision models in a real-time Flutter app
+
+**Run:**
+```bash
+cd laya_tetris
+flutter pub get
+flutter run -d macos
+```
+
 ## Testing
 
 - `basic_app` (Dart console):
@@ -154,12 +176,19 @@ cd tui_coding_agent
 dart test
 ```
 
-Note: `chat_app` uses Flutter libraries (`dart:ui`), so `dart test` is not
-the correct runner for that example.
+- `laya_tetris` (Flutter decision-model game):
+
+```bash
+cd laya_tetris
+flutter test
+```
+
+Note: `chat_app` and `laya_tetris` use Flutter libraries (`dart:ui`), so
+`dart test` is not the correct runner for those examples.
 
 ## Quick Start
 
-1. **Choose an example**: Basic (console), Chat (Flutter), API Server (Relic), llama.cpp-style CLI clone (Dart), or TUI coding agent (Dart + nocterm)
+1. **Choose an example**: Basic (console), Chat (Flutter), API Server (Relic), llama.cpp-style CLI clone (Dart), TUI coding agent (Dart + nocterm), or Laya Tetris (Flutter decision model)
 2. **Download a model** (see each example's README)
 3. **Run the example**: Follow instructions in each subdirectory
 
@@ -207,6 +236,11 @@ example/
 │   ├── lib/            # Session, tools, and TUI components
 │   ├── pubspec.yaml    # Dependencies
 │   └── README.md       # Instructions
+├── laya_tetris/        # Flutter decision-model game
+│   ├── bin/            # Headless bench + dataset tool
+│   ├── lib/            # Game, players, and Laya loading
+│   ├── pubspec.yaml    # Dependencies
+│   └── README.md       # Instructions
 └── chat_app/           # Flutter application
     ├── lib/            # Flutter code
     ├── android/        # Android config
@@ -224,7 +258,7 @@ example/
 ## Requirements
 
 - Dart SDK 3.10.7 or higher
-- For chat_app: Flutter 3.38.0 or higher
+- For chat_app and laya_tetris: Flutter 3.38.0 or higher
 - Flutter Apple builds require deployment targets of iOS 16.4 or newer and
   macOS 14.0 or newer
 - Internet connection (for first run - downloads selected native runtime
