@@ -81,7 +81,10 @@ Result interpretation:
 
 `bin/llamadart_decision_example.dart` answers a `department` choice, an
 `urgency` score and a `refund` yes/no question about a support ticket with
-[`DecisionEngine`](../guides/decision-models). It prints each answer with its
+[`DecisionEngine`](../guides/decision-models). The questions are
+[typed keys](../guides/decision-models#typed-questions): `ChoiceKey.enumOf`
+over a `Department` enum, `ScoreKey.of` and `NoulKey.of`, each read with
+`result.answerOf(key)`. It prints each answer with its
 `confidence` and `actProbability`; `--json` adds Laya's
 `{model, answers, usage}` response.
 

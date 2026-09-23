@@ -63,7 +63,7 @@ Future<void> main(List<String> arguments) async {
     );
     stopwatch.stop();
 
-    stdout.write(formatDecisionAnswers(result));
+    stdout.write(formatTicketTriage(result));
     print(
       '\n${result.answers.length} questions in '
       '${stopwatch.elapsedMilliseconds} ms, '
@@ -77,9 +77,6 @@ Future<void> main(List<String> arguments) async {
     exitCode = 2;
   } catch (error) {
     stderr.writeln('Error: $error');
-    if ('$error'.contains('"laya.config"')) {
-      stderr.writeln("Pass the head's rl_agent_config.json with --config.");
-    }
     exitCode = 1;
   } finally {
     await decisions?.dispose();

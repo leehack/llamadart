@@ -9,52 +9,81 @@ const Map<String, Object?> defaultTicketState = {
   'body': 'We were billed twice for March. Please refund the duplicate.',
 };
 
-/// Triage questions: one choice, one score and one noul.
-final Map<String, DecisionQuestion> ticketTriageQuestions = {
-  'department': DecisionQuestion.choice(
-    'Which department should handle this request?',
-    criteria: {
-      'billing': 'invoices, payments, refunds',
-      'technical': 'bugs, outages, system errors',
-      'other': null,
-    },
-  ),
-  'urgency': DecisionQuestion.score(
-    'How urgent is this request?',
-    levels: ['not urgent', 'soon', 'critical'],
-  ),
-  'refund': DecisionQuestion.noul('Does the user request a refund?'),
-};
+/// Department that should handle a ticket; the options of [ticketDepartment].
+enum Department {
+  /// Invoices, payments and refunds.
+  billing,
+
+  /// Bugs, outages and system errors.
+  technical,
+
+  /// Any other request.
+  other,
+}
+
+/// Choice of the [Department] that should handle the ticket.
+final ChoiceKey<Department> ticketDepartment = ChoiceKey.enumOf(
+  'department',
+  'Which department should handle this request?',
+  criteria: {
+    Department.billing: 'invoices, payments, refunds',
+    Department.technical: 'bugs, outages, system errors',
+    Department.other: null,
+  },
+);
+
+/// Score of how urgent the ticket is, from level 0 (`not urgent`) to 2
+/// (`critical`).
+final ScoreKey ticketUrgency = ScoreKey.of(
+  'urgency',
+  'How urgent is this request?',
+  levels: ['not urgent', 'soon', 'critical'],
+);
+
+/// Yes/no question: whether the ticket asks for a refund.
+final NoulKey ticketRefund = NoulKey.of(
+  'refund',
+  'Does the user request a refund?',
+);
+
+/// Triage questions by id, built from [ticketDepartment], [ticketUrgency] and
+/// [ticketRefund].
+final Map<String, DecisionQuestion> ticketTriageQuestions =
+    DecisionKey.questionsOf([ticketDepartment, ticketUrgency, ticketRefund]);
 
 /// Formats [value] for display: a [String] as-is, anything else as JSON.
 String decisionValueText(Object? value) =>
     value is String ? value : jsonEncode(value);
 
-/// Formats every answer in [result] with its confidence and act probability.
-String formatDecisionAnswers(DecisionResult result) {
-  final buffer = StringBuffer();
-  for (final MapEntry(key: id, value: answer) in result.answers.entries) {
-    switch (answer) {
-      case ChoiceAnswer(:final choice, :final probabilities):
-        buffer
-          ..writeln('$id (choice): $choice')
-          ..writeln('  ${_formatProbabilities(probabilities, (key) => key)}');
-      case ScoreAnswer(:final score, :final legend, :final probabilities):
-        String level(String key) => switch (legend[key]) {
-          null => key,
-          final description => '$key ${decisionValueText(description)}',
-        };
-        buffer
-          ..writeln('$id (score): ${_fixed(score)} (expected level)')
-          ..writeln('  ${_formatProbabilities(probabilities, level)}');
-      case NoulAnswer(:final noul):
-        buffer.writeln('$id (noul): ${_fixed(noul)} (${noul >= 0.5})');
-    }
-    buffer.writeln(
-      '  confidence ${_fixed(answer.confidence)}, '
-      'actProbability ${_fixed(answer.actProbability)}',
-    );
-  }
+/// Formats the triage answers in [result], read through the triage keys, with
+/// their confidence and act probability.
+///
+/// Throws [LlamaDecisionException] when a triage key cannot read its answer
+/// from [result]; see [DecisionResultKeys.answerOf].
+String formatTicketTriage(DecisionResult result) {
+  final department = result.answerOf(ticketDepartment);
+  final urgency = result.answerOf(ticketUrgency);
+  final refund = result.answerOf(ticketRefund);
+  String level(String key) => switch (urgency.legend[key]) {
+    null => key,
+    final description => '$key ${decisionValueText(description)}',
+  };
+  final buffer = StringBuffer()
+    ..writeln('${ticketDepartment.id} (choice): ${department.value.name}')
+    ..writeln(
+      '  ${_formatProbabilities(department.probabilities, (label) => label)}',
+    )
+    ..writeln(_formatConfidence(department.answer))
+    ..writeln(
+      '${ticketUrgency.id} (score): ${_fixed(urgency.score)} (expected level)',
+    )
+    ..writeln('  ${_formatProbabilities(urgency.probabilities, level)}')
+    ..writeln(_formatConfidence(urgency))
+    ..writeln(
+      '${ticketRefund.id} (noul): ${_fixed(refund.noul)} '
+      '(${refund.noul >= 0.5})',
+    )
+    ..writeln(_formatConfidence(refund));
   return buffer.toString();
 }
 
@@ -72,5 +101,9 @@ String _formatProbabilities(
   ];
   return 'probabilities: ${options.join(', ')}';
 }
+
+String _formatConfidence(DecisionAnswer answer) =>
+    '  confidence ${_fixed(answer.confidence)}, '
+    'actProbability ${_fixed(answer.actProbability)}';
 
 String _fixed(double value) => value.toStringAsFixed(4);
