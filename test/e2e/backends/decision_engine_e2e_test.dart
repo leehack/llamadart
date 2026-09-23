@@ -189,6 +189,16 @@ void main() {
         }
       }
 
+      if (backend != GpuBackend.cpu &&
+          backend != GpuBackend.auto &&
+          !(capabilities.backendName ?? '').toLowerCase().contains(
+            backend.name,
+          )) {
+        failures.add(
+          'requested ${backend.name}, but the model runs on '
+          '${capabilities.backendName}',
+        );
+      }
       if (backend == GpuBackend.cpu &&
           decisionEngine.info.deviceName != 'CPU') {
         failures.add(
@@ -271,6 +281,54 @@ void main() {
     } finally {
       await decisions?.dispose();
       await engine.dispose();
+    }
+  });
+
+  test('rejects a config longer than the encoder was trained for', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final headPath = _requiredFile(_headPathKey);
+    if (modelPath == null || headPath == null) {
+      return;
+    }
+    final engine = LlamaEngine(LlamaBackend());
+    final tempDir = Directory.systemTemp.createTempSync(
+      'decision_long_config_',
+    );
+    try {
+      await engine.loadModel(
+        modelPath,
+        modelParams: ModelParams(
+          contextSize: 512,
+          preferredBackend: _backend(),
+          gpuLayers: 0,
+        ),
+      );
+      final head = await engine.loadDecisionHeadBackend(
+        headPath,
+        configPath: _optionalFile(_configPathKey),
+      );
+      final config = jsonDecode(head.configJson) as Map<String, Object?>;
+      await engine.freeDecisionHeadBackend(head.handle);
+      final longConfig = File('${tempDir.path}/rl_agent_config.json')
+        ..writeAsStringSync(jsonEncode({...config, 'max_len': 1 << 20}));
+
+      await expectLater(
+        DecisionEngine.load(
+          engine,
+          headPath: headPath,
+          configPath: longConfig.path,
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('but the loaded encoder was trained for'),
+          ),
+        ),
+      );
+    } finally {
+      await engine.dispose();
+      tempDir.deleteSync(recursive: true);
     }
   });
 

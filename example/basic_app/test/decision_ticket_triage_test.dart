@@ -44,11 +44,11 @@ DecisionResult _triage({String choice = 'billing', double refund = 0.91693}) =>
 void main() {
   test('ticketTriageQuestions are the Laya ticket questions in key order', () {
     expect(
-      {
+      jsonEncode({
         for (final MapEntry(:key, :value) in ticketTriageQuestions.entries)
           key: value.toJson(),
-      },
-      {
+      }),
+      jsonEncode({
         'department': {
           'type': 'choice',
           'instructions': 'Which department should handle this request?',
@@ -67,11 +67,11 @@ void main() {
           'type': 'noul',
           'instructions': 'Does the user request a refund?',
         },
-      },
+      }),
     );
   });
 
-  test('formatTicketTriage prints every answer in question order', () {
+  test('formatTicketTriage prints department, urgency and refund', () {
     expect(
       formatTicketTriage(_triage()),
       'department (choice): billing\n'

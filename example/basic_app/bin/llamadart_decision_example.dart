@@ -75,6 +75,15 @@ Future<void> main(List<String> arguments) async {
   } on LlamaUnsupportedException catch (error) {
     stderr.writeln('Cannot run this decision model: $error');
     exitCode = 2;
+  } on LlamaModelException catch (error) {
+    stderr.writeln('Error: $error');
+    if (engine.isReady && decisions == null && options.configSource == null) {
+      stderr.writeln(
+        'If the head has no laya.config metadata, pass its '
+        'rl_agent_config.json with --config.',
+      );
+    }
+    exitCode = 1;
   } catch (error) {
     stderr.writeln('Error: $error');
     exitCode = 1;
