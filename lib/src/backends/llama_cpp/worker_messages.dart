@@ -372,6 +372,56 @@ class TextToSpeechSynthesizeRequest extends WorkerRequest {
 /// Fire-and-forget request to cancel active native speech synthesis.
 class TextToSpeechCancelRequest {}
 
+/// Request for decision-model support of a loaded model.
+class DecisionCapabilitiesRequest extends WorkerRequest {
+  /// Handle of the loaded model.
+  final int modelHandle;
+
+  /// Creates a decision capability request.
+  DecisionCapabilitiesRequest(this.modelHandle, super.sendPort);
+}
+
+/// Request to load a decision head for a loaded model.
+class DecisionHeadLoadRequest extends WorkerRequest {
+  /// Handle of the loaded encoder model.
+  final int modelHandle;
+
+  /// Path to the head's safetensors file.
+  final String headPath;
+
+  /// Path to a JSON config for heads without `laya.config` metadata.
+  final String? configPath;
+
+  /// Creates a decision head load request.
+  DecisionHeadLoadRequest(
+    this.modelHandle,
+    this.headPath,
+    this.configPath,
+    super.sendPort,
+  );
+}
+
+/// Request to run encoder inputs through a loaded decision head.
+class DecisionRunRequest extends WorkerRequest {
+  /// Handle of the loaded decision head.
+  final int headHandle;
+
+  /// Encoder inputs, one per question, in order.
+  final List<BackendDecisionSequence> sequences;
+
+  /// Creates a decision run request.
+  DecisionRunRequest(this.headHandle, this.sequences, super.sendPort);
+}
+
+/// Request to free a decision head; answered with [DoneResponse].
+class DecisionHeadFreeRequest extends WorkerRequest {
+  /// Handle of the decision head.
+  final int headHandle;
+
+  /// Creates a decision head free request.
+  DecisionHeadFreeRequest(this.headHandle, super.sendPort);
+}
+
 /// Request for system information (VRAM/RAM).
 class SystemInfoRequest extends WorkerRequest {
   /// Creates a new [SystemInfoRequest].
@@ -517,6 +567,33 @@ class TextToSpeechResultResponse {
     required this.framesGenerated,
     required this.truncated,
   }) : pcm = TransferableTypedData.fromList(<TypedData>[samples]);
+}
+
+/// Worker response containing decision-model support.
+class DecisionCapabilitiesResponse {
+  /// Capability snapshot from the native runtime.
+  final BackendDecisionCapabilities capabilities;
+
+  /// Creates a decision capability response.
+  DecisionCapabilitiesResponse(this.capabilities);
+}
+
+/// Worker response describing a loaded decision head.
+class DecisionHeadLoadResponse {
+  /// The loaded head.
+  final BackendDecisionHeadInfo head;
+
+  /// Creates a decision head load response.
+  DecisionHeadLoadResponse(this.head);
+}
+
+/// Worker response containing raw decision-head outputs.
+class DecisionRunResponse {
+  /// Outputs in request order.
+  final List<BackendDecisionOutput> outputs;
+
+  /// Creates a decision run response.
+  DecisionRunResponse(this.outputs);
 }
 
 /// Response containing a list of token IDs.

@@ -88,6 +88,9 @@ class LlamaEngine {
   Map<String, String>? _cachedModelMetadata;
   LlamaLogLevel _dartLogLevel = LlamaLogLevel.none;
   LlamaLogLevel _nativeLogLevel = LlamaLogLevel.none;
+  final Map<int, int> _decisionHeadHandles = <int, int>{};
+  int _nextDecisionHeadHandle = 1;
+  int _decisionHeadEpoch = 0;
 
   /// Configures logging for the library.
   ///
@@ -544,6 +547,8 @@ class LlamaEngine {
     if (!isReady && _modelHandle == null && _mmContextHandle == null) return;
     LlamaLogger.instance.info('Unloading model...');
     _isReady = false;
+    _decisionHeadHandles.clear();
+    _decisionHeadEpoch++;
     backend.cancelGeneration();
     if (_contextHandle != null) {
       await backend.contextFree(_contextHandle!);
@@ -1322,6 +1327,116 @@ class LlamaEngine {
     if (candidate is BackendTextToSpeech) {
       (candidate as BackendTextToSpeech).cancelTextToSpeech();
     }
+  }
+
+  /// Returns decision-model support for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// Applications should prefer `DecisionEngine.capabilitiesFor`.
+  Future<BackendDecisionCapabilities> get backendDecisionCapabilities async {
+    final candidate = backend;
+    if (candidate is! BackendDecision) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active backend does not expose decision models.',
+      );
+    }
+    final modelHandle = _modelHandle;
+    if (!_isReady || modelHandle == null) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason: 'Load a model first.',
+      );
+    }
+    return (candidate as BackendDecision).decisionCapabilities(modelHandle);
+  }
+
+  /// Loads the decision head at [headPath] for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// [configPath] names a JSON config for head files without `laya.config`
+  /// metadata. The returned [BackendDecisionHeadInfo.handle] is an engine
+  /// handle that this engine never reuses, not the backend's own handle; pass
+  /// it to [runDecisionBackend] and [freeDecisionHeadBackend]. The head stays
+  /// usable until it is freed or the model is unloaded.
+  Future<BackendDecisionHeadInfo> loadDecisionHeadBackend(
+    String headPath, {
+    String? configPath,
+  }) async {
+    final decisionBackend = _decisionBackend();
+    _ensureReady(requireContext: false);
+    final epoch = _decisionHeadEpoch;
+    final head = await decisionBackend.decisionHeadLoad(
+      _modelHandle!,
+      headPath,
+      configPath: configPath,
+    );
+    if (epoch != _decisionHeadEpoch) {
+      await decisionBackend
+          .decisionHeadFree(head.handle)
+          .catchError((Object _) {});
+      throw LlamaStateException(
+        'The model was unloaded while its decision head was loading. Load '
+        'the model and the DecisionEngine again.',
+      );
+    }
+    final handle = _nextDecisionHeadHandle++;
+    _decisionHeadHandles[handle] = head.handle;
+    return BackendDecisionHeadInfo(
+      handle: handle,
+      hiddenSize: head.hiddenSize,
+      clsToken: head.clsToken,
+      sepToken: head.sepToken,
+      maskToken: head.maskToken,
+      maskText: head.maskText,
+      configJson: head.configJson,
+      deviceName: head.deviceName,
+    );
+  }
+
+  /// Runs [sequences] through the decision head [headHandle].
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`, which
+  /// builds the sequences and decodes the outputs. [headHandle] is a handle
+  /// returned by [loadDecisionHeadBackend]. Throws [LlamaStateException] when
+  /// it is not loaded on this engine, such as after it was freed or its model
+  /// was unloaded.
+  Future<List<BackendDecisionOutput>> runDecisionBackend(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) async {
+    final backendHandle = _decisionHeadHandles[headHandle];
+    if (backendHandle == null) {
+      throw LlamaStateException(
+        'Decision head $headHandle is not loaded on this engine; it was '
+        'freed, its model was unloaded, or it was never loaded. Load the '
+        'DecisionEngine again.',
+      );
+    }
+    return _decisionBackend().decisionRun(backendHandle, sequences);
+  }
+
+  /// Frees the decision head [headHandle].
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// [headHandle] is a handle returned by [loadDecisionHeadBackend]. Does
+  /// nothing when it is not loaded on this engine, such as after it was freed
+  /// or its model was unloaded.
+  Future<void> freeDecisionHeadBackend(int headHandle) async {
+    final backendHandle = _decisionHeadHandles.remove(headHandle);
+    if (backendHandle == null) return;
+    await _decisionBackend().decisionHeadFree(backendHandle);
+  }
+
+  BackendDecision _decisionBackend() {
+    final candidate = backend;
+    if (candidate is! BackendDecision) {
+      throw LlamaUnsupportedException(
+        'The active backend does not expose decision models.',
+      );
+    }
+    return candidate as BackendDecision;
   }
 
   // ============================================================

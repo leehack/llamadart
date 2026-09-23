@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -167,6 +168,168 @@ void main() {
         expect(detokenize, isA<DetokenizeResponse>());
       } finally {
         await _disposeWorker(worker);
+      }
+    });
+
+    test('answers decision requests for unknown handles', () async {
+      final worker = await _spawnWorker();
+
+      try {
+        final capabilities = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionCapabilitiesRequest(-1, sendPort),
+        );
+        expect(capabilities, isA<DecisionCapabilitiesResponse>());
+        final snapshot =
+            (capabilities as DecisionCapabilitiesResponse).capabilities;
+        expect(snapshot.isSupported, isFalse);
+        expect(snapshot.unsupportedReason, contains('handle -1'));
+
+        final load = await _sendRequest(
+          worker.sendPort,
+          (sendPort) =>
+              DecisionHeadLoadRequest(-1, 'head.safetensors', null, sendPort),
+        );
+        expect(load, isA<ErrorResponse>());
+        expect((load as ErrorResponse).kind, WorkerErrorKind.state);
+
+        final run = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionRunRequest(-1, const [], sendPort),
+        );
+        expect(run, isA<ErrorResponse>());
+        expect((run as ErrorResponse).kind, WorkerErrorKind.state);
+
+        final free = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionHeadFreeRequest(-1, sendPort),
+        );
+        expect(free, isA<DoneResponse>());
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('routes decision requests and their typed lists', () async {
+      final service = _DecisionService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final capabilities = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionCapabilitiesRequest(5, sendPort),
+        );
+        expect(
+          (capabilities as DecisionCapabilitiesResponse)
+              .capabilities
+              .isSupported,
+          isTrue,
+        );
+        expect(service.capabilityModels, [5]);
+
+        final load = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionHeadLoadRequest(
+            5,
+            'head.safetensors',
+            'config.json',
+            sendPort,
+          ),
+        );
+        final head = (load as DecisionHeadLoadResponse).head;
+        expect(head.handle, 9);
+        expect(head.maskText, '[MASK]');
+        expect(service.loads, [(5, 'head.safetensors', 'config.json')]);
+
+        final run = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionRunRequest(9, [
+            for (final (markers, type) in [
+              ([1, 2], DecisionQuestionType.noul),
+              ([0], DecisionQuestionType.choice),
+              ([2, 0, 1], DecisionQuestionType.score),
+            ])
+              BackendDecisionSequence(
+                tokens: Int32List.fromList([1, 2, 3]),
+                markers: Int32List.fromList(markers),
+                questionType: type,
+              ),
+          ], sendPort),
+        );
+        final outputs = (run as DecisionRunResponse).outputs;
+        expect(outputs, hasLength(3));
+        expect(outputs.first.logits, isA<Float32List>());
+        expect(
+          [for (final output in outputs) output.logits],
+          [
+            [1.0, 2.0],
+            [0.0],
+            [2.0, 0.0, 1.0],
+          ],
+        );
+        expect(outputs.first.actLogits, [2.0, -2.0]);
+        final received = service.runs.single;
+        expect(received.$1, 9);
+        expect(received.$2.first.tokens, isA<Int32List>());
+        expect(received.$2.first.tokens, [1, 2, 3]);
+        expect(
+          [for (final sequence in received.$2) sequence.questionType],
+          [
+            DecisionQuestionType.noul,
+            DecisionQuestionType.choice,
+            DecisionQuestionType.score,
+          ],
+        );
+
+        final free = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => DecisionHeadFreeRequest(9, sendPort),
+        );
+        expect(free, isA<DoneResponse>());
+        expect(service.freedHeads, [9]);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('preserves decision error categories', () async {
+      final cases = <(Object, WorkerErrorKind)>[
+        (LlamaModelException('bad head tensor'), WorkerErrorKind.model),
+        (LlamaStateException('head 9 is not loaded'), WorkerErrorKind.state),
+        (
+          LlamaInferenceException('sequence 0 has no markers'),
+          WorkerErrorKind.inference,
+        ),
+        (
+          LlamaUnsupportedException('not a ModernBERT encoder'),
+          WorkerErrorKind.unsupported,
+        ),
+        (
+          LlamaContextException('encoder context failed'),
+          WorkerErrorKind.context,
+        ),
+      ];
+      final requests = <WorkerRequest Function(SendPort)>[
+        (sendPort) => DecisionHeadLoadRequest(1, 'h', null, sendPort),
+        (sendPort) => DecisionRunRequest(1, const [], sendPort),
+        (sendPort) => DecisionHeadFreeRequest(1, sendPort),
+        (sendPort) => DecisionCapabilitiesRequest(1, sendPort),
+      ];
+
+      for (final (exception, expectedKind) in cases) {
+        final worker = await _startWorkerInCurrentIsolate(
+          _DecisionService(error: exception),
+        );
+        try {
+          for (final request in requests) {
+            final response = await _sendRequest(worker.sendPort, request);
+            expect(response, isA<ErrorResponse>());
+            expect((response as ErrorResponse).kind, expectedKind);
+            expect(response.message, isNot(contains('LlamaException:')));
+          }
+        } finally {
+          await _disposeWorker(worker);
+        }
       }
     });
 
@@ -804,6 +967,77 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
       'grammar sampler failed in this test runtime',
       'native grammar stack exhausted',
     );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _DecisionService extends LlamaCppService {
+  _DecisionService({this.error});
+
+  final Object? error;
+  final List<int> capabilityModels = <int>[];
+  final List<(int, String, String?)> loads = <(int, String, String?)>[];
+  final List<(int, List<BackendDecisionSequence>)> runs =
+      <(int, List<BackendDecisionSequence>)>[];
+  final List<int> freedHeads = <int>[];
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  BackendDecisionCapabilities decisionCapabilities(int modelHandle) {
+    if (error case final error?) throw error;
+    capabilityModels.add(modelHandle);
+    return const BackendDecisionCapabilities(isSupported: true);
+  }
+
+  @override
+  BackendDecisionHeadInfo loadDecisionHead(
+    int modelHandle,
+    String headPath,
+    String? configPath,
+  ) {
+    if (error case final error?) throw error;
+    loads.add((modelHandle, headPath, configPath));
+    return const BackendDecisionHeadInfo(
+      handle: 9,
+      hiddenSize: 4,
+      clsToken: 1,
+      sepToken: 2,
+      maskToken: 3,
+      maskText: '[MASK]',
+      configJson: '{}',
+      deviceName: 'CPU',
+    );
+  }
+
+  @override
+  List<BackendDecisionOutput> runDecision(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) {
+    if (error case final error?) throw error;
+    runs.add((headHandle, sequences));
+    return [
+      for (final sequence in sequences)
+        BackendDecisionOutput(
+          logits: Float32List.fromList([
+            for (final marker in sequence.markers) marker.toDouble(),
+          ]),
+          actLogits: Float32List.fromList([2.0, -2.0]),
+        ),
+    ];
+  }
+
+  @override
+  void freeDecisionHead(int headHandle) {
+    if (error case final error?) throw error;
+    freedHeads.add(headHandle);
   }
 
   @override

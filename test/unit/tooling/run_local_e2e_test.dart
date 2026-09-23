@@ -20,6 +20,10 @@ void main() {
       expect(result.stdout, contains('--mmproj-url <url>'));
       expect(result.stdout, contains('GGUF_AUDIO_EXPECTED_TEXT'));
       expect(result.stdout, contains('LLAMADART_LITERT_LM_LIBRARY_PATH'));
+      expect(result.stdout, contains('--head-path <path>'));
+      expect(result.stdout, contains('--config-path <path>'));
+      expect(result.stdout, contains('LLAMADART_DECISION_LOGIT_TOLERANCE'));
+      expect(result.stdout, contains('LLAMADART_DECISION_PROB_TOLERANCE'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),
@@ -36,6 +40,7 @@ void main() {
       expect(result.stdout, contains('gguf-audio-chat-smoke'));
       expect(result.stdout, contains('speech-to-text-smoke'));
       expect(result.stdout, contains('litert-lm-asr-smoke'));
+      expect(result.stdout, contains('decision-model-smoke'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -677,6 +682,116 @@ void main() {
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--model-path and --mmproj-path'));
+    });
+
+    test('dry-runs the decision model smoke with model and head', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'decision-model-smoke',
+        '--model-path',
+        'models/laya-Q8_0.gguf',
+        '--head-path',
+        'models/laya-head.safetensors',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('Scenario: decision-model-smoke'));
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_DECISION_MODEL_PATH=models/laya-Q8_0.gguf '
+          'LLAMADART_DECISION_HEAD_PATH=models/laya-head.safetensors '
+          'dart test -p vm --run-skipped -t local-only '
+          'test/e2e/backends/decision_engine_e2e_test.dart',
+        ),
+      );
+      expect(result.stdout, isNot(contains('LLAMADART_DECISION_CONFIG_PATH')));
+      expect(result.stdout, isNot(contains('LLAMADART_DECISION_BACKEND')));
+    });
+
+    test('passes the decision config path and explicit backend', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'decision-model-smoke',
+        '--model-path',
+        'models/laya-Q8_0.gguf',
+        '--head-path',
+        'checkpoint/model.safetensors',
+        '--config-path',
+        'checkpoint/rl_agent_config.json',
+        '--backend',
+        'metal',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_DECISION_HEAD_PATH=checkpoint/model.safetensors '
+          'LLAMADART_DECISION_CONFIG_PATH=checkpoint/rl_agent_config.json '
+          'LLAMADART_DECISION_BACKEND=metal dart test',
+        ),
+      );
+    });
+
+    for (final (name, args) in [
+      ('model', ['--head-path', 'models/laya-head.safetensors']),
+      ('head', ['--model-path', 'models/laya-Q8_0.gguf']),
+    ]) {
+      test('requires a decision $name path', () async {
+        final result = await runLocalE2e([
+          '--scenario',
+          'decision-model-smoke',
+          ...args,
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 64);
+        expect(
+          result.stderr,
+          contains(
+            '--model-path and --head-path are required for '
+            'decision-model-smoke.',
+          ),
+        );
+      });
+    }
+
+    test('requires a head path before a decision config path', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'decision-model-smoke',
+        '--model-path',
+        'models/laya-Q8_0.gguf',
+        '--config-path',
+        'checkpoint/rl_agent_config.json',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--config-path requires --head-path.'));
+    });
+
+    test('rejects a head path outside the decision scenario', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'text-to-speech-smoke',
+        '--model-path',
+        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        '--mmproj-path',
+        'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        '--head-path',
+        'models/laya-head.safetensors',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('--head-path is not supported by text-to-speech-smoke.'),
+      );
     });
 
     test('requires mmproj path before GGUF image path', () async {
