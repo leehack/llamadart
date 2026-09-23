@@ -37,6 +37,7 @@ class NativeAutoBackend
         BackendNativeChatGeneration,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
+        BackendDecision,
         BackendVideoRuntimeSupport {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
@@ -401,6 +402,58 @@ class NativeAutoBackend
   }
 
   @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      return Future<BackendDecisionCapabilities>.value(
+        const BackendDecisionCapabilities(
+          isSupported: false,
+          unsupportedReason: _decisionUnsupportedMessage,
+        ),
+      );
+    }
+    return (delegate as BackendDecision).decisionCapabilities(modelHandle);
+  }
+
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      throw LlamaUnsupportedException(_decisionUnsupportedMessage);
+    }
+    return (delegate as BackendDecision).decisionHeadLoad(
+      modelHandle,
+      headPath,
+      configPath: configPath,
+    );
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      throw LlamaUnsupportedException(_decisionUnsupportedMessage);
+    }
+    return (delegate as BackendDecision).decisionRun(headHandle, sequences);
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) {
+    final delegate = _delegate;
+    if (delegate is BackendDecision) {
+      return (delegate as BackendDecision).decisionHeadFree(headHandle);
+    }
+    return Future<void>.value();
+  }
+
+  @override
   Future<({int total, int free})> getVramInfo() {
     final delegate = _delegate;
     if (delegate != null) {
@@ -639,6 +692,10 @@ class NativeAutoBackend
     }
     return _NativeBackendKind.llamaCpp;
   }
+
+  static const String _decisionUnsupportedMessage =
+      'The selected native backend does not run decision models. Load a '
+      'ModernBERT encoder GGUF, which uses the llama.cpp backend.';
 
   LlamaBackend _requireDelegate() {
     final delegate = _delegate;

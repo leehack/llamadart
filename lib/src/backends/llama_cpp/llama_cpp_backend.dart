@@ -33,6 +33,7 @@ class NativeLlamaBackend
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendTextToSpeech,
+        BackendDecision,
         BackendVideoRuntimeSupport,
         BackendDartLogLevel {
   Isolate? _isolate;
@@ -955,6 +956,82 @@ class NativeLlamaBackend
     if (_textToSpeechRequestSent) {
       _sendPort?.send(TextToSpeechCancelRequest());
     }
+  }
+
+  @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(
+    int modelHandle,
+  ) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(DecisionCapabilitiesRequest(modelHandle, rp.sendPort));
+    final response = await rp.first;
+    rp.close();
+    if (response is DecisionCapabilitiesResponse) {
+      return response.capabilities;
+    }
+    throw _unexpectedDecisionResponse(response, 'capability probe');
+  }
+
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      DecisionHeadLoadRequest(modelHandle, headPath, configPath, rp.sendPort),
+    );
+    final response = await rp.first;
+    rp.close();
+    if (response is DecisionHeadLoadResponse) {
+      return response.head;
+    }
+    throw _unexpectedDecisionResponse(response, 'head load');
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      DecisionRunRequest(
+        headHandle,
+        List<BackendDecisionSequence>.of(sequences, growable: false),
+        rp.sendPort,
+      ),
+    );
+    final response = await rp.first;
+    rp.close();
+    if (response is DecisionRunResponse) {
+      return response.outputs;
+    }
+    throw _unexpectedDecisionResponse(response, 'run');
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) async {
+    if (_sendPort == null || _disposeStart != null) return;
+    final rp = ReceivePort();
+    _sendPort!.send(DecisionHeadFreeRequest(headHandle, rp.sendPort));
+    final response = await rp.first;
+    rp.close();
+    _expectDoneResponse(response, 'decision head free');
+  }
+
+  Object _unexpectedDecisionResponse(Object? response, String operation) {
+    if (response is ErrorResponse) {
+      return _workerError(response);
+    }
+    return LlamaDecisionException(
+      'Unexpected llama.cpp worker response (${response.runtimeType}) to a '
+      'decision $operation.',
+    );
   }
 
   @override

@@ -77,9 +77,12 @@ class LocalE2eRunContext {
     required this.mmprojPath,
     required this.imagePath,
     required this.audioPath,
+    required this.headPath,
+    required this.configPath,
     required this.modelUrl,
     required this.mmprojUrl,
     required this.backend,
+    required this.backendProvided,
     required this.speculativeCases,
     required this.benchmarkGpuLayers,
     required this.benchmarkMaxTokens,
@@ -110,9 +113,12 @@ class LocalE2eRunContext {
   final String? mmprojPath;
   final String? imagePath;
   final String? audioPath;
+  final String? headPath;
+  final String? configPath;
   final String? modelUrl;
   final String? mmprojUrl;
   final String backend;
+  final bool backendProvided;
   final String speculativeCases;
   final String benchmarkGpuLayers;
   final String benchmarkMaxTokens;
@@ -530,6 +536,38 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
                 '${context.projectRoot}/build/text-to-speech-smoke.wav',
           },
           description: 'Typed text-to-speech real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'decision-model-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run the Laya parity fixture through a real ModernBERT GGUF and '
+          'decision head: exact token ids, raw logits and answers.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '-p',
+            'vm',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/decision_engine_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_DECISION_MODEL_PATH': context.modelPath!,
+            'LLAMADART_DECISION_HEAD_PATH': context.headPath!,
+            if (context.configPath != null)
+              'LLAMADART_DECISION_CONFIG_PATH': context.configPath!,
+            if (context.backendProvided)
+              'LLAMADART_DECISION_BACKEND': context.backend,
+          },
+          description: 'Decision model real-model parity smoke',
         ),
       ],
     ),
@@ -1286,6 +1324,23 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.imagePath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
+  if (parsed.configPath != null && parsed.headPath == null) {
+    return LocalE2eResult(64, stderr: '--config-path requires --head-path.\n');
+  }
+  if (parsed.headPath != null && scenario.name != 'decision-model-smoke') {
+    return LocalE2eResult(
+      64,
+      stderr: '--head-path is not supported by ${scenario.name}.\n',
+    );
+  }
+  if (scenario.name == 'decision-model-smoke' &&
+      (parsed.modelPath == null || parsed.headPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path and --head-path are required for decision-model-smoke.\n',
+    );
+  }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
     return const LocalE2eResult(
       64,
@@ -1404,9 +1459,12 @@ Future<LocalE2eResult> runLocalE2e(
     mmprojPath: parsed.mmprojPath,
     imagePath: parsed.imagePath,
     audioPath: parsed.audioPath,
+    headPath: parsed.headPath,
+    configPath: parsed.configPath,
     modelUrl: parsed.modelUrl,
     mmprojUrl: parsed.mmprojUrl,
     backend: parsed.backend,
+    backendProvided: parsed.backendProvided,
     speculativeCases: parsed.speculativeCases,
     benchmarkGpuLayers: parsed.benchmarkGpuLayers,
     benchmarkMaxTokens: parsed.benchmarkMaxTokens,
@@ -1621,9 +1679,11 @@ Options:
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
   --audio-path <path>            Complete audio fixture for speech-to-text or native audio-chat smoke.
+  --head-path <path>             Decision head safetensors for decision-model-smoke.
+  --config-path <path>           Optional decision head config JSON for head files without laya.config metadata.
   --model-url <url>              Model URL for real-model web smoke.
   --mmproj-url <url>             Projector URL for real-model web smoke.
-  --backend <name>               Backend for local model scenarios (default: auto).
+  --backend <name>               Backend for local model scenarios (default: auto; decision-model-smoke: cpu).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
   --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
   --benchmark-max-tokens <n>     Max tokens for benchmark scenarios (default: 128).
@@ -1656,6 +1716,14 @@ Direct environment for tool/litert_lm_asr_smoke.dart:
 Direct environment for tool/gguf_chat_features_smoke.dart:
   GGUF_AUDIO_PATH                Optional local encoded WAV fixture.
   GGUF_AUDIO_EXPECTED_TEXT       Required exact expected answer when audio is set.
+
+Direct environment for test/e2e/backends/decision_engine_e2e_test.dart:
+  LLAMADART_DECISION_LOGIT_TOLERANCE
+                                 Largest raw marker-logit difference (default: 0.25).
+  LLAMADART_DECISION_PROB_TOLERANCE
+                                 Largest probability, confidence and noul difference
+                                 (default: 0.05); scores get twice this, and a choice
+                                 may differ when Laya's top-2 gap is within it.
 ''';
 }
 
@@ -1681,6 +1749,7 @@ class _ParsedArgs {
     required this.pythonProvided,
     required this.modelPreset,
     required this.backend,
+    required this.backendProvided,
     required this.speculativeCases,
     required this.benchmarkGpuLayers,
     required this.benchmarkMaxTokens,
@@ -1698,6 +1767,8 @@ class _ParsedArgs {
     this.mmprojPath,
     this.imagePath,
     this.audioPath,
+    this.headPath,
+    this.configPath,
     this.modelUrl,
     this.mmprojUrl,
     this.ngramSize,
@@ -1724,9 +1795,12 @@ class _ParsedArgs {
   final String? mmprojPath;
   final String? imagePath;
   final String? audioPath;
+  final String? headPath;
+  final String? configPath;
   final String? modelUrl;
   final String? mmprojUrl;
   final String backend;
+  final bool backendProvided;
   final String speculativeCases;
   final String benchmarkGpuLayers;
   final String benchmarkMaxTokens;
@@ -1754,6 +1828,7 @@ class _ParsedArgs {
     var python = 'python3';
     var pythonProvided = false;
     var backend = 'auto';
+    var backendProvided = false;
     var speculativeCases =
         'baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram';
     var benchmarkGpuLayers = '0';
@@ -1773,6 +1848,8 @@ class _ParsedArgs {
     String? mmprojPath;
     String? imagePath;
     String? audioPath;
+    String? headPath;
+    String? configPath;
     String? modelUrl;
     String? mmprojUrl;
     String? ngramSize;
@@ -1819,12 +1896,17 @@ class _ParsedArgs {
           imagePath = _readValue(args, ++index, arg);
         case '--audio-path':
           audioPath = _readValue(args, ++index, arg);
+        case '--head-path':
+          headPath = _readValue(args, ++index, arg);
+        case '--config-path':
+          configPath = _readValue(args, ++index, arg);
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
         case '--mmproj-url':
           mmprojUrl = _readValue(args, ++index, arg);
         case '--backend':
           backend = _readValue(args, ++index, arg);
+          backendProvided = true;
         case '--speculative-cases':
           speculativeCases = _readValue(args, ++index, arg);
         case '--benchmark-gpu-layers':
@@ -1875,9 +1957,12 @@ class _ParsedArgs {
       mmprojPath: mmprojPath,
       imagePath: imagePath,
       audioPath: audioPath,
+      headPath: headPath,
+      configPath: configPath,
       modelUrl: modelUrl,
       mmprojUrl: mmprojUrl,
       backend: backend,
+      backendProvided: backendProvided,
       speculativeCases: speculativeCases,
       benchmarkGpuLayers: benchmarkGpuLayers,
       benchmarkMaxTokens: benchmarkMaxTokens,
