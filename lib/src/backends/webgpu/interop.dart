@@ -53,6 +53,24 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
     WebGpuTextToSpeechOptions options,
   );
 
+  /// Returns decision-head support for the loaded model.
+  external JSPromise<JSAny?>? getDecisionCapabilities();
+
+  /// Loads a decision head from a URL for the loaded model.
+  external JSPromise<JSAny?>? loadDecisionHead(
+    String url, [
+    WebGpuDecisionHeadOptions? options,
+  ]);
+
+  /// Runs decision sequences through the encoder and the head [handle].
+  external JSPromise<JSAny?>? runDecision(
+    int handle,
+    JSArray<WebGpuDecisionSequence> sequences,
+  );
+
+  /// Frees the decision head [handle]; unknown handles are ignored.
+  external JSPromise<JSAny?>? freeDecisionHead(int handle);
+
   /// Tokenizes text.
   external JSPromise<JSAny>? tokenize(String text, [bool? addSpecial]);
 
@@ -224,4 +242,87 @@ extension type WebGpuTextToSpeechOptions._(JSObject _) implements JSObject {
     JSAny? signal,
     JSFunction? onProgress,
   });
+}
+
+/// Decision-head support reported by `getDecisionCapabilities`.
+@JS()
+@anonymous
+extension type WebGpuDecisionCapabilities._(JSObject _) implements JSObject {
+  /// Decision API version of the bridge.
+  external JSAny? get apiVersion;
+
+  /// Whether the loaded model can run decision heads.
+  external JSAny? get supported;
+
+  /// Why the loaded model cannot run decision heads.
+  external JSAny? get reason;
+}
+
+/// Decision-head load options.
+@JS()
+@anonymous
+extension type WebGpuDecisionHeadOptions._(JSObject _) implements JSObject {
+  /// Creates head load options.
+  ///
+  /// [configJson] is Laya's `rl_agent_config.json` text; without it the
+  /// bridge reads the head's `laya.config` metadata.
+  external factory WebGpuDecisionHeadOptions({
+    @JS('configJson') String? configJson,
+    @JS('onProgress') JSFunction? onProgress,
+  });
+}
+
+/// A decision head loaded by `loadDecisionHead`.
+@JS()
+@anonymous
+extension type WebGpuDecisionHeadInfo._(JSObject _) implements JSObject {
+  /// Decision API version of the bridge.
+  external JSAny? get apiVersion;
+
+  /// Bridge handle of the head.
+  external JSAny? get handle;
+
+  /// Hidden size shared by the encoder and the head.
+  external JSAny? get hiddenSize;
+
+  /// Token that starts every sequence.
+  external JSAny? get clsToken;
+
+  /// Token that separates sequence parts.
+  external JSAny? get sepToken;
+
+  /// Token placed before each option.
+  external JSAny? get maskToken;
+
+  /// Text of the mask token.
+  external JSAny? get maskText;
+
+  /// The head's Laya config as JSON text.
+  external JSAny? get configJson;
+
+  /// Name of the device the head runs on.
+  external JSAny? get deviceName;
+}
+
+/// Encoder input for one question, as `runDecision` takes it.
+@JS()
+@anonymous
+extension type WebGpuDecisionSequence._(JSObject _) implements JSObject {
+  /// Creates an encoder input.
+  external factory WebGpuDecisionSequence({
+    required JSInt32Array tokens,
+    required JSInt32Array markers,
+    @JS('questionType') required int questionType,
+  });
+}
+
+/// Raw head outputs for one sequence, as `runDecision` returns them.
+@JS()
+@anonymous
+extension type WebGpuDecisionOutput._(JSObject _) implements JSObject {
+  /// One raw logit per marker.
+  external JSAny? get logits;
+
+  /// Action-head logits.
+  external JSAny? get actLogits;
 }

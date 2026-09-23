@@ -60,8 +60,10 @@ class DecisionModelInfo {
 /// recommended because the decision path does not use the engine's own
 /// context.
 ///
-/// Supported on native llama.cpp backends. On Web and with the native
-/// LiteRT-LM backend, [load] throws [LlamaUnsupportedException].
+/// Supported on native llama.cpp backends, and on Web with llama-web-bridge
+/// assets that include the decision API (apiVersion 1). With bridge assets
+/// without decision API version 1, and with the LiteRT-LM backends, [load]
+/// throws [LlamaUnsupportedException].
 ///
 /// ```dart
 /// final engine = LlamaEngine(LlamaBackend());
@@ -137,13 +139,16 @@ class DecisionEngine {
   /// Loads the decision head at [headPath] for the model loaded in [engine].
   ///
   /// [configPath] names Laya's `rl_agent_config.json` for head files without
-  /// `laya.config` metadata, such as the official checkpoint. Throws
-  /// [LlamaUnsupportedException] when the backend or model cannot run
-  /// decision heads; [LlamaModelException] when the head file or its config
-  /// cannot be read, is malformed, or does not fit the encoder;
+  /// `laya.config` metadata, such as the official checkpoint. On Web both are
+  /// URLs resolved against the document base URL: the bridge fetches the
+  /// head, and the config is fetched in the page and passed to the bridge as
+  /// text. Throws [LlamaUnsupportedException] when the backend or model
+  /// cannot run decision heads; [LlamaModelException] when the head file or
+  /// its config cannot be read, is malformed, or does not fit the encoder;
   /// [LlamaContextException] when the head's encoder context cannot be
   /// created; and [LlamaStateException] when the model is unloaded during the
-  /// load. When a backend returns a head whose config or mask text fails
+  /// load, or on Web when the bridge rejects the load as disposed, busy or
+  /// cancelled. When a backend returns a head whose config or mask text fails
   /// validation, the head is freed and [LlamaDecisionException] is thrown.
   static Future<DecisionEngine> load(
     LlamaEngine engine, {
@@ -211,7 +216,9 @@ class DecisionEngine {
   /// encoding escapes it in non-string states. Throws [LlamaStateException]
   /// after [dispose] or once the engine's model is unloaded. A call running
   /// during an unload throws it too, unless its sequences already reached the
-  /// backend; that call returns answers from the unloaded model.
+  /// backend; that call returns answers from the unloaded model. On Web it is
+  /// also thrown once the bridge restarts its runtime, which frees the head;
+  /// load the DecisionEngine again.
   Future<DecisionResult> systemOne({
     required Object? state,
     required Map<String, DecisionQuestion> questions,

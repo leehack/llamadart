@@ -36,7 +36,8 @@ models through LiteRT-LM.
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 - Laya-style decision models on native llama.cpp through `DecisionEngine`:
   typed choice, score, and yes/no answers from a ModernBERT encoder GGUF and a
-  safetensors head, one encoder pass per question.
+  safetensors head, one encoder pass per question. Web needs WebGPU bridge
+  assets with the decision API, which no published asset tag has yet.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for

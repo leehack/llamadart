@@ -201,6 +201,10 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   physical playback, intelligibility, or speaker-reference fidelity. wasm32 TTS
   remains unsupported; use memory64.
 - `v0.1.39+` remains the compatibility floor for bridge asset capabilities.
+- Bridge assets with the decision API (apiVersion 1) run
+  [`DecisionEngine`](../guides/decision-models#web). No published tag includes
+  it yet, and the currently pinned assets report decision models as
+  unsupported.
 - The pinned `v0.1.44` bridge assets embed llama.cpp `v0.4.1`, matching the native runtime
   (`v0.4.1`, both built from upstream `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
   even though the bridge asset tag `v0.1.44` differs from the native runtime tag

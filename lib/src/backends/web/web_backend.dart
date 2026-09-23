@@ -21,8 +21,13 @@ class WebAutoBackend
         BackendGrammarConstraintsSupport,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
+        BackendDecision,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
+  static const String _decisionUnsupportedMessage =
+      'The active Web runtime does not run decision models. Load a '
+      'ModernBERT encoder GGUF, which uses the llama.cpp WebGPU bridge.';
+
   final LlamaBackend Function() _webGpuFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -214,6 +219,58 @@ class WebAutoBackend
     if (delegate is BackendTextToSpeech) {
       (delegate as BackendTextToSpeech).cancelTextToSpeech();
     }
+  }
+
+  @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      return Future<BackendDecisionCapabilities>.value(
+        const BackendDecisionCapabilities(
+          isSupported: false,
+          unsupportedReason: _decisionUnsupportedMessage,
+        ),
+      );
+    }
+    return (delegate as BackendDecision).decisionCapabilities(modelHandle);
+  }
+
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      throw LlamaUnsupportedException(_decisionUnsupportedMessage);
+    }
+    return (delegate as BackendDecision).decisionHeadLoad(
+      modelHandle,
+      headPath,
+      configPath: configPath,
+    );
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendDecision) {
+      throw LlamaUnsupportedException(_decisionUnsupportedMessage);
+    }
+    return (delegate as BackendDecision).decisionRun(headHandle, sequences);
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) {
+    final delegate = _delegate;
+    if (delegate is BackendDecision) {
+      return (delegate as BackendDecision).decisionHeadFree(headHandle);
+    }
+    return Future<void>.value();
   }
 
   @override

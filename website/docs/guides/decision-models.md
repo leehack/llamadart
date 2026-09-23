@@ -1,6 +1,6 @@
 ---
 title: Decision Models
-description: Answer typed choice, score, and yes/no questions about a state with Laya-style encoder decision models on native llama.cpp.
+description: Answer typed choice, score, and yes/no questions about a state with Laya-style encoder decision models on llama.cpp.
 ---
 
 `DecisionEngine` answers typed questions about a state with a Laya-style
@@ -19,13 +19,13 @@ yes/no condition.
 | Runtime | `DecisionEngine` |
 | --- | --- |
 | Native llama.cpp / GGUF | Supported: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head |
-| WebGPU / GGUF | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
+| WebGPU / GGUF | Supported with bridge assets that include the decision API (apiVersion 1); no published asset tag has it yet, so the currently pinned assets report unsupported and `DecisionEngine.load` throws `LlamaUnsupportedException`. See [Web](#web) |
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
 The head runs on the model's device: on CPU when the model is loaded on CPU,
 otherwise on the model's GPU. `decisions.info.deviceName` names that device,
-such as `CPU` or `MTL0`.
+such as `CPU` or `MTL0`; on Web, the bridge reports its own device name.
 
 ## Load a decision model
 
@@ -33,8 +33,8 @@ The reference assets are the community GGUF conversion
 [`fr0stbit3/laya-gguf`](https://huggingface.co/fr0stbit3/laya-gguf): the
 `laya-Q8_0.gguf` backbone (421 MB) and the `laya-head.safetensors` head
 (106 MB, F32). Load the backbone into a `LlamaEngine`, fetch the head through
-the engine's model download manager, then load the head with
-`DecisionEngine.load`:
+the engine's model download manager (native only; on Web, pass a URL as shown
+in [Web](#web)), then load the head with `DecisionEngine.load`:
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
@@ -187,9 +187,10 @@ for (final result in results) {
 ## Capabilities and model info
 
 `DecisionEngine.capabilitiesFor(engine)` reports whether a head can load on the
-engine now. Probe it after the backbone is loaded: without a model, native
-llama.cpp reports that a model must be loaded first. Web backends report
-unsupported with or without a model.
+engine now. Probe it after the backbone is loaded: without a model, it reports
+that a model must be loaded first. With a model on Web, bridge assets without
+the decision API, or with another decision API version, report unsupported and
+name the assets needed.
 
 `decisions.info` describes the loaded model: `hiddenSize`, the sequence limit
 `maxTokens`, the question-and-options budget `headMaxTokens`, and the
@@ -230,6 +231,42 @@ final official = await DecisionEngine.load(
   configPath: '/models/laya/rl_agent_config.json',
 );
 ```
+
+## Web
+
+On Web, `DecisionEngine` runs through the llama.cpp WebGPU bridge when its
+assets include the decision API (apiVersion 1). No published
+`llama-web-bridge-assets` tag includes it yet: with the currently pinned
+assets, `capabilitiesFor` reports unsupported and `DecisionEngine.load` throws
+`LlamaUnsupportedException`. LiteRT-LM Web models report unsupported too.
+
+- `headPath` and `configPath` are URLs, resolved against the document base
+  URL, so a `<base href>` applies. The engine's model download manager is not
+  available on Web; pass the head's URL instead:
+
+  ```dart
+  final head = ModelSource.huggingFace(
+    repoId: 'fr0stbit3/laya-gguf',
+    revision: 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c',
+    filePath: 'laya-head.safetensors',
+  );
+  final decisions = await DecisionEngine.load(
+    engine,
+    headPath: head.resolvedUri!.toString(),
+  );
+  ```
+
+- The bridge downloads the head into its in-memory file system, so peak memory
+  includes the whole head file. The page fetches `configPath` and passes its
+  text to the bridge; a config that cannot be fetched throws
+  `LlamaModelException`.
+- The head runs on WebGPU when the model loaded with GPU layers and on the
+  bridge CPU otherwise.
+- A bridge that restarts its runtime, for example when its worker fails during
+  a call, frees its heads. Calls then throw `LlamaStateException`; load the
+  `DecisionEngine` again.
+- Web accuracy and speed have not been measured with published bridge assets
+  yet; the table below is native.
 
 ## Accuracy and speed
 

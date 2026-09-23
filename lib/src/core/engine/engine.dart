@@ -1359,7 +1359,8 @@ class LlamaEngine {
   /// metadata. The returned [BackendDecisionHeadInfo.handle] is an engine
   /// handle that this engine never reuses, not the backend's own handle; pass
   /// it to [runDecisionBackend] and [freeDecisionHeadBackend]. The head stays
-  /// usable until it is freed or the model is unloaded.
+  /// usable until it is freed or the model is unloaded; on Web, a bridge that
+  /// restarts its runtime frees it too.
   Future<BackendDecisionHeadInfo> loadDecisionHeadBackend(
     String headPath, {
     String? configPath,
@@ -1401,7 +1402,7 @@ class LlamaEngine {
   /// builds the sequences and decodes the outputs. [headHandle] is a handle
   /// returned by [loadDecisionHeadBackend]. Throws [LlamaStateException] when
   /// it is not loaded on this engine, such as after it was freed or its model
-  /// was unloaded.
+  /// was unloaded, and on Web when a bridge runtime restart freed it.
   Future<List<BackendDecisionOutput>> runDecisionBackend(
     int headHandle,
     List<BackendDecisionSequence> sequences,

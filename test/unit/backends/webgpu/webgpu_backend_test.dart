@@ -11,7 +11,9 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' show Response, window;
+import 'package:web/web.dart' show Response, document, window;
+
+import '../../../support/fake_webgpu_decision_bridge.dart';
 
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
@@ -2658,5 +2660,176 @@ void main() {
         expect(synthesizeCallCount, 0);
       },
     );
+  });
+
+  group('WebGpuLlamaBackend decision heads', () {
+    late List<FakeDecisionBridge> bridges;
+    late bool withDecisionApi;
+    late WebGpuLlamaBackend backend;
+
+    setUp(() {
+      bridges = <FakeDecisionBridge>[];
+      withDecisionApi = true;
+      backend = WebGpuLlamaBackend(
+        bridgeFactory: ([config]) {
+          final fake = FakeDecisionBridge(
+            withDecisionApi: withDecisionApi,
+            withModelApi: true,
+          );
+          bridges.add(fake);
+          return fake.bridge;
+        },
+      );
+    });
+
+    tearDown(() => backend.dispose());
+
+    Future<void> loadModel() => backend.modelLoadFromUrl(
+      'laya-Q8_0.gguf',
+      const ModelParams(contextSize: 512),
+    );
+
+    final sequence = BackendDecisionSequence(
+      tokens: Int32List.fromList([1, 3, 20, 2]),
+      markers: Int32List.fromList([1]),
+      questionType: 0,
+    );
+
+    test('reports no model before a bridge is active', () async {
+      expect(backend, isA<BackendDecision>());
+      final capabilities = await backend.decisionCapabilities(1);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'No model is loaded on the Web bridge. Load a ModernBERT encoder GGUF '
+        'first.',
+      );
+      await expectLater(
+        backend.decisionHeadLoad(1, 'laya-head.safetensors'),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'No model is loaded on the Web bridge. Load the decision encoder '
+                'before its head.',
+          ),
+        ),
+      );
+      await expectLater(
+        backend.decisionRun(1, [sequence]),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await backend.decisionHeadFree(1);
+      expect(bridges, isEmpty);
+    });
+
+    test('reports bridge assets without the decision API', () async {
+      withDecisionApi = false;
+      await loadModel();
+
+      final capabilities = await backend.decisionCapabilities(1);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        contains(
+          'llama-web-bridge assets with the decision API (apiVersion 1)',
+        ),
+      );
+      await expectLater(
+        backend.decisionHeadLoad(1, 'laya-head.safetensors'),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
+    test('loads, runs and frees heads on the active bridge', () async {
+      await loadModel();
+      final fake = bridges.single;
+
+      final capabilities = await backend.decisionCapabilities(1);
+      final head = await backend.decisionHeadLoad(1, 'laya-head.safetensors');
+      final outputs = await backend.decisionRun(head.handle, [sequence]);
+      await backend.decisionHeadFree(head.handle);
+
+      expect(capabilities.isSupported, isTrue);
+      expect(head.handle, 1);
+      expect(outputs.single.logits, [1.0]);
+      expect(fake.calls, [
+        'loadModel laya-Q8_0.gguf',
+        'capabilities',
+        'capabilities',
+        'load ${Uri.parse(document.baseURI).resolve('laya-head.safetensors')}',
+        'run 7 1',
+        'free 7',
+      ]);
+      expect(fake.liveHandles, isEmpty);
+    });
+
+    test('frees heads with the model and never reuses handles', () async {
+      await loadModel();
+      final first = await backend.decisionHeadLoad(1, 'laya-head.safetensors');
+
+      await backend.modelFree(1);
+      await expectLater(
+        backend.decisionRun(first.handle, [sequence]),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await backend.decisionHeadFree(first.handle);
+
+      await loadModel();
+      await expectLater(
+        backend.decisionRun(first.handle, [sequence]),
+        throwsA(isA<LlamaStateException>()),
+      );
+      final second = await backend.decisionHeadLoad(1, 'laya-head.safetensors');
+
+      expect(bridges, hasLength(2));
+      expect(bridges.first.disposeCalls, 1);
+      expect(
+        bridges.first.calls.where((call) => call.startsWith('free')),
+        isEmpty,
+      );
+      expect(second.handle, 2);
+      expect(
+        bridges.last.calls.where((call) => call.startsWith('run')),
+        isEmpty,
+      );
+    });
+
+    test('forgets heads when a model reloads on the same bridge', () async {
+      await loadModel();
+      final head = await backend.decisionHeadLoad(1, 'laya-head.safetensors');
+
+      await loadModel();
+
+      expect(bridges, hasLength(1));
+      await expectLater(
+        backend.decisionRun(head.handle, [sequence]),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(
+        bridges.single.calls.where((call) => call.startsWith('run')),
+        isEmpty,
+      );
+    });
+
+    test('forgets heads on dispose', () async {
+      await loadModel();
+      final head = await backend.decisionHeadLoad(1, 'laya-head.safetensors');
+
+      await backend.dispose();
+
+      await expectLater(
+        backend.decisionRun(head.handle, [sequence]),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await backend.decisionHeadFree(head.handle);
+      expect(bridges.single.disposeCalls, 1);
+      expect(
+        bridges.single.calls.where((call) => call.startsWith('free')),
+        isEmpty,
+      );
+    });
   });
 }
