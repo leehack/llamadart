@@ -123,6 +123,11 @@ For canonical full release notes, use:
   throwing `Unrecognized schema`. Mistral Nemo and Magistral tool-call ids are
   now grammar-constrained to exactly nine alphanumerics
   ([#582](https://github.com/leehack/llamadart/issues/582)).
+- Stop a cancelled llama.cpp image or audio prompt at the next prompt chunk,
+  or between a media chunk's encode and its embedding decode, instead of after
+  the whole prompt is ingested. The native call already running still
+  finishes
+  ([#599](https://github.com/leehack/llamadart/issues/599)).
 
 ## 0.8.24
 
