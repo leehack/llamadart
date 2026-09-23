@@ -326,6 +326,29 @@ void main() {
         expect(backend.headLoads, isEmpty);
       },
     );
+
+    test('rejects a model swapped in during the capability probe', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+      final gate = backend.capabilityGate = Completer<void>();
+
+      final loading = DecisionEngine.load(engine, headPath: _headPath);
+      await backend.capabilityStarted.future;
+      await engine.unloadModel();
+      await engine.loadModel('laya-F16.gguf');
+      gate.complete();
+
+      await expectLater(
+        loading,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('unloaded while the DecisionEngine was loading'),
+          ),
+        ),
+      );
+      expect(backend.headLoads, isEmpty);
+    });
   });
 
   group('capabilitiesFor', () {
@@ -610,6 +633,25 @@ void main() {
 
       expect(results.single.answers, hasLength(rows.length));
       expect(backend.freed, [_headHandle]);
+    });
+
+    test('a batch answers its requests as they were when it started', () async {
+      final decisions = await loadDecisions();
+      final gate = backend.runGate = Completer<void>();
+      final readme = requestOf(cases['readme']!);
+      final requests = [readme];
+
+      final call = decisions.systemOneBatch(requests);
+      await backend.runStarted.future;
+      requests[0] = DecisionRequest(
+        state: 'replaced',
+        questions: {'replaced': NoulQuestion('Replaced?')},
+      );
+      gate.complete();
+      final results = await call;
+
+      expect(results.single.answers.keys, readme.questions.keys);
+      expect(results.single.questions, readme.questions);
     });
 
     test('dispose called twice during a call completes both futures', () async {

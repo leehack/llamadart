@@ -27,9 +27,9 @@ ticket questions below from the command line, as
 | Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 | LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
 
-The head runs on the model's device: on CPU when the model is loaded on CPU,
-otherwise on the model's GPU. `decisions.info.deviceName` names that device,
-such as `CPU` or `MTL0`.
+The head runs on CPU when the model is loaded on CPU, and on the model's GPU
+when a device of its backend is available, otherwise on CPU.
+`decisions.info.deviceName` names that device, such as `CPU` or `MTL0`.
 
 ## Load a decision model
 
