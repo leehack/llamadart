@@ -22,6 +22,10 @@ it falls.
 - Yes/no (`noul`) and `choice` questions sent as one `systemOneBatch` call per
   piece, or per knockout round, from the UI isolate while the llama.cpp worker
   isolate does the work.
+- A typed [`ChoiceKey.of`](../guides/decision-models#choice-values) over the
+  candidate placements in the base-head choice player, read back with
+  `answerOf` as the chosen candidate's `index` and the `optionProbabilities`.
+  The yes/no players and the knockout keep string ids.
 - Switching between GPU and CPU, backbones and thread counts at runtime by
   disposing the engine and loading a new one.
 

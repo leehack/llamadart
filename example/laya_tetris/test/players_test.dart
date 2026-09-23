@@ -262,6 +262,11 @@ void main() {
       expect(q.instructions, layaInstructions);
       expect(q.criteria['A'], pick.options.first.describe());
       expect(pick.verdict!.questions, 1);
+      expect(
+        pick.placement.bumpiness,
+        pick.options.map((o) => o.bumpiness).reduce(math.min),
+      );
+      expect(pick.verdict!.scores, hasLength(shortlistSize));
     });
 
     test('the tuned player uses only the tuned head', () async {
