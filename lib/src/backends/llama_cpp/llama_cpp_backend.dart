@@ -43,23 +43,30 @@ class NativeLlamaBackend
   int _lifecycleEpoch = 0;
   final LlamaWorkerEntrypoint _workerEntrypoint;
   final Duration _workerStartupTimeout;
+  final Allocator _textToSpeechCancelFlagAllocator;
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
   bool _textToSpeechActive = false;
   bool _textToSpeechCancelRequested = false;
   bool _textToSpeechRequestSent = false;
+  _NativeCancelFlag? _textToSpeechCancelFlag;
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a new [NativeLlamaBackend] and initializes its ports.
+  ///
+  /// [textToSpeechCancelFlagAllocator] allocates and frees the one-byte cancel
+  /// flag of each text-to-speech synthesis.
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
     Duration workerStartupTimeout = const Duration(seconds: 30),
+    Allocator textToSpeechCancelFlagAllocator = malloc,
   }) : _workerEntrypoint = workerEntrypoint,
-       _workerStartupTimeout = workerStartupTimeout {
+       _workerStartupTimeout = workerStartupTimeout,
+       _textToSpeechCancelFlagAllocator = textToSpeechCancelFlagAllocator {
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -757,6 +764,9 @@ class NativeLlamaBackend
   }
 
   Future<void> _disposeWorker() async {
+    // A synthesis claimed after this point sends its flag to the next worker,
+    // so this dispose must not free it.
+    final textToSpeechCancelFlag = _textToSpeechCancelFlag;
     _lifecycleEpoch += 1;
     _isReady = false;
     final startup = _isolateStart;
@@ -791,6 +801,7 @@ class NativeLlamaBackend
     _workerLogPort = null;
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
+    textToSpeechCancelFlag?.free();
     _activeCancelToken = null;
     _activeGenerationCleanup = null;
     _activeFreeToken = null;
@@ -885,10 +896,13 @@ class NativeLlamaBackend
     _textToSpeechActive = true;
     _textToSpeechCancelRequested = false;
     _textToSpeechRequestSent = false;
+    final cancelFlag = _NativeCancelFlag(_textToSpeechCancelFlagAllocator);
+    _textToSpeechCancelFlag = cancelFlag;
     try {
       await _ensureIsolate();
     } catch (_) {
       _textToSpeechActive = false;
+      cancelFlag.free();
       rethrow;
     }
     final rp = ReceivePort();
@@ -898,6 +912,7 @@ class NativeLlamaBackend
         contextHandle,
         mmContextHandle,
         request,
+        cancelFlag.address,
         rp.sendPort,
       ),
     );
@@ -941,6 +956,7 @@ class NativeLlamaBackend
       return await completer.future;
     } finally {
       _textToSpeechActive = false;
+      cancelFlag.free();
       await subscription.cancel();
       rp.close();
     }
@@ -952,6 +968,7 @@ class NativeLlamaBackend
       return;
     }
     _textToSpeechCancelRequested = true;
+    _textToSpeechCancelFlag?.raise();
     if (_textToSpeechRequestSent) {
       _sendPort?.send(TextToSpeechCancelRequest());
     }
@@ -1017,5 +1034,36 @@ class NativeLlamaBackend
     if (res is ChatTemplateResponse) return res.result;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during chat template application");
+  }
+}
+
+/// A one-byte cancel flag that the worker isolate reads, including from native
+/// code while a text-to-speech step runs.
+///
+/// The backend frees it after the worker's terminal response for the request
+/// that carries it, after the worker acknowledges a dispose that began after
+/// the flag was allocated, or when that request was never sent; never on
+/// cancel or on a timer.
+final class _NativeCancelFlag {
+  final Allocator _allocator;
+  Pointer<Int8>? _pointer;
+
+  /// Allocates the flag and lowers it.
+  _NativeCancelFlag(this._allocator) : _pointer = _allocator<Int8>()..value = 0;
+
+  /// The flag's native address.
+  int get address => _pointer!.address;
+
+  /// Raises the flag unless it was freed.
+  void raise() => _pointer?.value = 1;
+
+  /// Frees the flag; later calls do nothing.
+  void free() {
+    final pointer = _pointer;
+    if (pointer == null) {
+      return;
+    }
+    _pointer = null;
+    _allocator.free(pointer);
   }
 }

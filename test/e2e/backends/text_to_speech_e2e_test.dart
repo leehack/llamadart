@@ -3,14 +3,30 @@
 @Timeout(Duration(minutes: 15))
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:test/test.dart';
 
 const _modelPathKey = 'LLAMADART_TTS_MODEL_PATH';
 const _mmprojPathKey = 'LLAMADART_TTS_MMPROJ_PATH';
 const _outputPathKey = 'LLAMADART_TTS_OUTPUT_PATH';
+const _serviceRequest = BackendTextToSpeechRequest(
+  text: 'Hello from llamadart.',
+  language: 'english',
+  maxFrames: 64,
+  seed: 1,
+);
+final _cancelled = throwsA(
+  isA<LlamaTextToSpeechException>().having(
+    (error) => error.message,
+    'message',
+    'Text-to-speech synthesis was cancelled.',
+  ),
+);
 
 void main() {
   test('synthesizes a playable WAV through the public API', () async {
@@ -86,6 +102,84 @@ void main() {
       await engine.dispose();
     }
   });
+
+  test('a cancel flag raised before synthesis starts cancels it', () async {
+    await _withTextToSpeechService((service, context, projector) async {
+      final flag = calloc<Int8>()..value = 1;
+      try {
+        final progress = <BackendTextToSpeechProgress>[];
+        await expectLater(
+          service.synthesizeTextToSpeech(
+            context,
+            projector,
+            _serviceRequest,
+            flag.address,
+            onProgress: progress.add,
+          ),
+          _cancelled,
+        );
+        expect(progress, isEmpty);
+      } finally {
+        calloc.free(flag);
+      }
+    });
+  });
+
+  test('a cancel flag raised between steps stops the next step only when the '
+      'runtime can attach it', () async {
+    await _withTextToSpeechService((service, context, projector) async {
+      final attachable = service.debugMtmdEvalCallbackAddressForTesting() != 0;
+      final flag = calloc<Int8>();
+      try {
+        var steps = 0;
+        final synthesis = service.synthesizeTextToSpeech(
+          context,
+          projector,
+          _serviceRequest,
+          flag.address,
+          onProgress: (_) {
+            steps += 1;
+            flag.value = 1;
+          },
+        );
+        if (attachable) {
+          await expectLater(synthesis, _cancelled);
+          expect(steps, 1);
+        } else {
+          expect((await synthesis).samples, isNotEmpty);
+          expect(steps, greaterThan(1));
+        }
+      } finally {
+        calloc.free(flag);
+      }
+    });
+  });
+}
+
+Future<void> _withTextToSpeechService(
+  Future<void> Function(LlamaCppService service, int context, int projector)
+  body,
+) async {
+  final modelPath = _requiredFile(_modelPathKey);
+  final mmprojPath = _requiredFile(_mmprojPathKey);
+  if (modelPath == null || mmprojPath == null) {
+    return;
+  }
+  final service = LlamaCppService()..setLogLevel(LlamaLogLevel.none);
+  try {
+    service.initializeBackend();
+    const modelParams = ModelParams(
+      contextSize: 4096,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    final model = service.loadModel(modelPath, modelParams);
+    final context = service.createContext(model, modelParams);
+    final projector = service.createMultimodalContext(model, mmprojPath);
+    await body(service, context, projector);
+  } finally {
+    service.dispose();
+  }
 }
 
 String? _requiredFile(String environmentKey) {
