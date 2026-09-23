@@ -353,9 +353,11 @@ guide.
   and head, the 24 fixture rows, exact token ids and markers from the engine
   tokenizer, raw logits and `systemOne` answers within tolerance (see
   `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
-  the model offloads no layers, and off it for a model on a GPU backend; and
-  an engine disposed with a head still loaded, whose process must then exit
-  cleanly (on Metal a leaked buffer aborts the exit, which fails the runner).
+  the model offloads no layers, and off it for a model on a GPU backend; the
+  requested backend itself, not a CPU fallback; a config longer than the
+  encoder was trained for, which load rejects; and an engine disposed with a
+  head still loaded, whose process must then exit cleanly (on Metal a leaked
+  buffer aborts the exit, which fails the runner).
   Runner scenario `decision-model-smoke` (`--model-path`, `--head-path`,
   optional `--config-path` and `--backend`) and test-matrix row of the same
   id.
