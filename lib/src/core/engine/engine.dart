@@ -373,8 +373,8 @@ class LlamaEngine {
   ///
   /// On the native llama.cpp backend, throws [LlamaModelException] when
   /// [mmProjPath] is not an existing file or the runtime rejects the projector
-  /// for the loaded model, and [LlamaUnsupportedException] when the runtime
-  /// lacks the mtmd functions projector loading needs.
+  /// for the loaded model, and [LlamaUnsupportedException] only when the
+  /// runtime cannot run an mtmd function this package calls.
   Future<void> loadMultimodalProjector(String mmProjPath) {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
@@ -1200,6 +1200,9 @@ class LlamaEngine {
       await backend.supportsVision(_mmContextHandle!);
 
   /// Whether the loaded model supports audio.
+  ///
+  /// On the native llama.cpp backend, throws [LlamaUnsupportedException] only
+  /// when the runtime cannot run an mtmd function this package calls.
   Future<bool> get supportsAudio async =>
       _mmContextHandle != null &&
       await backend.supportsAudio(_mmContextHandle!);
