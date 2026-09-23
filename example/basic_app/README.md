@@ -172,7 +172,9 @@ How to translate result values:
 
 Triage a support ticket with a Laya decision model: a `department` choice, an
 `urgency` score and a `refund` yes/no question, answered by `DecisionEngine`
-without generating text. See the
+without generating text. The questions are typed keys (`ChoiceKey.enumOf` over
+a `Department` enum, `ScoreKey.of` and `NoulKey.of`), and each answer is read
+with `result.answerOf(key)`. See the
 [Decision Models guide](https://llamadart.leehack.com/docs/guides/decision-models)
 for the API.
 
@@ -247,7 +249,7 @@ dart test
 - **`bin/llamadart_sqlite_vector_example.dart`**: SQLite vector retrieval CLI example.
 - **`bin/llamadart_decision_example.dart`**: Decision model CLI example.
 - **`lib/services/decision_cli_options.dart`**: Decision CLI flags and pinned model sources.
-- **`lib/services/decision_ticket_triage.dart`**: Ticket questions and answer formatting.
+- **`lib/services/decision_ticket_triage.dart`**: Typed ticket question keys and answer formatting.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.
 - **`lib/models.dart`**: Data structures for the application.

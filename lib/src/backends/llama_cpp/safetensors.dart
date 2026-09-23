@@ -27,16 +27,7 @@ const Map<String, int> _dtypeBytes = {
 
 /// A tensor entry of a safetensors header.
 final class SafetensorsTensor {
-  SafetensorsTensor._(
-    this.name,
-    this.dtype,
-    this.shape,
-    this._begin,
-    this._end,
-  );
-
-  /// Tensor name.
-  final String name;
+  SafetensorsTensor._(this.dtype, this.shape, this._begin, this._end);
 
   /// Safetensors dtype name, such as `F32`.
   final String dtype;
@@ -95,7 +86,7 @@ final class SafetensorsFile {
     if (fileLength < 8) {
       malformed('$fileLength bytes is too short for the 8-byte header length');
     }
-    final prefix = _readExactly(path, file, 0, 8);
+    final prefix = _readExactly(path, file, 0, Uint8List(8));
     final headerLength = ByteData.sublistView(
       prefix,
     ).getUint64(0, Endian.little);
@@ -111,7 +102,7 @@ final class SafetensorsFile {
     final Object? header;
     try {
       header = jsonDecode(
-        utf8.decode(_readExactly(path, file, 8, headerLength)),
+        utf8.decode(_readExactly(path, file, 8, Uint8List(headerLength))),
       );
     } on FormatException catch (error) {
       malformed('header is not UTF-8 JSON (${error.message})');
@@ -172,7 +163,7 @@ final class SafetensorsFile {
           );
         }
       }
-      tensors[name] = SafetensorsTensor._(name, dtype, dims, begin, end);
+      tensors[name] = SafetensorsTensor._(dtype, dims, begin, end);
     }
     return SafetensorsFile._(
       path,
@@ -202,6 +193,28 @@ final class SafetensorsFile {
   /// the tensor is missing, has another dtype or cannot be read in full, and
   /// [LlamaStateException] after [close].
   Float32List readFloat32(String name) {
+    final (tensor, count) = _floatTensor(name);
+    final values = Float32List(count);
+    _readFloat32(tensor, values);
+    return values;
+  }
+
+  /// Reads tensor [name] into [target], converting it to F32.
+  ///
+  /// [target] may view native memory. Throws what [readFloat32] throws, and
+  /// [ArgumentError] when [target]'s length is not the tensor's element
+  /// count.
+  void readFloat32Into(String name, Float32List target) {
+    final (tensor, count) = _floatTensor(name);
+    if (target.length != count) {
+      throw ArgumentError(
+        'Tensor "$name" has $count elements; the target has ${target.length}.',
+      );
+    }
+    _readFloat32(tensor, target);
+  }
+
+  (SafetensorsTensor, int) _floatTensor(String name) {
     if (_closed) {
       throw LlamaStateException('Safetensors file "$path" is closed.');
     }
@@ -218,17 +231,31 @@ final class SafetensorsFile {
         'convert to F32.',
       );
     }
-    final bytes = _readExactly(
+    return (tensor, (tensor._end - tensor._begin) ~/ _dtypeBytes[dtype]!);
+  }
+
+  void _readFloat32(SafetensorsTensor tensor, Float32List target) {
+    final position = _dataStart + tensor._begin;
+    if (tensor.dtype == 'F32') {
+      _readExactly(
+        path,
+        _file,
+        position,
+        target.buffer.asUint8List(target.offsetInBytes, target.lengthInBytes),
+      );
+      return;
+    }
+    final halves = _readExactly(
       path,
       _file,
-      _dataStart + tensor._begin,
-      tensor._end - tensor._begin,
+      position,
+      Uint8List(target.length * 2),
+    ).buffer.asUint16List();
+    final bits = target.buffer.asUint32List(
+      target.offsetInBytes,
+      target.length,
     );
-    if (dtype == 'F32') return bytes.buffer.asFloat32List();
-    final halves = bytes.buffer.asUint16List();
-    final result = Float32List(halves.length);
-    final bits = result.buffer.asUint32List();
-    if (dtype == 'F16') {
+    if (tensor.dtype == 'F16') {
       final table = _halfToFloatBits;
       for (var i = 0; i < halves.length; i++) {
         bits[i] = table[halves[i]];
@@ -238,14 +265,16 @@ final class SafetensorsFile {
         bits[i] = halves[i] << 16;
       }
     }
-    return result;
   }
 
-  /// Closes the file. Later reads throw; closing again does nothing.
+  /// Closes the file. Later reads throw; closing again does nothing. A failure
+  /// to close is ignored, because the file is only read.
   void close() {
     if (_closed) return;
     _closed = true;
-    _file.closeSync();
+    try {
+      _file.closeSync();
+    } on FileSystemException catch (_) {}
   }
 }
 
@@ -253,9 +282,9 @@ Uint8List _readExactly(
   String path,
   RandomAccessFile file,
   int position,
-  int length,
+  Uint8List bytes,
 ) {
-  final bytes = Uint8List(length);
+  final length = bytes.length;
   try {
     file.setPositionSync(position);
     var read = 0;

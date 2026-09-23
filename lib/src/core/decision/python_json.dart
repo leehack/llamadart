@@ -3,8 +3,7 @@
 ///
 /// Separators are `, ` and `: `. Doubles use Python's `repr` (`1.0`, `1e-05`,
 /// `1e+16`), and `NaN`, `Infinity` and `-Infinity` are written bare, as
-/// `allow_nan=True` does. Map keys may be [String], [int], [double], [bool] or
-/// `null`; non-string keys are converted as Python converts them.
+/// `allow_nan=True` does. Map keys must be [String].
 ///
 /// With [ensureAscii], every character outside `0x20..0x7e` is escaped, as
 /// `\uXXXX` per UTF-16 code unit unless it has a short escape such as `\n`.
@@ -44,7 +43,10 @@ void _writeValue(StringBuffer out, Object? value, bool ensureAscii) {
       for (final MapEntry(:key, value: item) in value.entries) {
         if (!first) out.write(', ');
         first = false;
-        _writeString(out, _keyString(key), ensureAscii);
+        if (key is! String) {
+          throw ArgumentError.value(key, 'key', 'Map keys must be String');
+        }
+        _writeString(out, key, ensureAscii);
         out.write(': ');
         _writeValue(out, item, ensureAscii);
       }
@@ -57,19 +59,6 @@ void _writeValue(StringBuffer out, Object? value, bool ensureAscii) {
       );
   }
 }
-
-String _keyString(Object? key) => switch (key) {
-  String() => key,
-  null => 'null',
-  bool() => key ? 'true' : 'false',
-  int() => '$key',
-  double() => _floatRepr(key),
-  _ => throw ArgumentError.value(
-    key,
-    'key',
-    'keys must be String, int, double, bool or null, not ${key.runtimeType}',
-  ),
-};
 
 String _floatRepr(double value) {
   if (value.isNaN) return 'NaN';

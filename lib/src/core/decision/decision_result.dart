@@ -1,3 +1,4 @@
+import '../exceptions.dart';
 import 'decision_question.dart';
 
 /// The model's answer to one [DecisionQuestion].
@@ -74,6 +75,21 @@ final class ScoreAnswer extends DecisionAnswer {
   /// Probability of each level, keyed like [legend].
   final Map<String, double> probabilities;
 
+  /// Probability of each level, indexed by level, in an unmodifiable list.
+  ///
+  /// Reads [probabilities] under the keys `'0'` to `'K-1'`, where K is its
+  /// length, as the decision engine returns them. Throws
+  /// [LlamaDecisionException] when [probabilities] has other keys, as a
+  /// hand-built answer can.
+  List<double> get levelProbabilities => List.unmodifiable([
+    for (var i = 0; i < probabilities.length; i++)
+      probabilities['$i'] ??
+          (throw LlamaDecisionException(
+            'Score probabilities are keyed ${probabilities.keys.toList()}, '
+            'not by level 0 to ${probabilities.length - 1}.',
+          )),
+  ]);
+
   @override
   DecisionQuestionType get type => DecisionQuestionType.score;
 
@@ -133,11 +149,17 @@ class DecisionUsage {
 /// Answers to a decision request.
 class DecisionResult {
   /// Creates a result.
+  ///
+  /// [questions] are the questions that [answers] answer. The decision engine
+  /// always sets them; a result built without them, such as a test fake or a
+  /// copy of [model], [answers] and [usage] alone, has none.
   DecisionResult({
     required this.model,
     required Map<String, DecisionAnswer> answers,
     required this.usage,
-  }) : answers = Map.unmodifiable(answers);
+    Map<String, DecisionQuestion>? questions,
+  }) : answers = Map.unmodifiable(answers),
+       questions = questions == null ? null : Map.unmodifiable(questions);
 
   /// Model name reported in the response.
   final String model;
@@ -147,6 +169,13 @@ class DecisionResult {
 
   /// Token usage.
   final DecisionUsage usage;
+
+  /// The questions asked, by id, or `null` when not known.
+  ///
+  /// A typed key read checks that the question under the key's id is the
+  /// key's own question object. Without [questions] it checks only the
+  /// answer: its kind, and its option labels or level keys.
+  final Map<String, DecisionQuestion>? questions;
 
   /// The [ChoiceAnswer]s in [answers], in question order.
   Map<String, ChoiceAnswer> get choices => _answersOf<ChoiceAnswer>();

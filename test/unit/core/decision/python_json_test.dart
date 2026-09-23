@@ -106,18 +106,6 @@ final List<(String, Object?, String, String)> _portableCases = [
     '{"\u{e9}": "\u{fc}"}',
     '{"\\u00e9": "\\u00fc"}',
   ),
-  (
-    'int keys',
-    <Object?, Object?>{1: 'one', -7: 'neg'},
-    '{"1": "one", "-7": "neg"}',
-    '{"1": "one", "-7": "neg"}',
-  ),
-  (
-    'bool and null keys',
-    <Object?, Object?>{true: 't', false: 'f', null: 'n'},
-    '{"true": "t", "false": "f", "null": "n"}',
-    '{"true": "t", "false": "f", "null": "n"}',
-  ),
   ('empty key', <Object?, Object?>{'': ''}, '{"": ""}', '{"": ""}'),
   (
     'escaped key',
@@ -139,120 +127,53 @@ final List<(String, Object?, String, String)> _portableCases = [
   ),
 ];
 
-final List<(String, Object?, String, String)> _vmCases = [
-  ('positive zero', 0.0, '0.0', '0.0'),
-  ('negative zero', -0.0, '-0.0', '-0.0'),
-  ('one', 1.0, '1.0', '1.0'),
-  ('minus one', -1.0, '-1.0', '-1.0'),
-  ('one and a half', 1.5, '1.5', '1.5'),
-  ('negative fraction', -2.5, '-2.5', '-2.5'),
-  ('negative fraction below one', -0.5, '-0.5', '-0.5'),
-  ('negative small fixed', -0.001, '-0.001', '-0.001'),
-  ('tenth', 0.1, '0.1', '0.1'),
-  (
-    'inexact sum',
-    0.30000000000000004,
-    '0.30000000000000004',
-    '0.30000000000000004',
-  ),
-  ('third', 0.3333333333333333, '0.3333333333333333', '0.3333333333333333'),
-  (
-    'two thirds',
-    0.6666666666666666,
-    '0.6666666666666666',
-    '0.6666666666666666',
-  ),
-  ('hundred', 100.0, '100.0', '100.0'),
-  ('fraction', 12345.678, '12345.678', '12345.678'),
-  ('amount', 1250.5, '1250.5', '1250.5'),
-  ('pi', 3.141592653589793, '3.141592653589793', '3.141592653589793'),
-  ('milli', 0.001, '0.001', '0.001'),
-  ('smallest fixed', 0.0001, '0.0001', '0.0001'),
-  ('largest small sci', 9.99e-05, '9.99e-05', '9.99e-05'),
-  ('ten micro', 1e-05, '1e-05', '1e-05'),
-  ('small sci', 2.5e-05, '2.5e-05', '2.5e-05'),
-  ('tiny sci', 1.5e-07, '1.5e-07', '1.5e-07'),
-  ('very small', 1e-100, '1e-100', '1e-100'),
-  ('denormal', 5e-324, '5e-324', '5e-324'),
-  ('big fixed', 123456789012345.0, '123456789012345.0', '123456789012345.0'),
-  (
-    'largest fixed power',
-    1000000000000000.0,
-    '1000000000000000.0',
-    '1000000000000000.0',
-  ),
-  (
-    'largest fixed',
-    9999999999999998.0,
-    '9999999999999998.0',
-    '9999999999999998.0',
-  ),
-  (
-    'rounded fixed',
-    9007199254740992.0,
-    '9007199254740992.0',
-    '9007199254740992.0',
-  ),
-  ('smallest big sci', 1e+16, '1e+16', '1e+16'),
-  (
-    'big sci digits',
-    1.2345678901234568e+16,
-    '1.2345678901234568e+16',
-    '1.2345678901234568e+16',
-  ),
-  ('avogadro', 6.02214076e+23, '6.02214076e+23', '6.02214076e+23'),
-  ('big power', 1e+22, '1e+22', '1e+22'),
-  ('huge', 1e+100, '1e+100', '1e+100'),
-  (
-    'max double',
-    1.7976931348623157e+308,
-    '1.7976931348623157e+308',
-    '1.7976931348623157e+308',
-  ),
-  ('negative sci', -1.5e-07, '-1.5e-07', '-1.5e-07'),
-  ('negative big', -1e+16, '-1e+16', '-1e+16'),
-  ('nan', double.nan, 'NaN', 'NaN'),
-  ('infinity', double.infinity, 'Infinity', 'Infinity'),
-  ('negative infinity', double.negativeInfinity, '-Infinity', '-Infinity'),
-  (
-    'max int64',
-    int.parse('9223372036854775807'),
-    '9223372036854775807',
-    '9223372036854775807',
-  ),
-  (
-    'min int64',
-    int.parse('-9223372036854775808'),
-    '-9223372036854775808',
-    '-9223372036854775808',
-  ),
-  (
-    'doubles in list',
-    <Object?>[1.0, 2.5, -0.0],
-    '[1.0, 2.5, -0.0]',
-    '[1.0, 2.5, -0.0]',
-  ),
+final List<(String, Object?, String)> _vmCases = [
+  ('positive zero', 0.0, '0.0'),
+  ('negative zero', -0.0, '-0.0'),
+  ('one', 1.0, '1.0'),
+  ('minus one', -1.0, '-1.0'),
+  ('one and a half', 1.5, '1.5'),
+  ('negative fraction', -2.5, '-2.5'),
+  ('negative fraction below one', -0.5, '-0.5'),
+  ('negative small fixed', -0.001, '-0.001'),
+  ('tenth', 0.1, '0.1'),
+  ('inexact sum', 0.30000000000000004, '0.30000000000000004'),
+  ('third', 0.3333333333333333, '0.3333333333333333'),
+  ('two thirds', 0.6666666666666666, '0.6666666666666666'),
+  ('hundred', 100.0, '100.0'),
+  ('fraction', 12345.678, '12345.678'),
+  ('amount', 1250.5, '1250.5'),
+  ('pi', 3.141592653589793, '3.141592653589793'),
+  ('milli', 0.001, '0.001'),
+  ('smallest fixed', 0.0001, '0.0001'),
+  ('largest small sci', 9.99e-05, '9.99e-05'),
+  ('ten micro', 1e-05, '1e-05'),
+  ('small sci', 2.5e-05, '2.5e-05'),
+  ('tiny sci', 1.5e-07, '1.5e-07'),
+  ('very small', 1e-100, '1e-100'),
+  ('denormal', 5e-324, '5e-324'),
+  ('big fixed', 123456789012345.0, '123456789012345.0'),
+  ('largest fixed power', 1000000000000000.0, '1000000000000000.0'),
+  ('largest fixed', 9999999999999998.0, '9999999999999998.0'),
+  ('rounded fixed', 9007199254740992.0, '9007199254740992.0'),
+  ('smallest big sci', 1e+16, '1e+16'),
+  ('big sci digits', 1.2345678901234568e+16, '1.2345678901234568e+16'),
+  ('avogadro', 6.02214076e+23, '6.02214076e+23'),
+  ('big power', 1e+22, '1e+22'),
+  ('huge', 1e+100, '1e+100'),
+  ('max double', 1.7976931348623157e+308, '1.7976931348623157e+308'),
+  ('negative sci', -1.5e-07, '-1.5e-07'),
+  ('negative big', -1e+16, '-1e+16'),
+  ('nan', double.nan, 'NaN'),
+  ('infinity', double.infinity, 'Infinity'),
+  ('negative infinity', double.negativeInfinity, '-Infinity'),
+  ('max int64', int.parse('9223372036854775807'), '9223372036854775807'),
+  ('min int64', int.parse('-9223372036854775808'), '-9223372036854775808'),
+  ('doubles in list', <Object?>[1.0, 2.5, -0.0], '[1.0, 2.5, -0.0]'),
   (
     'double in map',
     <Object?, Object?>{'x': 0.5, 'y': 1e-07},
     '{"x": 0.5, "y": 1e-07}',
-    '{"x": 0.5, "y": 1e-07}',
-  ),
-  (
-    'double keys',
-    <Object?, Object?>{1.5: 'x', 1e+16: 'y', -0.0: 'z', 2.0: 'w'},
-    '{"1.5": "x", "1e+16": "y", "-0.0": "z", "2.0": "w"}',
-    '{"1.5": "x", "1e+16": "y", "-0.0": "z", "2.0": "w"}',
-  ),
-  (
-    'non-finite keys',
-    <Object?, Object?>{
-      double.nan: 'n',
-      double.infinity: 'i',
-      double.negativeInfinity: 'm',
-    },
-    '{"NaN": "n", "Infinity": "i", "-Infinity": "m"}',
-    '{"NaN": "n", "Infinity": "i", "-Infinity": "m"}',
   ),
 ];
 
@@ -268,10 +189,10 @@ void main() {
 
   // Web numbers cannot tell 1.0 from 1 or hold the int64 range.
   group('pythonJsonDumps matches Python for VM numbers', () {
-    for (final (label, value, plain, ascii) in _vmCases) {
+    for (final (label, value, expected) in _vmCases) {
       test(label, () {
-        expect(pythonJsonDumps(value), plain);
-        expect(pythonJsonDumps(value, ensureAscii: true), ascii);
+        expect(pythonJsonDumps(value), expected);
+        expect(pythonJsonDumps(value, ensureAscii: true), expected);
       });
     }
   }, testOn: 'vm');
@@ -293,13 +214,20 @@ void main() {
       }
     });
 
-    test('map keys', () {
-      expect(
-        () => pythonJsonDumps(<Object?, Object?>{
-          <int>[1]: 'list key',
-        }),
-        throwsArgumentError,
-      );
+    test('non-string map keys', () {
+      for (final key in <Object?>[
+        1,
+        1.5,
+        true,
+        null,
+        <int>[1],
+      ]) {
+        expect(
+          () => pythonJsonDumps(<Object?, Object?>{key: 'value'}),
+          throwsArgumentError,
+          reason: '$key',
+        );
+      }
     });
   });
 }
