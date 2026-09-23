@@ -8,6 +8,7 @@ The repository ships multiple examples for different integration styles.
 
 - [Basic App](./basic-app): minimal Dart console usage.
 - [Chat App](./chat-app): Flutter UI with settings and streaming.
+- [Laya Tetris](./laya-tetris): Flutter game played by a decision model.
 - [llamadart CLI](./llamadart-cli): llama.cpp-style command-line workflow.
 - [llamadart Server](./llamadart-server): OpenAI-compatible local HTTP server.
 - [TUI Coding Agent](./tui-coding-agent): nocterm-based coding assistant flow.
@@ -19,6 +20,7 @@ The repository ships multiple examples for different integration styles.
 - Learn local embedding + vector database retrieval: use Basic App SQLite vector CLI.
 - Learn decision models: use Basic App decision CLI.
 - Build a product UI: start with Chat App.
+- Run decision models in a real-time app: start with Laya Tetris.
 - Need terminal workflow parity: start with llama CLI.
 - Need HTTP integration for tools/agents: start with llamadart Server.
 - Need an interactive coding-agent terminal UI: start with TUI Coding Agent.

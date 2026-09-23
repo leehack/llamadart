@@ -310,8 +310,9 @@ Changes touching parsers, grammars, streaming, backend routing, capabilities,
 artifact consumers, release automation, or regression policy require an
 independent blocking review pass bound to the exact candidate head SHA and base
 SHA (`tool/testing/high_risk_readiness.dart`, `doc/high_risk_pre_merge_readiness.md`).
-Self-approval is prohibited, and the standalone `qa` profile is retired in favor
-of an independent operator-owned or fresh Codex adversarial audit identity.
+The auditor runs a blocking-only adversarial review and is an operator or a
+fresh agent session that took no part in the implementation, never the PR
+author or the retired standalone `qa` identity.
 The local evaluator derives the changed-file inventory from Git and never emits
 operational readiness. Until the separately reviewed GitHub App, auditor
 authentication, and conditional ruleset boundary exist, a valid high-risk run

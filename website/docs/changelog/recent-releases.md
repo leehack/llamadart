@@ -27,6 +27,9 @@ For canonical full release notes, use:
 - Add `example/basic_app/bin/llamadart_decision_example.dart`, a console demo
   that triages a support ticket with `DecisionEngine`
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add `example/laya_tetris`, a Flutter app in which a Laya decision model
+  plays real-time Tetris through `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Run `DecisionEngine` on WebGPU through the bridge decision API
   (apiVersion 1), which bridge assets `v0.1.47+` include
   ([#604](https://github.com/leehack/llamadart/issues/604)).

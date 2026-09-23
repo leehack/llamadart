@@ -641,6 +641,47 @@ void main() {
       expect(bound['worst_ms'], budget + 1, reason: id);
     }
   });
+  test('both cancel bounds pass at 500 ms and fail just past it', () async {
+    final adapters = <String, FakeSpeech Function(double)>{
+      'cancel_latency': (ms) => FakeSpeech()..cancelLatencyMs = ms,
+      'immediate_cancel_latency': (ms) =>
+          FakeSpeech()..immediateCancelLatencyMs = ms,
+    };
+    for (final MapEntry(key: name, value: adapter) in adapters.entries) {
+      for (final (latency, within) in [
+        (499.999, true),
+        (500.0, true),
+        (500.001, false),
+      ]) {
+        final reason = '$name at $latency ms';
+        final result = await runSpeechValidation(
+          adapter(latency),
+          residentBytes: stableResidentBytes,
+        );
+        final bound = (result['checks'] as List).singleWhere(
+          (row) => row['id'] == '${name}_bound',
+        );
+        expect(bound['budget_ms'], 500.0, reason: reason);
+        expect(bound['status'], within ? 'PASS' : 'FAIL', reason: reason);
+        final reported = (result['bounds'] as Map)['${name}_ms'] as Map;
+        expect(reported['budget'], 500.0, reason: reason);
+        expect(reported['within_budget'], within, reason: reason);
+        expect(result['functional_pass'], within, reason: reason);
+      }
+    }
+  });
+  test('the in-flight cancel bound reports a lead fraction of 0.5', () async {
+    final result = await runSpeechValidation(
+      FakeSpeech(),
+      residentBytes: stableResidentBytes,
+    );
+    final bound = (result['checks'] as List).singleWhere(
+      (row) => row['id'] == 'cancel_latency_bound',
+    );
+    expect(bound['lead_fraction'], 0.5);
+    final reported = (result['bounds'] as Map)['cancel_latency_ms'] as Map;
+    expect(reported['lead_fraction'], 0.5);
+  });
   test('a cancellation reporting an invalid measurement fails', () async {
     for (final (report, message) in <(Map<String, Object?>, String)>[
       ({'cancelled': false}, 'Cancellation not confirmed'),
@@ -755,6 +796,31 @@ void main() {
     expect(bound['peak_rss_growth'], speechPeakRssGrowthBudget);
     expect(bound['status'], 'PASS');
     expect(result['functional_pass'], true);
+  });
+  test('memory growth passes at 1.10x and fails just past it', () async {
+    const baseline = 1 << 52;
+    final atBudget = (baseline * 1.10).toInt();
+    for (final (peak, within) in [
+      (atBudget - 1, true),
+      (atBudget, true),
+      (atBudget + 1, false),
+    ]) {
+      final reason = 'peak offset ${peak - atBudget}';
+      final adapter = FakeSpeech();
+      final result = await runSpeechValidation(
+        adapter,
+        residentBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
+      );
+      final bound = (result['checks'] as List).singleWhere(
+        (row) => row['id'] == 'peak_memory_bound',
+      );
+      expect(bound['growth_budget'], 1.10, reason: reason);
+      expect(bound['status'], within ? 'PASS' : 'FAIL', reason: reason);
+      final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+      expect(reported['growth_budget'], 1.10, reason: reason);
+      expect(reported['within_budget'], within, reason: reason);
+      expect(result['functional_pass'], within, reason: reason);
+    }
   });
   test('one unmeasurable resident sample skips the bound', () async {
     final adapter = FakeSpeech();
@@ -1173,12 +1239,7 @@ void main() {
     expect(cancelled['cancelled'], isTrue);
     expect(cancelled['cancel_in_flight'], isTrue);
     expect(cancelled['reference_generation_ms'], reference);
-    expect(speechCancelInFlightLeadFraction, greaterThan(0));
-    expect(speechCancelInFlightLeadFraction, lessThan(1));
-    expect(
-      cancelled['cancel_after_ms'],
-      greaterThanOrEqualTo(reference * speechCancelInFlightLeadFraction),
-    );
+    expect(cancelled['cancel_after_ms'], greaterThanOrEqualTo(reference * 0.5));
     expect(cancelled['cancel_latency_ms'], isA<double>());
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
   });
