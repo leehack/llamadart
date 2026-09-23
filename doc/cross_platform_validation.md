@@ -980,10 +980,22 @@ the direct command also accepts the other primary CPU chat profiles.
 Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
-Cases cover generation, immediate cancellation, subsequent request, invalid
-input/recovery, independent reload and cleanup. GGUF STT additionally compares
-file and bytes inputs. TTS rejects silent, nonfinite or truncated output;
-playability is not a listening-quality assertion. Its first playable audio is
+Cases cover generation, cancellation, subsequent request, invalid
+input/recovery, independent reload and cleanup. Further
+cancel/dispose/load/generate cycles then run, and a `bounds` block records the
+measured cancellation latency and peak resident set against the budgets
+described in `packages/llamadart_validation/assets/speech/README.md`. The
+single-shot checks and every cycle each cancel twice: once as soon as the task
+is handed back, the window in which `tts` cancellations were dropped until
+[#596](https://github.com/leehack/llamadart/pull/596), and once after a wait.
+The second must report `cancel_in_flight`, which is true only if the adapter
+had not seen the task finish when it cancelled; it cannot show that the
+generation had begun. Exceeding any budget fails the run; if resident memory
+cannot be sampled, the memory bound records `SKIP` with a reason, and that is
+the only check a passing run may leave unmeasured.
+GGUF STT additionally compares file and bytes inputs.
+TTS rejects silent, nonfinite or truncated output; playability is not a
+listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the
 transcript and chat response and writes the synthesized response WAV.
 

@@ -18,6 +18,7 @@ class VoiceStage implements SpeechValidationAdapter {
   @override
   Future<Map<String, Object?>> execute({
     bool cancel = false,
+    bool cancelImmediately = false,
     bool invalid = false,
     bool bytesInput = false,
   }) async => output;
