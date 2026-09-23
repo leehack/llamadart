@@ -66,7 +66,7 @@ typedef _DecodeImageChunkDart =
       Pointer<Void>,
     );
 
-/// The mtmd functions that `mtmd_helper_eval_chunks` calls, resolved from one
+/// The mtmd functions [evalMtmdChunksUntilCancelled] calls, resolved from one
 /// library.
 final class MtmdChunkEvalApi {
   /// Creates an API from resolved functions.
