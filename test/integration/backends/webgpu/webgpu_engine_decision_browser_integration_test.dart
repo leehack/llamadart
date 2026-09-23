@@ -92,6 +92,51 @@ void main() {
     expect(fake.liveHandles, isEmpty);
   });
 
+  test('reads typed keys from Web results', () async {
+    await loadModel();
+    final decisions = await DecisionEngine.load(
+      engine,
+      headPath: 'laya-head.safetensors',
+    );
+    addTearDown(decisions.dispose);
+    final department = ChoiceKey.enumOf(
+      'department',
+      'Which department?',
+      criteria: {
+        _Department.billing: null,
+        _Department.technical: null,
+        _Department.other: null,
+      },
+    );
+    final urgency = ScoreKey.of(
+      'urgency',
+      'How urgent?',
+      levels: ['low', 'high'],
+    );
+    final refund = NoulKey.of('refund', 'Refund requested?');
+
+    final result = await decisions.systemOne(
+      state: 'Billed twice.',
+      questions: DecisionKey.questionsOf([department, urgency, refund]),
+    );
+
+    expect(bridges.single.lastSequences.map((s) => s.questionType), [0, 1, 2]);
+    expect(result.questions!['department'], same(department.question));
+    expect(result.answerOf(department).value, _Department.billing);
+    expect(result.answerOf(urgency).levelProbabilities, hasLength(2));
+    expect(result.answerOf(refund).noul, result.nouls['refund']!.noul);
+    expect(
+      () => result.answerOf(NoulKey.of('refund', 'Refund requested?')),
+      throwsA(
+        isA<LlamaDecisionException>().having(
+          (error) => error.message,
+          'message',
+          startsWith('Result question "refund" is not this key\'s question'),
+        ),
+      ),
+    );
+  });
+
   test('fetches configPath in the page', () async {
     const config = '{"max_len": 48, "head_max_len": 24}';
     final url = URL.createObjectURL(
@@ -196,3 +241,5 @@ void main() {
     },
   );
 }
+
+enum _Department { billing, technical, other }

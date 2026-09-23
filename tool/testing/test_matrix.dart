@@ -429,7 +429,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'decision-model-smoke --model-path <laya.gguf> '
         '--head-path <laya-head.safetensors> '
-        '[--config-path <rl_agent_config.json>] [--backend cpu]',
+        '[--config-path <rl_agent_config.json>] [--backend metal]',
     useWhen:
         'Decision engine, decision sequence or decoder, native decision head, '
         'safetensors reader, or llama.cpp encoder changes.',

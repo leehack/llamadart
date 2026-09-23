@@ -7390,10 +7390,11 @@ class LlamaCppService {
     return gpuBackendFromRegName(namePtr.cast<Utf8>().toDartString());
   }
 
-  /// Maps a ggml backend registry name to a [GpuBackend]; returns
-  /// [GpuBackend.auto] when unrecognized. Match-by-substring because registry
-  /// names vary by build (e.g. the Metal backend registers as `Metal` on some
-  /// builds and `MTL` on others), mirroring [_backendInfoContainsBackendMarker].
+  /// Maps a ggml backend registry name, or a backend display name such as
+  /// `Metal`, to a [GpuBackend]; returns [GpuBackend.auto] when unrecognized.
+  /// Match-by-substring because registry names vary by build (e.g. the Metal
+  /// backend registers as `Metal` on some builds and `MTL` on others),
+  /// mirroring [_backendInfoContainsBackendMarker].
   static GpuBackend gpuBackendFromRegName(String regName) {
     final name = regName.toLowerCase();
     if (name.contains('vulkan')) return GpuBackend.vulkan;
@@ -7615,8 +7616,9 @@ class LlamaCppService {
     final hiddenSize = llama_model_n_embd(model.pointer);
 
     final String configText;
-    final int maxTokens;
-    final DecisionHeadWeights weights;
+    final Pointer<llama_context> context;
+    final DecisionHeadRuntime runtime;
+    final int tokenLimit;
     final file = SafetensorsFile.open(headPath);
     try {
       configText = resolveDecisionHeadConfigText(
@@ -7624,77 +7626,72 @@ class LlamaCppService {
         configPath: configPath,
         metadata: file.metadata,
       );
-      final parsed = parseDecisionHeadConfig(
+      final config = parseDecisionHeadConfig(
         configText,
         source: configPath ?? '$headPath (laya.config metadata)',
       );
-      maxTokens = parsed.maxTokens;
+      final maxTokens = config.maxTokens;
       checkDecisionHeadFitsEncoder(
-        headPath: headPath,
-        typeEmbeddingShape: file.tensors['type_emb.weight']?.shape,
-        hiddenSize: hiddenSize,
         trainedContext: llama_model_n_ctx_train(model.pointer),
         maxTokens: maxTokens,
       );
-      weights = DecisionHeadWeights.read(
+      final weights = DecisionHeadWeights.read(
         file,
         hiddenSize: hiddenSize,
-        config: parsed.config,
+        layers: config.headLayers,
       );
+
+      final params = _modelLoadParams[modelHandle] ?? const ModelParams();
+      final resolvedGpuLayers =
+          _modelResolvedGpuLayers[modelHandle] ??
+          resolveGpuLayersForLoad(params, isAndroid: Platform.isAndroid);
+      final runsOnCpu = decisionHeadRunsOnCpu(
+        modelBackendName: _modelBackendNames[modelHandle],
+        resolvedGpuLayers: resolvedGpuLayers,
+      );
+
+      final ctxParams = llama_context_default_params();
+      applyDecisionContextParams(
+        ctxParams,
+        params,
+        maxTokens: maxTokens,
+        runsOnCpu: runsOnCpu,
+      );
+      if (!runsOnCpu &&
+          shouldUseConservativeAndroidVulkanContextConfig(
+            params,
+            resolvedGpuLayers: resolvedGpuLayers,
+            isAndroid: Platform.isAndroid,
+          )) {
+        _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
+      }
+
+      context = llama_init_from_model(model.pointer, ctxParams);
+      if (context == nullptr) {
+        throw LlamaContextException(
+          'Failed to create the decision encoder context of $maxTokens tokens.',
+        );
+      }
+      try {
+        tokenLimit = llama_n_ubatch(context);
+        checkDecisionEncoderContext(
+          poolingType: llama_pooling_type$1(context).value,
+          tokenLimit: tokenLimit,
+          maxTokens: maxTokens,
+        );
+        final device = runsOnCpu ? null : _decisionHeadDevice(modelHandle);
+        runtime = DecisionHeadRuntime.create(
+          weights,
+          device: device,
+          cpuThreads: llama_n_threads_batch(context),
+          opOffload: device != null && ctxParams.op_offload,
+        );
+      } catch (_) {
+        llama_free(context);
+        rethrow;
+      }
     } finally {
       file.close();
-    }
-
-    final params = _modelLoadParams[modelHandle] ?? const ModelParams();
-    final resolvedGpuLayers =
-        _modelResolvedGpuLayers[modelHandle] ??
-        resolveGpuLayersForLoad(params, isAndroid: Platform.isAndroid);
-    final runsOnCpu = decisionHeadRunsOnCpu(
-      modelBackendName: _modelBackendNames[modelHandle],
-      resolvedGpuLayers: resolvedGpuLayers,
-    );
-
-    final ctxParams = llama_context_default_params();
-    applyDecisionContextParams(
-      ctxParams,
-      params,
-      maxTokens: maxTokens,
-      runsOnCpu: runsOnCpu,
-    );
-    if (!runsOnCpu &&
-        shouldUseConservativeAndroidVulkanContextConfig(
-          params,
-          resolvedGpuLayers: resolvedGpuLayers,
-          isAndroid: Platform.isAndroid,
-        )) {
-      _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
-    }
-
-    final context = llama_init_from_model(model.pointer, ctxParams);
-    if (context == nullptr) {
-      throw LlamaContextException(
-        'Failed to create the decision encoder context of $maxTokens tokens.',
-      );
-    }
-    final DecisionHeadRuntime runtime;
-    final int tokenLimit;
-    try {
-      tokenLimit = llama_n_ubatch(context);
-      checkDecisionEncoderContext(
-        poolingType: llama_pooling_type$1(context).value,
-        tokenLimit: tokenLimit,
-        maxTokens: maxTokens,
-      );
-      final device = runsOnCpu ? null : _decisionHeadDevice(modelHandle);
-      runtime = DecisionHeadRuntime.create(
-        weights,
-        device: device,
-        cpuThreads: llama_n_threads_batch(context),
-        opOffload: device != null && ctxParams.op_offload,
-      );
-    } catch (_) {
-      llama_free(context);
-      rethrow;
     }
 
     final handle = _getHandle();
@@ -7761,10 +7758,10 @@ class LlamaCppService {
   /// Checks [sequences] against a decision head's limits.
   ///
   /// Each sequence needs 1 to [tokenLimit] tokens, each in `[0, vocabSize)`,
-  /// 1 to token-count markers, every marker a position in its tokens, and a
-  /// question type of 0, 1 or 2. Throws [LlamaInferenceException] naming the
-  /// first sequence that fails. The checks and messages match the
-  /// llama-web-bridge decision core, so both runtimes reject the same input.
+  /// 1 to token-count markers, and every marker a position in its tokens.
+  /// Throws [LlamaInferenceException] naming the first sequence that fails.
+  /// The llama-web-bridge decision core runs these checks with the same
+  /// messages, so both runtimes reject the same sequences.
   static void validateDecisionSequences(
     List<BackendDecisionSequence> sequences, {
     required int tokenLimit,
@@ -7807,12 +7804,6 @@ class LlamaCppService {
           );
         }
       }
-      if (sequence.questionType < 0 || sequence.questionType > 2) {
-        throw LlamaInferenceException(
-          'Decision sequence $i has question type ${sequence.questionType}; '
-          'expected 0 (choice), 1 (score) or 2 (noul).',
-        );
-      }
     }
   }
 
@@ -7848,19 +7839,14 @@ class LlamaCppService {
 
   /// Parses decision head config [text] read from [source].
   ///
-  /// Returns the JSON object and its `max_len` (512 when absent). Throws
-  /// [LlamaModelException] naming [source] when [decodeDecisionHeadConfig]
-  /// rejects [text].
-  static ({Map<String, Object?> config, int maxTokens}) parseDecisionHeadConfig(
+  /// Throws [LlamaModelException] naming [source] when
+  /// [decodeDecisionHeadConfig] rejects [text].
+  static DecisionHeadConfig parseDecisionHeadConfig(
     String text, {
     required String source,
   }) {
     try {
-      final config = decodeDecisionHeadConfig(text);
-      return (
-        config: config,
-        maxTokens: DecisionHeadConfig.fromJson(config).maxTokens,
-      );
+      return decodeDecisionHeadConfig(text);
     } on LlamaDecisionException catch (error) {
       throw LlamaModelException(
         'The decision head config in $source is invalid: ${error.message}',
@@ -7914,28 +7900,15 @@ class LlamaCppService {
     return null;
   }
 
-  /// Checks that the decision head at [headPath] fits the loaded encoder.
+  /// Checks that a decision head config's [maxTokens] fits the loaded
+  /// encoder.
   ///
-  /// Throws [LlamaModelException] when the head's `type_emb.weight`
-  /// [typeEmbeddingShape] is two-dimensional with a width other than
-  /// [hiddenSize], or when the config's [maxTokens] exceeds the encoder's
+  /// Throws [LlamaModelException] when [maxTokens] exceeds the encoder's
   /// [trainedContext].
   static void checkDecisionHeadFitsEncoder({
-    required String headPath,
-    required List<int>? typeEmbeddingShape,
-    required int hiddenSize,
     required int trainedContext,
     required int maxTokens,
   }) {
-    if (typeEmbeddingShape != null &&
-        typeEmbeddingShape.length == 2 &&
-        typeEmbeddingShape[1] != hiddenSize) {
-      throw LlamaModelException(
-        'The decision head at $headPath is ${typeEmbeddingShape[1]} wide but '
-        'the loaded encoder has hidden size $hiddenSize. Use the head '
-        'trained for this encoder.',
-      );
-    }
     if (trainedContext < maxTokens) {
       throw LlamaModelException(
         'The decision head config sets max_len $maxTokens, but the loaded '
@@ -7981,6 +7954,35 @@ class LlamaCppService {
         resolvedGpuLayers <= 0;
   }
 
+  /// Picks the device of a decision head for a model on [modelBackendName].
+  ///
+  /// [deviceBackends] holds the backend of each GPU or iGPU device, in
+  /// registry order, and [mainGpu] counts among the devices of the model's
+  /// backend. Returns the index in [deviceBackends] of the device [mainGpu]
+  /// selects, or of the backend's first device when [mainGpu] is out of
+  /// range. Returns null, meaning the CPU, when [modelBackendName] maps to
+  /// the CPU or to no backend, or when no device has the model's backend.
+  static int? decisionHeadDeviceIndex({
+    required String? modelBackendName,
+    required List<GpuBackend> deviceBackends,
+    required int mainGpu,
+  }) {
+    final backend = gpuBackendFromRegName(modelBackendName ?? '');
+    if (backend == GpuBackend.auto || backend == GpuBackend.cpu) {
+      return null;
+    }
+    final matching = [
+      for (final (index, deviceBackend) in deviceBackends.indexed)
+        if (deviceBackend == backend) index,
+    ];
+    if (matching.isEmpty) {
+      return null;
+    }
+    return mainGpu >= 0 && mainGpu < matching.length
+        ? matching[mainGpu]
+        : matching.first;
+  }
+
   String? _decisionUnsupportedReason(int modelHandle) {
     final model = _models[modelHandle];
     if (model == null) {
@@ -8012,38 +8014,22 @@ class LlamaCppService {
   }
 
   ggml_backend_dev_t? _decisionHeadDevice(int modelHandle) {
-    final backendName = _modelBackendNames[modelHandle];
-    final backend = GpuBackend.values.where(
-      (candidate) =>
-          candidate != GpuBackend.auto &&
-          candidate != GpuBackend.cpu &&
-          _backendDisplayName(candidate.name) == backendName,
-    );
-    if (backend.isEmpty) {
-      return null;
-    }
     final devices = <ggml_backend_dev_t>[];
     final count = _ggmlBackendDevCount();
     for (var i = 0; i < count; i++) {
       final device = _ggmlBackendDevGet(i);
-      if (device == nullptr || !_isGpuClassDevice(device)) {
-        continue;
-      }
-      final reg = _ggmlBackendDevBackendReg(device);
-      final label =
-          '${reg == nullptr ? '' : _utf8OrEmpty(_ggmlBackendRegName(reg))} '
-          '${_utf8OrEmpty(_ggmlBackendDevName(device))}';
-      if (_backendInfoContainsBackendMarker(label, backend.first)) {
+      if (device != nullptr && _isGpuClassDevice(device)) {
         devices.add(device);
       }
     }
-    if (devices.isEmpty) {
-      return null;
-    }
-    final mainGpu = _modelLoadParams[modelHandle]?.mainGpu ?? 0;
-    return mainGpu >= 0 && mainGpu < devices.length
-        ? devices[mainGpu]
-        : devices.first;
+    final index = decisionHeadDeviceIndex(
+      modelBackendName: _modelBackendNames[modelHandle],
+      deviceBackends: [
+        for (final device in devices) _gpuBackendForDevice(device),
+      ],
+      mainGpu: _modelLoadParams[modelHandle]?.mainGpu ?? 0,
+    );
+    return index == null ? null : devices[index];
   }
 
   bool _isGpuClassDevice(ggml_backend_dev_t device) {
@@ -9029,7 +9015,8 @@ Float32List _encodeDecisionBatch(
       'The decision encoder returned no per-token hidden states.',
     );
   }
-  return Float32List.fromList(embeddings.asTypedList(valueCount));
+  // The next llama_encode or llama_free on the context invalidates this view.
+  return embeddings.asTypedList(valueCount);
 }
 
 class _LlamaModelWrapper {

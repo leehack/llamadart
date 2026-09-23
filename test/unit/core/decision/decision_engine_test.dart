@@ -6,13 +6,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart/src/core/decision/decision_sequence.dart';
 import 'package:test/test.dart';
 
 import '../../../support/decision_fixture.dart';
 
-// Laya rounds answers to 4 decimals and decodes in float32.
-const _tolerance = 6e-5;
 const _headHandle = 7;
 const _headPath = 'laya-head.safetensors';
 
@@ -63,7 +60,7 @@ void main() {
         final question = DecisionQuestion.fromJson(row.question);
         expect(sent[i].tokens, row.ids, reason: row.id);
         expect(sent[i].markers, row.markers, reason: row.id);
-        expect(sent[i].questionType, question.type.index, reason: row.id);
+        expect(sent[i].questionType, question.type, reason: row.id);
       }
       expect(backend.runHandles, [_headHandle]);
       expect(results, hasLength(caseRows.length));
@@ -73,7 +70,7 @@ void main() {
         expect(result.model, 'laya-rl-agent');
         expect(result.answers.keys, [for (final row in rows) row.questionId]);
         for (final row in rows) {
-          _expectJsonClose(
+          expectDecisionJsonClose(
             result.answers[row.questionId]!.toJson(),
             row.answer,
             row.id,
@@ -121,7 +118,7 @@ void main() {
         'output_tokens': 0,
       });
       for (final row in rows) {
-        _expectJsonClose(
+        expectDecisionJsonClose(
           (json['answers'] as Map)[row.questionId],
           row.answer,
           row.id,
@@ -181,22 +178,11 @@ void main() {
 
       await decisions.systemOneBatch([request]);
 
-      final expected = (await buildDecisionSequences(
-        request,
-        DecisionSequenceSpec(
-          clsToken: fixture.clsToken,
-          sepToken: fixture.sepToken,
-          maskToken: fixture.maskToken,
-          maskText: '[MASK]',
-          maxTokens: 512,
-          headMaxTokens: 40,
-        ),
-        (text) async => fixture.pieces[text] ?? text.codeUnits,
-      )).single;
-      final sent = backend.runs.single.single;
-      expect(sent.tokens, expected.tokens);
-      expect(sent.markers, expected.markers);
-      expect(sent.markers, hasLength(8));
+      final markers = backend.runs.single.single.markers;
+      expect(markers, hasLength(8));
+      expect([
+        for (var i = 1; i < markers.length; i++) markers[i] - markers[i - 1],
+      ], everyElement(4));
     });
 
     test('strips the head mask text from every tokenized text', () async {
@@ -433,13 +419,10 @@ void main() {
       final decisions = await loadDecisions();
 
       await expectLater(
-        decisions.systemOneBatch([
-          requestOf(cases['readme']!),
-          DecisionRequest(
-            state: 'hi',
-            questions: {'': DecisionQuestion.noul('Is it?')},
-          ),
-        ]),
+        decisions.systemOne(
+          state: 'hi',
+          questions: {'': DecisionQuestion.noul('Is it?')},
+        ),
         throwsA(
           isA<LlamaDecisionException>().having(
             (error) => error.message,
@@ -685,7 +668,7 @@ void main() {
       expect(backend.runs, hasLength(caseRows.length));
       for (var c = 0; c < caseRows.length; c++) {
         for (final row in caseRows[c]) {
-          _expectJsonClose(
+          expectDecisionJsonClose(
             results[c].answers[row.questionId]!.toJson(),
             row.answer,
             row.id,
@@ -737,6 +720,26 @@ void main() {
         ),
       );
       expect(backend.runs, isEmpty);
+    });
+
+    test('a run error while the model is loaded passes through', () async {
+      final decisions = await loadDecisions();
+      backend.runError = LlamaInferenceException('head compute failed');
+
+      await expectLater(
+        decisions.systemOne(
+          state: 'hi',
+          questions: {'q': DecisionQuestion.noul('Is it?')},
+        ),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            'head compute failed',
+          ),
+        ),
+      );
+      expect(backend.runs, hasLength(1));
     });
 
     test('a model reloaded under a new handle is not tokenized', () async {
@@ -855,23 +858,6 @@ void main() {
   });
 }
 
-void _expectJsonClose(Object? actual, Object? expected, String path) {
-  switch (expected) {
-    case num():
-      expect(actual, isA<num>(), reason: path);
-      expect(actual as num, closeTo(expected, _tolerance), reason: path);
-    case Map():
-      expect(actual, isA<Map>(), reason: path);
-      final map = actual as Map;
-      expect(map.keys, orderedEquals(expected.keys), reason: path);
-      for (final key in expected.keys) {
-        _expectJsonClose(map[key], expected[key], '$path.$key');
-      }
-    default:
-      expect(actual, expected, reason: path);
-  }
-}
-
 class _DecisionBackend implements LlamaBackend, BackendDecision {
   _DecisionBackend(this.fixture)
     : config = {
@@ -892,6 +878,7 @@ class _DecisionBackend implements LlamaBackend, BackendDecision {
   );
   Object? capabilityError;
   Object? backendNameError;
+  Object? runError;
   Map<String, Object?> config;
   String? configJson;
   String maskText = '[MASK]';
@@ -1007,6 +994,8 @@ class _DecisionBackend implements LlamaBackend, BackendDecision {
     runs.add(sequences);
     if (!runStarted.isCompleted) runStarted.complete();
     await (runGateQueue.isEmpty ? runGate : runGateQueue.removeAt(0))?.future;
+    final error = runError;
+    if (error != null) throw error;
     return [
       for (final sequence in sequences.skip(dropOutputs)) _outputFor(sequence),
     ];

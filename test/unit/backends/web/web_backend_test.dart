@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -186,7 +187,7 @@ void main() {
     final sequence = BackendDecisionSequence(
       tokens: Int32List.fromList([1, 3, 2]),
       markers: Int32List.fromList([1]),
-      questionType: 2,
+      questionType: DecisionQuestionType.noul,
     );
 
     final capabilities = await backend.decisionCapabilities(1);

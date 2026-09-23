@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_decision.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart'
@@ -26,7 +27,7 @@ void main() {
   BackendDecisionSequence sequence(
     List<int> tokens,
     List<int> markers, [
-    int questionType = 0,
+    DecisionQuestionType questionType = DecisionQuestionType.choice,
   ]) => BackendDecisionSequence(
     tokens: Int32List.fromList(tokens),
     markers: Int32List.fromList(markers),
@@ -527,8 +528,8 @@ void main() {
       final head = await heads.load(fake.bridge, 'laya-head.safetensors');
 
       final outputs = await heads.run(fake.bridge, head.handle, [
-        sequence([1, 3, 20, 3, 21, 2], [1, 3], 1),
-        sequence([1, 3, 2], [1], 2),
+        sequence([1, 3, 20, 3, 21, 2], [1, 3], DecisionQuestionType.score),
+        sequence([1, 3, 2], [1], DecisionQuestionType.noul),
       ]);
 
       expect(fake.calls.last, 'run 7 2');
@@ -655,38 +656,6 @@ void main() {
       );
       expect(fake.calls.where((call) => call.startsWith('run')), hasLength(1));
     });
-
-    test(
-      'rejects question types outside int32 with the native message',
-      () async {
-        final head = await heads.load(fake.bridge, 'laya-head.safetensors');
-
-        for (final type in [0x80000000, -0x80000001]) {
-          await expectLater(
-            heads.run(fake.bridge, head.handle, [
-              sequence([1, 3, 2], [1]),
-              sequence([1, 3, 2], [1], type),
-            ]),
-            throwsTyped<LlamaInferenceException>(
-              'Decision sequence 1 has question type $type; expected 0 '
-              '(choice), 1 (score) or 2 (noul).',
-            ),
-          );
-        }
-        expect(fake.calls.where((call) => call.startsWith('run')), isEmpty);
-
-        await heads.run(fake.bridge, head.handle, [
-          sequence([1, 3, 2], [1], 3),
-          sequence([1, 3, 2], [1], 0x7fffffff),
-          sequence([1, 3, 2], [1], -0x80000000),
-        ]);
-        expect(fake.lastSequences.map((s) => s.questionType), [
-          3,
-          0x7fffffff,
-          -0x80000000,
-        ]);
-      },
-    );
 
     test('rejects malformed outputs with LlamaDecisionException', () async {
       final head = await heads.load(fake.bridge, 'laya-head.safetensors');

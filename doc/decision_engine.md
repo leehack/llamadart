@@ -4,7 +4,10 @@
 (ModernBERT GGUF, run by llama.cpp) plus a small decision head (safetensors),
 answering typed questions about a state in one non-autoregressive pass. The
 request and response shapes follow Laya's `system_one` and TypeSafe's Jev API,
-so prompts written for either carry over unchanged.
+so most questions written for Laya carry over unchanged; the guide's
+[Laya wire format](../website/docs/guides/decision-models.md#laya-wire-format)
+and [Known limits](../website/docs/guides/decision-models.md#known-limits)
+sections list the exceptions.
 
 Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 `convaiinnovations/laya` at `1c5edc17a7acd8701df6fc341c0d179f1c62c982`
@@ -19,71 +22,20 @@ Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 | Official checkpoint | `convaiinnovations/laya/model.safetensors` + `rl_agent_config.json` | also accepted as a head file: `encoder.*` tensors are ignored, config comes from `configPath` |
 
 Measured error and speed per backbone, head file and device are under
-[Measured](#measured). Q4_0 was both slower and less accurate on every device
-tried.
+[Measured](#measured).
 
 ## Public API
 
-```dart
-final engine = LlamaEngine(LlamaBackend());
-await engine.loadModel(
-  'laya-Q8_0.gguf',
-  modelParams: const ModelParams(contextSize: 512),
-);
-final decisions = await DecisionEngine.load(
-  engine,
-  headPath: 'laya-head.safetensors',
-);
-
-final result = await decisions.systemOne(
-  state: {'from': 'user@acme.com', 'body': 'Billed twice for March.'},
-  questions: {
-    'department': DecisionQuestion.choice(
-      'Which department should handle this?',
-      criteria: {'billing': 'invoices, refunds', 'technical': 'bugs', 'other': null},
-    ),
-    'urgency': DecisionQuestion.score(
-      'How urgent is this?',
-      levels: ['not urgent', 'soon', 'critical'],
-    ),
-    'refund': DecisionQuestion.noul('Does the user request a refund?'),
-  },
-);
-
-result.choices['department']!.choice; // 'billing'
-result.scores['urgency']!.score; // expected level, 0..2
-result.nouls['refund']!.noul; // P(true)
-result.toJson(); // {model, answers, usage}, the Laya/Jev response shape
-
-await decisions.dispose(); // frees the head; the LlamaEngine stays loaded
-```
-
-Types, all in `lib/src/core/decision/` and pure Dart:
-
-- `sealed class DecisionQuestion` with `ChoiceQuestion` (`Map<String, Object?>
-  criteria`; a null or empty value means "no description"), `ScoreQuestion`
-  (`List<Object?> levels`, sent as `criteria`) and `NoulQuestion` (optional
-  `whenTrue`/`whenFalse`, sent as `criteria: {"true", "false"}`). Factory
-  constructors `DecisionQuestion.choice/score/noul`, plus `fromJson`/`toJson` in
-  the wire format. `fromJson` accepts a list-valued choice `criteria` (Laya turns
-  it into `{label: null}`, dropping duplicates) and non-string `instructions`
-  (serialized as `json.dumps` with `ensure_ascii=True`). It is stricter than
-  Laya elsewhere: score `criteria` must be a list and noul `criteria` null or a
-  map, so a map of score levels or an empty noul list is rejected.
-- `DecisionRequest(state:, questions:)` for `systemOneBatch`.
-- `sealed class DecisionAnswer` with `ChoiceAnswer` (`choice`, `probabilities`),
-  `ScoreAnswer` (`score`, `legend`, `probabilities` keyed `'0'..`) and
-  `NoulAnswer` (`noul`). Every answer has `confidence` and `actProbability`
-  (Laya's `action.act_probability`).
-- `DecisionResult`: `model`, `answers`, typed views `choices`/`scores`/`nouls`,
-  `usage` (`inputTokens`, `outputTokens` = 0) and `toJson()`.
-- `DecisionEngine`: `load`, `capabilitiesFor(engine)`, `info` (limits and the
-  head's device), `systemOne`, `systemOneBatch`, `dispose`.
-- `LlamaDecisionException` for invalid questions and model-dependent failures
-  such as an option list that does not fit the head budget, and for text that
-  contains U+0000 (see [Known limits](#known-limits)).
-
-Values are unrounded doubles; upstream rounds to 4 decimals in its JSON.
+`lib/llamadart.dart` exports `DecisionEngine`, `DecisionCapabilities` and
+`DecisionModelInfo`; the questions (`DecisionQuestion` with `ChoiceQuestion`,
+`ScoreQuestion` and `NoulQuestion`, `DecisionQuestionType` and
+`DecisionRequest`); the answers (`DecisionAnswer` with `ChoiceAnswer`,
+`ScoreAnswer` and `NoulAnswer`, `DecisionUsage` and `DecisionResult`); and the
+typed keys (`DecisionKey` with `ChoiceKey`, `ScoreKey` and `NoulKey`,
+`ChoiceOf`, and the `DecisionResultKeys.answerOf` extension). Errors use
+`LlamaDecisionException`. The
+[Decision Models guide](../website/docs/guides/decision-models.md) documents
+their use.
 
 ## Architecture
 
@@ -110,6 +62,7 @@ hidden states across the isolate boundary; only logits cross it.
 | `python_json.dart` | `json.dumps` byte parity: `, `/`: ` separators, Python float `repr`, `NaN`/`Infinity`, `ensure_ascii` |
 | `decision_question.dart` | question types, `DecisionRequest`, JSON conversion, validation |
 | `decision_result.dart` | answer types, `DecisionUsage`, `DecisionResult` |
+| `decision_key.dart` | typed keys, `ChoiceOf`, the `answerOf` extension |
 | `decision_sequence.dart` | option rendering, tokenizer input texts, sequence assembly |
 | `decision_decoder.dart` | temperature selection and clamping, softmax, confidence, act features, answer decoding |
 | `decision_engine.dart` | facade, `DecisionCapabilities` and `DecisionModelInfo` |
@@ -131,9 +84,10 @@ abstract class BackendDecision {
 
 - `BackendDecisionHeadInfo`: `handle`, `hiddenSize`, `clsToken`, `sepToken`,
   `maskToken`, `maskText`, `configJson` (the Laya config text; the core reads
-  `max_len`, `head_max_len` and temperatures from it) and `deviceName`.
+  and validates `max_len`, `head_max_len`, `head_layers` and temperatures from
+  it) and `deviceName`.
 - `BackendDecisionSequence`: `tokens`, `markers` (`Int32List`) and
-  `questionType` (0 choice, 1 score, 2 noul), one per question.
+  `questionType` (`DecisionQuestionType`), one per question.
 - `BackendDecisionOutput`: per sequence, raw marker `logits` and raw
   `actLogits` (`Float32List`).
 
@@ -177,9 +131,15 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   sequence or a failed encoder or head pass is `inference`; an unknown model or
   head handle is `state`.
 - `safetensors.dart`: header parse with bounds checks; reads only the needed
-  byte ranges through `RandomAccessFile`; F32, F16 and BF16 convert to F32.
-- `decision_head.dart`: weights in one backend buffer, the head graph through
-  `ggml_backend_sched`, and the act MLP in Dart.
+  byte ranges through `RandomAccessFile`, into a Dart list or a caller's
+  buffer such as native memory; F32, F16 and BF16 convert to F32.
+- `decision_head.dart`: the type embedding and act MLP read into Dart, and
+  every other head tensor read from the file into a staging buffer just before
+  its upload into one backend buffer (`ggml_backend_alloc_ctx_tensors`), so the
+  head file stays open until the runtime exists; the head graph through
+  `ggml_backend_sched`, with the last layer's queries, attention output and
+  feed-forward computed only for the CLS and marker rows (keys and values use
+  every token); and the act MLP in Dart.
 - Service state: `Map<int, _DecisionHead>` keyed by `_getHandle()`, holding the
   model handle, a private `llama_context` (n_ctx = n_batch = n_ubatch =
   `max_len`, `n_seq_max` 1, `embeddings` true, pooling NONE, threads and offload
@@ -195,10 +155,11 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
 resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU
-device whose registry and device names match the model's backend (`mainGpu`
-picks among several; none matching means CPU), with the CPU backend last in
-the sched (required by `ggml_backend_sched_new`). Never
-`ggml_backend_init_best`, which would start a GPU backend in explicit CPU mode.
+device whose registry maps to the model's backend (`mainGpu` picks among
+several; none matching means CPU; `decisionHeadDeviceIndex` decides), with the
+CPU backend last in the sched (required by `ggml_backend_sched_new`). Never
+`ggml_backend_init_best`, which would start a GPU backend in explicit CPU
+mode.
 
 CPU threads: `llama_encode` uses the private context's `n_threads_batch` for
 every sequence of more than one token, and the head passes the same count
@@ -214,28 +175,30 @@ static helper that unit tests cover:
   `general.architecture` is `modern-bert`; the CLS (`llama_vocab_bos`), SEP and
   MASK tokens are in the vocabulary; the MASK token has text; `n_embd_out` is 0
   or `n_embd`.
-- `checkDecisionHeadFitsEncoder`: the head's `type_emb.weight` width equals
-  `n_embd`; `n_ctx_train >= max_len`.
+- `checkDecisionHeadFitsEncoder`: `n_ctx_train >= max_len`.
 - `checkDecisionEncoderContext`: pooling is NONE; `n_ubatch >= max_len`.
 - `DecisionHeadWeights.read`: every tensor is present with the exact shape
-  implied by `hidden`, `head_layers` and the act rows; `nhead = max(1, hidden
-  ~/ 64)` divides `hidden`.
+  implied by `hidden`, `head_layers` and the act rows, starting with
+  `type_emb.weight`, whose error names the encoder's hidden size; `nhead =
+  max(1, hidden ~/ 64)` divides `hidden`.
 
 The run path rejects a sequence longer than `llama_n_ubatch` before
 `llama_encode`, whose `GGML_ASSERT` would abort the process.
 `validateDecisionSequences` checks every sequence before the first encoder
-pass: 1 to `n_ubatch` tokens inside the vocabulary, 1 to token-count markers
-inside the sequence, and a question type from 0 to 2. The bridge core runs the
-same checks with the same messages, so both runtimes reject the same input; the
-marker-count bound comes from the bridge, whose head graph sizes its buffers by
-marker count.
+pass: 1 to `n_ubatch` tokens inside the vocabulary, and 1 to token-count
+markers inside the sequence. The bridge core runs the same checks with the same
+messages, plus a question type check that `DecisionQuestionType` always passes,
+so both runtimes reject the same input; the marker-count bound comes from the
+bridge, whose head graph sizes its buffers by marker count.
 
 Windows: `llama.dll` exports no `ggml_*` graph symbols; they live in
 `ggml-base.dll` (ops, graph, sched, buffers) and `ggml.dll` (registry). The head
-calls ggml through a small function table that uses the generated bindings on
-other platforms and `@Native` twins with `assetId:
-'package:llamadart/ggml-base'`/`'package:llamadart/ggml'` on Windows (precedent:
-`test/unit/backends/llama_cpp/native_precision_bindings_test.dart`). Generated
+calls ggml through a small function table that uses `@Native` twins with
+`assetId: 'package:llamadart/ggml-base'`/`'package:llamadart/ggml'` on Windows
+(precedent: `test/unit/backends/llama_cpp/native_precision_bindings_test.dart`)
+and the generated bindings on other platforms. The bindings leave out
+`ggml-alloc.h`, so `ggml_backend_alloc_ctx_tensors` has a hand-written `@Native`
+on their default asset, `package:llamadart/llamadart`, there too. Generated
 bindings are not edited.
 
 ### Web (`lib/src/backends/webgpu/`)
@@ -285,11 +248,6 @@ and reports which as `deviceName`.
   unsupported and a load throws `LlamaStateException`, as native does for an
   unloaded model. A malformed head description or output is
   `LlamaDecisionException`, like native's unexpected worker responses.
-- Sequences: the bridge's JavaScript layer type-checks every sequence before
-  the core validates any, and would reject a question type outside the int32
-  range in its own words. The backend rejects that case first with native's
-  message, so only the index can differ: with several invalid sequences, such a
-  question type is reported before an earlier sequence's core error.
 - The bridge serializes decision calls with its other operations and cannot
   cancel a run. When its worker fails during a run, it reloads the model on the
   main thread and rejects the run; the engine keeps its model, and the
@@ -310,14 +268,26 @@ Sequence (`build_sequence`, `max_len` 512, `head_max_len` 192):
 - State fills `max(0, max_len - len - 1)` tokens, then `[SEP]`; the result is cut
   to `max_len` and markers past it are dropped. If fewer markers than options
   survive, the question fails with `LlamaDecisionException`.
+- Instructions: a `String` as-is; any other JSON-like value, from a question
+  constructor or `fromJson`, becomes `json.dumps(value)` text with Python's
+  defaults (`ensure_ascii=True`, `, `/`: ` separators), as Laya's
+  `_to_internal` does. `fromJson` reads a `null` `instructions` as the text
+  `null`.
 - Tokenization is `engine.tokenize(text, addSpecial: false)` (llama.cpp parses
   special tokens, matching Hugging Face added-token splitting). Each distinct
   text is tokenized once per call.
+- Text containing U+0000 is rejected with `LlamaDecisionException` instead of
+  being tokenized: native tokenization passes the text's C-string length to
+  `llama_tokenize`, so it would cut the text at the NUL while Laya tokenizes
+  all of it. A non-string state is JSON-encoded, which escapes U+0000.
 - Options: choice `label` or `label: <criterion>`; score `level i: <criterion>`;
   noul `false: <criterion or "no, the statement does not hold">`, `true:
   <criterion or "yes, the statement holds">`. Non-string criteria render as
   compact JSON (`ensure_ascii=False`). State is a string as-is or
   `json.dumps(state, ensure_ascii=False)`.
+- `fromJson` turns a list-valued choice `criteria` into labels without
+  descriptions, in list order; a repeated label keeps its first position, as
+  Laya's `{c: None for c in crit}` does.
 
 Decoding, per question with K markers and question type q:
 
@@ -352,12 +322,12 @@ JSON-like (null, bool, num, String, List, Map with String keys).
 | Web (WebGPU bridge) | WebGPU or CPU (WASM) | needs bridge assets with the decision API (apiVersion 1), which no published asset tag has yet; the currently pinned assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
 | LiteRT-LM Web | - | `LlamaUnsupportedException` |
 
-Real-model evidence is macOS only. The CPU head unit tests are meant to run in
-the Linux, macOS and Windows CI jobs; until this PR's Linux and Windows jobs
-pass, they have run on macOS only. iOS, Vulkan and CUDA have no run at all.
-Android numbers come from the prototype that preceded this implementation, not
-from `DecisionEngine`: about 2.1 s per question (512-token window, Q8_0) on a
-Pixel 9 Pro with 6 CPU threads, and Mali Vulkan was slower than the CPU there.
+Real-model evidence is macOS only. The CPU head unit tests carry no
+`local-only` tag, so CI's Linux VM job and its macOS and Windows native test
+jobs run them. iOS, Vulkan and CUDA have no run at all. Android numbers come
+from the prototype that preceded this implementation, not from
+`DecisionEngine`: about 2.1 s per question (512-token window, Q8_0) on a Pixel
+9 Pro with 6 CPU threads, and Mali Vulkan was slower than the CPU there.
 
 ### Measured
 
@@ -425,98 +395,76 @@ Q8_0 on the WASM CPU misses the 0.05 probability tolerance on one row, with the
 same top option. The bridge's own smoke, which calls the bridge directly, gets
 the same worst logit difference, so the drift comes from the bridge's WASM CPU
 Q8_0 path rather than llamadart. The currently pinned assets reported
-unsupported with the actionable reason in both bridge modes. Sequence
-validation messages, error mapping, URL redaction, `<base href>` resolution,
-and heads freed or bridges disposed behind the engine's back were checked
-against the same build.
+unsupported with the actionable reason in both bridge modes. Typed key reads
+with the question identity check, sequence validation messages, error mapping,
+URL redaction, `<base href>` resolution, and heads freed or bridges disposed
+behind the engine's back were checked against the same build.
 
 ## Known limits
 
-- Input is not Unicode-normalized. The Hugging Face tokenizer applies NFC, so
-  NFD text (for example a decomposed "é") can tokenize differently. Pass NFC
-  text.
-- One encoder pass per question; the state is re-encoded for every question.
-- No cancellation: a batch runs to completion in the worker.
-- Only the English checkpoint is validated. Other ModernBERT-family checkpoints
-  load if the checks pass but have no parity evidence.
-- `contextSize: 512` is recommended for the engine's own context, which the
-  decision path does not use.
-- Text containing U+0000 is rejected with `LlamaDecisionException`: native
-  tokenization passes the text's C-string length to `llama_tokenize`, so it
-  would cut the text at the NUL while Laya tokenizes all of it. A non-string
-  state is JSON-encoded, which escapes U+0000.
-- Q8_0 backbones can change decisions; see [Measured](#measured).
+User-facing limits are listed under
+[Known limits](../website/docs/guides/decision-models.md#known-limits) in the
+guide.
 
 ## Testing
 
 - Unit (VM and Chrome unless noted): `python_json` against Python output
   (float formatting is VM-only because Web numbers lose the int/double
   distinction); sequence assembly, decoding, and question JSON round trips and
-  validation on synthetic inputs.
+  validation on synthetic inputs; typed keys on hand-built results: kind,
+  option-label and level-key checks, the missing-answer error, a question
+  shared by two keys, `questionsOf`, and the key constructors.
 - Unit (VM, the fixture is read with `dart:io`): sequence ids and markers for
   all 24 fixture rows using the fixture's recorded tokenizations; decoding from
   recorded raw logits to the recorded answers within 6e-5 (Laya rounds to 4
-  decimals and decodes in float32; worst measured deviation 4.96e-5).
+  decimals and decodes in float32; worst measured deviation 4.96e-5); typed
+  keys on the engine with a fake backend: fixture token ids for key-built
+  questions, typed reads, and the errors for an id the result did not ask and
+  for a question from a rebuilt key, from JSON or from another request of a
+  batch.
 - Unit (VM): safetensors parsing and malformed-file errors on synthetic files;
   the ggml head on a tiny synthetic head against a pure-Dart reference, and
   through a recording ggml function table that checks every create has its
   free, the teardown order, the thread count and the scheduler's backend
-  order; the service's load-time check helpers, sequence validation, and run
-  order through a substituted encoder; worker, backend-client and router
-  routing with fakes; engine hooks and facade with a fake backend.
+  order; the service's load-time check helpers, head device choice, sequence
+  validation, and run order through a substituted encoder; worker,
+  backend-client and router routing with fakes; engine hooks and facade with a
+  fake backend.
 - Unit (Chrome): `WebGpuDecisionHeads` against a fake bridge
   (`test/support/fake_webgpu_decision_bridge.dart`): the capability probe for
   old assets, API version skew, bridge reasons and state rejections; head
   loading with page-fetched configs, unreadable ones, URLs resolved against a
   `<base href>`, and credentials and queries kept out of errors; error mapping,
   including the `configJson` wording; handle scoping to the loading bridge;
-  question types outside int32; malformed responses. `WebGpuLlamaBackend`
-  without an active bridge, and forgetting heads on `modelFree`, a same-bridge
-  model load and `dispose`; `WebAutoBackend` forwarding and LiteRT-LM Web
-  reporting unsupported; the engine hook without a model.
+  malformed responses. `WebGpuLlamaBackend` without an active bridge, and
+  forgetting heads on `modelFree`, a same-bridge model load and `dispose`;
+  `WebAutoBackend` forwarding and LiteRT-LM Web reporting unsupported; the
+  engine hook without a model.
 - Integration (Chrome, fake bridge): `DecisionEngine` through `LlamaEngine`,
-  `WebAutoBackend` and `WebGpuLlamaBackend`: answers, sequence layout,
-  page-fetched config, old assets, API version skew, a cancelled capability
-  probe, and a model unload.
+  `WebAutoBackend` and `WebGpuLlamaBackend`: answers, typed key reads with the
+  question identity check, sequence layout, page-fetched config, old assets,
+  API version skew, a cancelled capability probe, and a model unload.
 - Integration (VM, CI's `stories15M.gguf`): a llama-architecture model is
   reported unsupported and `DecisionEngine.load` fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
   and head, the 24 fixture rows, exact token ids and markers from the engine
   tokenizer, raw logits and `systemOne` answers within tolerance (see
   `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
-  the model offloads no layers; and an engine disposed with a head still
-  loaded, whose process must then exit cleanly (on Metal a leaked buffer
-  aborts the exit, which fails the runner). Runner scenario
-  `decision-model-smoke` (`--model-path`, `--head-path`, optional
-  `--config-path` and `--backend`) and test-matrix row of the same id.
+  the model offloads no layers, and off it for a model on a GPU backend; and
+  an engine disposed with a head still loaded, whose process must then exit
+  cleanly (on Metal a leaked buffer aborts the exit, which fails the runner).
+  Runner scenario `decision-model-smoke` (`--model-path`, `--head-path`,
+  optional `--config-path` and `--backend`) and test-matrix row of the same
+  id.
 - No test reaches the service's `llama_free` of the encoder context after a
-  failed head load, its `op_offload` and `mainGpu` choices, or its order of
-  head and context teardown; that needs fault injection or several GPUs. The
-  PR's high-risk block records them as residual risk.
+  failed head load, its `op_offload` choice, or its order of head and context
+  teardown; that needs fault injection or a GPU device.
 
 Fixture: `test/fixtures/decision/laya_0_3_5_reference.json`, produced by the
 scripts beside it from the pinned official checkpoint on CPU in FP32.
 
 ## Delivery
 
-Stacked PRs, each merged only with maintainer approval:
-
-1. Design doc and the pure-Dart core with the parity fixture (standard risk).
-2. Native backend, engine hooks, facade, export, E2E, docs. High risk:
-   `classify_high_risk_changes.dart` reports `backendRuntime`,
-   `regressionPolicy` (the test-matrix row and its docs) and `structuredOutput`
-   (`lib/llamadart.dart` brings in all three structured-output v2 axes by
-   default). The readiness evidence must justify excluding each
-   structured-output axis from inspected production call sites, alongside the
-   regression-policy evidence and the independent audit.
-3. `example/basic_app` decision example.
-4. `example/laya_tetris` Flutter example: real-time Tetris played through
-   `DecisionEngine`, with the base and a Tetris-tuned head.
-5. Head fine-tuning notebook and dataset tool.
-6. Web: a decision module in `llama-web-bridge` (C++ next to its TTS module,
-   same graph on WebGPU), `WebGpuLlamaBackend` implementing `BackendDecision`
-   in this repo (reporting unsupported with the pinned assets), asset
-   publication, then the asset pin bump.
-
-Model hosting for the Tetris-tuned head, and publishing new bridge assets, need
-maintainer approval before they happen.
+The delivery plan and remaining work, including the examples, head fine-tuning
+and the Web decision module, are tracked in
+[#604](https://github.com/leehack/llamadart/issues/604).

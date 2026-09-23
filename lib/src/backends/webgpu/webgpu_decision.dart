@@ -229,21 +229,12 @@ class WebGpuDecisionHeads {
         'decision head again.',
       );
     }
-    for (var i = 0; i < sequences.length; i++) {
-      final questionType = sequences[i].questionType;
-      if (questionType < _int32Min || questionType > _int32Max) {
-        throw LlamaInferenceException(
-          'Decision sequence $i has question type $questionType; expected 0 '
-          '(choice), 1 (score) or 2 (noul).',
-        );
-      }
-    }
     final input = <WebGpuDecisionSequence>[
       for (final sequence in sequences)
         WebGpuDecisionSequence(
           tokens: sequence.tokens.toJS,
           markers: sequence.markers.toJS,
-          questionType: sequence.questionType,
+          questionType: sequence.questionType.index,
         ),
     ].toJS;
 
@@ -286,8 +277,6 @@ class WebGpuDecisionHeads {
   void clear() => _heads.clear();
 
   static const String _reloadHint = 'Load the decision head again';
-  static const int _int32Min = -0x80000000;
-  static const int _int32Max = 0x7fffffff;
   static final RegExp _absoluteUrl = RegExp(
     r'[A-Za-z][A-Za-z0-9+.-]*://[^\s"<>]+',
   );

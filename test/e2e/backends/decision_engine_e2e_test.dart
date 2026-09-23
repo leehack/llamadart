@@ -21,6 +21,7 @@ const _configPathKey = 'LLAMADART_DECISION_CONFIG_PATH';
 const _backendKey = 'LLAMADART_DECISION_BACKEND';
 const _logitToleranceKey = 'LLAMADART_DECISION_LOGIT_TOLERANCE';
 const _probToleranceKey = 'LLAMADART_DECISION_PROB_TOLERANCE';
+const _gpuBackendNames = {'Metal', 'CUDA', 'HIP', 'Vulkan', 'OpenCL'};
 
 void main() {
   test('matches the Laya 0.3.5 reference on every fixture row', () async {
@@ -97,7 +98,7 @@ void main() {
           BackendDecisionSequence(
             tokens: Int32List.fromList(row.ids),
             markers: Int32List.fromList(row.markers),
-            questionType: DecisionQuestion.fromJson(row.question).type.index,
+            questionType: DecisionQuestion.fromJson(row.question).type,
           ),
       ];
       await engine.runDecisionBackend(head.handle, inputs.sublist(0, 1));
@@ -193,6 +194,10 @@ void main() {
         failures.add(
           'head device ${decisionEngine.info.deviceName} for a CPU model',
         );
+      }
+      if (_gpuBackendNames.contains(capabilities.backendName) &&
+          decisionEngine.info.deviceName == 'CPU') {
+        failures.add('head device CPU for a ${capabilities.backendName} model');
       }
       final questions = fixture.rows.length;
       print(

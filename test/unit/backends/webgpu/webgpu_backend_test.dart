@@ -2692,7 +2692,7 @@ void main() {
     final sequence = BackendDecisionSequence(
       tokens: Int32List.fromList([1, 3, 20, 2]),
       markers: Int32List.fromList([1]),
-      questionType: 0,
+      questionType: DecisionQuestionType.choice,
     );
 
     test('reports no model before a bridge is active', () async {
