@@ -77,12 +77,12 @@ git diff --name-only --no-renames "$PR_BASE_REF"...HEAD | \
 dart run tool/testing/test_matrix.dart --tier high-risk
 ```
 
-Before mark-ready, assign an independent blocking review pass that did not
-implement the change, using an independent operator-owned or fresh Codex
-adversarial audit identity (the standalone qa profile is retired; author
-self-approval is rejected). It must review the exact head against the current
-base, inspect the actual production call sites, and verify positive and negative
-tests that fail if the relevant branch is deleted, bypassed, or miswired.
+Before mark-ready, assign an independent blocking-only adversarial review pass:
+an operator, or a fresh agent session that took no part in the
+implementation, never the PR author or the retired `qa` identity. It must
+review the exact head against the current base, inspect the actual production
+call sites, and verify positive and negative tests that fail if the relevant
+branch is deleted, bypassed, or miswired.
 Validate the evidence payload with `tool/testing/high_risk_readiness.dart`,
 supplying repository, PR, author, exact head, and exact base values from an
 independent source as documented in `doc/high_risk_pre_merge_readiness.md`.
