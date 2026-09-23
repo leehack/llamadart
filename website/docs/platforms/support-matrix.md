@@ -19,8 +19,9 @@ availability below is for the pinned/default artifacts.
 Speech support is narrower than general runtime availability. llama.cpp/GGUF
 has an experimental whole-file `SpeechToTextEngine` adapter when the caller
 explicitly selects the Qwen3-ASR profile and the loaded projector reports audio
-capability. Native accepts WAV, MP3, and FLAC file or byte inputs. WebGPU bridge
-assets `v0.1.30+` opt into the validated Qwen3-ASR path with WAV bytes only;
+capability. Native accepts WAV, MP3, and FLAC file or byte inputs; real-model
+validation covers WAV only. WebGPU bridge assets `v0.1.30+` opt into the
+validated Qwen3-ASR path with WAV bytes only;
 older or custom runtimes stay unsupported unless the host explicitly declares
 the capability. Native llama.cpp and WebGPU bridge assets `v0.1.33+` also expose
 experimental Qwen3-TTS synthesis through the separate typed

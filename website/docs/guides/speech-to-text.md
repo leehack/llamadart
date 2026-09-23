@@ -20,7 +20,7 @@ multimodal models.
 
 | Runtime | Generic audio-input chat | Typed `SpeechToTextEngine` | Text to speech |
 | --- | --- | --- | --- |
-| Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
+| Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes (real-model validation covers WAV only), final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
 | WebGPU / GGUF | Bridge + model dependent | Experimental Qwen3-ASR adapter with bridge assets `v0.1.30+`; complete WAV bytes, final transcript only | Unsupported |
 | Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental dedicated CPU ASR through `SpeechToTextEngine.liteRtLm`; mono 16 kHz float PCM, partial/final text, streaming input | Unsupported |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
@@ -51,7 +51,7 @@ final recognizer = SpeechToTextEngine.liteRtLm(
 
 final capabilities = await recognizer.capabilities;
 if (!capabilities.isSupported) {
-  throw StateError(capabilities.unsupportedReason);
+  throw StateError(capabilities.unsupportedReason!);
 }
 
 final session = await recognizer.startStream();
@@ -69,6 +69,7 @@ for (final chunk in mono16KhzFloatPcmChunks) {
 await session.finish();
 final completion = await session.done;
 await events.cancel();
+print(completion.state);
 ```
 
 The input contract is mono 16 kHz normalized `Float32List` PCM. The public
@@ -152,9 +153,10 @@ preflight fails before a task can start. After startup, `events` is a
 single-subscription stream: runtime failure is emitted as a stream error and
 the same terminal condition is available through `task.done`.
 
-Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
-PCM remains unsupported for that prompt adapter because projector sample rates
-are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
+Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Only WAV is
+validated with a real model; MP3 and FLAC tests check only that the adapter
+accepts the formats, and no test decodes them. Raw PCM remains unsupported for
+that prompt adapter because projector sample rates are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
 complete mono 16 kHz float buffer, or the incremental session shown above.
 
 WebGPU accepts encoded WAV bytes only. Browser file pickers must read the
@@ -236,9 +238,10 @@ LiteRT-LM chat bundles. Live dictation uses the native LiteRT-LM streaming STT
 API with an app-managed sidecar; it is not a capability of the selected chat
 bundle and remains unavailable on Web.
 ASR microphone recordings are capped at five minutes, cancelled when the app is
-backgrounded, and deleted on native or revoked on Web after transcription. This
-remains a whole-file workflow: it does not produce live partial transcripts
-while the user speaks. The recorder requests 16 kHz mono WAV, but hardware or
+backgrounded, and deleted on native or revoked on Web after transcription.
+The repository's real-model checks cover at most 33 seconds of audio; see
+[Known limits](#known-limits). This remains a whole-file workflow: it does not
+produce live partial transcripts while the user speaks. The recorder requests 16 kHz mono WAV, but hardware or
 the browser may choose another valid sample rate; the downstream decoder reads
 the WAV metadata.
 The live sidecar path instead requests PCM16 mono 16 kHz streaming, preserves
@@ -278,6 +281,38 @@ native and Web. Its immutable artifact revision, byte sizes, and SHA-256
 digests are pinned. Native downloads verify both files before selection; Web
 uses origin-scoped Cache Storage and the pinned source metadata.
 
+## Validated behavior
+
+The `validation-speech-stt` pack
+(`dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt`)
+runs the checksum-locked Qwen3-ASR 0.6B Q8_0 model and projector on `jfk.wav`,
+an 11-second English WAV, as a file and as bytes. It compares transcripts by
+word error rate, ignoring case and punctuation. It also sends four generated
+WAV inputs as bytes:
+
+| Input | Required outcome |
+| --- | --- |
+| 3 s of digital silence | `LlamaSpeechException` with the message `Speech recognition produced an empty transcript.` |
+| The first 20,044 bytes of `jfk.wav`, whose RIFF header declares more audio than the bytes carry | A non-empty transcript that is not the reference, or `LlamaAudioFormatException`. Every recorded run returned a short transcript and no error. |
+| `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
+| `jfk.wav` three times (33 s), crossing the projector's 30-second audio chunk | The reference three times |
+
+Each run then repeats three cancel/dispose/load/generate cycles. It fails if
+either budget is exceeded:
+
+- **Cancellation, 500 ms**: from `cancel()` to the task's terminal state, for
+  every cancel issued as soon as `transcribe` returns and every cancel issued
+  after half the duration of the most recent completed generation. This bounds
+  when the task ends for its caller, not when native work stops.
+- **Memory, 1.10x**: the largest whole-process resident set sampled after the
+  checks that follow the first generation, as a multiple of the one sampled
+  right after that generation.
+
+The pack has passed on macOS arm64 with CPU and with Metal on native
+`v0.4.1-1`, and on Linux x64 CPU (AMD EPYC) with an earlier llamadart tree on
+native `v0.4.1`. The Metal runs report the Metal backend; the pack does not
+verify GPU execution.
+
 ## Known limits
 
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker. llamadart
@@ -287,12 +322,21 @@ uses origin-scoped Cache Storage and the pinned source metadata.
   diarization. Incremental audio and partial text are LiteRT-LM-only.
 - Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
-- The local real-model smoke has passed on macOS arm64 CPU, and a separate
-  chat-app/manual smoke has passed on Metal. The full chat-app
-  model/projector, microphone, and final-transcript flow has also passed on a
-  physical Pixel using CPU inference and in the iOS Simulator. A physical
-  iPhone and Windows remain unverified; Linux keeps selected-file STT but not
-  microphone capture. Web requires `v0.1.30+`, a browser with enough memory for
+- The repository's real-model checks use WAV input of at most 33 s; none uses
+  MP3 or FLAC. Longer input is unvalidated. The audio prompt grows with
+  duration (3,890 tokens for 297 s in
+  [#636](https://github.com/leehack/llamadart/issues/636)). If it fits in
+  `contextSize` but leaves too little room for the transcript, the task
+  completes with a truncated transcript and no error.
+- Beyond [Validated behavior](#validated-behavior), chat-app microphone
+  transcription on CPU has passed on a physical Pixel and in the iOS Simulator
+  ([#328](https://github.com/leehack/llamadart/pull/328)), and CPU file
+  transcription plus chat-app microphone transcription have passed on a
+  physical iPad ([#462](https://github.com/leehack/llamadart/pull/462)). No STT
+  run covers Android x64, Linux arm64, Windows arm64 or x64, macOS x86_64, or a
+  physical iPhone, nor the Vulkan, CUDA, HIP, OpenCL, or BLAS backends. Linux
+  keeps selected-file STT but not microphone capture.
+- Web requires `v0.1.30+`, a browser with enough memory for
   the roughly 1.02 GB model/projector pair, and the targeted
   `web-speech-to-text-smoke` validation row. That row verifies both browser
   file selection and Chromium fake-device microphone capture with the same WAV

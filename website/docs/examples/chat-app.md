@@ -74,7 +74,11 @@ flutter test
   current LiteRT-LM chat bundles. Microphone capture is enabled on Android,
   iOS, macOS, Windows, and supported secure browser origins; Linux capture
   remains disabled pending a safe external-recorder preflight, while
-  selected-file transcription remains available there.
+  selected-file transcription remains available there. Recordings stop at five
+  minutes, but real-model checks cover only WAV input of at most 33 seconds. A
+  long recording can fill the preset's 4,096-token context; transcription then
+  completes with a truncated transcript and no error
+  ([#636](https://github.com/leehack/llamadart/issues/636)).
 - Experimental live English dictation for native chat models, including
   generic audio-chat models, through independently installed, checksum-pinned
   LiteRT sidecars. Moonshine Tiny is the recommended 54 MB default; Parakeet
@@ -95,8 +99,7 @@ flutter test
   bytes through ordinary multimodal chat so the model can answer the spoken
   request. It does not use `SpeechToTextEngine` and provides no transcript,
   timestamp, confidence, or live-partial contract. Qwen3-ASR keeps the separate
-  five-minute **Stop & transcribe** workflow and takes precedence for ASR
-  profiles.
+  **Stop & transcribe** workflow and takes precedence for ASR profiles.
 - A dedicated cross-platform Qwen3-TTS mode backed by `TextToSpeechEngine`.
   Type an utterance, optionally choose a language and select or record
   speaker-reference audio, then cancel synthesis, automatically play the

@@ -71,7 +71,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'platform',
     mode: 'opt-in; local model-backed',
     covers:
-        'Locked Qwen3-ASR/Qwen3-TTS and dedicated LiteRT CPU ASR, cancellation, reload, typed guards, WER and audio timing',
+        'Locked Qwen3-ASR/Qwen3-TTS and dedicated LiteRT CPU ASR, cancellation, '
+        'reload, typed guards, WER, audio timing, Qwen3-ASR edge fixtures, and '
+        'cancel-latency and peak-memory bounds',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
