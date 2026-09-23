@@ -1874,6 +1874,41 @@ void main() {
       );
     }
 
+    test(
+      'forces the fetch backend after an opted-in wasm32 staging failure',
+      () async {
+        final warnings = captureConsoleWarnings();
+        globalContext.setProperty(
+          '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+          true.toJS,
+        );
+        failLoadsInOrder([
+          (
+            'wasm32',
+            'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+                'threads_batch:4;model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+        ]);
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/opted-in-wasm32-model.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        );
+
+        expect(requestedForceRemoteFetchBackends, <bool?>[null, true]);
+        expect(
+          warnings,
+          contains(
+            'WebGpuLlamaBackend: wasm32 memory pressure detected; '
+            'retrying with wasm64 core and explicitly enabled '
+            'fetch-backed loading.',
+          ),
+        );
+      },
+    );
+
     test('keeps the load-start opt-in when a page opts in mid-load', () async {
       final warnings = captureConsoleWarnings();
       failFirstLoadAfterSetting(
