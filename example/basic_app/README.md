@@ -15,6 +15,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Sampling Controls**: Tune `--temp`, `--top-k`, `--top-p`, and `--penalty`.
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
+- **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
 
 ## Usage
 
@@ -167,6 +168,55 @@ How to translate result values:
 - `--quantized-qtype` (`UINT8`, `INT8`, `1BIT`) and
   `--quantized-max-memory` tune quantization behavior.
 
+### 7. Decision Model Example
+
+Triage a support ticket with a Laya decision model: a `department` choice, an
+`urgency` score and a `refund` yes/no question, answered by `DecisionEngine`
+without generating text. See the
+[Decision Models guide](https://llamadart.leehack.com/docs/guides/decision-models)
+for the API.
+
+```bash
+dart run bin/llamadart_decision_example.dart
+```
+
+On first run it downloads `laya-Q8_0.gguf` (421 MB) and
+`laya-head.safetensors` (106 MB) from `fr0stbit3/laya-gguf` at revision
+`ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c` into the package-managed cache, and
+reuses them on later runs.
+Each answer is printed with its `confidence` and `actProbability`; `--json`
+adds Laya's `{model, answers, usage}` response.
+
+```bash
+dart run bin/llamadart_decision_example.dart --json \
+  --state "The app crashes on login since the last update."
+dart run bin/llamadart_decision_example.dart \
+  --state '{"from": "ops@globex.io", "body": "Checkout returns 503."}'
+```
+
+`laya-Q8_0.gguf` can change decisions compared with Laya; see the guide's
+[accuracy section](https://llamadart.leehack.com/docs/guides/decision-models#accuracy-and-speed).
+To use the official
+[`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya)
+checkpoint as the head, pass its config too:
+
+```bash
+dart run bin/llamadart_decision_example.dart \
+  --head path/to/model.safetensors \
+  --config path/to/rl_agent_config.json
+```
+
+Decision CLI flags (`bin/llamadart_decision_example.dart`):
+
+- `-m, --model`: Backbone GGUF as a local path, HTTP(S) URL, or `hf://` source.
+- `--head`: Decision head safetensors, in the same forms.
+- `--config`: `rl_agent_config.json` for a head without `laya.config` metadata.
+- `-s, --state`: Ticket to triage: text, or a JSON object or array.
+- `--cpu`: Run the backbone and head on the CPU.
+- `--threads`: CPU threads for the encoder and head
+  (`ModelParams.numberOfThreadsBatch`; `0` keeps the default).
+- `--json`: Also print the Laya response JSON.
+
 ## Options
 
 - `-m, --model`: Local path, HTTP(S) URL, or `hf://` Hugging Face source for a GGUF model.
@@ -195,6 +245,9 @@ dart test
 - **`bin/llamadart_basic_example.dart`**: The CLI entry point and user interface logic.
 - **`bin/llamadart_embedding_example.dart`**: Embedding-only CLI entry point.
 - **`bin/llamadart_sqlite_vector_example.dart`**: SQLite vector retrieval CLI example.
+- **`bin/llamadart_decision_example.dart`**: Decision model CLI example.
+- **`lib/services/decision_cli_options.dart`**: Decision CLI flags and pinned model sources.
+- **`lib/services/decision_ticket_triage.dart`**: Ticket questions and answer formatting.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.
 - **`lib/models.dart`**: Data structures for the application.
