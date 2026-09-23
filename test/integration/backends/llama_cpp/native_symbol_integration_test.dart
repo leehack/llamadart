@@ -7,7 +7,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
-import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
@@ -971,8 +971,10 @@ void main() {
       );
       _expectDynamicLibraryExports(libraryFile!, _mtmdChunkEvalSymbols);
       expect(
-        MtmdChunkEvalApi.tryLoad(ffi.DynamicLibrary.open(libraryFile.path)),
-        isNotNull,
+        LlamaCppService.debugMtmdFallbackHasChunkEvalForTesting(
+          ffi.DynamicLibrary.open(libraryFile.path),
+        ),
+        isTrue,
       );
     });
 

@@ -7144,17 +7144,18 @@ class LlamaCppService {
   /// a wrapper library candidate instead of the mtmd library, for real-model
   /// regression tests.
   ///
-  /// With [chunkEval] false, the fallback gets no chunk-level functions.
+  /// With [chunkEval] true, the fallback is loaded the way the service loads
+  /// its own; with false, it gets no chunk-level functions.
   /// Returns false, changing nothing, when no candidate provides the
   /// fallback's mtmd functions.
   bool debugUseWrapperMtmdFallbackForTesting({required bool chunkEval}) {
     for (final candidate in _llamadartWrapperLibraryCandidates()) {
       final _MtmdApi? api;
       try {
-        api = _MtmdApi.tryLoad(
-          _openWrapperLibrary(candidate),
-          loadChunkEval: chunkEval,
-        );
+        final library = _openWrapperLibrary(candidate);
+        api = chunkEval
+            ? _MtmdApi.tryLoad(library)
+            : _MtmdApi.tryLoad(library, loadChunkEval: false);
       } catch (_) {
         continue;
       }
@@ -7166,6 +7167,11 @@ class LlamaCppService {
     }
     return false;
   }
+
+  /// Whether the mtmd fallback, loaded from [library] the way the service
+  /// loads its own, has chunk-level functions.
+  static bool debugMtmdFallbackHasChunkEvalForTesting(DynamicLibrary library) =>
+      _MtmdApi.tryLoad(library)?.chunkEval != null;
 
   _MtmdApi? _resolveMtmdFallbackApi() {
     if (_mtmdFallbackLookupAttempted) {
