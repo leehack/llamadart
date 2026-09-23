@@ -162,17 +162,17 @@ void main() {
       }
     });
 
-    test('temperatureFor prefers the bucket, then the type, clamped', () {
+    test('temperatureFor prefers the bucket, then the type', () {
       const config = DecisionHeadConfig(
-        temperature: [1.5, 0.2, 9.0],
-        temperatureByOptions: {'choice:3-5': 2.5, 'score:2': 0.1},
+        temperature: [1.5, 0.7, 9.0],
+        temperatureByOptions: {'choice:3-5': 2.5, 'score:2': 0.6},
       );
 
       expect(config.temperatureFor(DecisionQuestionType.choice, 4), 2.5);
       expect(config.temperatureFor(DecisionQuestionType.choice, 2), 1.5);
-      expect(config.temperatureFor(DecisionQuestionType.score, 2), 0.5);
-      expect(config.temperatureFor(DecisionQuestionType.score, 3), 0.5);
-      expect(config.temperatureFor(DecisionQuestionType.noul, 2), 5.0);
+      expect(config.temperatureFor(DecisionQuestionType.score, 2), 0.6);
+      expect(config.temperatureFor(DecisionQuestionType.score, 3), 0.7);
+      expect(config.temperatureFor(DecisionQuestionType.noul, 2), 9.0);
     });
   });
 

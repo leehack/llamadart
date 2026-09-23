@@ -17,27 +17,30 @@ enum DecisionQuestionType {
 
 /// A typed question for a decision model, in Laya's `system_one` format.
 ///
-/// Values in criteria, levels and noul descriptions must be JSON-like: `null`,
-/// [bool], [num], [String], or a [List] or [Map] with [String] keys of
-/// JSON-like values. They are deep-copied into unmodifiable collections.
+/// Instructions are text, or a JSON-like value that becomes Laya's
+/// `json.dumps(value)` text with `ensure_ascii=True`. Values in criteria,
+/// levels and noul descriptions must be JSON-like too: `null`, [bool], [num],
+/// [String], or a [List] or [Map] with [String] keys of JSON-like values. They
+/// are deep-copied into unmodifiable collections.
 sealed class DecisionQuestion {
-  DecisionQuestion._(this.instructions);
+  DecisionQuestion._(Object instructions)
+    : instructions = _instructionText(instructions);
 
   /// Creates a [ChoiceQuestion].
   factory DecisionQuestion.choice(
-    String instructions, {
+    Object instructions, {
     required Map<String, Object?> criteria,
   }) = ChoiceQuestion;
 
   /// Creates a [ScoreQuestion].
   factory DecisionQuestion.score(
-    String instructions, {
+    Object instructions, {
     required List<Object?> levels,
   }) = ScoreQuestion;
 
   /// Creates a [NoulQuestion].
   factory DecisionQuestion.noul(
-    String instructions, {
+    Object instructions, {
     Object? whenTrue,
     Object? whenFalse,
   }) = NoulQuestion;
@@ -65,13 +68,7 @@ sealed class DecisionQuestion {
         'Decision question is missing "instructions".',
       );
     }
-    final instructions = switch (json['instructions']) {
-      final String text => text,
-      final other => pythonJsonDumps(
-        _frozenJson(other, 'instructions'),
-        ensureAscii: true,
-      ),
-    };
+    final instructions = _instructionText(json['instructions']);
     final criteria = json['criteria'];
     return switch (type) {
       'choice' => ChoiceQuestion(
@@ -108,8 +105,8 @@ final class ChoiceQuestion extends DecisionQuestion {
   /// Creates a choice question over the labels of [criteria].
   ///
   /// A `null` or empty-string value means the label has no description.
-  /// Throws [LlamaDecisionException] when [criteria] is empty or a value is
-  /// not JSON-like.
+  /// Throws [LlamaDecisionException] when [criteria] is empty, or when
+  /// [instructions] or a value is not JSON-like.
   ChoiceQuestion(super.instructions, {required Map<String, Object?> criteria})
     : criteria = _frozenCriteria(criteria),
       super._();
@@ -135,8 +132,8 @@ final class ChoiceQuestion extends DecisionQuestion {
 final class ScoreQuestion extends DecisionQuestion {
   /// Creates a score question with [levels] from lowest to highest.
   ///
-  /// Throws [LlamaDecisionException] when [levels] is empty or a level is not
-  /// JSON-like.
+  /// Throws [LlamaDecisionException] when [levels] is empty, or when
+  /// [instructions] or a level is not JSON-like.
   ScoreQuestion(super.instructions, {required List<Object?> levels})
     : levels = _frozenLevels(levels),
       super._();
@@ -163,7 +160,8 @@ final class NoulQuestion extends DecisionQuestion {
   /// Creates a noul question with optional descriptions of each answer.
   ///
   /// A `null` or empty-string description uses Laya's default text. Throws
-  /// [LlamaDecisionException] when a description is not JSON-like.
+  /// [LlamaDecisionException] when [instructions] or a description is not
+  /// JSON-like.
   NoulQuestion(super.instructions, {Object? whenTrue, Object? whenFalse})
     : whenTrue = _frozenJson(whenTrue, 'whenTrue'),
       whenFalse = _frozenJson(whenFalse, 'whenFalse'),
@@ -191,28 +189,38 @@ final class NoulQuestion extends DecisionQuestion {
 }
 
 /// A state and the questions to answer about it.
-class DecisionRequest {
+final class DecisionRequest {
   /// Creates a request.
   ///
   /// [state] is text, or a JSON-like value sent as
   /// `json.dumps(state, ensure_ascii=False)` text. Throws
-  /// [LlamaDecisionException] when [questions] is empty or [state] is not
-  /// JSON-like.
+  /// [LlamaDecisionException] when [questions] is empty, a question id is
+  /// empty, or [state] is not JSON-like.
   DecisionRequest({
     required Object? state,
     required Map<String, DecisionQuestion> questions,
   }) : state = _frozenJson(state, 'state'),
-       questions = questions.isEmpty
-           ? throw LlamaDecisionException(
-               'A decision request needs at least one question.',
-             )
-           : Map.unmodifiable(questions);
+       questions = _frozenQuestions(questions);
 
   /// The state the questions are about.
   final Object? state;
 
   /// Questions by id, in answer order.
   final Map<String, DecisionQuestion> questions;
+}
+
+Map<String, DecisionQuestion> _frozenQuestions(
+  Map<String, DecisionQuestion> questions,
+) {
+  if (questions.isEmpty) {
+    throw LlamaDecisionException(
+      'A decision request needs at least one question.',
+    );
+  }
+  if (questions.containsKey('')) {
+    throw LlamaDecisionException('Decision question ids must be non-empty.');
+  }
+  return Map.unmodifiable(questions);
 }
 
 Map<String, Object?> _frozenCriteria(Map<String, Object?> criteria) {
@@ -281,6 +289,14 @@ NoulQuestion _noulFromJson(String instructions, Object? criteria) {
     whenFalse: criteria['false'],
   );
 }
+
+String _instructionText(Object? instructions) => switch (instructions) {
+  final String text => text,
+  final other => pythonJsonDumps(
+    _frozenJson(other, 'instructions'),
+    ensureAscii: true,
+  ),
+};
 
 Object? _frozenJson(Object? value, String path) =>
     _freeze(value, path, Set<Object>.identity());

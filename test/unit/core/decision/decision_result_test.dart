@@ -1,4 +1,6 @@
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/decision/decision_result.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -73,6 +75,40 @@ void main() {
     });
   });
 
+  test('levelProbabilities lists score probabilities by level', () {
+    final answer = ScoreAnswer(
+      score: 1.1,
+      legend: {'0': 'low', '1': 'mid', '2': 'high'},
+      probabilities: {'2': 0.3, '0': 0.1, '1': 0.6},
+      confidence: 0.2,
+      actProbability: 0,
+    );
+
+    expect(answer.levelProbabilities, [0.1, 0.6, 0.3]);
+    expect(() => answer.levelProbabilities[0] = 1, throwsUnsupportedError);
+  });
+
+  test('levelProbabilities rejects keys other than the levels', () {
+    final answer = ScoreAnswer(
+      score: 1,
+      legend: {'low': 'low', 'high': 'high'},
+      probabilities: {'low': 0.4, 'high': 0.6},
+      confidence: 0.2,
+      actProbability: 0,
+    );
+
+    expect(
+      () => answer.levelProbabilities,
+      throwsA(
+        isA<LlamaDecisionException>().having(
+          (e) => e.message,
+          'message',
+          'Score probabilities are keyed [low, high], not by level 0 to 1.',
+        ),
+      ),
+    );
+  });
+
   test('DecisionUsage serializes Laya usage keys', () {
     expect(const DecisionUsage(inputTokens: 96, outputTokens: 0).toJson(), {
       'input_tokens': 96,
@@ -138,6 +174,24 @@ void main() {
 
       expect(decision.answers.keys, ['a']);
       expect(() => decision.answers['c'] = noul(), throwsUnsupportedError);
+    });
+
+    test('copies questions into an unmodifiable map, or has none', () {
+      final question = DecisionQuestion.noul('Refund?');
+      final questions = <String, DecisionQuestion>{'a': question};
+      final decision = DecisionResult(
+        model: 'm',
+        answers: {'a': noul()},
+        usage: const DecisionUsage(inputTokens: 1, outputTokens: 0),
+        questions: questions,
+      );
+
+      questions['b'] = question;
+
+      expect(decision.questions!.keys, ['a']);
+      expect(decision.questions!['a'], same(question));
+      expect(() => decision.questions!['c'] = question, throwsUnsupportedError);
+      expect(result().questions, isNull);
     });
   });
 }

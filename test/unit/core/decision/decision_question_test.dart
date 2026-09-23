@@ -215,6 +215,45 @@ void main() {
     });
   });
 
+  group('instructions', () {
+    test('dump non-string values like json.dumps with ensure_ascii', () {
+      const instructions = {
+        'ask': 'Refund?',
+        'lang': '\u00e9',
+        'n': [1, true, null],
+      };
+      const text =
+          r'{"ask": "Refund?", "lang": "\u00e9", "n": [1, true, null]}';
+
+      for (final question in [
+        DecisionQuestion.choice(instructions, criteria: {'a': null}),
+        DecisionQuestion.score(instructions, levels: ['low']),
+        DecisionQuestion.noul(instructions),
+      ]) {
+        expect(question.instructions, text);
+        expect(question.toJson()['instructions'], text);
+      }
+      expect(
+        DecisionQuestion.noul(' Is "it" \u00e9?\n').instructions,
+        ' Is "it" \u00e9?\n',
+      );
+    });
+
+    test('reject values that are not JSON-like', () {
+      for (final (instructions, fragment) in <(Object, String)>[
+        (<int>{1}, 'instructions must be JSON-like'),
+        (DecisionQuestion.noul('Nested?'), 'instructions must be JSON-like'),
+        (<Object?, Object?>{1: 'a'}, 'instructions has the non-string key 1'),
+      ]) {
+        expect(
+          () => DecisionQuestion.noul(instructions),
+          _decisionError(fragment),
+          reason: '$instructions',
+        );
+      }
+    });
+  });
+
   group('DecisionQuestion.fromJson', () {
     test('round-trips every question type', () {
       for (final question in [
@@ -385,10 +424,17 @@ void main() {
       }
     });
 
-    test('rejects no questions and non-JSON-like states', () {
+    test('rejects no questions, empty ids and non-JSON-like states', () {
       expect(
         () => DecisionRequest(state: 'x', questions: {}),
         _decisionError('at least one question'),
+      );
+      expect(
+        () => DecisionRequest(
+          state: 'x',
+          questions: {'q': question, '': question},
+        ),
+        _decisionError('ids must be non-empty'),
       );
       expect(
         () => DecisionRequest(

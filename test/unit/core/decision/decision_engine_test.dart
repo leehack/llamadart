@@ -419,13 +419,10 @@ void main() {
       final decisions = await loadDecisions();
 
       await expectLater(
-        decisions.systemOneBatch([
-          requestOf(cases['readme']!),
-          DecisionRequest(
-            state: 'hi',
-            questions: {'': DecisionQuestion.noul('Is it?')},
-          ),
-        ]),
+        decisions.systemOne(
+          state: 'hi',
+          questions: {'': DecisionQuestion.noul('Is it?')},
+        ),
         throwsA(
           isA<LlamaDecisionException>().having(
             (error) => error.message,

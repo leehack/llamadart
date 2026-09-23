@@ -147,26 +147,21 @@ DecisionSequence assembleDecisionSequence({
 
 /// Builds one sequence per question of [request], in question order.
 ///
-/// Each distinct text goes through [tokenize] once per call. Throws
-/// [LlamaDecisionException] when a question's option markers do not all fit
-/// in [DecisionSequenceSpec.maxTokens].
+/// Throws [LlamaDecisionException] when a question's option markers do not
+/// all fit in [DecisionSequenceSpec.maxTokens].
 Future<List<DecisionSequence>> buildDecisionSequences(
   DecisionRequest request,
   DecisionSequenceSpec spec,
   Future<List<int>> Function(String text) tokenize,
 ) async {
-  final cache = <String, Future<List<int>>>{};
-  Future<List<int>> tokensOf(String text) =>
-      cache.putIfAbsent(text, () => tokenize(text));
-
-  final stateTokens = await tokensOf(decisionStateText(request.state, spec));
+  final stateTokens = await tokenize(decisionStateText(request.state, spec));
   final sequences = <DecisionSequence>[];
   for (final MapEntry(key: id, value: question) in request.questions.entries) {
     final sequence = assembleDecisionSequence(
-      headTokens: await tokensOf(decisionHeadText(question, spec)),
+      headTokens: await tokenize(decisionHeadText(question, spec)),
       optionTokens: [
         for (final text in decisionOptionTexts(question, spec))
-          await tokensOf(text),
+          await tokenize(text),
       ],
       stateTokens: stateTokens,
       spec: spec,

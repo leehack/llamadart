@@ -70,13 +70,11 @@ class DecisionHeadConfig {
   /// [temperature].
   final Map<String, double> temperatureByOptions;
 
-  /// Temperature for a [type] question with [optionCount] options, clamped by
-  /// [clampDecisionTemperature].
+  /// Temperature for a [type] question with [optionCount] options, as
+  /// stored; [DecisionHeadConfig.fromJson] stores it clamped.
   double temperatureFor(DecisionQuestionType type, int optionCount) =>
-      clampDecisionTemperature(
-        temperatureByOptions[decisionTemperatureBucket(type, optionCount)] ??
-            temperature[type.index],
-      );
+      temperatureByOptions[decisionTemperatureBucket(type, optionCount)] ??
+      temperature[type.index];
 }
 
 /// Decodes decision head config [text], Laya's `rl_agent_config.json`.

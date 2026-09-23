@@ -42,6 +42,7 @@ export 'src/core/speech/text_to_speech.dart';
 
 // Decision models
 export 'src/core/decision/decision_engine.dart';
+export 'src/core/decision/decision_key.dart';
 export 'src/core/decision/decision_question.dart';
 export 'src/core/decision/decision_result.dart';
 
