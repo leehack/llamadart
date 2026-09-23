@@ -994,6 +994,7 @@ void main() {
       final service = LlamaCppService();
       final exports = service.debugTtsCancelExportsForTesting();
       final address = service.debugMtmdEvalCallbackAddressForTesting();
+      expect(service.getStartupDiagnostics(), isEmpty);
 
       if (!_fileContainsAscii(wrapper!, 'llama_dart_tts_step')) {
         expect(exports, isNull);
