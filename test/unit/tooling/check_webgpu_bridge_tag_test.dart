@@ -696,17 +696,32 @@ void main() {
       );
     });
 
-    test('a different wrapper in the same family is not the approved anchor', () {
+    test('a different wrapper in the same family is not the approved pin', () {
       final root = _fakeRuntimeRepo(bridgeTag: 'v0.2.0', nativeTag: 'v0.2.0-2');
 
       expect(
         findBridgeRuntimeDrift(root, 'v0.2.0'),
         contains(
-          '$nativeLlamaCppTagPath pins v0.2.0-2, expected the bridge-qualified '
-          'native anchor $bridgeNativeReleaseTag',
+          '$nativeLlamaCppTagPath pins v0.2.0-2, expected the bridge-approved '
+          'native pin $bridgeApprovedNativePin',
         ),
       );
     });
+
+    test(
+      'the qualified anchor is not accepted in place of the approved pin',
+      () {
+        final root = _fakeRuntimeRepo(
+          bridgeTag: bridgeLlamaCppTag,
+          nativeTag: bridgeNativeReleaseTag,
+        );
+
+        expect(findBridgeRuntimeDrift(root, bridgeLlamaCppTag), [
+          '$nativeLlamaCppTagPath pins $bridgeNativeReleaseTag, expected the '
+              'bridge-approved native pin $bridgeApprovedNativePin',
+        ]);
+      },
+    );
 
     test('stale divergence prose is reported', () {
       final root = _fakeRuntimeRepo(
@@ -724,7 +739,7 @@ void main() {
     test('parity prose is accepted for matching upstream tags', () {
       final root = _fakeRuntimeRepo(
         bridgeTag: bridgeLlamaCppTag,
-        nativeTag: bridgeNativeReleaseTag,
+        nativeTag: bridgeApprovedNativePin,
         parityWording: true,
       );
 

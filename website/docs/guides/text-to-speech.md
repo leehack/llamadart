@@ -129,7 +129,10 @@ responsible for its own files, byte buffers, permissions, and disclosures.
 ## Cancellation, concurrency, and buffering
 
 Call `task.cancel()` to request cooperative cancellation. Cancelling only the
-event-stream subscription does not cancel synthesis.
+event-stream subscription does not cancel synthesis. On native llama.cpp with
+llamadart-native v0.4.1-1 or later, a cancel stops a Qwen3-TTS audio decode in
+progress at its next chunk boundary. Older runtimes finish the native step in
+progress first, which can include the whole audio decode.
 
 All typed STT and TTS wrappers over one `LlamaEngine` share a one-task speech
 lease. Do not run chat generation, transcription, or another synthesis on the

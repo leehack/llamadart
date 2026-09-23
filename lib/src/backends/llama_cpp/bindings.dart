@@ -6298,6 +6298,15 @@ external int llama_dart_tts_api_version();
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_tts>)>()
 external void llama_dart_tts_cancel(ffi.Pointer<llama_dart_tts> tts);
 
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.Bool, ffi.Pointer<ffi.Void>)
+>()
+external bool llama_dart_tts_eval_callback(
+  ffi.Pointer<ggml_tensor> tensor,
+  bool ask,
+  ffi.Pointer<ffi.Void> user_data,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_tts>)>()
 external void llama_dart_tts_free(ffi.Pointer<llama_dart_tts> tts);
 
@@ -6401,6 +6410,23 @@ external int _llama_dart_tts_reset(ffi.Pointer<llama_dart_tts> tts);
 
 llama_dart_tts_status llama_dart_tts_reset(ffi.Pointer<llama_dart_tts> tts) {
   return llama_dart_tts_status.fromValue(_llama_dart_tts_reset(tts));
+}
+
+@ffi.Native<
+  ffi.Int Function(ffi.Pointer<llama_dart_tts>, ffi.Pointer<ffi.Int8>)
+>(symbol: 'llama_dart_tts_set_cancel_flag')
+external int _llama_dart_tts_set_cancel_flag(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<ffi.Int8> flag,
+);
+
+llama_dart_tts_status llama_dart_tts_set_cancel_flag(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<ffi.Int8> flag,
+) {
+  return llama_dart_tts_status.fromValue(
+    _llama_dart_tts_set_cancel_flag(tts, flag),
+  );
 }
 
 @ffi.Native<
@@ -8719,7 +8745,7 @@ external int mtmd_tokenize_from_parts(
   bool add_special,
 );
 
-typedef FILE = __sFILE;
+typedef FILE = _IO_FILE;
 
 const int GGML_BACKEND_META_MAX_DEVICES = 16;
 
@@ -8858,88 +8884,90 @@ final class UnnamedUnion extends ffi.Union {
   external ffi.Array<ffi.Char> val_str;
 }
 
-typedef __darwin_off_t = __int64_t;
-typedef __int64_t = ffi.LongLong;
-typedef Dart__int64_t = int;
-
-final class __sFILE extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _p;
-
+final class _IO_FILE extends ffi.Struct {
   @ffi.Int()
-  external int _r;
-
-  @ffi.Int()
-  external int _w;
-
-  @ffi.Short()
   external int _flags;
 
-  @ffi.Short()
-  external int _file;
+  external ffi.Pointer<ffi.Char> _IO_read_ptr;
 
-  external __sbuf _bf;
+  external ffi.Pointer<ffi.Char> _IO_read_end;
 
-  @ffi.Int()
-  external int _lbfsize;
+  external ffi.Pointer<ffi.Char> _IO_read_base;
 
-  external ffi.Pointer<ffi.Void> _cookie;
+  external ffi.Pointer<ffi.Char> _IO_write_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>)>
-  >
-  _close;
+  external ffi.Pointer<ffi.Char> _IO_write_ptr;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _read;
+  external ffi.Pointer<ffi.Char> _IO_write_end;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<fpos_t Function(ffi.Pointer<ffi.Void>, fpos_t, ffi.Int)>
-  >
-  _seek;
+  external ffi.Pointer<ffi.Char> _IO_buf_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _write;
+  external ffi.Pointer<ffi.Char> _IO_buf_end;
 
-  external __sbuf _ub;
+  external ffi.Pointer<ffi.Char> _IO_save_base;
 
-  external ffi.Pointer<__sFILEX> _extra;
+  external ffi.Pointer<ffi.Char> _IO_backup_base;
+
+  external ffi.Pointer<ffi.Char> _IO_save_end;
+
+  external ffi.Pointer<_IO_marker> _markers;
+
+  external ffi.Pointer<_IO_FILE> _chain;
 
   @ffi.Int()
-  external int _ur;
+  external int _fileno;
 
-  @ffi.Array.multi([3])
-  external ffi.Array<ffi.UnsignedChar> _ubuf;
+  @ffi.Int()
+  external int _flags2;
+
+  @__off_t()
+  external int _old_offset;
+
+  @ffi.UnsignedShort()
+  external int _cur_column;
+
+  @ffi.SignedChar()
+  external int _vtable_offset;
 
   @ffi.Array.multi([1])
-  external ffi.Array<ffi.UnsignedChar> _nbuf;
+  external ffi.Array<ffi.Char> _shortbuf;
 
-  external __sbuf _lb;
+  external ffi.Pointer<_IO_lock_t> _lock;
 
-  @ffi.Int()
-  external int _blksize;
-
-  @fpos_t()
+  @__off64_t()
   external int _offset;
-}
 
-final class __sFILEX extends ffi.Opaque {}
+  external ffi.Pointer<_IO_codecvt> _codecvt;
 
-final class __sbuf extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _base;
+  external ffi.Pointer<_IO_wide_data> _wide_data;
+
+  external ffi.Pointer<_IO_FILE> _freeres_list;
+
+  external ffi.Pointer<ffi.Void> _freeres_buf;
+
+  @ffi.Size()
+  external int __pad5;
 
   @ffi.Int()
-  external int _size;
+  external int _mode;
+
+  @ffi.Array.multi([20])
+  external ffi.Array<ffi.Char> _unused2;
 }
 
-typedef fpos_t = __darwin_off_t;
+final class _IO_codecvt extends ffi.Opaque {}
+
+typedef _IO_lock_t = ffi.Void;
+typedef Dart_IO_lock_t = void;
+
+final class _IO_marker extends ffi.Opaque {}
+
+final class _IO_wide_data extends ffi.Opaque {}
+
+typedef __off64_t = ffi.Long;
+typedef Dart__off64_t = int;
+typedef __off_t = ffi.Long;
+typedef Dart__off_t = int;
 typedef ggml_abort_callback =
     ffi.Pointer<ffi.NativeFunction<ggml_abort_callbackFunction>>;
 typedef ggml_abort_callbackFunction =

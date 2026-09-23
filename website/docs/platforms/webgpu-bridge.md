@@ -205,15 +205,17 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   [`DecisionEngine`](../guides/decision-models#web) needs; older assets report
   decision models as unsupported.
 - The pinned `v0.1.47` bridge assets embed llama.cpp `v0.4.1`, matching the native runtime
-  (`v0.4.1`, both built from upstream `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
+  (`v0.4.1-1`, both built from upstream `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
   even though the bridge asset tag `v0.1.47` differs from the native runtime tag
-  `v0.4.1`. Pinned artifact provenance: release `394986324`, tag commit
+  `v0.4.1-1`. Pinned artifact provenance: release `394986324`, tag commit
   `ee45e864641648a99411128f9bb82b7897fad221`, bridge source
   `64ba8250871bf2472cc2064c6a00fff050783f02`, manifest SHA-256
   `9c5e9008d187690e283f37b2b892396da03e3c71bf7c3434d7c87ceca8e6a4bc`. The
-  bridge assets provision an explicit 1 MiB stack for both wasm32 and memory64,
-  preventing graph-parameter growth from overflowing Emscripten's 64 KiB
-  default during memory64 Qwen3-ASR context construction.
+  bridge assets were qualified against native `v0.4.1`; `v0.4.1-1` rebuilds it
+  from the same upstream commit. The bridge assets provision an explicit 1 MiB
+  stack for both wasm32 and memory64, preventing graph-parameter growth from
+  overflowing Emscripten's 64 KiB default during memory64 Qwen3-ASR context
+  construction.
 - `v0.1.12+` bridge assets forward native-compatible `ModelParams` load
   tuning fields, including multi-sequence slots, KV cache type, flash attention,
   RoPE overrides, split mode, and main GPU.

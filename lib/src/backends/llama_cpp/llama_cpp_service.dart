@@ -68,6 +68,10 @@ typedef _TtsStepDart =
     int Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_progress>);
 typedef _TtsCancelNative = Void Function(Pointer<llama_dart_tts>);
 typedef _TtsCancelDart = void Function(Pointer<llama_dart_tts>);
+typedef _TtsSetCancelFlagNative =
+    Int32 Function(Pointer<llama_dart_tts>, Pointer<Int8>);
+typedef _TtsSetCancelFlagDart =
+    int Function(Pointer<llama_dart_tts>, Pointer<Int8>);
 typedef _TtsResetNative = Int32 Function(Pointer<llama_dart_tts>);
 typedef _TtsResetDart = int Function(Pointer<llama_dart_tts>);
 typedef _TtsGetOutputInfoNative =
@@ -2966,6 +2970,14 @@ class LlamaCppService {
       }
     }
     throw LlamaUnsupportedException(_ttsUnavailableMessage());
+  }
+
+  ggml_backend_sched_eval_callback _ttsEvalCallback() {
+    try {
+      return _resolveTtsApi().evalCallback;
+    } on LlamaUnsupportedException {
+      return nullptr;
+    }
   }
 
   String _ttsUnavailableMessage() {
@@ -6874,9 +6886,11 @@ class LlamaCppService {
     final mmProjPathPtr = mmProjPath.toNativeUtf8();
     Pointer<mtmd_context> mmCtx = nullptr;
     try {
-      final ctxParams = _mtmdContextParamsDefault();
-      ctxParams.use_gpu = _modelToMtmdUseGpu[modelHandle] ?? true;
-      mmCtx = _mtmdInitFromFile(mmProjPathPtr.cast(), model.pointer, ctxParams);
+      mmCtx = _mtmdInitFromFile(
+        mmProjPathPtr.cast(),
+        model.pointer,
+        _mtmdContextParamsFor(modelHandle),
+      );
     } finally {
       malloc.free(mmProjPathPtr);
     }
@@ -6889,6 +6903,36 @@ class LlamaCppService {
     _mtmdContexts[handle] = mmCtx;
     _modelToMtmd[modelHandle] = handle;
     return handle;
+  }
+
+  mtmd_context_params _mtmdContextParamsFor(int modelHandle) {
+    final ctxParams = _mtmdContextParamsDefault();
+    ctxParams.use_gpu = _modelToMtmdUseGpu[modelHandle] ?? true;
+    ctxParams.cb_eval = _ttsEvalCallback();
+    return ctxParams;
+  }
+
+  /// The `cb_eval` address [createMultimodalContext] passes to mtmd: that of
+  /// `llama_dart_tts_eval_callback` in the library providing the text-to-
+  /// speech API, or 0 when that API is unavailable or its library does not
+  /// export the callback.
+  int debugMtmdEvalCallbackAddressForTesting() =>
+      _mtmdContextParamsFor(-1).cb_eval.address;
+
+  /// Whether the text-to-speech API this service resolves has
+  /// `llama_dart_tts_eval_callback` and `llama_dart_tts_set_cancel_flag`;
+  /// null when that API is unavailable.
+  ({bool evalCallback, bool setCancelFlag})? debugTtsCancelExportsForTesting() {
+    final _TtsApi api;
+    try {
+      api = _resolveTtsApi();
+    } on LlamaUnsupportedException {
+      return null;
+    }
+    return (
+      evalCallback: api.evalCallback != nullptr,
+      setCancelFlag: api.setCancelFlag != null,
+    );
   }
 
   /// Frees the multimodal context (projector).
@@ -8207,12 +8251,21 @@ class LlamaCppService {
   }
 
   /// Synthesizes complete float32 PCM with the stable native TTS wrapper.
+  ///
+  /// [cancelFlagAddress] is the address of a one-byte flag that another
+  /// isolate sets to nonzero to cancel. It is read before the native task is
+  /// created and, when the runtime exports `llama_dart_tts_set_cancel_flag`,
+  /// attached to the task after startup so native code reads it while a step
+  /// runs. It must stay allocated until this future completes; it is last read
+  /// before then.
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
     int contextHandle,
     int mmContextHandle,
-    BackendTextToSpeechRequest request, {
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
+    final cancelFlag = Pointer<Int8>.fromAddress(cancelFlagAddress);
     final context = _contexts[contextHandle];
     final mtmd = _mtmdContexts[mmContextHandle];
     if (context == null ||
@@ -8285,7 +8338,7 @@ class LlamaCppService {
       // Yields so a cancel already queued for this synthesis can be processed
       // before the native task setup, which cannot be interrupted.
       await Future<void>.delayed(Duration.zero);
-      if (_ttsCancelPending) {
+      if (_ttsCancelPending || cancelFlag.value != 0) {
         _ttsCancelPending = false;
         throw LlamaTextToSpeechException(
           'Text-to-speech synthesis was cancelled.',
@@ -8328,6 +8381,7 @@ class LlamaCppService {
         api: api,
         task: task,
       );
+      api.setCancelFlag?.call(task, cancelFlag);
 
       while (true) {
         progress.ref.struct_size = sizeOf<llama_dart_tts_progress>();
@@ -8553,6 +8607,8 @@ class _TtsApi {
   final _TtsGetOutputInfoDart getOutputInfo;
   final _TtsReadPcmDart readPcm;
   final _TtsLastErrorDart lastError;
+  final _TtsSetCancelFlagDart? setCancelFlag;
+  final ggml_backend_sched_eval_callback evalCallback;
 
   const _TtsApi({
     required this.apiVersion,
@@ -8567,10 +8623,14 @@ class _TtsApi {
     required this.getOutputInfo,
     required this.readPcm,
     required this.lastError,
+    required this.setCancelFlag,
+    required this.evalCallback,
   });
 
   static _TtsApi? tryLoad(DynamicLibrary library) {
     try {
+      const setCancelFlagSymbol = 'llama_dart_tts_set_cancel_flag';
+      const evalCallbackSymbol = 'llama_dart_tts_eval_callback';
       return _TtsApi(
         apiVersion: library
             .lookupFunction<_TtsApiVersionNative, _TtsApiVersionDart>(
@@ -8612,6 +8672,17 @@ class _TtsApi {
             .lookupFunction<_TtsLastErrorNative, _TtsLastErrorDart>(
               'llama_dart_tts_last_error',
             ),
+        setCancelFlag: library.providesSymbol(setCancelFlagSymbol)
+            ? library.lookupFunction<
+                _TtsSetCancelFlagNative,
+                _TtsSetCancelFlagDart
+              >(setCancelFlagSymbol)
+            : null,
+        evalCallback: library.providesSymbol(evalCallbackSymbol)
+            ? library.lookup<
+                NativeFunction<ggml_backend_sched_eval_callbackFunction>
+              >(evalCallbackSymbol)
+            : nullptr,
       );
     } catch (_) {
       return null;
