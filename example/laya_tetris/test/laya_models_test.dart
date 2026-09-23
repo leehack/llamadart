@@ -22,7 +22,7 @@ void main() {
         source.resolvedUri,
         Uri.parse(
           'https://huggingface.co/leehack/laya-tetris-head/resolve/'
-          '83794e0bdd5526420997279a5d3dc9810a445217/'
+          '465546a595ee2e8e3b212b8cb16829205d5dfab6/'
           'laya-head-tetris.safetensors?download=true',
         ),
       );

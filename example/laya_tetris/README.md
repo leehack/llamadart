@@ -20,7 +20,7 @@ On first launch the app downloads `laya-Q8_0.gguf` (421 MB) and
 `ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, and the Tetris-tuned head
 `laya-head-tetris.safetensors` (106 MB) from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `83794e0bdd5526420997279a5d3dc9810a445217`, and shows the
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`, and shows the
 progress. Files are cached in a `laya/` folder, and later launches load them
 from there. The folder is in the app's cache directory, which iOS leaves out
 of backups and may clear when storage runs low (the app then downloads again),

@@ -15,7 +15,7 @@ const String baseHeadFile = 'laya-head.safetensors';
 const String tunedHeadRepoId = 'leehack/laya-tetris-head';
 
 /// Pinned revision of [tunedHeadRepoId].
-const String tunedHeadRevision = '83794e0bdd5526420997279a5d3dc9810a445217';
+const String tunedHeadRevision = '465546a595ee2e8e3b212b8cb16829205d5dfab6';
 
 /// File name of the Tetris-tuned head.
 const String tunedHeadFile = 'laya-head-tetris.safetensors';
