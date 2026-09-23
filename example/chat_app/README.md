@@ -121,8 +121,9 @@ flutter test --run-skipped -t local-only \
      STT, and deletes the native file or revokes the browser blob.
      Capture is foreground-only and cancelling discards the temporary
      recording. Real-model checks cover only WAV input of at most 33 seconds.
-     A long recording can fill the preset's 4,096-token context; transcription
-     then completes with a truncated transcript and no error
+     On native macOS arm64 CPU, 297 seconds of audio filled a 4,096-token
+     context, the preset's size, and transcription completed with a truncated
+     transcript and no error
      ([#636](https://github.com/leehack/llamadart/issues/636)).
      This Qwen path remains whole-file rather than live. For native chat
      models, including generic audio-chat models, the composer can separately

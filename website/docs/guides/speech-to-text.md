@@ -286,9 +286,9 @@ uses origin-scoped Cache Storage and the pinned source metadata.
 The `validation-speech-stt` pack
 (`dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt`)
 runs the checksum-locked Qwen3-ASR 0.6B Q8_0 model and projector on `jfk.wav`,
-an 11-second English WAV, as a file and as bytes. It compares transcripts by
-word error rate, ignoring case and punctuation. It also sends four generated
-WAV inputs as bytes:
+an 11-second English WAV, as a file and as bytes. It scores each transcript
+against the reference by word error rate, after lowercasing both and replacing
+`.,!?:;"—–` with spaces. It also sends four generated WAV inputs as bytes:
 
 | Input | Required outcome |
 | --- | --- |
@@ -325,17 +325,17 @@ verify GPU execution.
 - The repository's real-model checks use WAV input of at most 33 s; none uses
   MP3 or FLAC. Longer input is unvalidated. The audio prompt grows with
   duration (3,890 tokens for 297 s in
-  [#636](https://github.com/leehack/llamadart/issues/636)). If it fits in
-  `contextSize` but leaves too little room for the transcript, the task
+  [#636](https://github.com/leehack/llamadart/issues/636)). On native, if it
+  fits in `contextSize` but leaves too little room for the transcript, the task
   completes with a truncated transcript and no error.
 - Beyond [Validated behavior](#validated-behavior), chat-app microphone
   transcription on CPU has passed on a physical Pixel and in the iOS Simulator
   ([#328](https://github.com/leehack/llamadart/pull/328)), and CPU file
   transcription plus chat-app microphone transcription have passed on a
-  physical iPad ([#462](https://github.com/leehack/llamadart/pull/462)). No STT
-  run covers Android x64, Linux arm64, Windows arm64 or x64, macOS x86_64, or a
-  physical iPhone, nor the Vulkan, CUDA, HIP, OpenCL, or BLAS backends. Linux
-  keeps selected-file STT but not microphone capture.
+  physical iPad ([#462](https://github.com/leehack/llamadart/pull/462)). No
+  Qwen3-ASR run covers Android x64, Linux arm64, Windows arm64 or x64, macOS
+  x86_64, or a physical iPhone, nor the Vulkan, CUDA, HIP, OpenCL, or BLAS
+  backends. Linux keeps selected-file STT but not microphone capture.
 - Web requires `v0.1.30+`, a browser with enough memory for
   the roughly 1.02 GB model/projector pair, and the targeted
   `web-speech-to-text-smoke` validation row. That row verifies both browser

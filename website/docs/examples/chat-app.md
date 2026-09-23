@@ -75,10 +75,10 @@ flutter test
   iOS, macOS, Windows, and supported secure browser origins; Linux capture
   remains disabled pending a safe external-recorder preflight, while
   selected-file transcription remains available there. Recordings stop at five
-  minutes, but real-model checks cover only WAV input of at most 33 seconds. A
-  long recording can fill the preset's 4,096-token context; transcription then
-  completes with a truncated transcript and no error
-  ([#636](https://github.com/leehack/llamadart/issues/636)).
+  minutes, but real-model checks cover only WAV input of at most 33 seconds. On
+  native macOS arm64 CPU, 297 seconds of audio filled a 4,096-token context, the
+  preset's size, and transcription completed with a truncated transcript and no
+  error ([#636](https://github.com/leehack/llamadart/issues/636)).
 - Experimental live English dictation for native chat models, including
   generic audio-chat models, through independently installed, checksum-pinned
   LiteRT sidecars. Moonshine Tiny is the recommended 54 MB default; Parakeet

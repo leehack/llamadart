@@ -9,7 +9,8 @@ import 'runner.dart' show redactDiagnostic;
 import 'speech_edge_fixtures.dart';
 
 /// Word edit distance divided by reference words; insertions can exceed 1.0.
-/// Normalization ignores case and ASCII punctuation, preserving Unicode words.
+/// Normalization lowercases, replaces `.,!?:;"—–` with spaces, then splits on
+/// whitespace.
 double speechWordErrorRate(String reference, String actual) {
   List<String> words(String text) => text
       .toLowerCase()
