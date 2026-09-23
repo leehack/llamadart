@@ -27,6 +27,76 @@ WebGpuLoadEscalation _escalation({int remoteFetchChunkBytes = _fourMiB}) {
   return WebGpuLoadEscalation(remoteFetchChunkBytes: remoteFetchChunkBytes);
 }
 
+WebGpuLoadFailure _published(
+  (String, String, String) output, {
+  int attemptIndex = 0,
+  bool forced = false,
+  bool optedIn = false,
+}) {
+  final (coreVariant, runtimeNotes, message) = output;
+  return _failure(
+    attemptIndex: attemptIndex,
+    errorText: message.toLowerCase(),
+    coreVariant: coreVariant,
+    runtimeNotes: runtimeNotes,
+    forceRemoteFetchRequested: forced,
+    remoteFetchBackendOptedIn: optedIn,
+  );
+}
+
+List<WebGpuRetryDecision> _replay(
+  List<WebGpuLoadFailure> failures, {
+  int remoteFetchChunkBytes = _fourMiB,
+}) {
+  var state = _escalation(remoteFetchChunkBytes: remoteFetchChunkBytes);
+  final decisions = <WebGpuRetryDecision>[];
+  for (final failure in failures) {
+    final decision = classifyWebGpuLoadFailure(failure, state);
+    decisions.add(decision);
+    state = decision.escalation;
+  }
+  return decisions;
+}
+
+const _skippedSmallTrapWasm32 = (
+  'wasm32',
+  'core_wasm32_active;core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+      'model_fetch_backend_skipped_small;model_network_stream;'
+      'model_response_stream;model_load_ccall_failed',
+  'memory access out of bounds',
+);
+
+const _skippedSmallTrapWasm64 = (
+  'wasm64',
+  'core_mem64_attempt;core_mem64_active;core_pthreads:1;thread_pool_size:4;'
+      'threads_batch:4;model_fetch_backend_skipped_small;model_network_stream;'
+      'model_response_stream;model_load_ccall_failed',
+  'memory access out of bounds',
+);
+
+const _streamedTrapWasm32 = (
+  'wasm32',
+  'core_wasm32_active;core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+      'model_network_stream;model_response_stream;model_load_ccall_failed',
+  'memory access out of bounds',
+);
+
+const _streamedStagingOomWasm32 = (
+  'wasm32',
+  'core_wasm32_active;core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+      'model_network_stream;model_response_stream;model_fs_write_loaded:0;'
+      'model_fs_write_arraybuffer_oom',
+  'Array buffer allocation failed',
+);
+
+const _noStreamMem64Unavailable = (
+  'wasm32',
+  'core_mem64_attempt;core_mem64_unavailable;core_wasm32_active;'
+      'core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+      'model_network_no_stream;model_response_nostream',
+  'Model response did not expose a readable stream (64 bytes).',
+);
+
 void main() {
   group('failure text predicates', () {
     test('memory pressure covers every recognised phrase', () {
@@ -219,8 +289,11 @@ void main() {
       ]) {
         final decision = classifyWebGpuLoadFailure(
           _failure(
+            errorText: 'aborted(). build with -sassertions for more info.',
             runtimeNotes:
-                'model_fetch_backend_attempt;model_fetch_backend_abort;$note',
+                'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+                '$note;threads_batch:1;model_fetch_backend_attempt;'
+                'model_fetch_chunk:4194304;core_abort',
             coreVariant: 'wasm32',
             forceRemoteFetchRequested: true,
             remoteFetchBackendOptedIn: true,
@@ -331,7 +404,9 @@ void main() {
       final decision = classifyWebGpuLoadFailure(
         _failure(
           coreVariant: 'wasm32',
-          errorText: 'aborted(native code called abort())',
+          errorText:
+              'error: aborted(native code called abort()) | '
+              'aborted(native code called abort())',
           runtimeNotes: 'model_fetch_backend_attempt',
           remoteFetchBackendOptedIn: true,
         ),
@@ -574,15 +649,12 @@ void main() {
 
     test('a skipped small fetch suppresses the restart', () {
       final decision = classifyWebGpuLoadFailure(
-        _failure(
-          coreVariant: 'wasm32',
-          errorText: 'out of memory',
-          runtimeNotes: 'model_fetch_backend_skipped_small',
-        ),
+        _published(_skippedSmallTrapWasm32, optedIn: true),
         _escalation(),
       );
 
       expect(decision.action, WebGpuRetryAction.advance);
+      expect(decision.escalation.retriedWithWasm64, isFalse);
     });
 
     test('fires at most once', () {
@@ -916,6 +988,482 @@ void main() {
       );
 
       expect(fieldsOf(fired.copyWith()), fieldsOf(fired));
+    });
+  });
+
+  group('published bridge failures', () {
+    const nativeAbort = 'Aborted(). Build with -sASSERTIONS for more info.';
+
+    test('a release-build native abort is not memory pressure', () {
+      final decision = classifyWebGpuLoadFailure(
+        _published((
+          'wasm32',
+          'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+              'threads_batch:4;model_network_stream;model_response_stream;'
+              'core_abort;model_load_ccall_abort',
+          nativeAbort,
+        )),
+        _escalation(),
+      );
+
+      expect(isMemoryPressureErrorText(nativeAbort.toLowerCase()), isFalse);
+      expect(decision.action, WebGpuRetryAction.giveUp);
+      expect(decision.logMessages, isEmpty);
+    });
+
+    test('a core that cannot allocate its memory is not memory pressure', () {
+      const message = 'WebAssembly.Memory(): could not allocate memory';
+      final decision = classifyWebGpuLoadFailure(
+        _published(('uninitialized', '', message)),
+        _escalation(),
+      );
+
+      expect(isMemoryPressureErrorText(message.toLowerCase()), isFalse);
+      expect(decision.action, WebGpuRetryAction.giveUp);
+    });
+
+    test('a table index trap is not memory pressure', () {
+      const message = 'table index is out of bounds';
+      final decision = classifyWebGpuLoadFailure(
+        _published((
+          'wasm32',
+          'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+              'threads_batch:4;model_network_stream;model_response_stream;'
+              'model_load_ccall_failed',
+          message,
+        )),
+        _escalation(),
+      );
+
+      expect(isMemoryPressureErrorText(message), isFalse);
+      expect(decision.action, WebGpuRetryAction.giveUp);
+      expect(decision.escalation.retriedWithWasm64, isFalse);
+    });
+
+    test('recognises only the V8 wording of a BigInt failure', () {
+      const message = "can't convert BigInt to number";
+      final decision = classifyWebGpuLoadFailure(
+        _published((
+          'wasm64',
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'thread_pool_size:4;threads_batch:4;model_network_stream;'
+              'model_response_stream;model_fs_write_loaded:0;'
+              'model_fs_write_bigint_error',
+          message,
+        )),
+        _escalation(),
+      );
+
+      expect(isBigIntInteropErrorText(message.toLowerCase()), isFalse);
+      expect(decision.action, WebGpuRetryAction.giveUp);
+      expect(decision.escalation.retriedWithWasm32, isFalse);
+    });
+
+    test('a model size in the error text is not a thread failure', () {
+      const message =
+          'Model response did not expose a readable stream (1138294784 bytes).';
+      final decision = classifyWebGpuLoadFailure(
+        _published(
+          (
+            'wasm64',
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'thread_pool_size:4;threads_batch:4;'
+                'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+                'core_abort;model_fetch_backend_failed;model_network_no_stream;'
+                'model_response_nostream',
+            message,
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(isThreadConstructorFailureText(message.toLowerCase()), isFalse);
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.remoteFetchChunkRetryCount, 1);
+      expect(decision.escalation.remoteFetchChunkBytes, 2 * 1024 * 1024);
+    });
+
+    test('a bridge URL in the error stack is not a thread failure', () {
+      const errorText =
+          'error: aborted(). build with -sassertions for more info. | '
+          'aborted(). build with -sassertions for more info. | '
+          'error: aborted(). build with -sassertions for more info.\n'
+          '    at bridgeworkerproxy._worker.onmessage '
+          '(https://example.com/threads/webgpu_bridge/'
+          'llama_webgpu_bridge.js:1037:11)';
+      final decision = classifyWebGpuLoadFailure(
+        _failure(
+          errorText: errorText,
+          coreVariant: 'wasm64',
+          runtimeNotes:
+              'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'thread_pool_size:4;threads_batch:4;model_fetch_backend_attempt;'
+              'model_fetch_chunk:4194304;core_abort',
+          forceRemoteFetchRequested: true,
+          remoteFetchBackendOptedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(isThreadConstructorFailureText(errorText), isFalse);
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.remoteFetchChunkRetryCount, 1);
+    });
+
+    test('a resumed stream is not a staging failure', () {
+      const notes =
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+          'thread_pool_size:4;threads_batch:4;model_network_stream;'
+          'model_response_stream;model_fs_write_loaded:32;'
+          'model_stream_resume_retry:1;model_stream_resume_offset:32;'
+          'model_network_stream;model_response_stream;model_load_ccall_failed';
+      final decision = classifyWebGpuLoadFailure(
+        _published(('wasm64', notes, 'memory access out of bounds')),
+        _escalation(),
+      );
+
+      expect(runtimeNotesIndicateModelFsWriteFailure(notes), isFalse);
+      expect(decision.action, WebGpuRetryAction.advance);
+      expect(decision.logMessages, isEmpty);
+    });
+
+    test('a cancelled transfer is not a fetch backend abort', () {
+      final decision = classifyWebGpuLoadFailure(
+        _published((
+          'wasm64',
+          'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+              'thread_pool_size:4;threads_batch:4;model_fetch_backend_attempt;'
+              'model_fetch_chunk:4194304;model_fetch_backend_failed;'
+              'model_network_stream;model_response_stream;'
+              'model_fs_write_loaded:64;model_fs_write_abort',
+          'Model load was cancelled.',
+        ), optedIn: true),
+        _escalation(),
+      );
+
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isFalse);
+      expect(decision.escalation.retriedWithoutRemoteFetchBackend, isFalse);
+    });
+
+    test('a split model is not a skipped small fetch', () {
+      const splitNotes =
+          'core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+          'model_split_detected:2;model_fetch_backend_skipped_split;'
+          'model_network_stream;model_response_stream;model_network_stream;'
+          'model_response_stream;model_load_ccall_failed';
+      final wasm64 = classifyWebGpuLoadFailure(
+        _published((
+          'wasm64',
+          'core_mem64_attempt;core_mem64_active;$splitNotes',
+          'memory access out of bounds',
+        ), optedIn: true),
+        _escalation(),
+      );
+      final wasm32 = classifyWebGpuLoadFailure(
+        _published((
+          'wasm32',
+          'core_wasm32_active;$splitNotes',
+          'memory access out of bounds',
+        ), optedIn: true),
+        _escalation(),
+      );
+
+      expect(wasm64.action, WebGpuRetryAction.advance);
+      expect(wasm64.escalation.retriedWithWasm32, isFalse);
+      expect(wasm32.action, WebGpuRetryAction.restart);
+      expect(wasm32.escalation.retriedWithWasm64, isTrue);
+    });
+
+    test(
+      'leaves the override alone after a forced abort without the opt-in',
+      () {
+        final decision = classifyWebGpuLoadFailure(
+          _published((
+            'wasm32',
+            'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+                'threads_batch:4;model_fetch_backend_attempt;'
+                'model_fetch_chunk:4194304;core_abort',
+            nativeAbort,
+          ), forced: true),
+          _escalation(),
+        );
+
+        expect(decision.action, WebGpuRetryAction.giveUp);
+        expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+        expect(decision.forceRemoteFetchBackend, isNull);
+      },
+    );
+
+    test('the wasm32 restart keeps an abort from the same failure', () {
+      final decision = classifyWebGpuLoadFailure(
+        _published(
+          (
+            'wasm64',
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'thread_pool_size:4;threads_capped_no_coi;threads_batch:1;'
+                'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+                'core_abort;model_fetch_backend_failed;model_network_stream;'
+                'model_response_stream;model_fs_write_loaded:0;'
+                'model_fs_write_bigint_error',
+            'Cannot convert a BigInt value to a number',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _escalation(),
+      );
+
+      expect(decision.action, WebGpuRetryAction.restart);
+      expect(decision.escalation.retriedWithWasm32, isTrue);
+      expect(decision.escalation.remoteFetchBackendKnownUnstable, isTrue);
+    });
+
+    test('matches a core variant built at run time', () {
+      (String, String, String) atRunTime((String, String, String) output) {
+        final (coreVariant, runtimeNotes, message) = output;
+        return (
+          String.fromCharCodes(coreVariant.codeUnits),
+          runtimeNotes,
+          message,
+        );
+      }
+
+      final staging = classifyWebGpuLoadFailure(
+        _published(atRunTime(_noStreamMem64Unavailable)),
+        _escalation(),
+      );
+      final wasm32 = classifyWebGpuLoadFailure(
+        _published(atRunTime(_skippedSmallTrapWasm64), optedIn: true),
+        _escalation(),
+      );
+      final wasm64 = classifyWebGpuLoadFailure(
+        _published(atRunTime(_streamedStagingOomWasm32)),
+        _escalation(),
+      );
+
+      expect(staging.escalation.retriedWithWasm64, isTrue);
+      expect(wasm32.escalation.retriedWithWasm32, isTrue);
+      expect(wasm64.escalation.retriedWithWasm64, isTrue);
+    });
+  });
+
+  group('published bridge failure sequences', () {
+    const nativeAbort = 'Aborted(). Build with -sASSERTIONS for more info.';
+    const mem64Prefix =
+        'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+        'thread_pool_size:4;threads_batch:4;';
+
+    List<WebGpuRetryAction> actionsOf(List<WebGpuRetryDecision> decisions) =>
+        decisions.map((decision) => decision.action).toList();
+
+    test('a staging restart keeps the abort latch for the wasm64 restart', () {
+      final decisions = _replay([
+        _published(
+          (
+            'wasm64',
+            'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+                'thread_pool_size:4;threads_capped_no_coi;threads_batch:1;'
+                'model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+                'core_abort;model_fetch_backend_failed;model_network_stream;'
+                'model_response_stream;model_fs_write_loaded:0;'
+                'model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _published(
+          (
+            'wasm32',
+            'core_mem64_attempt;core_mem64_unavailable;core_wasm32_active;'
+                'core_pthreads:1;thread_pool_size:4;threads_capped_no_coi;'
+                'threads_batch:1;model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+      ]);
+
+      expect(actionsOf(decisions), <WebGpuRetryAction>[
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.restart,
+      ]);
+      expect(decisions[0].escalation.remoteFetchBackendKnownUnstable, isTrue);
+      expect(decisions[1].forceRemoteFetchBackend, isFalse);
+      expect(decisions[1].logMessages, <String>[
+        'WebGpuLlamaBackend: wasm32 memory pressure detected; '
+            'retrying with wasm64 core and streamed network loading.',
+      ]);
+    });
+
+    test('the wasm64 restart stays spent after the ladder advances', () {
+      final decisions = _replay([
+        _published(_streamedStagingOomWasm32),
+        _published(_noStreamMem64Unavailable),
+        _published((
+          'wasm32',
+          'core_mem64_attempt;core_mem64_unavailable;core_wasm32_active;'
+              'core_pthreads:1;thread_pool_size:4;threads_batch:4;'
+              'model_network_stream;model_response_stream;'
+              'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+          'Array buffer allocation failed',
+        ), attemptIndex: 1),
+      ]);
+
+      expect(actionsOf(decisions), <WebGpuRetryAction>[
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.advance,
+        WebGpuRetryAction.advance,
+      ]);
+    });
+
+    test('the wasm32 restart stays spent after the wasm64 restart', () {
+      final decisions = _replay([
+        _published(_skippedSmallTrapWasm64, optedIn: true),
+        _published(_streamedTrapWasm32, optedIn: true),
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:4194304;model_fetch_backend_failed;'
+                'model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:131072;model_fetch_backend_failed;'
+                'model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_bigint_error',
+            'Cannot convert a BigInt value to a number',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+      ]);
+
+      expect(actionsOf(decisions), <WebGpuRetryAction>[
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.giveUp,
+      ]);
+      expect(decisions[1].forceRemoteFetchBackend, isTrue);
+      expect(decisions[3].logMessages, <String>[
+        'WebGpuLlamaBackend: wasm64 model staging failed; skipping '
+            'fallback ladder because additional nCtx/GPU/thread '
+            'reductions are unlikely to recover FS write failures.',
+      ]);
+    });
+
+    test('a native load BigInt error is not a staging failure', () {
+      const notes =
+          '${mem64Prefix}model_fetch_backend_attempt;model_fetch_chunk:4194304;'
+          'model_fetch_backend_failed;model_network_stream;'
+          'model_response_stream;model_load_ccall_bigint_error';
+      final decisions = _replay([
+        _published(_skippedSmallTrapWasm64, optedIn: true),
+        _published(_streamedTrapWasm32, optedIn: true),
+        _published(
+          ('wasm64', notes, 'Cannot convert a BigInt value to a number'),
+          forced: true,
+          optedIn: true,
+        ),
+      ]);
+
+      expect(runtimeNotesIndicateModelFsWriteFailure(notes), isFalse);
+      expect(decisions.last.action, WebGpuRetryAction.giveUp);
+      expect(decisions.last.logMessages, isEmpty);
+    });
+
+    test('the chunk restart count survives a ladder advance', () {
+      final decisions = _replay([
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:20480;core_abort',
+            nativeAbort,
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:16384',
+            'memory access out of bounds',
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:16384;core_abort',
+            nativeAbort,
+          ),
+          attemptIndex: 1,
+          forced: true,
+          optedIn: true,
+        ),
+      ], remoteFetchChunkBytes: 20 * 1024);
+
+      expect(actionsOf(decisions), <WebGpuRetryAction>[
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.advance,
+        WebGpuRetryAction.restart,
+      ]);
+      expect(decisions[2].logMessages, <String>[
+        'WebGpuLlamaBackend: fetch-backed model loading aborted; '
+            'retrying with smaller fetch chunks (5 KiB, attempt #2).',
+      ]);
+    });
+
+    test('a chunk restart keeps the streamed restart spent', () {
+      final decisions = _replay([
+        _published((
+          'wasm64',
+          '${mem64Prefix}model_fetch_backend_attempt;'
+              'model_fetch_chunk:4194304;core_abort',
+          nativeAbort,
+        ), optedIn: true),
+        _published((
+          'wasm64',
+          '${mem64Prefix}model_network_stream;model_response_stream;'
+              'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+          'Array buffer allocation failed',
+        ), optedIn: true),
+        _published(
+          (
+            'wasm64',
+            '${mem64Prefix}model_fetch_backend_attempt;'
+                'model_fetch_chunk:131072;core_abort',
+            nativeAbort,
+          ),
+          forced: true,
+          optedIn: true,
+        ),
+      ]);
+
+      expect(actionsOf(decisions), <WebGpuRetryAction>[
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.restart,
+        WebGpuRetryAction.restart,
+      ]);
+      expect(decisions[2].escalation.remoteFetchChunkBytes, 64 * 1024);
+      expect(decisions[2].escalation.retriedWithoutRemoteFetchBackend, isTrue);
     });
   });
 }

@@ -1792,6 +1792,215 @@ void main() {
       },
     );
 
+    const nativeAbort = 'Aborted(). Build with -sASSERTIONS for more info.';
+    const mem64Notes =
+        'core_mem64_attempt;core_mem64_active;core_pthreads:1;'
+        'thread_pool_size:4;threads_batch:4;';
+
+    test('keeps counting chunk restarts across a ladder advance', () async {
+      final warnings = captureConsoleWarnings();
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      globalContext.setProperty(
+        '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+        (20 * 1024).toJS,
+      );
+      failLoadsInOrder([
+        (
+          'wasm64',
+          '${mem64Notes}model_fetch_backend_attempt;model_fetch_chunk:20480;'
+              'core_abort',
+          nativeAbort,
+        ),
+        (
+          'wasm64',
+          '${mem64Notes}model_fetch_backend_attempt;model_fetch_chunk:16384',
+          'memory access out of bounds',
+        ),
+        (
+          'wasm64',
+          '${mem64Notes}model_fetch_backend_attempt;model_fetch_chunk:16384;'
+              'core_abort',
+          nativeAbort,
+        ),
+      ]);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/chunk-advance-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(requestedGpuLayerCounts, <int?>[99, 99, 0, 99]);
+      expect(requestedRemoteFetchChunkBytes, <int?>[
+        20 * 1024,
+        10 * 1024,
+        10 * 1024,
+        5 * 1024,
+      ]);
+      expect(
+        warnings
+            .where((message) => message.contains('smaller fetch chunks'))
+            .toList(),
+        <String>[
+          'WebGpuLlamaBackend: fetch-backed model loading aborted; retrying '
+              'with smaller fetch chunks (10 KiB, attempt #1).',
+          'WebGpuLlamaBackend: fetch-backed model loading aborted; retrying '
+              'with smaller fetch chunks (5 KiB, attempt #2).',
+        ],
+      );
+    });
+
+    void failFirstLoadAfterSetting(
+      String global,
+      (String, String, String) failure,
+    ) {
+      var loadCallCount = 0;
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          loadCallCount += 1;
+          recordLoadConfig(config);
+          if (loadCallCount > 1) {
+            return Future<void>.value().toJS;
+          }
+          globalContext.setProperty(global.toJS, true.toJS);
+          final (coreVariant, runtimeNotes, message) = failure;
+          bridgeRuntimeHints['llamadart.webgpu.core_variant'] = coreVariant;
+          bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] = runtimeNotes;
+          return rejectLoadWith(message);
+        }).toJS,
+      );
+    }
+
+    test('keeps the load-start opt-in when a page opts in mid-load', () async {
+      final warnings = captureConsoleWarnings();
+      failFirstLoadAfterSetting(
+        '__llamadartBridgeAllowAutoRemoteFetchBackend',
+        (
+          'wasm32',
+          'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+              'threads_batch:4;model_network_stream;model_response_stream;'
+              'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+          'Array buffer allocation failed',
+        ),
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/mid-load-opt-in-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(requestedForceRemoteFetchBackends, <bool?>[null, false]);
+      expect(
+        warnings,
+        contains(
+          'WebGpuLlamaBackend: wasm32 memory pressure detected; '
+          'retrying with wasm64 core and streamed network loading.',
+        ),
+      );
+    });
+
+    test(
+      'surfaces the staging error when a page opts in during a failed load',
+      () async {
+        failFirstLoadAfterSetting(
+          '__llamadartBridgeAllowAutoRemoteFetchBackend',
+          (
+            'wasm64',
+            '${mem64Notes}model_network_stream;model_response_stream;'
+                'model_fs_write_loaded:0;model_fs_write_arraybuffer_oom',
+            'Array buffer allocation failed',
+          ),
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/mid-load-staging-model.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              startsWith(
+                'Web model staging failed before the GGUF could be loaded '
+                'safely.',
+              ),
+            ),
+          ),
+        );
+
+        expect(requestedForceRemoteFetchBackends, <bool?>[null]);
+      },
+    );
+
+    test('classifies an attempt by the fetch mode it requested', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      failFirstLoadAfterSetting('__llamadartBridgeForceRemoteFetchBackend', (
+        'wasm32',
+        'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+            'threads_batch:4;model_fetch_backend_attempt;'
+            'model_fetch_chunk:4194304;core_abort',
+        nativeAbort,
+      ));
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/mid-attempt-force-model.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(requestedForceRemoteFetchBackends, <bool?>[null, false]);
+      expect(requestedRemoteFetchChunkBytes, <int?>[
+        4 * 1024 * 1024,
+        4 * 1024 * 1024,
+      ]);
+      expect(capturedPreferMemory64(), isTrue);
+    });
+
+    test(
+      'surfaces a BigInt worker crash that reports no core variant',
+      () async {
+        final warnings = captureConsoleWarnings();
+        bridge.setProperty(
+          'getModelMetadata'.toJS,
+          (() {
+            final meta = JSObject();
+            meta.setProperty('llamadart.webgpu.execution'.toJS, 'worker'.toJS);
+            return meta;
+          }).toJS,
+        );
+        failLoads(
+          message:
+              'Uncaught TypeError: Cannot convert a BigInt value to a number',
+          firstAttempts: 1,
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/worker-crash-model.gguf',
+            const ModelParams(
+              contextSize: 4096,
+              gpuLayers: 99,
+              preferMemory64: true,
+            ),
+          ),
+          throwsA(isNot(isA<UnsupportedError>())),
+        );
+
+        expect(requestedForceRemoteFetchBackends, <bool?>[null]);
+        expect(capturedPreferMemory64(), isTrue);
+        expect(
+          warnings.where((message) => message.contains('BigInt')),
+          isEmpty,
+        );
+      },
+    );
+
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
