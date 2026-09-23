@@ -128,7 +128,8 @@ void main() {
   test('a cancel flag raised between steps stops the next step only when the '
       'runtime can attach it', () async {
     await _withTextToSpeechService((service, context, projector) async {
-      final attachable = service.debugMtmdEvalCallbackAddressForTesting() != 0;
+      final attachable =
+          service.debugTtsCancelExportsForTesting()?.setCancelFlag ?? false;
       final flag = calloc<Int8>();
       try {
         var steps = 0;

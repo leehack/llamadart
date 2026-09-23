@@ -983,36 +983,35 @@ void main() {
       );
     });
 
-    test('mtmd contexts get the TTS eval callback only when exported', () {
+    test('the TTS API has both cancel exports and mtmd contexts get its eval '
+        'callback', () {
       final wrapper = _llamadartWrapperLibraryFileOrNull();
       expect(
         wrapper,
         isNotNull,
         reason: 'Expected the llama.cpp wrapper library.',
       );
-      final library = ffi.DynamicLibrary.open(wrapper!.path);
-      final exports = LlamaCppService.debugTtsCancelExportsForTesting(library);
-      final address = LlamaCppService()
-          .debugMtmdEvalCallbackAddressForTesting();
-      final exported = _ttsCancelSymbols
-          .where((symbol) => _fileContainsAscii(wrapper, symbol))
-          .toList(growable: false);
+      final service = LlamaCppService();
+      final exports = service.debugTtsCancelExportsForTesting();
+      final address = service.debugMtmdEvalCallbackAddressForTesting();
 
-      if (!_fileContainsAscii(wrapper, 'llama_dart_tts_step')) {
+      if (!_fileContainsAscii(wrapper!, 'llama_dart_tts_step')) {
         expect(exports, isNull);
         expect(address, 0);
         return;
       }
-      if (exported.isEmpty) {
-        expect(exports, (evalCallback: false, setCancelFlag: false));
-        expect(address, 0);
-        return;
-      }
-      expect(exported, _ttsCancelSymbols);
+      expect(
+        _ttsCancelSymbols
+            .where((symbol) => _fileContainsAscii(wrapper, symbol))
+            .toList(),
+        _ttsCancelSymbols,
+      );
       expect(exports, (evalCallback: true, setCancelFlag: true));
       expect(
         address,
-        library.lookup<ffi.Void>('llama_dart_tts_eval_callback').address,
+        ffi.DynamicLibrary.open(
+          wrapper.path,
+        ).lookup<ffi.Void>('llama_dart_tts_eval_callback').address,
       );
     });
 

@@ -6905,13 +6905,16 @@ class LlamaCppService {
   int debugMtmdEvalCallbackAddressForTesting() =>
       _mtmdContextParamsFor(-1).cb_eval.address;
 
-  /// Whether the service's text-to-speech API lookup finds
-  /// `llama_dart_tts_eval_callback` and `llama_dart_tts_set_cancel_flag` in
-  /// [library]; null when [library] lacks the text-to-speech API.
-  static ({bool evalCallback, bool setCancelFlag})?
-  debugTtsCancelExportsForTesting(DynamicLibrary library) {
-    final api = _TtsApi.tryLoad(library);
-    if (api == null) return null;
+  /// Whether the text-to-speech API this service resolves has
+  /// `llama_dart_tts_eval_callback` and `llama_dart_tts_set_cancel_flag`;
+  /// null when that API is unavailable.
+  ({bool evalCallback, bool setCancelFlag})? debugTtsCancelExportsForTesting() {
+    final _TtsApi api;
+    try {
+      api = _resolveTtsApi();
+    } on LlamaUnsupportedException {
+      return null;
+    }
     return (
       evalCallback: api.evalCallback != nullptr,
       setCancelFlag: api.setCancelFlag != null,

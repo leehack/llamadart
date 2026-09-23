@@ -8,9 +8,8 @@
 
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
-  progress first, when the llamadart-native runtime exports
-  `llama_dart_tts_set_cancel_flag` and `llama_dart_tts_eval_callback`. Older
-  runtimes, including the pinned v0.4.1, keep the previous behaviour
+  progress first. This needs llamadart-native v0.4.1-1 or later; older
+  runtimes keep the previous behaviour
   ([llamadart-native#86](https://github.com/leehack/llamadart-native/issues/86),
   [#325](https://github.com/leehack/llamadart/issues/325)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
