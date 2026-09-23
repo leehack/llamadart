@@ -1,5 +1,17 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.4.1-1`, keeping the `v0.4.1` llama.cpp
+  ABI/bindings while picking up wrapper-only native fixes. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and
+  aligned current README/website native override docs.
+
+- Stop a Qwen3-TTS audio decode at its next chunk boundary when native
+  text-to-speech is cancelled, instead of finishing the native step in
+  progress first. This needs llamadart-native v0.4.1-1 or later; older
+  runtimes keep the previous behaviour
+  ([llamadart-native#86](https://github.com/leehack/llamadart-native/issues/86),
+  [#322](https://github.com/leehack/llamadart/issues/322)).
 - Add an experimental `DecisionEngine` for Laya-style decision models (a
   ModernBERT encoder GGUF plus a safetensors head) on native llama.cpp, with
   typed `ChoiceKey`, `ScoreKey` and `NoulKey` questions

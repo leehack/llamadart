@@ -289,6 +289,7 @@ void runLlamaWorkerForTesting(
                   message.contextHandle,
                   message.mmContextHandle,
                   message.request,
+                  message.cancelFlagAddress,
                   onProgress: (progress) {
                     message.sendPort.send(
                       TextToSpeechProgressResponse(progress),

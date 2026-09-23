@@ -434,10 +434,12 @@ void main() {
             2,
             3,
             const BackendTextToSpeechRequest(text: 'Hello.'),
+            0x5a5a0,
             responsePort.sendPort,
           ),
         );
         await service.synthesisStarted.future;
+        expect(service.receivedCancelFlagAddress, 0x5a5a0);
         worker.sendPort.send(TextToSpeechCancelRequest());
         await service.cancelObserved.future;
         service.releaseSynthesis();
@@ -486,6 +488,7 @@ void main() {
               2,
               3,
               const BackendTextToSpeechRequest(text: 'Hello.'),
+              0x5a5a0,
               sendPort,
             ),
           );
@@ -863,6 +866,7 @@ class _BlockingTextToSpeechService extends LlamaCppService {
   final Completer<void> cancelObserved = Completer<void>();
   final Completer<void> _releaseSynthesis = Completer<void>();
   int cancelCalls = 0;
+  int? receivedCancelFlagAddress;
 
   void releaseSynthesis() {
     if (!_releaseSynthesis.isCompleted) {
@@ -880,9 +884,11 @@ class _BlockingTextToSpeechService extends LlamaCppService {
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
     int contextHandle,
     int mmContextHandle,
-    BackendTextToSpeechRequest request, {
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
+    receivedCancelFlagAddress = cancelFlagAddress;
     if (!synthesisStarted.isCompleted) {
       synthesisStarted.complete();
     }
@@ -931,7 +937,8 @@ class _ThrowingTextToSpeechService extends LlamaCppService {
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
     int contextHandle,
     int mmContextHandle,
-    BackendTextToSpeechRequest request, {
+    BackendTextToSpeechRequest request,
+    int cancelFlagAddress, {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     throw exception;
