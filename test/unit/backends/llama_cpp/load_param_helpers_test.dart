@@ -403,6 +403,8 @@ void main() {
       c.ref.op_offload = true;
       c.ref.flash_attn_typeAsInt =
           llama_flash_attn_type.LLAMA_FLASH_ATTN_TYPE_AUTO.value;
+      c.ref.pooling_typeAsInt =
+          llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value;
       c.ref.n_threads = 3;
       c.ref.n_threads_batch = 3;
       return c;
