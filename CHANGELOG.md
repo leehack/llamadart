@@ -4,6 +4,9 @@
   ModernBERT encoder GGUF plus a safetensors head) on native llama.cpp, with
   typed `ChoiceKey`, `ScoreKey` and `NoulKey` questions
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add `example/basic_app/bin/llamadart_decision_example.dart`, a console demo
+  that triages a support ticket with `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Run `DecisionEngine` on WebGPU with bridge assets that include the decision
   API (apiVersion 1); the currently pinned assets predate it and report
   unsupported
