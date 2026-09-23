@@ -53,7 +53,7 @@ dart test -p chrome --exclude-tags local-only
   Avoid `show`/`hide` on imports unless resolving a name clash.
 - Names: `PascalCase` types; `lowerCamelCase` members, variables and
   constants; `snake_case` files and directories.
-- No new TODO/FIXME comments in maintained Dart or workflow code.
+- No new TODO/FIXME comments in maintained source or workflow code.
 - Export new public API from `lib/llamadart.dart` with explicit parameter,
   return and field types (locals may infer), useful `///` Dartdoc, and tests;
   implementation stays in `lib/src/`. Select platform-specific backends with
@@ -87,9 +87,9 @@ Never patch upstream native or web bridge sources here. Owners:
 This repo only consumes them: native hook/config/bindings, and bridge tag
 pinning, fetch and runtime wiring
 (`website/docs/maintainers/runtime-ownership.md`). Checkouts often keep them as
-siblings in `..`; verify the path first. Change and release the owning repo
-first, then update pins, hooks, docs and tests here, and run analyze and the
-relevant tests before the final commit.
+siblings in `..`; verify the path first. Commit, push and release the change
+in the owning repo first, then update pins, hooks, docs and tests here, and run
+analyze and the relevant tests before the final commit.
 
 - A WebGPU bridge change is verified across the pinned tag/manifest, direct and
   worker paths, Dart interop, public API, docs and examples together; capability
