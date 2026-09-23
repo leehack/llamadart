@@ -22,6 +22,9 @@
 - Add `example/laya_tetris`, a Flutter app in which a Laya decision model
   plays real-time Tetris through `DecisionEngine`
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add a notebook in `example/laya_tetris/training/` that fine-tunes a Laya
+  decision head for the Tetris example and exports it for `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Run `DecisionEngine` on WebGPU through the bridge decision API
   (apiVersion 1), which bridge assets `v0.1.47+` include
   ([#604](https://github.com/leehack/llamadart/issues/604)).

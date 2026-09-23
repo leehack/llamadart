@@ -77,28 +77,36 @@ wait until it finishes.
 
 ## Tetris-tuned head
 
-The published tuned head is the base head fine-tuned on the heuristic-labelled
-choice examples that `bin/make_dataset.dart` writes (`train.jsonl` and
-`val.jsonl` in the Laya request format, with target probabilities):
+The published tuned head,
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head),
+is the base head fine-tuned with the recipe in
+[Fine-tune the head](#fine-tune-the-head).
 
-```bash
-dart run bin/make_dataset.dart dataset 16000 2000
-```
-
-A notebook that fine-tunes the head on this data is planned
-([#604](https://github.com/leehack/llamadart/issues/604)). The app loads the
-first tuned head it finds:
+The app loads the first tuned head it finds:
 
 1. The URL from `--dart-define=LAYA_TUNED_HEAD_URL=<url>`.
 2. `laya-head-tetris.safetensors` in the app's `laya/` folder, such as a
-   fine-tune of your own. The app looks for it at launch and whenever it
-   reloads the models. On iOS, where the folder is inside the app sandbox, use
-   the URL instead.
+   fine-tune of your own from [Fine-tune the head](#fine-tune-the-head). The
+   app looks for it at launch and whenever it reloads the models. On iOS,
+   where the folder is inside the app sandbox, use the URL instead.
 3. The published head.
 
 If the tuned head fails to load, for example because its download failed, the
 app shows the error, how to recover, and a **Reload models** button, and the
 tuned player is disabled.
+
+## Fine-tune the head
+
+`bin/make_dataset.dart` writes heuristic-labelled choice questions
+(`train.jsonl` and `val.jsonl` in the Laya request format, with target
+probabilities and heuristic values), and the notebook
+`training/laya_head_tuning.ipynb` fine-tunes Laya's head on them with the
+encoder frozen, for 12 epochs. On an Apple M4 Max a run takes about 25
+minutes; eight runs raised the head's validation accuracy from 0.305 to
+between 0.755 and 0.785.
+[`training/README.md`](https://github.com/leehack/llamadart/blob/main/example/laya_tetris/training/README.md)
+has the Python setup, the steps, and a recipe that builds the backbone GGUF
+from the official checkpoint.
 
 ## Headless runs
 
@@ -125,7 +133,8 @@ a run; `--help` lists every option.
 With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
 backbone. The tuned rows use the published tuned head from
 [`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
-at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6`.
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6` (validation accuracy
+0.757).
 
 Time for one six-option choice (175 tokens), each row in a fresh engine,
 over three back-to-back runs:
@@ -159,7 +168,11 @@ on; with the base head, that format also plays like a random pick (36 pieces,
 of the checklist's twelve, reaches the 150-piece cap in every game, and clears
 48 lines to the checklist's 35. Over 40 seeds of up to 500 pieces, the tuned
 player cleared a mean of 70.8 lines with "3 best + 3 random" and 73.6 with all
-candidates.
+candidates, to 60.9 and 55.2 for the earlier 8-epoch head (revision
+`83794e0b`); only the all-candidates gap is significant (Wilcoxon p = 0.033).
+Heads from five runs with 8 epochs instead of 12 played 97 to 147 pieces with
+"3 best + 3 random" and 107 to 146 with all legal moves in the 5-seed games;
+the lowest came from the run that reached 0.705 accuracy.
 
 Real-time games on Metal from level 1, 60 ms per key, two games each played
 until the stack topped out:
@@ -174,7 +187,9 @@ until the stack topped out:
 
 Two games per row are too few to rank players. Over 40 games per row, the
 tuned player cleared a mean of 52.3 lines with "3 best + 3 random" and 51.5
-with all candidates, and every answer arrived before its piece locked.
+with all candidates, and every answer arrived before its piece locked. The
+earlier 8-epoch head cleared 49.7 and 48.6 on the same seeds; 40 games per row
+cannot resolve a gap that small.
 
 ## Test
 
