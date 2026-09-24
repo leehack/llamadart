@@ -643,6 +643,12 @@ class LlamaEngine {
   ///   },
   /// }).drain();
   /// ```
+  ///
+  /// The final chunk's `finishReason` is `tool_calls` when it carries tool
+  /// calls. Otherwise it is `length` when the native llama.cpp backend stopped
+  /// at [GenerationParams.maxTokens] or a full context before the model ended
+  /// its output, and `stop` in every other case, including backends that do
+  /// not report a token limit.
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
@@ -695,6 +701,9 @@ class LlamaEngine {
       // Generate raw tokens with grammar constraint. Backends that can consume
       // structured chat natively may receive the original messages/tools, while
       // all other backends keep the rendered prompt path.
+      BackendGenerationLimit? generationLimit;
+      void recordLimit(BackendGenerationLimit limit) => generationLimit = limit;
+
       final tokenStream = plan.usesNativeChatGeneration
           ? _generateNativeChat(
               plan.nativeChatBackend!,
@@ -708,12 +717,14 @@ class LlamaEngine {
               sourceLangCode: sourceLangCode,
               targetLangCode: targetLangCode,
               templateNow: templateNow,
+              onLimit: recordLimit,
               isCancelled: isCancelled,
             )
           : _generate(
               result.prompt,
               params: plan.generationParams,
               parts: plan.mediaParts,
+              onLimit: recordLimit,
               isCancelled: isCancelled,
             );
 
@@ -726,7 +737,16 @@ class LlamaEngine {
         modelName: _modelPath ?? 'llama_model',
         completionId: completionId,
         tools: effectiveTools,
-      );
+        stoppedAtLimit: () => generationLimit != null,
+      ).map((chunk) {
+        final limit = generationLimit;
+        if (limit != null &&
+            chunk.choices.isNotEmpty &&
+            chunk.choices.first.finishReason == 'length') {
+          _completionGenerationLimits[chunk] = limit;
+        }
+        return chunk;
+      });
     });
   }
 
@@ -864,8 +884,9 @@ class LlamaEngine {
 
   Stream<String> _generate(
     String prompt, {
-    required GenerationParams params,
+    GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
     required bool Function() isCancelled,
   }) async* {
     _ensureReady();
@@ -885,6 +906,7 @@ class LlamaEngine {
       )) {
         yield token;
       }
+      _reportGenerationLimit(stream, onLimit);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Generation', error);
     } on LlamaException {
@@ -912,6 +934,7 @@ class LlamaEngine {
     String? sourceLangCode,
     String? targetLangCode,
     DateTime? templateNow,
+    void Function(BackendGenerationLimit limit)? onLimit,
     required bool Function() isCancelled,
   }) async* {
     _ensureReady();
@@ -937,6 +960,7 @@ class LlamaEngine {
       )) {
         yield token;
       }
+      _reportGenerationLimit(stream, onLimit);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Native chat generation', error);
     } on LlamaException {
@@ -946,6 +970,24 @@ class LlamaEngine {
         LlamaInferenceException('Native chat generation failed', error),
         stackTrace,
       );
+    }
+  }
+
+  void _reportGenerationLimit(
+    Stream<List<int>> generation,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  ) {
+    if (onLimit == null) {
+      return;
+    }
+    final reporting = backend;
+    if (reporting is! BackendGenerationLimitReporting) {
+      return;
+    }
+    final limit = (reporting as BackendGenerationLimitReporting)
+        .generationLimitOf(generation);
+    if (limit != null) {
+      onLimit(limit);
     }
   }
 
@@ -1786,3 +1828,11 @@ class LlamaEngine {
     }
   }
 }
+
+final Expando<BackendGenerationLimit> _completionGenerationLimits =
+    Expando<BackendGenerationLimit>();
+
+/// The token limit behind [chunk]'s `length` finish reason, when the backend
+/// reported one to [LlamaEngine.create].
+BackendGenerationLimit? completionGenerationLimit(LlamaCompletionChunk chunk) =>
+    _completionGenerationLimits[chunk];

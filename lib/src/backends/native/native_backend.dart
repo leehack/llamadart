@@ -38,7 +38,8 @@ class NativeAutoBackend
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
-        BackendVideoRuntimeSupport {
+        BackendVideoRuntimeSupport,
+        BackendGenerationLimitReporting {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -143,6 +144,17 @@ class NativeAutoBackend
       params,
       parts: parts,
     );
+  }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) {
+    final delegate = _delegate;
+    if (delegate is BackendGenerationLimitReporting) {
+      return (delegate as BackendGenerationLimitReporting).generationLimitOf(
+        generation,
+      );
+    }
+    return null;
   }
 
   @override

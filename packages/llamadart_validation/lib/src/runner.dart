@@ -676,10 +676,11 @@ class ValidationRunner {
           valid = false;
         }
       }
-      final expectedFinish = mode == ToolChoice.none ? 'stop' : 'tool_calls';
       final modePassed =
-          canonicalJson(output['finish_reasons']) ==
-              canonicalJson([expectedFinish]) &&
+          (mode == ToolChoice.none
+              ? _isTextFinish(output['finish_reasons'])
+              : canonicalJson(output['finish_reasons']) ==
+                    canonicalJson(['tool_calls'])) &&
           output['tool_choice'] == mode.name &&
           output['enable_thinking'] == false &&
           canonicalJson(output['tools']) == canonicalJson([tool.toJson()]) &&
@@ -778,12 +779,17 @@ class ValidationRunner {
               (recovery['tool_call_deltas'] as List).isEmpty &&
               (profile.enableThinking || recovery['thinking'] == '') &&
               recovery['enable_thinking'] == profile.enableThinking &&
-              canonicalJson(recovery['finish_reasons']) ==
-                  canonicalJson(['stop'])
+              _isTextFinish(recovery['finish_reasons'])
           ? 'PASS'
           : 'FAIL',
     };
   }
+
+  /// Whether [finishReasons] is one text finish: `stop`, or `length` when the
+  /// answer reached its token budget.
+  bool _isTextFinish(Object? finishReasons) =>
+      canonicalJson(finishReasons) == canonicalJson(['stop']) ||
+      canonicalJson(finishReasons) == canonicalJson(['length']);
 
   Future<Map<String, dynamic>> _runCase(String id, String location) async {
     if (profile.nativeReference &&
