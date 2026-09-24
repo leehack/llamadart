@@ -95,6 +95,51 @@ File writeSyntheticLlamaGguf(
   );
 }
 
+/// Writes a one-layer T5 encoder-only GGUF with random F32 weights and a
+/// byte-fallback SentencePiece vocabulary to [path].
+///
+/// llama.cpp reports an encoder and no decoder for this architecture and
+/// creates a KV cache for it. [poolingType] is the raw `llama_pooling_type`
+/// value.
+File writeSyntheticT5EncoderGguf(
+  String path, {
+  int? poolingType,
+  int contextLength = 1024,
+  int seed = 0,
+}) {
+  const arch = 't5encoder';
+  const buckets = 32;
+  final random = math.Random(seed);
+  return _writeGguf(
+    path,
+    arch: arch,
+    metadata: {
+      '$arch.context_length': _GgufValue.uint32(contextLength),
+      '$arch.embedding_length': _GgufValue.uint32(_embd),
+      '$arch.feed_forward_length': _GgufValue.uint32(_ff),
+      '$arch.block_count': _GgufValue.uint32(1),
+      '$arch.attention.head_count': _GgufValue.uint32(2),
+      '$arch.attention.layer_norm_rms_epsilon': _GgufValue.float32(1e-5),
+      '$arch.attention.relative_buckets_count': _GgufValue.uint32(buckets),
+      if (poolingType != null)
+        '$arch.pooling_type': _GgufValue.uint32(poolingType),
+    },
+    tensors: {
+      'token_embd.weight': _weights(random, [_embd, _tokens.length]),
+      'enc.output_norm.weight': _ones([_embd]),
+      'enc.blk.0.attn_norm.weight': _ones([_embd]),
+      'enc.blk.0.attn_rel_b.weight': _weights(random, [2, buckets]),
+      'enc.blk.0.attn_q.weight': _weights(random, [_embd, _embd]),
+      'enc.blk.0.attn_k.weight': _weights(random, [_embd, _embd]),
+      'enc.blk.0.attn_v.weight': _weights(random, [_embd, _embd]),
+      'enc.blk.0.attn_o.weight': _weights(random, [_embd, _embd]),
+      'enc.blk.0.ffn_norm.weight': _ones([_embd]),
+      'enc.blk.0.ffn_up.weight': _weights(random, [_embd, _ff]),
+      'enc.blk.0.ffn_down.weight': _weights(random, [_ff, _embd]),
+    },
+  );
+}
+
 final _tokens = <String>[
   '<unk>',
   '<s>',

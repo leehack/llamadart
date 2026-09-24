@@ -2369,6 +2369,35 @@ void main() {
       expect(vector.every((value) => value.isFinite), isTrue);
     });
 
+    test('an encoder-only model rejects input above the micro-batch', () {
+      final modelPath = path.join(tempDir.path, 't5encoder.gguf');
+      writeSyntheticT5EncoderGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
+      );
+      const params = ModelParams(
+        contextSize: 1024,
+        batchSize: 1024,
+        microBatchSize: 64,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+
+      expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+      expect(
+        () => service.embed(handle, textOfTokens(65)),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('at most 64 tokens'),
+          ),
+        ),
+      );
+    });
+
     test('embed and embedBatch reject a rank-pooled model', () {
       final handle = context(
         const ModelParams(contextSize: 64, maxParallelSequences: 2),
