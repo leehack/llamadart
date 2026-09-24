@@ -89,9 +89,16 @@ void main() {
     expect(trigger['push']['branches'], ['main']);
     expect(workflow['permissions'], {'contents': 'read'});
     final deploy = workflow['jobs']['deploy'] as Map;
-    expect(deploy['if'], contains("github.ref == 'refs/heads/main'"));
-    expect(deploy['if'], contains("github.repository == 'leehack/llamadart'"));
+    expect(
+      deploy['if'],
+      "github.ref == 'refs/heads/main' && "
+      "github.repository == 'leehack/llamadart'",
+    );
+    expect(deploy.containsKey('continue-on-error'), isFalse);
     final steps = deploy['steps'] as List;
+    for (final step in steps) {
+      expect((step as Map).containsKey('continue-on-error'), isFalse);
+    }
     final tests = steps.indexWhere(
       (step) => '${step['run']}'.contains('flutter test'),
     );
