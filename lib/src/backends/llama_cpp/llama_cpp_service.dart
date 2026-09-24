@@ -5610,7 +5610,13 @@ class LlamaCppService {
 
     final remaining = stopBuffer.finish();
     if (remaining.isNotEmpty) yield remaining;
-    if (limit != null) onLimit?.call(limit);
+    if (limit != null &&
+        !llama_vocab_is_eog(
+          vocab,
+          llama_sampler_sample(sampler, ctx.pointer, -1),
+        )) {
+      onLimit?.call(limit);
+    }
 
     evalStopwatch.stop();
     ctx.lastPerfEvalMs = evalMicros / 1000.0;

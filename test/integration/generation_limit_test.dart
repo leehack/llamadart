@@ -75,6 +75,26 @@ void main() {
       expect(perf.evalTokens, 5);
     });
 
+    test('maxTokens equal to the natural length reports no limit', () async {
+      const natural = GenerationParams(
+        maxTokens: 100000,
+        temp: 0,
+        seed: 1,
+        penalty: 1,
+        grammar: 'root ::= "a a a"',
+      );
+      final (text, _) = await run(natural);
+      final length = (await performance.getPerformanceContext(
+        context,
+      ))!.evalTokens;
+
+      expect(await run(natural.copyWith(maxTokens: length)), (text, null));
+      expect(
+        (await run(natural.copyWith(maxTokens: length - 1))).$2,
+        BackendGenerationLimit.maxTokens,
+      );
+    });
+
     test('an end-of-generation token reports no limit', () async {
       final (text, limit) = await run(
         endless.copyWith(grammar: 'root ::= "a a"'),
@@ -133,6 +153,18 @@ void main() {
       final (_, limit) = await run(speculative.copyWith(maxTokens: 12));
 
       expect(limit, BackendGenerationLimit.maxTokens);
+    });
+
+    test('a stop sequence reports no limit', () async {
+      final (control, _) = await run(speculative.copyWith(maxTokens: 40));
+      final stop = control.substring(20, 25);
+
+      final (text, limit) = await run(
+        speculative.copyWith(stopSequences: <String>[stop]),
+      );
+
+      expect(text, control.substring(0, control.indexOf(stop)));
+      expect(limit, isNull);
     });
   });
 

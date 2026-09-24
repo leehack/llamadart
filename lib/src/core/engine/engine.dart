@@ -641,8 +641,9 @@ class LlamaEngine {
   ///
   /// The final chunk's `finishReason` is `tool_calls` when it carries tool
   /// calls. Otherwise it is `length` when the native llama.cpp backend stopped
-  /// at [GenerationParams.maxTokens] or a full context, and `stop` in every
-  /// other case, including backends that do not report a token limit.
+  /// at [GenerationParams.maxTokens] or a full context before the model ended
+  /// its output, and `stop` in every other case, including backends that do
+  /// not report a token limit.
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,

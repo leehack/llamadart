@@ -213,7 +213,17 @@ class FakeEngine implements ValidationEngine {
           ? [featureFault == 'tool_finish' ? 'length' : 'tool_calls']
           : raw
           ? []
-          : [adjusted && batchingFault == 'finish' ? 'length' : 'stop'],
+          : [
+              (adjusted && batchingFault == 'finish') ||
+                      (featureFault == 'tool_text_length' &&
+                          toolsSeen &&
+                          (tools == null || toolChoice == ToolChoice.none) &&
+                          !prompt.contains(
+                            'temperature_celsius from the tool result',
+                          ))
+                  ? 'length'
+                  : 'stop',
+            ],
       'prompt': prompt,
       'cancel_requested': cancelAfterFirst,
       'cancel_to_done_ms': cancelAfterFirst ? 1 : null,
@@ -333,6 +343,24 @@ void main() {
       expect(result.report.qualified, false);
     });
   }
+
+  test('release tools accept a text answer that reaches its budget', () async {
+    final result = await run(
+      FakeEngine()..featureFault = 'tool_text_length',
+      selected: profile(release: true),
+    );
+    final tools = result.report.cases.singleWhere(
+      (c) => c['case_id'] == 'C07.tools',
+    );
+    final trials = (tools['trials'] as List).cast<Map>();
+
+    expect(
+      trials.singleWhere((t) => t['tool_choice'] == 'none')['finish_reasons'],
+      ['length'],
+    );
+    expect((tools['recovery'] as Map)['finish_reasons'], ['length']);
+    expect(tools['status'], 'PASS');
+  });
 
   test('catalog three preserves unimplemented feature obligations', () async {
     final selected = profile(release: true);
