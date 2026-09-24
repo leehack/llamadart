@@ -54,7 +54,7 @@ void main() {
 
   group('ModernBERT encoder', () {
     test(
-      '751 tokens in a 1024-token context throw instead of aborting',
+      'over 512 tokens in a 1024-token context throw instead of aborting',
       () async {
         final engine = await _load(
           _encoderModelPathKey,
@@ -76,7 +76,7 @@ void main() {
       },
     );
 
-    test('a 1024-token micro-batch embeds 751 tokens', () async {
+    test('a 1024-token micro-batch embeds over 750 tokens', () async {
       final engine = await _load(_encoderModelPathKey, _wideMicroBatch);
       if (engine == null) return;
       addTearDown(engine.dispose);

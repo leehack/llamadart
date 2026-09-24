@@ -26,7 +26,7 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../support/synthetic_decision_head.dart';
-import '../../../support/synthetic_modern_bert_gguf.dart';
+import '../../../support/synthetic_embedding_gguf.dart';
 
 void main() {
   test('preserved template tokens remain excluded from native text stops', () {
@@ -2307,7 +2307,7 @@ void main() {
     });
   });
 
-  group('embeddings on a model without a KV cache', () {
+  group('embedding pass limits', () {
     late Directory tempDir;
     late LlamaCppService service;
     late int modelHandle;
@@ -2348,6 +2348,26 @@ void main() {
       expect(service.tokenize(modelHandle, text, true), hasLength(tokens));
       return text;
     }
+
+    test('a model with a KV cache embeds input above the micro-batch', () {
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_LAST.value,
+      );
+      const params = ModelParams(
+        contextSize: 1024,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+
+      final vector = service.embed(handle, textOfTokens(600));
+
+      expect(vector, hasLength(16));
+      expect(vector.every((value) => value.isFinite), isTrue);
+    });
 
     test('embed and embedBatch reject a rank-pooled model', () {
       final handle = context(

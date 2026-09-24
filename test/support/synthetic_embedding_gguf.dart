@@ -20,31 +20,113 @@ File writeSyntheticModernBertGguf(
   int contextLength = 1024,
   int seed = 0,
 }) {
-  final tokens = <String>[
-    '<unk>',
-    '<s>',
-    '</s>',
-    for (var byte = 0; byte < 256; byte++)
-      '<0x${byte.toRadixString(16).toUpperCase().padLeft(2, '0')}>',
-  ];
   const arch = 'modern-bert';
-  final metadata = <String, _GgufValue>{
+  final random = math.Random(seed);
+  return _writeGguf(
+    path,
+    arch: arch,
+    metadata: {
+      '$arch.context_length': _GgufValue.uint32(contextLength),
+      '$arch.embedding_length': _GgufValue.uint32(_embd),
+      '$arch.feed_forward_length': _GgufValue.uint32(_ff),
+      '$arch.block_count': _GgufValue.uint32(1),
+      '$arch.attention.head_count': _GgufValue.uint32(2),
+      '$arch.attention.layer_norm_epsilon': _GgufValue.float32(1e-5),
+      '$arch.attention.causal': _GgufValue.boolean(false),
+      if (poolingType != null)
+        '$arch.pooling_type': _GgufValue.uint32(poolingType),
+      if (classifierLabels != null)
+        '$arch.classifier.output_labels': _GgufValue.strings(classifierLabels),
+    },
+    tensors: {
+      'token_embd.weight': _weights(random, [_embd, _tokens.length]),
+      'token_embd_norm.weight': _ones([_embd]),
+      'output_norm.weight': _ones([_embd]),
+      'blk.0.attn_qkv.weight': _weights(random, [_embd, 3 * _embd]),
+      'blk.0.attn_output.weight': _weights(random, [_embd, _embd]),
+      'blk.0.ffn_up.weight': _weights(random, [_embd, 2 * _ff]),
+      'blk.0.ffn_down.weight': _weights(random, [_ff, _embd]),
+      'blk.0.ffn_norm.weight': _ones([_embd]),
+      if (classifierLabels != null)
+        'cls.output.weight': _weights(random, [_embd, classifierLabels.length]),
+    },
+  );
+}
+
+/// Writes a one-layer causal Llama GGUF with random F32 weights and a
+/// byte-fallback SentencePiece vocabulary to [path].
+///
+/// llama.cpp creates a KV cache for this architecture. [poolingType] is the
+/// raw `llama_pooling_type` value.
+File writeSyntheticLlamaGguf(
+  String path, {
+  int? poolingType,
+  int contextLength = 1024,
+  int seed = 0,
+}) {
+  const arch = 'llama';
+  final random = math.Random(seed);
+  return _writeGguf(
+    path,
+    arch: arch,
+    metadata: {
+      '$arch.context_length': _GgufValue.uint32(contextLength),
+      '$arch.embedding_length': _GgufValue.uint32(_embd),
+      '$arch.feed_forward_length': _GgufValue.uint32(_ff),
+      '$arch.block_count': _GgufValue.uint32(1),
+      '$arch.attention.head_count': _GgufValue.uint32(2),
+      '$arch.attention.layer_norm_rms_epsilon': _GgufValue.float32(1e-5),
+      if (poolingType != null)
+        '$arch.pooling_type': _GgufValue.uint32(poolingType),
+    },
+    tensors: {
+      'token_embd.weight': _weights(random, [_embd, _tokens.length]),
+      'output_norm.weight': _ones([_embd]),
+      'blk.0.attn_norm.weight': _ones([_embd]),
+      'blk.0.attn_q.weight': _weights(random, [_embd, _embd]),
+      'blk.0.attn_k.weight': _weights(random, [_embd, _embd]),
+      'blk.0.attn_v.weight': _weights(random, [_embd, _embd]),
+      'blk.0.attn_output.weight': _weights(random, [_embd, _embd]),
+      'blk.0.ffn_norm.weight': _ones([_embd]),
+      'blk.0.ffn_gate.weight': _weights(random, [_embd, _ff]),
+      'blk.0.ffn_up.weight': _weights(random, [_embd, _ff]),
+      'blk.0.ffn_down.weight': _weights(random, [_ff, _embd]),
+    },
+  );
+}
+
+final _tokens = <String>[
+  '<unk>',
+  '<s>',
+  '</s>',
+  for (var byte = 0; byte < 256; byte++)
+    '<0x${byte.toRadixString(16).toUpperCase().padLeft(2, '0')}>',
+];
+
+(List<int>, List<double>) _weights(math.Random random, List<int> shape) => (
+  shape,
+  [
+    for (var i = 0; i < shape.reduce((a, b) => a * b); i++)
+      (random.nextDouble() - 0.5) * 0.2,
+  ],
+);
+
+(List<int>, List<double>) _ones(List<int> shape) =>
+    (shape, List<double>.filled(shape.reduce((a, b) => a * b), 1));
+
+File _writeGguf(
+  String path, {
+  required String arch,
+  required Map<String, _GgufValue> metadata,
+  required Map<String, (List<int>, List<double>)> tensors,
+}) {
+  final allMetadata = <String, _GgufValue>{
     'general.architecture': _GgufValue.string(arch),
-    '$arch.context_length': _GgufValue.uint32(contextLength),
-    '$arch.embedding_length': _GgufValue.uint32(_embd),
-    '$arch.feed_forward_length': _GgufValue.uint32(_ff),
-    '$arch.block_count': _GgufValue.uint32(1),
-    '$arch.attention.head_count': _GgufValue.uint32(2),
-    '$arch.attention.layer_norm_epsilon': _GgufValue.float32(1e-5),
-    '$arch.attention.causal': _GgufValue.boolean(false),
-    if (poolingType != null)
-      '$arch.pooling_type': _GgufValue.uint32(poolingType),
-    if (classifierLabels != null)
-      '$arch.classifier.output_labels': _GgufValue.strings(classifierLabels),
+    ...metadata,
     'tokenizer.ggml.model': _GgufValue.string('llama'),
-    'tokenizer.ggml.tokens': _GgufValue.strings(tokens),
+    'tokenizer.ggml.tokens': _GgufValue.strings(_tokens),
     'tokenizer.ggml.scores': _GgufValue.float32s(
-      List<double>.filled(tokens.length, 0),
+      List<double>.filled(_tokens.length, 0),
     ),
     'tokenizer.ggml.token_type': _GgufValue.int32s([
       2,
@@ -54,37 +136,13 @@ File writeSyntheticModernBertGguf(
     ]),
   };
 
-  final random = math.Random(seed);
-  List<double> weights(int count) => [
-    for (var i = 0; i < count; i++) (random.nextDouble() - 0.5) * 0.2,
-  ];
-  List<double> ones(int count) => List<double>.filled(count, 1);
-  final tensors = <String, (List<int>, List<double>)>{
-    'token_embd.weight': (
-      [_embd, tokens.length],
-      weights(_embd * tokens.length),
-    ),
-    'token_embd_norm.weight': ([_embd], ones(_embd)),
-    'output_norm.weight': ([_embd], ones(_embd)),
-    'blk.0.attn_qkv.weight': ([_embd, 3 * _embd], weights(3 * _embd * _embd)),
-    'blk.0.attn_output.weight': ([_embd, _embd], weights(_embd * _embd)),
-    'blk.0.ffn_up.weight': ([_embd, 2 * _ff], weights(2 * _ff * _embd)),
-    'blk.0.ffn_down.weight': ([_ff, _embd], weights(_ff * _embd)),
-    'blk.0.ffn_norm.weight': ([_embd], ones(_embd)),
-    if (classifierLabels != null)
-      'cls.output.weight': (
-        [_embd, classifierLabels.length],
-        weights(_embd * classifierLabels.length),
-      ),
-  };
-
   final out = BytesBuilder(copy: false);
   final header = _GgufBytes()
     ..raw('GGUF'.codeUnits)
     ..uint32(3)
     ..uint64(tensors.length)
-    ..uint64(metadata.length);
-  for (final MapEntry(:key, :value) in metadata.entries) {
+    ..uint64(allMetadata.length);
+  for (final MapEntry(:key, :value) in allMetadata.entries) {
     header.string(key);
     value.write(header);
   }

@@ -40,8 +40,9 @@
   past llama.cpp's classifier-score buffer
   ([#583](https://github.com/leehack/llamadart/issues/583)).
 - Throw `LlamaInferenceException` from native `embed()` and `embedBatch()`
-  when input to a BERT-family, ModernBERT or other encoder GGUF does not fit
-  one `microBatchSize` pass, instead of aborting the process
+  when input to an encoder-only model or a model without a KV cache (such as
+  BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
+  instead of aborting the process or embedding only the last chunk
   ([#607](https://github.com/leehack/llamadart/issues/607)).
 * Aligned the default WebGPU bridge assets to `v0.1.47` for the decision API,
   retaining Web/native llama.cpp
