@@ -53,3 +53,6 @@ laya-encoder/
 *.safetensors
 .ipynb_checkpoints/
 .venv/
+
+# WebGPU bridge assets from scripts/fetch_webgpu_bridge_assets.sh
+/web/webgpu_bridge/

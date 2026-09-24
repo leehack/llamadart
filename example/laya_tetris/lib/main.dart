@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -8,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:llamadart/llamadart.dart'
     show GpuBackend, ModelDownloadCancelToken;
 
+import 'host.dart';
 import 'laya/benchmark.dart';
 import 'laya/models.dart';
 import 'laya/store.dart';
@@ -99,11 +99,13 @@ class _GamePageState extends State<GamePage>
   String _tunedStatus = '';
 
   RealtimePlayer _player = RealtimePlayer.layaChecklist;
-  ShortlistMode _mode = Platform.isAndroid
-      ? ShortlistMode.mixed
-      : ShortlistMode.all;
-  GpuBackend _backend = Platform.isAndroid ? GpuBackend.cpu : GpuBackend.auto;
-  int _threads = Platform.isAndroid ? 6 : 4;
+  ShortlistMode _mode = isAndroid ? ShortlistMode.mixed : ShortlistMode.all;
+  GpuBackend _backend = isAndroid ? GpuBackend.cpu : GpuBackend.auto;
+  final List<int> _threadChoices = [
+    for (final n in [1, 2, 3, 4, 6, 8])
+      if (maxThreads == null || n <= maxThreads!) n,
+  ];
+  late int _threads = math.min(isAndroid ? 6 : 4, _threadChoices.last);
   LayaBackbone _backbone = LayaBackbone.q8;
   bool _natural = true;
   int _startLevel = 1;
@@ -248,6 +250,10 @@ class _GamePageState extends State<GamePage>
     final lines = <String>[];
     await for (final r in benchmarkLaya(
       setup,
+      configs: [
+        for (final c in speedConfigs)
+          if (c.$1 != GpuBackend.cpu || _threadChoices.contains(c.$2)) c,
+      ],
       downloads: store.downloads,
       load: widget.loadModels,
     )) {
@@ -730,9 +736,7 @@ class _GamePageState extends State<GamePage>
             'CPU threads',
             130,
             _threads,
-            [
-              for (final n in [1, 2, 3, 4, 6, 8]) (n, '$n'),
-            ],
+            [for (final n in _threadChoices) (n, '$n')],
             (n) {
               _threads = n;
               _reload();

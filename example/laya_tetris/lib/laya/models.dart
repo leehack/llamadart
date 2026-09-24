@@ -140,6 +140,8 @@ class LayaModels {
 
   /// Downloads missing files through [downloads], then loads the backbone of
   /// [setup] into one [LlamaEngine] and each head as a [DecisionEngine] on it.
+  /// A backend that loads URLs, such as the WebGPU bridge, fetches the files
+  /// itself.
   ///
   /// A tuned head that fails to download or load is reported in [tunedError]
   /// and leaves [tuned] null; every other failure disposes the engine and
@@ -151,19 +153,29 @@ class LayaModels {
     LayaLoadStatus? onStatus,
   }) async {
     final sw = Stopwatch()..start();
-    final options = ModelLoadOptions(cancelToken: cancelToken);
-    void Function(ModelDownloadProgress) progressOf(ModelSource source) =>
-        (p) => onStatus?.call(
-          'Downloading ${source.fileName}: ${_mb(p.receivedBytes)}'
-          '${p.totalBytes == null ? '' : ' of ${_mb(p.totalBytes!)}'} MB',
-          p.fraction,
-        );
+    final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: downloads);
+    // URL-loading backends reject a cancel token.
+    final options = engine.backend.supportsUrlLoading
+        ? ModelLoadOptions.defaults
+        : ModelLoadOptions(cancelToken: cancelToken);
+    void Function(ModelDownloadProgress) progressOf(ModelSource source) => (p) {
+      final fraction = p.fraction;
+      final amount = p.totalBytes == null && fraction != null
+          ? '${(fraction * 100).round()}%'
+          : '${_mb(p.receivedBytes)}'
+                '${p.totalBytes == null ? '' : ' of ${_mb(p.totalBytes!)}'} MB';
+      onStatus?.call('Downloading ${source.fileName}: $amount', fraction);
+    };
 
     Future<DecisionEngine> loadHead(
       LlamaEngine engine,
       ModelSource source,
     ) async {
       onStatus?.call('Loading ${source.fileName}', null);
+      final url = source.resolvedUri;
+      if (url != null && engine.backend.supportsUrlLoading) {
+        return DecisionEngine.load(engine, headPath: '$url');
+      }
       final entry = await engine.modelDownloadManager.ensureModel(
         source,
         options: options,
@@ -173,7 +185,6 @@ class LayaModels {
       return DecisionEngine.load(engine, headPath: entry.filePath);
     }
 
-    final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: downloads);
     final heads = <DecisionEngine>[];
     Future<void> disposeAll() async {
       for (final head in heads.reversed) {

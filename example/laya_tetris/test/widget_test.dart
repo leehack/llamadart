@@ -231,9 +231,9 @@ void main() {
       find.textContaining('Tap Reload models to try again'),
       findsOneWidget,
     );
-    expect(find.textContaining(store.tunedHeadPath), findsOneWidget);
+    expect(find.textContaining(store.tunedHeadPath!), findsOneWidget);
 
-    File(store.tunedHeadPath).writeAsBytesSync([0]);
+    File(store.tunedHeadPath!).writeAsBytesSync([0]);
     await tester.tap(find.text('Reload models'));
     await settle(tester);
     expect(loader.setups[1].tunedHead?.path, store.tunedHeadPath);
@@ -259,7 +259,7 @@ void main() {
       'Laya yes/no checklist',
       RealtimePlayer.layaTuned.label,
     );
-    File(store.tunedHeadPath).deleteSync();
+    File(store.tunedHeadPath!).deleteSync();
     await choose(tester, 'GPU (auto)', 'CPU');
     expect(loader.setups[3].tunedHead, same(publishedTunedHead));
     loader.finish(3, tunedError: 'download failed');
@@ -293,7 +293,7 @@ void main() {
     await pumpWithModels(tester);
     loader.finish(0, tuned: true);
     await settle(tester);
-    File(store.tunedHeadPath).writeAsBytesSync([0]);
+    File(store.tunedHeadPath!).writeAsBytesSync([0]);
 
     await tester.tap(find.text('Benchmark'));
     await settle(tester);
