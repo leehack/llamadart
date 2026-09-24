@@ -30,6 +30,45 @@ void main() {
       expect(chunks.last.model, 'test-model');
     });
 
+    test('finishes with length when the stream ended at a limit', () async {
+      var stoppedAtLimit = false;
+      Stream<String> tokens() async* {
+        yield 'par';
+        yield 'tial';
+        stoppedAtLimit = true;
+      }
+
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: tokens(),
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        parseToolCallsEnabled: false,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: '124',
+        stoppedAtLimit: () => stoppedAtLimit,
+      ).toList();
+
+      final content = chunks
+          .map((chunk) => chunk.choices.single.delta.content ?? '')
+          .join();
+      expect(content, 'partial');
+      expect(chunks.last.choices.single.finishReason, 'length');
+    });
+
+    test('finishes with stop when the stream ended without a limit', () async {
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(['done']),
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        parseToolCallsEnabled: false,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: '125',
+        stoppedAtLimit: () => false,
+      ).toList();
+
+      expect(chunks.last.choices.single.finishReason, 'stop');
+    });
+
     test('routes forced-open Qwen thinking into reasoning content', () async {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(<String>[

@@ -852,7 +852,13 @@ class ChatTemplateResponse {
 }
 
 /// Response indicating an operation has completed.
-class DoneResponse {}
+class DoneResponse {
+  /// The token limit that ended a generation, or null when none did.
+  final BackendGenerationLimit? generationLimit;
+
+  /// Creates a new [DoneResponse].
+  DoneResponse({this.generationLimit});
+}
 
 /// Handshake message sent from main to worker.
 class WorkerHandshake {

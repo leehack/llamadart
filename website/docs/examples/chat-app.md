@@ -68,8 +68,9 @@ flutter test
 - Separate file and microphone transcription actions for compatible Qwen3-ASR
   GGUF models, backed by the typed whole-file `SpeechToTextEngine`. Native file
   selection accepts WAV, MP3, and FLAC; WebGPU bridge assets `v0.1.30+` accept
-  WAV bytes. The microphone captures a temporary foreground WAV and transcribes
-  it only after **Stop & transcribe**; it does not emit live partial text. These
+  WAV bytes. The microphone captures up to 30 seconds of temporary foreground
+  WAV and transcribes it only after **Stop & transcribe**; it does not emit
+  live partial text. These
   actions are distinct from generic audio attachment and are not shown for
   current LiteRT-LM chat bundles. Microphone capture is enabled on Android,
   iOS, macOS, Windows, and supported secure browser origins; Linux capture
@@ -95,7 +96,7 @@ flutter test
   bytes through ordinary multimodal chat so the model can answer the spoken
   request. It does not use `SpeechToTextEngine` and provides no transcript,
   timestamp, confidence, or live-partial contract. Qwen3-ASR keeps the separate
-  five-minute **Stop & transcribe** workflow and takes precedence for ASR
+  30-second **Stop & transcribe** workflow and takes precedence for ASR
   profiles.
 - A dedicated cross-platform Qwen3-TTS mode backed by `TextToSpeechEngine`.
   Type an utterance, optionally choose a language and select or record

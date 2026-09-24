@@ -662,6 +662,10 @@ class SpeechToTextEngine {
   /// [SpeechAudioPcmInput] and emits any intermediate partial events before its
   /// final result. Invalid input and unsupported preflight checks throw before
   /// a task is returned; failures after startup are reported by the task.
+  ///
+  /// On native llama.cpp, a Qwen3-ASR task that reaches the context size or
+  /// [SpeechToTextRequest.maxOutputTokens] before the transcript ends fails
+  /// with [LlamaSpeechTranscriptTruncatedException].
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
     _validateRequest(request);
     if (_usesLiteRtLm) {
@@ -945,8 +949,13 @@ class SpeechToTextEngine {
 
       Object? tokenStreamError;
       StackTrace? tokenStreamStackTrace;
+      BackendGenerationLimit? generationLimit;
       try {
-        tokenSubscription = _promptAdapterTokens(request).listen(
+        final tokens = _promptAdapterTokens(
+          request,
+          onLimit: (limit) => generationLimit = limit,
+        );
+        tokenSubscription = tokens.listen(
           (token) {
             if (!task.isCancellationRequested && tokenStreamError == null) {
               output.write(token);
@@ -997,6 +1006,10 @@ class SpeechToTextEngine {
       }
 
       final normalized = _normalizeTranscript(output.toString());
+      final limit = generationLimit;
+      if (limit != null) {
+        throw _truncatedTranscript(limit, normalized.text);
+      }
       if (normalized.text.isEmpty) {
         throw LlamaSpeechException(
           'Speech recognition produced an empty transcript.',
@@ -1039,7 +1052,10 @@ class SpeechToTextEngine {
   /// Native Qwen3-ASR needs the audio turn wrapped by the model chat template,
   /// so it goes through [LlamaEngine.create]. The Web bridge speech contract is
   /// validated against raw prompt generation with bytes-only audio parts.
-  Stream<String> _promptAdapterTokens(SpeechToTextRequest request) {
+  Stream<String> _promptAdapterTokens(
+    SpeechToTextRequest request, {
+    required void Function(BackendGenerationLimit limit) onLimit,
+  }) {
     final engine = _engine!;
     final params = GenerationParams(
       maxTokens: request.maxOutputTokens,
@@ -1072,12 +1088,39 @@ class SpeechToTextEngine {
           enableThinking: false,
         )
         .expand((chunk) {
+          final limit = completionGenerationLimit(chunk);
+          if (limit != null) {
+            onLimit(limit);
+          }
           if (chunk.choices.isEmpty) {
             return const <String>[];
           }
           final text = chunk.choices.first.delta.content;
           return text == null ? const <String>[] : <String>[text];
         });
+  }
+
+  LlamaSpeechTranscriptTruncatedException _truncatedTranscript(
+    BackendGenerationLimit limit,
+    String partialTranscript,
+  ) {
+    return switch (limit) {
+      BackendGenerationLimit.maxTokens =>
+        LlamaSpeechTranscriptTruncatedException(
+          'Speech recognition reached maxOutputTokens before the transcript '
+          'ended. Raise maxOutputTokens or send shorter audio.',
+          limit: LlamaSpeechTranscriptLimit.maxOutputTokens,
+          partialTranscript: partialTranscript,
+        ),
+      BackendGenerationLimit.contextSize =>
+        LlamaSpeechTranscriptTruncatedException(
+          'The audio prompt and transcript filled the model context before '
+          'the transcript ended. Send shorter audio or load the model with a '
+          'larger contextSize.',
+          limit: LlamaSpeechTranscriptLimit.contextSize,
+          partialTranscript: partialTranscript,
+        ),
+    };
   }
 
   String _promptFor(SpeechToTextRequest request) {

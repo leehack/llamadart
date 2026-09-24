@@ -116,7 +116,7 @@ flutter test --run-skipped -t local-only \
      MP3, or FLAC; Web accepts WAV bytes with bridge assets `v0.1.30+`. On
      Android, iOS, macOS, Windows, and supported secure browser origins it also
      shows a microphone button. The microphone records a temporary mono WAV
-     for up to five minutes; **Stop & transcribe** finalizes it, runs whole-file
+     for up to 30 seconds; **Stop & transcribe** finalizes it, runs whole-file
      STT, and deletes the native file or revokes the browser blob.
      Capture is foreground-only and cancelling discards the temporary
      recording. This Qwen path remains whole-file rather than live. For native chat
@@ -167,7 +167,7 @@ flutter test --run-skipped -t local-only \
      30 seconds; **Stop & ask** sends the encoded WAV bytes through normal
      multimodal chat and asks the model to answer the spoken request. This is not
      `SpeechToTextEngine`: it has no transcript, timestamp, confidence, or live
-     partial-text contract. Qwen3-ASR continues to use the separate five-minute
+     partial-text contract. Qwen3-ASR continues to use the separate 30-second
      **Stop & transcribe** flow, and takes precedence for models declared as
      ASR profiles.
    - The voice-question UI is code-supported on Android, iOS, macOS, and

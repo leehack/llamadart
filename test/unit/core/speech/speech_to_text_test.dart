@@ -6,6 +6,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/backend.dart'
+    show BackendGenerationLimit, BackendGenerationLimitReporting;
 import 'package:test/test.dart';
 
 void main() {
@@ -593,6 +595,80 @@ void main() {
       expect((await task.done).state, SpeechToTextCompletionState.completed);
     });
 
+    for (final (limit, expected)
+        in <(BackendGenerationLimit, LlamaSpeechTranscriptLimit)>[
+          (
+            BackendGenerationLimit.contextSize,
+            LlamaSpeechTranscriptLimit.contextSize,
+          ),
+          (
+            BackendGenerationLimit.maxTokens,
+            LlamaSpeechTranscriptLimit.maxOutputTokens,
+          ),
+        ]) {
+      test('fails a transcript truncated at $limit', () async {
+        backend
+          ..generationText = 'language English<asr_text>And so my'
+          ..generationLimit = limit;
+        await _loadSpeechModel(llamaEngine);
+        final task = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/long.wav'),
+          ),
+        );
+        final events = <SpeechToTextEvent>[];
+        final streamError = Completer<Object>();
+        task.events.listen(
+          events.add,
+          onError: (Object error) => streamError.complete(error),
+        );
+
+        final completion = await task.done;
+
+        expect(completion.state, SpeechToTextCompletionState.failed);
+        expect(completion.result, isNull);
+        expect(events, isEmpty);
+        final error = completion.error;
+        expect(error, isA<LlamaSpeechTranscriptTruncatedException>());
+        error as LlamaSpeechTranscriptTruncatedException;
+        expect(error.limit, expected);
+        expect(error.partialTranscript, 'And so my');
+        expect(
+          error.message,
+          contains(
+            expected == LlamaSpeechTranscriptLimit.contextSize
+                ? 'contextSize'
+                : 'maxOutputTokens',
+          ),
+        );
+        expect(await streamError.future, same(error));
+      });
+    }
+
+    test('fails an empty transcript truncated at a limit', () async {
+      backend
+        ..generationText = ' <asr_text> '
+        ..generationLimit = BackendGenerationLimit.contextSize;
+      await _loadSpeechModel(llamaEngine);
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/long.wav')),
+      );
+      task.events.listen((_) {}, onError: (_) {});
+
+      final completion = await task.done;
+
+      expect(
+        completion.error,
+        isA<LlamaSpeechTranscriptTruncatedException>()
+            .having((error) => error.partialTranscript, 'partial', isEmpty)
+            .having(
+              (error) => error.limit,
+              'limit',
+              LlamaSpeechTranscriptLimit.contextSize,
+            ),
+      );
+    });
+
     test('preserves typed backend failures', () async {
       backend.generationError = LlamaUnsupportedException('missing symbol');
       await _loadSpeechModel(llamaEngine);
@@ -707,8 +783,11 @@ Future<void> _loadSpeechModel(LlamaEngine engine) async {
   await engine.loadMultimodalProjector('mmproj.gguf');
 }
 
-class _SpeechBackend implements LlamaBackend {
+class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
   bool _ready = false;
+  BackendGenerationLimit? generationLimit;
+  final Expando<BackendGenerationLimit> _generationLimits =
+      Expando<BackendGenerationLimit>();
   bool audioSupported = true;
   Object? audioProbeError;
   String backendName = 'CPU';
@@ -819,8 +898,17 @@ class _SpeechBackend implements LlamaBackend {
     if (!generationStarted.isCompleted) {
       generationStarted.complete();
     }
-    return generationStream ?? _defaultGenerationStream();
+    final stream = generationStream ?? _defaultGenerationStream();
+    final limit = generationLimit;
+    if (limit != null) {
+      _generationLimits[stream] = limit;
+    }
+    return stream;
   }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      _generationLimits[generation];
 
   Stream<List<int>> _defaultGenerationStream() async* {
     if (blockGeneration) {

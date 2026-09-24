@@ -152,6 +152,21 @@ preflight fails before a task can start. After startup, `events` is a
 single-subscription stream: runtime failure is emitted as a stream error and
 the same terminal condition is available through `task.done`.
 
+### Audio length
+
+A Qwen3-ASR prompt grows by about 13 tokens per second of audio, and the
+transcript shares the same context. On native llama.cpp, a task that reaches
+the context size or `maxOutputTokens` before the transcript ends fails with
+`LlamaSpeechTranscriptTruncatedException`. Its `limit` names the limit that
+stopped recognition and `partialTranscript` holds the text produced before it.
+The Web bridge does not report why generation stopped, so a truncated Web
+transcript still completes.
+
+Whole-file recognition is validated up to 30 seconds per input. Longer inputs
+can drop or repeat sentences without reaching either limit, so split longer
+recordings into windows of at most 30 seconds. Built-in windowing is tracked in
+[#327](https://github.com/leehack/llamadart/issues/327).
+
 Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
 PCM remains unsupported for that prompt adapter because projector sample rates
 are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
@@ -208,7 +223,7 @@ different user actions:
 - **Transcribe Audio** selects one file and uses `SpeechToTextEngine` with a
   compatible GGUF ASR model. Native accepts WAV, MP3, and FLAC; Web accepts WAV.
 - With Qwen3-ASR, the microphone records a temporary foreground WAV for up to
-  five minutes. **Stop & transcribe** finalizes that recording and passes its
+  30 seconds. **Stop & transcribe** finalizes that recording and passes its
   file on native or its encoded bytes on Web to `SpeechToTextEngine`, while
   **Discard** cancels capture and removes or revokes the partial recording.
 - With a native chat model, **Live transcription** uses a separately installed,
@@ -235,7 +250,7 @@ validated Qwen3-ASR preset and runtime capability. It remains hidden for normal
 LiteRT-LM chat bundles. Live dictation uses the native LiteRT-LM streaming STT
 API with an app-managed sidecar; it is not a capability of the selected chat
 bundle and remains unavailable on Web.
-ASR microphone recordings are capped at five minutes, cancelled when the app is
+ASR microphone recordings are capped at 30 seconds, cancelled when the app is
 backgrounded, and deleted on native or revoked on Web after transcription. This
 remains a whole-file workflow: it does not produce live partial transcripts
 while the user speaks. The recorder requests 16 kHz mono WAV, but hardware or
@@ -280,6 +295,8 @@ uses origin-scoped Cache Storage and the pinned source metadata.
 
 ## Known limits
 
+- Qwen3-ASR whole-file recognition is validated up to 30 seconds per input;
+  see [Audio length](#audio-length).
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker. llamadart
   strips that marker, but does not expose it as reliable detected-language
   metadata until language behavior has a dedicated validation contract.

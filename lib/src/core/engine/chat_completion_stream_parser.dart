@@ -37,6 +37,10 @@ class ChatCompletionStreamParser {
   const ChatCompletionStreamParser._();
 
   /// Parses [tokenStream] into incremental content, thinking, and tool chunks.
+  ///
+  /// Without tool calls, the final chunk's finish reason is `length` when
+  /// [stoppedAtLimit] returns true after [tokenStream] ends, and `stop`
+  /// otherwise.
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
@@ -45,6 +49,7 @@ class ChatCompletionStreamParser {
     required String modelName,
     required String completionId,
     List<ToolDefinition>? tools,
+    bool Function()? stoppedAtLimit,
   }) async* {
     final buffer = StringBuffer();
     var streamedContent = '';
@@ -370,7 +375,7 @@ class ChatCompletionStreamParser {
         completionId: completionId,
         modelName: modelName,
         delta: LlamaCompletionChunkDelta(),
-        finishReason: 'stop',
+        finishReason: stoppedAtLimit?.call() == true ? 'length' : 'stop',
       );
     }
   }

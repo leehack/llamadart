@@ -194,6 +194,68 @@ void main() {
     });
 
     test(
+      'generationLimitOf reports the limit of each finished stream',
+      () async {
+        final limited = backend.generate(
+          1,
+          'pending',
+          const GenerationParams(),
+        );
+        final chunks = <List<int>>[];
+        final done = limited.listen(chunks.add).asFuture<void>();
+        await Future<void>.delayed(Duration.zero);
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+        generateRequest.sendPort
+          ..send(TokenResponse(<int>[67]))
+          ..send(
+            DoneResponse(generationLimit: BackendGenerationLimit.contextSize),
+          );
+        await done;
+
+        expect(chunks, <List<int>>[
+          <int>[67],
+        ]);
+        expect(
+          backend.generationLimitOf(limited),
+          BackendGenerationLimit.contextSize,
+        );
+
+        final natural = backend.generate(1, 'ok', const GenerationParams());
+        await natural.drain<void>();
+        expect(backend.generationLimitOf(natural), isNull);
+        expect(
+          backend.generationLimitOf(limited),
+          BackendGenerationLimit.contextSize,
+        );
+      },
+    );
+
+    test(
+      'generationLimitOf ignores a limit after the caller cancels',
+      () async {
+        final cancelled = backend.generate(
+          1,
+          'pending',
+          const GenerationParams(),
+        );
+        final subscription = cancelled.listen((_) {});
+        await Future<void>.delayed(Duration.zero);
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+        await subscription.cancel();
+        generateRequest.sendPort.send(
+          DoneResponse(generationLimit: BackendGenerationLimit.maxTokens),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(backend.generationLimitOf(cancelled), isNull);
+      },
+    );
+
+    test(
       'canceling a generation subscription triggers backend cancelation',
       () async {
         final subscription = backend

@@ -109,7 +109,9 @@ class ChatProvider extends ChangeNotifier {
   static const int _webTextToSpeechMaxFrames = 96;
 
   /// The maximum microphone recording length before automatic transcription.
-  static const Duration maxAudioRecordingDuration = Duration(minutes: 5);
+  ///
+  /// Whole-file Qwen3-ASR is validated up to this length.
+  static const Duration maxAudioRecordingDuration = Duration(seconds: 30);
 
   /// The maximum live-dictation session before automatic finalization.
   static const Duration maxLiveSpeechTranscriptionDuration = Duration(

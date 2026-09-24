@@ -4177,12 +4177,15 @@ class LlamaCppService {
   ///
   /// Returns a [Stream] of token bytes.
   /// Supports multimodal input via [parts].
+  /// Calls [onLimit] before the stream closes when a token limit ended the
+  /// generation.
   Stream<List<int>> generate(
     int contextHandle,
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
@@ -4396,6 +4399,7 @@ class LlamaCppService {
           speculativeSession,
           speculativeApi!,
           tokensPtr,
+          onLimit,
         );
       } else {
         yield* _runInferenceLoop(
@@ -4410,6 +4414,7 @@ class LlamaCppService {
           pieceBuf,
           preservedTokenIds,
           effectiveStopSequences,
+          onLimit,
         );
       }
     } finally {
@@ -5532,24 +5537,35 @@ class LlamaCppService {
     Pointer<Uint8> pieceBuf,
     Set<int> preservedTokenIds,
     List<String> stopSequences,
+    void Function(BackendGenerationLimit limit)? onLimit,
   ) async* {
     final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
     int currentPos = startPos;
     final stopBuffer = StopSequenceBuffer(stopSequences);
+    BackendGenerationLimit? limit = BackendGenerationLimit.maxTokens;
     final evalStopwatch = Stopwatch()..start();
     var sampleMicros = 0;
     var evalMicros = 0;
     var generatedTokens = 0;
 
     for (int i = 0; i < params.maxTokens; i++) {
-      if (cancelToken.value == 1) break;
-      if (currentPos >= nCtx) break;
+      if (cancelToken.value == 1) {
+        limit = null;
+        break;
+      }
+      if (currentPos >= nCtx) {
+        limit = BackendGenerationLimit.contextSize;
+        break;
+      }
 
       final sampleTick = Stopwatch()..start();
       final selectedToken = llama_sampler_sample(sampler, ctx.pointer, -1);
       sampleTick.stop();
       sampleMicros += sampleTick.elapsedMicroseconds;
-      if (llama_vocab_is_eog(vocab, selectedToken)) break;
+      if (llama_vocab_is_eog(vocab, selectedToken)) {
+        limit = null;
+        break;
+      }
 
       final pieceTick = Stopwatch()..start();
       final n = llama_token_to_piece(
@@ -5568,7 +5584,10 @@ class LlamaCppService {
         generatedTokens++;
         final visible = stopBuffer.add(bytes);
         if (visible.isNotEmpty) yield visible;
-        if (stopBuffer.isStopped) break;
+        if (stopBuffer.isStopped) {
+          limit = null;
+          break;
+        }
       }
 
       batch.n_tokens = 1;
@@ -5582,11 +5601,15 @@ class LlamaCppService {
       final decodeStatus = llama_decode(ctx.pointer, batch);
       evalTick.stop();
       evalMicros += evalTick.elapsedMicroseconds;
-      if (decodeStatus != 0) break;
+      if (decodeStatus != 0) {
+        limit = null;
+        break;
+      }
     }
 
     final remaining = stopBuffer.finish();
     if (remaining.isNotEmpty) yield remaining;
+    if (limit != null) onLimit?.call(limit);
 
     evalStopwatch.stop();
     ctx.lastPerfEvalMs = evalMicros / 1000.0;
@@ -5612,6 +5635,7 @@ class LlamaCppService {
     Pointer<llama_dart_speculative> speculativeSession,
     _SpeculativeApi speculativeApi,
     Pointer<Int32> tokensPtr,
+    void Function(BackendGenerationLimit limit)? onLimit,
   ) async* {
     final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
     final draftCapacity = speculativeConfig.draftTokenMax;
@@ -5636,11 +5660,15 @@ class LlamaCppService {
     var speculativeVerifyTokens = 0;
     var speculativeReplayTokens = 0;
     var shouldStop = false;
+    var contextFull = false;
 
     try {
       while (!shouldStop && generatedTokens < params.maxTokens) {
         if (cancelToken.value == 1) break;
-        if (currentPos >= nCtx) break;
+        if (currentPos >= nCtx) {
+          contextFull = true;
+          break;
+        }
 
         int selectedToken;
         if (pendingSampledToken != null) {
@@ -5995,6 +6023,11 @@ class LlamaCppService {
       }
       final remaining = stopBuffer.finish();
       if (remaining.isNotEmpty) yield remaining;
+      if (contextFull) {
+        onLimit?.call(BackendGenerationLimit.contextSize);
+      } else if (!shouldStop && generatedTokens >= params.maxTokens) {
+        onLimit?.call(BackendGenerationLimit.maxTokens);
+      }
     } finally {
       malloc.free(draftPtr);
       malloc.free(idxPtr);

@@ -514,6 +514,35 @@ void main() {
     },
   );
 
+  test('forwards generation limits from a reporting delegate only', () async {
+    final llama = _LimitReportingFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+    final generation = Stream<List<int>>.empty();
+    llama.limits[generation] = BackendGenerationLimit.maxTokens;
+
+    try {
+      expect(backend.generationLimitOf(generation), isNull);
+
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+      expect(
+        backend.generationLimitOf(generation),
+        BackendGenerationLimit.maxTokens,
+      );
+      expect(backend.generationLimitOf(Stream<List<int>>.empty()), isNull);
+
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(backend.generationLimitOf(generation), isNull);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test(
     'routes multimodal, template, and VRAM calls to selected delegate',
     () async {
@@ -1095,6 +1124,18 @@ void main() {
       }
     },
   );
+}
+
+class _LimitReportingFakeBackend extends _FakeBackend
+    implements BackendGenerationLimitReporting {
+  _LimitReportingFakeBackend({required super.handle});
+
+  final Map<Stream<List<int>>, BackendGenerationLimit> limits =
+      <Stream<List<int>>, BackendGenerationLimit>{};
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      limits[generation];
 }
 
 class _FakeBackend
