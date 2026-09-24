@@ -22,8 +22,8 @@
       "regex": "\\bhello\\b"
     },
     "arithmetic": {
-      "prompt": "What is 2 + 2? Reply with only the number.",
-      "regex": "^4[.!]?$"
+      "prompt": "What is 3 + 4? Reply with only the number.",
+      "regex": "^(?:3 \\+ 4 = )?7[.!]?$"
     }
   }
 }
