@@ -5620,10 +5620,11 @@ class LlamaCppService {
     final remaining = stopBuffer.finish();
     if (remaining.isNotEmpty) yield remaining;
     if (limit != null &&
-        !llama_vocab_is_eog(
-          vocab,
-          llama_sampler_sample(sampler, ctx.pointer, -1),
-        )) {
+        (currentPos == 0 ||
+            !llama_vocab_is_eog(
+              vocab,
+              llama_sampler_sample(sampler, ctx.pointer, -1),
+            ))) {
       onLimit?.call(limit);
     }
 
