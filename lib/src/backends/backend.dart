@@ -226,6 +226,26 @@ abstract class BackendVideoRuntimeSupport {
   Future<bool?> supportsVideoRuntime(int mmContextHandle);
 }
 
+/// Token limit that ended a generation before the model finished.
+enum BackendGenerationLimit {
+  /// The generation produced [GenerationParams.maxTokens] tokens.
+  maxTokens,
+
+  /// The prompt and generated tokens filled the context.
+  contextSize,
+}
+
+/// Internal backend probe for the limit that ended a generation stream.
+abstract class BackendGenerationLimitReporting {
+  /// The limit that ended [generation], a stream this backend returned from
+  /// `generate`.
+  ///
+  /// Returns null while [generation] is still open, when it ended at an
+  /// end-of-generation token, a stop sequence, cancellation or an error, or
+  /// when the backend cannot tell.
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation);
+}
+
 /// Model family reported by a backend text-to-speech implementation.
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.

@@ -35,6 +35,7 @@ class NativeLlamaBackend
         BackendTextToSpeech,
         BackendDecision,
         BackendVideoRuntimeSupport,
+        BackendGenerationLimitReporting,
         BackendDartLogLevel {
   Isolate? _isolate;
   SendPort? _sendPort;
@@ -52,6 +53,8 @@ class NativeLlamaBackend
   bool _textToSpeechCancelRequested = false;
   bool _textToSpeechRequestSent = false;
   _NativeCancelFlag? _textToSpeechCancelFlag;
+  final Expando<BackendGenerationLimit> _generationLimits =
+      Expando<BackendGenerationLimit>();
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -451,6 +454,7 @@ class NativeLlamaBackend
       },
     );
     _activeGenerationCleanup = detachAndClose;
+    final stream = controller.stream;
 
     _sendPort!.send(
       GenerateRequest(
@@ -469,6 +473,10 @@ class NativeLlamaBackend
           controller.add(msg.bytes);
         }
       } else if (msg is DoneResponse) {
+        final limit = msg.generationLimit;
+        if (limit != null && !detached) {
+          _generationLimits[stream] = limit;
+        }
         detachAndClose();
         freeToken();
       } else if (msg is ErrorResponse) {
@@ -480,8 +488,12 @@ class NativeLlamaBackend
       }
     });
 
-    return controller.stream;
+    return stream;
   }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      _generationLimits[generation];
 
   @override
   Future<List<int>> tokenize(

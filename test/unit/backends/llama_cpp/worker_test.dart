@@ -412,6 +412,44 @@ void main() {
       },
     );
 
+    for (final limit in <BackendGenerationLimit?>[
+      null,
+      ...BackendGenerationLimit.values,
+    ]) {
+      test(
+        'sends the generation limit $limit with the final response',
+        () async {
+          final worker = await _startWorkerInCurrentIsolate(
+            _LimitedGenerationLlamaCppService(limit),
+          );
+          final responsePort = ReceivePort();
+
+          try {
+            final responses = StreamIterator<Object?>(responsePort);
+            worker.sendPort.send(
+              GenerateRequest(
+                1,
+                'hello',
+                const GenerationParams(streamBatchTokenThreshold: 1),
+                0,
+                responsePort.sendPort,
+              ),
+            );
+
+            expect(await responses.moveNext(), isTrue);
+            expect((responses.current as TokenResponse).bytes, <int>[104, 105]);
+            expect(await responses.moveNext(), isTrue);
+            final done = responses.current as DoneResponse;
+            expect(done.generationLimit, limit);
+            await responses.cancel();
+          } finally {
+            responsePort.close();
+            await _disposeWorker(worker);
+          }
+        },
+      );
+    }
+
     test('routes text-to-speech progress, result, and cancellation', () async {
       final service = _BlockingTextToSpeechService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -787,6 +825,7 @@ class _BlockingLlamaCppService extends LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
@@ -851,6 +890,7 @@ class _UnsupportedGenerationLlamaCppService extends LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     throw LlamaUnsupportedException(
       'missing reasoning-budget wrapper in this test runtime',
@@ -948,6 +988,37 @@ class _ThrowingTextToSpeechService extends LlamaCppService {
   void dispose() {}
 }
 
+class _LimitedGenerationLlamaCppService extends LlamaCppService {
+  _LimitedGenerationLlamaCppService(this.limit);
+
+  final BackendGenerationLimit? limit;
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) async* {
+    yield <int>[104, 105];
+    final reached = limit;
+    if (reached != null) {
+      onLimit?.call(reached);
+    }
+  }
+
+  @override
+  void dispose() {}
+}
+
 class _InferenceGenerationLlamaCppService extends LlamaCppService {
   @override
   void initializeBackend() {}
@@ -962,6 +1033,7 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     throw LlamaInferenceException(
       'grammar sampler failed in this test runtime',

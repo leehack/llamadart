@@ -44,6 +44,32 @@ class LlamaSpeechException extends LlamaException {
   LlamaSpeechException(super.message, [super.details]);
 }
 
+/// Token limit that stopped speech recognition before the transcript ended.
+enum LlamaSpeechTranscriptLimit {
+  /// The transcript reached the request's `maxOutputTokens`.
+  maxOutputTokens,
+
+  /// The audio prompt and the transcript filled the model context.
+  contextSize,
+}
+
+/// Exception thrown when speech recognition stops at a token limit before the
+/// transcript ends.
+class LlamaSpeechTranscriptTruncatedException extends LlamaSpeechException {
+  /// The limit that stopped recognition.
+  final LlamaSpeechTranscriptLimit limit;
+
+  /// The normalized transcript produced before [limit] stopped recognition.
+  final String partialTranscript;
+
+  /// Creates a new [LlamaSpeechTranscriptTruncatedException].
+  LlamaSpeechTranscriptTruncatedException(
+    super.message, {
+    required this.limit,
+    required this.partialTranscript,
+  });
+}
+
 /// Exception thrown when text-to-speech synthesis fails.
 class LlamaTextToSpeechException extends LlamaSpeechException {
   /// Creates a new [LlamaTextToSpeechException].

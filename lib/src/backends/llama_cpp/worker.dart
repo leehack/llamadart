@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
+import '../backend.dart';
 import '../native_token_stream_batcher.dart';
 import 'llama_cpp_service.dart';
 import 'worker_messages.dart';
@@ -240,12 +241,14 @@ void runLlamaWorkerForTesting(
             // await its terminal response before tearing down the isolate.
             final generateFuture = () async {
               try {
+                BackendGenerationLimit? limit;
                 final stream = service.generate(
                   message.contextHandle,
                   message.prompt,
                   message.params,
                   message.cancelTokenAddress,
                   parts: message.parts,
+                  onLimit: (reached) => limit = reached,
                 );
 
                 final batcher = NativeTokenStreamBatcher(
@@ -265,7 +268,7 @@ void runLlamaWorkerForTesting(
                   message.sendPort.send(TokenResponse(finalChunk));
                 }
 
-                message.sendPort.send(DoneResponse());
+                message.sendPort.send(DoneResponse(generationLimit: limit));
               } catch (error) {
                 message.sendPort.send(_toErrorResponse(error));
               }

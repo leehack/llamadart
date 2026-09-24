@@ -4,7 +4,13 @@ import 'dart:math' as math;
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
-    show BackendDeferredEngineCreation, BackendVideoRuntimeSupport;
+    show
+        BackendDeferredEngineCreation,
+        BackendGenerationLimit,
+        BackendGenerationLimitReporting,
+        BackendVideoRuntimeSupport;
+import 'package:llamadart/src/core/engine/engine.dart'
+    show completionGenerationLimit;
 
 class MockLlamaBackend
     implements
@@ -373,6 +379,74 @@ class NativeChatMockBackend extends MockLlamaBackend
         : Map<String, dynamic>.from(chatTemplateKwargs);
     yield utf8.encode(generationText);
   }
+}
+
+class LimitReportingMockBackend extends NativeChatMockBackend
+    implements BackendGenerationLimitReporting {
+  BackendGenerationLimit? nextLimit;
+  bool nativeChat = false;
+  final Expando<BackendGenerationLimit> _limits =
+      Expando<BackendGenerationLimit>();
+
+  @override
+  bool get supportsNativeChatGeneration => nativeChat;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _track(super.generate(contextHandle, prompt, params, parts: parts));
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _track(
+    super.generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    ),
+  );
+
+  Stream<List<int>> _track(Stream<List<int>> source) {
+    late final Stream<List<int>> tracked;
+    final limit = nextLimit;
+    tracked = source.transform(
+      StreamTransformer<List<int>, List<int>>.fromHandlers(
+        handleDone: (sink) {
+          if (limit != null) {
+            _limits[tracked] = limit;
+          }
+          sink.close();
+        },
+      ),
+    );
+    return tracked;
+  }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      _limits[generation];
 }
 
 class MockModelResolver implements ModelResolver {
@@ -3160,6 +3234,84 @@ void main() {
       await engine.loadMultimodalProjector('proj.gguf');
       await engine.dispose();
       expect(engine.isReady, false);
+    });
+  });
+
+  group('LlamaEngine generation limits', () {
+    late LimitReportingMockBackend limitBackend;
+    late LlamaEngine limitEngine;
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+    ];
+
+    setUp(() async {
+      limitBackend = LimitReportingMockBackend()..generationText = 'partial';
+      limitEngine = LlamaEngine(limitBackend);
+      await limitEngine.loadModel('qwen-test.gguf');
+    });
+
+    tearDown(() async {
+      await limitEngine.dispose();
+    });
+
+    for (final nativeChat in <bool>[false, true]) {
+      final path = nativeChat ? 'native chat' : 'rendered prompt';
+
+      for (final limit in BackendGenerationLimit.values) {
+        test(
+          'create finishes with length at $limit on the $path path',
+          () async {
+            limitBackend
+              ..nativeChat = nativeChat
+              ..nextLimit = limit;
+
+            final chunks = await limitEngine.create(messages).toList();
+
+            expect(limitBackend.nativeGenerateChatCalls, nativeChat ? 1 : 0);
+            expect(
+              chunks
+                  .map((chunk) => chunk.choices.first.delta.content ?? '')
+                  .join(),
+              'partial',
+            );
+            expect(chunks.last.choices.first.finishReason, 'length');
+          },
+        );
+      }
+
+      test(
+        'create finishes with stop without a limit on the $path path',
+        () async {
+          limitBackend.nativeChat = nativeChat;
+
+          final chunks = await limitEngine.create(messages).toList();
+
+          expect(chunks.last.choices.first.finishReason, 'stop');
+        },
+      );
+    }
+
+    for (final limit in BackendGenerationLimit.values) {
+      test(
+        'completionGenerationLimit names $limit on the final chunk',
+        () async {
+          limitBackend.nextLimit = limit;
+
+          final chunks = await limitEngine.create(messages).toList();
+
+          expect(completionGenerationLimit(chunks.last), limit);
+          expect(
+            chunks.take(chunks.length - 1).map(completionGenerationLimit),
+            everyElement(isNull),
+          );
+        },
+      );
+    }
+
+    test('completionGenerationLimit is null without a limit', () async {
+      final chunks = await limitEngine.create(messages).toList();
+
+      expect(chunks.map(completionGenerationLimit), everyElement(isNull));
     });
   });
 }

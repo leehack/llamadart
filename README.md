@@ -29,9 +29,10 @@ models through LiteRT-LM.
   multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
   persistence, and runtime diagnostics where the active backend supports them.
 - Experimental typed speech recognition through `SpeechToTextEngine`:
-  llama.cpp whole-file Qwen3-ASR on native and validated WebGPU bridge assets,
-  plus worker-isolated, CPU-only native LiteRT-LM streaming ASR with bounded
-  16 kHz PCM input and partial transcripts.
+  llama.cpp whole-file Qwen3-ASR (validated up to 30 seconds per input) on
+  native and validated WebGPU bridge assets, plus worker-isolated, CPU-only
+  native LiteRT-LM streaming ASR with bounded 16 kHz PCM input and partial
+  transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 - Experimental Laya-style decision models on native llama.cpp through

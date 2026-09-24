@@ -178,6 +178,13 @@ For canonical full release notes, use:
   the whole prompt is ingested. The native call already running still
   finishes
   ([#599](https://github.com/leehack/llamadart/issues/599)).
+- `SpeechToTextEngine` now fails a native Qwen3-ASR transcript that reaches
+  the context size or `maxOutputTokens` with
+  `LlamaSpeechTranscriptTruncatedException` instead of completing with
+  truncated text, and `create()` reports `finishReason: 'length'` when native
+  llama.cpp stops at either limit. The chat app caps Qwen3-ASR recordings at
+  the validated 30 seconds
+  ([#636](https://github.com/leehack/llamadart/issues/636)).
 
 ## 0.8.24
 

@@ -1212,7 +1212,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('Recording for transcription 0:00 / 5:00'),
+      find.text('Recording for transcription 0:00 / 0:30'),
       findsOneWidget,
     );
     expect(find.text('Discard'), findsOneWidget);
