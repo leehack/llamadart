@@ -1784,6 +1784,11 @@ class WebGpuLlamaBackend
               isCpuMultimodalRuntime: isCpuMultimodalRuntime,
             );
           }
+          // The bridge's worker path only reacts to an abort event, so a
+          // signal aborted before this call would be ignored.
+          if (abortController.signal.aborted) {
+            return;
+          }
           final normalizedPrompt = _normalizePromptForBridge(prompt, bridge);
           final completion = bridge.createCompletion(normalizedPrompt, options);
           final completionResult = await _toFuture(completion);

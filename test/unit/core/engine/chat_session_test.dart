@@ -7,6 +7,8 @@ import 'package:test/test.dart';
 
 class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   int _generateCallCount = 0;
+  int generateCalls = 0;
+  Future<void>? contextSizeGate;
   final List<String> _responses = [];
   int contextSize = 2048;
   String? lastPrompt;
@@ -39,7 +41,10 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   Future<void> contextFree(int contextHandle) async {}
 
   @override
-  Future<int> getContextSize(int contextHandle) async => contextSize;
+  Future<int> getContextSize(int contextHandle) async {
+    await contextSizeGate;
+    return contextSize;
+  }
 
   @override
   Stream<List<int>> generate(
@@ -48,6 +53,7 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
+    generateCalls += 1;
     lastPrompt = prompt;
     lastParams = params;
     if (_generateCallCount < _responses.length) {
@@ -619,6 +625,43 @@ void main() {
       // carries the schema in the grammar rather than the prompt text.
       expect(backend.lastPrompt, contains('Respond in JSON format'));
       expect(backend.lastParams?.grammar, contains('test_tool'));
+    });
+
+    test('honours a cancel issued before the context check ends', () async {
+      final gate = Completer<void>();
+      backend.contextSizeGate = gate.future;
+      final done = Completer<void>();
+      final content = StringBuffer();
+
+      session.create([const LlamaTextContent('Hi')]).listen((chunk) {
+        if (chunk.choices.isNotEmpty) {
+          content.write(chunk.choices.first.delta.content ?? '');
+        }
+      }, onDone: done.complete);
+      await Future<void>.delayed(Duration.zero);
+      engine.cancelGeneration();
+      gate.complete();
+      await done.future;
+
+      expect(backend.generateCalls, 0);
+      expect(content.toString(), isEmpty);
+    });
+
+    test('a cancel after completion leaves the next turn intact', () async {
+      backend.queueResponse('First');
+      await session.create([const LlamaTextContent('Hi')]).drain<void>();
+      engine.cancelGeneration();
+
+      backend.queueResponse('Second');
+      final chunks = await session.create([
+        const LlamaTextContent('Again'),
+      ]).toList();
+
+      expect(backend.generateCalls, 2);
+      expect(
+        chunks.map((chunk) => chunk.choices.first.delta.content ?? '').join(),
+        'Second',
+      );
     });
   });
 }

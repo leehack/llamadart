@@ -13,6 +13,10 @@
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and
   aligned current README/website native override docs.
 
+- Honour `LlamaEngine.cancelGeneration()` issued right after listening to a
+  `create`, `generate` or `ChatSession.create` stream, before it reaches the
+  backend, instead of running the whole generation
+  ([#602](https://github.com/leehack/llamadart/issues/602)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older

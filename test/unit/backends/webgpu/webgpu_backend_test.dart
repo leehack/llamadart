@@ -2038,6 +2038,30 @@ void main() {
       },
     );
 
+    test('skips the bridge when generation is cancelled first', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      final chunks = <List<int>>[];
+      final done = Completer<void>();
+
+      backend
+          .generate(1, 'Hello', const GenerationParams())
+          .listen(chunks.add, onDone: done.complete);
+      backend.cancelGeneration();
+      await done.future;
+
+      expect(createCompletionCallCount, 0);
+      expect(chunks, isEmpty);
+
+      final next = await backend
+          .generate(1, 'Hello', const GenerationParams())
+          .toList();
+      expect(createCompletionCallCount, 1);
+      expect(next, isNotEmpty);
+    });
+
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
