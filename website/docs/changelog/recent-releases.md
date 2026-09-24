@@ -114,10 +114,10 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
-- Add `decision-gguf-{cpu,metal,vulkan,cuda}` validation profiles that check
-  `DecisionEngine` token ids, raw logits and answers against the Laya 0.3.5
-  reference, plus batching, reload and typed rejections, on desktop, mobile,
-  Web and GCE CUDA
+- Add `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` validation profiles that
+  check `DecisionEngine` token ids, raw logits and answers against the Laya
+  0.3.5 reference, plus batching, reload and typed rejections, on desktop,
+  mobile, Web WebGPU and GCE CUDA
   ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp

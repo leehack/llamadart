@@ -95,7 +95,7 @@ untrusted producer's report.
 | `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
-| `decision-gguf-{cpu,metal,vulkan,cuda}` | Laya ModernBERT Q8_0, 421,407,968 bytes, plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
+| `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Laya ModernBERT Q8_0, 421,407,968 bytes, plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
 
 Full revisions and SHA256 values live in profile JSON. The instruction GGUF is
 [ggml-org's Q4_0 artifact](https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/blob/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf),
@@ -161,7 +161,7 @@ in the journal. The raw tiny fixture does not claim chat capability.
 
 ### Decision profiles
 
-`decision-gguf-{cpu,metal,vulkan,cuda}` lock the `fr0stbit3/laya-gguf`
+`decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` lock the `fr0stbit3/laya-gguf`
 `laya-Q8_0.gguf` encoder (model kind `decision`) and, under `decision.head`,
 its `laya-head.safetensors` head. An optional `decision.config` lock takes the
 same fields for heads without embedded config. They load with context 512 and
@@ -192,27 +192,31 @@ GGUF accelerator proof for these profiles expects two model loads (`C01.load`,
 `D06.reload`) and six compute buffers: one per model load plus one encoder
 context per successful head load (`D01`, `D03`, two in `D06`). Every head
 device must name the backend, such as `MTL0`. Reports also require the verified
-head hash and size.
+head hash and size. The Web host keeps no native log, so `decision-gguf-webgpu`
+reports cannot verify placement and do not qualify.
 
 Desktop, Android and iOS hosts download and verify the head beside the model,
 each file within the host's download deadline. The Web host verifies both in
-the page and passes the head URL to the bridge; it runs `decision-gguf-cpu` on
-WASM CPU, and there is no Web GPU decision profile. GCE accepts
-`decision-gguf-cuda`. `validation.dart coverage --use-case decision` lists the
-rows.
+the page and passes the head URL to the bridge. Backend `webgpu` loads with
+every layer on WebGPU and runs only on the Web host and in Web bundles. The Web
+host and Web bundles reject every other decision profile: Q8_0 on the WASM CPU
+is outside these tolerances ([Web check](decision_engine.md#web-check)). GCE
+accepts `decision-gguf-cuda`. `validation.dart coverage --use-case decision`
+lists the rows; Web WASM is `UNSUPPORTED`.
 
 Observed on an Apple Silicon Mac at load averages of 15 to 210: `local` CPU and
 Metal runs passed all eight cases, and Metal verified placement. Worst
 logit/probability/score differences were 0.142/0.036/0.061 on the CPU and
 0.164/0.044/0.025 on Metal. Neither qualified, since a `local` run is not a
-portable bundle. In headless Chromium with the bridge assets from
-[#665](https://github.com/leehack/llamadart/pull/665), the Web bundle passed
-`C01` to `D02`, then `D03.logits` exceeded the 60 s case timeout on the WASM
-CPU in both runs, leaving the rest NOT_RUN. A measurement
-build with a 20-minute timeout took 77 to 86 s for each of `D03` to `D06`;
-`D03`, `D06` and `D07` passed, and `D04` and `D05` failed on
-`plain_text/urgency5` (probability 0.0628, score 0.1224), the Q8_0 drift in the
-[DecisionEngine Web check](decision_engine.md#web-check).
+portable bundle. In headless Chromium with WebGPU on Metal and the bridge
+assets from [#665](https://github.com/leehack/llamadart/pull/665), two
+`decision-gguf-webgpu` Web bundle runs passed all eight cases with the head on
+`WebGPU: WebGPU`; worst differences were 0.164/0.044/0.025, and the slowest
+case, `D06.reload`, took 25 and 32 s against the 60 s case timeout. The same
+runs on the WASM CPU, before the Web host rejected it, stopped at `D03.logits`
+on the 60 s timeout; with a 20-minute timeout, `D03` to `D06` took 77 to 86 s
+each and `D04` and `D05` failed on `plain_text/urgency5` (probability 0.0628,
+score 0.1224).
 
 ```bash
 dart run tool/testing/validation.dart local --profile decision-gguf-metal

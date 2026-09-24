@@ -403,9 +403,9 @@ Q8_0 on the WASM CPU misses the probability and score tolerances on one row,
 calls the bridge directly, gets the same worst logit difference on wasm32 and
 wasm64 in both bridge modes, so the drift comes from the bridge's WASM CPU
 Q8_0 path rather than llamadart. With the bridge assets from
-[#665](https://github.com/leehack/llamadart/pull/665), the `decision-gguf-cpu`
-validation profile on the WASM CPU gave the same worst differences on the same
-row: logit 0.2326, probability 0.0628, score 0.1224.
+[#665](https://github.com/leehack/llamadart/pull/665), the validation harness
+gave the same worst differences: 0.2326, 0.0628 and 0.1224 on the WASM CPU,
+and 0.1636, 0.0436 and 0.0247 with `decision-gguf-webgpu`, which passed.
 Typed key reads with the question identity check, sequence validation
 messages, error mapping, URL redaction, `<base href>` resolution, and heads
 freed or bridges disposed behind the engine's back were checked against the

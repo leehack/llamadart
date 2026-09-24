@@ -618,9 +618,9 @@ void main() {
   test('a WebGPU profile needs a WebGPU head', () async {
     final webgpu = _profile('webgpu');
     for (final (device, backend, status) in [
-      ('WebGPU', 'WebGPU (Prototype bridge)', 'PASS'),
-      ('CPU', 'WebGPU (Prototype bridge)', 'FAIL'),
-      ('WebGPU', 'WASM (Prototype bridge)', 'FAIL'),
+      ('WebGPU: WebGPU', 'WebGPU, CPU', 'PASS'),
+      ('CPU', 'WebGPU, CPU', 'FAIL'),
+      ('WebGPU: WebGPU', 'WASM (Prototype bridge)', 'FAIL'),
     ]) {
       final report = (await _run(
         FakeDecisionEngine(device: device, backendName: backend),
