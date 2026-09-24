@@ -162,8 +162,9 @@ the same terminal condition is available through `task.done`.
 Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Only WAV is
 validated with a real model; native tests check only that the adapter accepts
 MP3 and FLAC, and no test decodes them. Raw PCM remains unsupported for
-that prompt adapter because projector sample rates are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
-complete mono 16 kHz float buffer, or the incremental session shown above.
+that prompt adapter because projector sample rates are model-specific.
+Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a complete mono 16 kHz
+float buffer, or the incremental session shown above.
 
 WebGPU accepts encoded WAV bytes only. Browser file pickers must read the
 selected file into memory and use `SpeechAudioBytesInput`; local filesystem
@@ -247,9 +248,9 @@ ASR microphone recordings are capped at five minutes, cancelled when the app is
 backgrounded, and deleted on native or revoked on Web after transcription.
 The repository's real-model checks cover at most 33 seconds of audio; see
 [Known limits](#known-limits). This remains a whole-file workflow: it does not
-produce live partial transcripts while the user speaks. The recorder requests 16 kHz mono WAV, but hardware or
-the browser may choose another valid sample rate; the downstream decoder reads
-the WAV metadata.
+produce live partial transcripts while the user speaks. The recorder requests
+16 kHz mono WAV, but hardware or the browser may choose another valid sample
+rate; the downstream decoder reads the WAV metadata.
 The live sidecar path instead requests PCM16 mono 16 kHz streaming, preserves
 samples split across arbitrary byte-chunk boundaries, applies one in-flight
 worker push at a time, and caps each session at five minutes. It is currently
@@ -314,10 +315,9 @@ either budget is exceeded:
   checks that follow the first generation, as a multiple of the one sampled
   right after that generation.
 
-The pack has passed on macOS arm64 with CPU and with Metal on native
-`v0.4.1-1`, and on Linux x64 CPU (AMD EPYC) with an earlier llamadart tree on
-native `v0.4.1`. The Metal runs report the Metal backend; the pack does not
-verify GPU execution.
+With native `v0.4.1-1`, the pack has passed on macOS arm64 with CPU and with
+Metal, and on Linux x64 with CPU (AMD EPYC 7B12). The Metal runs report the
+Metal backend; the pack does not verify GPU execution.
 
 ## Known limits
 
