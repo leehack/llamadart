@@ -30,7 +30,7 @@ void main() {
 
     test('prefers the file in the folder over the published head', () {
       final store = ModelStore(dir.path, tunedHeadUrl: '');
-      File(store.tunedHeadPath).writeAsBytesSync([0]);
+      File(store.tunedHeadPath!).writeAsBytesSync([0]);
 
       final source = store.tunedHead();
       expect(source.kind, ModelSourceKind.path);
@@ -42,7 +42,7 @@ void main() {
         dir.path,
         tunedHeadUrl: 'https://example.com/heads/tuned.safetensors',
       );
-      File(store.tunedHeadPath).writeAsBytesSync([0]);
+      File(store.tunedHeadPath!).writeAsBytesSync([0]);
 
       final source = store.tunedHead();
       expect(source.kind, ModelSourceKind.http);
@@ -60,7 +60,7 @@ void main() {
       store.tunedHeadHelp(publishedTunedHead),
       allOf(
         contains('Tap Reload models to try again'),
-        contains(store.tunedHeadPath),
+        contains(store.tunedHeadPath!),
         isNot(contains('LAYA_TUNED_HEAD_URL')),
       ),
     );
@@ -72,8 +72,19 @@ void main() {
       ),
     );
     expect(
-      store.tunedHeadHelp(ModelSource.path(store.tunedHeadPath)),
+      store.tunedHeadHelp(ModelSource.path(store.tunedHeadPath!)),
       allOf(contains('delete it'), isNot(contains('try again'))),
+    );
+  });
+
+  test('ModelStore without a folder uses the published head', () {
+    final store = ModelStore(null, tunedHeadUrl: '');
+    expect(store.downloads, isNull);
+    expect(store.tunedHeadPath, isNull);
+    expect(store.tunedHead().kind, ModelSourceKind.huggingFace);
+    expect(
+      store.tunedHeadHelp(publishedTunedHead),
+      'Tap Reload models to try again.',
     );
   });
 

@@ -118,7 +118,7 @@ dart run bin/tui_coding_agent.dart
 ```
 
 ### 6. Laya Tetris (`laya_tetris/`)
-A Flutter app (macOS, iOS, Android) in which a Laya decision model plays
+A Flutter app (macOS, iOS, Android, Web) in which a Laya decision model plays
 real-time Tetris through `DecisionEngine`:
 
 - One backbone GGUF in a `LlamaEngine` shared by two heads: the base head and
@@ -138,6 +138,9 @@ cd laya_tetris
 flutter pub get
 flutter run -d macos
 ```
+
+Web needs the WebGPU bridge assets and cross-origin isolation headers; see
+[`laya_tetris/README.md`](laya_tetris/README.md#web).
 
 ## Testing
 
