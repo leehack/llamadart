@@ -16,10 +16,9 @@ For canonical full release notes, use:
   new `LlamaEngine.hasMultimodalProjector`
   ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@v0.4.1-1`, keeping the `v0.4.1` llama.cpp
-  ABI/bindings while picking up wrapper-only native fixes. Refreshed the
-  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current
-  README/website native override docs.
+  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching
+  Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
+  checksum, and aligned current README/website native override docs.
 - Honour `LlamaEngine.cancelGeneration()` issued right after listening to a
   `create`, `generate` or `ChatSession.create` stream, before it reaches the
   backend, instead of running the whole generation
@@ -71,12 +70,12 @@ For canonical full release notes, use:
   BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
   instead of aborting the process or embedding only the last chunk
   ([#607](https://github.com/leehack/llamadart/issues/607)).
-- Aligned default WebGPU bridge assets to `v0.1.49` for the decision API
-  and the Web runtime fixes below, qualified against native `v0.4.1-1` and
-  retaining Web/native llama.cpp
-  `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity and Web
+- Aligned default WebGPU bridge assets to `v0.1.51` for the decision API
+  and the Web runtime fixes below. The assets embed llama.cpp `v0.5.0`, are
+  qualified against native `v0.5.0`, and keep Web/native llama.cpp
+  `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity and Web
   `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
-  `28d7b92d8d7a4406d2dd33f2d434f30f43bdbca82565914d9dfb6ff4a23bdddc`.
+  `8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`.
 - On Web, an invalid GBNF grammar now fails generation with a
   `LlamaInferenceException` whose details contain `(invalid grammar)`, and the
   loaded model stays usable, instead of aborting the WebGPU bridge runtime
