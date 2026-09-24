@@ -256,7 +256,9 @@ and reports which as `deviceName`.
 - The bridge serializes decision calls with its other operations and cannot
   cancel a run. When its worker fails during a run, it reloads the model on the
   main thread and rejects the run; the engine keeps its model, and the
-  `DecisionEngine` must be loaded again.
+  `DecisionEngine` must be loaded again. If that reload also fails, the bridge
+  forgets the model: later decision calls throw `LlamaStateException` ("No model
+  loaded"), and the model must be unloaded and loaded again.
 
 ## Parity rules
 
@@ -384,8 +386,8 @@ the head frees in `freeModel` and `dispose` makes the same exit abort in
 ### Web check
 
 Local only, not in CI: `DecisionEngine` through `LlamaEngine(LlamaBackend())`
-in Playwright's headless Chromium on the same machine, with the pinned bridge
-assets (bridge source `64ba8250`), the 24 fixture rows,
+in Playwright's headless Chromium on the same machine, with bridge assets
+`v0.1.47` (bridge source `64ba8250`), the 24 fixture rows,
 `laya-head.safetensors` and the tolerances of `decision-model-smoke`. Token ids
 and markers matched on every row.
 

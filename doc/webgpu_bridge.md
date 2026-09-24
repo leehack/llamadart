@@ -19,22 +19,21 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.47`.
+Default pinned tag in the example is `v0.1.49`.
 
 That release embeds llama.cpp `v0.4.1`, matching the `hook/build.dart` native pin
 (`v0.4.1-1`, both built from upstream llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
-even though the bridge asset tag `v0.1.47` differs from the native runtime tag
-`v0.4.1-1`. Provenance for this immutable consumer artifact: release `394986324`,
-tag commit `ee45e864641648a99411128f9bb82b7897fad221`, bridge source
-`64ba8250871bf2472cc2064c6a00fff050783f02`, and manifest SHA-256
-`9c5e9008d187690e283f37b2b892396da03e3c71bf7c3434d7c87ceca8e6a4bc`. The bridge
-assets were qualified against native `v0.4.1`; `v0.4.1-1` rebuilds it from the
-same upstream commit. The assets add the decision API (apiVersion 1), retain the
-Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30`, and provision
-the explicit 1 MiB Wasm stack needed for memory64 context construction in
-direct and worker modes. The chat bootstrap opts `SpeechToTextEngine` into that
-contract from the immutable tag; older or custom assets remain disabled unless
-the host explicitly sets
+even though the bridge asset tag `v0.1.49` differs from the native runtime tag
+`v0.4.1-1`. Provenance for this immutable consumer artifact: release `395657276`,
+tag commit `90afd31f640840396fd3c92ac769055d72e9e6f8`, bridge source
+`e187f10a1c1d29becdfa87ea90246bbcb012221b`, and manifest SHA-256
+`28d7b92d8d7a4406d2dd33f2d434f30f43bdbca82565914d9dfb6ff4a23bdddc`. The bridge
+assets were qualified against native `v0.4.1-1`. The assets add the decision API
+(apiVersion 1), retain the Qwen3-ASR typed speech-to-text contract introduced
+in `v0.1.30`, and provision the explicit 1 MiB Wasm stack needed for memory64
+context construction in direct and worker modes. The chat bootstrap opts
+`SpeechToTextEngine` into that contract from the immutable tag; older or custom
+assets remain disabled unless the host explicitly sets
 `window.__llamadartBridgeSpeechToTextSupported = true` after equivalent
 validation.
 
@@ -49,7 +48,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.47 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.49 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -130,7 +129,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.47';
+  window.__llamadartBridgeAssetsTag = 'v0.1.49';
 </script>
 ```
 

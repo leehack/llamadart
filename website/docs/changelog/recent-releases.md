@@ -64,11 +64,37 @@ For canonical full release notes, use:
   BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
   instead of aborting the process or embedding only the last chunk
   ([#607](https://github.com/leehack/llamadart/issues/607)).
-- Aligned default WebGPU bridge assets to `v0.1.47` for the decision API,
+- Aligned default WebGPU bridge assets to `v0.1.49` for the decision API
+  and the Web runtime fixes below, qualified against native `v0.4.1-1` and
   retaining Web/native llama.cpp
   `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity and Web
   `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
-  `9c5e9008d187690e283f37b2b892396da03e3c71bf7c3434d7c87ceca8e6a4bc`.
+  `28d7b92d8d7a4406d2dd33f2d434f30f43bdbca82565914d9dfb6ff4a23bdddc`.
+- On Web, an invalid GBNF grammar now fails generation with a
+  `LlamaInferenceException` whose details contain `(invalid grammar)`, and the
+  loaded model stays usable, instead of aborting the WebGPU bridge runtime
+  ([llama-web-bridge#125](https://github.com/leehack/llama-web-bridge/pull/125)).
+- On Web, when a bridge worker fails and the main-thread reload fails too, or
+  a replacement worker cannot start, the bridge now forgets the model instead
+  of being left broken with a `TypeError`. Later calls fail with
+  `No model loaded. Call loadModelFromUrl first.`; call `unloadModel()`, then
+  `loadModel()` and any projector again to recover
+  ([llama-web-bridge#123](https://github.com/leehack/llama-web-bridge/pull/123),
+  [llama-web-bridge#127](https://github.com/leehack/llama-web-bridge/pull/127)).
+- On Web, a replacement bridge worker reloads the current model before its next
+  request
+  ([llama-web-bridge#126](https://github.com/leehack/llama-web-bridge/pull/126)).
+- On Web, grammar-constrained generation no longer aborts the bridge runtime
+  when top-k or top-p keeps only tokens the grammar rejects; it resamples as
+  llama.cpp does, and fails with `Grammar rejected every candidate token` only
+  when the grammar cannot continue
+  ([llama-web-bridge#118](https://github.com/leehack/llama-web-bridge/pull/118)).
+- On Web, an ordinary error from a healthy bridge worker, such as a prompt that
+  overflows the context or empty embedding input, is now rethrown with the
+  worker kept, instead of moving the session to the main thread for good and
+  re-running the request
+  ([llama-web-bridge#119](https://github.com/leehack/llama-web-bridge/pull/119),
+  [llama-web-bridge#120](https://github.com/leehack/llama-web-bridge/pull/120)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second
