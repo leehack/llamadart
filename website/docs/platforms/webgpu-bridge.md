@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.47`, with local vendored assets
-identified as `v0.1.47-local-v0.4.1`.
+The example currently pins bridge assets to `v0.1.49`, with local vendored assets
+identified as `v0.1.49-local-v0.4.1`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.47 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.49 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -204,18 +204,17 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
 - `v0.1.47+` bridge assets include the decision API (apiVersion 1) that
   [`DecisionEngine`](../guides/decision-models#web) needs; older assets report
   decision models as unsupported.
-- The pinned `v0.1.47` bridge assets embed llama.cpp `v0.4.1`, matching the native runtime
+- The pinned `v0.1.49` bridge assets embed llama.cpp `v0.4.1`, matching the native runtime
   (`v0.4.1-1`, both built from upstream `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4`)
-  even though the bridge asset tag `v0.1.47` differs from the native runtime tag
-  `v0.4.1-1`. Pinned artifact provenance: release `394986324`, tag commit
-  `ee45e864641648a99411128f9bb82b7897fad221`, bridge source
-  `64ba8250871bf2472cc2064c6a00fff050783f02`, manifest SHA-256
-  `9c5e9008d187690e283f37b2b892396da03e3c71bf7c3434d7c87ceca8e6a4bc`. The
-  bridge assets were qualified against native `v0.4.1`; `v0.4.1-1` rebuilds it
-  from the same upstream commit. The bridge assets provision an explicit 1 MiB
-  stack for both wasm32 and memory64, preventing graph-parameter growth from
-  overflowing Emscripten's 64 KiB default during memory64 Qwen3-ASR context
-  construction.
+  even though the bridge asset tag `v0.1.49` differs from the native runtime tag
+  `v0.4.1-1`. Pinned artifact provenance: release `395657276`, tag commit
+  `90afd31f640840396fd3c92ac769055d72e9e6f8`, bridge source
+  `e187f10a1c1d29becdfa87ea90246bbcb012221b`, manifest SHA-256
+  `28d7b92d8d7a4406d2dd33f2d434f30f43bdbca82565914d9dfb6ff4a23bdddc`. The
+  bridge assets were qualified against native `v0.4.1-1`. The bridge assets
+  provision an explicit 1 MiB stack for both wasm32 and memory64, preventing
+  graph-parameter growth from overflowing Emscripten's 64 KiB default during
+  memory64 Qwen3-ASR context construction.
 - `v0.1.12+` bridge assets forward native-compatible `ModelParams` load
   tuning fields, including multi-sequence slots, KV cache type, flash attention,
   RoPE overrides, split mode, and main GPU.
@@ -346,7 +345,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.47';
+  window.__llamadartBridgeAssetsTag = 'v0.1.49';
   // Custom assets stay speech-disabled unless the host has validated them:
   // window.__llamadartBridgeSpeechToTextSupported = true;
   // Prefer local runtime even off localhost:
