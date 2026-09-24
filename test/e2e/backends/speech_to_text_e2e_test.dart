@@ -13,8 +13,11 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:test/test.dart';
 
+import '../../test_helper.dart';
+
 const _modelPathKey = 'LLAMADART_STT_MODEL_PATH';
 const _mmprojPathKey = 'LLAMADART_STT_MMPROJ_PATH';
+const _ttsMmprojPathKey = 'LLAMADART_TTS_MMPROJ_PATH';
 const _audioPathKey = 'LLAMADART_STT_AUDIO_PATH';
 const _expectedTextKey = 'LLAMADART_STT_EXPECTED_TEXT';
 const _asrPrompt =
@@ -148,6 +151,55 @@ void main() {
       },
     );
   }
+
+  test('rejects a projector made for another model family', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final mmprojPath = _requiredFile(_mmprojPathKey);
+    final ttsMmprojPath = _requiredFile(_ttsMmprojPathKey);
+    if (modelPath == null || mmprojPath == null || ttsMmprojPath == null) {
+      return;
+    }
+    final textModel = await TestHelper.getTestModel();
+
+    for (final (model, projector) in [
+      (modelPath, ttsMmprojPath),
+      (textModel.path, mmprojPath),
+    ]) {
+      final engine = LlamaEngine(LlamaBackend());
+      try {
+        await engine.loadModel(
+          model,
+          modelParams: const ModelParams(
+            contextSize: 512,
+            preferredBackend: GpuBackend.cpu,
+            gpuLayers: 0,
+          ),
+        );
+        await expectLater(
+          engine.loadMultimodalProjector(projector),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              startsWith(
+                'The native runtime could not load the multimodal projector',
+              ),
+            ),
+          ),
+        );
+        final capabilities = await SpeechToTextEngine(
+          engine,
+          modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        ).capabilities;
+        expect(
+          capabilities.unsupportedReason,
+          startsWith('No multimodal projector is loaded.'),
+        );
+      } finally {
+        await engine.dispose();
+      }
+    }
+  });
 
   for (final (route, chunkEval) in [
     ('primary mtmd', null),

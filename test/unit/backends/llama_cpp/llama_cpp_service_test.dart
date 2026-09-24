@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:mirrors';
 import 'dart:typed_data';
 
@@ -10,14 +11,17 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -3639,6 +3643,127 @@ void main() {
     });
   });
 
+  group('projector load failures', () {
+    late LlamaCppService service;
+    late int modelHandle;
+    late Directory tempDir;
+    late String projectorPath;
+    late String missingPath;
+
+    setUp(() {
+      service = LlamaCppService();
+      modelHandle = _registerNullModelForTesting(service);
+      tempDir = Directory.systemTemp.createTempSync('llamadart_mmproj_');
+      projectorPath = path.join(tempDir.path, 'mmproj.gguf');
+      File(projectorPath).writeAsStringSync('GGUF');
+      missingPath = path.join(tempDir.path, 'missing.gguf');
+      _writePrivateForTesting(service, '_mtmdPrimarySymbolsUnavailable', true);
+      _writePrivateForTesting(service, '_mtmdFallbackLookupAttempted', true);
+    });
+
+    tearDown(() {
+      _readPrivateForTesting<Map<Object?, Object?>>(
+        service,
+        '_models',
+      ).remove(modelHandle);
+      tempDir.deleteSync(recursive: true);
+    });
+
+    final notFound = throwsA(
+      isA<LlamaModelException>().having(
+        (error) => error.message,
+        'message',
+        'Multimodal projector file not found.',
+      ),
+    );
+
+    Matcher unsupportedFor(String symbol) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(
+          contains('`$symbol` cannot run'),
+          contains('this package pins ($llamaCppTag)'),
+        ),
+      ),
+    );
+
+    test('reports a missing projector file before any mtmd call', () {
+      expect(
+        () => service.createMultimodalContext(modelHandle, missingPath),
+        notFound,
+      );
+    });
+
+    test('reports a runtime without mtmd as unsupported', () {
+      expect(
+        () => service.createMultimodalContext(modelHandle, projectorPath),
+        unsupportedFor('mtmd_context_params_default'),
+      );
+      expect(
+        () => _invokePrivateForTesting<Object?>(service, '_mtmdInitFromFile', [
+          nullptr,
+          nullptr,
+          Struct.create<mtmd_context_params>(),
+        ]),
+        unsupportedFor('mtmd_init_from_file'),
+      );
+    });
+
+    test('reports an audio probe without mtmd as unsupported', () {
+      final mmHandle = _registerMtmdContextForTesting(service);
+      addTearDown(
+        () => _readPrivateForTesting<Map<Object?, Object?>>(
+          service,
+          '_mtmdContexts',
+        ).remove(mmHandle),
+      );
+
+      expect(service.supportsAudio(-1), isFalse);
+      expect(
+        () => service.supportsAudio(mmHandle),
+        unsupportedFor('mtmd_support_audio'),
+      );
+    });
+
+    test('keeps the error types across the worker', () async {
+      final mmHandle = _registerMtmdContextForTesting(service);
+      final workerPort = ReceivePort();
+      runLlamaWorkerForTesting(
+        workerPort.sendPort,
+        service,
+        exitOnDispose: false,
+      );
+      final backend = NativeLlamaBackend(
+        initialSendPort: await workerPort.first as SendPort,
+      );
+      try {
+        await expectLater(
+          backend.multimodalContextCreate(modelHandle, missingPath),
+          notFound,
+        );
+        await expectLater(
+          backend.multimodalContextCreate(modelHandle, projectorPath),
+          unsupportedFor('mtmd_context_params_default'),
+        );
+        await expectLater(
+          backend.supportsAudio(mmHandle),
+          unsupportedFor('mtmd_support_audio'),
+        );
+      } finally {
+        _readPrivateForTesting<Map<Object?, Object?>>(
+          service,
+          '_mtmdContexts',
+        ).remove(mmHandle);
+        _readPrivateForTesting<Map<Object?, Object?>>(
+          service,
+          '_models',
+        ).remove(modelHandle);
+        await backend.dispose();
+      }
+    });
+  });
+
   test('resolveBackendModuleDirectory returns null on unsupported hosts', () {
     if (Platform.isAndroid || Platform.isLinux || Platform.isWindows) {
       return;
@@ -3663,6 +3788,35 @@ void main() {
       contains(endsWith(path.join('llama.framework', 'llama'))),
     );
   });
+}
+
+int _registerNullModelForTesting(LlamaCppService service) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  final wrapperClass =
+      owner.declarations[MirrorSystem.getSymbol('_LlamaModelWrapper', owner)]
+          as ClassMirror;
+  final model = wrapperClass
+      .newInstance(
+        Symbol.empty,
+        [nullptr],
+        {#vocabSize: 0, #suppressedTokens: const <int>[]},
+      )
+      .reflectee;
+  final handle = _invokePrivateForTesting<int>(service, '_getHandle', []);
+  _readPrivateForTesting<Map<Object?, Object?>>(service, '_models')[handle] =
+      model;
+  return handle;
+}
+
+int _registerMtmdContextForTesting(LlamaCppService service) {
+  final handle = _invokePrivateForTesting<int>(service, '_getHandle', []);
+  _readPrivateForTesting<Map<Object?, Object?>>(
+    service,
+    '_mtmdContexts',
+  )[handle] = Pointer<mtmd_context>.fromAddress(
+    0x10,
+  );
+  return handle;
 }
 
 LlamaCppService _warmedLoadFailureService(String corruptGgufPath) {
