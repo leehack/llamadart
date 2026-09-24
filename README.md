@@ -25,7 +25,7 @@ models through LiteRT-LM.
 - `.litertlm` model loading and generation through LiteRT-LM.
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
-  WebGPU tool calling with `ToolChoice.auto` is best-effort, without a grammar.
+  WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
   multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
   persistence, and runtime diagnostics where the active backend supports them.

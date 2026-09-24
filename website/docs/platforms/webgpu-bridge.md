@@ -230,7 +230,7 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   `stateSaveFile` / `stateLoadFile` helpers.
 - The bridge applies `grammar` from the first token, starting at `root`, and
   has no lazy grammar or triggers. WebGPU rejects `GenerationParams.grammarLazy`
-  and any other `grammarRoot`, and `ToolChoice.auto` runs without the tool-call
+  and any other `grammarRoot`, and `ToolChoice.auto` skips a lazy tool-call
   grammar; see [Tool calling](../guides/tool-calling#tool-choice-semantics).
 - CPU fallback is available through bridge runtime routing.
 - Safari compatibility guard and fallback behavior are integrated in this repo.

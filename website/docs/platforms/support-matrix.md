@@ -298,8 +298,8 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   at `root`, and rejects `grammarLazy` and any other `grammarRoot` with
   `LlamaUnsupportedException`. `engine.create` with `ToolChoice.auto` skips the
   lazy tool-call grammar there and parses tool calls best-effort; it fails
-  early for `ToolChoice.required` or a strict `responseFormat` that would need
-  one. See [Tool calling](../guides/tool-calling#tool-choice-semantics).
+  early for `ToolChoice.required` on chat formats whose required-tool grammar
+  stays lazy. See [Tool calling](../guides/tool-calling#tool-choice-semantics).
 - **Experimental DSpark speculative decoding** is available as an explicit
   opt-in on native llama.cpp/GGUF through
   `SpeculativeDecodingConfig.draftDspark(...)`; it is never enabled by default.

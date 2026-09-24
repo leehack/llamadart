@@ -218,8 +218,8 @@ For canonical full release notes, use:
   llama.cpp stops at either limit. The chat app caps Qwen3-ASR recordings at
   the validated 30 seconds
   ([#636](https://github.com/leehack/llamadart/issues/636)).
-- Stop `ToolChoice.auto` on WebGPU from forcing a tool call: it now runs
-  without the tool-call grammar and parses tool calls best-effort. WebGPU
+- Stop `ToolChoice.auto` on WebGPU from forcing a tool call: it now skips
+  the lazy tool-call grammar and parses tool calls best-effort. WebGPU
   rejects `GenerationParams.grammarLazy` and a non-`root` `grammarRoot` with
   `LlamaUnsupportedException`; backends report this through the new
   `BackendLazyGrammarSupport`
