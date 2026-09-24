@@ -73,6 +73,10 @@
     "arithmetic": {
       "prompt": "What is 2 + 2? Reply with only the number.",
       "regex": "^4[.!]?$"
+    },
+    "history": {
+      "user": "The secret code is K7Q2.",
+      "expected": "K7Q2"
     }
   }
 }

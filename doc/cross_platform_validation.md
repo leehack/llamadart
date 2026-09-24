@@ -302,7 +302,8 @@ packaged. Kit `license-*` files are retained in the APK.
 The direct native control bypasses `LlamaEngine` and its backend/worker bindings,
 calling the pinned C API on a dedicated isolate. It now runs twelve cases: load,
 hello, arithmetic, four history controls, reload, warmup and three throughput
-repetitions. The history controls retain the exact `cedar17` oracle and compare
+repetitions. The history controls use the exact, case-sensitive `K7Q2` oracle
+(see the 2026-09-23 quantization control) and compare
 canonical native system/history seeding, the former public path's literal JSON system
 content, history without a system message, and one combined user prompt. Each
 records the JSON bytes supplied to the C API, response, timing and dispatch
@@ -913,6 +914,25 @@ All 43 harness tests and 44 provider/input tests pass. Revalidating copies of th
 three CPU journals and latest public/native S24 journals preserves their exact
 verdicts and counts, with no new integrity problems; originals remain unchanged.
 
+### Gemma3 quantization control and history fixture (2026-09-23)
+
+Upstream `litert-lm-api==0.17.0` (macOS arm64 wheel, no llamadart code) ran the
+four history variants on two files from the same repository revision, with a
+greedy sampler, thinking enabled, context 1280 and 32 output tokens. The int4
+`gemma3-1b-it-int4.litertlm` failed 12/12 exactly as above; the q8
+`Gemma3-1B-IT_multi-prefill-seq_q8_ekv4096.task` (SHA256
+`9fc939cf525890ea060a815c5cd4395a1496161e3930c3891891be9e255ac09f`) returned
+`cedar17\n` 12/12, like the original model. The failures come from the int4
+artifact, not the LiteRT executor. q8 ships only as `.task`, so this compares
+published artifacts rather than one conversion varied by bit width.
+
+The int4 artifact capitalizes lowercase word codes and degenerates on `cedar17`;
+it recalls non-word codes exactly. `gemma3-litert-cpu` and `npu-qualcomm-sm8650`
+therefore use code `K7Q2` with the same system, acknowledgement and question.
+The original model and the int4 artifact each return `K7Q2` for all four
+variants in three repetitions, and the public `gemma3-litert-cpu` run passes all
+17 cases. The q4 SM8650 NPU artifact has not run this fixture.
+
 ## Planned platform/backend coverage
 
 Inspect the model/use-case coverage catalog without downloading models or
@@ -993,7 +1013,12 @@ had not seen the task finish when it cancelled; it cannot show that the
 generation had begun. Exceeding any budget fails the run; if resident memory
 cannot be sampled, the memory bound records `SKIP` with a reason, and that is
 the only check a passing run may leave unmeasured.
-GGUF STT additionally compares file and bytes inputs.
+GGUF STT additionally compares file and bytes inputs and runs four generated
+edge fixtures: digital silence must fail with the typed empty-transcript
+`LlamaSpeechException`, a truncated RIFF must yield an inexact non-empty
+transcript or `LlamaAudioFormatException`, a 44.1 kHz stereo copy of
+`jfk.wav` must yield the reference, and three concatenated copies (33 s) must
+yield it three times.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the

@@ -156,10 +156,11 @@ class FakeEngine implements ValidationEngine {
           : (adjusted && batchingFault == 'content') ||
                 (recovering && batchingFault == 'recovery')
           ? 'corrupted'
-          : history != null || prompt.contains('The secret code is cedar17.')
+          : history != null ||
+                prompt.contains(profile.fixtureText('history', 'user'))
           ? wrongHistory
                 ? '77777777777777777777777777777777'
-                : 'cedar17'
+                : profile.fixtureText('history', 'expected')
           : prompt.contains('3 + 4')
           ? wrongArithmetic
                 ? '2'
@@ -1001,6 +1002,22 @@ void main() {
     expect(profile().enableThinking, false);
     expect(profile().historyControls, false);
     expect(profile(backend: 'npu').enableThinking, true);
+  });
+
+  test('Gemma3 q4 profiles use the int4-qualified history fixture', () {
+    for (final name in ['gemma3-litert-cpu', 'npu-qualcomm-sm8650']) {
+      final gemma = ValidationProfile.fromJson(
+        jsonDecode(File('assets/profiles/$name.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+      expect(gemma.fixtures['history'], {
+        'system': 'Remember the secret code exactly.',
+        'user': 'The secret code is K7Q2.',
+        'assistant': 'I will remember the code.',
+        'prompt': 'What is the secret code? Reply with only the code.',
+        'expected': 'K7Q2',
+      }, reason: name);
+    }
   });
 
   test('history controls and thinking overrides reject invalid contracts', () {

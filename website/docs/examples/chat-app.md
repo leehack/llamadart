@@ -75,7 +75,11 @@ flutter test
   current LiteRT-LM chat bundles. Microphone capture is enabled on Android,
   iOS, macOS, Windows, and supported secure browser origins; Linux capture
   remains disabled pending a safe external-recorder preflight, while
-  selected-file transcription remains available there.
+  selected-file transcription remains available there. Recordings stop at 30
+  seconds; real-model checks cover only WAV input of at most 33 seconds. On
+  native, a selected file long enough to fill the preset's 4,096-token context
+  fails with an error instead of returning a truncated transcript
+  ([#636](https://github.com/leehack/llamadart/issues/636)).
 - Experimental live English dictation for native chat models, including
   generic audio-chat models, through independently installed, checksum-pinned
   LiteRT sidecars. Moonshine Tiny is the recommended 54 MB default; Parakeet
