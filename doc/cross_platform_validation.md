@@ -95,6 +95,7 @@ untrusted producer's report.
 | `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
+| `decision-gguf-{cpu,metal,vulkan,cuda}` | Laya ModernBERT Q8_0, 421,407,968 bytes, plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
 
 Full revisions and SHA256 values live in profile JSON. The instruction GGUF is
 [ggml-org's Q4_0 artifact](https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/blob/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf),
@@ -157,6 +158,52 @@ expected bytes, remove partial weights and never become inference/TPS samples.
 Prompts, regex expectations, exact output/thinking, ordered terminal case IDs,
 configuration hashes, model hashes, source/runtime pins and environment all appear
 in the journal. The raw tiny fixture does not claim chat capability.
+
+### Decision profiles
+
+`decision-gguf-{cpu,metal,vulkan,cuda}` lock the `fr0stbit3/laya-gguf`
+`laya-Q8_0.gguf` encoder (model kind `decision`) and, under `decision.head`,
+its `laya-head.safetensors` head. An optional `decision.config` lock takes the
+same fields for heads without embedded config. They load with context 512 and
+four threads, run `C01.load`, then:
+
+| Case | Public API | Passes when |
+| --- | --- | --- |
+| `D01.head` | `DecisionEngine.capabilitiesFor`, `DecisionEngine.load` | Supported; head device `CPU` for the CPU profile, otherwise not `CPU` and the backend name contains the profile backend |
+| `D02.tokenizer` | `LlamaEngine.tokenize(addSpecial: false)` | Exact ids for all 97 reference texts |
+| `D03.logits` | `loadDecisionHeadBackend`, `runDecisionBackend` | The 24 reference sequences, run in one call, give every marker logit within 0.25 |
+| `D04.answers` | `systemOne`, one call per reference case (15 calls, 24 questions) | Answers match, as below |
+| `D05.batch` | `systemOneBatch` with the 15 requests | Answers match, as below |
+| `D06.reload` | `dispose`, `load`, `unloadModel`, `loadModel`, `load` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
+| `D07.guards` | `load` with a missing head, `systemOne` with U+0000 in the state | `LlamaModelException`, `LlamaDecisionException`, then the first case's answers match |
+
+Answers match when the type, probability key order, model `laya-rl-agent`
+and `usage.input_tokens` are exact; confidence, act probability, each
+probability and noul are within 0.05; the score is within 0.1; and the choice
+is the reference's unless the reference top-2 gap is within 0.05. These are the
+`decision-model-smoke` defaults. The reference is
+`packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json`, the
+decision E2E fixture, pinned by SHA256: a missing or altered copy makes every
+decision case ERROR. Chat cases are unselected with
+`decision_model_has_no_text_generation`. Decision catalogs require the current
+catalog version and journal schema 2; chat catalogs are unchanged.
+
+GGUF accelerator proof for these profiles expects two model loads (`C01.load`,
+`D06.reload`) and six compute buffers: one per model load plus one encoder
+context per successful head load (`D01`, `D03`, two in `D06`). Every head
+device must name the backend, such as `MTL0`. Reports also require the verified
+head hash and size.
+
+Desktop, Android and iOS hosts download and verify the head beside the model,
+each file within the host's download deadline. The Web host verifies both in
+the page and passes the head URL to the bridge; it runs `decision-gguf-cpu` on
+WASM CPU, and there is no Web GPU decision profile. GCE accepts
+`decision-gguf-cuda`. `validation.dart coverage --use-case decision` lists the
+rows.
+
+```bash
+dart run tool/testing/validation.dart local --profile decision-gguf-metal
+```
 
 ### Focused selections and replay metadata
 
