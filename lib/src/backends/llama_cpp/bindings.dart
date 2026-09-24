@@ -2042,6 +2042,21 @@ external ffi.Pointer<ggml_tensor> ggml_dsv4_hc_pre(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_dsv4_hc_pre_gated(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> x,
+  ffi.Pointer<ggml_tensor> gate,
+  double scale,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
   )
 >()
 external ffi.Pointer<ggml_tensor> ggml_dup(
@@ -5836,6 +5851,17 @@ external void llama_adapter_lora_free(ffi.Pointer<llama_adapter_lora> adapter);
 external ffi.Pointer<llama_adapter_lora> llama_adapter_lora_init(
   ffi.Pointer<llama_model> model,
   ffi.Pointer<ffi.Char> path_lora,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_adapter_lora> Function(
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<FILE>,
+  )
+>()
+external ffi.Pointer<llama_adapter_lora> llama_adapter_lora_init_from_file_ptr(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<FILE> file,
 );
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_adapter_lora>)>()
@@ -12009,7 +12035,8 @@ enum llama_vocab_type {
   LLAMA_VOCAB_TYPE_WPM(3),
   LLAMA_VOCAB_TYPE_UGM(4),
   LLAMA_VOCAB_TYPE_RWKV(5),
-  LLAMA_VOCAB_TYPE_PLAMO2(6);
+  LLAMA_VOCAB_TYPE_PLAMO2(6),
+  LLAMA_VOCAB_TYPE_TEST(7);
 
   final int value;
   const llama_vocab_type(this.value);
@@ -12022,6 +12049,7 @@ enum llama_vocab_type {
     4 => LLAMA_VOCAB_TYPE_UGM,
     5 => LLAMA_VOCAB_TYPE_RWKV,
     6 => LLAMA_VOCAB_TYPE_PLAMO2,
+    7 => LLAMA_VOCAB_TYPE_TEST,
     _ => throw ArgumentError('Unknown value for llama_vocab_type: $value'),
   };
 }
