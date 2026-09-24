@@ -1785,8 +1785,8 @@ class WebGpuLlamaBackend
             );
           }
           // The bridge rejects an already-aborted signal with an AbortError
-          // (v0.1.36 ignored it on its worker path). End the stream here
-          // without that error, as a cancelled generation ends.
+          // (v0.1.36 ignored it on its worker path), so end the stream here
+          // without starting the generation.
           if (abortController.signal.aborted) {
             return;
           }
