@@ -370,6 +370,11 @@ class LlamaEngine {
   }
 
   /// Loads a multimodal projector model for vision/audio support.
+  ///
+  /// On the native llama.cpp backend, throws [LlamaModelException] when
+  /// [mmProjPath] is not an existing file or the runtime rejects the projector
+  /// for the loaded model, and [LlamaUnsupportedException] only when the
+  /// runtime cannot run an mtmd function this package calls.
   Future<void> loadMultimodalProjector(String mmProjPath) {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
@@ -1186,12 +1191,18 @@ class LlamaEngine {
     return int.tryParse(ctx) ?? 0;
   }
 
+  /// Whether a multimodal projector is loaded.
+  bool get hasMultimodalProjector => _mmContextHandle != null;
+
   /// Whether the loaded model supports vision.
   Future<bool> get supportsVision async =>
       _mmContextHandle != null &&
       await backend.supportsVision(_mmContextHandle!);
 
   /// Whether the loaded model supports audio.
+  ///
+  /// On the native llama.cpp backend, throws [LlamaUnsupportedException] only
+  /// when the runtime cannot run an mtmd function this package calls.
   Future<bool> get supportsAudio async =>
       _mmContextHandle != null &&
       await backend.supportsAudio(_mmContextHandle!);
@@ -1359,7 +1370,8 @@ class LlamaEngine {
   /// metadata. The returned [BackendDecisionHeadInfo.handle] is an engine
   /// handle that this engine never reuses, not the backend's own handle; pass
   /// it to [runDecisionBackend] and [freeDecisionHeadBackend]. The head stays
-  /// usable until it is freed or the model is unloaded.
+  /// usable until it is freed or the model is unloaded; on Web, a bridge that
+  /// restarts its runtime frees it too.
   Future<BackendDecisionHeadInfo> loadDecisionHeadBackend(
     String headPath, {
     String? configPath,
@@ -1401,7 +1413,7 @@ class LlamaEngine {
   /// builds the sequences and decodes the outputs. [headHandle] is a handle
   /// returned by [loadDecisionHeadBackend]. Throws [LlamaStateException] when
   /// it is not loaded on this engine, such as after it was freed or its model
-  /// was unloaded.
+  /// was unloaded, and on Web when a bridge runtime restart freed it.
   Future<List<BackendDecisionOutput>> runDecisionBackend(
     int headHandle,
     List<BackendDecisionSequence> sequences,

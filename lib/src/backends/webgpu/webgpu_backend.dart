@@ -17,6 +17,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../backend.dart';
 import 'interop.dart';
+import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
 
 @JS('Object.keys')
@@ -30,6 +31,7 @@ class WebGpuLlamaBackend
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
+        BackendDecision,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
@@ -73,6 +75,7 @@ class WebGpuLlamaBackend
   bool _webGpuMultimodalWarmupAttempted = false;
   bool? _preferMemory64Override;
   bool? _forceRemoteFetchBackendOverride;
+  final WebGpuDecisionHeads _decisionHeads = WebGpuDecisionHeads();
 
   /// Creates a bridge-backed web backend.
   WebGpuLlamaBackend({
@@ -313,6 +316,7 @@ class WebGpuLlamaBackend
     final abortController = _abortController;
     _bridge = null;
     _abortController = null;
+    _decisionHeads.clear();
     abortController?.abort();
     bridge?.cancel();
     if (bridge == null) {
@@ -1124,6 +1128,7 @@ class WebGpuLlamaBackend
 
         _isReady = true;
         _mmContextActive = false;
+        _decisionHeads.clear();
         _resetWebGpuMultimodalWarmupState();
         return 1;
       } catch (e) {
@@ -2044,6 +2049,44 @@ class WebGpuLlamaBackend
     controller.abort();
     _bridge?.cancel();
   }
+
+  /// Probes the active bridge for decision heads.
+  ///
+  /// Reports unsupported without an active bridge, and for bridge assets
+  /// without the decision API or with a decision API version other than 1.
+  @override
+  Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle) {
+    return _decisionHeads.capabilities(_activeBridge);
+  }
+
+  /// Loads a decision head into the active bridge.
+  ///
+  /// [headPath] and [configPath] are URLs that resolve against the document
+  /// base URL. The config is fetched here and passed to the bridge as text;
+  /// the bridge fetches the head.
+  @override
+  Future<BackendDecisionHeadInfo> decisionHeadLoad(
+    int modelHandle,
+    String headPath, {
+    String? configPath,
+  }) {
+    return _decisionHeads.load(_activeBridge, headPath, configUrl: configPath);
+  }
+
+  @override
+  Future<List<BackendDecisionOutput>> decisionRun(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) {
+    return _decisionHeads.run(_activeBridge, headHandle, sequences);
+  }
+
+  @override
+  Future<void> decisionHeadFree(int headHandle) {
+    return _decisionHeads.free(_activeBridge, headHandle);
+  }
+
+  LlamaWebGpuBridge? get _activeBridge => _usingBridge ? _bridge : null;
 
   @override
   Future<List<double>> embed(

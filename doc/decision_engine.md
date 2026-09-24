@@ -46,6 +46,8 @@ DecisionEngine (core, pure Dart)
     BackendDecision (backend.dart, web-safe value types)
       NativeAutoBackend -> NativeLlamaBackend -> worker isolate -> LlamaCppService
         private encoder llama_context + safetensors head + ggml head graph
+      WebAutoBackend -> WebGpuLlamaBackend -> WebGpuDecisionHeads -> llama-web-bridge
+        bridge decision API 1: private encoder context + head in the WASM core
   raw marker logits + raw act logits -> decoder (core) -> DecisionResult
 ```
 
@@ -89,16 +91,14 @@ abstract class BackendDecision {
 - `BackendDecisionOutput`: per sequence, raw marker `logits` and raw
   `actLogits` (`Float32List`).
 
-`NativeAutoBackend` implements and forwards it; the LiteRT-LM delegate reports
-unsupported. `WebAutoBackend` does not implement it until the bridge ships the
-module, so the engine hook reports unsupported and `DecisionEngine.load` throws
-`LlamaUnsupportedException`.
+`NativeAutoBackend` and `WebAutoBackend` implement and forward it; their
+LiteRT-LM delegates report unsupported.
 
 ### Engine hooks (`lib/src/core/engine/engine.dart`)
 
 Plain public methods documented as low-level integration hooks, like the TTS
 trio. The capabilities hook checks `is! BackendDecision` before readiness, so
-Web reports a stable reason without a model.
+a backend without the contract reports a stable reason without a model.
 
 Backend handles are not unique over an engine's life: the worker numbers
 handles from 1, and a new worker starts after `LlamaEngine.dispose` followed by
@@ -184,6 +184,12 @@ static helper that unit tests cover:
 
 The run path rejects a sequence longer than `llama_n_ubatch` before
 `llama_encode`, whose `GGML_ASSERT` would abort the process.
+`validateDecisionSequences` checks every sequence before the first encoder
+pass: 1 to `n_ubatch` tokens inside the vocabulary, and 1 to token-count
+markers inside the sequence. The bridge core runs the same checks with the same
+messages, plus a question type check that `DecisionQuestionType` always passes,
+so both runtimes reject the same input; the marker-count bound comes from the
+bridge, whose head graph sizes its buffers by marker count.
 
 Windows: `llama.dll` exports no `ggml_*` graph symbols; they live in
 `ggml-base.dll` (ops, graph, sched, buffers) and `ggml.dll` (registry). The head
@@ -194,6 +200,63 @@ and the generated bindings on other platforms. The bindings leave out
 `ggml-alloc.h`, so `ggml_backend_alloc_ctx_tensors` has a hand-written `@Native`
 on their default asset, `package:llamadart/llamadart`, there too. Generated
 bindings are not edited.
+
+### Web (`lib/src/backends/webgpu/`)
+
+`WebGpuLlamaBackend` implements `BackendDecision` through `WebGpuDecisionHeads`
+(`webgpu_decision.dart`), which calls the llama-web-bridge decision API:
+`getDecisionCapabilities`, `loadDecisionHead`, `runDecision` and
+`freeDecisionHead` (bridge `docs/api.md`, "Decision heads"). The bridge runs the
+head on WebGPU when the model loaded with GPU layers and on the CPU otherwise,
+and reports which as `deviceName`.
+
+- Capability probe: a bridge object without all four methods reports
+  unsupported with "Web decision models need llama-web-bridge assets v0.1.47+
+  with the decision API (apiVersion 1)", from the
+  `webGpuDecisionBridgeRequirement` constant. A capability or head response
+  with an `apiVersion` other than 1 is unsupported too, and such a head is
+  freed first. Bridge assets `v0.1.47+`, the default pin among them, have the
+  API.
+- Paths are URLs, resolved in Dart against `document.baseURI` before any
+  fetch, so a page's `<base href>` applies to both in both bridge modes. The
+  bridge fetches `headPath`. It takes the config only as text, so `configPath`
+  is fetched in the page with `fetch`, before the head, and passed as
+  `configJson`; with both a missing config and a bad head, Web reports the
+  config where native reports the head. A failed fetch or an HTTP error is
+  `LlamaModelException` "Cannot read the decision head config at <url>." with
+  the status or error in `details`. URLs in error messages and details drop
+  user info, query and fragment, including URLs that browser and bridge
+  errors quote.
+- Handles: the backend numbers heads itself, never reusing a number, and maps
+  each to the bridge instance and bridge handle that loaded it. `modelFree` and
+  `dispose` dispose the bridge, and a model load on the same bridge frees every
+  bridge head, so the backend forgets all heads at each. A run with a forgotten
+  head, or with a head whose bridge is no longer active, throws
+  `LlamaStateException` without calling the bridge; a free does nothing.
+- Errors: the bridge rejects with plain `Error`s that carry the core's message
+  and no status code, so the mapping reads the message after stripping the
+  bridge's `Failed to load decision head: ` or `Decision run failed: ` prefix.
+  "Load the decision head again" (a freed head, or one lost to a worker
+  failure, which also forgets the head), "No model loaded", "Bridge has been
+  disposed", "was cancelled" and "during active generation" map to
+  `LlamaStateException`, from the capability probe too; "decision encoder
+  context" to `LlamaContextException`; anything else to unsupported for the
+  probe, `LlamaModelException` for a load (head URL in `details`),
+  `LlamaInferenceException` for a run and `LlamaStateException` for a free.
+  Load errors that ask bridge callers to pass `configJson` name `configPath`
+  or the config URL instead. Without an active bridge, the probe reports
+  unsupported and a load throws `LlamaStateException`, as native does for an
+  unloaded model. A malformed head description or output is
+  `LlamaDecisionException`, like native's unexpected worker responses.
+- Numbers: Web numbers cannot tell `30.0` from `30`, so `pythonJsonDumps`
+  writes an integral double in a non-`String` state, instructions, criteria or
+  levels as an int (`30` where Python writes `30.0`). The tokens then differ
+  from native and Laya; the guide's Web section tells users to pass such
+  values as `String`s when parity matters.
+- The bridge serializes decision calls with its other operations and cannot
+  cancel a run. When its worker fails during a run, it reloads the model on the
+  main thread and rejects the run; the engine keeps its model, and the
+  `DecisionEngine` must be loaded again.
 
 ## Parity rules
 
@@ -261,7 +324,8 @@ JSON-like (null, bool, num, String, List, Map with String keys).
 | Linux | CPU, Vulkan, CUDA | expected, untested |
 | Windows | CPU, Vulkan, CUDA | expected through the `ggml-base` twins, untested |
 | Native LiteRT-LM | - | `LlamaUnsupportedException` |
-| Web (WebGPU bridge) | - | `LlamaUnsupportedException` until the bridge module ships |
+| Web (WebGPU bridge) | WebGPU or CPU (WASM) | bridge assets `v0.1.47+` (apiVersion 1), the default pin among them; older assets report `LlamaUnsupportedException`. CI uses a fake bridge; checked locally with a real model ([Web check](#web-check)) |
+| LiteRT-LM Web | - | `LlamaUnsupportedException` |
 
 Real-model evidence is macOS only. The CPU head unit tests carry no
 `local-only` tag, so CI's Linux VM job and its macOS and Windows native test
@@ -317,6 +381,32 @@ On Metal, disposing the engine with a head still loaded exits cleanly; skipping
 the head frees in `freeModel` and `dispose` makes the same exit abort in
 `ggml_metal_rsets_free`.
 
+### Web check
+
+Local only, not in CI: `DecisionEngine` through `LlamaEngine(LlamaBackend())`
+in Playwright's headless Chromium on the same machine, with the pinned bridge
+assets (bridge source `64ba8250`), the 24 fixture rows,
+`laya-head.safetensors` and the tolerances of `decision-model-smoke`. Token ids
+and markers matched on every row.
+
+| Backbone | Bridge runtime | Head device | Logit diff | Probability diff | Score diff |
+| --- | --- | --- | --- | --- | --- |
+| `laya-Q8_0.gguf` | WebGPU; worker and main thread on wasm64 and wasm32 | WebGPU | 0.1636 | 0.0436 | 0.0247 |
+| F16 (local conversion) | WebGPU; worker and main thread on wasm64 | WebGPU | 0.0169 | 0.0046 | 0.0013 |
+| F16 (local conversion) | WASM CPU; worker and main thread on wasm64 | CPU | 0.0149 | 0.0039 | 0.0028 |
+| `laya-Q8_0.gguf` | WASM CPU; worker and main thread on wasm64 | CPU | 0.2326 | 0.0628 | 0.1224 |
+
+Q8_0 on the WASM CPU misses the probability and score tolerances on one row,
+`plain_text/urgency5`, with the same top option. The bridge's own smoke, which
+calls the bridge directly, gets the same worst logit difference on wasm32 and
+wasm64 in both bridge modes, so the drift comes from the bridge's WASM CPU
+Q8_0 path rather than llamadart.
+Typed key reads with the question identity check, sequence validation
+messages, error mapping, URL redaction, `<base href>` resolution, and heads
+freed or bridges disposed behind the engine's back were checked against the
+same assets. The previous pin, `v0.1.44`, which lacks the API, reported
+unsupported with the actionable reason in both bridge modes.
+
 ## Known limits
 
 User-facing limits are listed under
@@ -346,7 +436,21 @@ guide.
   order; the service's load-time check helpers, head device choice, sequence
   validation, and run order through a substituted encoder; worker,
   backend-client and router routing with fakes; engine hooks and facade with a
-  fake backend; Web unsupported path under `@TestOn('browser')`.
+  fake backend.
+- Unit (Chrome): `WebGpuDecisionHeads` against a fake bridge
+  (`test/support/fake_webgpu_decision_bridge.dart`): the capability probe for
+  old assets, API version skew, bridge reasons and state rejections; head
+  loading with page-fetched configs, unreadable ones, URLs resolved against a
+  `<base href>`, and credentials and queries kept out of errors; error mapping,
+  including the `configJson` wording; handle scoping to the loading bridge;
+  malformed responses. `WebGpuLlamaBackend` without an active bridge, and
+  forgetting heads on `modelFree`, a same-bridge model load and `dispose`;
+  `WebAutoBackend` forwarding and LiteRT-LM Web reporting unsupported; the
+  engine hook without a model.
+- Integration (Chrome, fake bridge): `DecisionEngine` through `LlamaEngine`,
+  `WebAutoBackend` and `WebGpuLlamaBackend`: answers, typed key reads with the
+  question identity check, sequence layout, page-fetched config, old assets,
+  API version skew, a cancelled capability probe, and a model unload.
 - Integration (VM, CI's `stories15M.gguf`): a llama-architecture model is
   reported unsupported and `DecisionEngine.load` fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
@@ -370,6 +474,8 @@ scripts beside it from the pinned official checkpoint on CPU in FP32.
 
 ## Delivery
 
-The delivery plan and remaining work, including the examples, head fine-tuning
-and the Web decision module, are tracked in
-[#604](https://github.com/leehack/llamadart/issues/604).
+The delivery plan and remaining work, including head fine-tuning and the Web
+decision module, are tracked in
+[#604](https://github.com/leehack/llamadart/issues/604). The Tetris-tuned head
+is published as
+[leehack/laya-tetris-head](https://huggingface.co/leehack/laya-tetris-head).

@@ -66,6 +66,7 @@ const sidebars: SidebarsConfig = {
         'examples/overview',
         'examples/basic-app',
         'examples/chat-app',
+        'examples/laya-tetris',
         'examples/llamadart-cli',
         'examples/llamadart-server',
         'examples/tui-coding-agent'

@@ -9,6 +9,12 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Throw `LlamaModelException` when native llama.cpp cannot find or load a
+  multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
+  the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.
+  Speech-to-text capabilities now say when no projector is loaded, using the
+  new `LlamaEngine.hasMultimodalProjector`
+  ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.4.1-1`, keeping the `v0.4.1` llama.cpp
   ABI/bindings while picking up wrapper-only native fixes. Refreshed the
@@ -27,6 +33,20 @@ For canonical full release notes, use:
 - Add `example/basic_app/bin/llamadart_decision_example.dart`, a console demo
   that triages a support ticket with `DecisionEngine`
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add `example/laya_tetris`, a Flutter app in which a Laya decision model
+  plays real-time Tetris through `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add a notebook in `example/laya_tetris/training/` that fine-tunes a Laya
+  decision head for the Tetris example and exports it for `DecisionEngine`
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Run `DecisionEngine` on WebGPU through the bridge decision API
+  (apiVersion 1), which bridge assets `v0.1.47+` include
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Aligned default WebGPU bridge assets to `v0.1.47` for the decision API,
+  retaining Web/native llama.cpp
+  `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity and Web
+  `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
+  `9c5e9008d187690e283f37b2b892396da03e3c71bf7c3434d7c87ceca8e6a4bc`.
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second

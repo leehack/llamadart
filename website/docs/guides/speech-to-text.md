@@ -121,8 +121,14 @@ On Web, the active backend must also expose the validated prompt-speech
 capability. The hosted chat app derives that opt-in from immutable
 `llama-web-bridge-assets` tags `v0.1.30+`; custom hosts can explicitly set
 `window.__llamadartBridgeSpeechToTextSupported` before the backend is created.
-An older bridge, a missing or mismatched projector, or a failed runtime audio
-probe leaves `capabilities.isSupported` false with an actionable reason.
+An older bridge, no loaded projector, a projector without audio support, or a
+failed runtime audio probe leaves `capabilities.isSupported` false with an
+actionable reason.
+
+On native llama.cpp, `loadMultimodalProjector` itself throws when it cannot
+load the projector: `LlamaModelException` for a missing file or a projector the
+runtime rejects, such as the Qwen3-TTS projector with the Qwen3-ASR model, and
+`LlamaUnsupportedException` when the runtime lacks the mtmd functions.
 
 ## Transcribe a complete file
 
