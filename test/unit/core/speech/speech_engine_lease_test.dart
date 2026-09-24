@@ -33,8 +33,8 @@ void main() {
 
     SpeechEngineLease.cancelActiveTask(engine);
     expect(lease.acquire('text-to-speech'), isTrue);
-    lease.onUnload('speech-to-text', () => cancels += 100);
     lease.onUnload('text-to-speech', () => cancels += 1);
+    lease.onUnload('speech-to-text', () => cancels += 100);
     SpeechEngineLease.cancelActiveTask(engine);
     expect(cancels, 1);
 

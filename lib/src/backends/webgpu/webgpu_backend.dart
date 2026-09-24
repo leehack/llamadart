@@ -1784,8 +1784,9 @@ class WebGpuLlamaBackend
               isCpuMultimodalRuntime: isCpuMultimodalRuntime,
             );
           }
-          // The bridge's worker path only reacts to an abort event, so a
-          // signal aborted before this call would be ignored.
+          // The bridge rejects an already-aborted signal with an AbortError
+          // (v0.1.36 ignored it on its worker path). End the stream here
+          // without that error, as a cancelled generation ends.
           if (abortController.signal.aborted) {
             return;
           }
