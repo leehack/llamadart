@@ -64,6 +64,7 @@ export 'src/backends/backend.dart'
         BackendDecisionOutput,
         BackendDecisionSequence,
         BackendGrammarConstraintsSupport,
+        BackendLazyGrammarSupport,
         BackendGpuEnumeration,
         BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,

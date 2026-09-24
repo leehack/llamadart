@@ -107,8 +107,37 @@ class ChatCompletionRequestPlanner {
       );
     }
 
+    final skipsLazyTemplateGrammar =
+        backendSupportsGrammarConstraints &&
+        templateResult.grammar != null &&
+        templateResult.grammarLazy &&
+        !_supportsLazyGrammar(backend);
+    if (skipsLazyTemplateGrammar) {
+      if (_hasStrictResponseFormat(responseFormat)) {
+        throw LlamaUnsupportedException(
+          'Strict responseFormat output with tools needs a lazy grammar, but '
+          'the active backend applies grammars from the first token (for '
+          'example, WebGPU). Omit tools or responseFormat on this backend.',
+        );
+      }
+      if (toolChoice == ToolChoice.required) {
+        throw LlamaUnsupportedException(
+          'ToolChoice.required for ${_formatName(templateResult)} tool calling '
+          'needs a lazy tool-call grammar, but the active backend applies '
+          'grammars from the first token (for example, WebGPU). Use '
+          'ToolChoice.auto for best-effort tool calling, or use native '
+          'llama.cpp.',
+        );
+      }
+      LlamaLogger.instance.debug(
+        '  Lazy template grammar skipped: backend does not support lazy '
+        'grammar; tool calls are parsed best-effort',
+      );
+    }
     final hasTemplateGrammar =
-        templateResult.grammar != null && backendSupportsGrammarConstraints;
+        templateResult.grammar != null &&
+        backendSupportsGrammarConstraints &&
+        !skipsLazyTemplateGrammar;
     final effectiveGrammar = hasTemplateGrammar
         ? templateResult.grammar
         : params?.grammar;
@@ -127,7 +156,8 @@ class ChatCompletionRequestPlanner {
               .toList(growable: false)
         : (params?.grammarTriggers ?? const <GenerationGrammarTrigger>[]);
     final effectivePreservedTokens = {
-      if (backendSupportsGrammarConstraints) ...templateResult.preservedTokens,
+      if (backendSupportsGrammarConstraints && !skipsLazyTemplateGrammar)
+        ...templateResult.preservedTokens,
       ...?params?.preservedTokens,
     }.toList(growable: false);
     final requestedThinkingBudget = params?.thinkingBudget;
@@ -199,6 +229,19 @@ class ChatCompletionRequestPlanner {
     if (backend is BackendGrammarConstraintsSupport) {
       return (backend as BackendGrammarConstraintsSupport)
           .supportsGrammarConstraints;
+    }
+    return true;
+  }
+
+  static String _formatName(LlamaChatTemplateResult templateResult) {
+    return templateResult.format < ChatFormat.values.length
+        ? ChatFormat.values[templateResult.format].name
+        : 'this chat format';
+  }
+
+  static bool _supportsLazyGrammar(LlamaBackend backend) {
+    if (backend is BackendLazyGrammarSupport) {
+      return (backend as BackendLazyGrammarSupport).supportsLazyGrammar;
     }
     return true;
   }

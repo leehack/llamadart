@@ -60,6 +60,7 @@ void main() {
     int? lastTokenEventFlushChars;
     String? lastMmprojPath;
     String? lastPrompt;
+    String? lastGrammar;
     String? lastStateSavePath;
     List<int>? lastStateSaveTokens;
     String? lastStateLoadPath;
@@ -254,6 +255,7 @@ void main() {
       lastTokenEventFlushChars = null;
       lastMmprojPath = null;
       lastPrompt = null;
+      lastGrammar = null;
       lastStateSavePath = null;
       lastStateSaveTokens = null;
       lastStateLoadPath = null;
@@ -281,6 +283,10 @@ void main() {
         ((String prompt, JSObject opts) {
           createCompletionCallCount += 1;
           lastPrompt = prompt;
+          final grammarRaw = opts.getProperty('grammar'.toJS);
+          lastGrammar = grammarRaw.isA<JSString>()
+              ? (grammarRaw as JSString).toDart
+              : null;
 
           final emitCurrentTextRaw = opts.getProperty(
             'emitCurrentTextOnToken'.toJS,
@@ -2958,6 +2964,87 @@ void main() {
         expect(sawMediaParts, isTrue);
       },
     );
+
+    group('tool grammar', () {
+      const hermesTemplate =
+          '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+          '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+          '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+          '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}';
+      final weatherTool = ToolDefinition(
+        name: 'get_weather',
+        description: 'Returns current weather for a city.',
+        parameters: [ToolParam.string('city', description: 'City name')],
+        handler: (_) async => 'Sunny',
+      );
+
+      Future<LlamaEngine> loadHermesEngine() async {
+        bridgeRuntimeHints['tokenizer.chat_template'] = hermesTemplate;
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+          modelParams: const ModelParams(),
+        );
+        return engine;
+      }
+
+      Future<void> createWithTools(LlamaEngine engine, ToolChoice choice) {
+        return engine
+            .create(
+              <LlamaChatMessage>[
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'Say hello in French. Do not use tools.',
+                ),
+              ],
+              tools: <ToolDefinition>[weatherTool],
+              toolChoice: choice,
+            )
+            .drain<void>();
+      }
+
+      test('ToolChoice.auto sends no tool grammar to the bridge', () async {
+        final engine = await loadHermesEngine();
+
+        await createWithTools(engine, ToolChoice.auto);
+
+        expect(lastPrompt, contains('get_weather'));
+        expect(lastGrammar, isNull);
+        expect(backend.supportsLazyGrammar, isFalse);
+      });
+
+      test('ToolChoice.required still sends the strict tool grammar', () async {
+        final engine = await loadHermesEngine();
+
+        await createWithTools(engine, ToolChoice.required);
+
+        expect(lastGrammar, contains('get_weather'));
+      });
+
+      test(
+        'generate rejects lazy grammar and a non-root start symbol',
+        () async {
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+
+          for (final params in <GenerationParams>[
+            const GenerationParams(grammar: 'root ::= "a"', grammarLazy: true),
+            const GenerationParams(
+              grammar: 'start ::= "a"',
+              grammarRoot: 'start',
+            ),
+          ]) {
+            expect(
+              () => backend.generate(1, 'Hello', params),
+              throwsA(isA<LlamaUnsupportedException>()),
+            );
+          }
+          expect(createCompletionCallCount, 0);
+        },
+      );
+    });
 
     test(
       'buffers partial stop sequence prefixes across token callbacks',

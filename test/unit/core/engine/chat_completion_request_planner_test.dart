@@ -172,6 +172,96 @@ void main() {
       expect(plan.parseToolCallsEnabled, isTrue);
     });
 
+    group('on a backend without lazy grammar', () {
+      final lazyHermesResult = LlamaChatTemplateResult(
+        prompt: 'qwen prompt',
+        format: ChatFormat.hermes.index,
+        grammar: 'root ::= tool_call',
+        grammarLazy: true,
+        preservedTokens: ['<tool_call>'],
+        grammarTriggers: [GrammarTrigger(type: 0, value: '<tool_call>')],
+      );
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello.'),
+      ];
+
+      test('skips a lazy template grammar for ToolChoice.auto', () {
+        final plan = ChatCompletionRequestPlanner.build(
+          backend: _EagerGrammarBackend(),
+          templateResult: lazyHermesResult,
+          messages: messages,
+          params: const GenerationParams(preservedTokens: ['<caller>']),
+          tools: [_weatherTool],
+          toolChoice: ToolChoice.auto,
+          parallelToolCalls: false,
+        );
+
+        expect(plan.generationParams.grammar, isNull);
+        expect(plan.generationParams.grammarLazy, isFalse);
+        expect(plan.generationParams.grammarTriggers, isEmpty);
+        expect(plan.generationParams.preservedTokens, ['<caller>']);
+        expect(plan.parseToolCallsEnabled, isTrue);
+      });
+
+      test('keeps a strict template grammar', () {
+        final plan = ChatCompletionRequestPlanner.build(
+          backend: _EagerGrammarBackend(),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'qwen prompt',
+            format: ChatFormat.hermes.index,
+            grammar: 'root ::= tool_call',
+          ),
+          messages: messages,
+          tools: [_weatherTool],
+          toolChoice: ToolChoice.required,
+          parallelToolCalls: false,
+        );
+
+        expect(plan.generationParams.grammar, 'root ::= tool_call');
+        expect(plan.generationParams.grammarLazy, isFalse);
+      });
+
+      test('rejects ToolChoice.required with a lazy template grammar', () {
+        expect(
+          () => ChatCompletionRequestPlanner.build(
+            backend: _EagerGrammarBackend(),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'apertus prompt',
+              format: ChatFormat.apertus.index,
+              grammar: 'root ::= tool_call',
+              grammarLazy: true,
+            ),
+            messages: messages,
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.required,
+            parallelToolCalls: false,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('ToolChoice.required'), contains('apertus')),
+            ),
+          ),
+        );
+      });
+
+      test('rejects strict responseFormat with a lazy template grammar', () {
+        expect(
+          () => ChatCompletionRequestPlanner.build(
+            backend: _EagerGrammarBackend(),
+            templateResult: lazyHermesResult,
+            messages: messages,
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.auto,
+            parallelToolCalls: false,
+            responseFormat: const {'type': 'json_object'},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      });
+    });
+
     test('preserves Gemma 4 required rendered-prompt compatibility', () {
       final plan = ChatCompletionRequestPlanner.build(
         backend: _NoGrammarNativeChatBackend(),
@@ -247,6 +337,12 @@ class _NoGrammarBackend extends _BaseBackend
     implements BackendGrammarConstraintsSupport {
   @override
   bool get supportsGrammarConstraints => false;
+}
+
+class _EagerGrammarBackend extends _BaseBackend
+    implements BackendLazyGrammarSupport {
+  @override
+  bool get supportsLazyGrammar => false;
 }
 
 class _NativeChatBackend extends _BaseBackend

@@ -228,6 +228,10 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   WASMFS virtual paths and are not durable across page reloads. Durable browser
   storage currently requires app-level export/import outside the Dart
   `stateSaveFile` / `stateLoadFile` helpers.
+- The bridge applies `grammar` from the first token, starting at `root`, and
+  has no lazy grammar or triggers. WebGPU rejects `GenerationParams.grammarLazy`
+  and any other `grammarRoot`, and `ToolChoice.auto` runs without the tool-call
+  grammar; see [Tool calling](../guides/tool-calling#tool-choice-semantics).
 - CPU fallback is available through bridge runtime routing.
 - Safari compatibility guard and fallback behavior are integrated in this repo.
 - Legacy bridge assets may be forced to CPU in Safari when GPU layers are

@@ -144,6 +144,18 @@ abstract class BackendGrammarConstraintsSupport {
   bool get supportsGrammarConstraints;
 }
 
+/// Optional backend capability for reporting lazy grammar activation.
+///
+/// A grammar-capable backend that implements this with `false` applies
+/// [GenerationParams.grammar] from the first token and rejects
+/// [GenerationParams.grammarLazy]. `LlamaEngine.create` then skips a lazy
+/// template grammar for [ToolChoice.auto] and parses tool calls best-effort,
+/// and throws `LlamaUnsupportedException` when a request needs that grammar.
+abstract class BackendLazyGrammarSupport {
+  /// Whether [GenerationParams.grammarLazy] and its triggers are supported.
+  bool get supportsLazyGrammar;
+}
+
 /// Optional backend capability for native structured chat generation.
 ///
 /// Backends that implement this can receive chat messages and tools directly

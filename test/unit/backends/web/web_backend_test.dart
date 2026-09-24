@@ -50,6 +50,15 @@ void main() {
     expect(legacy.supportsGrammarConstraints, isTrue);
   });
 
+  test('WebAutoBackend forwards lazy grammar support from its delegate', () {
+    final eager = WebAutoBackend(webBackend: _EagerGrammarBackend());
+    final legacy = WebAutoBackend(webBackend: _NoStateBackend());
+
+    expect(eager, isA<BackendLazyGrammarSupport>());
+    expect(eager.supportsLazyGrammar, isFalse);
+    expect(legacy.supportsLazyGrammar, isTrue);
+  });
+
   test(
     'WebAutoBackend forwards deferred engine creation from its delegate',
     () {
@@ -424,6 +433,12 @@ class _GrammarSupportBackend extends _NoStateBackend
 
   @override
   final bool supportsGrammarConstraints;
+}
+
+class _EagerGrammarBackend extends _NoStateBackend
+    implements BackendLazyGrammarSupport {
+  @override
+  bool get supportsLazyGrammar => false;
 }
 
 class _TextToSpeechBackend extends _NoStateBackend
