@@ -9,6 +9,12 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Throw `LlamaModelException` when native llama.cpp cannot find or load a
+  multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
+  the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.
+  Speech-to-text capabilities now say when no projector is loaded, using the
+  new `LlamaEngine.hasMultimodalProjector`
+  ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.4.1-1`, keeping the `v0.4.1` llama.cpp
   ABI/bindings while picking up wrapper-only native fixes. Refreshed the

@@ -636,8 +636,10 @@ class SpeechToTextEngine {
     if (!supportsAudio) {
       return SpeechToTextCapabilities(
         isSupported: false,
-        unsupportedReason:
-            'The loaded multimodal projector does not report audio support.',
+        unsupportedReason: engine.hasMultimodalProjector
+            ? 'The loaded multimodal projector does not report audio support.'
+            : 'No multimodal projector is loaded. Load the model\'s audio '
+                  'projector with LlamaEngine.loadMultimodalProjector.',
         backendName: backendName,
       );
     }

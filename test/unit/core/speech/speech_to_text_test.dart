@@ -74,6 +74,93 @@ void main() {
       expect(capabilities.unsupportedReason, contains('does not report audio'));
     });
 
+    test('reports a model without a projector as unsupported', () async {
+      await llamaEngine.loadModel('model.gguf');
+
+      final capabilities = await speechEngine.capabilities;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'No multimodal projector is loaded. Load the model\'s audio projector '
+        'with LlamaEngine.loadMultimodalProjector.',
+      );
+    });
+
+    test('reports no projector after a projector load fails', () async {
+      await _loadSpeechModel(llamaEngine);
+      backend.projectorLoadError = LlamaModelException('rejected');
+
+      await expectLater(
+        llamaEngine.loadMultimodalProjector('other-mmproj.gguf'),
+        throwsA(isA<LlamaModelException>()),
+      );
+      final capabilities = await speechEngine.capabilities;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        startsWith('No multimodal projector is loaded.'),
+      );
+    });
+
+    test('rejects the dedicated LiteRT-LM profile on a LlamaEngine', () {
+      expect(
+        () => SpeechToTextEngine(
+          llamaEngine,
+          modelProfile: SpeechToTextModelProfile.liteRtLmDedicated,
+        ),
+        throwsA(
+          isA<ArgumentError>()
+              .having((error) => error.name, 'name', 'modelProfile')
+              .having(
+                (error) => error.message,
+                'message',
+                'Use SpeechToTextEngine.liteRtLm for dedicated LiteRT-LM ASR.',
+              ),
+        ),
+      );
+    });
+
+    test('rejects PCM input before starting a prompt-adapter task', () async {
+      await _loadSpeechModel(llamaEngine);
+
+      await expectLater(
+        speechEngine.transcribe(
+          SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'The Qwen3-ASR prompt adapter accepts encoded audio only.',
+          ),
+        ),
+      );
+      expect(backend.generationStarted.isCompleted, isFalse);
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      expect((await task.done).state, SpeechToTextCompletionState.completed);
+    });
+
+    test('rejects streaming on the prompt adapter', () async {
+      await _loadSpeechModel(llamaEngine);
+
+      await expectLater(
+        speechEngine.startStream(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+          ),
+        ),
+      );
+      expect(backend.audioProbeStarted.isCompleted, isFalse);
+    });
+
     test('turns an audio probe failure into capability diagnostics', () async {
       backend.audioProbeError = StateError('old native symbols');
       await _loadSpeechModel(llamaEngine);
@@ -790,6 +877,7 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
       Expando<BackendGenerationLimit>();
   bool audioSupported = true;
   Object? audioProbeError;
+  Object? projectorLoadError;
   String backendName = 'CPU';
   String generationText = 'transcript';
   List<String>? generationChunks;
@@ -829,7 +917,13 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => 3;
+  ) async {
+    final error = projectorLoadError;
+    if (error != null) {
+      throw error;
+    }
+    return 3;
+  }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async {

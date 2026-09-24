@@ -1794,6 +1794,17 @@ void main() {
       },
     );
 
+    test('hasMultimodalProjector tracks projector load and unload', () async {
+      await engine.loadModel('qwen-test.gguf');
+      expect(engine.hasMultimodalProjector, isFalse);
+
+      await engine.loadMultimodalProjector('proj.gguf');
+      expect(engine.hasMultimodalProjector, isTrue);
+
+      await engine.unloadMultimodalProjector();
+      expect(engine.hasMultimodalProjector, isFalse);
+    });
+
     test('tokenize and detokenize', () async {
       await engine.loadModel('qwen-test.gguf');
       final tokens = await engine.tokenize('hello');

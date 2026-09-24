@@ -852,6 +852,7 @@ class NativeLlamaBackend
     _sendPort!.send(SupportsAudioRequest(mmContextHandle, rp.sendPort));
     final res = await rp.first;
     rp.close();
+    if (res is ErrorResponse) throw _workerError(res);
     return res as bool;
   }
 
