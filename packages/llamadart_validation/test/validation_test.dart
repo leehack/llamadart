@@ -160,6 +160,10 @@ class FakeEngine implements ValidationEngine {
           ? wrongHistory
                 ? '77777777777777777777777777777777'
                 : 'cedar17'
+          : prompt.contains('3 + 4')
+          ? wrongArithmetic
+                ? '2'
+                : '3 + 4 = 7'
           : prompt.contains('2 + 2')
           ? wrongArithmetic
                 ? '2'
@@ -1541,6 +1545,29 @@ void main() {
     expect(failure['content'], '2');
     expect(result.report.samples, hasLength(3));
     expect(result.report.assertionsPassed, isFalse);
+  });
+  test('Qwen3 LiteRT arithmetic oracle accepts only the correct sum', () {
+    for (final backend in ['cpu', 'gpu']) {
+      final litert = ValidationProfile.fromJson(
+        jsonDecode(
+              File(
+                'assets/profiles/chat-litert-$backend.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>,
+      );
+      expect(
+        litert.fixtureText('arithmetic', 'prompt'),
+        'What is 3 + 4? Reply with only the number.',
+      );
+      final oracle = RegExp(litert.fixtureText('arithmetic', 'regex'));
+      for (final output in ['7', '7.', '3 + 4 = 7']) {
+        expect(oracle.hasMatch(output), isTrue, reason: output);
+      }
+      for (final output in ['2', '4', '17', '3 + 4 = 8', '7 + 3 = 10']) {
+        expect(oracle.hasMatch(output), isFalse, reason: output);
+      }
+    }
   });
   test('engine create deadline override rejects invalid contracts', () {
     for (final patch in <Map<String, dynamic>>[

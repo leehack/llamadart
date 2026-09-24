@@ -196,8 +196,9 @@ Track the distinct findings:
   Galaxy S24 GGUF Vulkan crash. The vendor compiler appears in the stack;
   originating driver/runtime/artifact/integration ownership remains unproven.
 - [llamadart #509](https://github.com/leehack/llamadart/issues/509): shared
-  LiteRT Qwen3 arithmetic failure. A wrong small-model answer alone does not
-  establish a Dart regression; compare identical native and model-reference runs.
+  LiteRT Qwen3 arithmetic failure. The original `Qwen/Qwen3-0.6B` weights also
+  answer `2` with thinking disabled, so this is model behavior; `chat-litert`
+  now uses the reference-qualified C04 fixture below.
 - [litert-lm-native #51](https://github.com/leehack/litert-lm-native/issues/51):
   Android GPU output divergence. OpenCL was unavailable, then WebGPU selected an
   Adreno 750 Vulkan adapter. The fallback is evidence, not an established cause.
@@ -321,7 +322,7 @@ the model manifest determines supported positive rows and typed negative rows.
 | C01 packaging, routing and load | Verify binary/model hashes; load by `.gguf` or `.litertlm`; probe capabilities | Correct runtime family, ready state and effective backend evidence; missing library/corrupt model produces actionable error. Native/Web assets distinguished. |
 | C02 tokenizer and Unicode | Encode/decode `Hello, Montréal! 안녕하세요 👋\n  two spaces`; plain-text mode with explicit BOS/special-token policy | Exact round trip where advertised, stable IDs for the pinned tokenizer; capture literal byte-level spellings. LiteRT Web asserts typed unsupported tokenizer path. |
 | C03 raw stream | Tiny GGUF: `Once upon a time`, max 32; native chat-capable models use their locked raw fixture | One nonempty valid, finite ordered stream with no crash/hang. Benchmark repetitions are scheduled once separately, not repeated for every case. A stories model need not answer instructions. |
-| C04 visible chat and thinking control | `Reply with one short sentence saying hello.` and `What is 2+2? Answer only with the number.`; thinking disabled | Greeting contains `hello` case-insensitively; arithmetic trimmed matches `^4[.!]?$`; no hidden-thinking leakage. Existing LiteRT failures remain visible until reference triage. |
+| C04 visible chat and thinking control | `Reply with one short sentence saying hello.` and `What is 2+2? Answer only with the number.`; thinking disabled | Greeting contains `hello` case-insensitively; arithmetic trimmed matches `^4[.!]?$`; no hidden-thinking leakage. `chat-litert` asks `What is 3 + 4? Reply with only the number.` and matches `^(?:3 \+ 4 = )?7[.!]?$`: original Qwen3-0.6B answers `2` to 2 + 2 with thinking disabled ([#509](https://github.com/leehack/llamadart/issues/509)). |
 | C05 thinking and budget | Same arithmetic prompt with thinking on, max 256; native GGUF budget 0 and 32 on a qualified reasoning fixture | Final visible answer; correctly separated thinking when emitted; no leaked delimiters. Budget behavior checked against native counters/reference semantics, not character count. LiteRT/Web reject native GGUF-only budget controls. |
 | C06 conversation and system messages | System `Answer briefly.`; user `Remember this code: cedar-17.`; assistant acknowledgement; user `What code did I ask you to remember? Reply only with the code.` | Native/GGUF history retains `cedar-17`; captured serialized messages preserve system role. LiteRT Web single-turn limitation is explicitly reported; no claimed history pass. |
 | C07 tools | Tool `get_weather(city: string)`; user `Call get_weather for Montréal.`; modes auto, required, none; fixed tool response | Required emits the named tool and parsed `{"city":"Montréal"}` where supported; none emits no tool; auto accepts permitted text or valid call. Tool response continuation tested where supported. Unsupported constrained modes fail explicitly. |
