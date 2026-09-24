@@ -129,7 +129,7 @@ List<SpeechEdgeFixture> buildSpeechEdgeFixtures(Uint8List fixture) {
       seconds: concatenated.length / 16000,
       contract: SpeechEdgeContract.repeatedReference,
       referenceRepeats: repeats,
-      rationale: 'Audio crossing the 30-second preprocessing boundary.',
+      rationale: 'Audio over 30 seconds must be transcribed in full.',
     ),
   ];
   for (final entry in fixtures) {
