@@ -83,6 +83,9 @@ class ValidationReport {
       if (legacy && profile.selection == 'focused') {
         problems.add('Focused selection requires result schema 2');
       }
+      if (legacy && profile.isDecision) {
+        problems.add('Decision cases require result schema 2');
+      }
       if (!legacy) {
         if (manifest['catalog_hash'] != jsonHash(manifest['catalog'])) {
           problems.add('Catalog hash does not match the manifest');
@@ -253,6 +256,7 @@ class ValidationReport {
         : null;
     final tag = environment[runtime == 'litert' ? 'litert_tag' : 'native_tag'];
     final model = (manifest['profile'] as Map?)?['model'] as Map? ?? {};
+    final decision = (manifest['profile'] as Map?)?['decision'] as Map? ?? {};
     final preparation = manifest['preparation'] is Map
         ? manifest['preparation'] as Map
         : const {};
@@ -266,6 +270,13 @@ class ValidationReport {
           preparation['sha256'] != model['sha256'] ||
           preparation['bytes'] != model['bytes'])
         'Verified model hash and byte size do not match the profile lock',
+      for (final MapEntry(:key, :value) in decision.entries)
+        if (preparation['decision_$key'] is! Map ||
+            (preparation['decision_$key'] as Map)['verified'] != true ||
+            (preparation['decision_$key'] as Map)['sha256'] !=
+                (value as Map?)?['sha256'] ||
+            (preparation['decision_$key'] as Map)['bytes'] != value?['bytes'])
+          'Verified decision $key hash and byte size do not match the profile lock',
       if (desktop &&
           (environment['runtime_payload_verified'] != true ||
               !RegExp(

@@ -1,7 +1,9 @@
 # Laya decision-model reference
 
-`laya_0_3_5_reference.json` is the parity fixture for the decision core in
-`lib/src/core/decision/`. Each of its 24 rows holds a state and one question,
+[`laya_0_3_5_reference.json`](../../../packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json)
+is the parity fixture for the decision core in `lib/src/core/decision/`, the
+decision E2E test and the validation harness's decision cases, which bundle it
+as a Flutter asset. Each of its 24 rows holds a state and one question,
 the exact sequence token ids and option marker positions, the raw marker and
 act-head logits, and the answer the reference returned. `pieces` maps every
 tokenizer input text to its token ids, so sequence assembly is tested without a
@@ -26,8 +28,12 @@ hf download convaiinnovations/laya \
   --include rl_agent_config.json --include model.safetensors \
   --include 'tokenizer/*' --include 'encoder/*'
 python laya_ref_dump.py rows.json checkpoint
-python gen_decision_fixture.py rows.json checkpoint/tokenizer laya_0_3_5_reference.json
+python gen_decision_fixture.py rows.json checkpoint/tokenizer \
+  ../../../packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json
 ```
+
+A regenerated file needs its new SHA256 in the harness's `decision` fixture
+(`packages/llamadart_validation/lib/src/decision_catalog.dart`).
 
 The Laya checkpoint and the `laya` package are by Convai Innovations, licensed
 under Apache-2.0. The fixture contains their outputs, not model weights.

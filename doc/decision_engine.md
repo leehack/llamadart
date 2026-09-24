@@ -471,8 +471,9 @@ guide.
   failed head load, its `op_offload` choice, or its order of head and context
   teardown; that needs fault injection or a GPU device.
 
-Fixture: `test/fixtures/decision/laya_0_3_5_reference.json`, produced by the
-scripts beside it from the pinned official checkpoint on CPU in FP32.
+Fixture: `packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json`,
+produced by the scripts in `test/fixtures/decision/` from the pinned official
+checkpoint on CPU in FP32.
 
 ## Delivery
 

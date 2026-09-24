@@ -1287,6 +1287,40 @@ void main() {
       expect(provider.calls, isEmpty);
     },
   );
+  test(
+    'GCE accepts the CUDA decision profile and rejects its CPU twin',
+    () async {
+      final assets = Directory(p.join(bundle.path, 'assets/profiles'))
+        ..createSync(recursive: true);
+      for (final backend in ['cpu', 'cuda']) {
+        File(
+          'packages/llamadart_validation/assets/profiles/decision-gguf-$backend.json',
+        ).copySync(p.join(assets.path, 'decision-gguf-$backend.json'));
+      }
+      await writeBundleManifest(bundle, {
+        'target': 'desktop',
+        'source_dirty': false,
+        'build_os': 'linux',
+        'build_abi': 'linux_x64',
+      });
+      final provider = FakeProvider()..preflightFails = true;
+      await controller(
+        provider,
+      ).run(plan(target: 'gce-linux-cuda', profile: 'decision-gguf-cuda'));
+      expect(provider.calls, ['preflight']);
+      expect(
+        (await controller(provider).run(
+          plan(
+            id: 'qa-two',
+            target: 'gce-linux-cuda',
+            profile: 'decision-gguf-cpu',
+          ),
+        ))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.calls, ['preflight']);
+    },
+  );
   for (final target in ['gce-windows-cuda', 'gce-linux-cuda']) {
     test(
       '$target selects the supported transfer protocol for upload and collection',

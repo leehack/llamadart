@@ -17,7 +17,15 @@ void main() {
       expect(profile['backend'], row['backend']);
       expect(
         (profile['model']['filename'] as String).toLowerCase(),
-        startsWith(row['model'] == 'gemma4-e2b' ? 'gemma-4' : 'qwen3.5'),
+        startsWith(switch (row['model']) {
+          'gemma4-e2b' => 'gemma-4',
+          'laya-q8_0' => 'laya-q8_0',
+          _ => 'qwen3.5',
+        }),
+      );
+      expect(
+        profile['model']['kind'] == 'decision',
+        row['use_case'] == 'decision',
       );
       expect(row['status'], 'NOT_RUN');
     }
@@ -72,6 +80,26 @@ void main() {
           row['use_case'] == 'stt' &&
           !['web', 'windows-arm64'].contains(row['platform']);
       expect(row['status'], cpuAsr ? 'NOT_RUN' : 'UNSUPPORTED');
+    }
+  });
+
+  test('decision rows bind GGUF profiles and keep LiteRT unsupported', () {
+    final rows = validationCoverage().where(
+      (row) => row['use_case'] == 'decision',
+    );
+    expect(rows, isNotEmpty);
+    for (final row in rows) {
+      final gguf = row['runtime'] == 'gguf';
+      expect(row['status'], gguf ? 'NOT_RUN' : 'UNSUPPORTED', reason: '$row');
+      expect(
+        row['profile'],
+        gguf &&
+                row['platform'] != 'web' &&
+                ['cpu', 'metal', 'vulkan', 'cuda'].contains(row['backend'])
+            ? 'decision-gguf-${row['backend']}'
+            : isNull,
+        reason: '${row['id']}',
+      );
     }
   });
 

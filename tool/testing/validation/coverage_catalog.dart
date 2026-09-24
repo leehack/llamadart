@@ -54,6 +54,22 @@ List<Map<String, Object?>> validationCoverage() {
       }
       add(entry.key, 'gguf', backend, 'qwen3-asr', 'stt');
       add(entry.key, 'gguf', backend, 'qwen3-tts', 'tts');
+      add(
+        entry.key,
+        'gguf',
+        backend,
+        'laya-q8_0',
+        'decision',
+        profile: ['cpu', 'metal', 'vulkan', 'cuda'].contains(backend)
+            ? 'decision-gguf-$backend'
+            : null,
+        reason: backend == 'wasm'
+            ? 'The Web host runs decision-gguf-cpu on WASM CPU; requires '
+                  'execution evidence.'
+            : backend == 'webgpu'
+            ? 'No Web GPU decision profile.'
+            : 'Requires exact-artifact and platform execution evidence.',
+      );
     }
     final platform = entry.key;
     final available = platform != 'windows-arm64';
@@ -99,6 +115,17 @@ List<Map<String, Object?>> validationCoverage() {
         'tts',
         status: 'UNSUPPORTED',
         reason: 'Pinned LiteRT runtime exposes no typed TTS path.',
+      );
+      add(
+        platform,
+        'litert',
+        backend,
+        'decision-model-unavailable',
+        'decision',
+        status: 'UNSUPPORTED',
+        reason:
+            'DecisionEngine needs a llama.cpp GGUF encoder; LiteRT-LM '
+            'reports LlamaUnsupportedException.',
       );
     }
     for (final useCase in ['chat', 'stt', 'tts']) {

@@ -108,20 +108,23 @@ Future<void> main(List<String> args) async {
     );
     final journal = FileValidationJournal(directory);
     try {
+      final cache = Directory(
+        options['cache'] ??
+            p.join(launchDirectory, '.dart_tool', 'validation', 'model-cache'),
+      );
       final prepared = await prepareModel(
         profile,
-        Directory(
-          options['cache'] ??
-              p.join(
-                launchDirectory,
-                '.dart_tool',
-                'validation',
-                'model-cache',
-              ),
-        ),
+        cache,
         suppliedPath: options['model'],
         onProgress: journal.emitPreparation,
       );
+      final decision = profile.isDecision
+          ? await prepareDecisionAssets(
+              profile,
+              cache,
+              onProgress: journal.emitPreparation,
+            )
+          : null;
       final environment = <String, dynamic>{
         ...provenance,
         'os': Platform.operatingSystem,
@@ -134,8 +137,19 @@ Future<void> main(List<String> args) async {
       };
       final runner = ValidationRunner(
         profile: profile,
-        engine: PublicValidationEngine(),
+        engine: PublicValidationEngine(
+          decisionHead: decision?.head,
+          decisionConfig: decision?.config,
+        ),
         emit: journal.emit,
+        decisionReference: profile.isDecision
+            ? File(
+                p.join(
+                  p.dirname(assetRoot),
+                  profile.fixtureText('decision', 'reference'),
+                ),
+              ).readAsStringSync()
+            : null,
       );
       final interrupt = ProcessSignal.sigint.watch().listen(
         (_) => runner.cancel(),
@@ -145,7 +159,7 @@ Future<void> main(List<String> args) async {
           prepared.path,
           runId: runId,
           environment: environment,
-          preparation: prepared.evidence,
+          preparation: {...prepared.evidence, ...?decision?.evidence},
         );
       } finally {
         await interrupt.cancel();

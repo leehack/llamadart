@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 import 'runtime_environment.dart';
+
+part 'decision_runner.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -39,12 +43,25 @@ abstract interface class ValidationEngine {
 }
 
 /// Runs inference through the exported llamadart API on every platform.
-class PublicValidationEngine implements ValidationEngine {
+class PublicValidationEngine
+    with _PublicDecisionValidation
+    implements ValidationEngine {
   /// Uses the public engine; a factory allows isolated adapter verification.
-  PublicValidationEngine({this.npu, LlamaEngine Function()? engineFactory})
-    : _engineFactory = engineFactory ?? (() => LlamaEngine(LlamaBackend()));
+  /// [decisionHead] and [decisionConfig] are the prepared decision files or
+  /// URLs of a decision profile.
+  PublicValidationEngine({
+    this.npu,
+    LlamaEngine Function()? engineFactory,
+    this.decisionHead,
+    this.decisionConfig,
+  }) : _engineFactory = engineFactory ?? (() => LlamaEngine(LlamaBackend()));
   final NpuExecutionMonitor? npu;
+  @override
+  final String? decisionHead;
+  @override
+  final String? decisionConfig;
   final LlamaEngine Function() _engineFactory;
+  @override
   late LlamaEngine _engine = _engineFactory();
   @override
   bool get isWeb => const bool.fromEnvironment('dart.library.js_interop');
@@ -74,6 +91,8 @@ class PublicValidationEngine implements ValidationEngine {
   Future<void> unload() => _engine.unloadModel();
   @override
   Future<void> dispose() async {
+    await _decisions?.dispose();
+    _decisions = null;
     await _engine.dispose();
     _disposed = true;
   }
@@ -277,12 +296,16 @@ class ValidationRunner {
     required this.engine,
     required this.emit,
     this.caseTimeout = const Duration(seconds: 60),
+    this.decisionReference,
   });
 
   final ValidationProfile profile;
   final ValidationEngine engine;
   final ValidationEventSink emit;
   final Duration caseTimeout;
+
+  /// Text of the decision fixture's reference file, for decision profiles.
+  final String? decisionReference;
 
   /// Cases that reload the model and generate within one deadline.
   static const engineReloadCaseIds = {
@@ -792,6 +815,7 @@ class ValidationRunner {
       canonicalJson(finishReasons) == canonicalJson(['length']);
 
   Future<Map<String, dynamic>> _runCase(String id, String location) async {
+    if (id.startsWith('D')) return _decisionCase(id, location);
     if (profile.nativeReference &&
         ['C02.generate', 'C05.thinking', 'C07.tools'].contains(id)) {
       return {

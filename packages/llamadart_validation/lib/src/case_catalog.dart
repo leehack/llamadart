@@ -1,3 +1,5 @@
+import 'decision_catalog.dart';
+
 /// Current reproducible catalog contract; older journals retain their version.
 const int validationCatalogVersion = 4;
 
@@ -236,5 +238,8 @@ ValidationCaseDefinition validationCase(
       implemented: false,
     );
   }
-  return validationCaseCatalog.singleWhere((definition) => definition.id == id);
+  return [
+    ...validationCaseCatalog,
+    ...decisionValidationCases,
+  ].singleWhere((definition) => definition.id == id);
 }
