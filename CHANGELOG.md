@@ -35,6 +35,12 @@
 - Run `DecisionEngine` on WebGPU through the bridge decision API
   (apiVersion 1), which bridge assets `v0.1.47+` include
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Stop native image and audio requests from seeding the repeat penalty with
+  leftover memory, which made output depend on the previous request
+  ([#603](https://github.com/leehack/llamadart/issues/603)).
+- After a failed native prompt decode, the next `reusePromptPrefix` request no
+  longer runs on the wrong KV cache or keeps failing
+  ([#601](https://github.com/leehack/llamadart/issues/601)).
 - Reject `embed()` and `embedBatch()` on rank-pooled reranker GGUFs with
   `LlamaUnsupportedException` on native, instead of returning memory read
   past llama.cpp's classifier-score buffer

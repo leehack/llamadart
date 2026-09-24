@@ -4318,7 +4318,7 @@ class LlamaCppService {
 
       // 3. Ingest Prompt (Text or Multimodal)
       final promptEvalStopwatch = Stopwatch()..start();
-      final initialTokens = _ingestPrompt(
+      final (nPast: initialTokens, :promptTokenCount) = _ingestPrompt(
         contextHandle,
         modelHandle,
         ctx,
@@ -4349,7 +4349,7 @@ class LlamaCppService {
             speculativeSession,
             0,
             tokensPtr,
-            initialTokens,
+            promptTokenCount,
           )) {
         throw Exception(
           "Failed to initialize llama.cpp speculative prompt state",
@@ -4367,7 +4367,7 @@ class LlamaCppService {
         lazyGrammarConfig,
         thinkingBudgetConfig,
         reasoningBudgetApi,
-        initialTokens,
+        promptTokenCount,
         tokensPtr,
       );
 
@@ -4858,8 +4858,11 @@ class LlamaCppService {
     llama_memory_clear(memory, true);
   }
 
-  /// Helper: Ingests the prompt (text or multimodal) and returns initial token count.
-  int _ingestPrompt(
+  /// Ingests the prompt (text or multimodal).
+  ///
+  /// Returns the next KV position and how many prompt ids were written to
+  /// `tokensPtr`. Multimodal ingestion writes none.
+  ({int nPast, int promptTokenCount}) _ingestPrompt(
     int contextHandle,
     int modelHandle,
     _LlamaContextWrapper ctx,
@@ -4885,7 +4888,7 @@ class LlamaCppService {
     final mmCtx = mmHandle != null ? _mtmdContexts[mmHandle] : null;
 
     if (mediaParts.isNotEmpty && mmCtx != null) {
-      return _ingestMultimodalPrompt(
+      final nPast = _ingestMultimodalPrompt(
         mmCtx,
         ctx,
         vocab,
@@ -4894,8 +4897,9 @@ class LlamaCppService {
         modelParams,
         cancelToken,
       );
+      return (nPast: nPast, promptTokenCount: 0);
     } else {
-      return _ingestTextPrompt(
+      final nTokens = _ingestTextPrompt(
         batch,
         vocab,
         prompt,
@@ -4908,6 +4912,7 @@ class LlamaCppService {
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
       );
+      return (nPast: nTokens, promptTokenCount: nTokens);
     }
   }
 
@@ -5244,6 +5249,8 @@ class LlamaCppService {
 
     final maxSeqPos = llama_memory_seq_pos_max(memory, 0);
     final removeTo = maxSeqPos >= decodeStart ? maxSeqPos + 1 : decodeStart;
+    ctx.cachedPromptTokens = null;
+    ctx.kvFromStateLoad = false;
     final removedTail = llama_memory_seq_rm(memory, 0, decodeStart, removeTo);
     if (!removedTail) {
       return _decodeAndCacheFullPrompt(
@@ -5293,6 +5300,8 @@ class LlamaCppService {
     _SpeculativeApi? speculativeApi,
     _LlamaCppSpeculativeConfig? speculativeConfig,
   }) {
+    ctx.cachedPromptTokens = null;
+    ctx.kvFromStateLoad = false;
     _clearContextMemory(ctx.pointer);
     _decodePromptSegment(
       batch,
@@ -5435,7 +5444,7 @@ class LlamaCppService {
     _LazyGrammarConfig? lazyGrammarConfig,
     _LlamaCppThinkingBudgetConfig? thinkingBudgetConfig,
     _ReasoningBudgetApi? reasoningBudgetApi,
-    int initialTokens,
+    int promptTokenCount,
     Pointer<Int32> tokensPtr,
   ) {
     final sampler = llama_sampler_chain_init(
@@ -5509,7 +5518,7 @@ class LlamaCppService {
         pauseGrammarDuringReasoning: grammarSampler != nullptr,
         grammarSampler: grammarSampler,
         promptTokens: tokensPtr,
-        promptTokenCount: initialTokens,
+        promptTokenCount: promptTokenCount,
       );
       if (budgetSampler == nullptr) {
         if (grammarSampler != nullptr) {
@@ -5546,16 +5555,16 @@ class LlamaCppService {
       llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
     }
 
-    if (grammarPtr == nullptr && tokensPtr != nullptr && initialTokens > 0) {
+    if (grammarPtr == nullptr && tokensPtr != nullptr && promptTokenCount > 0) {
       if (thinkingBudgetConfig != null) {
         // The composite sampler derives its reasoning state from the complete
         // prompt rather than accepting it token by token, but prompt tokens
         // still need to seed the repeat-penalty sampler as before.
-        for (int i = 0; i < initialTokens; i++) {
+        for (int i = 0; i < promptTokenCount; i++) {
           llama_sampler_accept(penaltiesSampler, tokensPtr[i]);
         }
       } else {
-        for (int i = 0; i < initialTokens; i++) {
+        for (int i = 0; i < promptTokenCount; i++) {
           llama_sampler_accept(sampler, tokensPtr[i]);
         }
       }
