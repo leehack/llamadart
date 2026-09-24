@@ -112,6 +112,27 @@ void main() {
       }
     },
   );
+
+  test(
+    'a text prompt still seeds the repeat penalty with its own ids',
+    () async {
+      final session = _Session.open(modelPath);
+      final fakeMtmd = _FakeMtmd(session, session.tokenize(_p1));
+      try {
+        const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
+        final unprimed = await session.generate(
+          '<__media__>',
+          params,
+          parts: fakeMtmd.parts,
+        );
+        // Same KV, but the text path primes the penalty with the prompt ids.
+        expect(await session.generate(_p1, params), isNot(unprimed));
+      } finally {
+        fakeMtmd.dispose();
+        session.dispose();
+      }
+    },
+  );
 }
 
 final class _Session {
