@@ -201,6 +201,19 @@ WASM CPU, and there is no Web GPU decision profile. GCE accepts
 `decision-gguf-cuda`. `validation.dart coverage --use-case decision` lists the
 rows.
 
+Observed on an Apple Silicon Mac at load averages of 15 to 210: `local` CPU and
+Metal runs passed all eight cases, and Metal verified placement. Worst
+logit/probability/score differences were 0.142/0.036/0.061 on the CPU and
+0.164/0.044/0.025 on Metal. Neither qualified, since a `local` run is not a
+portable bundle. In headless Chromium with the bridge assets from
+[#665](https://github.com/leehack/llamadart/pull/665), the Web bundle passed
+`C01` to `D02`, then `D03.logits` exceeded the 60 s case timeout on the WASM
+CPU in both runs, leaving the rest NOT_RUN. A measurement
+build with a 20-minute timeout took 77 to 86 s for each of `D03` to `D06`;
+`D03`, `D06` and `D07` passed, and `D04` and `D05` failed on
+`plain_text/urgency5` (probability 0.0628, score 0.1224), the Q8_0 drift in the
+[DecisionEngine Web check](decision_engine.md#web-check).
+
 ```bash
 dart run tool/testing/validation.dart local --profile decision-gguf-metal
 ```
