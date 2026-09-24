@@ -3013,6 +3013,95 @@ void main() {
         expect(backend.supportsLazyGrammar, isFalse);
       });
 
+      void replayBridgeEmission(List<String> pieces) {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final grammarRaw = opts.getProperty('grammar'.toJS);
+            lastGrammar = grammarRaw.isA<JSString>()
+                ? (grammarRaw as JSString).toDart
+                : null;
+            final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
+            var text = '';
+            for (final piece in pieces) {
+              text += piece;
+              onToken?.callAsFunction(null, piece.toJS, text.toJS);
+            }
+            return Future<JSString>.value(text.toJS).toJS;
+          }).toJS,
+        );
+      }
+
+      Future<List<LlamaCompletionChunk>> createAuto(
+        LlamaEngine engine,
+        String text,
+      ) {
+        return engine
+            .create(
+              <LlamaChatMessage>[
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: text),
+              ],
+              tools: <ToolDefinition>[weatherTool],
+              toolChoice: ToolChoice.auto,
+            )
+            .toList();
+      }
+
+      test(
+        'ToolChoice.auto parses a tool call from unconstrained output',
+        () async {
+          final engine = await loadHermesEngine();
+          replayBridgeEmission(<String>[
+            '<tool_call>',
+            '\n{{"name": "get_',
+            'weather", "arguments": {"ci',
+            'ty": "Paris"}}\n',
+            '</tool_call>',
+          ]);
+
+          final chunks = await createAuto(
+            engine,
+            'What is the weather in Paris right now?',
+          );
+
+          expect(lastGrammar, isNull);
+          final toolCalls = chunks
+              .expand((chunk) => chunk.choices.first.delta.toolCalls ?? [])
+              .toList();
+          expect(toolCalls, hasLength(1));
+          expect(toolCalls.single.function?.name, 'get_weather');
+          expect(
+            jsonDecode(toolCalls.single.function!.arguments!),
+            <String, dynamic>{'city': 'Paris'},
+          );
+          expect(chunks.last.choices.first.finishReason, 'tool_calls');
+        },
+      );
+
+      test('ToolChoice.auto keeps a truncated tool call as content', () async {
+        final engine = await loadHermesEngine();
+        replayBridgeEmission(<String>[
+          '<tool_call>',
+          '\n{"name": "get_weather", ',
+          '"arguments": {"city": "Par',
+        ]);
+
+        final chunks = await createAuto(
+          engine,
+          'What is the weather in Paris right now?',
+        );
+
+        expect(lastGrammar, isNull);
+        expect(
+          chunks.expand((chunk) => chunk.choices.first.delta.toolCalls ?? []),
+          isEmpty,
+        );
+        expect(
+          chunks.map((chunk) => chunk.choices.first.delta.content ?? '').join(),
+          contains('"city": "Par'),
+        );
+      });
+
       test('ToolChoice.required still sends the strict tool grammar', () async {
         final engine = await loadHermesEngine();
 

@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/grammar/json_schema_converter.dart';
 import 'package:llamadart/src/core/grammar/tool_grammar_generator.dart'
     as grammar;
@@ -161,6 +162,57 @@ void main() {
       );
     }
   });
+
+  test(
+    'backends without lazy grammar get a compiled required grammar only',
+    () {
+      String? plannedGrammar(ToolChoice toolChoice) {
+        const messages = [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Call the ping tool now.',
+          ),
+        ];
+        final templateResult = ChatTemplateEngine.render(
+          templateSource: _hermesTemplate,
+          messages: messages,
+          metadata: const {},
+          tools: [tool],
+          toolChoice: toolChoice,
+        );
+        return ChatCompletionRequestPlanner.build(
+          backend: _EagerGrammarBackend(),
+          templateResult: templateResult,
+          messages: messages,
+          tools: [tool],
+          toolChoice: toolChoice,
+          parallelToolCalls: false,
+        ).generationParams.grammar;
+      }
+
+      expect(plannedGrammar(ToolChoice.auto), isNull);
+      final required = plannedGrammar(ToolChoice.required);
+      expect(required, isNotNull);
+      expect(
+        _compiledGrammarAccepts(
+          nativeModel!,
+          required!,
+          '<tool_call>{"name": "ping", "arguments": {}}</tool_call>',
+        ),
+        isTrue,
+      );
+      for (final invalid in [
+        'Hello!',
+        '<tool_call>{"name": "not_ping", "arguments": {}}</tool_call>',
+      ]) {
+        expect(
+          _compiledGrammarAccepts(nativeModel!, required, invalid),
+          isFalse,
+          reason: '$invalid must not satisfy the required grammar.',
+        );
+      }
+    },
+  );
 
   test('compiled grammar rejects an incomplete valid prefix at EOG', () {
     expect(
@@ -339,4 +391,18 @@ Future<Map<String, dynamic>> _generateThroughProductionTools(
         .join(),
     'finishReason': chunks.last.choices.first.finishReason,
   };
+}
+
+const _hermesTemplate =
+    '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+    '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+    '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+    '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}';
+
+class _EagerGrammarBackend implements LlamaBackend, BackendLazyGrammarSupport {
+  @override
+  bool get supportsLazyGrammar => false;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
