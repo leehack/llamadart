@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'engine.dart';
+import 'generation_cancellation.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
@@ -148,118 +149,125 @@ class ChatSession {
     Map<String, dynamic>? chatTemplateKwargs,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
-  }) async* {
-    // Add user message if parts provided
-    if (parts.isNotEmpty) {
-      final userMsg = parts.length == 1 && parts.first is LlamaTextContent
-          ? LlamaChatMessage.fromText(
-              role: LlamaChatRole.user,
-              text: (parts.first as LlamaTextContent).text,
-              continuesPreviousTurn: continuesPreviousTurn,
-            )
-          : LlamaChatMessage.withContent(
-              role: LlamaChatRole.user,
-              content: parts,
-              continuesPreviousTurn: continuesPreviousTurn,
-            );
-      _history.add(userMsg);
-      onMessageAdded?.call(userMsg);
-    }
-
-    // Ensure the rendered request, including tool schemas, leaves enough room
-    // for the configured response rather than using a fixed small reserve.
-    _lastRequestFitContext = await _enforceContextLimit(
-      params: params,
-      tools: tools,
-      toolChoice: toolChoice,
-      parallelToolCalls: parallelToolCalls,
-      enableThinking: enableThinking,
-      chatTemplateKwargs: chatTemplateKwargs,
-    );
-
-    // Build messages for engine
-    final messages = _buildMessages();
-
-    // Generate response
-    final fullContent = StringBuffer();
-    final fullThinking = StringBuffer();
-    final Map<int, _ToolCallBuilder> toolCallBuilders = {};
-
-    await for (final chunk in _engine.create(
-      messages,
-      params: params,
-      tools: tools,
-      toolChoice: toolChoice,
-      parallelToolCalls: parallelToolCalls,
-      enableThinking: enableThinking,
-      chatTemplateKwargs: chatTemplateKwargs,
-    )) {
-      // Guard against an empty-choices chunk (e.g. a keep-alive) which would
-      // otherwise throw "Bad state: No element" mid-stream.
-      if (chunk.choices.isEmpty) {
-        yield chunk;
-        continue;
-      }
-      final delta = chunk.choices.first.delta;
-      if (delta.content != null) fullContent.write(delta.content!);
-      if (delta.thinking != null) fullThinking.write(delta.thinking!);
-
-      if (delta.toolCalls != null) {
-        for (final tc in delta.toolCalls!) {
-          toolCallBuilders.putIfAbsent(tc.index, () => _ToolCallBuilder());
-          final builder = toolCallBuilders[tc.index]!;
-          if (tc.id != null) builder.id = tc.id;
-          if (tc.type != null) builder.type = tc.type;
-          if (tc.function?.name != null) builder.name = tc.function!.name;
-          if (tc.function?.arguments != null) {
-            builder.arguments.write(tc.function!.arguments!);
-          }
-        }
+  }) {
+    final cancellation = GenerationCancellation.forEngine(_engine);
+    return cancellation.request((isCancelled) async* {
+      // Add user message if parts provided
+      if (parts.isNotEmpty) {
+        final userMsg = parts.length == 1 && parts.first is LlamaTextContent
+            ? LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: (parts.first as LlamaTextContent).text,
+                continuesPreviousTurn: continuesPreviousTurn,
+              )
+            : LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: parts,
+                continuesPreviousTurn: continuesPreviousTurn,
+              );
+        _history.add(userMsg);
+        onMessageAdded?.call(userMsg);
       }
 
-      yield chunk;
-    }
+      // Ensure the rendered request, including tool schemas, leaves enough room
+      // for the configured response rather than using a fixed small reserve.
+      _lastRequestFitContext = await _enforceContextLimit(
+        params: params,
+        tools: tools,
+        toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+      );
 
-    // Reconstruct final message with all parts
-    final contentParts = <LlamaContentPart>[];
+      // Build messages for engine
+      final messages = _buildMessages();
 
-    if (fullThinking.isNotEmpty) {
-      contentParts.add(LlamaThinkingContent(fullThinking.toString()));
-    }
+      // Generate response
+      final fullContent = StringBuffer();
+      final fullThinking = StringBuffer();
+      final Map<int, _ToolCallBuilder> toolCallBuilders = {};
 
-    if (fullContent.isNotEmpty) {
-      contentParts.add(LlamaTextContent(fullContent.toString()));
-    }
-
-    // Add tool calls
-    final sortedIndices = toolCallBuilders.keys.toList()..sort();
-    for (final index in sortedIndices) {
-      final b = toolCallBuilders[index]!;
-      Map<String, dynamic> args = {};
-      try {
-        if (b.arguments.isNotEmpty) {
-          args = jsonDecode(b.arguments.toString());
-        }
-      } catch (_) {
-        // Keep empty if parse fails
-      }
-
-      contentParts.add(
-        LlamaToolCallContent(
-          id: b.id,
-          name: b.name ?? "",
-          arguments: args,
-          rawJson: b.arguments.toString(),
+      final completion = cancellation.inherit(
+        isCancelled,
+        () => _engine.create(
+          messages,
+          params: params,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          chatTemplateKwargs: chatTemplateKwargs,
         ),
       );
-    }
+      await for (final chunk in completion) {
+        // Guard against an empty-choices chunk (e.g. a keep-alive) which would
+        // otherwise throw "Bad state: No element" mid-stream.
+        if (chunk.choices.isEmpty) {
+          yield chunk;
+          continue;
+        }
+        final delta = chunk.choices.first.delta;
+        if (delta.content != null) fullContent.write(delta.content!);
+        if (delta.thinking != null) fullThinking.write(delta.thinking!);
 
-    final assistantMsg = LlamaChatMessage.withContent(
-      role: LlamaChatRole.assistant,
-      content: contentParts,
-    );
-    _history.add(assistantMsg);
-    onMessageAdded?.call(assistantMsg);
+        if (delta.toolCalls != null) {
+          for (final tc in delta.toolCalls!) {
+            toolCallBuilders.putIfAbsent(tc.index, () => _ToolCallBuilder());
+            final builder = toolCallBuilders[tc.index]!;
+            if (tc.id != null) builder.id = tc.id;
+            if (tc.type != null) builder.type = tc.type;
+            if (tc.function?.name != null) builder.name = tc.function!.name;
+            if (tc.function?.arguments != null) {
+              builder.arguments.write(tc.function!.arguments!);
+            }
+          }
+        }
+
+        yield chunk;
+      }
+
+      // Reconstruct final message with all parts
+      final contentParts = <LlamaContentPart>[];
+
+      if (fullThinking.isNotEmpty) {
+        contentParts.add(LlamaThinkingContent(fullThinking.toString()));
+      }
+
+      if (fullContent.isNotEmpty) {
+        contentParts.add(LlamaTextContent(fullContent.toString()));
+      }
+
+      // Add tool calls
+      final sortedIndices = toolCallBuilders.keys.toList()..sort();
+      for (final index in sortedIndices) {
+        final b = toolCallBuilders[index]!;
+        Map<String, dynamic> args = {};
+        try {
+          if (b.arguments.isNotEmpty) {
+            args = jsonDecode(b.arguments.toString());
+          }
+        } catch (_) {
+          // Keep empty if parse fails
+        }
+
+        contentParts.add(
+          LlamaToolCallContent(
+            id: b.id,
+            name: b.name ?? "",
+            arguments: args,
+            rawJson: b.arguments.toString(),
+          ),
+        );
+      }
+
+      final assistantMsg = LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: contentParts,
+      );
+      _history.add(assistantMsg);
+      onMessageAdded?.call(assistantMsg);
+    });
   }
 
   /// Builds the message list for the engine, including system prompt.

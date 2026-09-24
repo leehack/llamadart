@@ -1784,6 +1784,12 @@ class WebGpuLlamaBackend
               isCpuMultimodalRuntime: isCpuMultimodalRuntime,
             );
           }
+          // The bridge rejects an already-aborted signal with an AbortError
+          // (v0.1.36 ignored it on its worker path), so end the stream here
+          // without starting the generation.
+          if (abortController.signal.aborted) {
+            return;
+          }
           final normalizedPrompt = _normalizePromptForBridge(prompt, bridge);
           final completion = bridge.createCompletion(normalizedPrompt, options);
           final completionResult = await _toFuture(completion);

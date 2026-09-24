@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
 import 'chat_template_renderer.dart';
+import 'generation_cancellation.dart';
 import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
 import '../models/config/gpu_device_info.dart';
@@ -24,6 +25,7 @@ import '../models/model_resolver.dart';
 import '../models/model_source.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
+import '../speech/speech_engine_lease.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
 ///
@@ -91,6 +93,8 @@ class LlamaEngine {
   final Map<int, int> _decisionHeadHandles = <int, int>{};
   int _nextDecisionHeadHandle = 1;
   int _decisionHeadEpoch = 0;
+  late final GenerationCancellation _generationCancellation =
+      GenerationCancellation.forEngine(this);
 
   /// Configures logging for the library.
   ///
@@ -555,6 +559,7 @@ class LlamaEngine {
     _decisionHeadHandles.clear();
     _decisionHeadEpoch++;
     backend.cancelGeneration();
+    SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;
@@ -656,88 +661,92 @@ class LlamaEngine {
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-  }) async* {
-    _ensureReady();
-    await _rejectUnsupportedVideoInput(
-      messages.expand((message) => message.parts),
-    );
+  }) {
+    return _generationCancellation.request((isCancelled) async* {
+      _ensureReady();
+      await _rejectUnsupportedVideoInput(
+        messages.expand((message) => message.parts),
+      );
 
-    // Keep tools available to template routing even with toolChoice.none,
-    // matching llama.cpp behavior.
-    final effectiveTools = tools;
-    final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
+      // Keep tools available to template routing even with toolChoice.none,
+      // matching llama.cpp behavior.
+      final effectiveTools = tools;
+      final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
 
-    // Apply chat template with tools - returns grammar for constraining
-    final result = await chatTemplate(
-      messages,
-      tools: effectiveTools,
-      toolChoice: effectiveToolChoice,
-      parallelToolCalls: parallelToolCalls,
-      enableThinking: enableThinking,
-      responseFormat: responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
-      chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
-      includeTokenCount: false,
-    );
-    final plan = ChatCompletionRequestPlanner.build(
-      backend: backend,
-      templateResult: result,
-      messages: messages,
-      params: params,
-      tools: effectiveTools,
-      toolChoice: effectiveToolChoice,
-      parallelToolCalls: parallelToolCalls,
-      responseFormat: responseFormat,
-    );
+      // Apply chat template with tools - returns grammar for constraining
+      final result = await chatTemplate(
+        messages,
+        tools: effectiveTools,
+        toolChoice: effectiveToolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        responseFormat: responseFormat,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+        chatTemplateKwargs: chatTemplateKwargs,
+        templateNow: templateNow,
+        includeTokenCount: false,
+      );
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: backend,
+        templateResult: result,
+        messages: messages,
+        params: params,
+        tools: effectiveTools,
+        toolChoice: effectiveToolChoice,
+        parallelToolCalls: parallelToolCalls,
+        responseFormat: responseFormat,
+      );
 
-    // Generate raw tokens with grammar constraint. Backends that can consume
-    // structured chat natively may receive the original messages/tools, while
-    // all other backends keep the rendered prompt path.
-    BackendGenerationLimit? generationLimit;
-    void recordLimit(BackendGenerationLimit limit) => generationLimit = limit;
+      // Generate raw tokens with grammar constraint. Backends that can consume
+      // structured chat natively may receive the original messages/tools, while
+      // all other backends keep the rendered prompt path.
+      BackendGenerationLimit? generationLimit;
+      void recordLimit(BackendGenerationLimit limit) => generationLimit = limit;
 
-    final tokenStream = plan.usesNativeChatGeneration
-        ? _generateNativeChat(
-            plan.nativeChatBackend!,
-            messages,
-            params: plan.generationParams,
-            tools: effectiveTools,
-            toolChoice: effectiveToolChoice,
-            parallelToolCalls: parallelToolCalls,
-            enableThinking: enableThinking,
-            chatTemplateKwargs: chatTemplateKwargs,
-            sourceLangCode: sourceLangCode,
-            targetLangCode: targetLangCode,
-            templateNow: templateNow,
-            onLimit: recordLimit,
-          )
-        : _generate(
-            result.prompt,
-            params: plan.generationParams,
-            parts: plan.mediaParts,
-            onLimit: recordLimit,
-          );
+      final tokenStream = plan.usesNativeChatGeneration
+          ? _generateNativeChat(
+              plan.nativeChatBackend!,
+              messages,
+              params: plan.generationParams,
+              tools: effectiveTools,
+              toolChoice: effectiveToolChoice,
+              parallelToolCalls: parallelToolCalls,
+              enableThinking: enableThinking,
+              chatTemplateKwargs: chatTemplateKwargs,
+              sourceLangCode: sourceLangCode,
+              targetLangCode: targetLangCode,
+              templateNow: templateNow,
+              onLimit: recordLimit,
+              isCancelled: isCancelled,
+            )
+          : _generate(
+              result.prompt,
+              params: plan.generationParams,
+              parts: plan.mediaParts,
+              onLimit: recordLimit,
+              isCancelled: isCancelled,
+            );
 
-    final completionId = DateTime.now().millisecondsSinceEpoch.toString();
-    yield* ChatCompletionStreamParser.parse(
-      tokenStream: tokenStream,
-      templateResult: plan.templateResult,
-      parseToolCallsEnabled: plan.parseToolCallsEnabled,
-      enableThinking: enableThinking,
-      modelName: _modelPath ?? 'llama_model',
-      completionId: completionId,
-      tools: effectiveTools,
-      stoppedAtLimit: () => generationLimit != null,
-    ).map((chunk) {
-      final limit = generationLimit;
-      if (limit != null &&
-          chunk.choices.isNotEmpty &&
-          chunk.choices.first.finishReason == 'length') {
-        _completionGenerationLimits[chunk] = limit;
-      }
-      return chunk;
+      final completionId = DateTime.now().millisecondsSinceEpoch.toString();
+      yield* ChatCompletionStreamParser.parse(
+        tokenStream: tokenStream,
+        templateResult: plan.templateResult,
+        parseToolCallsEnabled: plan.parseToolCallsEnabled,
+        enableThinking: enableThinking,
+        modelName: _modelPath ?? 'llama_model',
+        completionId: completionId,
+        tools: effectiveTools,
+        stoppedAtLimit: () => generationLimit != null,
+      ).map((chunk) {
+        final limit = generationLimit;
+        if (limit != null &&
+            chunk.choices.isNotEmpty &&
+            chunk.choices.first.finishReason == 'length') {
+          _completionGenerationLimits[chunk] = limit;
+        }
+        return chunk;
+      });
     });
   }
 
@@ -863,7 +872,14 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
   }) {
-    return _generate(prompt, params: params, parts: parts);
+    return _generationCancellation.request(
+      (isCancelled) => _generate(
+        prompt,
+        params: params,
+        parts: parts,
+        isCancelled: isCancelled,
+      ),
+    );
   }
 
   Stream<String> _generate(
@@ -871,9 +887,11 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    required bool Function() isCancelled,
   }) async* {
     _ensureReady();
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
+    if (isCancelled()) return;
 
     try {
       final stream = backend.generate(
@@ -917,8 +935,10 @@ class LlamaEngine {
     String? targetLangCode,
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
+    required bool Function() isCancelled,
   }) async* {
     _ensureReady();
+    if (isCancelled()) return;
 
     try {
       final stream = nativeBackend.generateChat(
@@ -971,8 +991,13 @@ class LlamaEngine {
     }
   }
 
-  /// Immediately cancels any ongoing generation process.
+  /// Cancels every generation whose [create] or [generate] stream has been
+  /// listened to.
+  ///
+  /// A stream that has not reached the backend yet ends without generating.
+  /// A stream listened to after this call is not affected.
   void cancelGeneration() {
+    _generationCancellation.cancel();
     backend.cancelGeneration();
   }
 

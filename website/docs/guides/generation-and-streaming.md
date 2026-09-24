@@ -198,7 +198,11 @@ fail early for strict structured output.
 engine.cancelGeneration();
 ```
 
-Cancellation is immediate and backend-specific.
+This cancels every `create`, `generate` and `ChatSession.create` stream that has
+been listened to, including one still rendering its template or checking its
+input: that stream ends without generating. A stream listened to after the
+call is not affected. How quickly a running generation stops depends on the
+backend.
 
 ## Tokenization helpers
 

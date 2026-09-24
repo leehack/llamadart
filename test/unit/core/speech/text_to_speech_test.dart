@@ -232,6 +232,52 @@ void main() {
       expect((await next.done).state, TextToSpeechCompletionState.completed);
     });
 
+    for (final call in <String>['unloadModel', 'dispose']) {
+      test('$call cancels an active synthesis', () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        backend
+          ..blockSynthesis = true
+          ..contextFreeAwaitsSynthesis = true;
+        final task = await speechEngine.synthesize(
+          const TextToSpeechRequest(text: 'Cancel me.'),
+        );
+        await backend.synthesisStarted.future;
+
+        final returned = call == 'unloadModel'
+            ? llamaEngine.unloadModel()
+            : llamaEngine.dispose();
+        await returned.timeout(
+          const Duration(seconds: 5),
+          onTimeout: () {
+            backend.releaseSynthesis();
+            fail('$call waited for the synthesis instead of cancelling it.');
+          },
+        );
+
+        expect(backend.cancelCalls, 1);
+        expect(task.isCancellationRequested, isTrue);
+        expect((await task.done).state, TextToSpeechCompletionState.cancelled);
+        expect(await task.events.toList(), isEmpty);
+      });
+    }
+
+    test('unloadModel after a synthesis completes cancels nothing', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      final first = await speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'First.'),
+      );
+      expect((await first.done).state, TextToSpeechCompletionState.completed);
+
+      await llamaEngine.unloadModel();
+      await _loadTextToSpeechModel(llamaEngine);
+      final next = await speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Next.'),
+      );
+
+      expect((await next.done).state, TextToSpeechCompletionState.completed);
+      expect(backend.cancelCalls, 0);
+    });
+
     test('validates input and sampling before capability lookup', () async {
       await _loadTextToSpeechModel(llamaEngine);
 
@@ -346,6 +392,7 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
       );
   bool blockCapabilities = false;
   bool blockSynthesis = false;
+  bool contextFreeAwaitsSynthesis = false;
   Object? synthesisError;
   Completer<void> capabilityProbeStarted = Completer<void>();
   Completer<void> synthesisStarted = Completer<void>();
@@ -460,7 +507,12 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
   Future<void> modelFree(int modelHandle) async {}
 
   @override
-  Future<void> contextFree(int contextHandle) async {}
+  Future<void> contextFree(int contextHandle) async {
+    // The llama.cpp worker frees the context only after synthesis ends.
+    if (contextFreeAwaitsSynthesis && blockSynthesis) {
+      await _synthesisRelease.future;
+    }
+  }
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) async {}

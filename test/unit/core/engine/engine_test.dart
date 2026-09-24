@@ -449,6 +449,44 @@ class LimitReportingMockBackend extends NativeChatMockBackend
       _limits[generation];
 }
 
+/// Models the llama.cpp backend: a cancel reaches only a generation whose
+/// cancel token [generate] has already created.
+class TokenCancelBackend extends MockLlamaBackend {
+  int generateCalls = 0;
+  void Function()? _cancelActive;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    generateCalls += 1;
+    var cancelled = false;
+    _cancelActive = () => cancelled = true;
+    Stream<List<int>> chunks() async* {
+      try {
+        for (final chunk in const <String>['one ', 'two ', 'three']) {
+          await Future<void>.delayed(Duration.zero);
+          if (cancelled) return;
+          yield utf8.encode(chunk);
+        }
+      } finally {
+        _cancelActive = null;
+      }
+    }
+
+    return chunks();
+  }
+
+  @override
+  void cancelGeneration() {
+    super.cancelGeneration();
+    _cancelActive?.call();
+  }
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -3222,6 +3260,106 @@ void main() {
     test('cancelGeneration', () {
       engine.cancelGeneration();
       // Should not throw
+    });
+
+    group('cancelGeneration before the backend starts', () {
+      late TokenCancelBackend tokenBackend;
+      late LlamaEngine tokenEngine;
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'hello',
+      );
+
+      setUp(() async {
+        tokenBackend = TokenCancelBackend();
+        tokenEngine = LlamaEngine(tokenBackend);
+        await tokenEngine.loadModel('qwen-test.gguf');
+      });
+
+      tearDown(() => tokenEngine.dispose());
+
+      Future<String> collect(Stream<String> stream, {bool cancel = false}) {
+        final output = StringBuffer();
+        final done = Completer<String>();
+        stream.listen(
+          output.write,
+          onError: done.completeError,
+          onDone: () => done.complete(output.toString()),
+        );
+        if (cancel) tokenEngine.cancelGeneration();
+        return done.future;
+      }
+
+      Stream<String> content(Stream<LlamaCompletionChunk> chunks) => chunks
+          .where((chunk) => chunk.choices.isNotEmpty)
+          .map((chunk) => chunk.choices.first.delta.content ?? '');
+
+      test('generate honours a cancel issued right after listen', () async {
+        final output = await collect(
+          tokenEngine.generate('hello'),
+          cancel: true,
+        );
+
+        expect(output, isEmpty);
+        expect(tokenBackend.generateCalls, 0);
+      });
+
+      test('create honours a cancel issued right after listen', () async {
+        final output = await collect(
+          content(tokenEngine.create(const [user])),
+          cancel: true,
+        );
+
+        expect(output, isEmpty);
+        expect(tokenBackend.generateCalls, 0);
+      });
+
+      test('native chat create honours a cancel right after listen', () async {
+        final nativeBackend = NativeChatMockBackend();
+        final nativeEngine = LlamaEngine(nativeBackend);
+        addTearDown(nativeEngine.dispose);
+        await nativeEngine.loadModel('gemma.litertlm');
+
+        final chunks = nativeEngine.create(const [user]).toList();
+        nativeEngine.cancelGeneration();
+        final output = await content(Stream.fromIterable(await chunks)).join();
+
+        expect(output, isEmpty);
+        expect(nativeBackend.nativeGenerateChatCalls, 0);
+      });
+
+      test('a cancel after completion leaves the next stream intact', () async {
+        expect(await collect(tokenEngine.generate('hello')), 'one two three');
+        tokenEngine.cancelGeneration();
+
+        expect(await collect(tokenEngine.generate('hello')), 'one two three');
+        expect(
+          await collect(content(tokenEngine.create(const [user]))),
+          'one two three',
+        );
+        expect(tokenBackend.generateCalls, 3);
+      });
+
+      test('a cancel before listen leaves the stream intact', () async {
+        final stream = tokenEngine.generate('hello');
+        tokenEngine.cancelGeneration();
+
+        expect(await collect(stream), 'one two three');
+        expect(tokenBackend.generateCalls, 1);
+      });
+
+      test('a cancel after the backend starts still reaches it', () async {
+        final output = StringBuffer();
+        final done = Completer<void>();
+        tokenEngine.generate('hello').listen((token) {
+          output.write(token);
+          tokenEngine.cancelGeneration();
+        }, onDone: done.complete);
+        await done.future;
+
+        expect(output.toString(), 'one ');
+        expect(tokenBackend.generateCalls, 1);
+      });
     });
 
     test('getTokenCount', () async {
