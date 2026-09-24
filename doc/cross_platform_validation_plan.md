@@ -554,7 +554,9 @@ The public path runs 14 quick chat cases; the control now runs twelve (load,
 hello/arithmetic, four history controls, reload, warmup and three measured
 generations). The additional controls compare canonical system/history seeding,
 the observed public system JSON, history without system content, and a combined
-prompt; all retain the exact `cedar17` oracle and per-generation NPU proof.
+prompt; all use the exact `K7Q2` history oracle and per-generation NPU proof.
+The earlier `cedar17` oracle failed on the int4 artifact itself
+([#513](https://github.com/leehack/llamadart/issues/513)).
 N01/N03/N04/N06
 are covered to this bounded scope. N02's additional Unicode generation fixture,
 the compatible CPU Gemma control, and aggregate matching of the reference/public
