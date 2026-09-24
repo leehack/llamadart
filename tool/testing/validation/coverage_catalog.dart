@@ -60,14 +60,14 @@ List<Map<String, Object?>> validationCoverage() {
         backend,
         'laya-q8_0',
         'decision',
-        profile: ['cpu', 'metal', 'vulkan', 'cuda'].contains(backend)
+        profile: ['cpu', 'metal', 'vulkan', 'cuda', 'webgpu'].contains(backend)
             ? 'decision-gguf-$backend'
             : null,
+        status: backend == 'wasm' ? 'UNSUPPORTED' : 'NOT_RUN',
         reason: backend == 'wasm'
-            ? 'The Web host runs decision-gguf-cpu on WASM CPU; requires '
-                  'execution evidence.'
-            : backend == 'webgpu'
-            ? 'No Web GPU decision profile.'
+            ? 'Q8_0 on the WASM CPU is outside the Laya tolerances '
+                  '(doc/decision_engine.md#web-check); the Web host runs '
+                  'decision profiles only on WebGPU.'
             : 'Requires exact-artifact and platform execution evidence.',
       );
     }

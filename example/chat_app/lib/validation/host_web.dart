@@ -38,6 +38,7 @@ class _WebHost implements ValidationHost {
         'Native LiteRT fixtures are not browser bundles. Supply a separately qualified Web profile.',
       );
     }
+    profile.requireRunnable(web: true);
     _decisionHead = null;
     _decisionConfig = null;
     final model = await _verify(profile.model);

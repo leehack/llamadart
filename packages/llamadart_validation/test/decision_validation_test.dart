@@ -264,13 +264,23 @@ const _decisionIds = [
 
 void main() {
   test('decision profiles select only load and decision cases', () {
-    for (final backend in ['cpu', 'metal', 'vulkan', 'cuda']) {
+    for (final backend in ['cpu', 'metal', 'vulkan', 'cuda', 'webgpu']) {
       final profile = _profile(backend);
       expect(profile.isDecision, isTrue);
       expect(profile.caseIds, ['C01.load', ..._decisionIds]);
       expect(profile.requiresAcceleratorProof, backend != 'cpu');
       expect(profile.loadParams.contextSize, 512);
       expect(profile.loadParams.numberOfThreadsBatch, 4);
+      expect(
+        profile.loadParams.gpuLayers,
+        backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
+      );
+      expect(
+        profile.loadParams.preferredBackend,
+        backend == 'webgpu'
+            ? GpuBackend.auto
+            : GpuBackend.values.byName(backend),
+      );
       final cases = (profile.catalog['cases'] as List).cast<Map>();
       for (final entry in cases) {
         final selected = profile.caseIds.contains(entry['id']);
@@ -603,6 +613,56 @@ void main() {
       )).report;
       expect(_statuses(report)['D01.head'], status, reason: '$device $backend');
     }
+  });
+
+  test('a WebGPU profile needs a WebGPU head', () async {
+    final webgpu = _profile('webgpu');
+    for (final (device, backend, status) in [
+      ('WebGPU', 'WebGPU (Prototype bridge)', 'PASS'),
+      ('CPU', 'WebGPU (Prototype bridge)', 'FAIL'),
+      ('WebGPU', 'WASM (Prototype bridge)', 'FAIL'),
+    ]) {
+      final report = (await _run(
+        FakeDecisionEngine(device: device, backendName: backend),
+        profile: webgpu,
+      )).report;
+      expect(_statuses(report)['D01.head'], status, reason: '$device $backend');
+    }
+  });
+
+  test('WebGPU profiles run only on the Web host, which runs no other '
+      'decision profile', () async {
+    Matcher rejects(String message) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        contains(message),
+      ),
+    );
+    final webgpu = _profile('webgpu');
+    expect(webgpu.requireRunnable, rejects('only in the Web'));
+    webgpu.requireRunnable(web: true);
+    for (final backend in ['cpu', 'metal', 'vulkan', 'cuda']) {
+      final profile = _profile(backend)..requireRunnable();
+      expect(
+        () => profile.requireRunnable(web: true),
+        rejects('decision_engine.md#web-check'),
+      );
+    }
+    ValidationProfile.fromJson(
+      jsonDecode(File('assets/profiles/tiny-gguf-cpu.json').readAsStringSync())
+          as Map<String, dynamic>,
+    ).requireRunnable(web: true);
+    expect(
+      () => PublicValidationEngine(
+        engineFactory: () => fail('created an engine'),
+      ).load('model.gguf', webgpu),
+      rejects('only in the Web'),
+    );
+    expect(
+      () => prepareModel(webgpu, Directory.systemTemp),
+      rejects('only in the Web'),
+    );
   });
 
   test('an unsupported model fails D01 and errors later cases', () async {

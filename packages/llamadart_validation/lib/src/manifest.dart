@@ -49,7 +49,7 @@ class ValidationProfile {
     }
     final validBackends = runtime == 'litert'
         ? ['cpu', 'gpu', 'npu', 'auto']
-        : GpuBackend.values.map((value) => value.name).toList();
+        : [...GpuBackend.values.map((value) => value.name), 'webgpu'];
     if (!validBackends.contains(backend)) {
       throw FormatException('Invalid $runtime backend: $backend');
     }
@@ -459,12 +459,29 @@ class ValidationProfile {
       !['cpu', 'auto', 'blas'].contains(backend);
 
   /// NPU candidates require the installed Android host to verify the kit first.
-  void requireRunnable({bool verifiedAndroidNpuHost = false}) {
+  /// `webgpu` profiles run only on the [web] host, which runs decision
+  /// profiles only on WebGPU.
+  void requireRunnable({
+    bool verifiedAndroidNpuHost = false,
+    bool web = false,
+  }) {
     if (backend == 'npu' && !verifiedAndroidNpuHost) {
       throw LlamaUnsupportedException(
         'NPU validation needs installed-app vendor packaging, SoC checks and '
         'per-generation execution proof. Use validation.dart npu-preflight '
         'to inspect the locked inputs without downloading or loading a model.',
+      );
+    }
+    if (backend == 'webgpu' && !web) {
+      throw LlamaUnsupportedException(
+        'The webgpu backend runs only in the Web validation host.',
+      );
+    }
+    if (web && isDecision && backend != 'webgpu') {
+      throw LlamaUnsupportedException(
+        'Web decision validation runs only on WebGPU: Q8_0 on the WASM CPU is '
+        'outside the Laya tolerances (doc/decision_engine.md#web-check). Use '
+        'decision-gguf-webgpu.',
       );
     }
   }
@@ -473,9 +490,11 @@ class ValidationProfile {
   ModelParams get loadParams => ModelParams(
     contextSize: contextSize,
     gpuLayers: backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
-    preferredBackend: runtime == 'gguf'
-        ? GpuBackend.values.byName(backend)
-        : GpuBackend.cpu,
+    preferredBackend: runtime != 'gguf'
+        ? GpuBackend.cpu
+        : backend == 'webgpu'
+        ? GpuBackend.auto
+        : GpuBackend.values.byName(backend),
     liteRtLmBackend: runtime == 'litert'
         ? LiteRtLmBackendPreference.values.byName(backend)
         : LiteRtLmBackendPreference.auto,

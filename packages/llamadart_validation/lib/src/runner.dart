@@ -70,7 +70,7 @@ class PublicValidationEngine
   @override
   Future<void> load(String location, ValidationProfile profile) async {
     requireValidationRuntimeEnvironment();
-    profile.requireRunnable(verifiedAndroidNpuHost: npu != null);
+    profile.requireRunnable(verifiedAndroidNpuHost: npu != null, web: isWeb);
     if (_disposed) {
       _engine = _engineFactory();
       _disposed = false;

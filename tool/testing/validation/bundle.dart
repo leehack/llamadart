@@ -101,6 +101,7 @@ Future<Directory> buildValidationBundle(
   requireExecutableValidationProfile(
     selectedProfile,
     supportsLocalModelPath: target == 'desktop',
+    web: target == 'web',
     verifiedAndroidKit:
         npu && target == 'android' && npuKit != null && model != null,
   );

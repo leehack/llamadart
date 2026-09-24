@@ -1288,11 +1288,11 @@ void main() {
     },
   );
   test(
-    'GCE accepts the CUDA decision profile and rejects its CPU twin',
+    'GCE accepts the CUDA decision profile and rejects its CPU and WebGPU twins',
     () async {
       final assets = Directory(p.join(bundle.path, 'assets/profiles'))
         ..createSync(recursive: true);
-      for (final backend in ['cpu', 'cuda']) {
+      for (final backend in ['cpu', 'cuda', 'webgpu']) {
         File(
           'packages/llamadart_validation/assets/profiles/decision-gguf-$backend.json',
         ).copySync(p.join(assets.path, 'decision-gguf-$backend.json'));
@@ -1314,6 +1314,16 @@ void main() {
             id: 'qa-two',
             target: 'gce-linux-cuda',
             profile: 'decision-gguf-cpu',
+          ),
+        ))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(
+        (await controller(provider).run(
+          plan(
+            id: 'qa-three',
+            target: 'gce-linux-cuda',
+            profile: 'decision-gguf-webgpu',
           ),
         ))['phase'],
         'PREFLIGHT_FAILED',

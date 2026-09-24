@@ -86,6 +86,7 @@ class _ValidationAppState extends State<ValidationApp> {
                                 'decision-gguf-metal',
                                 'decision-gguf-vulkan',
                                 'decision-gguf-cuda',
+                                'decision-gguf-webgpu',
                               ])
                       DropdownMenuItem(value: id, child: Text(id)),
                   ],
