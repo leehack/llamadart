@@ -11,9 +11,10 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
   with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
   touch devices. Plain-text paste continues to work normally.
-- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
-  transcribe a selected file or capture a foreground microphone recording,
-  then transcribe it after **Stop & transcribe**.
+- 🎙️ **Whole-file transcription**: Compatible GGUF ASR models, on native and
+  on Web with bridge assets `v0.1.30+`, can transcribe a selected file or
+  capture a foreground microphone recording, then transcribe it after
+  **Stop & transcribe**.
 - 📝 **Live dictation**: Native chat models, including generic audio-chat
   models, can use a separately installed LiteRT sidecar to show confirmed and
   pending English text while the user speaks, then place the final text in the
@@ -119,7 +120,12 @@ flutter test --run-skipped -t local-only \
      for up to five minutes; **Stop & transcribe** finalizes it, runs whole-file
      STT, and deletes the native file or revokes the browser blob.
      Capture is foreground-only and cancelling discards the temporary
-     recording. This Qwen path remains whole-file rather than live. For native chat
+     recording. Real-model checks cover only WAV input of at most 33 seconds.
+     On native macOS arm64 CPU, 297 seconds of audio filled a 4,096-token
+     context, the preset's size, and transcription completed with a truncated
+     transcript and no error
+     ([#636](https://github.com/leehack/llamadart/issues/636)).
+     This Qwen path remains whole-file rather than live. For native chat
      models, including generic audio-chat models, the composer can separately
      install a live-dictation model/tokenizer and expose **Live transcription**
      on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
@@ -159,6 +165,7 @@ flutter test --run-skipped -t local-only \
      supported. It remains hidden on Linux because the recorder plugin can
      report startup before its required external tools are ready; selected-file
      transcription still works there.
+   - The complete Qwen3-ASR model/projector, microphone, and final-transcript
      flow has passed on a physical Pixel using CPU inference and in the iOS
      Simulator. This is not yet physical-iPhone or Windows validation.
    - The native Gemma 4 E2B presets expose **Ask with voice** when either the
@@ -167,7 +174,7 @@ flutter test --run-skipped -t local-only \
      30 seconds; **Stop & ask** sends the encoded WAV bytes through normal
      multimodal chat and asks the model to answer the spoken request. This is not
      `SpeechToTextEngine`: it has no transcript, timestamp, confidence, or live
-     partial-text contract. Qwen3-ASR continues to use the separate five-minute
+     partial-text contract. Qwen3-ASR continues to use the separate
      **Stop & transcribe** flow, and takes precedence for models declared as
      ASR profiles.
    - The voice-question UI is code-supported on Android, iOS, macOS, and

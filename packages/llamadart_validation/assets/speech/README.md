@@ -17,10 +17,10 @@ reference or threshold to match the output of a failing run.
 The `stt` pack also builds four edge fixtures in process, so no extra audio is
 stored: digital silence, plus three derived from `jfk.wav` — a truncated RIFF
 whose header declares more audio than the bytes carry, a stereo 44.1 kHz
-re-encode, and a 33-second concatenation crossing the projector's 30-second
-`audio_chunk_len`. Their required outcomes are measured behavior, not
-aspiration, except that the truncated RIFF may equally be rejected with a typed
-`LlamaAudioFormatException` should decoding start validating the header.
+re-encode, and a 33-second concatenation. Their required outcomes are measured
+behavior, not aspiration, except that the truncated RIFF may equally be
+rejected with a typed `LlamaAudioFormatException` should decoding start
+validating the header.
 `speech-results.json` records each generated fixture's SHA-256 under
 `edge_fixtures`, keyed by the same id as its check.
 

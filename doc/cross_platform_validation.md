@@ -1013,7 +1013,12 @@ had not seen the task finish when it cancelled; it cannot show that the
 generation had begun. Exceeding any budget fails the run; if resident memory
 cannot be sampled, the memory bound records `SKIP` with a reason, and that is
 the only check a passing run may leave unmeasured.
-GGUF STT additionally compares file and bytes inputs.
+GGUF STT additionally compares file and bytes inputs and runs four generated
+edge fixtures: digital silence must fail with the typed empty-transcript
+`LlamaSpeechException`, a truncated RIFF must yield an inexact non-empty
+transcript or `LlamaAudioFormatException`, a 44.1 kHz stereo copy of
+`jfk.wav` must yield the reference, and three concatenated copies (33 s) must
+yield it three times.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the

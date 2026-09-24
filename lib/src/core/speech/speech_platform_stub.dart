@@ -13,7 +13,7 @@ bool get speechToTextSupportsFileInput => true;
 /// Whether byte inputs require explicit encoding metadata on this platform.
 bool get speechToTextRequiresEncodedAudioFormat => false;
 
-/// Encoded formats validated for prompt-adapted speech input.
+/// Encoded formats accepted for prompt-adapted speech input.
 Set<String> get speechToTextEncodedAudioFormats => const <String>{
   'wav',
   'mp3',
