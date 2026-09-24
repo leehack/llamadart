@@ -45,10 +45,11 @@ class NativeLlamaBackend
   int _lifecycleEpoch = 0;
   final LlamaWorkerEntrypoint _workerEntrypoint;
   final Duration _workerStartupTimeout;
-  final Allocator _textToSpeechCancelFlagAllocator;
-  Pointer<Int8>? _activeCancelToken;
+  final Allocator _cancelFlagAllocator;
+  _NativeCancelFlag? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
+  _QueuedGeneration? _queuedGeneration;
   bool _textToSpeechActive = false;
   bool _textToSpeechCancelRequested = false;
   bool _textToSpeechRequestSent = false;
@@ -61,16 +62,16 @@ class NativeLlamaBackend
 
   /// Creates a new [NativeLlamaBackend] and initializes its ports.
   ///
-  /// [textToSpeechCancelFlagAllocator] allocates and frees the one-byte cancel
-  /// flag of each text-to-speech synthesis.
+  /// [cancelFlagAllocator] allocates and frees the one-byte cancel flag of
+  /// each generation and text-to-speech synthesis.
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
     Duration workerStartupTimeout = const Duration(seconds: 30),
-    Allocator textToSpeechCancelFlagAllocator = malloc,
+    Allocator cancelFlagAllocator = malloc,
   }) : _workerEntrypoint = workerEntrypoint,
        _workerStartupTimeout = workerStartupTimeout,
-       _textToSpeechCancelFlagAllocator = textToSpeechCancelFlagAllocator {
+       _cancelFlagAllocator = cancelFlagAllocator {
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -268,7 +269,8 @@ class NativeLlamaBackend
 
   @override
   void cancelGeneration() {
-    _activeCancelToken?.value = 1;
+    _activeCancelToken?.raise();
+    _queuedGeneration?.close();
   }
 
   @override
@@ -387,17 +389,80 @@ class NativeLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    if (_activeCancelToken != null || _activeGenerationCleanup != null) {
+    final runningToken = _activeCancelToken;
+    if (_queuedGeneration != null ||
+        (runningToken != null && !runningToken.isRaised)) {
       return Stream<List<int>>.error(
-        StateError('llama.cpp generation is already in progress.'),
+        LlamaStateException(
+          'llama.cpp generation is already in progress. Cancel it or wait '
+          'for its stream to end before starting another.',
+        ),
       );
     }
 
     late final StreamController<List<int>> controller;
+    void Function() cancel = () {};
+    controller = StreamController<List<int>>(onCancel: () => cancel());
+    final stream = controller.stream;
+
+    void start() {
+      cancel = _sendGeneration(
+        controller,
+        stream,
+        contextHandle,
+        prompt,
+        params,
+        parts,
+      );
+    }
+
+    if (runningToken == null) {
+      start();
+      return stream;
+    }
+
+    late final _QueuedGeneration queued;
+    void close() {
+      if (_queuedGeneration == queued) {
+        _queuedGeneration = null;
+      }
+      if (!controller.isClosed) {
+        unawaited(controller.close());
+      }
+    }
+
+    queued = _QueuedGeneration(start, close);
+    cancel = close;
+    _queuedGeneration = queued;
+    return stream;
+  }
+
+  void _startQueuedGeneration() {
+    final queued = _queuedGeneration;
+    if (queued == null) {
+      return;
+    }
+    _queuedGeneration = null;
+    if (_disposeStart != null) {
+      queued.close();
+    } else {
+      queued.start();
+    }
+  }
+
+  /// Sends a generation to the worker and returns the cancel callback of
+  /// [stream].
+  void Function() _sendGeneration(
+    StreamController<List<int>> controller,
+    Stream<List<int>> stream,
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    List<LlamaContentPart>? parts,
+  ) {
     final rp = ReceivePort();
 
-    final cancelToken = malloc<Int8>(1);
-    cancelToken.value = 0;
+    final cancelToken = _NativeCancelFlag(_cancelFlagAllocator);
     _activeCancelToken = cancelToken;
 
     // The cancel token is shared with the worker isolate, which polls it every
@@ -420,7 +485,7 @@ class NativeLlamaBackend
       }
       tokenFreed = true;
       rp.close();
-      malloc.free(cancelToken);
+      cancelToken.free();
       if (_activeCancelToken == cancelToken) {
         _activeCancelToken = null;
       }
@@ -444,17 +509,7 @@ class NativeLlamaBackend
       }
     }
 
-    controller = StreamController<List<int>>(
-      onCancel: () {
-        cancelGeneration();
-        // Close the Dart side immediately, but keep the response port open and
-        // the native token alive so the worker can observe the cancel flag and
-        // emit its terminal response, at which point freeToken() runs.
-        detachAndClose();
-      },
-    );
     _activeGenerationCleanup = detachAndClose;
-    final stream = controller.stream;
 
     _sendPort!.send(
       GenerateRequest(
@@ -479,16 +534,24 @@ class NativeLlamaBackend
         }
         detachAndClose();
         freeToken();
+        _startQueuedGeneration();
       } else if (msg is ErrorResponse) {
         if (!controller.isClosed) {
           controller.addError(_workerError(msg));
         }
         detachAndClose();
         freeToken();
+        _startQueuedGeneration();
       }
     });
 
-    return stream;
+    return () {
+      // Close the Dart side immediately, but keep the response port open and
+      // the native token alive so the worker can observe the cancel flag and
+      // emit its terminal response, at which point freeToken() runs.
+      cancelToken.raise();
+      detachAndClose();
+    };
   }
 
   @override
@@ -796,7 +859,7 @@ class NativeLlamaBackend
     // terminal response normally frees the token first. After killing the
     // worker (below) the token is provably unread, so freeing it there is safe
     // and idempotent (guarded by the freeToken tokenFreed flag).
-    _activeCancelToken?.value = 1;
+    cancelGeneration();
     _activeGenerationCleanup?.call();
     cancelTextToSpeech();
 
@@ -814,6 +877,7 @@ class NativeLlamaBackend
     _workerLogPort = null;
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
+    _queuedGeneration?.close();
     textToSpeechCancelFlag?.free();
     _activeCancelToken = null;
     _activeGenerationCleanup = null;
@@ -910,7 +974,7 @@ class NativeLlamaBackend
     _textToSpeechActive = true;
     _textToSpeechCancelRequested = false;
     _textToSpeechRequestSent = false;
-    final cancelFlag = _NativeCancelFlag(_textToSpeechCancelFlagAllocator);
+    final cancelFlag = _NativeCancelFlag(_cancelFlagAllocator);
     _textToSpeechCancelFlag = cancelFlag;
     try {
       await _ensureIsolate();
@@ -1131,9 +1195,9 @@ class NativeLlamaBackend
 /// code while a text-to-speech step runs.
 ///
 /// The backend frees it after the worker's terminal response for the request
-/// that carries it, after the worker acknowledges a dispose that began after
-/// the flag was allocated, or when that request was never sent; never on
-/// cancel or on a timer.
+/// that carries it, after the worker that received that request acknowledges
+/// a dispose, or when that request was never sent; never on cancel or on a
+/// timer.
 final class _NativeCancelFlag {
   final Allocator _allocator;
   Pointer<Int8>? _pointer;
@@ -1143,6 +1207,9 @@ final class _NativeCancelFlag {
 
   /// The flag's native address.
   int get address => _pointer!.address;
+
+  /// Whether the flag is raised; false once it is freed.
+  bool get isRaised => _pointer?.value == 1;
 
   /// Raises the flag unless it was freed.
   void raise() => _pointer?.value = 1;
@@ -1156,4 +1223,16 @@ final class _NativeCancelFlag {
     _pointer = null;
     _allocator.free(pointer);
   }
+}
+
+/// A generation waiting for the worker to stop reading the cancel token of a
+/// cancelled run.
+final class _QueuedGeneration {
+  /// Sends the generation to the worker.
+  final void Function() start;
+
+  /// Ends the generation's stream without output.
+  final void Function() close;
+
+  _QueuedGeneration(this.start, this.close);
 }
