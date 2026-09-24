@@ -48,6 +48,14 @@ class FakeEngine implements ValidationEngine {
   String? featureFault;
   bool toolsSeen = false;
   var cleanupFails = false;
+  String? earlyFault;
+  num earlyCancelMs = 1;
+  bool _earlyCancelSeen = false;
+  bool _grammarSeen = false;
+  String? overlapFault;
+  final overlapCalls = <bool>[];
+  String? grammarFault;
+  String? requiredFault;
   @override
   Future<void> load(String location, ValidationProfile profile) async {
     if (location.endsWith('.missing')) {
@@ -101,13 +109,78 @@ class FakeEngine implements ValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
   }) async {
     generated++;
+    if (grammar != null) {
+      _grammarSeen = true;
+      final fixture = profile.fixtures['invalid_grammar'] as Map;
+      switch (grammarFault) {
+        case 'accepted':
+          break;
+        case 'wrong_type':
+          throw LlamaStateException(fixture['native_message'] as String);
+        case 'wrong_message':
+          throw LlamaInferenceException('Generation failed', 'other failure');
+        default:
+          throw isWeb
+              ? LlamaInferenceException(
+                  'Generation failed',
+                  'Failed to start generation: Failed to initialize sampler '
+                      'chain (invalid grammar): unexpected end of input',
+                )
+              : LlamaInferenceException(fixture['native_message'] as String);
+      }
+    }
+    if (requiredFault != null && toolChoice == ToolChoice.required) {
+      throw LlamaUnsupportedException(
+        requiredFault == 'documented'
+            ? 'ToolChoice.required for Qwen3-Coder XML tool calling needs a '
+                  'lazy tool-call grammar, but the active backend applies '
+                  'grammars from the first token (for example, WebGPU).'
+            : 'ToolChoice.required is unsupported',
+      );
+    }
+    if (cancelOnListen) {
+      _earlyCancelSeen = true;
+      final output = earlyFault == 'output';
+      return {
+        'content': output ? 'hello' : '',
+        'thinking': '',
+        'chunks': output ? 1 : 0,
+        'finish_reasons': raw ? [] : ['stop'],
+        'tool_call_deltas': [],
+        'stream_completed': true,
+        'completion_order_valid': true,
+        'cancel_requested': true,
+        'cancel_on_listen': true,
+        'chunks_before_cancel': earlyFault == 'late_cancel' ? 1 : 0,
+        'cancel_to_done_ms': earlyCancelMs,
+        'metrics': {'native_decode_tokens': output ? 8 : null},
+      };
+    }
+    if ((_earlyCancelSeen && earlyFault == 'lingering') ||
+        (_grammarSeen && grammarFault == 'recovery')) {
+      _grammarSeen = false;
+      _earlyCancelSeen = false;
+      return {
+        'content': '',
+        'thinking': '',
+        'chunks': 0,
+        'finish_reasons': raw ? [] : ['stop'],
+        'tool_call_deltas': [],
+        'stream_completed': true,
+        'completion_order_valid': true,
+        'cancel_requested': false,
+        'metrics': {'native_decode_tokens': null},
+      };
+    }
     if (featureFault == 'tool_followup_error' &&
         prompt.contains('temperature_celsius from the tool result')) {
       throw StateError('synthetic tool followup failure');
@@ -194,8 +267,7 @@ class FakeEngine implements ValidationEngine {
                 'function': {'name': 'get_weather'},
               },
             ]
-          : tools != null &&
-                (toolChoice != ToolChoice.none || featureFault == 'tool_none')
+          : _callsTool(profile, prompt, tools, toolChoice)
           ? [
               {
                 'index': featureFault == 'tool_index' ? 1 : 0,
@@ -214,7 +286,7 @@ class FakeEngine implements ValidationEngine {
               {'index': 0},
             ]
           : [],
-      'finish_reasons': tools != null && toolChoice != ToolChoice.none
+      'finish_reasons': _callsTool(profile, prompt, tools, toolChoice)
           ? [featureFault == 'tool_finish' ? 'length' : 'tool_calls']
           : raw
           ? []
@@ -231,6 +303,8 @@ class FakeEngine implements ValidationEngine {
             ],
       'prompt': prompt,
       'cancel_requested': cancelAfterFirst,
+      'cancel_on_listen': false,
+      'chunks_before_cancel': cancelAfterFirst ? 1 : null,
       'cancel_to_done_ms': cancelAfterFirst ? 1 : null,
       'metrics': {
         'native_decode_tokens':
@@ -243,6 +317,116 @@ class FakeEngine implements ValidationEngine {
       },
     };
   }
+
+  bool _callsTool(
+    ValidationProfile profile,
+    String prompt,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+  ) =>
+      tools != null &&
+      (prompt == profile.fixtureText('tools', 'prompt')
+          ? toolChoice != ToolChoice.none || featureFault == 'tool_none'
+          : featureFault == 'auto_text_tool');
+
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
+  }) async {
+    generated++;
+    overlapCalls.add(cancelFirst);
+    final fault = overlapFault;
+    Map<String, dynamic> completed(String content, num firstDelta, num ended) =>
+        {
+          'content': content,
+          'thinking': '',
+          'chunks': 2,
+          'finish_reasons': raw ? [] : ['stop'],
+          'tool_call_deltas': [],
+          'stream_completed': true,
+          'completion_order_valid': true,
+          'cancel_requested': false,
+          'timeline_ms': {'first_delta': firstDelta, 'ended': ended},
+        };
+    Map<String, dynamic> failed(String type, {required bool state}) => {
+      'error_type': type,
+      'state_exception': state,
+      'message': 'LlamaException: generation is already in progress',
+      'content': '',
+      'chunks': 0,
+      'stream_completed': false,
+    };
+    if (cancelFirst) {
+      return {
+        'first': completed('Once', 1, 3),
+        'second': fault == 'restart_error'
+            ? failed('LlamaInferenceException', state: false)
+            : fault == 'restart_empty'
+            ? completed('', 4, 5)
+            : completed('hello', fault == 'restart_interleave' ? 2 : 4, 5),
+        'cancel_first': true,
+        'second_issued': true,
+        'first_ended_before_second_issued': fault == 'restart_late',
+        'first_cancelled_before_second_issued': true,
+        'first_deltas_after_second_ended': 0,
+        'timeline_ms': {
+          'first_cancel': 1,
+          'second_issued': 1,
+          'second_ended': 5,
+          'first_ended': 3,
+        },
+      };
+    }
+    return {
+      'first': completed('Once upon', 1, fault == 'overlap_late' ? 1.5 : 4),
+      'second': fault == 'overlap_accepted'
+          ? completed('hello', 2, 3)
+          : failed(
+              fault == 'overlap_wrong_type'
+                  ? 'LlamaInferenceException'
+                  : 'LlamaStateException',
+              state: fault != 'overlap_wrong_type',
+            ),
+      'cancel_first': false,
+      'second_issued': true,
+      'first_ended_before_second_issued': false,
+      'first_cancelled_before_second_issued': false,
+      'first_deltas_after_second_ended': fault == 'overlap_stalled' ? 0 : 1,
+      'timeline_ms': {
+        'first_cancel': 3,
+        'second_issued': 1,
+        'second_ended': 2,
+        'first_ended': fault == 'overlap_late' ? 1.5 : 4,
+      },
+    };
+  }
+}
+
+/// Removes the records that catalog [version] did not derive for [selected],
+/// renumbering events as that catalog's runner would have written them.
+void dropUndeclared(
+  List<Map<String, dynamic>> events,
+  ValidationProfile selected,
+  int version,
+) {
+  final inventory = version == 0
+      ? selected.legacyCaseIds
+      : selected.caseIdsForCatalog(version);
+  events.removeWhere(
+    (e) =>
+        (e['type'] == 'case' || e['type'] == 'case_start') &&
+        !inventory.contains(e['case_id']),
+  );
+  var sequence = 0;
+  for (final event in events.skip(1)) {
+    event['sequence'] = sequence++;
+  }
+  events.first['case_ids'] = inventory;
 }
 
 Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
@@ -313,7 +497,12 @@ void main() {
       FakeEngine(),
       selected: ValidationProfile.fromJson(data),
     );
-    for (final id in ['C02.generate', 'C05.thinking', 'C07.tools']) {
+    for (final id in [
+      'C02.generate',
+      'C05.thinking',
+      'C07.tools',
+      'C07.tools.auto_text',
+    ]) {
       final record = result.report.cases.singleWhere((c) => c['case_id'] == id);
       expect(record['status'], 'NOT_RUN');
       expect(record['reason'], 'Requires public chat feature controls');
@@ -371,6 +560,7 @@ void main() {
     final selected = profile(release: true);
     final result = await run(FakeEngine(), selected: selected);
     final events = result.events;
+    dropUndeclared(events, selected, 3);
     events.first['catalog'] = selected.catalogForVersion(3);
     events.first['catalog_hash'] = jsonHash(events.first['catalog']);
     for (final record in events.where((e) => e['type'] == 'case')) {
@@ -519,6 +709,7 @@ void main() {
       expect(selected.caseIds, [
         ...profile().caseIds,
         'C07.tools',
+        'C07.tools.auto_text',
         'C10.stop',
         'C11.batching',
       ]);
@@ -661,6 +852,7 @@ void main() {
       final selected = focused(['streaming']);
       final result = await run(FakeEngine(), selected: selected);
       final events = result.events;
+      dropUndeclared(events, selected, 1);
       events.first['catalog'] = selected.catalogForVersion(1);
       events.first['catalog_hash'] = jsonHash(events.first['catalog']);
       final batching = events.singleWhere(
@@ -738,6 +930,7 @@ void main() {
       final selected = profile(release: true);
       final result = await run(FakeEngine(), selected: selected);
       final events = result.events;
+      dropUndeclared(events, selected, 2);
       events.first['catalog'] = selected.catalogForVersion(2);
       events.first['catalog_hash'] = jsonHash(events.first['catalog']);
       expect(
@@ -926,6 +1119,7 @@ void main() {
     'legacy quick journals remain readable without invented catalog metadata',
     () async {
       final result = await run(FakeEngine());
+      dropUndeclared(result.events, profile(), 0);
       result.events.first
         ..['schema_version'] = 1
         ..remove('catalog')
@@ -1054,7 +1248,7 @@ void main() {
           engine,
           selected: ValidationProfile.fromJson(data),
         );
-        expect(result.report.cases.length, native ? 12 : 17);
+        expect(result.report.cases.length, native ? 12 : 18);
         expect(result.report.assertionsPassed, true);
         final histories = engine.requests
             .where((r) => r['history'] != null)
@@ -1848,6 +2042,312 @@ void main() {
     expect(result.report.toCsv(), isNot(contains('warmup')));
     expect(result.report.toJUnit(), contains('&lt;script&gt;'));
   });
+  ValidationProfile gguf([String id = 'chat-gguf-cpu']) =>
+      ValidationProfile.fromJson(
+        jsonDecode(File('assets/profiles/$id.json').readAsStringSync())
+            as Map<String, dynamic>,
+      );
+  FakeEngine ggufEngine() => FakeEngine()..backendName = 'CPU';
+  Map<String, dynamic> record(
+    ({ValidationReport report, List<Map<String, dynamic>> events}) result,
+    String id,
+  ) => result.report.cases.singleWhere((c) => c['case_id'] == id);
+
+  group('catalog 5 cancellation, restart, overlap and grammar cases', () {
+    test('GGUF quick core adds them; LiteRT omits the undefined contracts', () {
+      expect(gguf('tiny-gguf-cpu').caseIds, [
+        'C01.load',
+        'C02.unicode',
+        'C03.raw',
+        'C08.cancel',
+        'C08.cancel.early',
+        'C08.cancel.restart',
+        'C08.overlap',
+        'C09.reload',
+        'C10.limit',
+        'C12.grammar',
+        'C12.recovery',
+        'B01.warmup',
+        'B01.1',
+        'B01.2',
+        'B01.3',
+      ]);
+      final litert = profile();
+      expect(litert.caseIds.where(catalogFiveCaseIds.contains), [
+        'C08.cancel.early',
+      ]);
+      final omitted = {
+        for (final entry in (litert.catalog['cases'] as List).cast<Map>())
+          if (entry['selected'] == false) entry['id']: entry['omission_reason'],
+      };
+      expect(
+        omitted['C08.cancel.restart'],
+        'litert_restart_contract_undefined',
+      );
+      expect(omitted['C08.overlap'], 'litert_restart_contract_undefined');
+      expect(omitted['C12.grammar'], 'litert_grammar_unsupported');
+      expect(litert.caseIdsForCatalog(4), isNot(contains('C08.cancel.early')));
+      expect(
+        gguf().caseIdsForCatalog(4).where(catalogFiveCaseIds.contains),
+        isEmpty,
+      );
+    });
+
+    test('catalog 4 journals keep their inventory and C07 contract', () async {
+      final selected = gguf();
+      final current = await run(ggufEngine(), selected: selected);
+      expect(current.report.qualified, true);
+      final events = [
+        for (final event in current.events)
+          jsonDecode(jsonEncode(event)) as Map<String, dynamic>,
+      ];
+      dropUndeclared(events, selected, 4);
+      events.first['catalog'] = selected.catalogForVersion(4);
+      events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+      for (final event in events.where((e) => e['type'] == 'case')) {
+        final id = event['case_id'] as String;
+        event['case_version'] = validationCase(id, catalogVersion: 4).version;
+        event['fixture_hash'] = jsonHash(
+          selected.caseFixtures(id, catalogVersion: 4),
+        );
+      }
+      expect(
+        (events.first['catalog']['fixtures'] as Map).keys,
+        isNot(contains('invalid_grammar')),
+      );
+      expect(validationCase('C07.tools', catalogVersion: 4).version, 2);
+      expect(validationCase('C07.tools', catalogVersion: 4).fixtures, [
+        'tools',
+      ]);
+      final historical = ValidationReport.parse(
+        events.map(jsonEncode).join('\n'),
+      );
+      expect(historical.problems, isEmpty);
+      expect(
+        historical.cases.map((c) => c['case_id']),
+        isNot(contains('C08.cancel.early')),
+      );
+      events.insert(
+        events.length - 2,
+        current.events.singleWhere(
+          (e) => e['type'] == 'case' && e['case_id'] == 'C08.cancel.early',
+        ),
+      );
+      var sequence = 0;
+      for (final event in events.skip(1)) {
+        event['sequence'] = sequence++;
+      }
+      expect(
+        ValidationReport.parse(events.map(jsonEncode).join('\n')).problems,
+        contains('Unexpected case record: C08.cancel.early'),
+      );
+      final override = selected.toJson()
+        ..['fixtures'] = {
+          'invalid_grammar': {'grammar': 'root ::= x'},
+        };
+      expect(
+        () => ValidationProfile.fromJson(override).catalogForVersion(4),
+        throwsFormatException,
+      );
+    });
+
+    test(
+      'early cancel passes only for a stream that never produced output',
+      () async {
+        for (final selected in [profile(), gguf(), gguf('tiny-gguf-cpu')]) {
+          final engine = selected.runtime == 'gguf'
+              ? ggufEngine()
+              : FakeEngine();
+          final result = await run(engine, selected: selected);
+          final early = record(result, 'C08.cancel.early');
+          expect(early['status'], 'PASS', reason: selected.id);
+          expect(early['cancel_before_first_delta'], true);
+          expect((early['cancelled'] as Map)['content'], '');
+          expect((early['uncancelled_control'] as Map)['content'], isNotEmpty);
+        }
+        for (final entry in {
+          'output': 'FAIL',
+          'lingering': 'FAIL',
+          'late_cancel': 'NOT_RUN',
+        }.entries) {
+          final result = await run(
+            ggufEngine()..earlyFault = entry.key,
+            selected: gguf(),
+          );
+          expect(
+            record(result, 'C08.cancel.early')['status'],
+            entry.value,
+            reason: entry.key,
+          );
+          expect(result.report.qualified, false);
+        }
+      },
+    );
+
+    test('early cancel deadline is the cancel fixture deadline', () async {
+      expect((gguf().fixtures['cancel'] as Map)['deadline_ms'], 5000);
+      for (final entry in {5000: 'PASS', 5001: 'FAIL'}.entries) {
+        final result = await run(
+          ggufEngine()..earlyCancelMs = entry.key,
+          selected: gguf(),
+        );
+        expect(
+          record(result, 'C08.cancel.early')['status'],
+          entry.value,
+          reason: '${entry.key} ms',
+        );
+      }
+    });
+
+    test('restart after cancel needs the queued request to complete', () async {
+      final engine = ggufEngine();
+      final result = await run(engine, selected: gguf());
+      final restart = record(result, 'C08.cancel.restart');
+      expect(restart['status'], 'PASS');
+      expect(restart['first_cancelled_before_second_issued'], true);
+      expect(restart['first_ended_before_second_issued'], false);
+      expect(engine.overlapCalls, [true, false]);
+      for (final entry in {
+        'restart_error': 'FAIL',
+        'restart_empty': 'FAIL',
+        'restart_interleave': 'FAIL',
+        'restart_late': 'NOT_RUN',
+      }.entries) {
+        final failed = await run(
+          ggufEngine()..overlapFault = entry.key,
+          selected: gguf(),
+        );
+        expect(
+          record(failed, 'C08.cancel.restart')['status'],
+          entry.value,
+          reason: entry.key,
+        );
+        expect(failed.report.qualified, false);
+      }
+    });
+
+    test(
+      'overlap needs a typed rejection while the first keeps streaming',
+      () async {
+        final result = await run(ggufEngine(), selected: gguf());
+        final overlap = record(result, 'C08.overlap');
+        expect(overlap['status'], 'PASS');
+        expect((overlap['second'] as Map)['state_exception'], true);
+        expect(overlap['first_deltas_after_second_ended'], 1);
+        expect((overlap['recovery'] as Map)['content'], isNotEmpty);
+        for (final entry in {
+          'overlap_accepted': 'FAIL',
+          'overlap_wrong_type': 'FAIL',
+          'overlap_stalled': 'FAIL',
+          'overlap_late': 'NOT_RUN',
+        }.entries) {
+          final failed = await run(
+            ggufEngine()..overlapFault = entry.key,
+            selected: gguf(),
+          );
+          expect(
+            record(failed, 'C08.overlap')['status'],
+            entry.value,
+            reason: entry.key,
+          );
+        }
+      },
+    );
+
+    test('Web records restart and overlap as NOT_RUN', () async {
+      final engine = ggufEngine()..isWeb = true;
+      final result = await run(engine, selected: gguf());
+      for (final id in ['C08.cancel.restart', 'C08.overlap']) {
+        final web = record(result, id);
+        expect(web['status'], 'NOT_RUN');
+        expect(web['reason'], contains('Only native llama.cpp'));
+      }
+      expect(engine.overlapCalls, isEmpty);
+      expect(record(result, 'C08.cancel.early')['status'], 'PASS');
+    });
+
+    test(
+      'invalid grammar needs the backend-specific typed rejection',
+      () async {
+        for (final web in [false, true]) {
+          final result = await run(ggufEngine()..isWeb = web, selected: gguf());
+          final grammar = record(result, 'C12.grammar');
+          expect(grammar['status'], 'PASS', reason: 'web=$web');
+          expect((grammar['rejection'] as Map)['inference_exception'], true);
+          expect((grammar['recovery'] as Map)['content'], isNotEmpty);
+        }
+        for (final fault in [
+          'accepted',
+          'wrong_message',
+          'wrong_type',
+          'recovery',
+        ]) {
+          for (final web in [false, true]) {
+            final result = await run(
+              ggufEngine()
+                ..isWeb = web
+                ..grammarFault = fault,
+              selected: gguf(),
+            );
+            expect(
+              record(result, 'C12.grammar')['status'],
+              'FAIL',
+              reason: '$fault web=$web',
+            );
+          }
+        }
+      },
+    );
+
+    test(
+      'auto tool choice must answer a prompt that needs no tool in text',
+      () async {
+        final selected = gguf();
+        expect(
+          selected.caseIds,
+          containsAll(['C07.tools', 'C07.tools.auto_text']),
+        );
+        final passing = await run(ggufEngine(), selected: selected);
+        expect(record(passing, 'C07.tools.auto_text')['status'], 'PASS');
+        expect(record(passing, 'C07.tools')['status'], 'PASS');
+        final forced = await run(
+          ggufEngine()..featureFault = 'auto_text_tool',
+          selected: selected,
+        );
+        expect(record(forced, 'C07.tools.auto_text')['status'], 'FAIL');
+      },
+    );
+
+    test(
+      'only Web accepts the documented lazy required-tool rejection',
+      () async {
+        final web = await run(
+          ggufEngine()
+            ..isWeb = true
+            ..requiredFault = 'documented',
+          selected: gguf(),
+        );
+        final tools = record(web, 'C07.tools');
+        expect(tools['status'], 'PASS');
+        expect(tools['required_documented_web_rejection'], true);
+        for (final entry in {
+          'native documented': (false, 'documented'),
+          'web undocumented': (true, 'other'),
+        }.entries) {
+          final result = await run(
+            ggufEngine()
+              ..isWeb = entry.value.$1
+              ..requiredFault = entry.value.$2,
+            selected: gguf(),
+          );
+          final failed = record(result, 'C07.tools');
+          expect(failed['status'], 'ERROR', reason: entry.key);
+          expect(failed['error_type'], 'LlamaUnsupportedException');
+        }
+      },
+    );
+  });
+
   test('diagnostics redact bearer tokens and signed URLs', () {
     expect(
       redactDiagnostic('Bearer secret https://x.test/a?token=secret'),
