@@ -77,6 +77,17 @@
 - On Web, a replacement bridge worker reloads the current model before its next
   request
   ([llama-web-bridge#126](https://github.com/leehack/llama-web-bridge/pull/126)).
+- On Web, grammar-constrained generation no longer aborts the bridge runtime
+  when top-k or top-p keeps only tokens the grammar rejects; it resamples as
+  llama.cpp does, and fails with `Grammar rejected every candidate token` only
+  when the grammar cannot continue
+  ([llama-web-bridge#118](https://github.com/leehack/llama-web-bridge/pull/118)).
+- On Web, an ordinary error from a healthy bridge worker, such as a prompt that
+  overflows the context or empty embedding input, is now rethrown with the
+  worker kept, instead of moving the session to the main thread for good and
+  re-running the request
+  ([llama-web-bridge#119](https://github.com/leehack/llama-web-bridge/pull/119),
+  [llama-web-bridge#120](https://github.com/leehack/llama-web-bridge/pull/120)).
 - Extend the GGUF speech-to-text validation pack with four synthetic edge
   fixtures built in-process, so no extra audio is stored: generated digital
   silence, plus a truncated RIFF, a stereo 44.1 kHz re-encode and a 33-second
