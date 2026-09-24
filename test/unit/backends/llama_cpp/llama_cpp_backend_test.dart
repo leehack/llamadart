@@ -255,89 +255,250 @@ void main() {
       },
     );
 
-    test(
-      'canceling a generation subscription triggers backend cancelation',
-      () async {
-        final subscription = backend
+    group('generation cancel flags', () {
+      late _RecordingAllocator allocator;
+      late NativeLlamaBackend flagBackend;
+
+      setUp(() {
+        allocator = _RecordingAllocator();
+        flagBackend = NativeLlamaBackend(
+          initialSendPort: harness.sendPort,
+          cancelFlagAllocator: allocator,
+        );
+        addTearDown(allocator.release);
+        addTearDown(flagBackend.dispose);
+      });
+
+      List<GenerateRequest> generateRequests() =>
+          harness.received.whereType<GenerateRequest>().toList();
+
+      int flagValue(GenerateRequest request) =>
+          Pointer<Int8>.fromAddress(request.cancelTokenAddress).value;
+
+      Future<GenerateRequest> startPending() async {
+        flagBackend
             .generate(1, 'pending', const GenerationParams())
             .listen((_) {});
-
         await Future<void>.delayed(Duration.zero);
+        return generateRequests().last;
+      }
+
+      test('cancelling a subscription raises only its own flag', () async {
+        final subscription = flagBackend
+            .generate(1, 'pending', const GenerationParams())
+            .listen((_) {});
+        await Future<void>.delayed(Duration.zero);
+        final request = generateRequests().single;
+        expect(flagValue(request), 0);
+
         await subscription.cancel();
 
-        expect(backend.cancelGenerationCalled, isTrue);
-      },
-    );
-
-    test(
-      'cancel defers token free until the terminal worker response',
-      () async {
-        final subscription = backend
-            .generate(1, 'pending', const GenerationParams())
-            .listen((_) {});
+        expect(flagValue(request), 1);
+        expect(allocator.freed, isEmpty);
+        request.sendPort.send(DoneResponse());
         await Future<void>.delayed(Duration.zero);
+        expect(allocator.freed, [request.cancelTokenAddress]);
+      });
 
-        final generateRequest = harness.received
-            .whereType<GenerateRequest>()
-            .last;
+      test('a finished generation keeps its freed flag untouched', () async {
+        await flagBackend.generate(1, 'ok', const GenerationParams()).toList();
+        final request = generateRequests().single;
 
-        // Cancelling closes the Dart side but must NOT free the shared cancel
-        // token yet, because the worker may still be polling it.
-        await subscription.cancel();
-        expect(backend.cancelGenerationCalled, isTrue);
+        expect(allocator.freed, [request.cancelTokenAddress]);
+        expect(flagValue(request), 0);
+      });
 
-        // The worker observes the cancel flag and emits its terminal response,
-        // which is when the token is finally freed. A double free here would
-        // crash the VM.
-        generateRequest.sendPort.send(DoneResponse());
-        await Future<void>.delayed(Duration.zero);
-
-        // The backend remains healthy: a subsequent generation still streams.
-        final chunks = await backend
-            .generate(1, 'ok', const GenerationParams())
-            .toList();
-        expect(chunks, <List<int>>[
-          <int>[65],
-          <int>[66],
-        ]);
-      },
-    );
-
-    test(
-      'rejects overlapping generations until the active worker response ends',
-      () async {
-        final subscription = backend
-            .generate(1, 'pending', const GenerationParams())
-            .listen((_) {});
-        await Future<void>.delayed(Duration.zero);
+      test('rejects a generation that overlaps an uncancelled one', () async {
+        await startPending();
 
         await expectLater(
-          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
-          throwsA(isA<StateError>()),
+          flagBackend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('already in progress'),
+            ),
+          ),
         );
+        expect(generateRequests(), hasLength(1));
+      });
 
-        final generateRequest = harness.received
-            .whereType<GenerateRequest>()
-            .last;
-        await subscription.cancel();
+      for (final cancelled in const <String>[
+        'subscription',
+        'cancelGeneration',
+      ]) {
+        test('a generation after a $cancelled cancel starts once the cancelled '
+            'run ends', () async {
+          final subscription = flagBackend
+              .generate(1, 'pending', const GenerationParams())
+              .listen((_) {});
+          await Future<void>.delayed(Duration.zero);
+          final first = generateRequests().single;
+          if (cancelled == 'subscription') {
+            await subscription.cancel();
+          } else {
+            flagBackend.cancelGeneration();
+          }
 
-        await expectLater(
-          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
-          throwsA(isA<StateError>()),
-        );
+          final chunks = <List<int>>[];
+          final next = flagBackend
+              .generate(1, 'ok', const GenerationParams())
+              .listen(chunks.add)
+              .asFuture<void>();
+          await Future<void>.delayed(Duration.zero);
+          if (cancelled == 'cancelGeneration') {
+            await subscription.cancel();
+          }
+          expect(generateRequests(), hasLength(1));
 
-        generateRequest.sendPort.send(DoneResponse());
+          first.sendPort.send(DoneResponse());
+          await next;
+
+          final second = generateRequests().last;
+          expect(generateRequests(), hasLength(2));
+          expect(second.cancelTokenAddress, isNot(first.cancelTokenAddress));
+          expect(chunks, <List<int>>[
+            <int>[65],
+            <int>[66],
+          ]);
+          expect(allocator.freed, [
+            first.cancelTokenAddress,
+            second.cancelTokenAddress,
+          ]);
+          expect(flagValue(second), 0);
+        });
+      }
+
+      test(
+        'a worker error on the cancelled run starts the queued one',
+        () async {
+          final firstDone = flagBackend
+              .generate(1, 'pending', const GenerationParams())
+              .drain<void>();
+          await Future<void>.delayed(Duration.zero);
+          final first = generateRequests().single;
+          flagBackend.cancelGeneration();
+          final next = flagBackend
+              .generate(1, 'ok', const GenerationParams())
+              .toList();
+
+          first.sendPort.send(ErrorResponse('decode failed'));
+
+          await expectLater(firstDone, throwsA(isA<Exception>()));
+          expect(await next, hasLength(2));
+          expect(generateRequests(), hasLength(2));
+        },
+      );
+
+      test('cancelGeneration ends a queued generation unsent', () async {
+        final first = await startPending();
+        flagBackend.cancelGeneration();
+        final chunks = <List<int>>[];
+        final next = flagBackend
+            .generate(1, 'ok', const GenerationParams())
+            .listen(chunks.add)
+            .asFuture<void>();
+
+        flagBackend.cancelGeneration();
+        await next;
+        first.sendPort.send(DoneResponse());
         await Future<void>.delayed(Duration.zero);
 
-        final chunks = await backend
+        expect(chunks, isEmpty);
+        expect(generateRequests(), hasLength(1));
+      });
+
+      test('a cancelled queued subscription frees the queue slot', () async {
+        final first = await startPending();
+        flagBackend.cancelGeneration();
+        final dropped = flagBackend
+            .generate(1, 'ok', const GenerationParams())
+            .listen((_) {});
+        await dropped.cancel();
+
+        final next = flagBackend
             .generate(1, 'ok', const GenerationParams())
             .toList();
-        expect(chunks, <List<int>>[
-          <int>[65],
-          <int>[66],
-        ]);
-      },
-    );
+        first.sendPort.send(DoneResponse());
+
+        expect(await next, hasLength(2));
+        expect(generateRequests(), hasLength(2));
+      });
+
+      test('rejects a generation while another is queued', () async {
+        await startPending();
+        flagBackend.cancelGeneration();
+        flagBackend.generate(1, 'ok', const GenerationParams()).listen((_) {});
+
+        await expectLater(
+          flagBackend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(isA<LlamaStateException>()),
+        );
+      });
+
+      test('dispose ends a queued generation unsent', () async {
+        final first = await startPending();
+        flagBackend.cancelGeneration();
+        final chunks = <List<int>>[];
+        final next = flagBackend
+            .generate(1, 'ok', const GenerationParams())
+            .listen(chunks.add)
+            .asFuture<void>();
+
+        final disposed = flagBackend.dispose();
+        await next;
+        first.sendPort.send(DoneResponse());
+        await disposed;
+
+        expect(chunks, isEmpty);
+        expect(generateRequests(), hasLength(1));
+        expect(allocator.freed, [first.cancelTokenAddress]);
+      });
+
+      test(
+        'a generation queued during dispose ends unsent when the run ends',
+        () async {
+          harness.holdNextDispose = true;
+          final first = await startPending();
+          final disposed = flagBackend.dispose();
+          await harness.disposeReceived.future;
+          final chunks = <List<int>>[];
+          final next = flagBackend
+              .generate(1, 'ok', const GenerationParams())
+              .listen(chunks.add)
+              .asFuture<void>();
+
+          first.sendPort.send(DoneResponse());
+          await next;
+          harness.acknowledgeHeldDispose();
+          await disposed;
+
+          expect(chunks, isEmpty);
+          expect(generateRequests(), hasLength(1));
+        },
+      );
+
+      test(
+        'dispose ends a queued generation when the cancelled run never ends',
+        () async {
+          harness.holdNextDispose = true;
+          final first = await startPending();
+          final disposed = flagBackend.dispose();
+          await harness.disposeReceived.future;
+          final next = flagBackend
+              .generate(1, 'ok', const GenerationParams())
+              .toList();
+
+          harness.acknowledgeHeldDispose();
+          await disposed;
+
+          expect(await next, isEmpty);
+          expect(generateRequests(), hasLength(1));
+          expect(allocator.freed, [first.cancelTokenAddress]);
+        },
+      );
+    });
 
     test('diagnostic and multimodal endpoints route correctly', () async {
       expect(await backend.getBackendName(), 'CPU');
@@ -433,7 +594,7 @@ void main() {
         addTearDown(allocator.release);
         final flagBackend = NativeLlamaBackend(
           initialSendPort: harness.sendPort,
-          textToSpeechCancelFlagAllocator: allocator,
+          cancelFlagAllocator: allocator,
         );
         harness.holdTextToSpeech = true;
         final pending = flagBackend.synthesizeTextToSpeech(
@@ -469,7 +630,7 @@ void main() {
         addTearDown(allocator.release);
         final flagBackend = NativeLlamaBackend(
           initialSendPort: harness.sendPort,
-          textToSpeechCancelFlagAllocator: allocator,
+          cancelFlagAllocator: allocator,
         );
         harness.holdTextToSpeech = true;
         final pending = flagBackend.synthesizeTextToSpeech(
@@ -510,7 +671,7 @@ void main() {
       addTearDown(allocator.release);
       final flagBackend = NativeLlamaBackend(
         workerEntrypoint: _failingInitializationWorkerEntry,
-        textToSpeechCancelFlagAllocator: allocator,
+        cancelFlagAllocator: allocator,
       );
       addTearDown(flagBackend.dispose);
 
@@ -533,7 +694,7 @@ void main() {
         addTearDown(allocator.release);
         final flagBackend = NativeLlamaBackend(
           workerEntrypoint: _delayedTextToSpeechRejectingWorkerEntry,
-          textToSpeechCancelFlagAllocator: allocator,
+          cancelFlagAllocator: allocator,
         );
         addTearDown(flagBackend.dispose);
         final startup = flagBackend.modelLoad(
