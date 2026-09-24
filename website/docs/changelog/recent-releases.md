@@ -114,6 +114,13 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
+- Add GGUF speech validation pack checks: `tts` unloads and disposes the engine
+  during a synthesis and cancels one during its audio decode, and `stt` must
+  fail with `LlamaSpeechTranscriptTruncatedException` at `maxOutputTokens` and
+  at the context size. `stt` runs now execute 22 checks and `tts` runs 18
+  ([#628](https://github.com/leehack/llamadart/issues/628),
+  [#636](https://github.com/leehack/llamadart/issues/636),
+  [#322](https://github.com/leehack/llamadart/issues/322)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).

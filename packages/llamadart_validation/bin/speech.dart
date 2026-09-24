@@ -112,6 +112,8 @@ Future<void> main(List<String> args) async {
       adapter,
       checkBytes: pack == 'stt',
       edgeFixtures: edgeFixtures,
+      checkTranscriptLimits: pack == 'stt',
+      checkSynthesisInterrupts: pack == 'tts',
     );
     result.addAll({
       'edge_fixtures': [
@@ -144,6 +146,8 @@ Future<void> main(List<String> args) async {
         'stt_max_tokens': 512,
         'tts_seed': 1,
         'tts_max_frames': 384,
+        'stt_truncation_context_size': speechTruncationContextSize,
+        'tts_decode_cancel_frame_cap': speechDecodeCancelFrameCap,
         'tts_text': 'Hello from llamadart. The answer is forty two.',
         'language': 'English',
       },

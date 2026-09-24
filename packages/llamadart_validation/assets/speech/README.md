@@ -71,3 +71,34 @@ and Dart allocations together, what it counts is platform dependent, and it does
 not exist without `dart:io`. If any sample taken before `peak_memory_bound` is
 unavailable, that check records `SKIP` with a reason and
 `bounds.peak_resident_bytes.measured` is `false`; it never passes silently.
+
+## Interrupt and truncation checks
+
+The `tts` pack adds `unload_during_synthesis`, `dispose_during_synthesis` and
+`decode_cancel`; the `stt` pack adds `max_output_tokens_truncation` and
+`context_size_truncation`. Each asserts its precondition in its own row and
+records its budget there, not under `bounds`:
+
+- `unload_during_synthesis` and `dispose_during_synthesis` require a progress
+  event reporting a frame, and the task unfinished, before the call. The task
+  must then end cancelled with no final audio within
+  `speechCancelLatencyBudgetMs` of the call, and a synthesis after the reload
+  must pass.
+- `decode_cancel` times the audio decode of `speechDecodeCancelReferenceRuns`
+  uncancelled syntheses capped at `speechDecodeCancelFrameCap` frames, from
+  the progress event reporting the cap to the terminal state. Another capped
+  synthesis is cancelled `speechDecodeCancelLeadFraction` of the shorter
+  decode after that event, and must end within
+  `speechDecodeCancelRemainderBudget` of the decode time that reference had
+  left. The latest normal synthesis must exceed the cap. Because the runs are
+  separate, a decode that runs fast enough can pass without chunk-boundary
+  cancellation.
+- `max_output_tokens_truncation` sets `maxOutputTokens` to
+  `speechTruncationTokenFraction` of the reference's token count, rounded
+  down, and requires the latest complete transcript to tokenize to more.
+  `context_size_truncation` loads a `speechTruncationContextSize` context,
+  with `maxOutputTokens` no smaller, and sends the 33-second fixture. Both
+  must fail with `LlamaSpeechTranscriptTruncatedException` at that limit and a
+  partial transcript that is a strict word prefix of the expected one, its
+  last word possibly cut short, and the next recognition on the same engine
+  must reproduce the reference.

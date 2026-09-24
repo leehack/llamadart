@@ -1018,7 +1018,22 @@ edge fixtures: digital silence must fail with the typed empty-transcript
 `LlamaSpeechException`, a truncated RIFF must yield an inexact non-empty
 transcript or `LlamaAudioFormatException`, a 44.1 kHz stereo copy of
 `jfk.wav` must yield the reference, and three concatenated copies (33 s) must
-yield it three times.
+yield it three times. Two truncation checks follow: `jfk.wav` with
+`maxOutputTokens` at half the reference's token count, and the 33 s input on a
+512-token context, must each fail with
+`LlamaSpeechTranscriptTruncatedException` at that limit and a partial
+transcript that is a strict prefix of the expected one, and the next
+recognition on the same engine must pass.
+GGUF TTS adds three interrupt checks. `unload_during_synthesis` and
+`dispose_during_synthesis` call `unloadModel()` or `dispose()` once a progress
+event reports a frame; the task must end cancelled within the 500 ms budget,
+and a synthesis after the reload must pass. `decode_cancel` times the audio
+decode of two uncancelled 12-frame syntheses, cancels a third a quarter of the
+shorter decode time after its twelfth frame is reported, and must end within
+half the decode time that reference had left. It targets the chunk-boundary
+decode cancellation of native `v0.4.1-1`
+([#322](https://github.com/leehack/llamadart/issues/322)). A run executes 22
+checks for `stt`, 18 for `tts` and 15 for `litert-asr`.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the

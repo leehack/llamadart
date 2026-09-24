@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/speech/speech_engine_lease.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:llamadart_validation/src/process_memory.dart';
 import 'package:llamadart_validation/src/speech_edge_fixtures.dart';
@@ -275,6 +277,294 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
       framesGenerated: deltas.length,
       truncated: false,
     );
+  }
+}
+
+class FakeInterruptSpeech extends FakeSpeech
+    implements SpeechSynthesisInterruptAdapter {
+  Map<String, Object?> teardownReport = {};
+  Map<String, Object?> decodeReport = {};
+
+  static Map<String, Object?> passingDecode() => {
+    'frame_cap': speechDecodeCancelFrameCap,
+    'uncapped_frames': speechDecodeCancelFrameCap + 1,
+    'references': [
+      for (final decode in [500.0, 400.0])
+        {
+          'frames': speechDecodeCancelFrameCap,
+          'truncated': true,
+          'decode_ms': decode,
+        },
+    ],
+    'frames_before_cancel': speechDecodeCancelFrameCap,
+    'cancel_after_decode_start_ms': 100.0,
+    'cancel_in_flight': true,
+    'completion_state': 'cancelled',
+    'final_events': 0,
+    'cancel_latency_ms': 1.0,
+  };
+
+  @override
+  Future<Map<String, Object?>> executeTeardown({required bool dispose}) async {
+    calls.add(dispose ? 'dispose_synthesis' : 'unload_synthesis');
+    return {
+      'teardown': dispose ? 'dispose' : 'unload',
+      'in_flight': true,
+      'frames_before_teardown': 1,
+      'completion_state': 'cancelled',
+      'final_events': 0,
+      'teardown_latency_ms': 1.0,
+      'teardown_call_ms': 2.0,
+      'after_teardown': {'predicate_passed': true},
+      ...teardownReport,
+    };
+  }
+
+  @override
+  Future<Map<String, Object?>> executeDecodeCancel() async {
+    calls.add('decode_cancel');
+    return {...passingDecode(), ...decodeReport};
+  }
+}
+
+class FakeLimitSpeech extends FakeSpeech
+    implements SpeechTranscriptLimitAdapter {
+  final reports = <LlamaSpeechTranscriptLimit, Map<String, Object?>>{};
+
+  static Map<String, Object?> passingLimit(LlamaSpeechTranscriptLimit limit) =>
+      {
+        'max_output_tokens': limit == LlamaSpeechTranscriptLimit.maxOutputTokens
+            ? 11
+            : 512,
+        if (limit == LlamaSpeechTranscriptLimit.maxOutputTokens)
+          'transcript_tokens': 12,
+        if (limit == LlamaSpeechTranscriptLimit.contextSize)
+          'context_size': speechTruncationContextSize,
+        'reference': 'and so my fellow americans',
+        'reference_repeats': 1,
+        'completion_state': 'failed',
+        'truncated_limit': limit.name,
+        'partial_transcript': 'And so, my',
+        'after_truncation': {'predicate_passed': true},
+      };
+
+  @override
+  Future<Map<String, Object?>> executeTranscriptLimit(
+    LlamaSpeechTranscriptLimit limit,
+  ) async {
+    calls.add('limit:${limit.name}');
+    return {...passingLimit(limit), ...?reports[limit]};
+  }
+}
+
+class DelegatingSpeech extends FakeSpeech
+    implements SpeechSynthesisInterruptAdapter, SpeechTranscriptLimitAdapter {
+  DelegatingSpeech(this.inner);
+  final PublicSpeechValidationAdapter inner;
+
+  @override
+  Future<void> load() async {
+    await super.load();
+    await inner.load();
+  }
+
+  @override
+  Future<void> dispose() async {
+    await super.dispose();
+    await inner.dispose();
+  }
+
+  @override
+  Future<Map<String, Object?>> execute({
+    bool cancel = false,
+    bool cancelImmediately = false,
+    bool invalid = false,
+    bool bytesInput = false,
+  }) => cancel || cancelImmediately || invalid
+      ? super.execute(
+          cancel: cancel,
+          cancelImmediately: cancelImmediately,
+          invalid: invalid,
+        )
+      : inner.execute(bytesInput: bytesInput);
+
+  @override
+  Future<Map<String, Object?>> executeTeardown({required bool dispose}) =>
+      inner.executeTeardown(dispose: dispose);
+
+  @override
+  Future<Map<String, Object?>> executeDecodeCancel() =>
+      inner.executeDecodeCancel();
+
+  @override
+  Future<Map<String, Object?>> executeTranscriptLimit(
+    LlamaSpeechTranscriptLimit limit,
+  ) => inner.executeTranscriptLimit(limit);
+}
+
+class SynthesisSpeechEngine extends FakeSpeechEngine {
+  SynthesisSpeechEngine({
+    this.decodeHonoursCancel = true,
+    this.teardownCancels = true,
+  });
+  final bool decodeHonoursCancel;
+  final bool teardownCancels;
+  static const naturalFrames = 20;
+  static const frameDelay = Duration(milliseconds: 4);
+  static const decodeDelay = Duration(milliseconds: 600);
+  final teardowns = <String>[];
+  final requestedFrames = <int>[];
+  var _cancelled = false;
+  Completer<void>? _wake;
+
+  Future<void> _wait(Duration delay, {bool interruptible = true}) async {
+    if (!interruptible) return Future<void>.delayed(delay);
+    final wake = _wake = Completer<void>();
+    final timer = Timer(delay, () {
+      if (!wake.isCompleted) wake.complete();
+    });
+    await wake.future;
+    timer.cancel();
+  }
+
+  @override
+  void cancelTextToSpeechBackend() {
+    _cancelled = true;
+    final wake = _wake;
+    if (wake != null && !wake.isCompleted) wake.complete();
+  }
+
+  @override
+  Future<void> unloadModel() async {
+    teardowns.add('unload');
+    if (teardownCancels) SpeechEngineLease.cancelActiveTask(this);
+  }
+
+  @override
+  Future<void> dispose() async {
+    teardowns.add('dispose');
+    if (teardownCancels) SpeechEngineLease.cancelActiveTask(this);
+    disposals++;
+  }
+
+  @override
+  Future<BackendTextToSpeechCapabilities>
+  get backendTextToSpeechCapabilities async =>
+      const BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: 24000,
+        channelCount: 1,
+        supportsLanguage: true,
+        supportsCancellation: true,
+      );
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    _cancelled = false;
+    requestedFrames.add(request.maxFrames);
+    final frames = math.min(naturalFrames, request.maxFrames);
+    var generated = 0;
+    while (generated < frames && !_cancelled) {
+      await _wait(frameDelay);
+      if (_cancelled) break;
+      generated++;
+      onProgress?.call(
+        BackendTextToSpeechProgress(
+          phase: BackendTextToSpeechPhase.generating,
+          promptTokensRemaining: 0,
+          framesGenerated: generated,
+          truncated: false,
+        ),
+      );
+    }
+    if (!_cancelled) {
+      await _wait(decodeDelay, interruptible: decodeHonoursCancel);
+    }
+    return BackendTextToSpeechResult(
+      samples: Float32List.fromList([.25, -.25]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: generated,
+      truncated: naturalFrames > request.maxFrames,
+    );
+  }
+}
+
+const jfkReference =
+    'And so my fellow Americans ask not what your country can do for you ask '
+    'what you can do for your country';
+
+List<String> referenceWords(int repeats) =>
+    List.filled(repeats, jfkReference).join(' ').split(' ');
+
+class LimitedRecognitionEngine extends FakeSpeechEngine {
+  LimitedRecognitionEngine({required this.fixtureBytes, this.typed = true});
+  final int fixtureBytes;
+  final bool typed;
+  final contextSizes = <int>[];
+  final maxTokens = <int?>[];
+  var _contextSize = 0;
+
+  @override
+  Future<void> loadModel(
+    String path, {
+    ModelParams modelParams = const ModelParams(),
+  }) async {
+    loaded.add(path);
+    contextSizes.add(_contextSize = modelParams.contextSize);
+  }
+
+  @override
+  Future<int> getContextSize() async => _contextSize;
+
+  @override
+  Future<List<int>> tokenize(String text, {bool addSpecial = true}) async =>
+      List.filled(text.split(' ').length, 1);
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    generations++;
+    final audio = messages
+        .expand((message) => message.parts)
+        .whereType<LlamaAudioContent>()
+        .single;
+    audioParts.add(audio);
+    maxTokens.add(params!.maxTokens);
+    final repeats = (audio.bytes?.length ?? fixtureBytes) > fixtureBytes
+        ? 3
+        : 1;
+    final words = referenceWords(repeats);
+    final fits = repeats > 1 && _contextSize < 1024 ? 2 * words.length ~/ 3 : 0;
+    final limit = fits > 0 && fits < params.maxTokens ? fits : params.maxTokens;
+    for (final word in words.take(limit)) {
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      yield completionChunk('$word ');
+    }
+    if (typed && limit < words.length) {
+      throw LlamaSpeechTranscriptTruncatedException(
+        'Speech recognition reached a token limit.',
+        limit: limit == params.maxTokens
+            ? LlamaSpeechTranscriptLimit.maxOutputTokens
+            : LlamaSpeechTranscriptLimit.contextSize,
+        partialTranscript: words.take(limit).join(' '),
+      );
+    }
   }
 }
 
@@ -1399,4 +1689,494 @@ void main() {
       }
     },
   );
+
+  Map<String, Object?> rowOf(Map<String, Object?> result, String id) =>
+      (result['checks'] as List).cast<Map<String, Object?>>().singleWhere(
+        (row) => row['id'] == id,
+      );
+  const interruptIds = [
+    'unload_during_synthesis',
+    'dispose_during_synthesis',
+    'decode_cancel',
+  ];
+  const limitIds = ['max_output_tokens_truncation', 'context_size_truncation'];
+
+  test(
+    'interrupt and limit checks are opt-in and deliberately counted',
+    () async {
+      final tts = FakeInterruptSpeech();
+      final interrupted = await runSpeechValidation(
+        tts,
+        checkSynthesisInterrupts: true,
+        residentBytes: stableResidentBytes,
+      );
+      expect(interrupted['expected_checks'], speechLifecycleCheckCount + 3);
+      expect(interrupted['checks'], hasLength(speechLifecycleCheckCount + 3));
+      expect(interrupted['functional_pass'], true);
+      final ttsIds = [
+        for (final row in interrupted['checks'] as List) row['id'] as String,
+      ];
+      expect(
+        ttsIds.sublist(
+          ttsIds.indexOf('after_invalid') + 1,
+          ttsIds.indexOf('reload'),
+        ),
+        interruptIds,
+      );
+      expect(
+        tts.calls.sublist(
+          tts.calls.indexOf('unload_synthesis'),
+          tts.calls.indexOf('decode_cancel') + 1,
+        ),
+        ['unload_synthesis', 'dispose_synthesis', 'decode_cancel'],
+      );
+
+      final stt = FakeLimitSpeech();
+      final limited = await runSpeechValidation(
+        stt,
+        checkTranscriptLimits: true,
+        residentBytes: stableResidentBytes,
+      );
+      expect(limited['expected_checks'], speechLifecycleCheckCount + 2);
+      expect(limited['functional_pass'], true);
+      final sttIds = [
+        for (final row in limited['checks'] as List) row['id'] as String,
+      ];
+      expect(
+        sttIds.sublist(
+          sttIds.indexOf('after_invalid') + 1,
+          sttIds.indexOf('reload'),
+        ),
+        limitIds,
+      );
+
+      final lifecycleOnly = await runSpeechValidation(
+        FakeInterruptSpeech(),
+        residentBytes: stableResidentBytes,
+      );
+      expect(lifecycleOnly['expected_checks'], speechLifecycleCheckCount);
+      expect(
+        () => runSpeechValidation(FakeSpeech(), checkSynthesisInterrupts: true),
+        throwsArgumentError,
+      );
+      expect(
+        () => runSpeechValidation(FakeSpeech(), checkTranscriptLimits: true),
+        throwsArgumentError,
+      );
+    },
+  );
+
+  test('a teardown that does not cancel a synthesis in flight fails', () async {
+    for (final (report, message) in <(Map<String, Object?>, String?)>[
+      ({'in_flight': false}, 'not in flight'),
+      ({'frames_before_teardown': 0}, 'not in flight'),
+      ({'completion_state': 'completed'}, 'did not cancel'),
+      ({'final_events': 1}, 'did not cancel'),
+      ({'teardown_latency_ms': double.nan}, 'not measured'),
+      ({'teardown_latency_ms': null}, 'not measured'),
+      (
+        {
+          'after_teardown': {'predicate_passed': false},
+        },
+        null,
+      ),
+      ({'after_teardown': null}, null),
+    ]) {
+      final result = await runSpeechValidation(
+        FakeInterruptSpeech()..teardownReport = report,
+        checkSynthesisInterrupts: true,
+        residentBytes: stableResidentBytes,
+      );
+      expect(result['functional_pass'], false, reason: '$report');
+      for (final id in interruptIds.take(2)) {
+        final row = rowOf(result, id);
+        expect(row['status'], 'FAIL', reason: '$id $report');
+        if (message != null) {
+          expect(row['message'], contains(message), reason: '$id $report');
+        }
+      }
+    }
+  });
+
+  test('teardown checks pass at 500 ms and fail just past it', () async {
+    for (final (latency, within) in [
+      (499.999, true),
+      (500.0, true),
+      (500.001, false),
+    ]) {
+      final result = await runSpeechValidation(
+        FakeInterruptSpeech()
+          ..teardownReport = {'teardown_latency_ms': latency},
+        checkSynthesisInterrupts: true,
+        residentBytes: stableResidentBytes,
+      );
+      for (final id in interruptIds.take(2)) {
+        final row = rowOf(result, id);
+        expect(row['budget_ms'], 500.0, reason: '$id $latency');
+        expect(row['status'], within ? 'PASS' : 'FAIL', reason: '$id $latency');
+      }
+      expect(result['functional_pass'], within, reason: '$latency');
+    }
+  });
+
+  test('a decode cancellation without its preconditions fails', () async {
+    Map<String, Object?> reference({
+      Object? frames = speechDecodeCancelFrameCap,
+      Object? truncated = true,
+      Object? decode = 400.0,
+    }) => {'frames': frames, 'truncated': truncated, 'decode_ms': decode};
+    for (final (report, message) in <(Map<String, Object?>, String)>[
+      ({'uncapped_frames': speechDecodeCancelFrameCap}, 'does not truncate'),
+      ({'uncapped_frames': null}, 'does not truncate'),
+      ({'frame_cap': speechDecodeCancelFrameCap + 1}, 'does not truncate'),
+      (
+        {
+          'references': [reference()],
+        },
+        'did not stop at the frame cap',
+      ),
+      (
+        {
+          'references': [reference(), reference(truncated: false)],
+        },
+        'did not stop at the frame cap',
+      ),
+      (
+        {
+          'references': [reference(), reference(frames: 11)],
+        },
+        'did not stop at the frame cap',
+      ),
+      (
+        {
+          'references': [reference(), reference(decode: 0.0)],
+        },
+        'did not stop at the frame cap',
+      ),
+      (
+        {
+          'references': [reference(), reference(decode: null)],
+        },
+        'did not stop at the frame cap',
+      ),
+      ({'cancel_after_decode_start_ms': 99.999}, 'inside the reference'),
+      ({'cancel_after_decode_start_ms': 400.0}, 'inside the reference'),
+      ({'cancel_after_decode_start_ms': null}, 'inside the reference'),
+      ({'frames_before_cancel': null}, 'decoding synthesis'),
+      ({'cancel_in_flight': false}, 'decoding synthesis'),
+      ({'completion_state': 'completed'}, 'final result'),
+      ({'final_events': 1}, 'final result'),
+      ({'cancel_latency_ms': double.infinity}, 'not measured'),
+    ]) {
+      final result = await runSpeechValidation(
+        FakeInterruptSpeech()..decodeReport = report,
+        checkSynthesisInterrupts: true,
+        residentBytes: stableResidentBytes,
+      );
+      final row = rowOf(result, 'decode_cancel');
+      expect(row['status'], 'FAIL', reason: '$report');
+      expect(row['message'], contains(message), reason: '$report');
+      expect(result['functional_pass'], false, reason: '$report');
+    }
+  });
+
+  test(
+    'decode cancellation passes at half the shorter reference remainder',
+    () async {
+      for (final (latency, within) in [
+        (1.0, true),
+        (150.0, true),
+        (150.001, false),
+        (160.0, false),
+      ]) {
+        final result = await runSpeechValidation(
+          FakeInterruptSpeech()..decodeReport = {'cancel_latency_ms': latency},
+          checkSynthesisInterrupts: true,
+          residentBytes: stableResidentBytes,
+        );
+        final row = rowOf(result, 'decode_cancel');
+        expect(row['reference_decode_ms'], 400.0, reason: '$latency');
+        expect(row['reference_remainder_ms'], 300.0, reason: '$latency');
+        expect(row['budget_ms'], 150.0, reason: '$latency');
+        expect(row['lead_fraction'], 0.25, reason: '$latency');
+        expect(row['remainder_budget'], 0.5, reason: '$latency');
+        expect(row['status'], within ? 'PASS' : 'FAIL', reason: '$latency');
+        expect(result['functional_pass'], within, reason: '$latency');
+      }
+    },
+  );
+
+  test('transcript prefixes credit only a strict cut of the reference', () {
+    const reference = 'And so, my fellow Americans';
+    expect(speechTranscriptPrefixHolds(reference, 'and so'), isTrue);
+    expect(speechTranscriptPrefixHolds(reference, 'And so, my fel'), isTrue);
+    expect(
+      speechTranscriptPrefixHolds(reference, 'and so my fellow americ'),
+      isTrue,
+    );
+    expect(speechTranscriptPrefixHolds(reference, ''), isFalse);
+    expect(speechTranscriptPrefixHolds(reference, reference), isFalse);
+    expect(speechTranscriptPrefixHolds(reference, '$reference and'), isFalse);
+    expect(speechTranscriptPrefixHolds(reference, 'and to my'), isFalse);
+    expect(speechTranscriptPrefixHolds(reference, 'and so mx'), isFalse);
+  });
+
+  test('a transcript limit check without its preconditions fails', () async {
+    const maxTokens = LlamaSpeechTranscriptLimit.maxOutputTokens;
+    const contextSize = LlamaSpeechTranscriptLimit.contextSize;
+    for (final (limit, report, message)
+        in <(LlamaSpeechTranscriptLimit, Map<String, Object?>, String?)>[
+          (maxTokens, {'transcript_tokens': 11}, 'fits in maxOutputTokens'),
+          (maxTokens, {'transcript_tokens': null}, 'fits in maxOutputTokens'),
+          (maxTokens, {'max_output_tokens': 0}, 'fits in maxOutputTokens'),
+          (contextSize, {'context_size': 4096}, 'context size differs'),
+          (contextSize, {'max_output_tokens': 511}, 'context size differs'),
+          (maxTokens, {'truncated_limit': 'contextSize'}, 'did not fail'),
+          (contextSize, {'truncated_limit': null}, 'did not fail'),
+          (maxTokens, {'reference': null}, 'no reference'),
+          (contextSize, {'reference_repeats': 0}, 'no reference'),
+          (maxTokens, {'partial_transcript': ''}, null),
+          (
+            maxTokens,
+            {'partial_transcript': 'and so my fellow americans'},
+            null,
+          ),
+          (contextSize, {'partial_transcript': 'ask not'}, null),
+          (
+            maxTokens,
+            {
+              'after_truncation': {'predicate_passed': false},
+            },
+            null,
+          ),
+          (contextSize, {'after_truncation': null}, null),
+        ]) {
+      final reason = '${limit.name} $report';
+      final result = await runSpeechValidation(
+        FakeLimitSpeech()..reports[limit] = report,
+        checkTranscriptLimits: true,
+        residentBytes: stableResidentBytes,
+      );
+      final row = rowOf(
+        result,
+        limit == maxTokens
+            ? 'max_output_tokens_truncation'
+            : 'context_size_truncation',
+      );
+      expect(row['status'], 'FAIL', reason: reason);
+      if (message != null) {
+        expect(row['message'], contains(message), reason: reason);
+      }
+      expect(result['functional_pass'], false, reason: reason);
+    }
+  });
+
+  PublicSpeechValidationAdapter synthesisAdapter(SynthesisSpeechEngine engine) {
+    var created = 0;
+    return PublicSpeechValidationAdapter(
+      model: 'model.gguf',
+      projector: 'mmproj.gguf',
+      backend: GpuBackend.cpu,
+      pack: 'tts',
+      saveAudio: (_) async {},
+      createEngine: () {
+        created++;
+        engine.loaded.add('created:$created');
+        return engine;
+      },
+    );
+  }
+
+  test('the public adapter interrupts a synthesis in flight', () async {
+    final engine = SynthesisSpeechEngine();
+    final adapter = synthesisAdapter(engine);
+    await adapter.load();
+    await adapter.execute();
+    final unloaded = await adapter.executeTeardown(dispose: false);
+    expect(engine.teardowns, ['unload']);
+    expect(unloaded['in_flight'], isTrue);
+    expect(unloaded['frames_before_teardown'], 1);
+    expect(unloaded['completion_state'], 'cancelled');
+    expect(unloaded['final_events'], 0);
+    expect(
+      unloaded['teardown_latency_ms'],
+      lessThan(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
+    );
+    expect(unloaded['teardown_call_ms'], isA<double>());
+    expect((unloaded['after_teardown'] as Map)['predicate_passed'], isTrue);
+    expect(engine.loaded.where((path) => path.startsWith('created')), [
+      'created:1',
+    ]);
+    expect(engine.loaded.where((path) => path == 'model.gguf'), hasLength(2));
+
+    final disposed = await adapter.executeTeardown(dispose: true);
+    expect(engine.teardowns, ['unload', 'dispose']);
+    expect(engine.disposals, 1);
+    expect(disposed['completion_state'], 'cancelled');
+    expect(engine.loaded.where((path) => path.startsWith('created')), [
+      'created:1',
+      'created:2',
+    ]);
+
+    final decode = await adapter.executeDecodeCancel();
+    expect(
+      engine.requestedFrames.skip(
+        engine.requestedFrames.length - speechDecodeCancelReferenceRuns - 1,
+      ),
+      List.filled(
+        speechDecodeCancelReferenceRuns + 1,
+        speechDecodeCancelFrameCap,
+      ),
+    );
+    expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
+    final references = decode['references'] as List;
+    expect(references, hasLength(speechDecodeCancelReferenceRuns));
+    final shortest = references
+        .map((reference) => reference['decode_ms'] as double)
+        .reduce(math.min);
+    for (final reference in references) {
+      expect(reference['frames'], speechDecodeCancelFrameCap);
+      expect(reference['truncated'], isTrue);
+    }
+    expect(
+      decode['cancel_after_decode_start_ms'],
+      greaterThanOrEqualTo(shortest * speechDecodeCancelLeadFraction),
+    );
+    expect(decode['frames_before_cancel'], speechDecodeCancelFrameCap);
+    expect(decode['cancel_in_flight'], isTrue);
+    expect(decode['completion_state'], 'cancelled');
+    await adapter.dispose();
+    final stt = edgeAdapter();
+    await stt.load();
+    await expectLater(
+      stt.executeTeardown(dispose: false),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Synthesis interrupts require the TTS pack',
+        ),
+      ),
+    );
+    await stt.dispose();
+  });
+
+  test('interrupt checks pass only when the runtime ends the work', () async {
+    for (final (engine, failing) in [
+      (SynthesisSpeechEngine(), <String>[]),
+      (
+        SynthesisSpeechEngine(teardownCancels: false),
+        ['unload_during_synthesis', 'dispose_during_synthesis'],
+      ),
+      (SynthesisSpeechEngine(decodeHonoursCancel: false), ['decode_cancel']),
+    ]) {
+      final result = await runSpeechValidation(
+        DelegatingSpeech(synthesisAdapter(engine)),
+        checkSynthesisInterrupts: true,
+        residentBytes: stableResidentBytes,
+      );
+      for (final id in interruptIds) {
+        expect(
+          rowOf(result, id)['status'],
+          failing.contains(id) ? 'FAIL' : 'PASS',
+          reason: '$failing ${rowOf(result, id)}',
+        );
+      }
+      expect(result['functional_pass'], failing.isEmpty, reason: '$failing');
+    }
+  });
+
+  PublicSpeechValidationAdapter limitAdapter(LimitedRecognitionEngine engine) {
+    final wav = Uint8List.fromList(
+      File('assets/speech/jfk.wav').readAsBytesSync(),
+    );
+    return PublicSpeechValidationAdapter(
+      model: 'model.gguf',
+      projector: 'mmproj.gguf',
+      backend: GpuBackend.cpu,
+      pack: 'stt',
+      audio: wav,
+      audioSeconds: speechFixtureSeconds(wav),
+      reference: jfkReference,
+      saveAudio: (_) async {},
+      createEngine: () => engine,
+    );
+  }
+
+  test('the public adapter drives recognition into each limit', () async {
+    final wav = File('assets/speech/jfk.wav').readAsBytesSync();
+    final engine = LimitedRecognitionEngine(fixtureBytes: wav.length);
+    final adapter = limitAdapter(engine);
+    await adapter.load();
+    await expectLater(
+      adapter.executeTranscriptLimit(
+        LlamaSpeechTranscriptLimit.maxOutputTokens,
+      ),
+      throwsStateError,
+    );
+    await adapter.execute();
+    final byTokens = await adapter.executeTranscriptLimit(
+      LlamaSpeechTranscriptLimit.maxOutputTokens,
+    );
+    final referenceTokens = referenceWords(1).length;
+    expect(byTokens['reference_tokens'], referenceTokens);
+    expect(byTokens['transcript_tokens'], referenceTokens);
+    final limit = (referenceTokens * speechTruncationTokenFraction).floor();
+    expect(byTokens['max_output_tokens'], limit);
+    expect(engine.maxTokens.skip(1), [limit, 512]);
+    expect(byTokens['truncated_limit'], 'maxOutputTokens');
+    expect(
+      byTokens['partial_transcript'],
+      referenceWords(1).take(limit).join(' '),
+    );
+    expect((byTokens['after_truncation'] as Map)['wer'], 0);
+
+    final byContext = await adapter.executeTranscriptLimit(
+      LlamaSpeechTranscriptLimit.contextSize,
+    );
+    final long = edgeFixturesById()['edge_long_boundary']!;
+    expect(engine.contextSizes, [4096, speechTruncationContextSize, 4096]);
+    expect(byContext['context_size'], speechTruncationContextSize);
+    expect(byContext['max_output_tokens'], 512);
+    expect(byContext['reference_repeats'], long.referenceRepeats);
+    expect(engine.audioParts[engine.audioParts.length - 2].bytes, long.bytes);
+    expect(byContext['truncated_limit'], 'contextSize');
+    expect((byContext['after_truncation'] as Map)['wer'], 0);
+    await adapter.dispose();
+    await expectLater(
+      edgeAdapter(
+        pack: 'tts',
+      ).executeTranscriptLimit(LlamaSpeechTranscriptLimit.contextSize),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          'Transcript limit checks require the STT pack',
+        ),
+      ),
+    );
+  });
+
+  test('limit checks pass only for the typed truncation', () async {
+    final wav = File('assets/speech/jfk.wav').readAsBytesSync();
+    for (final typed in [true, false]) {
+      final result = await runSpeechValidation(
+        DelegatingSpeech(
+          limitAdapter(
+            LimitedRecognitionEngine(fixtureBytes: wav.length, typed: typed),
+          ),
+        ),
+        checkTranscriptLimits: true,
+        residentBytes: stableResidentBytes,
+      );
+      for (final id in limitIds) {
+        expect(
+          rowOf(result, id)['status'],
+          typed ? 'PASS' : 'FAIL',
+          reason: '$id typed=$typed',
+        );
+      }
+      expect(result['functional_pass'], typed, reason: 'typed=$typed');
+    }
+  });
 }

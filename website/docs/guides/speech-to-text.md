@@ -319,6 +319,12 @@ against the reference by word error rate, after lowercasing both and replacing
 | `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
 | `jfk.wav` three times (33 s) | The reference three times |
 
+It then sends `jfk.wav` with `maxOutputTokens` at half the reference's token
+count, and the 33 s input on a 512-token context. Each must fail with
+`LlamaSpeechTranscriptTruncatedException` at that limit, with a partial
+transcript that starts the expected one, and the next recognition on the same
+engine must return the reference.
+
 Each run then repeats three cancel/dispose/load/generate cycles. It fails if
 either budget is exceeded:
 
