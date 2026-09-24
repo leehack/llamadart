@@ -20,6 +20,11 @@
 - Cancel an active text-to-speech synthesis on `LlamaEngine.unloadModel()` and
   `dispose()` instead of waiting for it to finish
   ([#628](https://github.com/leehack/llamadart/issues/628)).
+- Start a native llama.cpp generation requested right after a cancel once the
+  cancelled run stops, instead of failing with `generation is already in
+  progress`. An overlap with a running generation that was not cancelled now
+  throws `LlamaStateException`
+  ([#655](https://github.com/leehack/llamadart/issues/655)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older
