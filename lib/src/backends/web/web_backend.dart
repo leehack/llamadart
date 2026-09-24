@@ -19,6 +19,7 @@ class WebAutoBackend
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
         BackendGrammarConstraintsSupport,
+        BackendLazyGrammarSupport,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
@@ -80,6 +81,15 @@ class WebAutoBackend
     if (delegate is BackendGrammarConstraintsSupport) {
       return (delegate as BackendGrammarConstraintsSupport)
           .supportsGrammarConstraints;
+    }
+    return true;
+  }
+
+  @override
+  bool get supportsLazyGrammar {
+    final delegate = _delegate;
+    if (delegate is BackendLazyGrammarSupport) {
+      return (delegate as BackendLazyGrammarSupport).supportsLazyGrammar;
     }
     return true;
   }

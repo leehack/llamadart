@@ -33,7 +33,8 @@ class WebGpuLlamaBackend
         BackendTextToSpeech,
         BackendDecision,
         BackendStatePersistence,
-        BackendStatePersistenceSupport {
+        BackendStatePersistenceSupport,
+        BackendLazyGrammarSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
   static const Duration _bridgePollInterval = Duration(milliseconds: 100);
   static const int _defaultRemoteFetchChunkBytes = 4 * 1024 * 1024;
@@ -92,6 +93,10 @@ class WebGpuLlamaBackend
 
   @override
   bool get isReady => _isReady;
+
+  /// The bridge applies [GenerationParams.grammar] from the first token.
+  @override
+  bool get supportsLazyGrammar => false;
 
   @override
   bool get supportsStatePersistence {
@@ -1618,6 +1623,18 @@ class WebGpuLlamaBackend
     if (params.isSpeculativeDecodingEnabled) {
       throw UnsupportedError(
         'WebGPU speculative decoding is not supported yet.',
+      );
+    }
+    if (params.grammarLazy) {
+      throw LlamaUnsupportedException(
+        'WebGPU does not support GenerationParams.grammarLazy: the bridge '
+        'applies a grammar from the first token and has no trigger support.',
+      );
+    }
+    if (params.grammarRoot != const GenerationParams().grammarRoot) {
+      throw LlamaUnsupportedException(
+        'WebGPU does not support GenerationParams.grammarRoot other than '
+        '"root": the bridge always starts a grammar at "root".',
       );
     }
 

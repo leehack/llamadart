@@ -293,6 +293,13 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   resolves known template delimiters automatically; raw generation requires
   explicit delimiters. LiteRT-LM and WebGPU reject the setting, as does the
   llama.cpp speculative-decoding path.
+- **Lazy grammars** (`GenerationParams.grammarLazy` with `grammarTriggers`) run
+  on native llama.cpp. WebGPU applies a grammar from the first token, starting
+  at `root`, and rejects `grammarLazy` and any other `grammarRoot` with
+  `LlamaUnsupportedException`. `engine.create` with `ToolChoice.auto` skips the
+  lazy tool-call grammar there and parses tool calls best-effort; it fails
+  early for `ToolChoice.required` on chat formats whose required-tool grammar
+  stays lazy. See [Tool calling](../guides/tool-calling#tool-choice-semantics).
 - **Experimental DSpark speculative decoding** is available as an explicit
   opt-in on native llama.cpp/GGUF through
   `SpeculativeDecodingConfig.draftDspark(...)`; it is never enabled by default.

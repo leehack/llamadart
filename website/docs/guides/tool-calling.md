@@ -70,3 +70,10 @@ For an end-to-end OpenAI-compatible reference, see
 - `ToolChoice.none`: disable tool calls for that request.
 - `ToolChoice.auto`: model decides whether to call tools.
 - `ToolChoice.required`: model must emit tool calls.
+
+On Web with WebGPU (llama.cpp), the bridge applies a grammar from the first
+token and cannot wait for a tool-call trigger. `ToolChoice.auto` therefore skips
+a lazy tool-call grammar, and tool calls are parsed from the output
+best-effort. `ToolChoice.required` keeps a grammar that starts at the first
+token and fails early with `LlamaUnsupportedException` when the chat format's
+required-tool grammar is lazy.
