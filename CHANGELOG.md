@@ -41,6 +41,15 @@
 - After a failed native prompt decode, the next `reusePromptPrefix` request no
   longer runs on the wrong KV cache or keeps failing
   ([#601](https://github.com/leehack/llamadart/issues/601)).
+- Reject `embed()` and `embedBatch()` on rank-pooled reranker GGUFs with
+  `LlamaUnsupportedException` on native, instead of returning memory read
+  past llama.cpp's classifier-score buffer
+  ([#583](https://github.com/leehack/llamadart/issues/583)).
+- Throw `LlamaInferenceException` from native `embed()` and `embedBatch()`
+  when input to an encoder-only model or a model without a KV cache (such as
+  BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
+  instead of aborting the process or embedding only the last chunk
+  ([#607](https://github.com/leehack/llamadart/issues/607)).
 * Aligned the default WebGPU bridge assets to `v0.1.47` for the decision API,
   retaining Web/native llama.cpp
   `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity and Web

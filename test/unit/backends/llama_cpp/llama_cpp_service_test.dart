@@ -26,6 +26,7 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../support/synthetic_decision_head.dart';
+import '../../../support/synthetic_embedding_gguf.dart';
 
 void main() {
   test('preserved template tokens remain excluded from native text stops', () {
@@ -2303,6 +2304,194 @@ void main() {
       expect(index('CPU', [GpuBackend.cpu]), isNull);
       expect(index(null, [GpuBackend.auto]), isNull);
       expect(index('Unknown', [GpuBackend.auto]), isNull);
+    });
+  });
+
+  group('embedding pass limits', () {
+    late Directory tempDir;
+    late LlamaCppService service;
+    late int modelHandle;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('embedding_');
+      service = LlamaCppService();
+    });
+
+    tearDown(() {
+      service.dispose();
+      tempDir.deleteSync(recursive: true);
+    });
+
+    int context(
+      ModelParams params, {
+      int poolingType = 1,
+      List<String>? classifierLabels,
+    }) {
+      final modelPath = path.join(tempDir.path, 'modern_bert.gguf');
+      writeSyntheticModernBertGguf(
+        modelPath,
+        poolingType: poolingType,
+        classifierLabels: classifierLabels,
+      );
+      final cpuParams = params.copyWith(
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, cpuParams);
+      return service.createContext(modelHandle, cpuParams);
+    }
+
+    String textOfTokens(int tokens, {String letter = 'a'}) {
+      final text = letter * (tokens - 4);
+      expect(service.tokenize(modelHandle, text, true), hasLength(tokens));
+      return text;
+    }
+
+    test('a model with a KV cache embeds input above the micro-batch', () {
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_LAST.value,
+      );
+      const params = ModelParams(
+        contextSize: 1024,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+
+      final vector = service.embed(handle, textOfTokens(600));
+
+      expect(vector, hasLength(16));
+      expect(vector.every((value) => value.isFinite), isTrue);
+    });
+
+    test('an encoder-only model rejects input above the micro-batch', () {
+      final modelPath = path.join(tempDir.path, 't5encoder.gguf');
+      writeSyntheticT5EncoderGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
+      );
+      const params = ModelParams(
+        contextSize: 1024,
+        batchSize: 1024,
+        microBatchSize: 64,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+
+      expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+      expect(
+        () => service.embed(handle, textOfTokens(65)),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('at most 64 tokens'),
+          ),
+        ),
+      );
+    });
+
+    test('embed and embedBatch reject a rank-pooled model', () {
+      final handle = context(
+        const ModelParams(contextSize: 64, maxParallelSequences: 2),
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_RANK.value,
+        classifierLabels: const ['yes', 'no'],
+      );
+      final rejectsRank = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('rank-pooled'), contains('/issues/323')),
+        ),
+      );
+
+      expect(() => service.embed(handle, 'query'), rejectsRank);
+      expect(() => service.embedBatch(handle, ['a', 'b']), rejectsRank);
+    });
+
+    test('default micro-batch rejects input above 512 tokens', () {
+      final handle = context(const ModelParams(contextSize: 1024));
+
+      expect(service.embed(handle, textOfTokens(512)), hasLength(16));
+      expect(
+        () => service.embed(handle, textOfTokens(513)),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('at most 512 tokens'),
+              contains('ModelParams.microBatchSize'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a raised micro-batch embeds input above 512 tokens', () {
+      final handle = context(
+        const ModelParams(
+          contextSize: 1024,
+          batchSize: 1024,
+          microBatchSize: 1024,
+        ),
+      );
+
+      final vector = service.embed(handle, textOfTokens(600));
+
+      expect(vector, hasLength(16));
+      expect(vector.every((value) => value.isFinite), isTrue);
+    });
+
+    test('embed rejects input above an explicit micro-batch', () {
+      final handle = context(
+        const ModelParams(
+          contextSize: 1024,
+          batchSize: 1024,
+          microBatchSize: 64,
+        ),
+      );
+
+      expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+      expect(
+        () => service.embed(handle, textOfTokens(65)),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains(
+              'has 65 tokens, but this model embeds its input in one '
+              'pass of at most 64 tokens',
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('embedBatch keeps grouped input within the micro-batch', () {
+      final handle = context(
+        const ModelParams(
+          contextSize: 1024,
+          batchSize: 1024,
+          microBatchSize: 64,
+          maxParallelSequences: 2,
+        ),
+      );
+      final first = textOfTokens(40);
+      final second = textOfTokens(40, letter: 'b');
+
+      final vectors = service.embedBatch(handle, [first, second]);
+
+      expect(vectors[0], orderedEquals(service.embed(handle, first)));
+      expect(vectors[1], orderedEquals(service.embed(handle, second)));
+      expect(vectors[0], isNot(orderedEquals(vectors[1])));
     });
   });
 

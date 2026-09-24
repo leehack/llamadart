@@ -38,6 +38,15 @@ Future<void> main() async {
   and `embedBatch(...)` throw `LlamaUnsupportedException`.
 - Native llama.cpp/GGUF backends support embeddings, including batched
   embeddings, when the loaded model was built for embedding output.
+- On native, rank-pooled reranker GGUFs (such as Qwen3-Reranker) return
+  classifier scores rather than embeddings, so `embed(...)` and
+  `embedBatch(...)` throw `LlamaUnsupportedException` for them. Reranking is
+  tracked in [#323](https://github.com/leehack/llamadart/issues/323).
+- On native, encoder-only models and models without a KV cache (such as
+  BERT-family and ModernBERT GGUFs) embed each input in one pass. An input
+  longer than the context's `microBatchSize` (512 tokens by default for
+  BERT-family models) throws `LlamaInferenceException`; raise
+  `microBatchSize` and `batchSize` to embed longer input.
 - Web backend supports embeddings when bridge assets expose embedding APIs
   (`v0.1.7` or newer).
 - If web bridge assets are older than `v0.1.7`, embedding calls can fail with
