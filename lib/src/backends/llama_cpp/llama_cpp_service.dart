@@ -4467,10 +4467,24 @@ class LlamaCppService {
       );
     }
     final useEncoderPath = hasEncoder && !hasDecoder;
+    final poolingType = llama_pooling_type$1(ctx.pointer);
+    _checkEmbeddingPoolingType(poolingType);
 
     final vocab = llama_model_get_vocab(model.pointer);
     final nSeqCtx = llama_n_ctx_seq(ctx.pointer);
     final tokens = _tokenizeEmbeddingText(vocab, text, nSeqCtx);
+    final passTokenLimit = _embeddingPassTokenLimit(
+      ctx.pointer,
+      useEncoderPath,
+    );
+    if (passTokenLimit != null && tokens.length > passTokenLimit) {
+      throw LlamaInferenceException(
+        'The embedding input has ${tokens.length} tokens, but this model '
+        'embeds its input in one pass of at most $passTokenLimit tokens '
+        '(n_ubatch). Shorten the input or raise ModelParams.microBatchSize '
+        'and ModelParams.batchSize.',
+      );
+    }
     final configuredBatchSize = contextParams.n_batch > 0
         ? contextParams.n_batch
         : tokens.length;
@@ -4512,7 +4526,6 @@ class LlamaCppService {
         decodedTokens += chunkTokenCount;
       }
 
-      final poolingType = llama_pooling_type$1(ctx.pointer);
       Pointer<Float> embeddingPtr;
       if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_NONE) {
         embeddingPtr = llama_get_embeddings_ith(
@@ -4589,6 +4602,7 @@ class LlamaCppService {
     final useEncoderPath = hasEncoder && !hasDecoder;
 
     final poolingType = llama_pooling_type$1(ctx.pointer);
+    _checkEmbeddingPoolingType(poolingType);
     final maxParallelSequences = llama_n_seq_max(ctx.pointer);
     if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_NONE ||
         maxParallelSequences <= 1) {
@@ -4604,7 +4618,16 @@ class LlamaCppService {
     final configuredBatchSize = contextParams.n_batch > 0
         ? contextParams.n_batch
         : llama_n_ctx(ctx.pointer);
-    final batchCapacity = math.max(1, configuredBatchSize);
+    final passTokenLimit = _embeddingPassTokenLimit(
+      ctx.pointer,
+      useEncoderPath,
+    );
+    final batchCapacity = math.max(
+      1,
+      passTokenLimit == null
+          ? configuredBatchSize
+          : math.min(configuredBatchSize, passTokenLimit),
+    );
     final embeddingSize = _resolveEmbeddingDimension(model.pointer);
 
     final tokenizedInputs = <List<int>>[];
@@ -4756,6 +4779,27 @@ class LlamaCppService {
       malloc.free(tokensPtr);
       malloc.free(textPtr);
     }
+  }
+
+  void _checkEmbeddingPoolingType(llama_pooling_type poolingType) {
+    if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_RANK) {
+      throw LlamaUnsupportedException(
+        'Embeddings are not supported for rank-pooled models such as '
+        'rerankers: llama.cpp returns classifier scores, not an embedding, '
+        'for pooling type RANK. Reranking is tracked in '
+        'https://github.com/leehack/llamadart/issues/323.',
+      );
+    }
+  }
+
+  int? _embeddingPassTokenLimit(
+    Pointer<llama_context> contextPointer,
+    bool useEncoderPath,
+  ) {
+    if (useEncoderPath || llama_get_memory(contextPointer) == nullptr) {
+      return llama_n_ubatch(contextPointer);
+    }
+    return null;
   }
 
   int _resolveEmbeddingDimension(Pointer<llama_model> modelPointer) {

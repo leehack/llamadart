@@ -214,6 +214,10 @@ class ModelParams {
   /// [ModelParams.defaultMicroBatchSize]. Native encoder-only models retain
   /// the resolved logical batch size for compatibility. Other backends may
   /// preserve the same architecture-agnostic fallback.
+  ///
+  /// Native encoder-only models and models whose context has no KV cache,
+  /// such as BERT and ModernBERT, embed each input in one micro-batch, so a
+  /// longer embedding input throws `LlamaInferenceException`.
   final int microBatchSize;
 
   /// Maximum parallel sequence slots in context memory (n_seq_max).

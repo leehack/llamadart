@@ -58,7 +58,11 @@ Important fields:
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
   resolved logical batch unless a safety preset applies. Explicit positive
-  values are preserved within `n_ubatch <= n_batch <= n_ctx`.
+  values are preserved within `n_ubatch <= n_batch <= n_ctx`. Native
+  encoder-only models and models without a KV cache (such as BERT and
+  ModernBERT) embed each input in one micro-batch, so `embed()` throws
+  `LlamaInferenceException` for longer input; raise `microBatchSize` and
+  `batchSize` to embed it.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
