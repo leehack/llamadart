@@ -82,6 +82,31 @@ void main() {
     },
   );
 
+  test('Laya Tetris deploys only tested main commits of this repository', () {
+    final workflow = readWorkflow('laya_tetris_hf_static_deploy');
+    final trigger = workflow['on'] as Map;
+    expect(trigger.keys, unorderedEquals(['push', 'workflow_dispatch']));
+    expect(trigger['push']['branches'], ['main']);
+    expect(workflow['permissions'], {'contents': 'read'});
+    final deploy = workflow['jobs']['deploy'] as Map;
+    expect(deploy['if'], contains("github.ref == 'refs/heads/main'"));
+    expect(deploy['if'], contains("github.repository == 'leehack/llamadart'"));
+    final steps = deploy['steps'] as List;
+    final tests = steps.indexWhere(
+      (step) => '${step['run']}'.contains('flutter test'),
+    );
+    final secretSteps = [
+      for (var i = 0; i < steps.length; i++)
+        if (jsonEncode(steps[i]).contains('secrets.')) i,
+    ];
+    expect(tests, greaterThanOrEqualTo(0));
+    expect(secretSteps, hasLength(1));
+    expect(secretSteps.single, greaterThan(tests));
+    final upload = '${steps[secretSteps.single]['run']}';
+    expect(upload, contains('git/ref/heads/main'));
+    expect(upload, contains('private=False'));
+  });
+
   test(
     'preview selection precedes SDK and secrets while close cleanup is unfiltered',
     () {

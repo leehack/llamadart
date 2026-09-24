@@ -84,7 +84,9 @@ jobs:
       - name: Deploy to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import os
 
@@ -96,6 +98,7 @@ jobs:
               repo_id=space_repo,
               repo_type="space",
               space_sdk="static",
+              private=False,
               exist_ok=True,
           )
           api.upload_folder(
@@ -110,8 +113,8 @@ jobs:
 
       - name: Verify the deployed app
         run: |
-          for _ in $(seq 1 30); do
-            if [ "$(curl -fsS "$APP_URL/deploy-sha.txt" || true)" = "$GITHUB_SHA" ]; then
+          for attempt in $(seq 1 30); do
+            if [ "$(curl -fsS "$APP_URL/deploy-sha.txt?attempt=$attempt" || true)" = "$GITHUB_SHA" ]; then
               headers="$(curl -fsSIL "$APP_URL/")"
               grep -qi '^cross-origin-opener-policy: same-origin' <<<"$headers"
               grep -qi '^cross-origin-embedder-policy: require-corp' <<<"$headers"
