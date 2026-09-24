@@ -42,6 +42,14 @@ For canonical full release notes, use:
 - Run `DecisionEngine` on WebGPU through the bridge decision API
   (apiVersion 1), which bridge assets `v0.1.47+` include
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Reject `embed()` and `embedBatch()` on rank-pooled reranker GGUFs with
+  `LlamaUnsupportedException` on native, instead of returning memory read
+  past llama.cpp's classifier-score buffer
+  ([#583](https://github.com/leehack/llamadart/issues/583)).
+- Throw `LlamaInferenceException` from native `embed()` and `embedBatch()`
+  when input to a BERT-family, ModernBERT or other encoder GGUF does not fit
+  one `microBatchSize` pass, instead of aborting the process
+  ([#607](https://github.com/leehack/llamadart/issues/607)).
 - Aligned default WebGPU bridge assets to `v0.1.47` for the decision API,
   retaining Web/native llama.cpp
   `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity and Web
