@@ -25,6 +25,7 @@ import '../models/model_resolver.dart';
 import '../models/model_source.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
+import '../speech/speech_engine_lease.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
 ///
@@ -558,6 +559,7 @@ class LlamaEngine {
     _decisionHeadHandles.clear();
     _decisionHeadEpoch++;
     backend.cancelGeneration();
+    SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;

@@ -17,6 +17,9 @@
   `create`, `generate` or `ChatSession.create` stream, before it reaches the
   backend, instead of running the whole generation
   ([#602](https://github.com/leehack/llamadart/issues/602)).
+- Cancel an active text-to-speech synthesis on `LlamaEngine.unloadModel()` and
+  `dispose()` instead of waiting for it to finish
+  ([#628](https://github.com/leehack/llamadart/issues/628)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older

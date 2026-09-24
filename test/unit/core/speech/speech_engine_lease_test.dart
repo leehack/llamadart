@@ -25,6 +25,28 @@ void main() {
     expect(second.acquire('text-to-speech'), isTrue);
   });
 
+  test('cancels only the task registered by the current owner', () async {
+    final engine = LlamaEngine(LlamaBackend());
+    addTearDown(engine.dispose);
+    final lease = SpeechEngineLease.forEngine(engine);
+    var cancels = 0;
+
+    SpeechEngineLease.cancelActiveTask(engine);
+    expect(lease.acquire('text-to-speech'), isTrue);
+    lease.onUnload('speech-to-text', () => cancels += 100);
+    lease.onUnload('text-to-speech', () => cancels += 1);
+    SpeechEngineLease.cancelActiveTask(engine);
+    expect(cancels, 1);
+
+    lease.release('text-to-speech');
+    SpeechEngineLease.cancelActiveTask(engine);
+    expect(cancels, 1);
+
+    expect(lease.acquire('speech-to-text'), isTrue);
+    SpeechEngineLease.cancelActiveTask(engine);
+    expect(cancels, 1);
+  });
+
   test('keeps leases independent between engines', () async {
     final firstEngine = LlamaEngine(LlamaBackend());
     final secondEngine = LlamaEngine(LlamaBackend());

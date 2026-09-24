@@ -26,14 +26,28 @@ class SpeechEngineLease {
     return true;
   }
 
+  /// Sets how [LlamaEngine.unloadModel] cancels [owner]'s running task.
+  void onUnload(String owner, void Function() cancel) {
+    if (_state.owner == owner) {
+      _state.cancel = cancel;
+    }
+  }
+
   /// Releases the engine only when [owner] still owns it.
   void release(String owner) {
     if (_state.owner == owner) {
       _state.owner = null;
+      _state.cancel = null;
     }
+  }
+
+  /// Cancels the task that owns [engine], if it registered [onUnload].
+  static void cancelActiveTask(LlamaEngine engine) {
+    _states[engine]?.cancel?.call();
   }
 }
 
 class _SpeechEngineLeaseState {
   String? owner;
+  void Function()? cancel;
 }

@@ -511,6 +511,7 @@ class TextToSpeechEngine {
       final task = TextToSpeechTask._(
         onCancel: _engine.cancelTextToSpeechBackend,
       );
+      _engineLease.onUnload(_leaseOwner, task.cancel);
       unawaited(_runTask(task, request, normalizedLanguage));
       return task;
     } catch (_) {
