@@ -283,6 +283,13 @@
   fresh checkout. A failed report step is now the run's error, with its exit
   code and a redacted stderr tail
   ([#688](https://github.com/leehack/llamadart/issues/688)).
+- Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
+  tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with
+  any number of extra closing braces) without a grammar. Calls are extracted as
+  before; a double-brace call with other malformed envelope text keeps that
+  text. This deliberately differs from upstream llama.cpp, which rejects that
+  output and extracts no call
+  ([#662](https://github.com/leehack/llamadart/issues/662)).
 
 ## 0.8.24
 
