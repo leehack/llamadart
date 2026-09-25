@@ -1,7 +1,7 @@
 ---
 title: Your first chat session
 sidebar_label: First chat session
-description: "Build a multi-turn chat with ChatSession: automatic history, streaming replies, resetting state, and when to call engine.create directly."
+description: "Build a multi-turn chat with ChatSession: automatic history, streaming replies, the context budget, resetting state, where a Flutter app owns the engine, and when to call engine.create directly."
 ---
 
 `ChatSession` wraps `LlamaEngine` for multi-turn conversations with automatic
@@ -48,6 +48,33 @@ Future<void> main() async {
   }
 }
 ```
+
+## Context budget
+
+Before each request, `ChatSession` drops the oldest turns until the rendered
+prompt, plus room for the reply, fits `maxContextTokens`. The system prompt is
+kept. `maxContextTokens` defaults to the loaded context size
+(`engine.getContextSize()`); set it lower to cap prompt size:
+
+```dart
+final session = ChatSession(
+  engine,
+  maxContextTokens: 768,
+  systemPrompt: 'You are concise.',
+);
+```
+
+The room reserved for the reply is the request's `maxTokens`, capped at half the
+budget and, when the budget allows, at least 128 tokens.
+`session.lastRequestFitContext` is `false` when the active turn still did not
+fit after trimming.
+
+## In a Flutter app
+
+Create the engine and session once in a long-lived owner, such as a service,
+provider or `State`, not in `build()`. Call `engine.dispose()` when that owner
+is disposed. For a full walkthrough, see
+[Build a Flutter chat app](../tutorials/flutter-chat-app).
 
 ## Resetting state
 

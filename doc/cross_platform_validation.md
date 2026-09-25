@@ -46,6 +46,44 @@ Three benchmark samples support diagnosis, not a performance regression threshol
 or a device ranking. First qualify the portable build workflow, then expand the
 critical feature packs with representative locked models before broadening devices.
 
+## LiteRT-LM GPU qualification history
+
+Linux x64 and Windows x64 keep CPU for automatic LiteRT-LM selection; explicit
+GPU uses the LiteRT-LM GPU backend, not CUDA.
+
+- Desktop, `v0.17.0-5`: passed on NVIDIA L4 with Qwen3 0.6B (repaired
+  tokenizer) and Gemma 4 E2B, on CPU and GPU. Windows used Direct3D 12 with
+  driver 582.53; Linux used Vulkan with driver 580.173.02. Checks covered text
+  answers, cancellation and reuse without runtime library search-path
+  workarounds. This does not establish support for every GPU, driver or model.
+  Linux arm64 remains CPU-only.
+- Windows x64 GPU, `v0.17.0-5` vs `v0.17.0-6`: `v0.17.0-6` bundles `dxil.dll`
+  and `dxcompiler.dll`, which Dawn's D3D12 backend loads at GPU engine
+  creation. The published `v0.17.0-5` Windows archive omits them and fails GPU
+  engine creation on a clean host. `v0.17.0-6` passed on NVIDIA L4 (driver
+  582.53) with Qwen3 0.6B and Gemma 4 E2B: GPU answers matched CPU, and
+  cancellation and reuse passed with the runtime directory off `PATH`.
+- Linux x64 GPU, `v0.17.0-6`, Mesa llvmpipe only (`Selected adapter: llvmpipe
+  ... adapterType=CPU / Software`): loads and answers the first prompts, then
+  segfaults in `libvulkan_lvp.so`
+  ([#572](https://github.com/leehack/llamadart/issues/572)).
+- Pixel 9 Pro: the `v0.17.0-3` Android Dawn correction targets the Mali/Vulkan
+  device-loss regression seen with Qwen3 0.6B and Gemma 4 E2B. Qwen3.5 0.8B
+  int8 GPU initialization still fails with out-of-memory, also reproduced on
+  the previous runtime. An OpenCL diagnostic crashed and is not qualified by
+  the Vulkan tests.
+- Galaxy S24 (Adreno 750, WebGPU over Vulkan), `v0.17.0-6`: Qwen3 0.6B loads on
+  GPU without an error, then generates incoherent text; CPU on the same device
+  is correct. Dawn rejects one weight buffer at load: `Binding size
+  (155582464) ... is larger than the maximum storage buffer binding size
+  (134217728)` ([#553](https://github.com/leehack/llamadart/issues/553)).
+- ARM64 iOS simulator, `v0.17.0-2`: Qwen3 and Qwen3.5 CPU/GPU tests passed;
+  Gemma 4 E2B GPU hit a Metal texture-binding limit also present in the
+  previous runtime. Simulator evidence does not establish physical iOS GPU
+  coverage.
+
+These rows are not claims that every model works on every backend.
+
 ## Source and generated artifacts
 
 - `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
@@ -670,6 +708,16 @@ cleanup refuses to delete a potentially unrelated resource, records UNKNOWN and
 blocks another run. No cloud run is permitted under the $0-out-of-pocket policy
 when applicable credit cannot be verified.
 
+- The GCE `ubuntu-accelerator-2404-amd64-with-nvidia-580` image ships the
+  NVIDIA driver but not the CUDA 12 runtime libraries (`libcudart.so.12`,
+  `libcublas.so.12`) that `libggml-cuda.so` links; without them the CUDA module
+  fails to load and llama.cpp runs on CPU. The stock image also lacks
+  `libgomp1`, which every llama.cpp load needs.
+- Container link checks for the CUDA and HIP modules:
+  `docker/validation/Dockerfile.cuda-linkcheck`,
+  `docker/validation/Dockerfile.hip-linkcheck`, and
+  `scripts/check_native_link_deps.sh <native-lib-dir> <lib-name> [<lib-name> ...]`.
+
 ## Recovery and evidence
 
 ```sh
@@ -730,6 +778,12 @@ adapters; they remain incomplete.
 Normal model runs are opt-in. Model-free suite/provider tests run in CI. Before
 claiming another platform qualified, attach the exact commit, model/backend,
 command, provider/device identity, combined verdict, cleanup and native evidence.
+
+LiteRT-LM interrupted cleanup: a Dart timeout or killed isolate does not forcibly interrupt a blocking native
+call. CLI validation should use an outer process deadline and retain the timeout
+and cleanup error in its results. Closing response ports must not be counted as
+successful native cleanup. Requested GPU selection remains separate from verified
+accelerator placement.
 
 ## Initial owned-machine observations (2026-09-17)
 
@@ -1080,6 +1134,21 @@ builder as runnable profiles; existing model-lock and NPU preflight requirements
 remain mandatory. Browser/delegate and device-specific model memory checks are
 still required for every actual run.
 
+### Native video input
+
+The pinned `llamadart-native` `v0.5.0` archive exports upstream video helper
+symbols (`mtmd_helper_video_*`), but the release is not qualified for
+end-to-end video input. The companion build does not opt into
+`LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe, so the public Dart
+path stays unsupported until matching native, packaging and frame-lifecycle
+validation exists. Native LiteRT-LM direct media accepts image and audio only;
+WebGPU and Web LiteRT-LM have no validated video transport or frame-lifetime
+contract; Android and iOS need native packaging and device validation.
+`LlamaVideoContent` throws `LlamaUnsupportedException` naming either the native
+compile/dependency blocker or, for a custom video-enabled native build, the
+remaining Dart frame-ingestion/lifetime blocker. Do not infer support from the
+exported symbols.
+
 ### Primary model profiles and runnable speech packs
 
 Gemma 4 E2B now has immutable `gemma4-gguf-{cpu,metal,vulkan,cuda}` and
@@ -1177,6 +1246,49 @@ not accelerator or perceptual qualification. Full microphone/playback,
 noise/language/voice fixtures, mobile/Web speech packaging, and historical
 speech dashboards remain open. A supported backend request still requires
 actual hardware execution evidence before marking a platform/backend row green.
+
+### Speech to text: validated behavior
+
+The `validation-speech-stt` pack
+(`dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt`)
+runs the checksum-locked Qwen3-ASR 0.6B Q8_0 model and projector on `jfk.wav`,
+an 11-second English WAV, as a file and as bytes. It scores each transcript
+against the reference by word error rate, after lowercasing both and replacing
+`.,!?:;"—–` with spaces. It also sends four generated WAV inputs as bytes:
+
+| Input | Required outcome |
+| --- | --- |
+| 3 s of digital silence | `LlamaSpeechException` with the message `Speech recognition produced an empty transcript.` |
+| The first 20,044 bytes of `jfk.wav`, whose RIFF header declares more audio than the bytes carry | A non-empty transcript that is not the reference, or `LlamaAudioFormatException`. Every recorded run returned a short transcript and no error. |
+| `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
+| `jfk.wav` three times (33 s) | The reference three times |
+
+It then sends `jfk.wav` with `maxOutputTokens` at half the reference's token
+count, and the 33 s input on a 512-token context. Each must fail with
+`LlamaSpeechTranscriptTruncatedException` at that limit, with a partial
+transcript that starts the expected one, and the next recognition on the same
+engine must return the reference.
+
+Each run then repeats eight cancel/dispose/load/generate cycles. It fails if
+any budget is exceeded:
+
+- **Cancellation, 500 ms**: from `cancel()` to the task's terminal state, for
+  every cancel issued as soon as `transcribe` returns and every cancel issued
+  after half the duration of the most recent completed generation. This bounds
+  when the task ends for its caller, not when native work stops.
+- **Memory, 1.10x**: the largest whole-process resident set sampled after the
+  checks that follow the first generation, as a multiple of the one sampled
+  right after that generation. Not applied on Linux CUDA, where the weights
+  stay in device memory
+  ([#686](https://github.com/leehack/llamadart/issues/686)).
+- **Memory growth, 7 MiB per cycle**: the run fails if the resident set grows
+  by more than 7 MiB in every one of the seven cycles after the first. A
+  plateau passes; a steady leak fails. Slower growth passes this check.
+
+With native `v0.4.1-1` (before the current `v0.5.0` pin), the pack has passed
+on macOS arm64 with CPU and with Metal, and on Linux x64 with CPU (AMD EPYC
+7B12). The Metal runs report the Metal backend; the pack does not verify GPU
+execution.
 
 ### Preparation progress on interrupted runs
 

@@ -1,25 +1,23 @@
 ---
-title: Maintainer Overview
+title: Maintainer overview
 description: Repo-specific maintenance checklist for the llamadart docs site, releases, and verification flow.
 ---
 
 This section is for `llamadart` maintainers: repository ownership, routine
 checks, and how the docs site is built and published.
 
-## Repository ownership map
+## Repository ownership
 
-- `llamadart` (this repo): Dart API surface, hooks integration, docs/tests.
-- `llamadart-native`: native build graph, runtime bundle matrix, release assets.
-- `llama-web-bridge`: web bridge runtime source/build behavior.
-- `llama-web-bridge-assets`: published bridge artifacts consumed by this repo.
+Which repository owns which runtime change is listed once, in
+[Runtime ownership](./runtime-ownership).
 
-## Local maintainer workspace convention
-
-Many maintainers keep sibling checkouts one level above this repo:
+Many maintainers keep the owning repositories as sibling checkouts one level
+above this repo:
 
 ```text
 ../llamadart
 ../llamadart-native
+../litert-lm-native
 ../llama-web-bridge
 ../llama-web-bridge-assets
 ```

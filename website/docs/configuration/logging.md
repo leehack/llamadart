@@ -3,8 +3,8 @@ title: Logging
 description: Control Dart-side and native log levels separately, configure logging in worker isolates, and quiet noisy runtime output.
 ---
 
-`llamadart` supports separate log controls for Dart-side and native runtime
-layers.
+`llamadart` has separate log levels for Dart-side records and the native
+runtime. Both default to `none`.
 
 ## Engine log controls
 
@@ -12,12 +12,13 @@ layers.
 await engine.setDartLogLevel(LlamaLogLevel.info);
 await engine.setNativeLogLevel(LlamaLogLevel.warn);
 
-// or set both to same value
+// or set both to the same value
 await engine.setLogLevel(LlamaLogLevel.error);
 ```
 
 `setDartLogLevel` and `setLogLevel` also apply the Dart level to a running
 native backend worker (see [Backend worker isolates](#backend-worker-isolates)).
+Set levels before `loadModel` to capture load-time output.
 
 ## Global Dart logger configuration
 
@@ -39,25 +40,22 @@ receives them after the main-isolate level is applied again.
 `engine.setDartLogLevel` and `engine.setLogLevel` change the level of a
 running worker too; a later `configureLogging` call changes only the handler
 and the main-isolate level. At the default `none` nothing is forwarded.
+
 A forwarded record carries its error as `toString` text and its stack trace
-rebuilt from text. A worker forwards
-at most 1000 `debug` records; records above `debug` are never capped. An error
-thrown by the handler on a forwarded record is printed, not thrown. Web
-backends run on the main isolate and are unaffected.
+rebuilt from text. A worker forwards at most 1000 `debug` records; records
+above `debug` are never capped. An error thrown by the handler on a forwarded
+record is printed, not thrown. Web backends run on the main isolate and are
+unaffected.
 
 ## Recommended profiles
 
 - Local debugging: Dart `info`, native `warn`.
 - Performance testing: Dart `warn`, native `error`.
-- Production app defaults: both `error` or `none`.
+- Production: both `error` or `none`.
 
-## Troubleshooting noisy logs
-
-If you still see too much output, verify:
-
-- You are not re-enabling logs in app startup paths.
-- Model load/reload paths set levels before first inference.
-- Any custom logger handler is filtering correctly.
+If output stays noisy, check that app startup or model reload paths do not
+raise the levels again, and that a custom `configureLogging` handler filters
+as intended.
 
 ## Native output outside llamadart's control
 

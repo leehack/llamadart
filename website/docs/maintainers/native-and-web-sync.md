@@ -1,5 +1,5 @@
 ---
-title: Native and Web Sync Flows
+title: Native and web sync flows
 description: Follow the correct workflow when syncing native bindings, companion package pins, or published web bridge assets.
 ---
 
@@ -134,6 +134,11 @@ changes, verify the companion package changes under `packages/`, then run at
 least one Flutter iOS build and one macOS build with those packages enabled.
 Inspect the packaged frameworks to confirm the expected native release artifacts
 are present.
+
+App overrides through `llamadart_native_tag` accept the same tag forms as the
+sync, never `latest`, and do not regenerate bindings. The symbols and wrapper
+fixes a replacement runtime must provide are listed in
+[Override the llama.cpp release](../platforms/native-build-hooks#override-the-llamacpp-release).
 
 ## Native version update checklist
 

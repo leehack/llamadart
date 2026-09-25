@@ -134,24 +134,5 @@ when tuning a known workload.
 Start with `maxParallelSequences` matching expected concurrent batch width (for
 example `4` or `8`), then tune based on memory and latency/throughput tradeoffs.
 
-## Benchmarking
-
-Use the built-in scripts to compare sequential vs batch embedding throughput and
-to sweep `max-seq` values.
-
-```bash
-# Single benchmark report
-dart run tool/testing/native_embedding_benchmark.dart \
-  --model path/to/model.gguf \
-  --cpu \
-  --mode both \
-  --input-count 8 \
-  --max-seq 8
-
-# max-seq sweep with CSV output
-dart run tool/testing/native_embedding_sweep.dart \
-  --model path/to/model.gguf \
-  --cpu \
-  --max-seq-values 1,2,4,8 \
-  --csv-out embedding_speedup.csv
-```
+To measure sequential vs batch throughput, see
+[Backend benchmarks](./backend-benchmarks#embedding-throughput).

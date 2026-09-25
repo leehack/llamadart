@@ -30,7 +30,8 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🔊 **Text to speech**: The cross-platform Qwen3-TTS preset switches the
   composer into a dedicated synthesis mode with language, optional speaker
   reference, cancellation, playback, and WAV export.
-- 📱 Material Design 3 UI
+- 📱 Material Design 3 UI with conversation-first navigation; settings open
+  full-screen on narrow (mobile) layouts
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers,
   context size, logical batch size, and micro-batch size; LiteRT-LM does not
   expose the llama.cpp/WebGPU batch controls)
@@ -41,7 +42,8 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 💾 Settings persistence
 - 🔇 Separate Dart vs native log level controls
 - 🔄 Streaming generation
-- 🎨 Restrained user bubbles with readable, copyable assistant responses
+- 🎨 Restrained user bubbles with readable assistant responses and copy and
+  regenerate actions
 - 📊 Compact runtime status with detailed performance diagnostics on demand
 
 ## Setup
@@ -111,6 +113,17 @@ flutter test --run-skipped -t local-only \
      library** removes only the saved entry; downloaded-file deletion remains
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
+   - The download flow wires `ModelDownloadController` through a small adapter
+     (`lib/services/model_download_controller_adapter.dart`), so cache checks,
+     progress, cancel, retry, and ready/failure states come from the package
+     helper, while the app keeps its own multi-asset model + `mmproj` storage
+     and browser cache behavior.
+   - On Android and iOS a download is foreground work: the app does not cancel
+     it when the OS reports a lifecycle pause, and asks you to keep the app
+     open. If the OS drops the connection anyway, the next attempt resumes the
+     partial file when the server honors HTTP Range requests. An app that must
+     finish downloads in the background needs a native background downloader
+     behind a custom `ModelDownloadManager`.
 4. Once downloaded, tap **Select** to load the model.
    - The Qwen3-ASR preset exposes **Attach Audio** and **Transcribe Audio** on
      native and Web builds. Native selected-file transcription accepts WAV,
@@ -120,7 +133,10 @@ flutter test --run-skipped -t local-only \
      for up to 30 seconds; **Stop & transcribe** finalizes it, runs whole-file
      STT, and deletes the native file or revokes the browser blob.
      Capture is foreground-only and cancelling discards the temporary
-     recording. Real-model checks cover only WAV input of at most 33 seconds.
+     recording. The recorder requests 16 kHz mono WAV, but the hardware or
+     browser may pick another valid rate; the decoder reads the WAV metadata.
+     Browser startup checks microphone permission and WAV encoder support
+     before recording. Real-model checks cover only WAV input of at most 33 seconds.
      On native, a selected file long enough to fill the preset's 4,096-token
      context fails with an error instead of returning a truncated transcript
      ([#636](https://github.com/leehack/llamadart/issues/636)).
@@ -130,7 +146,9 @@ flutter test --run-skipped -t local-only \
      on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
      54 MB default; Parakeet TDT 0.6B is an optional 615 MB higher-capacity,
      heavier choice. Both process mono 16 kHz PCM in five-second windows on a
-     worker isolate through `SpeechToTextEngine.liteRtLm`, show confirmed and
+     worker isolate through `SpeechToTextEngine.liteRtLm` (the sidecar keeps
+     samples split across byte-chunk boundaries and one worker push in
+     flight), show confirmed and
      replaceable pending English text, and put the finalized transcript into the composer for review instead of
      sending it automatically. The selected sidecar is remembered, and the UI
      shows its size, installed state, determinate download progress, cancel,
@@ -195,6 +213,8 @@ flutter test --run-skipped -t local-only \
      remembers the working choice for the loaded model. For the validated
      Gemma 4 E2B bundle, GPU text/vision with CPU audio is the resolved path;
      this is not a universal LiteRT-LM CPU-audio limitation.
+   - Gemma 4 GGUF tiers: E2B, E4B, and 12B projectors expose image and audio
+     input; 26B A4B and 31B expose image input only.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current native
      `llama.cpp` mtmd path used here, that projector exposes image and audio
      input, so it uses the same **Ask with voice** interaction. Video is not
@@ -228,6 +248,9 @@ flutter test --run-skipped -t local-only \
 1. Tap the settings control in the top bar.
 2. Adjust **GPU Layers**, **Context Size**, and **Preferred Backend**. Expand
    **Advanced** for Dart and native/bridge log levels.
+   - Logical batch size (`n_batch`) and micro-batch size (`n_ubatch`) default to
+     `Auto`, which keeps the backend's own defaults; an explicit value applies
+     on the next model load. LiteRT-LM bundles disable these controls.
    - `Auto` selects the best supported runtime; on supported Macs it prefers
      Metal. The selector also lists concrete runtime-detected options such as
      CPU/Vulkan/CUDA for GGUF or CPU/GPU/NPU for LiteRT-LM.
@@ -509,6 +532,11 @@ await prefs.setInt('preferred_backend', backendIndex);
   replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).
 - On web, **Download** prefetches model/mmproj bytes into browser Cache Storage with progress.
+- Loading a remote HTTP(S) model URL first prefetches it into the browser
+  cache. If `CacheStorage` is unavailable, over quota, or rejects the write,
+  the app loads the model from the network instead of failing. Model URLs with
+  userinfo, a fragment, or credential-like query parameters (tokens, signed-URL
+  keys) skip the persistent cache so credentials are not stored as cache keys.
 - Qwen3.5 `0.8B` WebGPU loads are capped to a low layer count for stable browser text output.
 - Qwen3.5 multimodal web runs currently use CPU-safe fallback for stability even when the text model was loaded with WebGPU acceleration.
 - Web models use streamed network staging by default. Controlled origins that

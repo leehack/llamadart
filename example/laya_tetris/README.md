@@ -32,6 +32,11 @@ first selected.
 One `LlamaEngine` holds the backbone (`ModelParams(contextSize: 512)`); the
 base head and the Tetris-tuned head are two `DecisionEngine`s on it.
 
+The Apple projects target iOS `16.4` and macOS `14.0`. The macOS app is
+sandboxed with the network client entitlement for the downloads. The Android
+app keeps native libraries extracted (`useLegacyPackaging`) so llama.cpp can
+load its backend modules, and needs Android 10 (API 29) or newer.
+
 ## Web
 
 In a browser the app runs on the llama.cpp WebGPU bridge; see
@@ -90,7 +95,8 @@ and Firefox are untested.
 | Laya choice (A-F): one choice over up to six candidates, with the board as state | 1 |
 | Laya choice (Tetris-tuned): knockout of six-option choices with the tuned head | 1 per group of up to six, per round: 1 for 6 candidates, 7 for 34 |
 
-**Laya considers** sets the candidates: every legal landing, or six of them.
+**Laya considers** sets the candidates: every legal landing, the three best by
+heuristic plus three random, the six best by heuristic, or six random.
 All questions about one piece go to `systemOneBatch` in one call; the knockout
 sends one call per round.
 
@@ -99,9 +105,9 @@ prototype of this app ran fastest that way on a Pixel 9 Pro, where Vulkan was
 slower than the CPU; elsewhere the best GPU, 4 threads and all legal moves.
 **CPU threads** sets `numberOfThreadsBatch`, which drives the encoder and the
 head on the CPU.
-**Benchmark** times one six-option choice on the GPU and at 2, 4, 6 and 8 CPU
-threads, each in a fresh engine; the game and the model settings wait until it
-finishes.
+**Benchmark** times one six-option choice on the best device and at 2, 4, 6
+and 8 CPU threads, each in a fresh engine; the game and the model settings
+wait until it finishes.
 
 Keys: left and right or A and D to move, down or S to soft drop, up, W or X to
 rotate clockwise, Q or Z to rotate counter-clockwise, Space to hard drop, C or
@@ -141,6 +147,69 @@ dart run bin/bench.dart ... --speed                   # time per question
 `--cpu`, `--threads`, `--players`, `--modes`, `--pieces` and `--seeds` narrow
 a run; `--help` lists every option.
 
+## Measured
+
+With `bin/bench.dart` on an Apple M4 Max (16 CPU cores) and the Q8_0
+backbone. The tuned rows use the published tuned head from
+[`leehack/laya-tetris-head`](https://huggingface.co/leehack/laya-tetris-head)
+at revision `465546a595ee2e8e3b212b8cb16829205d5dfab6` (validation accuracy
+0.757).
+
+Time for one six-option choice (175 tokens), each row in a fresh engine,
+over three back-to-back runs:
+
+| Device | ms per question |
+| --- | --- |
+| Metal | 19.6 to 19.7 |
+| CPU, 2 threads | 306.3 to 312.5 |
+| CPU, 4 threads | 157.9 to 159.0 |
+| CPU, 6 threads | 108.4 to 110.8 |
+| CPU, 8 threads | 83.5 to 85.2 |
+
+Turn-based games on Metal, means over 5 seeds of up to 150 pieces:
+
+| Player | Candidates | Pieces | Lines | Questions per piece |
+| --- | --- | --- | --- | --- |
+| Heuristic bot | all | 150 | 56 | 0 |
+| Random candidate | 3 best + 3 random | 31 | 1 | 0 |
+| Laya yes/no checklist | 3 best + 3 random | 120 | 35 | 11.9 |
+| Laya yes/no checklist | all | 83 | 18 | 41.0 |
+| Laya yes/no: good move? | 3 best + 3 random | 86 | 18 | 5.9 |
+| Laya yes/no: good move? | all | 53 | 6 | 21.3 |
+| Laya choice (A-F) | 3 best + 3 random | 33 | 1 | 1 |
+| Laya choice (Tetris-tuned) | 3 best + 3 random | 150 | 48 | 1 |
+| Laya choice (Tetris-tuned) | all | 135 | 40 | 4.8 |
+
+The base head asked to choose among six candidates plays about as well as a
+random pick. The tuned player asks in the format the tuned head was trained
+on; with the base head, that format also plays like a random pick (36 pieces,
+1 line). With "3 best + 3 random", the tuned head asks one question instead
+of the checklist's twelve, reaches the 150-piece cap in every game, and clears
+48 lines to the checklist's 35. Over 40 seeds of up to 500 pieces, the tuned
+player cleared a mean of 70.8 lines with "3 best + 3 random" and 73.6 with all
+candidates, to 60.9 and 55.2 for the earlier 8-epoch head (revision
+`83794e0b`); only the all-candidates gap is significant (Wilcoxon p = 0.033).
+Heads from five runs with 8 epochs instead of 12 played 97 to 147 pieces with
+"3 best + 3 random" and 107 to 146 with all legal moves in the 5-seed games;
+the lowest came from the run that reached 0.705 accuracy.
+
+Real-time games on Metal from level 1, 60 ms per key, two games each played
+until the stack topped out:
+
+| Player | Candidates | Lines per game | Mean think time |
+| --- | --- | --- | --- |
+| Heuristic bot | all | 127, 161 | 0 ms |
+| Laya yes/no checklist | 3 best + 3 random | 17, 50 | 161 ms |
+| Laya yes/no checklist | all | 23, 23 | 573 to 677 ms |
+| Laya choice (Tetris-tuned) | 3 best + 3 random | 20, 92 | 26 ms |
+| Laya choice (Tetris-tuned) | all | 0, 13 | 89 to 95 ms |
+
+Two games per row are too few to rank players. Over 40 games per row, the
+tuned player cleared a mean of 52.3 lines with "3 best + 3 random" and 51.5
+with all candidates, and every answer arrived before its piece locked. The
+earlier 8-epoch head cleared 49.7 and 48.6 on the same seeds; 40 games per row
+cannot resolve a gap that small.
+
 ## Test
 
 ```bash
@@ -148,5 +217,11 @@ flutter test
 LAYA_MODEL_DIR=<folder> flutter test test/laya_models_local_test.dart
 ```
 
+The tests cover the game rules (line clears, hold, T-spins, gravity and lock
+delay), the move planner, the players against a fake decision function, the
+model folder and load settings, and the app's model reloads, benchmark and
+tuned-head handling against a fake loader.
+
 The second command loads `laya-Q8_0.gguf` and `laya-head.safetensors` from
-`<folder>`; without `LAYA_MODEL_DIR` those tests are skipped.
+`<folder>`, and checks that a tuned head that fails to load leaves the base
+head working; without `LAYA_MODEL_DIR` those tests are skipped.

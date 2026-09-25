@@ -1,5 +1,5 @@
 ---
-title: Release Checklist
+title: Release checklist
 description: Use this checklist to cut a llamadart release, snapshot docs, and verify the published artifacts afterward.
 ---
 
@@ -13,10 +13,11 @@ dart run tool/testing/test_matrix.dart --tier release
 dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
-dart test
+dart run tool/testing/check_platform_boundaries.dart
+dart test -p vm -j 1 --exclude-tags local-only
+dart test -p chrome --exclude-tags local-only
 dart run tool/testing/verify_release_docs_versions.dart --release-prep
-./tool/docs/build_site.sh
-./tool/docs/validate_links.sh
+./tool/docs/build_site.sh # fails on broken internal links
 ```
 
 Ensure migration/changelog docs reflect behavior in the release branch.

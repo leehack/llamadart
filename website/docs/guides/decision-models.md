@@ -15,7 +15,7 @@ and [Known limits](#known-limits) list the exceptions.
 Use it for classification-style decisions where a chat model would be slow or
 would need output parsing: routing a ticket, rating urgency, or checking a
 yes/no condition. The
-[Basic App decision example](../examples/basic-app#decision-model) runs the
+[Basic App decision example](../examples/basic-app) runs the
 ticket questions below from the command line, as
 [typed keys](#typed-questions), and the
 [Laya Tetris example](../examples/laya-tetris) plays real-time Tetris with it
@@ -442,31 +442,20 @@ models report unsupported too.
 - A bridge that restarts its runtime, for example when its worker fails during
   a call, frees its heads. Calls then throw `LlamaStateException`; load the
   `DecisionEngine` again.
-- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` differs from Laya by
-  more than 0.05 in probability and 0.10 in score (0.0628 and 0.1224) on one of
-  the 24 questions in Laya's parity fixture, with the same top option. The
-  bridge's own smoke gets the same worst logit difference, so the drift comes
-  from the bridge's WASM CPU Q8_0 path, not llamadart. On the same fixture, a
-  locally converted F16 backbone, or GPU layers with either backbone, stays
-  within those bounds; [Accuracy and speed](#accuracy-and-speed) shows native
-  Q8_0 changing decisions on 187 random questions. The design doc's
+- On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` misses the parity
+  tolerances on one of Laya's 24 fixture questions, with the same top option;
+  the drift comes from the bridge's WASM CPU Q8_0 path. An F16 backbone, or GPU
+  layers with either backbone, stays within them. The design doc's
   [Web check](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#web-check)
-  has the Web accuracy numbers.
+  has the numbers.
 
 ## Accuracy and speed
 
-On an Apple M4 Max (macOS), over Laya's 24-question parity fixture with
-`laya-head.safetensors`, `systemOne` took 14.0 to 15.4 ms per question on Metal
-and 85.6 ms (`laya-Q8_0.gguf`) to 187 ms (F32 backbone) on the CPU. On 187
-random questions, an F32 backbone stayed within 0.0086 of the probabilities of
-Laya's PyTorch reference and changed no decision. `laya-Q8_0.gguf` differed by
-up to 0.24 in probability and changed decisions on both CPU and Metal,
-including a yes/no answer that went from 0.694 to 0.457 on the CPU. An F16
-conversion matched F32 on Metal and flipped two near-ties on the CPU. Use an
-F32 backbone, or F16 on Metal, when answers must match Laya. The design doc's
+Use an F32 backbone, or F16 on Metal, when answers must match Laya:
+`laya-Q8_0.gguf` can change decisions, including clear ones. Timings and
+parity measured on an Apple M4 Max are in the design doc's
 [Measured](https://github.com/leehack/llamadart/blob/main/doc/decision_engine.md#measured)
-section has the full tables and method. Other native platforms and GPU
-backends have not been measured; [Web](#web) covers the bridge.
+section; other native platforms and GPU backends have not been measured.
 
 ## Known limits
 
@@ -490,11 +479,11 @@ backends have not been measured; [Web](#web) covers the bridge.
 - **English only.** Parity is validated only for the English Laya checkpoint.
   Other ModernBERT-family checkpoints load if the checks pass, but have no
   parity evidence.
-- **Quantization.** `laya-Q8_0.gguf` can change decisions, including clear
-  ones; see [Accuracy and speed](#accuracy-and-speed). A local F16 conversion
-  was measured; the published `laya-F16.gguf` was not.
+- **Quantization.** See [Accuracy and speed](#accuracy-and-speed). The
+  published `laya-F16.gguf` matches a local F16 conversion on Laya's fixture
+  but was not measured on the broader random set.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
   `LlamaDecisionException`, because native tokenization would cut the text
   there. A state that is not a `String` is sent as JSON, which escapes it.
-- **Web numbers.** On Web, an integral `double` in JSON text, such as `30.0`,
-  is written as `30`, unlike native and Laya; see [Web](#web).
+- **Web numbers.** Web writes some numbers differently from native and Laya;
+  see [Web](#web).
