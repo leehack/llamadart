@@ -1,15 +1,15 @@
 name: llamadart
-description: Dart and Flutter local LLM inference with llama.cpp GGUF and LiteRT-LM across native platforms and web.
+description: Cross-platform, on-device LLM inference for Dart and Flutter. Run GGUF (llama.cpp) and LiteRT-LM models locally on Android, iOS, macOS, Windows, Linux and web.
 version: 0.8.24
-homepage: https://github.com/leehack/llamadart
+homepage: https://llamadart.leehack.com
 repository: https://github.com/leehack/llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
 topics:
-  - llama
   - llm
-  - inference
+  - ai
+  - on-device
+  - offline
   - gguf
-  - litert
 
 platforms:
   android:
