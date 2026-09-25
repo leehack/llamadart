@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -178,6 +179,76 @@ void main() {
 
     expect(single.prompt, parallel.prompt);
     expect(single.parser, isNot(parallel.parser));
+  });
+
+  group('Qwen3 tool-call turn matches llama.cpp', () {
+    final upstream =
+        jsonDecode(
+              File(
+                'test/fixtures/qwen3_tool_turn_render_upstream.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final expected = upstream['prompt'] as String;
+    final templates = <String, String>{
+      'fixture template': File(
+        'test/fixtures/${upstream['template']}',
+      ).readAsStringSync(),
+      'LiteRT-LM built-in template': kLiteRtLmChatTemplates
+          .singleWhere((template) => template.id == 'qwen3')
+          .template,
+    };
+    List<LlamaChatMessage> conversation(List<LlamaContentPart> reasoning) =>
+        <LlamaChatMessage>[
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is the weather in Paris?',
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: <LlamaContentPart>[
+              ...reasoning,
+              const LlamaToolCallContent(
+                id: 'call_0',
+                name: 'get_weather',
+                arguments: <String, dynamic>{'city': 'Paris'},
+                rawJson: '{"city": "Paris"}',
+              ),
+            ],
+          ),
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: <LlamaContentPart>[
+              LlamaToolResultContent(
+                id: 'call_0',
+                name: 'get_weather',
+                result: 'sunny',
+              ),
+            ],
+          ),
+        ];
+    final conversations = <String, List<LlamaChatMessage>>{
+      'empty reasoning': conversation(const <LlamaContentPart>[
+        LlamaThinkingContent(''),
+      ]),
+      'no reasoning': conversation(const <LlamaContentPart>[]),
+    };
+
+    for (final MapEntry(key: templateName, value: source)
+        in templates.entries) {
+      for (final MapEntry(key: name, value: messages)
+          in conversations.entries) {
+        test('$templateName: $name', () {
+          final result = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: const <String, String>{},
+          );
+
+          expect(result.prompt, expected);
+        });
+      }
+    }
   });
 
   group('parallel tool results match llama.cpp', () {
