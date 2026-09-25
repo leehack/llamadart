@@ -29,6 +29,10 @@ For canonical full release notes, use:
 - Cancel an active Qwen3-ASR transcription on `LlamaEngine.unloadModel()` and
   `dispose()` instead of completing it with the transcript cut at the unload
   ([#670](https://github.com/leehack/llamadart/issues/670)).
+- Send LiteRT-LM tool calls and tool results in the runtime's own message
+  format, so Gemma 4 reads tool output and Qwen3 tool histories no longer
+  fail
+  ([#681](https://github.com/leehack/llamadart/issues/681)).
 - Start a native llama.cpp generation requested right after a cancel once the
   cancelled run stops, instead of failing with `generation is already in
   progress`. An overlap with a running generation that was not cancelled now
