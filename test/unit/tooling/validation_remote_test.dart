@@ -1409,9 +1409,9 @@ void main() {
         'source_dirty': false,
       });
       final provider = FakeProvider()..preflightFails = true;
-      final state = await controller(
-        provider,
-      ).run(plan(id: 'qa-$id', target: target, profile: id));
+      final state = await controller(provider).run(
+        plan(id: 'qa-${target.substring(9)}-$id', target: target, profile: id),
+      );
       expect(state['phase'], 'PREFLIGHT_FAILED', reason: id);
       expect(provider.calls, rejected ? isEmpty : ['preflight'], reason: id);
     }

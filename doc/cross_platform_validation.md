@@ -493,7 +493,7 @@ goes to the browser console, so its reports cannot verify placement and do
 not qualify.
 
 Observed on an Apple Silicon Mac in headless Chromium with WebGPU on Metal and
-bridge `v0.1.51`, at load averages of 7 to 57: a clean `chat-gguf-webgpu`
+the pinned bridge assets, at load averages of 7 to 57: a clean `chat-gguf-webgpu`
 bundle passed 12 cases; `C06.history` failed (`17` for `cedar17`) and
 `C10.limit` was NOT_RUN. The bridge capped Qwen3.5 0.8B at 2 WebGPU layers.
 A `gemma4-gguf-webgpu` draft (those settings with the Gemma 4 GGUF) verified
@@ -612,9 +612,9 @@ Collection keeps the lines between that log's first and last
 collected journal, writes them to `report/native.log` and passes that to the
 reporter. With no such log, or more than one native log source, GGUF reports
 keep `accelerator_evidence_missing`. Trimmed iPhone 16 Pro Firebase logs in
-`packages/llamadart_validation/test/fixtures/ios_xctest/` pin this; the
-`decision-gguf-metal` log yields both 29/29-layer `MTL0` loads and verifies
-placement.
+`packages/llamadart_validation/test/fixtures/ios_xctest/` pin this (their
+`bridge_tag` reads `fixture-bridge`); the `decision-gguf-metal` log yields
+both 29/29-layer `MTL0` loads and verifies placement.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
 
