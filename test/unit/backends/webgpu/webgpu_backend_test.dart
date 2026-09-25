@@ -1484,6 +1484,45 @@ void main() {
       ]);
     });
 
+    for (final message in const [
+      'thread constructor failed',
+      'bridge model load failed: error 138',
+    ]) {
+      for (final forcedFetchAbort in const [false, true]) {
+        test('maps "$message" to the cross-origin isolation error '
+            '(forced fetch abort: $forcedFetchAbort)', () async {
+          if (forcedFetchAbort) {
+            globalContext.setProperty(
+              '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+              true.toJS,
+            );
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+            bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+                'model_fetch_backend_attempt;model_fetch_backend_abort';
+          }
+          failLoads(message: message, firstAttempts: 99);
+
+          await expectLater(
+            backend.modelLoadFromUrl(
+              'https://example.com/thread-constructor-model.gguf',
+              const ModelParams(contextSize: 4096, gpuLayers: 99),
+            ),
+            throwsA(
+              isA<UnsupportedError>().having(
+                (error) => error.message,
+                'message',
+                startsWith(
+                  'Browser runtime blocked worker thread creation required '
+                  'by the fetch-backed web model loader.',
+                ),
+              ),
+            ),
+          );
+          expect(requestedContextSizes, <int>[4096]);
+        });
+      }
+    }
+
     test(
       'surfaces the memory limit error after an opted-in wasm64 staging failure',
       () async {

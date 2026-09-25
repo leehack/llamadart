@@ -852,7 +852,7 @@ class WebGpuLlamaBackend
     final threadConstructorFailure =
         runtimeNotes.contains('threads_capped_no_coi') ||
         runtimeNotes.contains('thread_constructor_failed') ||
-        loweredText.contains('thread constructor failed');
+        isThreadConstructorFailureText(loweredText);
 
     if (threadConstructorFailure) {
       final workerFallbackReason = _getGlobalString(

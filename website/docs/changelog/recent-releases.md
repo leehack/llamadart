@@ -274,6 +274,11 @@ For canonical full release notes, use:
   ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
   selection
   ([#611](https://github.com/leehack/llamadart/issues/611)).
+- Report a WebGPU model load that fails with `error 138` as the documented
+  cross-origin isolation (COOP/COEP) `UnsupportedError`, as
+  `thread constructor failed` already was, instead of rethrowing the raw
+  bridge error
+  ([#598](https://github.com/leehack/llamadart/issues/598)).
 
 ## 0.8.24
 
