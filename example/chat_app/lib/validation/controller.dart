@@ -6,6 +6,20 @@ import 'package:llamadart_validation/llamadart_validation.dart';
 
 import 'host.dart';
 
+const _profileAssets = 'packages/llamadart_validation/assets/profiles/';
+
+/// Sorted ids of the profiles bundled with the app, from its asset manifest.
+Future<List<String>> bundledValidationProfiles([AssetBundle? bundle]) async {
+  final manifest = await AssetManifest.loadFromAssetBundle(
+    bundle ?? rootBundle,
+  );
+  return [
+    for (final asset in manifest.listAssets())
+      if (asset.startsWith(_profileAssets) && asset.endsWith('.json'))
+        asset.substring(_profileAssets.length, asset.length - '.json'.length),
+  ]..sort();
+}
+
 /// Coordinates the same suite for interactive and unattended Flutter runs.
 class ValidationController extends ChangeNotifier {
   /// Allows host injection in widget tests.
@@ -66,7 +80,7 @@ class ValidationController extends ChangeNotifier {
     var started = false;
     try {
       final source = await rootBundle.loadString(
-        'packages/llamadart_validation/assets/profiles/$profileId.json',
+        '$_profileAssets$profileId.json',
       );
       final data = jsonDecode(source) as Map<String, dynamic>;
       data['execution_path'] = const String.fromEnvironment(

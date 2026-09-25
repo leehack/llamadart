@@ -26,6 +26,22 @@ class _ValidationAppState extends State<ValidationApp> {
     defaultValue: 'public_api',
   );
   String _profile = _compiledProfile;
+  List<String> _profiles = const [_compiledProfile];
+  @override
+  void initState() {
+    super.initState();
+    if (_compiledProfile.startsWith('npu-')) return;
+    bundledValidationProfiles().then((ids) {
+      if (!mounted) return;
+      setState(
+        () => _profiles = {
+          _compiledProfile,
+          ...ids.where((id) => !id.startsWith('npu-')),
+        }.toList()..sort(),
+      );
+    });
+  }
+
   @override
   void dispose() {
     _controller.cancel();
@@ -66,28 +82,7 @@ class _ValidationAppState extends State<ValidationApp> {
                     labelText: 'Model / backend profile',
                   ),
                   items: [
-                    for (final id
-                        in _compiledProfile.startsWith('npu-')
-                            ? [_compiledProfile]
-                            : const [
-                                'tiny-gguf-cpu',
-                                'tiny-gguf-lifecycle',
-                                'tiny-gguf-batching',
-                                'tiny-gguf-metal',
-                                'tiny-gguf-vulkan',
-                                'tiny-gguf-cuda',
-                                'chat-gguf-cpu',
-                                'chat-gguf-metal',
-                                'chat-gguf-vulkan',
-                                'chat-gguf-cuda',
-                                'chat-litert-cpu',
-                                'chat-litert-gpu',
-                                'decision-gguf-cpu',
-                                'decision-gguf-metal',
-                                'decision-gguf-vulkan',
-                                'decision-gguf-cuda',
-                                'decision-gguf-webgpu',
-                              ])
+                    for (final id in _profiles)
                       DropdownMenuItem(value: id, child: Text(id)),
                   ],
                   onChanged: _controller.running
