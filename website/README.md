@@ -1,47 +1,47 @@
 # llamadart docs site
 
-This directory contains the Docusaurus site for `llamadart`.
+The [Jaspr](https://jaspr.site) static site published at
+https://llamadart.leehack.com. Use the Flutter SDK pinned in
+`../.flutter-version`; the search index step also needs Node.js for `npx`.
 
-## Local development
-
-Use Node.js 20.x. The docs CI pins Node 20, and newer major versions can expose
-toolchain incompatibilities before Docusaurus and its plugins declare support.
+## Develop
 
 ```bash
 cd website
-npm ci
-npm run start
+dart pub get
+DOCS_ARCHIVED=0 dart run jaspr_cli:jaspr serve
 ```
 
-## Build and verify (repo root)
+`DOCS_ARCHIVED=<n>` limits the build to the newest `n` archived releases.
+
+## Build, check and preview (repo root)
 
 ```bash
 ./tool/docs/build_site.sh
-./tool/docs/validate_links.sh
+(cd website && dart analyze --fatal-infos && dart test)
+(cd website && dart run tool/serve_site.dart --port 8080)
 ```
 
-Automatic local Markdown images are disabled because the Docusaurus
-image-dimension dependency has no patched release for its ICNS, JXL, and
-HEIF/AVIF infinite-loop parsers. Put docs images under `static/` and use an
-explicit pathname URL, such as `![diagram](pathname:///img/diagram.png)`, to
-bypass automatic dimension parsing. The guard checks both Markdown grammars
-that Docusaurus can select. Remote Markdown images and HTML image elements do
-not use that parser.
+The build fails on any broken internal link or anchor.
 
-## API docs
+## Content
 
-The docs site links API references to pub.dev:
+- `docs/` and `sidebars.json`: docs for the next release (`/docs/next`).
+- `versioned_docs/`, `versioned_sidebars/`, `versions.json`: released
+  snapshots; the first version is the latest and is served at `/docs`.
+- `web/`: static assets. Put images in `web/img/` and link them as
+  `/img/<name>`.
 
-- https://pub.dev/documentation/llamadart/latest/
+API references link to https://pub.dev/documentation/llamadart/latest/.
 
 ## Versioning
 
-Create a docs snapshot manually:
+Release tags run `.github/workflows/docs_version_cut.yml`. To cut a version by
+hand:
 
 ```bash
 cd website
-npm ci
-npm run docusaurus docs:version <version>
+dart run tool/cut_version.dart <version>
 ```
 
-Automated version cuts also run on `v*` release tags via repository workflows.
+See `docs/maintainers/docs-site.md` for the full maintainer guide.

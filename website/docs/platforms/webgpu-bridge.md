@@ -1,5 +1,6 @@
 ---
-title: WebGPU Bridge
+title: WebGPU bridge for browser inference
+sidebar_label: WebGPU bridge
 description: Check browser readiness, bridge asset loading, fallback behavior, and Flutter Web smoke-test paths for llamadart's experimental WebGPU runtime.
 ---
 

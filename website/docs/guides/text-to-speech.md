@@ -1,5 +1,6 @@
 ---
-title: Text to Speech
+title: On-device text to speech
+sidebar_label: Text to speech
 description: Generate complete PCM and WAV audio with the experimental typed llama.cpp Qwen3-TTS API on native and WebGPU runtimes.
 ---
 

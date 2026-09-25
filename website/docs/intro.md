@@ -1,18 +1,38 @@
 ---
-title: Introduction
+title: "llamadart: on-device LLMs for Flutter and Dart"
+sidebar_label: Overview
 slug: /intro
-description: Learn what llamadart provides and where to start when building local AI features in Dart and Flutter.
+description: llamadart runs LLMs on-device in Flutter and Dart apps, with one API for GGUF and LiteRT-LM models on six platforms. See what it does and where to start.
 ---
 
-`llamadart` is a Dart and Flutter plugin for local LLMs. It runs GGUF models
-through `llama.cpp` across native and web targets, and routes `.litertlm`
-bundles through LiteRT-LM native and web runtimes.
+`llamadart` is a Dart package for on-device inference. It runs GGUF models
+through `llama.cpp` and `.litertlm` bundles through LiteRT-LM, on Android, iOS,
+macOS, Linux, Windows and the web, behind one Dart API.
 
 ## Who this is for
 
-- App developers building local-first AI features in Dart/Flutter.
-- Teams that need OpenAI-style HTTP compatibility from local models.
-- Maintainers who need predictable native/web runtime integration.
+- Flutter and Dart developers who want AI features that run on the user's
+  device: prompts stay private, and there is no inference server or API key.
+- Apps that must work offline. Native targets need no network once the model
+  is on the device; on the web, the page fetches the runtime and model over the
+  network, then runs inference in the browser.
+- Teams that want one codebase across mobile, desktop and web instead of a
+  separate SDK per platform.
+- Tools that need an OpenAI-compatible HTTP endpoint backed by a local model:
+  see the [OpenAI-compatible server example](./examples/llamadart-server).
+
+## What you can build
+
+- Streaming chat and text generation, with
+  [structured JSON output](./guides/generation-and-streaming#structured-json-output).
+- [Tool calling](./guides/tool-calling) driven by the model's chat template.
+- [Embeddings](./guides/embeddings) for search and retrieval.
+- [Image and audio input](./guides/multimodal) with multimodal models.
+- [Speech to text](./guides/speech-to-text) and
+  [text to speech](./guides/text-to-speech).
+- [Decision models](./guides/decision-models) that answer typed questions
+  without generating text.
+- Runtime [LoRA adapters](./guides/lora-adapters).
 
 ## Core primitives
 
@@ -22,17 +42,17 @@ bundles through LiteRT-LM native and web runtimes.
 
 ## Read by workflow
 
-- First setup: [Installation](./getting-started/installation)
+- First setup: [Install llamadart](./getting-started/installation)
 - First inference: [Quickstart](./getting-started/quickstart)
-- Multi-turn chat: [First Chat Session](./getting-started/first-chat-session)
+- Multi-turn chat: [Your first chat session](./getting-started/first-chat-session)
 - Backend choice: [Choosing llama.cpp or LiteRT-LM](./guides/backend-selection)
 - Embedding pipelines: [Embeddings](./guides/embeddings)
-- Function calling: [Tool Calling](./guides/tool-calling)
-- Template diagnostics: [Chat Templates and Parsing](./guides/chat-template-and-parsing)
-- Template internals: [Template Engine Internals](./guides/template-engine-internals)
-- LoRA runtime workflows: [LoRA Adapters](./guides/lora-adapters)
-- Performance work: [Performance Tuning](./guides/performance-tuning)
-- Backend benchmark results: [Backend Benchmarks](./guides/backend-benchmarks)
-- Platform/backend planning: [Platform & Backend Matrix](./platforms/support-matrix)
-- Upgrade planning: [Upgrade Checklist](./migration/upgrade-checklist)
-- Maintainer operations: [Maintainer Overview](./maintainers/docs-site)
+- Function calling: [Tool calling](./guides/tool-calling)
+- Template diagnostics: [Chat templates and output parsing](./guides/chat-template-and-parsing)
+- Template internals: [Template engine internals](./guides/template-engine-internals)
+- LoRA runtime workflows: [LoRA adapters](./guides/lora-adapters)
+- Performance work: [Performance tuning](./guides/performance-tuning)
+- Backend benchmark results: [Backend benchmarks](./guides/backend-benchmarks)
+- Platform/backend planning: [Platform and backend support matrix](./platforms/support-matrix)
+- Upgrade planning: [Upgrade checklist](./migration/upgrade-checklist)
+- Maintainer operations: [Maintainer overview](./maintainers/docs-site)

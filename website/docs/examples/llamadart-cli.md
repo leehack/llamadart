@@ -1,5 +1,7 @@
 ---
 title: llama.cpp-Style CLI Example
+sidebar_label: llama.cpp-style CLI
+description: A command-line tool with llama.cpp-style arguments built on llamadart, with parity tooling against upstream llama.cpp.
 ---
 
 Path: `example/llamadart_cli`

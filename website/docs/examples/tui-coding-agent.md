@@ -1,5 +1,7 @@
 ---
 title: TUI Coding Agent Example
+sidebar_label: TUI coding agent
+description: "A small terminal coding agent built with nocterm and llamadart: one local model, one conversation and four general tools."
 ---
 
 Path: `example/tui_coding_agent`
@@ -55,10 +57,10 @@ Qwen3.6 has a real thinking on/off switch but no model-trained
 low/medium/high reasoning-effort levels. This example exposes only the real
 control: `--thinking` enables reasoning and its coding sampler; omitting the
 flag disables it. Thinking mode also passes Qwen's `preserve_thinking` template
-option so reasoning can be reused across agent tool rounds. Upstream llama.cpp
-has a separate hard reasoning-token budget, but llamadart's embedded API does
-not currently expose it, and the example does not mislabel total output tokens
-as reasoning effort.
+option so reasoning can be reused across agent tool rounds. llamadart exposes
+llama.cpp's hard reasoning-token budget as `GenerationParams.thinkingBudget`;
+this example does not set it, and does not mislabel total output tokens as
+reasoning effort.
 
 The session passes its exact `hf://` source to
 `LlamaEngine.loadModelSource`, which owns resolution, resumable downloads, and

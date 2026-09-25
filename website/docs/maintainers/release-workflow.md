@@ -192,6 +192,6 @@ branch protections), run the version cut locally and open a PR:
 
 ```bash
 cd website
-npm ci
-npm run docusaurus docs:version <release-version>
+dart pub get
+dart run tool/cut_version.dart <release-version>
 ```

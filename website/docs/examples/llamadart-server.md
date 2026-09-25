@@ -1,5 +1,7 @@
 ---
 title: OpenAI-Compatible Server Example
+sidebar_label: OpenAI-compatible server
+description: Serve a local model over an OpenAI-style HTTP API with llamadart, including endpoints and example requests.
 ---
 
 Path: `example/llamadart_server`
@@ -9,8 +11,10 @@ Path: `example/llamadart_server`
 
 ## Endpoints
 
+- `GET /healthz`
 - `GET /v1/models`
 - `POST /v1/chat/completions`
+- `POST /v1/embeddings`
 - `GET /openapi.json`
 - `GET /docs` (Swagger UI)
 
