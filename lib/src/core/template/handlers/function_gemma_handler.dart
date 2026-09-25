@@ -82,6 +82,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
       metadata: metadata,
       context: {
         'messages': _serializeMessages(
+          templateSource,
           messages,
           multimodalContent: multimodalContent,
         ),
@@ -113,29 +114,28 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
   }
 
   List<Map<String, dynamic>> _serializeMessages(
+    String templateSource,
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
   }) {
-    return TemplateRenderContext.splitToolResults(messages)
-        .map((message) {
-          if (message.role == LlamaChatRole.tool) {
-            return _serializeToolMessage(message);
-          }
-
-          return multimodalContent
-              ? message.toJsonMultimodal()
-              : message.toJson();
-        })
-        .toList(growable: false);
+    final split = TemplateRenderContext.splitToolResults(messages);
+    final rendered = templateMessages(
+      split,
+      multimodal: multimodalContent,
+      templateSource: templateSource,
+    );
+    return [
+      for (var i = 0; i < split.length; i++)
+        _serializeToolMessage(split[i]) ?? rendered[i],
+    ];
   }
 
-  Map<String, dynamic> _serializeToolMessage(LlamaChatMessage message) {
+  Map<String, dynamic>? _serializeToolMessage(LlamaChatMessage message) {
+    if (message.role != LlamaChatRole.tool) return null;
     final result = message.parts
         .whereType<LlamaToolResultContent>()
         .firstOrNull;
-    if (result == null) {
-      return message.toJson();
-    }
+    if (result == null) return null;
 
     return {
       'role': 'tool',

@@ -128,7 +128,7 @@ void main() {
         '{"type": "object", "properties": {"city": {"type": "string"}}}}}]'
         '[/AVAILABLE_TOOLS]'
         '[INST]Weather in Paris?[/INST]'
-        '[TOOL_CALLS]get_weather[ARGS]{"city":"Paris"}</s>'
+        '[TOOL_CALLS]get_weather[ARGS]{"city": "Paris"}</s>'
         '[TOOL_RESULTS]sunny[/TOOL_RESULTS]'
         'It is sunny.</s>'
         '[INST]And Rome?[/INST]',

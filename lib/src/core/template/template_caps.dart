@@ -30,6 +30,10 @@ class TemplateCaps {
   /// Whether the template supports thinking/reasoning tags.
   final bool supportsThinking;
 
+  /// Whether the template reads tool-call `arguments` as an object, so
+  /// earlier tool calls are rendered with their arguments parsed from JSON.
+  final bool supportsObjectArguments;
+
   /// Creates a [TemplateCaps] with the specified capabilities.
   const TemplateCaps({
     this.supportsSystemRole = true,
@@ -39,6 +43,7 @@ class TemplateCaps {
     this.supportsStringContent = true,
     this.supportsTypedContent = false,
     this.supportsThinking = false,
+    this.supportsObjectArguments = false,
   });
 
   /// Detects capabilities by scanning the template source string.
@@ -126,6 +131,7 @@ class TemplateCaps {
     'supports_string_content': supportsStringContent,
     'supports_typed_content': supportsTypedContent,
     'supports_thinking': supportsThinking,
+    'supports_object_arguments': supportsObjectArguments,
   };
 
   @override

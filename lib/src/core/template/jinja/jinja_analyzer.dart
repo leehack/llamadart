@@ -14,6 +14,7 @@ class JinjaAnalyzer {
   static const String _toolNameMarker = '__llamadart_caps_tool__';
   static const String _toolCallMarker1 = '__llamadart_caps_call_1__';
   static const String _toolCallMarker2 = '__llamadart_caps_call_2__';
+  static const String _toolArgMarker = '__llamadart_caps_arg__';
 
   /// Analyzes the [source] template and returns detected [TemplateCaps].
   static TemplateCaps analyze(String source) {
@@ -33,7 +34,9 @@ class JinjaAnalyzer {
   /// produces no render only when both renders throw. The parallel tool-call
   /// probe renders the conversation that succeeded with a second tool call.
   /// When that render throws, `caps.supportsParallelToolCalls` is `false` and
-  /// `failed` is unaffected.
+  /// `failed` is unaffected. `caps.supportsObjectArguments` comes from a
+  /// separate render of llama.cpp's object-arguments probe conversation, and
+  /// is `true` only when that render prints an argument value.
   static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(String source) {
     try {
       final program = parseTemplate(source);
@@ -61,6 +64,7 @@ class JinjaAnalyzer {
     var supportsParallelToolCalls = astCaps.supportsParallelToolCalls;
     var supportsStringContent = astCaps.supportsStringContent;
     var supportsTypedContent = astCaps.supportsTypedContent;
+    var supportsObjectArguments = false;
 
     final stringRender = _renderTemplate(
       template,
@@ -139,6 +143,9 @@ class JinjaAnalyzer {
     } else {
       supportsTools = toolRender.contains(_toolNameMarker);
       supportsToolCalls = toolRender.contains(_toolCallMarker1);
+      if (supportsToolCalls) {
+        supportsObjectArguments = _probeObjectArguments(template);
+      }
       supportsParallelToolCalls = false;
       if (supportsToolCalls) {
         final parallel = _tryRender(
@@ -174,6 +181,7 @@ class JinjaAnalyzer {
         supportsStringContent: supportsStringContent,
         supportsTypedContent: supportsTypedContent,
         supportsThinking: astCaps.supportsThinking,
+        supportsObjectArguments: supportsObjectArguments,
       ),
       failed:
           stringRender == null ||
@@ -181,6 +189,48 @@ class JinjaAnalyzer {
           systemRender == null ||
           toolRender == null,
     );
+  }
+
+  /// Renders llama.cpp's `supports_object_arguments` probe conversation and
+  /// reports whether the output prints the argument value. Printing the whole
+  /// arguments object does not count: llama.cpp does not mark its members as
+  /// used then. A render that throws reports `false`, as in llama.cpp.
+  static bool _probeObjectArguments(Template template) {
+    final output = _tryRender(
+      template,
+      messages: <Map<String, dynamic>>[
+        <String, dynamic>{'role': 'user', 'content': 'User message'},
+        <String, dynamic>{
+          'role': 'assistant',
+          'content': '',
+          'tool_calls': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'call00001',
+              'type': 'function',
+              'function': <String, dynamic>{
+                'name': _toolNameMarker,
+                'arguments': <String, dynamic>{'arg': _toolArgMarker},
+              },
+            },
+          ],
+        },
+        <String, dynamic>{
+          'role': 'tool',
+          'content': 'Tool response',
+          'tool_call_id': 'call00001',
+        },
+        <String, dynamic>{
+          'role': 'assistant',
+          'content': "The tool response was 'tool response'",
+        },
+        <String, dynamic>{'role': 'user', 'content': 'User message'},
+      ],
+      tools: _probeTools,
+    ).output;
+    if (output == null) return false;
+    return output
+        .replaceAll("{'arg': '$_toolArgMarker'}", '')
+        .contains(_toolArgMarker);
   }
 
   static const List<Map<String, dynamic>> _probeTools = <Map<String, dynamic>>[

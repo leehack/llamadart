@@ -1,5 +1,6 @@
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
@@ -44,6 +45,45 @@ void main() {
 
       expect(result.format, equals(ChatFormat.translateGemma.index));
       expect(result.prompt, contains('ko-KR->en-US:안녕하세요'));
+    });
+
+    test('passes typed tool results to the template as JSON text', () {
+      final result = ChatTemplateEngine.handlerFor(ChatFormat.translateGemma)
+          .render(
+            templateSource:
+                '{%- for message in messages -%}'
+                "{%- if message.role == 'tool' -%}{{ message.content }}|"
+                '{%- endif -%}'
+                '{%- endfor -%}',
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [
+                  LlamaToolResultContent(
+                    id: 'call_0',
+                    name: 'get_weather',
+                    result: {'temp': 21.5, 'sky': 'clear', 'note': "it's"},
+                  ),
+                  LlamaToolResultContent(
+                    id: 'call_1',
+                    name: 'get_weather',
+                    result: [
+                      1,
+                      'a',
+                      {'k': true},
+                    ],
+                  ),
+                ],
+              ),
+            ],
+            metadata: const {},
+            addAssistant: false,
+          );
+
+      expect(
+        result.prompt,
+        '{"temp":21.5,"sky":"clear","note":"it\'s"}|[1,"a",{"k":true}]|',
+      );
     });
 
     test('parses output as plain content', () {

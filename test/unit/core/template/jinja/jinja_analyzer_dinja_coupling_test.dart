@@ -133,6 +133,7 @@ void main() {
         'supports_string_content': true,
         'supports_typed_content': true,
         'supports_thinking': false,
+        'supports_object_arguments': false,
       },
       'string literal does not imply thinking support': <String, bool>{
         'supports_system_role': true,
@@ -142,6 +143,7 @@ void main() {
         'supports_string_content': true,
         'supports_typed_content': false,
         'supports_thinking': false,
+        'supports_object_arguments': false,
       },
       'typed content parts': <String, bool>{
         'supports_system_role': false,
@@ -151,6 +153,7 @@ void main() {
         'supports_string_content': false,
         'supports_typed_content': true,
         'supports_thinking': false,
+        'supports_object_arguments': false,
       },
       'bare tools guard': <String, bool>{
         'supports_system_role': false,
@@ -160,6 +163,7 @@ void main() {
         'supports_string_content': true,
         'supports_typed_content': false,
         'supports_thinking': false,
+        'supports_object_arguments': false,
       },
     };
 
@@ -201,6 +205,7 @@ void main() {
         'supports_string_content': true,
         'supports_typed_content': false,
         'supports_thinking': false,
+        'supports_object_arguments': false,
       });
     });
 

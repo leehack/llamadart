@@ -165,7 +165,11 @@ class Gemma4Handler extends ChatTemplateHandler
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
   }) {
-    final rendered = templateMessages(messages, multimodal: multimodalContent);
+    final rendered = templateMessages(
+      messages,
+      multimodal: multimodalContent,
+      templateSource: templateSource,
+    );
     return templateSource.contains(_openAiToolMessagesMarker)
         ? rendered
         : _embedToolResponses(rendered);

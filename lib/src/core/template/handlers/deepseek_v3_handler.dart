@@ -9,7 +9,6 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
-import '../template_render_context.dart';
 import '../thinking_utils.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
@@ -63,9 +62,10 @@ class DeepseekV3Handler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': TemplateRenderContext.splitToolResults(
+        'messages': templateMessages(
           modifiedMessages,
-        ).map((m) => m.toJson()).toList(),
+          templateSource: templateSource,
+        ),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token': bosToken,

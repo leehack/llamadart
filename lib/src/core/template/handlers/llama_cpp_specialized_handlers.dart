@@ -47,7 +47,7 @@ abstract class _DirectJinjaHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: <String, dynamic>{
-        'messages': templateMessages(messages),
+        'messages': templateMessages(messages, templateSource: templateSource),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((tool) => tool.toJson()).toList(),
         'enable_thinking': enableThinking,
