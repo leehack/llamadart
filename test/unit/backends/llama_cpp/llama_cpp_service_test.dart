@@ -530,11 +530,14 @@ void main() {
           '_ggmlBackendRegGet',
           [i],
         );
-        final name = _invokePrivateForTesting<Pointer<Char>>(
+        if (reg == nullptr) continue;
+        final namePtr = _invokePrivateForTesting<Pointer<Char>>(
           service,
           '_ggmlBackendRegName',
           [reg],
-        ).cast<Utf8>().toDartString();
+        );
+        if (namePtr == nullptr) continue;
+        final name = namePtr.cast<Utf8>().toDartString();
         final deviceCount = _invokePrivateForTesting<int>(
           service,
           '_ggmlBackendRegDevCount',
