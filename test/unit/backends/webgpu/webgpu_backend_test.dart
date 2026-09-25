@@ -2322,6 +2322,165 @@ void main() {
       );
     });
 
+    group('next-token scoring', () {
+      JSObject? lastScoreOptions;
+      String? lastScorePrompt;
+
+      JSObject jsError(String message) => globalContext
+          .getProperty<JSFunction>('Error'.toJS)
+          .callAsConstructor<JSObject>(message.toJS);
+
+      JSObject scoredToken(int token, List<int> bytes, double? logprob) {
+        final entry = JSObject();
+        entry.setProperty('token'.toJS, token.toJS);
+        entry.setProperty('bytes'.toJS, Uint8List.fromList(bytes).toJS);
+        entry.setProperty('logprob'.toJS, logprob?.toJS);
+        return entry;
+      }
+
+      void installScoring(JSPromise<JSAny?> Function() respond) {
+        bridge.setProperty(
+          'scoreNextToken'.toJS,
+          ((String prompt, JSObject options) {
+            lastScorePrompt = prompt;
+            lastScoreOptions = options;
+            return respond();
+          }).toJS,
+        );
+      }
+
+      setUp(() {
+        lastScoreOptions = null;
+        lastScorePrompt = null;
+      });
+
+      test('reports support only when the bridge has the method', () async {
+        installScoring(() => Future<JSAny?>.value(null).toJS);
+        expect(backend.supportsNextTokenScoring, isFalse);
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        expect(backend.supportsNextTokenScoring, isTrue);
+
+        bridge.delete('scoreNextToken'.toJS);
+        expect(backend.supportsNextTokenScoring, isFalse);
+        await expectLater(
+          () => backend.scoreNextToken(
+            1,
+            'hi',
+            candidates: const <int>[1],
+            topK: 0,
+            reusePromptPrefix: true,
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.52'),
+            ),
+          ),
+        );
+      });
+
+      test('forwards the request and parses the scores', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        installScoring(() {
+          final result = JSObject();
+          result.setProperty(
+            'candidates'.toJS,
+            <JSObject>[
+              scoredToken(7, const <int>[0xe2, 0x82], -0.25),
+              scoredToken(9, const <int>[], null),
+            ].toJS,
+          );
+          result.setProperty(
+            'top'.toJS,
+            <JSObject>[
+              scoredToken(7, const <int>[0x41], -0.25),
+            ].toJS,
+          );
+          result.setProperty('promptTokens'.toJS, 3.toJS);
+          return Future<JSAny?>.value(result).toJS;
+        });
+
+        final scores = await backend.scoreNextToken(
+          1,
+          'The answer is',
+          candidates: const <int>[7, 9],
+          topK: 1,
+          reusePromptPrefix: false,
+        );
+
+        expect(lastScorePrompt, 'The answer is');
+        final options = lastScoreOptions!;
+        expect(
+          options
+              .getProperty<JSArray<JSNumber>>('candidates'.toJS)
+              .toDart
+              .map((token) => token.toDartInt),
+          <int>[7, 9],
+        );
+        expect(options.getProperty<JSNumber>('topK'.toJS).toDartInt, 1);
+        expect(
+          options.getProperty<JSBoolean>('reusePromptPrefix'.toJS).toDart,
+          isFalse,
+        );
+
+        expect(scores.candidates.map((entry) => entry.token), <int>[7, 9]);
+        expect(scores.candidates.first.bytes, <int>[0xe2, 0x82]);
+        expect(scores.candidates.first.logprob, -0.25);
+        expect(scores.candidates.last.logprob, double.negativeInfinity);
+        expect(scores.top.single.text, 'A');
+        expect(scores.promptTokens, 3);
+      });
+
+      test('maps bridge errors to the native error types', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        Future<void> expectRejection(String message, Matcher matcher) async {
+          installScoring(() => _rejectPromise(jsError(message)));
+          await expectLater(
+            () => backend.scoreNextToken(
+              1,
+              'hi',
+              candidates: const <int>[99],
+              topK: 0,
+              reusePromptPrefix: true,
+            ),
+            throwsA(matcher),
+          );
+        }
+
+        const outOfVocabulary =
+            'Next-token scoring failed: Token id 99 is outside the vocabulary '
+            'of 32 tokens';
+        await expectRejection(
+          outOfVocabulary,
+          isA<RangeError>().having(
+            (RangeError error) => error.message,
+            'message',
+            outOfVocabulary,
+          ),
+        );
+        await expectRejection(
+          'Next-token scoring failed: Next-token scoring needs a decoder-only '
+          'model',
+          isA<LlamaUnsupportedException>(),
+        );
+        await expectRejection(
+          'Next-token scoring failed: llama_decode failed while processing '
+          'prompt',
+          isNot(anyOf(isA<RangeError>(), isA<LlamaUnsupportedException>())),
+        );
+      });
+    });
+
     test('throws clear error for unsupported runtime LoRA updates', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',

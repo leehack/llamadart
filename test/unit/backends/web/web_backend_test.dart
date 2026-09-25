@@ -14,6 +14,7 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:test/test.dart';
 
@@ -31,7 +32,10 @@ void main() {
     expect(backend, isA<BackendPromptSpeechToTextSupport>());
     expect(backend, isA<BackendTextToSpeech>());
     expect(backend, isA<BackendDecision>());
+    expect(backend, isA<BackendNextTokenScoring>());
+    expect(backend, isA<BackendNextTokenScoringSupport>());
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
+    expect(backend.supportsNextTokenScoring, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
   });
 
@@ -187,6 +191,43 @@ void main() {
           contains('v0.1.15'),
         ),
       ),
+    );
+  });
+
+  test('WebAutoBackend forwards next-token scoring to its delegate', () async {
+    final scoring = _ScoringBackend(supportsNextTokenScoring: true);
+    final backend = WebAutoBackend(webBackend: scoring);
+    expect(backend.supportsNextTokenScoring, isTrue);
+    expect(
+      WebAutoBackend(
+        webBackend: _ScoringBackend(supportsNextTokenScoring: false),
+      ).supportsNextTokenScoring,
+      isFalse,
+    );
+
+    final scores = await backend.scoreNextToken(
+      1,
+      'prompt',
+      candidates: const <int>[4, 2],
+      topK: 3,
+      reusePromptPrefix: false,
+    );
+    final request = scoring.lastRequest!;
+    expect(request.$1, 1);
+    expect(request.$2, 'prompt');
+    expect(request.$3, <int>[4, 2]);
+    expect(request.$4, 3);
+    expect(request.$5, isFalse);
+    expect(scores.promptTokens, 5);
+
+    final legacy = WebAutoBackend(webBackend: _NoStateBackend());
+    expect(legacy.supportsNextTokenScoring, isFalse);
+    final engine = LlamaEngine(legacy);
+    await engine.loadModel('/model.gguf');
+    expect(engine.supportsNextTokenScoring, isFalse);
+    await expectLater(
+      () => engine.scoreNextToken('prompt', topK: 1),
+      throwsA(isA<LlamaUnsupportedException>()),
     );
   });
 
@@ -477,6 +518,32 @@ class _TextToSpeechBackend extends _NoStateBackend
   @override
   void cancelTextToSpeech() {
     cancelCalls += 1;
+  }
+}
+
+class _ScoringBackend extends _NoStateBackend
+    implements BackendNextTokenScoring, BackendNextTokenScoringSupport {
+  _ScoringBackend({required this.supportsNextTokenScoring});
+
+  @override
+  final bool supportsNextTokenScoring;
+
+  (int, String, List<int>, int, bool)? lastRequest;
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    lastRequest = (contextHandle, prompt, candidates, topK, reusePromptPrefix);
+    return LlamaNextTokenScores(
+      candidates: const <LlamaTokenLogprob>[],
+      top: const <LlamaTokenLogprob>[],
+      promptTokens: 5,
+    );
   }
 }
 
