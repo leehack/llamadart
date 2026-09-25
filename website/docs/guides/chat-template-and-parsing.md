@@ -4,22 +4,11 @@ sidebar_label: Chat templates
 description: How llamadart detects, renders and parses chat templates in line with llama.cpp, and how to inspect or override a template.
 ---
 
-`llamadart` routes chat rendering/parsing through template handlers aligned to
-llama.cpp behavior.
-
-## Parity model
-
-`llamadart` reimplements llama.cpp-style template detection, rendering,
-workarounds, grammar wiring, and parse behavior in Dart. This is why
-`engine.create(...)` and `engine.chatTemplate(...)` can keep consistent behavior
-across native and web backends.
-
-Template rendering is powered by [`dinja`](https://pub.dev/packages/dinja), the
-Dart Jinja runtime used by `llamadart` for llama.cpp-compatible template
-execution.
-
-For internals and pipeline details, see
-[Template Engine Internals](./template-engine-internals).
+`llamadart` reimplements llama.cpp's template detection, rendering and parsing
+in Dart, so `engine.create` and `engine.chatTemplate` behave the same on native
+and web. Templates run on [`dinja`](https://pub.dev/packages/dinja), a Dart
+Jinja runtime; the pipeline is described in
+[Template engine internals](./template-engine-internals).
 
 ## Core API
 
@@ -51,21 +40,11 @@ print(result.format);
 - `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
 - `responseFormat`: structured-output schema hints.
 
-`engine.create(...)` accepts `responseFormat` for strict structured output.
-Use `{'type': 'json_object'}` or
-`{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`.
-Application code can build those maps with `LlamaStructuredOutput`, or call
-`engine.createStructuredJson(...)` to collect streamed content and validate the
-final JSON before decoding it into an app type. Streaming UI code can still pass
-`responseFormat: output.responseFormat` and finish with
-`await stream.parseStructuredJson(output)` after the stream completes.
-Grammar-capable backends use those hints for strict output. LiteRT-LM native
-and web fail early for strict response formats because the current public
-runtime APIs do not expose JSON-schema/Lark constraint wiring.
-
-`chatTemplate(...)` still accepts the deprecated `jsonSchema` shortcut for
-template inspection. Prefer `responseFormat` for new code; if both are passed,
-`responseFormat` wins.
+Structured output (`responseFormat`, `LlamaStructuredOutput`,
+`parseStructuredJson`) is covered in
+[Generation and Streaming](./generation-and-streaming#structured-json-output).
+`chatTemplate(...)` still accepts the deprecated `jsonSchema` shortcut; if both
+are passed, `responseFormat` wins.
 
 ## When to inspect template output
 

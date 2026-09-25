@@ -4,8 +4,10 @@ sidebar_label: Tool calling
 description: Define tools with ToolDefinition, control them with ToolChoice, and run a template-aware tool-calling loop with a local model.
 ---
 
-`llamadart` supports template-aware tool calling through `ToolDefinition` and
-`ToolChoice`.
+Pass `ToolDefinition`s to `engine.create` or `ChatSession.create`. The model's
+chat template renders them, and the parser returns the model's calls as
+`delta.toolCalls`. Your code runs the tools: nothing in `llamadart`, including
+`ChatSession`, invokes a handler for you.
 
 ## Define a tool
 
@@ -25,47 +27,71 @@ final weatherTool = ToolDefinition(
 );
 ```
 
-## Run completion with tools
+## Run the tool-call loop
 
 ```dart
-final stream = engine.create(
-  [
-    LlamaChatMessage.fromText(
-      role: LlamaChatRole.user,
-      text: 'What is the weather in Seoul?',
-    ),
-  ],
-  tools: [weatherTool],
-  toolChoice: ToolChoice.auto,
-  parallelToolCalls: false,
-);
+import 'dart:convert';
+
+final engine = LlamaEngine(LlamaBackend());
+await engine.loadModel('model.gguf');
+final tools = [weatherTool];
+final session = ChatSession(engine);
+
+var parts = <LlamaContentPart>[
+  const LlamaTextContent('What is the weather in Seoul?'),
+];
+for (var round = 0; round < 5; round++) {
+  final calls = <LlamaCompletionChunkToolCall>[];
+  await for (final chunk in session.create(parts, tools: tools)) {
+    final delta = chunk.choices.first.delta;
+    if (delta.content != null) print(delta.content);
+    calls.addAll(delta.toolCalls ?? const []);
+  }
+  if (calls.isEmpty) break;
+
+  for (final call in calls) {
+    final name = call.function?.name ?? '';
+    final arguments = call.function?.arguments ?? '';
+    Object? result;
+    try {
+      final tool = tools.firstWhere((tool) => tool.name == name);
+      result = await tool.invoke(
+        arguments.isEmpty
+            ? const {}
+            : jsonDecode(arguments) as Map<String, dynamic>,
+      );
+    } catch (error) {
+      result = 'Error: $error';
+    }
+    session.addMessage(
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [
+          LlamaToolResultContent(id: call.id, name: name, result: result),
+        ],
+      ),
+    );
+  }
+  parts = const [];
+}
+await engine.dispose();
 ```
 
-## Typical execution loop
+- Tool calls arrive complete, with JSON `arguments`, in the final chunk, whose
+  `finishReason` is `tool_calls`.
+- `ChatSession` stores the assistant's tool calls in its history.
+  `session.create(const [])` continues from the tool results without a new
+  user turn.
+- With `engine.create`, append the assistant message (a `LlamaToolCallContent`
+  per call) and the tool messages to your own list before the next call.
+- Cap the rounds: a model can keep calling tools.
 
-1. Stream assistant response.
-2. Detect tool call content from deltas/messages.
-3. Execute matching tool handler.
-4. Append tool result message.
-5. Call `engine.create(...)` again for final assistant response.
+`LlamaToolResultContent.result` may be any JSON-compatible value. Non-string
+results are JSON-encoded into the prompt; strings pass through unchanged. A
+message with several results is rendered as one tool message per result.
 
-`LlamaToolResultContent.result` can contain JSON-compatible objects, arrays,
-scalars, or null. The shared template renderer encodes these as JSON text;
-string results remain unchanged. This conversion does not mutate the typed
-result or change its public JSON representation. Multimodal templates receive
-the encoded result as a text part.
-
-Qwen XML tool calls are validated against the tools supplied to `engine.create`.
-Schema-declared strings such as `"123"` retain their type. Unknown functions,
-unknown or duplicate parameters, missing required values, and invalid value
-types remain response content instead of producing callable tool deltas.
-Tool calls are emitted after final validation; malformed output is preserved
-through the existing rollback behavior. Direct schema-free template parsing
-retains its legacy behavior, so pass tool definitions when validating calls.
-
-For an end-to-end OpenAI-compatible reference, see
-`example/llamadart_server` and the docs page
-[OpenAI-Compatible Server](../examples/llamadart-server).
+For an OpenAI-compatible reference, see
+[OpenAI-compatible server](../examples/llamadart-server).
 
 ## Tool choice semantics
 
@@ -80,12 +106,5 @@ best-effort. `ToolChoice.required` keeps a grammar that starts at the first
 token and fails early with `LlamaUnsupportedException` when the chat format's
 required-tool grammar is lazy.
 
-Without that grammar, Qwen2.5 can copy the double braces its GGUF template
-prints in the tool prompt:
-`<tool_call>{{"name": "get_weather", "arguments": {"city": "Paris"}}}</tool_call>`,
-sometimes with fewer or more closing braces. The Hermes/Qwen parser extracts
-the call. When only closing braces and whitespace follow the call before
-`</tool_call>`, the envelope leaves no content, as for the single-brace form;
-otherwise its text stays in content. This deliberately differs from upstream
-llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
-call.
+Parser details, such as call validation against the supplied tools, are in
+[Template engine internals](./template-engine-internals#tool-call-parsing).

@@ -12,6 +12,7 @@ import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
@@ -592,6 +593,28 @@ void main() {
         const ModelParams(),
       );
       expect(backend.generationUsageOf(generation), isNull);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('reports the runtime of the selected delegate', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () =>
+          _RuntimeFakeBackend(handle: 11, runtime: LlamaRuntime.llamaCpp),
+      liteRtLmFactory: () =>
+          _RuntimeFakeBackend(handle: 22, runtime: LlamaRuntime.liteRtLm),
+    );
+
+    try {
+      expect(backend.runtime, isNull);
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+      expect(backend.runtime, LlamaRuntime.llamaCpp);
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(backend.runtime, LlamaRuntime.liteRtLm);
     } finally {
       await backend.dispose();
     }
@@ -1178,6 +1201,14 @@ void main() {
       }
     },
   );
+}
+
+class _RuntimeFakeBackend extends _FakeBackend
+    implements BackendRuntimeIdentity {
+  _RuntimeFakeBackend({required super.handle, required this.runtime});
+
+  @override
+  final LlamaRuntime runtime;
 }
 
 class _UsageReportingFakeBackend extends _FakeBackend

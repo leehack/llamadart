@@ -151,6 +151,7 @@ class ChatSession {
     bool continuesPreviousTurn = false,
   }) {
     final cancellation = GenerationCancellation.forEngine(_engine);
+    final zone = Zone.current;
     return cancellation.request((request) async* {
       // Add user message if parts provided
       if (parts.isNotEmpty) {
@@ -188,16 +189,18 @@ class ChatSession {
       final fullThinking = StringBuffer();
       final Map<int, _ToolCallBuilder> toolCallBuilders = {};
 
-      final completion = cancellation.inherit(
-        request,
-        () => _engine.create(
-          messages,
-          params: params,
-          tools: tools,
-          toolChoice: toolChoice,
-          parallelToolCalls: parallelToolCalls,
-          enableThinking: enableThinking,
-          chatTemplateKwargs: chatTemplateKwargs,
+      final completion = zone.run(
+        () => cancellation.inherit(
+          request,
+          () => _engine.create(
+            messages,
+            params: params,
+            tools: tools,
+            toolChoice: toolChoice,
+            parallelToolCalls: parallelToolCalls,
+            enableThinking: enableThinking,
+            chatTemplateKwargs: chatTemplateKwargs,
+          ),
         ),
       );
       await for (final chunk in completion) {

@@ -1,7 +1,7 @@
 ---
 title: Text generation and streaming
 sidebar_label: Generation and streaming
-description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, cancellation and tokenization helpers.
+description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, operation observers, cancellation and tokenization helpers.
 ---
 
 `llamadart` exposes three generation entry points:
@@ -19,10 +19,13 @@ description: Stream tokens with generate, create and ChatSession; use structured
 | `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as an OpenAI-compatible server, a one-shot completion, or an app that owns its transcript. |
 | `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to append user/assistant turns, apply the system prompt, and trim history as the context grows. |
 
-For beginner or one-shot instruction examples, prefer `engine.create(...)` so the
-model's chat template is applied without introducing session state. For real
-chat applications, prefer `ChatSession` unless your app already stores and sends
-the full message list itself.
+For one-shot instructions, prefer `engine.create(...)`: it applies the chat
+template without session state, and a follow-up turn sees only the messages you
+pass again. For chat apps, prefer `ChatSession` unless your app already stores
+the transcript. `session.addMessage(...)` restores history or inserts tool
+results, and `session.reset()` starts over. See
+[First Chat Session](../getting-started/first-chat-session) for a multi-turn
+example.
 
 ## Generation pipeline (visual)
 
@@ -116,6 +119,67 @@ The backend times `timeToFirstToken` and `duration` from when it starts the
 request. They exclude template rendering and time spent queued behind another
 request, and `timeToFirstToken` excludes stream batching.
 
+## Observing operations
+
+Pass observers to `LlamaEngine` to trace, measure or log its work. An observer
+sees chat completions (`create`, `createStructuredJson` and
+`ChatSession.create`), `generate`, `embed`, `embedBatch` and model loads.
+
+```dart
+final class TimingObserver extends LlamaEngineObserver {
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation operation) {
+    final name = switch (operation) {
+      LlamaChatOperation() => 'chat',
+      LlamaTextCompletionOperation() => 'text_completion',
+      LlamaEmbeddingsOperation() => 'embeddings',
+      LlamaModelLoadOperation() => 'model_load',
+      _ => 'other',
+    };
+    return _Timing('$name ${operation.model}', Stopwatch()..start());
+  }
+}
+
+final class _Timing extends LlamaOperationObserver {
+  _Timing(this.name, this.watch);
+
+  final String name;
+  final Stopwatch watch;
+
+  @override
+  void onEnd(LlamaOperationResult result) {
+    print('$name: ${watch.elapsed}, finish ${result.finishReason}, '
+        'tokens ${result.usage?.totalTokens}');
+  }
+}
+
+final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
+```
+
+- A `create` or `generate` operation starts when its stream is listened to;
+  the others start when their method is called. Every callback runs in the
+  zone that called the engine method, so a tracer can read its parent context
+  there.
+- `onChunk` receives each `create` chunk and `onText` each `generate` piece.
+- `onEnd` runs once, with the error, the cancel, or the finish reason and
+  usage. Usage is reported where the final `create` chunk carries it. A chat
+  subscription cancelled after the final chunk ends completed, unless
+  `cancelGeneration` stopped it first.
+- `LlamaOperation.model` is the model's `general.name` metadata, or else the
+  last segment of the path or URL it was loaded from. It is null when that
+  segment is empty or contains one of `/ \ ? # @ ; & =`, so the segment is
+  never a directory path, URL query, fragment or userinfo. On the built-in
+  backends, `runtime` is `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm`
+  for operations after a model load, and null for the load itself.
+- Operations carry copies of the prompts and messages. Record them only when
+  your users opt in.
+- Extend the observer classes rather than implementing them, and give a
+  `switch` over operations a default case: later versions may add callbacks
+  and operation types.
+- An exception an observer throws is reported to the library logger as a
+  warning and never reaches the caller. Without observers the engine does no
+  observation work.
+
 ## Thinking budget (native llama.cpp)
 
 For GGUF models with a thinking channel, `ThinkingBudget` maps to llama.cpp's
@@ -193,8 +257,10 @@ final classification = await engine.createStructuredJson(
 );
 ```
 
-For live rendering, keep the returned stream, call `engine.create(...,
-responseFormat: output.responseFormat)`, and then finalize it with
+Without the helper, pass `responseFormat: {'type': 'json_object'}` or
+`{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}` to
+`engine.create(...)`. For live rendering, keep the stream returned by
+`engine.create(..., responseFormat: output.responseFormat)` and finalize it with
 `await stream.parseStructuredJson(output)`. Validation is a final-output step
 because partial stream chunks are often not valid JSON yet.
 
@@ -280,19 +346,3 @@ prompt is reused unless `reusePromptPrefix` is false. Check
 `engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
 assets `v0.1.52+` support it; LiteRT-LM and older bridge assets report false
 and throw `LlamaUnsupportedException`.
-
-## Stateless vs stateful chat
-
-`engine.create(...)` is stateless: it uses exactly the messages you pass for that
-request and does not remember the assistant response. If you want a follow-up
-turn to see prior context, append both the user message and assistant response to
-your own `messages` list before calling `engine.create(...)` again.
-
-`ChatSession.create(...)` is stateful: it adds the new user content to session
-history, streams through `engine.create(...)`, then stores the assistant message
-for later turns. Use `session.addMessage(...)` when you need to restore history or
-insert tool results manually, and `session.reset(...)` when a conversation should
-start over.
-
-See [First Chat Session](../getting-started/first-chat-session) for a minimal
-multi-turn example.

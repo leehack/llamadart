@@ -8,7 +8,16 @@
         "getting-started/installation",
         "getting-started/quickstart",
         "getting-started/finding-models",
+        "getting-started/model-families",
         "getting-started/first-chat-session"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Tutorials",
+      "items": [
+        "tutorials/flutter-chat-app",
+        "tutorials/rag"
       ]
     },
     {
@@ -19,6 +28,7 @@
         "guides/api-levels",
         "guides/backend-selection",
         "guides/model-lifecycle",
+        "guides/model-downloads",
         "guides/generation-and-streaming",
         "guides/chat-template-and-parsing"
       ]
@@ -96,7 +106,9 @@
     {
       "type": "category",
       "label": "Internals",
-      "items": ["guides/template-engine-internals"]
+      "items": [
+        "guides/template-engine-internals"
+      ]
     }
   ]
 }

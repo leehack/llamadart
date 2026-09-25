@@ -1,16 +1,12 @@
 ---
 title: Model and generation parameters
 sidebar_label: Runtime parameters
-description: The ModelParams and GenerationParams settings that matter most, with practical defaults for chat and embedding workloads.
+description: The ModelParams and GenerationParams settings that matter most, native LiteRT-LM runtime and cache controls, and practical defaults for chat and embedding workloads.
 ---
 
-Runtime behavior is primarily controlled by:
-
-- `ModelParams` at model load time.
-- `GenerationParams` per generation call.
-
-For a strategy-focused walkthrough on how to change these knobs and what to
-measure, see [Performance Tuning](../guides/performance-tuning).
+`ModelParams` apply at model load; `GenerationParams` apply per generation
+call. To decide which knob to change and what to measure, see
+[Performance tuning](../guides/performance-tuning).
 
 ## ModelParams essentials
 
@@ -61,52 +57,92 @@ Important fields:
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
-  GGUF. It defaults to `false` because these tensors consume extra memory. Set
-  it to `true` before model loading when `SpeculativeDecodingConfig.mtp(...)`
-  will run without an external `draftModelPath`; explicitly supplied MTP draft
-  models are loaded as MTP automatically.
-- `chatTemplate`: optional template override.
-- `preferMemory64` (web/WebGPU only): prefer the 64-bit (wasm64/mem64) bridge
-  core. The default 32-bit core has a 4 GiB address-space limit, but large
-  models need room for KV cache and intermediate buffers. `null` (default) lets
-  llamadart decide from `modelBytesHint` using the current wasm32-safe ceiling
-  (about 2 GiB of model bytes); `true` forces mem64; `false` forces wasm32.
-  Ignored on non-web backends.
-- `modelBytesHint` (web/WebGPU only): approximate model size in bytes, used to
-  select the mem64 core up front instead of waiting for an out-of-memory retry.
-  Ignored on non-web backends.
-- `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
-  `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
-  native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
-  runtime defaults; LiteRT-LM web rejects them as native-only.
-- `liteRtLmCacheDir` and `liteRtLmMaxProgramCacheBytes`: native LiteRT-LM
-  runtime cache directory and opt-in size cap for GPU program cache files.
-  Both default to `null`, which keeps the platform default directory and never
-  deletes cache files; LiteRT-LM web rejects them. See
-  [LiteRT-LM Cache Directory](../guides/backend-selection#litert-lm-cache-directory).
-- `numberOfThreads`: honored by native LiteRT-LM; `0` keeps automatic
-  selection.
-- `loras`: native LiteRT-LM accepts one default-scale initial text adapter at
-  model load. Runtime LoRA control APIs, adapter stacking, and custom scales
-  remain llama.cpp-only.
+  GGUF. Defaults to `false` because the tensors cost memory; set it to `true`
+  when `SpeculativeDecodingConfig.mtp(...)` runs without a `draftModelPath`.
+- `chatTemplate`: template override for `.litertlm` models. `engine.create`
+  on GGUF models uses the template embedded in the file.
+- `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
+  (mem64) bridge core; see
+  [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).
+  Ignored on native backends.
+- `liteRtLm*` fields: native LiteRT-LM `.litertlm` loads only; see
+  [LiteRT-LM runtime controls](#litert-lm-runtime-controls).
 
 For runtime LoRA control (`setLora`, `removeLora`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).
 
+## LiteRT-LM runtime controls
+
+Native `.litertlm` loads accept `contextSize`, `chatTemplate` and the fields
+below. The `liteRtLm*` tuning fields default to `null`, which keeps the pinned
+runtime default.
+
+| Field | Effect |
+| --- | --- |
+| `liteRtLmBackend` | `auto` (default), `cpu`, `gpu`, or `npu` (Android). `auto` uses `cpu` when `gpuLayers` is `0`, otherwise it maps `preferredBackend`. |
+| `liteRtLmActivationDataType` | Activation type override: `float32`, `float16`, `int16`, or `int8`. Forwarded to `litert_lm_engine_settings_set_activation_data_type`. |
+| `liteRtLmPrefillChunkSize` | Prefill chunk size for CPU dynamic models. Must be positive. |
+| `liteRtLmParallelFileSectionLoading` | `false` disables parallel `.litertlm` file-section loading, for diagnostics. `null` keeps parallel loading. |
+| `liteRtLmDispatchLibDir` | LiteRT dispatch library directory for Android NPU deployments. Must be non-empty. |
+| `liteRtLmCacheDir`, `liteRtLmMaxProgramCacheBytes` | Runtime cache directory and GPU program cache size cap; see [LiteRT-LM cache directory](#litert-lm-cache-directory). |
+| `numberOfThreads` | Generation thread count; `0` keeps automatic selection. |
+| `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
+
+`gpuLayers` must be `0` (CPU) or `ModelParams.maxGpuLayers`. Native
+LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
+`numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
+throws `LlamaModelException` whose cause is an `ArgumentError`, so a GGUF
+tuning profile never appears to apply silently. LiteRT-LM web
+accepts `liteRtLmBackend` for CPU or GPU selection and rejects every other
+field in the table.
+
+Benchmark load time, prefill and decode throughput, and output quality on the
+deployment device after changing the activation type or prefill chunk size.
+The LiteRT-LM smoke tool for a repository checkout is in
+[Backend benchmarks](../guides/backend-benchmarks#reproducing).
+
+## LiteRT-LM cache directory
+
+The native LiteRT-LM runtime writes cache files such as
+`*_mldrift_program_cache.bin` (GPU programs), `*_mldrift_weight_cache.bin`
+(GPU weights) and `*.xnnpack_cache`. llamadart only chooses the directory:
+
+| `liteRtLmCacheDir` | macOS, Android | Other native platforms |
+| --- | --- | --- |
+| `null` (default) | `llamadart_litert_lm` under `Directory.systemTemp` | No directory is passed; the runtime caches next to the model file |
+| A path | That directory, created when missing | That directory, created when missing |
+
+`liteRtLmMaxProgramCacheBytes` caps GPU program cache files. `null` (default)
+never deletes anything. Otherwise, before each engine create, llamadart
+deletes regular files directly inside the effective cache directory whose name
+ends with `_mldrift_program_cache.bin` and whose size exceeds the cap. Weight
+and XNNPACK caches, subdirectories and symbolic links are left alone. When no
+directory is passed to the runtime, nothing is pruned; set `liteRtLmCacheDir`
+to enable pruning there. Each deletion, and each prune failure, logs a Dart
+`warn` record and never fails the load (see [Logging](./logging)).
+
+```dart
+const params = ModelParams(
+  liteRtLmCacheDir: '/data/app/litert-cache',
+  liteRtLmMaxProgramCacheBytes: 1024 * 1024 * 1024,
+);
+```
+
+The cap mitigates a known runtime issue
+([#552](https://github.com/leehack/llamadart/issues/552)): with Qwen3.5-0.8B
+on the macOS GPU backend, every engine create appended about 0.5 GB to
+`*_mldrift_program_cache.bin`, later creates logged
+`Deserialization failed: DATA_LOSS`, and deleting the file did not slow engine
+create. llamadart can create an engine more than once per loaded model: on the
+first generation or tokenization after each context create, and again when
+speculative decoding, vision, audio or image-count settings change.
+
 ## Embedding-oriented model params
 
-For high-throughput `embedBatch(...)`, tune context batch fields together:
-
-- Keep `batchSize` large enough for total tokens across your average batch.
-- Set `microBatchSize` close to `batchSize` unless you need tighter memory
-  bounds.
-- Set both values explicitly when a fixed embedding workload needs larger
-  batches; the decoder defaults prioritize safe prompt processing and do not
-  replace workload-specific embedding tuning.
-- Increase `maxParallelSequences` above `1` (for example `2`, `4`, `8`) to
-  enable true multi-sequence embedding batching.
-
-See [Embeddings](../guides/embeddings) for API usage and benchmark scripts.
+For `embedBatch(...)`, set `batchSize` and `microBatchSize` explicitly for the
+workload and raise `maxParallelSequences` above `1` for true multi-sequence
+batching. The decoder defaults do not replace embedding tuning. See
+[Embeddings](../guides/embeddings#throughput-tuning-for-embedbatch).
 
 ## GenerationParams essentials
 
@@ -145,19 +181,12 @@ Important fields:
   generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
   is incompatible with speculative decoding, and unsupported backends reject
   it explicitly.
-- `speculativeDecoding` / `speculativeDecodingConfig`: opt-in backend-native
-  speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
-  llama.cpp supports the upstream strategy surface:
-  `SpeculativeDecodingConfig.mtp(...)`, `draftSimple(...)`,
-  `draftEagle3(...)`, `draftDflash(...)`, `draftDspark(...)`,
-  `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`,
-  `ngramCache(...)`, and `mixed(...)` for draftless n-gram strategies plus one
-  draft-model strategy. Experimental `draftDspark(...)` is opt-in, maps exactly
-  to llama.cpp `draft-dspark`, requires a compatible external GGUF in
-  `draftModelPath`, and does not load target-model MTP tensors. It is never
-  selected automatically. Draftless n-gram strategies use token history or
-  n-gram caches without a draft model. WebGPU and LiteRT-LM web reject
-  speculative decoding until their speculative paths are implemented.
+- `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
+  decoding. Native LiteRT-LM uses the boolean, or a
+  `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
+  draft tuning; native llama.cpp takes any `SpeculativeDecodingConfig`
+  strategy. WebGPU and LiteRT-LM web reject both.
+  See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

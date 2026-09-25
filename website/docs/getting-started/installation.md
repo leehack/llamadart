@@ -1,61 +1,22 @@
 ---
 title: Install llamadart
 sidebar_label: Installation
-description: Install llamadart, add the package to your app, and understand the native runtime setup on first run.
+description: Add llamadart to a Dart or Flutter app, set up Apple and web targets, verify the install, and customize the prebuilt native runtimes.
 ---
 
-## Prerequisites
+## Requirements
 
 - Dart SDK `>= 3.10.7`
 - Flutter SDK `>= 3.38.0` (if you build Flutter apps)
-- Flutter iOS builds require a minimum deployment target of `16.4` or newer
-- Flutter macOS builds require a minimum deployment target of `14.0` or newer
+- Flutter iOS apps: deployment target `16.4` or newer
+- Flutter macOS apps: deployment target `14.0` or newer
 
-## Apple deployment targets
-
-If you build a Flutter Apple app, set your app project deployment target before
-running the app. iOS needs `16.4` or newer; macOS needs `14.0` or newer. If
-your iOS app still uses CocoaPods, set the Podfile platform too.
-
-```ruby
-platform :ios, '16.4'
-```
-
-In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
-`MACOSX_DEPLOYMENT_TARGET = 14.0` for the relevant Runner configurations.
-
-## Add dependency
+## Add the package
 
 ```yaml
 dependencies:
   llamadart: ^0.8.24
 ```
-
-For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
-Package Manager, also add the runtime companion packages you need:
-
-Pair companion `0.0.19` with core `0.8.24` for matching llama.cpp v0.4.1
-bindings. Keep core `0.8.23` paired with companion `0.0.18`, and core `0.8.22`
-paired with companion `0.0.17`.
-
-Apple builds verify the resolved companion's SwiftPM runtime pin before native
-symbol lookup. Incompatible companions or unverified local `Artifacts`
-overrides fail the build; resolve the matching companion and rerun
-`flutter pub get`. Core native overrides do not replace SPM frameworks.
-
-```yaml
-dependencies:
-  llamadart: ^0.8.24
-  llamadart_llama_cpp_flutter: ^0.0.19 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.11 # Apple .litertlm / LiteRT-LM targets
-```
-
-The companion packages are published independently from the `packages/`
-subdirectories in the main `llamadart` repository.
-The LiteRT-LM companion manifest includes consolidated iOS and macOS SwiftPM
-runtime targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS
-LiteRT-LM builds currently keep the core package's native-assets fallback while
-the hook path remains responsible for the complete runtime.
 
 Then resolve packages:
 
@@ -65,7 +26,45 @@ dart pub get
 flutter pub get
 ```
 
-## What happens on first run/build
+## Flutter iOS and macOS setup
+
+Set the app's deployment target before running: iOS `16.4` or newer, macOS
+`14.0` or newer. In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
+`MACOSX_DEPLOYMENT_TARGET = 14.0` for the Runner configurations. An iOS app that
+still uses CocoaPods also needs the Podfile platform:
+
+```ruby
+platform :ios, '16.4'
+```
+
+To link the Apple XCFrameworks through Swift Package Manager, add the runtime
+companion packages you need:
+
+```yaml
+dependencies:
+  llamadart: ^0.8.24
+  llamadart_llama_cpp_flutter: ^0.0.19 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.11 # Apple .litertlm / LiteRT-LM targets
+```
+
+Pair companion `0.0.19` with core `0.8.24`. The build checks the resolved
+companion's runtime pin and fails on a mismatch or on an unverified local
+`Artifacts` override; resolve the matching companion and rerun
+`flutter pub get`. Flutter macOS LiteRT-LM builds still use the core package's
+native-assets runtime rather than SwiftPM.
+
+## Web
+
+Web apps must load the WebGPU bridge script in their `web/index.html`; the
+package does not inject it. See
+[Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
+
+## Verify it works
+
+Run the [Quickstart](./quickstart) example with `maxTokens: 1`. If the runtime
+initializes and the model loads, your setup is complete.
+
+## What happens on first build
 
 On the first `dart run` / `flutter run` for a native target, `llamadart`:
 
@@ -78,111 +77,37 @@ On the first `dart run` / `flutter run` for a native target, `llamadart`:
 
 No local C++ toolchain setup is required for consumers.
 
-## Optional native source and backend selection
+## Customize native runtimes
 
-You can configure the native runtime source and backend modules per target in
-your `pubspec.yaml`:
+Native builds bundle every available runtime family. To ship only one model
+format, or to test another native build, set `hooks.user_defines` in your
+`pubspec.yaml`:
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
-      # Optional. Defaults to llamadart's tested native runtime pin.
-      # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: v0.5.0
-
-      # Optional. GitHub repository slug or github.com URL.
-      llamadart_native_repository: leehack/llamadart-native
-
-      # Optional. Takes precedence over GitHub downloads when set.
-      # Relative paths are resolved from the pubspec defining this config.
-      # llamadart_native_path: ./native-bundles
-
-      llamadart_native_backends:
-        platforms:
-          android-arm64:
-            backends: [vulkan]
-            cpu_profile: full # default: full; use compact for baseline-only CPU
-          linux-x64: [vulkan, cuda]
-          windows-x64: [vulkan, cuda]
+      llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
+      # Compatibility testing only; omit to use the tested pin.
+      # llamadart_native_tag: v0.5.0
 ```
 
-Module availability is platform/arch specific and tied to the selected native
-bundle tag. If `llamadart_native_tag` points at a release without a matching
-bundle asset, the native-assets hook fails while downloading that asset. See
-[Platform & Backend Matrix](../platforms/support-matrix) for the current
-per-target module list.
+A `llamadart_native_backends` request that names any backend module the target
+bundle lacks is discarded whole: the hook logs a warning and bundles the
+defaults instead.
 
-Native source overrides are for compatibility testing. They do not regenerate
-Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default
+Override tags name a `leehack/llamadart-native` release: stable
+`vMAJOR.MINOR.PATCH`, stable wrapper rebuilds `vMAJOR.MINOR.PATCH-N`,
+historical `bNNNN`, nightly wrapper rebuilds `bNNNN-N`, or consume-only
+`bNNNN-llamadart.N`. Nightly cores are written without leading zeros, and
+rebuild counters start at 1. Build-hook overrides must always name an explicit
+tag; `latest` is limited to maintainer synchronization and header/binding
+regeneration. An override does not regenerate the Dart bindings, so its
+binary must stay ABI-compatible with the default
 `leehack/llamadart-native@v0.5.0` runtime.
 
-Available native tags are published on the
-[`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
-Stable distributions use `vMAJOR.MINOR.PATCH`. Historical/nightly `bNNNN`
-releases remain valid explicit overrides. New nightly wrapper rebuilds use
-`bNNNN-N`; existing `bNNNN-llamadart.N` artifacts remain valid
-consumption-only overrides. A stable wrapper-only rebuild of upstream `vM.m.p`
-uses `vM.m.p-N`, such as native `v0.2.0-1` for upstream `v0.2.0`. The suffix
-advances the native sequence while the manifest's upstream ref remains
-`v0.2.0`. New wrapper and nightly releases are GitHub prereleases and must be
-named explicitly. Immutable historical `bNNNN` and `bNNNN-llamadart.N`
-artifacts may retain older `prerelease=false` metadata, but remain explicit
-compatibility inputs. Build-hook overrides must always name an explicit tag;
-`latest` is limited to maintainer synchronization and header/binding
-regeneration, where it accepts only an unsuffixed stable tag regardless of
-GitHub metadata. Nightly cores use canonical decimal spelling (`b0` or a nonzero
-first digit), and rebuild counters start at 1 without leading zeros. Other
-suffixes are rejected so a typo cannot select an unreviewed or version-skewed
-archive.
-You can also list them with the GitHub CLI:
-
-```bash
-gh release list --repo leehack/llamadart-native --limit 20
-```
-
-Before overriding, confirm the release includes the asset for your target. The
-hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-v0.5.0.tar.gz`.
-For local testing, `llamadart_native_path` may point directly at a bundle
-archive, at an extracted bundle directory, or at a directory containing
-`<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
-
-For `android-arm64`, CPU variant policy is configurable:
-
-- `cpu_profile: full` (default) includes all Android ARM CPU variants.
-- `cpu_profile: compact` keeps baseline CPU variant only.
-- `cpu_variants: [...]` (advanced) selects exact variants and overrides profile.
-
-Canonical `cpu_variants` values:
-
-- `android_armv8.0_1`
-- `android_armv8.2_1`
-- `android_armv8.2_2`
-- `android_armv8.6_1`
-- `android_armv9.0_1`
-- `android_armv9.2_1`
-- `android_armv9.2_2`
-
-Key differences:
-
-- `android_armv8.2_1`: `DOTPROD`
-- `android_armv8.2_2`: `DOTPROD` + `FP16_VECTOR_ARITHMETIC`
-- `android_armv9.2_1`: `DOTPROD` + `FP16_VECTOR_ARITHMETIC` + `MATMUL_INT8` +
-  `SVE` + `SME`
-- `android_armv9.2_2`: `android_armv9.2_1` + `SVE2`
-
-Selection precedence:
-
-1. `cpu_variants` (if present and valid)
-2. `cpu_profile`
-3. default `cpu_profile: full`
-
-If requested modules are unavailable for a target, `llamadart` falls back to
-safe defaults and logs warnings.
-
-## Verify installation quickly
-
-Run the [Quickstart](./quickstart) example with `maxTokens: 1`. If the runtime
-initializes and the model loads, your setup is complete.
+Every key, per-target backend and Android CPU variant selection, local bundle
+paths, and fallback rules:
+[Configuring native backend modules](../platforms/native-build-hooks#choose-llamacpp-backend-modules).
+How the hook resolves runtimes and the Apple SwiftPM path:
+[Native build hooks](../platforms/native-build-hooks).
