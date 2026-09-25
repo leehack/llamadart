@@ -436,8 +436,26 @@ void main() {
         (
           'https://u:S1ab@S2cd#S3ef%40S4gh?S5ij\u00fcS6kl@example.com/h.bin',
           credentials,
-          'https://example.com/h.bin',
+          'credentials: https://',
           <String>['S1ab', 'S2cd', 's2cd', 'S3ef', 'S4gh', 'S5ij', 'S6kl'],
+        ),
+        (
+          'https://u:P7@example.com/h.bin?token=abc@SEKsecret',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['P7', 'abc', 'SEKsecret', 'seksecret'],
+        ),
+        (
+          'https://u:P7@example.com/h.bin#frag@SEKsecret',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['P7', 'frag', 'SEKsecret', 'seksecret'],
+        ),
+        (
+          'https://u:P7@example.com/path@SEKpath/h.bin',
+          credentials,
+          'https://example.com/path@SEKpath/h.bin',
+          <String>['P7', 'sekpath'],
         ),
       ]) {
         final leaksNoSecret = allOf(<Matcher>[
@@ -475,6 +493,60 @@ void main() {
     });
 
     test(
+      'shows the host of source URLs with @ in the query, fragment or path',
+      () async {
+        fake.bridge.setProperty(
+          'loadDecisionHead'.toJS,
+          ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+        );
+        for (final (url, display) in const [
+          (
+            'http://127.0.0.1:9/h.bin?token=abc@SEKsecret',
+            'http://127.0.0.1:9/h.bin',
+          ),
+          (
+            'http://127.0.0.1:9/h.bin#frag@SEKsecret',
+            'http://127.0.0.1:9/h.bin',
+          ),
+          (
+            'http://127.0.0.1:9/path@SEKpath/h.bin',
+            'http://127.0.0.1:9/path@SEKpath/h.bin',
+          ),
+        ]) {
+          final leaksNoSecret = allOf(<Matcher>[
+            isNot(contains('abc')),
+            isNot(contains('frag')),
+            isNot(contains('SEKsecret')),
+            isNot(contains('seksecret')),
+            isNot(contains('sekpath')),
+          ]);
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having((error) => error.details, 'details', display)
+                  .having((error) => '$error', 'toString', leaksNoSecret),
+            ),
+            reason: 'head $url',
+          );
+          await expectLater(
+            heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    'Cannot read the decision head config at $display.',
+                  )
+                  .having((error) => '$error', 'toString', leaksNoSecret),
+            ),
+            reason: 'config $url',
+          );
+        }
+      },
+    );
+
+    test(
       'classifies bridge errors before removing source URL secrets',
       () async {
         fake.loadError = 'No model loaded. Call loadModelFromUrl first.';
@@ -499,6 +571,11 @@ void main() {
           'Bad password S1ab@S2cd#S3ef@S4gh?S5ijüS6kl (encoded '
               'S1ab%40S2cd%23S3ef%2540S4gh%3FS5ij%C3%BCS6kl)',
           'Bad password  (encoded )',
+        ),
+        (
+          'https://u:P7@example.com/h.bin?k=example.com',
+          'Failed to fetch https://u:P7@example.com/h.bin?k=example.com',
+          'Failed to fetch https://',
         ),
         (
           'https://example.com/m.gguf?sig=Q9&token=T8#F7',
@@ -549,6 +626,16 @@ void main() {
             'Bad URL //example.com/m.gguf',
         'Bad URL x=https://u:p/w@example.com/m.gguf':
             'Bad URL x=https://example.com/m.gguf',
+        'Bad URL https://example.com/h.bin?token=abc@SEKsecret':
+            'Bad URL https://example.com/h.bin',
+        'Bad URL https://example.com/h.bin#frag@SEKsecret':
+            'Bad URL https://example.com/h.bin',
+        'Bad URL https://u:p@[Q@example.com/m.gguf':
+            'Bad URL https://example.com/m.gguf',
+        'Bad URL https://example.com/path@SEKpath/h.bin':
+            'Bad URL https://example.com/path@SEKpath/h.bin',
+        'Bad URL https://u:p@example.com/h.bin?e=a@b.example':
+            'Bad URL https://example.com/h.bin',
       };
       for (final MapEntry(key: message, value: expected) in cases.entries) {
         expect(

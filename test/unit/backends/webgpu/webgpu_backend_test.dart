@@ -3614,7 +3614,25 @@ void main() {
             'https://example.com/m.gguf',
             <String>['SEK', 'RIT'],
           ),
-          (passwordUrl, credentials, 'https://example.com/m.gguf', password),
+          (passwordUrl, credentials, 'credentials: https://', password),
+          (
+            'https://u:P7@example.com/h.bin?token=abc@SEKsecret',
+            credentials,
+            'credentials: https://example.com/h.bin',
+            <String>['P7', 'abc', 'SEKsecret', 'seksecret'],
+          ),
+          (
+            'https://u:P7@example.com/h.bin#frag@SEKsecret',
+            credentials,
+            'credentials: https://example.com/h.bin',
+            <String>['P7', 'frag', 'SEKsecret', 'seksecret'],
+          ),
+          (
+            'https://u:P7@example.com/path@SEKpath/h.bin',
+            credentials,
+            'credentials: https://example.com/path@SEKpath/h.bin',
+            <String>['P7', 'sekpath'],
+          ),
         ]) {
           await expectRedactedFetchError(url, phrase, redacted, secrets);
         }
@@ -3647,7 +3665,7 @@ void main() {
               'https://example.com/m.gguf',
               <String>['SEKRIT', 'frag'],
             ),
-            (passwordUrl, 'https://example.com/m.gguf', password),
+            (passwordUrl, 'credentials: https://', password),
           ]) {
             await expectRedactedFetchError(url, credentials, redacted, secrets);
           }

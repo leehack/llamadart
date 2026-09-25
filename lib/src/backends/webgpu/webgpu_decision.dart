@@ -149,14 +149,14 @@ class WebGpuDecisionHeads {
       if (resolvedConfigUrl != null) {
         message = message.replaceAll(
           'config in configJson ',
-          'config in ${_displayUrl(resolvedConfigUrl)} ',
+          'config in ${_sourceDisplayUrl(resolvedConfigUrl)} ',
         );
       }
       throw _bridgeException(
         message,
         classifiedText: _coreMessage(_bridgeErrorMessage(error)),
         fallback: (message) =>
-            LlamaModelException(message, _displayUrl(resolvedHeadUrl)),
+            LlamaModelException(message, _sourceDisplayUrl(resolvedHeadUrl)),
       );
     }
 
@@ -282,9 +282,6 @@ class WebGpuDecisionHeads {
   void clear() => _heads.clear();
 
   static const String _reloadHint = 'Load the decision head again';
-  static final RegExp _absoluteUrl = RegExp(
-    r'[A-Za-z][A-Za-z0-9+.-]*://[^\s"<>]+',
-  );
 
   static bool _exposesDecisionApi(LlamaWebGpuBridge bridge) {
     for (final name in const <String>[
@@ -338,7 +335,7 @@ class WebGpuDecisionHeads {
 
   static Future<String> _fetchConfigText(String url, String sourceUrl) async {
     final message =
-        'Cannot read the decision head config at ${_displayUrl(url)}.';
+        'Cannot read the decision head config at ${_sourceDisplayUrl(url)}.';
     final Response response;
     try {
       response = await window.fetch(url.toJS).toDart;
@@ -443,7 +440,7 @@ class WebGpuDecisionHeads {
 /// First, for each of [sourceUrls], these texts are replaced wherever they
 /// occur as written, percent-decoded, percent-encoded or JSON-escaped: the
 /// URL and its browser-resolved `href`, when the URL starts with `//` or
-/// `scheme://`, become `[scheme:]//host[:port]/path`; its userinfo, password,
+/// `scheme://`, become its display form (below); its userinfo, password,
 /// query, query values and fragment, also as the browser parses them, are
 /// removed. Userinfo runs from after `//` to the last `@` of the authority,
 /// and to the last `@` of the URL. A query value is the text after the first
@@ -454,10 +451,20 @@ class WebGpuDecisionHeads {
 /// and punctuation, is treated as a URL when it contains `://`, starts with
 /// `/`, `./`, `../` or `host.name[:port]/` (optionally after userinfo), is a
 /// dotted file name followed by `?` or `#`, or has a `?` or `#` part
-/// containing `=`. Such a URL loses its userinfo, then everything from its
-/// first `?` or `#`. When the word contains `://` or starts with `//`, the
-/// userinfo is everything from after `//` to the last `@` of the word;
-/// otherwise it is a `user@` or `user:password@` at the start of the word.
+/// containing `=`. From a leading `//`, or its first `scheme://` before any
+/// `?` or `#`, the rest of the word becomes its display form; otherwise the
+/// word loses everything from its first `?` or `#`, then a leading `user@`
+/// or `user:password@`.
+///
+/// The display form is `[scheme:]//host[:port]/path`. The authority runs from
+/// after `//` to the first `/`, `?`, `#` or `\`, and the host follows its
+/// last `@`. When the authority has no `@` and is not a `host[:port]`, the
+/// host follows the last `@` before the first `?` or `#` instead. The host is
+/// left out when neither applies, when an authority with an `@` and an empty
+/// or `/` path is followed by `?` or `#` and then another `@`, or, for a
+/// source URL, when the display
+/// form would contain its userinfo, password, query, a query value or its
+/// fragment as the browser reads them.
 String webGpuBridgeErrorText(
   Object error, {
   Iterable<String> sourceUrls = const <String>[],
@@ -476,6 +483,10 @@ final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
 final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
 final RegExp _schemeAndSlashes = RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://');
 final RegExp _authorityEnd = RegExp(r'[/?#\\]');
+final RegExp _queryOrFragment = RegExp('[?#]');
+final RegExp _hostAndPort = RegExp(
+  r'^(?:[^\s/?#@\\:\[\]"<>]*|\[[0-9A-Fa-f:.]+\])(?::\d*)?$',
+);
 final RegExp _percentEscapes = RegExp('(?:%[0-9A-Fa-f]{2})+');
 
 String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
@@ -483,7 +494,7 @@ String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
   for (final url in sourceUrls) {
     final browserUrl = _parseBrowserUrl(url);
     if (_authorityStart(url) >= 0) {
-      final display = _displayUrl(url);
+      final display = _sourceDisplayUrl(url, browserUrl);
       for (final whole in <String>[
         url,
         if (browserUrl != null) browserUrl.href,
@@ -493,7 +504,8 @@ String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
         }
       }
     }
-    for (final secret in _sourceUrlSecrets(url, browserUrl)) {
+    final secrets = _sourceUrlSecrets(url, browserUrl);
+    for (final secret in <String>{...secrets.parsed, ...secrets.extended}) {
       for (final form in _encodedForms(secret)) {
         replacements.putIfAbsent(form, () => '');
       }
@@ -509,52 +521,66 @@ String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
   );
 }
 
-Set<String> _sourceUrlSecrets(String url, URL? browserUrl) {
-  final secrets = <String>{};
-  void addUserInfo(String userInfo) {
+/// Secrets of a source URL: `parsed` where the browser reads them, and
+/// `extended` from userinfo that runs to the last `@` of the whole URL.
+typedef _SourceUrlSecrets = ({Set<String> parsed, Set<String> extended});
+
+_SourceUrlSecrets _sourceUrlSecrets(String url, URL? browserUrl) {
+  final parsed = <String>{};
+  final extended = <String>{};
+  void addUserInfo(Set<String> secrets, String userInfo) {
     secrets.add(userInfo);
     final colon = userInfo.indexOf(':');
     if (colon >= 0) secrets.add(userInfo.substring(colon + 1));
   }
 
-  void addQuery(String query) {
-    secrets.add(query);
-    for (final part in query.split('&')) {
-      final equals = part.indexOf('=');
-      secrets.add(equals < 0 ? part : part.substring(equals + 1));
-    }
-  }
-
-  final queryStarts = <int>[0];
-  final start = _authorityStart(url);
-  if (start >= 0) {
-    final end = url.indexOf(_authorityEnd, start);
-    final authority = url.substring(start, end < 0 ? url.length : end);
-    for (final at in <int>[
-      start + authority.lastIndexOf('@'),
-      url.lastIndexOf('@'),
-    ]) {
-      if (at < start) continue;
-      addUserInfo(url.substring(start, at));
-      queryStarts.add(at + 1);
-    }
-  }
-  for (final from in queryStarts) {
+  void addQueryAndFragment(Set<String> secrets, int from) {
     final fragment = url.indexOf('#', from);
     final query = url.indexOf('?', from);
     if (fragment >= 0) secrets.add(url.substring(fragment + 1));
     if (query >= 0 && (fragment < 0 || query < fragment)) {
-      addQuery(url.substring(query + 1, fragment < 0 ? url.length : fragment));
+      _addQuery(
+        secrets,
+        url.substring(query + 1, fragment < 0 ? null : fragment),
+      );
+    }
+  }
+
+  addQueryAndFragment(parsed, 0);
+  final start = _authorityStart(url);
+  if (start >= 0) {
+    final end = url.indexOf(_authorityEnd, start);
+    final authority = url.substring(start, end < 0 ? url.length : end);
+    final authorityAt = authority.lastIndexOf('@');
+    if (authorityAt >= 0) {
+      addUserInfo(parsed, authority.substring(0, authorityAt));
+    }
+    final lastAt = url.lastIndexOf('@');
+    if (lastAt >= start && lastAt != start + authorityAt) {
+      addUserInfo(extended, url.substring(start, lastAt));
+      addQueryAndFragment(extended, lastAt + 1);
     }
   }
   if (browserUrl != null) {
     final username = browserUrl.username;
     final password = browserUrl.password;
-    addUserInfo(password.isEmpty ? username : '$username:$password');
-    if (browserUrl.search.isNotEmpty) addQuery(browserUrl.search.substring(1));
-    if (browserUrl.hash.isNotEmpty) secrets.add(browserUrl.hash.substring(1));
+    addUserInfo(parsed, password.isEmpty ? username : '$username:$password');
+    if (browserUrl.search.isNotEmpty) {
+      _addQuery(parsed, browserUrl.search.substring(1));
+    }
+    if (browserUrl.hash.isNotEmpty) parsed.add(browserUrl.hash.substring(1));
   }
-  return secrets;
+  parsed.remove('');
+  extended.remove('');
+  return (parsed: parsed, extended: extended);
+}
+
+void _addQuery(Set<String> secrets, String query) {
+  secrets.add(query);
+  for (final part in query.split('&')) {
+    final equals = part.indexOf('=');
+    secrets.add(equals < 0 ? part : part.substring(equals + 1));
+  }
 }
 
 Set<String> _encodedForms(String text) {
@@ -619,27 +645,15 @@ String _redactWord(String word) {
 }
 
 String _redactUrl(String url) {
-  final base = _withoutUserInfoQueryAndFragment(url);
-  if (base.contains('://')) {
-    return base.replaceAllMapped(
-      WebGpuDecisionHeads._absoluteUrl,
-      (match) => _displayUrl(match[0]!),
-    );
+  if (url.startsWith('//')) return _displayUrl(url);
+  final scheme = _schemeAndSlashes.firstMatch(url);
+  final end = url.indexOf(_queryOrFragment);
+  if (scheme != null && (end < 0 || scheme.start < end)) {
+    return url.substring(0, scheme.start) +
+        _displayUrl(url.substring(scheme.start));
   }
-  if (base.startsWith('//')) return _displayUrl(base);
+  final base = end < 0 ? url : url.substring(0, end);
   return base.replaceFirst(_leadingUserInfo, '');
-}
-
-String _withoutUserInfoQueryAndFragment(String url) {
-  var base = url;
-  final slashes = base.startsWith('//') ? 0 : base.indexOf('://');
-  if (slashes >= 0) {
-    final start = base.indexOf('//', slashes) + 2;
-    final at = base.lastIndexOf('@');
-    if (at >= start) base = base.substring(0, start) + base.substring(at + 1);
-  }
-  final end = base.indexOf(RegExp('[?#]'));
-  return end < 0 ? base : base.substring(0, end);
 }
 
 String _bridgeErrorMessage(Object error) {
@@ -652,13 +666,73 @@ String _bridgeErrorMessage(Object error) {
   return error.toString();
 }
 
+/// The display form of a source [url], without its host when the display
+/// form would contain one of its `parsed` secrets.
+String _sourceDisplayUrl(String url, [URL? browserUrl]) {
+  final display = _displayUrl(url);
+  final start = _authorityStart(url);
+  if (start < 0) return display;
+  final secrets = _sourceUrlSecrets(url, browserUrl ?? _parseBrowserUrl(url));
+  for (final secret in secrets.parsed) {
+    for (final form in _encodedForms(secret)) {
+      if (form.isNotEmpty && display.contains(form)) {
+        return url.substring(0, start).toLowerCase();
+      }
+    }
+  }
+  return display;
+}
+
 String _displayUrl(String url) {
-  final base = _withoutUserInfoQueryAndFragment(url);
-  final uri = Uri.tryParse(base);
-  if (uri == null) return base;
+  final start = _authorityStart(url);
+  if (start < 0) {
+    final end = url.indexOf(_queryOrFragment);
+    final base = end < 0 ? url : url.substring(0, end);
+    final uri = Uri.tryParse(base);
+    if (uri == null) return base;
+    return Uri(
+      scheme: uri.hasScheme ? uri.scheme : null,
+      host: uri.hasAuthority ? uri.host : null,
+      port: uri.hasPort ? uri.port : null,
+      path: uri.path,
+    ).toString();
+  }
+  final prefix = url.substring(0, start).toLowerCase();
+  var end = url.indexOf(_authorityEnd, start);
+  if (end < 0) end = url.length;
+  final authority = url.substring(start, end);
+  final at = authority.lastIndexOf('@');
+  String? host = at < 0 ? authority : authority.substring(at + 1);
+  if (at >= 0) {
+    final pathEnd = url.indexOf(_queryOrFragment, end);
+    final path = pathEnd < 0 ? '' : url.substring(end, pathEnd);
+    if (pathEnd >= 0 &&
+        (path.isEmpty || path == '/') &&
+        url.indexOf('@', pathEnd) >= 0) {
+      host = null;
+    }
+  } else if (!_hostAndPort.hasMatch(authority)) {
+    final queryStart = url.indexOf(_queryOrFragment, start);
+    final lastAt = url
+        .substring(0, queryStart < 0 ? url.length : queryStart)
+        .lastIndexOf('@');
+    host = null;
+    if (lastAt >= start) {
+      end = url.indexOf(_authorityEnd, lastAt + 1);
+      if (end < 0) end = url.length;
+      host = url.substring(lastAt + 1, end);
+    }
+  }
+  if (host == null) return prefix;
+  final rest = url.substring(end);
+  final queryStart = rest.indexOf(_queryOrFragment);
+  var path = queryStart < 0 ? rest : rest.substring(0, queryStart);
+  if (path.contains('://')) path = _redactUrl(path);
+  final uri = Uri.tryParse('$prefix$host$path');
+  if (uri == null) return '$prefix$host$path';
   return Uri(
     scheme: uri.hasScheme ? uri.scheme : null,
-    host: uri.hasAuthority ? uri.host : null,
+    host: uri.host,
     port: uri.hasPort ? uri.port : null,
     path: uri.path,
   ).toString();
