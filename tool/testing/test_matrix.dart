@@ -100,7 +100,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'native GGUF cancel during a ~1,600-token prompt: cancelGeneration and '
-        'subscription-cancel latency, and a generation right after the cancel',
+        'generate/create subscription-cancel latency, no events after a '
+        'subscription cancel, and a generation right after the cancel',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'native-prompt-cancel --model-path <chat.gguf> --backend cpu',

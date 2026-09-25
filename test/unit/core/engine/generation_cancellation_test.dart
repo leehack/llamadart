@@ -107,6 +107,38 @@ void main() {
     expect(stops, 1);
   });
 
+  test('a subscription cancel cancels the source before running the '
+      'stops', () async {
+    final order = <String>[];
+    final source = StreamController<int>(onCancel: () => order.add('source'));
+    final (stream, made) = requestOf(() => source.stream);
+    made.onSubscriptionCancel(() async => order.add('stop'));
+    final subscription = stream.listen(null);
+    await pumpEventQueue();
+
+    await subscription.cancel();
+
+    expect(order, ['source', 'stop']);
+  });
+
+  test('a stop that throws still runs the other stops and fails the '
+      'cancel', () async {
+    final source = StreamController<int>();
+    addTearDown(source.close);
+    final (stream, made) = requestOf(() => source.stream);
+    final failure = StateError('stop failed');
+    var laterStops = 0;
+    made
+      ..onSubscriptionCancel(() => throw failure)
+      ..onSubscriptionCancel(() async => laterStops += 1);
+    final subscription = stream.listen(null);
+
+    final cancelled = subscription.cancel();
+
+    expect(laterStops, 1);
+    await expectLater(cancelled, throwsA(same(failure)));
+  });
+
   test('a parent subscription cancel runs the stops of inherited requests '
       'only', () async {
     final source = StreamController<int>();

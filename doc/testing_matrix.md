@@ -486,9 +486,11 @@ dart run tool/testing/run_local_e2e.dart --scenario native-prompt-cancel \
 ```
 
 This local-only row builds a prompt of at least 1,600 tokens and times an
-uncancelled run's first token. It then cancels three runs at 20% of that time:
-`cancelGeneration()` and an awaited subscription cancel must each end in under
-60% of it, and the run after each cancel must produce the uncancelled output.
+uncancelled run's first token. It then cancels four runs at 20% of that time.
+`cancelGeneration()` and awaited subscription cancels of `generate()` and
+`create()` must each end in under 60% of it, the subscription cancels must
+deliver no events after the cancel is called, and the run after each cancel
+must produce the uncancelled output.
 It prints each latency as JSON. `PROMPT_CANCEL_THREADS` sets the CPU threads
 (default 4). Repeat with `--backend metal` on macOS. The timings depend on
 machine load, so record `uptime` with the results and rerun a timing failure

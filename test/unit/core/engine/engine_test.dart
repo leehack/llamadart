@@ -532,6 +532,71 @@ class PromptEvaluationBackend extends NativeChatMockBackend {
   }) => _held();
 }
 
+/// Emits [output] when a generation is listened to, then holds it open, as a
+/// model still running, until the subscription is cancelled.
+class HeldOutputBackend extends MockLlamaBackend
+    implements BackendNativeChatGeneration, BackendGrammarConstraintsSupport {
+  HeldOutputBackend({
+    this.output = const <String>[],
+    this.nativeChat = false,
+    this.cancelError,
+    super.modelMetadataResponse,
+  });
+
+  final List<String> output;
+  final bool nativeChat;
+  final Object? cancelError;
+  int generateCalls = 0;
+  int listens = 0;
+
+  @override
+  bool get supportsNativeChatGeneration => nativeChat;
+
+  @override
+  bool get supportsGrammarConstraints => true;
+
+  Stream<List<int>> _held() {
+    generateCalls += 1;
+    late final StreamController<List<int>> controller;
+    controller = StreamController<List<int>>(
+      onListen: () {
+        listens += 1;
+        for (final text in output) {
+          controller.add(utf8.encode(text));
+        }
+      },
+      onCancel: () {
+        final error = cancelError;
+        if (error != null) throw error;
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _held();
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _held();
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -3497,6 +3562,197 @@ void main() {
       expect(session.history.map((message) => message.role), [
         LlamaChatRole.user,
       ]);
+    });
+  });
+
+  group('LlamaEngine subscription cancel delivers no events', () {
+    const user = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'hello',
+    );
+    const toolTemplate = {
+      'llm.context_length': '4096',
+      'tokenizer.chat_template':
+          '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS]get_weather[ARGS]{}'
+          '{% for m in messages %}{{ m["content"] }}{% endfor %}',
+    };
+    final tools = [
+      ToolDefinition(
+        name: 'search',
+        description: 'Search docs',
+        parameters: [ToolParam.string('query', required: true)],
+        handler: (_) async => 'ok',
+      ),
+    ];
+    const toolCall = '[TOOL_CALLS]search[ARGS]{"query":"Seoul"}';
+    final paths = <String, (bool, Stream<Object?> Function(LlamaEngine))>{
+      'generate': (false, (engine) => engine.generate('hello')),
+      'create': (false, (engine) => engine.create(const [user])),
+      'native chat create': (true, (engine) => engine.create(const [user])),
+      'ChatSession.create': (
+        false,
+        (engine) => ChatSession(engine).create([LlamaTextContent('hello')]),
+      ),
+    };
+
+    Future<LlamaEngine> load(HeldOutputBackend backend) async {
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+      return engine;
+    }
+
+    /// Listens to [stream], cancels it once [backend] has run, and returns
+    /// the callbacks that ran after the cancel was called, including inside
+    /// it. A cancel before the backend runs happens right after the listen.
+    Future<List<String>> eventsAfterCancel(
+      Stream<Object?> stream,
+      HeldOutputBackend backend, {
+      bool beforeBackend = false,
+      bool cancelTwice = false,
+      void Function(Future<void> cancelled)? onCancelled,
+    }) async {
+      final events = <String>[];
+      var cancelCalled = false;
+      final subscription = stream.listen(
+        (event) {
+          if (cancelCalled) events.add('data $event');
+        },
+        onError: (Object error) {
+          if (cancelCalled) events.add('error $error');
+        },
+        onDone: () {
+          if (cancelCalled) events.add('done');
+        },
+      );
+      if (!beforeBackend) {
+        while (backend.listens == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await pumpEventQueue();
+      }
+      cancelCalled = true;
+      final cancelled = subscription.cancel();
+      if (onCancelled != null) {
+        onCancelled(cancelled);
+      } else {
+        await cancelled;
+      }
+      if (cancelTwice) await subscription.cancel();
+      await pumpEventQueue();
+      return events;
+    }
+
+    for (final MapEntry(key: path, value: (nativeChat, start))
+        in paths.entries) {
+      for (final output in const [
+        <String>[],
+        <String>['Hello'],
+      ]) {
+        final state = output.isEmpty
+            ? 'during prompt evaluation'
+            : 'mid-output';
+        test('$path cancelled $state delivers nothing after the cancel is '
+            'called', () async {
+          final backend = HeldOutputBackend(
+            output: output,
+            nativeChat: nativeChat,
+          );
+          final engine = await load(backend);
+
+          expect(await eventsAfterCancel(start(engine), backend), isEmpty);
+        });
+      }
+
+      test('$path cancelled before the backend starts delivers nothing and '
+          'skips it', () async {
+        final backend = HeldOutputBackend(
+          output: const ['Hello'],
+          nativeChat: nativeChat,
+        );
+        final engine = await load(backend);
+
+        final events = await eventsAfterCancel(
+          start(engine),
+          backend,
+          beforeBackend: true,
+        );
+
+        expect(events, isEmpty);
+        expect(backend.generateCalls, 0);
+      });
+    }
+
+    test('create cancelled with a whole tool call buffered delivers nothing '
+        'after the cancel is called', () async {
+      final backend = HeldOutputBackend(
+        output: const [toolCall],
+        modelMetadataResponse: toolTemplate,
+      );
+      final engine = await load(backend);
+
+      final events = await eventsAfterCancel(
+        engine.create(const [user], tools: tools),
+        backend,
+      );
+
+      expect(events, isEmpty);
+    });
+
+    test('ChatSession.create cancelled with a whole tool call buffered '
+        'delivers nothing and adds no assistant message', () async {
+      final backend = HeldOutputBackend(
+        output: const [toolCall],
+        modelMetadataResponse: toolTemplate,
+      );
+      final engine = await load(backend);
+      final session = ChatSession(engine);
+
+      final events = await eventsAfterCancel(
+        session.create([LlamaTextContent('hello')], tools: tools),
+        backend,
+      );
+
+      expect(events, isEmpty);
+      expect(session.history.map((message) => message.role), [
+        LlamaChatRole.user,
+      ]);
+    });
+
+    test('a second cancel delivers nothing', () async {
+      final backend = HeldOutputBackend(output: const ['Hello']);
+      final engine = await load(backend);
+
+      final events = await eventsAfterCancel(
+        engine.create(const [user]),
+        backend,
+        cancelTwice: true,
+      );
+
+      expect(events, isEmpty);
+    });
+
+    test('a backend cancel failure completes the cancel with that error and '
+        'delivers nothing', () async {
+      final failure = StateError('backend cancel failed');
+      final backend = HeldOutputBackend(
+        output: const ['Hello'],
+        cancelError: failure,
+      );
+      final engine = await load(backend);
+      late Future<void> cancelled;
+
+      final events = await eventsAfterCancel(
+        engine.create(const [user]),
+        backend,
+        onCancelled: (future) {
+          cancelled = future;
+          future.ignore();
+        },
+      );
+
+      expect(events, isEmpty);
+      await expectLater(cancelled, throwsA(same(failure)));
     });
   });
 

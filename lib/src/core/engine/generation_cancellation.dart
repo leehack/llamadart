@@ -83,7 +83,9 @@ final class GenerationRequest {
       return const <Future<void>>[];
     }
     _subscriptionCancelled = true;
-    return <Future<void>>[for (final stop in List.of(_stops)) stop()];
+    return <Future<void>>[
+      for (final stop in List.of(_stops)) Future<void>.sync(stop),
+    ];
   }
 }
 
@@ -119,12 +121,16 @@ class _RequestSubscription<T> implements StreamSubscription<T> {
 
   _RequestSubscription(this._source, this._request);
 
+  /// Cancels the source before running the stops. A stop can let the
+  /// generator finish synchronously, and a source still listened to would
+  /// then deliver its last events and done inside this cancel.
   @override
   Future<void> cancel() {
+    final sourceCancelled = _source.cancel();
     final stops = _request._cancelSubscription();
     return Future.wait<void>(<Future<void>>[
+      sourceCancelled,
       ...stops,
-      _source.cancel(),
     ]).then<void>((_) {});
   }
 

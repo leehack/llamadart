@@ -95,6 +95,33 @@ void main() {
 
   Future<void> duringPrompt() => Future<void>.delayed(promptTime * 0.2);
 
+  /// Cancels [stream] during prompt evaluation and returns the cancel's
+  /// latency and the callbacks that ran after the cancel was called.
+  Future<(Duration, List<String>)> cancelDuringPrompt(
+    Stream<Object?> stream,
+  ) async {
+    final events = <String>[];
+    var cancelCalled = false;
+    final subscription = stream.listen(
+      (event) {
+        if (cancelCalled) events.add('data $event');
+      },
+      onError: (Object error) {
+        if (cancelCalled) events.add('error $error');
+      },
+      onDone: () {
+        if (cancelCalled) events.add('done');
+      },
+    );
+    await duringPrompt();
+    final stopwatch = Stopwatch()..start();
+    cancelCalled = true;
+    await subscription.cancel();
+    final cancelled = stopwatch.elapsed;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    return (cancelled, events);
+  }
+
   test('cancelGeneration during prompt evaluation ends the stream before '
       'the prompt is evaluated', () async {
     final done = Completer<void>();
@@ -114,20 +141,35 @@ void main() {
   });
 
   test('an awaited subscription cancel during prompt evaluation returns '
-      'before the prompt is evaluated', () async {
-    final subscription = engine
-        .generate(prompt, params: fullPrompt)
-        .listen((_) {});
-    await duringPrompt();
-    final stopwatch = Stopwatch()..start();
-    await subscription.cancel();
-    final cancelled = stopwatch.elapsed;
+      'before the prompt is evaluated and delivers no events', () async {
+    final (cancelled, events) = await cancelDuringPrompt(
+      engine.generate(prompt, params: fullPrompt),
+    );
     report('subscription.cancel', cancelled);
     final (text, _) = await timedRun(fullPrompt);
 
+    expect(events, isEmpty);
     expect(cancelled, lessThan(promptTime * 0.6));
     expect(text, uncancelled);
   });
+
+  test(
+    'an awaited create() subscription cancel during prompt evaluation '
+    'returns before the prompt is evaluated and delivers no events',
+    () async {
+      final (cancelled, events) = await cancelDuringPrompt(
+        engine.create([
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
+        ], params: fullPrompt),
+      );
+      report('create subscription.cancel', cancelled);
+      final (text, _) = await timedRun(fullPrompt);
+
+      expect(events, isEmpty);
+      expect(cancelled, lessThan(promptTime * 0.6));
+      expect(text, uncancelled);
+    },
+  );
 
   test('a generation right after an un-awaited subscription cancel during '
       'prompt evaluation matches an uncancelled run', () async {
