@@ -73,10 +73,11 @@ abstract final class LlamaOperation {
   /// the path or URL it was loaded from. For a [LlamaModelLoadOperation],
   /// that last segment of the model being loaded.
   ///
-  /// Null when no model is loaded, or when that segment is empty, is not
-  /// valid percent-encoding or contains one of `/ \ ? # @ ; & =`, so the
-  /// segment is never a directory path, URL query, fragment or userinfo.
-  /// `general.name` is reported as the model file declares it.
+  /// Null when no model is loaded, or when that segment is empty, has a
+  /// percent escape that does not decode to UTF-8, or contains one of
+  /// `/ \ ? # @ ; & =` once decoded, so the segment is never a directory
+  /// path, URL query, fragment or userinfo. `general.name` is reported as the
+  /// model file declares it.
   final String? model;
 
   /// The runtime of the loaded model, or null when the backend does not

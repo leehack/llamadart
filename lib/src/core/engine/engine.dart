@@ -373,9 +373,9 @@ class LlamaEngine {
         : name;
   }
 
-  /// The last path segment of [source], or null when it is empty, is not
-  /// valid percent-encoding or holds URL syntax that could carry more than a
-  /// file name.
+  /// The last path segment of [source], or null when it is empty, has a
+  /// percent escape that does not decode to UTF-8, or holds URL syntax that
+  /// could carry more than a file name.
   static String? _observedNameForSource(String source) {
     final uri = Uri.tryParse(source);
     final List<String> segments;
