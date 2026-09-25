@@ -3732,27 +3732,92 @@ void main() {
       expect(events, isEmpty);
     });
 
-    test('a backend cancel failure completes the cancel with that error and '
-        'delivers nothing', () async {
-      final failure = StateError('backend cancel failed');
+    final failure = StateError('backend cancel failed');
+    final llamaFailure = LlamaStateException('backend cancel state');
+    final cancelFailures =
+        <String, (Object, String, Matcher Function(String operation))>{
+          'a raw error': (
+            failure,
+            'wraps it',
+            (operation) => isA<LlamaInferenceException>()
+                .having((e) => e.message, 'message', '$operation failed')
+                .having((e) => e.details, 'details', same(failure)),
+          ),
+          'an UnsupportedError': (
+            UnsupportedError('no cancel'),
+            'reports it as unsupported',
+            (operation) => isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              '$operation is not supported by the active backend: no cancel',
+            ),
+          ),
+          'a LlamaException': (
+            llamaFailure,
+            'keeps it',
+            (_) => same(llamaFailure),
+          ),
+        };
+    final operations = <String, (bool, String)>{
+      'generate': (false, 'Generation'),
+      'create': (false, 'Generation'),
+      'native chat create': (true, 'Native chat generation'),
+    };
+
+    for (final MapEntry(key: path, value: (nativeChat, operation))
+        in operations.entries) {
+      for (final MapEntry(key: kind, value: (error, action, matcher))
+          in cancelFailures.entries) {
+        test('$path: a backend cancel failure with $kind $action as the '
+            'generation does, and delivers nothing', () async {
+          final backend = HeldOutputBackend(
+            output: const ['Hello'],
+            nativeChat: nativeChat,
+            cancelError: error,
+          );
+          final engine = await load(backend);
+          late Future<void> cancelled;
+
+          final events = await eventsAfterCancel(
+            paths[path]!.$2(engine),
+            backend,
+            onCancelled: (future) {
+              cancelled = future;
+              future.ignore();
+            },
+          );
+
+          expect(events, isEmpty);
+          await expectLater(cancelled, throwsA(matcher(operation)));
+        });
+      }
+    }
+
+    test('an unawaited cancel reports a backend cancel failure once, as a '
+        'LlamaException', () async {
       final backend = HeldOutputBackend(
         output: const ['Hello'],
         cancelError: failure,
       );
       final engine = await load(backend);
-      late Future<void> cancelled;
+      final unhandled = <Object>[];
 
-      final events = await eventsAfterCancel(
-        engine.create(const [user]),
-        backend,
-        onCancelled: (future) {
-          cancelled = future;
-          future.ignore();
-        },
-      );
+      await runZonedGuarded(() async {
+        final subscription = engine.create(const [user]).listen(null);
+        while (backend.listens == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        unawaited(subscription.cancel());
+        await pumpEventQueue();
+      }, (error, _) => unhandled.add(error));
 
-      expect(events, isEmpty);
-      await expectLater(cancelled, throwsA(same(failure)));
+      expect(unhandled, [
+        isA<LlamaInferenceException>().having(
+          (e) => e.details,
+          'details',
+          same(failure),
+        ),
+      ]);
     });
   });
 
