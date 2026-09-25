@@ -60,4 +60,19 @@ void main() {
     expect(usage.promptTokens, 4);
     expect(usage.completionTokens, 2);
   });
+
+  test('LlamaCompletionChunk parses an OpenAI include_usage chunk', () {
+    final chunk = LlamaCompletionChunk.fromJson({
+      'id': 'chatcmpl-1',
+      'object': 'chat.completion.chunk',
+      'created': 1,
+      'model': 'm',
+      'choices': <Object>[],
+      'usage': {'prompt_tokens': 3, 'completion_tokens': 2, 'total_tokens': 5},
+    });
+
+    expect(chunk.usage!.promptTokens, 3);
+    expect(chunk.usage!.completionTokens, 2);
+    expect(chunk.usage!.duration, isNull);
+  });
 }

@@ -1,15 +1,23 @@
 /// Token counts and timings of one generation request.
 class LlamaGenerationUsage {
   /// Prompt tokens in the context when generation started, including
-  /// [cachedPromptTokens] and any media tokens.
+  /// [cachedPromptTokens].
+  ///
+  /// For a multimodal prompt this is the number of context positions the
+  /// prompt filled. Models with M-RoPE vision, such as Qwen2-VL, give an image
+  /// fewer positions than image tokens.
   final int promptTokens;
 
-  /// Leading prompt tokens reused from the context's previous request instead
-  /// of being evaluated again, or null when the backend cannot tell.
+  /// Leading prompt tokens reused from the KV cache, left by the context's
+  /// previous request or by a loaded state, instead of being evaluated again.
+  /// Null when the backend cannot tell.
   final int? cachedPromptTokens;
 
-  /// Generated tokens with a non-empty text piece, including tokens that
-  /// formed a stop sequence. The end-of-generation token is not counted.
+  /// Generated tokens, including tokens that formed a stop sequence and
+  /// excluding the end-of-generation token.
+  ///
+  /// Without speculative decoding, tokens whose text piece is empty are not
+  /// counted.
   final int completionTokens;
 
   /// Time from the backend starting the request to its first streamed text,
@@ -19,8 +27,9 @@ class LlamaGenerationUsage {
   /// tokens, so it excludes time spent queued behind another request.
   final Duration? timeToFirstToken;
 
-  /// Time from the backend starting the request to the end of generation.
-  final Duration duration;
+  /// Time from the backend starting the request to the end of generation, or
+  /// null when unknown, such as after parsing JSON without `duration_ms`.
+  final Duration? duration;
 
   /// Creates a new [LlamaGenerationUsage].
   const LlamaGenerationUsage({
@@ -28,16 +37,18 @@ class LlamaGenerationUsage {
     this.cachedPromptTokens,
     required this.completionTokens,
     this.timeToFirstToken,
-    required this.duration,
+    this.duration,
   });
 
   /// [promptTokens] plus [completionTokens].
   int get totalTokens => promptTokens + completionTokens;
 
-  /// Creates a [LlamaGenerationUsage] from a map produced by [toJson].
+  /// Creates a [LlamaGenerationUsage] from a map produced by [toJson] or an
+  /// OpenAI-style `usage` map.
   factory LlamaGenerationUsage.fromJson(Map<String, dynamic> json) {
     final details = json['prompt_tokens_details'] as Map<String, dynamic>?;
     final timeToFirstTokenMs = json['time_to_first_token_ms'] as num?;
+    final durationMs = json['duration_ms'] as num?;
     return LlamaGenerationUsage(
       promptTokens: json['prompt_tokens'] as int,
       cachedPromptTokens: details?['cached_tokens'] as int?,
@@ -45,7 +56,7 @@ class LlamaGenerationUsage {
       timeToFirstToken: timeToFirstTokenMs == null
           ? null
           : _durationFromMs(timeToFirstTokenMs),
-      duration: _durationFromMs(json['duration_ms'] as num),
+      duration: durationMs == null ? null : _durationFromMs(durationMs),
     );
   }
 
@@ -53,6 +64,7 @@ class LlamaGenerationUsage {
   /// `time_to_first_token_ms` and `duration_ms` added.
   Map<String, dynamic> toJson() {
     final timeToFirstToken = this.timeToFirstToken;
+    final duration = this.duration;
     return {
       'prompt_tokens': promptTokens,
       'completion_tokens': completionTokens,
@@ -61,7 +73,7 @@ class LlamaGenerationUsage {
         'prompt_tokens_details': {'cached_tokens': cachedPromptTokens},
       if (timeToFirstToken != null)
         'time_to_first_token_ms': timeToFirstToken.inMicroseconds / 1000,
-      'duration_ms': duration.inMicroseconds / 1000,
+      if (duration != null) 'duration_ms': duration.inMicroseconds / 1000,
     };
   }
 

@@ -65,16 +65,25 @@ void main() {
       expect(decoded.duration, const Duration(microseconds: 40001));
     });
 
-    test('fromJson leaves absent optional fields null', () {
+    test('fromJson reads an OpenAI usage map', () {
       final decoded = LlamaGenerationUsage.fromJson({
         'prompt_tokens': 3,
         'completion_tokens': 1,
-        'duration_ms': 2,
+        'total_tokens': 4,
+        'prompt_tokens_details': {'cached_tokens': 2},
       });
 
-      expect(decoded.cachedPromptTokens, isNull);
+      expect(decoded.promptTokens, 3);
+      expect(decoded.cachedPromptTokens, 2);
+      expect(decoded.completionTokens, 1);
       expect(decoded.timeToFirstToken, isNull);
-      expect(decoded.duration, const Duration(milliseconds: 2));
+      expect(decoded.duration, isNull);
+    });
+
+    test('toJson omits an unknown duration', () {
+      const usage = LlamaGenerationUsage(promptTokens: 3, completionTokens: 1);
+
+      expect(usage.toJson().containsKey('duration_ms'), isFalse);
     });
   });
 }

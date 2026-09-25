@@ -86,6 +86,12 @@ void main() {
 
       expect(usage.promptTokens, secondTokens.length);
       expect(usage.cachedPromptTokens, shared);
+
+      final fullDecode = await run(
+        second,
+        repeating.copyWith(reusePromptPrefix: false),
+      );
+      expect(fullDecode.cachedPromptTokens, 0);
     });
 
     test(

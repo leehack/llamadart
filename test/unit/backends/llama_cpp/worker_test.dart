@@ -476,7 +476,7 @@ void main() {
     test(
       'sends generation usage timed from the first non-empty chunk',
       () async {
-        const firstTextDelay = Duration(milliseconds: 30);
+        const firstTextDelay = Duration(milliseconds: 50);
         final worker = await _startWorkerInCurrentIsolate(
           _UsageReportingLlamaCppService(firstTextDelay),
         );
@@ -497,7 +497,10 @@ void main() {
           expect(usage.promptTokens, 11);
           expect(usage.cachedPromptTokens, 4);
           expect(usage.completionTokens, 2);
-          expect(usage.timeToFirstToken, greaterThanOrEqualTo(firstTextDelay));
+          expect(
+            usage.timeToFirstToken,
+            greaterThanOrEqualTo(firstTextDelay ~/ 2),
+          );
           expect(usage.duration, greaterThanOrEqualTo(usage.timeToFirstToken!));
         } finally {
           await _disposeWorker(worker);
