@@ -168,9 +168,9 @@ final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
 - `LlamaOperation.model` is the model's `general.name` metadata, or else the
   last segment of the path or URL it was loaded from. It is null when that
   segment is empty or contains one of `/ \ ? # @ ; & =`, so the segment is
-  never a directory path, URL query, fragment or userinfo. `runtime` is
-  `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm` on the built-in
-  backends.
+  never a directory path, URL query, fragment or userinfo. On the built-in
+  backends, `runtime` is `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm`
+  for operations after a model load, and null for the load itself.
 - Operations carry copies of the prompts and messages. Record them only when
   your users opt in.
 - Extend the observer classes rather than implementing them, and give a
