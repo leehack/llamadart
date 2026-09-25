@@ -59,8 +59,8 @@ Important fields:
 - `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
   GGUF. Defaults to `false` because the tensors cost memory; set it to `true`
   when `SpeculativeDecodingConfig.mtp(...)` runs without a `draftModelPath`.
-- `chatTemplate`: template override for `.litertlm` models. GGUF models always
-  use the template embedded in the file.
+- `chatTemplate`: template override for `.litertlm` models. `engine.create`
+  on GGUF models uses the template embedded in the file.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).

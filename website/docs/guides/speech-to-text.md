@@ -169,6 +169,8 @@ transcript shares the same context. On native llama.cpp, a task that reaches
 the context size or `maxOutputTokens` before the transcript ends fails with
 `LlamaSpeechTranscriptTruncatedException`. Its `limit` names the limit that
 stopped recognition and `partialTranscript` holds the text produced before it.
+A Qwen3-ASR task whose transcript is empty, for example from silent input,
+fails with `LlamaSpeechException`.
 
 Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Only WAV is
 validated with a real model; native tests check only that the adapter accepts

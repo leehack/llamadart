@@ -164,9 +164,10 @@ Question: When is the library open on Saturday?
 ## Limits to plan for
 
 - **Chunk your documents.** EmbeddingGemma embeds its input in one pass of at
-  most `microBatchSize` tokens (512 by default). Longer input throws
-  `LlamaInferenceException`; nothing is truncated for you. Split documents into
-  passages, or raise `microBatchSize` and `batchSize`.
+  most `microBatchSize` tokens (512 by default). Longer input fails, with
+  `LlamaInferenceException` while it fits the context; nothing is truncated for
+  you. Split documents into passages, or raise `microBatchSize`, `batchSize`
+  and, past 2048 tokens, `contextSize`.
 - **Answer quality depends on the chat model.** Retrieval scores were sensible
   in every test run, but the 0.8B chat model still misread the retrieved text
   on some questions. Use a larger model when answers matter, and show the

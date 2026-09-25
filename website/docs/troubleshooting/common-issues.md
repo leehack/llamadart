@@ -64,8 +64,9 @@ Linux only. Every llama.cpp load needs the OpenMP runtime. Install `libgomp1`
 
 ### `Timed out after 30000 ms waiting for the llama.cpp worker to initialize its backend.`
 
-`LlamaBackendInitializationException`: the native llama.cpp worker did not
-finish starting within 30 seconds. The native runtime may be missing, fail to
+`LlamaBackendInitializationException`, which `loadModel` wraps in
+`LlamaModelException`: the native llama.cpp worker did not finish starting
+within 30 seconds. The native runtime may be missing, fail to
 load, or hang during backend initialization. Check the native log for a
 library load error and confirm the platform prerequisites.
 

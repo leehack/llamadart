@@ -58,8 +58,9 @@ dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 ## Speech and voice
 
 With a Qwen3-ASR model loaded, the composer transcribes a selected file or a
-microphone recording of up to 30 seconds. Native chat models can add live
-English dictation through a separately installed LiteRT model: Moonshine Tiny
+microphone recording of up to 30 seconds. On Android, iOS, macOS and Windows,
+native chat models can add live English dictation through a separately
+installed LiteRT model: Moonshine Tiny
 (54 MB) or Parakeet TDT 0.6B (615 MB). Native Gemma 4 E2B answers a spoken
 question through **Ask with voice**, and the Qwen3-TTS preset switches the
 composer to speech synthesis. See [Speech to text](../guides/speech-to-text) and

@@ -54,6 +54,10 @@ local paths or encoded media bytes. Remote image URLs and raw PCM
 `Float32List` audio samples are rejected before native generation because the
 current LiteRT-LM C message loader expects a local `path` or base64 `blob`.
 
+LiteRT-LM starts audio preprocessing on the selected backend. If that fails, it
+retries on CPU and keeps CPU audio for the loaded model; the Gemma 4 E2B bundle
+resolves to GPU text and vision with CPU audio.
+
 ## Build multimodal message
 
 ```dart

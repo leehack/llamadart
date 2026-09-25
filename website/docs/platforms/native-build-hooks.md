@@ -58,7 +58,9 @@ hooks:
 ```
 
 - Platform keys are OS names (`android`, `ios`, `linux`, `macos`, `windows`) or
-  bundle keys such as `android-arm64` or `ios-arm64-sim`. For each bundle the
+  bundle keys: `android-arm64`, `android-x64`, `ios-arm64`, `ios-arm64-sim`,
+  `ios-x86_64-sim`, `linux-arm64`, `linux-x64`, `macos-arm64`,
+  `macos-x86_64`, `windows-arm64` and `windows-x64`. For each bundle the
   exact bundle key wins, then its OS key, then `runtimes`, then every family.
 - Aliases: `gguf`, `llama`, `llama.cpp` for `llama_cpp`; `litert`,
   `litert-lm`, `litertlm`, `.litertlm` for `litert_lm`. `all` and `both` select
