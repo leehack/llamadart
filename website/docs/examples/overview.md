@@ -15,6 +15,8 @@ style.
   controls, multimodal input and speech.
 - [Laya Tetris](./laya-tetris): Flutter game played in real time by a
   decision model.
+- [Laya Command Bar](./laya-command-bar): Flutter text field that a decision
+  model, an embedding model or a small LLM reshapes as you type.
 - [llama.cpp-Style CLI](./llamadart-cli): terminal chat with llama.cpp-style
   arguments and parity tooling.
 - [OpenAI-compatible server](./llamadart-server): OpenAI-style HTTP API over
@@ -34,6 +36,7 @@ style.
 - Learn decision models: Basic App decision CLI.
 - Build a product UI: Chat App.
 - Run decision models in a real-time app: Laya Tetris.
+- Drive interactive UI from a classifier: Laya Command Bar.
 - Keep a llama.cpp terminal workflow: llama.cpp-Style CLI.
 - Serve tools and agents over HTTP: OpenAI-Compatible Server.
 - Build an interactive coding agent in the terminal: TUI Coding Agent.
