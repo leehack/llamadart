@@ -53,8 +53,7 @@ class _LayaCommandBarAppState extends State<LayaCommandBarApp> {
   /// aborts the process when it exits with GPU buffers still allocated.
   Future<AppExitResponse> _onExit() async {
     await Future.wait([
-      for (final source in _sources ?? const <SourceOption>[])
-        source.dispose(),
+      for (final source in _sources ?? const <SourceOption>[]) source.dispose(),
     ]);
     return AppExitResponse.exit;
   }
