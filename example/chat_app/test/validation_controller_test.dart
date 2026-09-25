@@ -86,11 +86,22 @@ class TokenOnlyEngine implements ValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
+  }) => throw StateError('not a text model');
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
   }) => throw StateError('not a text model');
 }
 

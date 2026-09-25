@@ -34,11 +34,26 @@ abstract interface class ValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
+  });
+
+  /// Streams [first] and, at its first content or thinking delta, starts
+  /// [second] without waiting for [first] to end. With [cancelFirst], that
+  /// delta cancels [first] before [second] starts; otherwise [first] is
+  /// cancelled at its first delta after [second] ends. Errors are recorded.
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
   });
 }
 
@@ -127,11 +142,145 @@ class PublicValidationEngine
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
+  }) => _generate(
+    prompt,
+    profile,
+    raw: raw,
+    maxTokens: maxTokens,
+    streamBatchTokens: streamBatchTokens,
+    streamBatchBytes: streamBatchBytes,
+    cancelAfterFirst: cancelAfterFirst,
+    cancelOnListen: cancelOnListen,
+    history: history,
+    stopSequences: stopSequences,
+    enableThinking: enableThinking,
+    tools: tools,
+    toolChoice: toolChoice,
+    grammar: grammar,
+  );
+
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
+  }) async {
+    final clock = Stopwatch()..start();
+    double? ms(int? us) => us == null ? null : us / 1000;
+    Future<Map<String, dynamic>>? secondRun;
+    int? secondIssuedUs;
+    int? secondEndedUs;
+    int? firstCancelUs;
+    int? firstEndedUs;
+    bool? firstEndedAtSecondIssue;
+    var firstDeltasAfterSecondEnded = 0;
+    Future<Map<String, dynamic>> capture(
+      Future<Map<String, dynamic>> run,
+      void Function() onError,
+    ) => run.catchError((Object error) {
+      onError();
+      return <String, dynamic>{
+        'error_type': error.runtimeType.toString(),
+        'state_exception': error is LlamaStateException,
+        'message': redactDiagnostic('$error'),
+        'content': '',
+        'chunks': 0,
+        'stream_completed': false,
+      };
+    });
+    void onFirstDelta() {
+      final now = clock.elapsedMicroseconds;
+      if (secondRun == null) {
+        if (cancelFirst) {
+          firstCancelUs = now;
+          cancel();
+        }
+        firstEndedAtSecondIssue = firstEndedUs != null;
+        secondIssuedUs = clock.elapsedMicroseconds;
+        secondRun = capture(
+          _generate(
+            second,
+            profile,
+            raw: raw,
+            clock: clock,
+            collectMetrics: false,
+            onStreamEnd: () => secondEndedUs ??= clock.elapsedMicroseconds,
+          ),
+          () => secondEndedUs ??= clock.elapsedMicroseconds,
+        );
+        return;
+      }
+      if (secondEndedUs == null) return;
+      firstDeltasAfterSecondEnded++;
+      if (!cancelFirst && firstCancelUs == null) {
+        firstCancelUs = now;
+        cancel();
+      }
+    }
+
+    final firstOutput = await capture(
+      _generate(
+        first,
+        profile,
+        raw: raw,
+        maxTokens: firstMaxTokens,
+        clock: clock,
+        collectMetrics: false,
+        onDelta: onFirstDelta,
+        onStreamEnd: () => firstEndedUs ??= clock.elapsedMicroseconds,
+      ),
+      () => firstEndedUs ??= clock.elapsedMicroseconds,
+    );
+    final secondOutput = await secondRun;
+    return {
+      'first': firstOutput,
+      'second': ?secondOutput,
+      'cancel_first': cancelFirst,
+      'second_issued': secondOutput != null,
+      'first_ended_before_second_issued': firstEndedAtSecondIssue,
+      'first_cancelled_before_second_issued':
+          firstCancelUs != null &&
+          secondIssuedUs != null &&
+          firstCancelUs! <= secondIssuedUs!,
+      'first_deltas_after_second_ended': firstDeltasAfterSecondEnded,
+      'timeline_ms': {
+        'first_cancel': ms(firstCancelUs),
+        'second_issued': ms(secondIssuedUs),
+        'second_ended': ms(secondEndedUs),
+        'first_ended': ms(firstEndedUs),
+      },
+    };
+  }
+
+  Future<Map<String, dynamic>> _generate(
+    String prompt,
+    ValidationProfile profile, {
+    bool raw = false,
+    int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
+    bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
+    List<LlamaChatMessage>? history,
+    List<String>? stopSequences,
+    bool? enableThinking,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    String? grammar,
+    Stopwatch? clock,
+    bool collectMetrics = true,
+    void Function()? onDelta,
+    void Function()? onStreamEnd,
   }) async {
     final text = StringBuffer();
     final thinking = StringBuffer();
@@ -142,14 +291,44 @@ class PublicValidationEngine
     var chunks = 0;
     int? firstUs;
     int? cancelUs;
+    int? chunksBeforeCancel;
+    int? firstDeltaClockUs;
+    int? endClockUs;
     final params = profile.generationParams.copyWith(
       maxTokens: maxTokens,
       streamBatchTokenThreshold: streamBatchTokens,
       streamBatchByteThreshold: streamBatchBytes,
       stopSequences: stopSequences,
+      grammar: grammar,
     );
     final npuBefore = npu?.snapshot();
     final watch = Stopwatch()..start();
+    void requestCancel() {
+      cancelUs = watch.elapsedMicroseconds;
+      chunksBeforeCancel = chunks;
+      cancel();
+    }
+
+    Stream<T> listened<T>(Stream<T> source) => !cancelOnListen
+        ? source
+        : Stream<T>.multi((controller) {
+            final subscription = source.listen(
+              controller.addSync,
+              onError: controller.addErrorSync,
+              onDone: controller.closeSync,
+            );
+            controller
+              ..onPause = subscription.pause
+              ..onResume = subscription.resume
+              ..onCancel = subscription.cancel;
+            requestCancel();
+          });
+
+    void delta() {
+      firstDeltaClockUs ??= clock?.elapsedMicroseconds;
+      onDelta?.call();
+    }
+
     void append(String content) {
       if (content.isEmpty) return;
       firstUs ??= watch.elapsedMicroseconds;
@@ -158,32 +337,34 @@ class PublicValidationEngine
         cancel();
         throw StateError('Output exceeded the 64 KiB core limit');
       }
-      if (cancelAfterFirst && cancelUs == null) {
-        cancelUs = watch.elapsedMicroseconds;
-        cancel();
-      }
+      if (cancelAfterFirst && cancelUs == null) requestCancel();
+      delta();
     }
 
     String? cancellationAbort;
     try {
       if (raw) {
-        await for (final delta in _engine.generate(prompt, params: params)) {
+        await for (final piece in listened(
+          _engine.generate(prompt, params: params),
+        )) {
           chunks++;
-          append(delta);
+          append(piece);
         }
       } else {
-        await for (final chunk in _engine.create(
-          history ??
-              [
-                LlamaChatMessage.fromText(
-                  role: LlamaChatRole.user,
-                  text: prompt,
-                ),
-              ],
-          params: params,
-          enableThinking: enableThinking ?? profile.enableThinking,
-          tools: tools,
-          toolChoice: toolChoice,
+        await for (final chunk in listened(
+          _engine.create(
+            history ??
+                [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: prompt,
+                  ),
+                ],
+            params: params,
+            enableThinking: enableThinking ?? profile.enableThinking,
+            tools: tools,
+            toolChoice: toolChoice,
+          ),
         )) {
           chunks++;
           for (final choice in chunk.choices) {
@@ -198,12 +379,15 @@ class PublicValidationEngine
               }
               toolDeltas.add(data);
             }
-            append(choice.delta.content ?? '');
-            thinking.write(choice.delta.thinking ?? '');
+            final content = choice.delta.content ?? '';
+            append(content);
+            final reasoning = choice.delta.thinking ?? '';
+            thinking.write(reasoning);
             if (thinking.length > 65536) {
               cancel();
               throw StateError('Thinking exceeded the 64 KiB core limit');
             }
+            if (reasoning.isNotEmpty && content.isEmpty) delta();
             if (choice.finishReason != null) finish.add(choice.finishReason!);
           }
         }
@@ -217,18 +401,23 @@ class PublicValidationEngine
       } else {
         rethrow;
       }
+    } finally {
+      endClockUs = clock?.elapsedMicroseconds;
+      onStreamEnd?.call();
     }
     watch.stop();
     final npuAfter = npu?.snapshot();
     // Tokenization and diagnostic reads occur after the timed region.
     int? estimatedTokens;
-    try {
-      estimatedTokens = (await tokenize(text.toString())).length;
-    } catch (_) {}
     BackendPerfContextData? perf;
-    try {
-      perf = await _engine.getPerformanceContext();
-    } catch (_) {}
+    if (collectMetrics) {
+      try {
+        estimatedTokens = (await tokenize(text.toString())).length;
+      } catch (_) {}
+      try {
+        perf = await _engine.getPerformanceContext();
+      } catch (_) {}
+    }
     final wallMs = watch.elapsedMicroseconds / 1000;
     final nativeMs = perf?.decodeMs ?? perf?.evalMs;
     final nativeTokens = perf?.evalTokens;
@@ -237,6 +426,7 @@ class PublicValidationEngine
       if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
       'max_tokens': params.maxTokens,
       'stop_sequences': params.stopSequences,
+      'grammar': ?params.grammar,
       'enable_thinking': enableThinking ?? profile.enableThinking,
       'tools': tools?.map((tool) => tool.toJson()).toList(),
       'tool_choice': toolChoice?.name,
@@ -253,17 +443,28 @@ class PublicValidationEngine
       'stream_batch_tokens': params.streamBatchTokenThreshold,
       'stream_batch_bytes': params.streamBatchByteThreshold,
       'cancel_requested': cancelUs != null,
+      'cancel_on_listen': cancelOnListen,
+      'chunks_before_cancel': chunksBeforeCancel,
       'cancel_abort_observed': cancellationAbort != null,
       'cancel_abort': ?cancellationAbort,
       'cancel_to_done_ms': cancelUs == null
           ? null
           : (watch.elapsedMicroseconds - cancelUs!) / 1000,
+      if (clock != null)
+        'timeline_ms': {
+          'first_delta': firstDeltaClockUs == null
+              ? null
+              : firstDeltaClockUs! / 1000,
+          'ended': endClockUs == null ? null : endClockUs / 1000,
+        },
       'metrics': {
         'wall_ms': wallMs,
         'ttfa_ms': firstUs == null ? null : firstUs! / 1000,
         'native_ttft_ms': null,
         'estimated_output_tokens': estimatedTokens,
-        'token_count_source': 'retokenized visible output; not stream chunks',
+        'token_count_source': collectMetrics
+            ? 'retokenized visible output; not stream chunks'
+            : null,
         'estimated_wall_tps': wallMs > 0 && estimatedTokens != null
             ? estimatedTokens * 1000 / wallMs
             : null,
@@ -282,7 +483,9 @@ class PublicValidationEngine
         'native_prompt_tokens': perf?.promptEvalTokens,
         'native_prompt_ms': perf?.promptEvalMs,
         'missing_native_metrics_reason': perf == null
-            ? 'backend did not expose counters'
+            ? collectMetrics
+                  ? 'backend did not expose counters'
+                  : 'not collected while another request can run'
             : null,
       },
     };
@@ -643,7 +846,7 @@ class ValidationRunner {
     };
   }
 
-  Future<Map<String, dynamic>> _tools() async {
+  ToolDefinition _weatherTool() {
     final fixture = profile.fixtures['tools'] as Map;
     final function = (fixture['tool'] as Map)['function'] as Map;
     final tool = ToolDefinition(
@@ -657,25 +860,50 @@ class ValidationRunner {
         'Tool fixture schema does not match the public tool definition',
       );
     }
+    return tool;
+  }
+
+  Future<Map<String, dynamic>> _tools() async {
+    final fixture = profile.fixtures['tools'] as Map;
+    final tool = _weatherTool();
     final trials = <Map<String, dynamic>>[];
     _partialCaseEvidence = {'trials': trials};
     var passed = true;
+    var webRequiredRejected = false;
     for (final mode in [
       ToolChoice.auto,
       ToolChoice.required,
       ToolChoice.none,
     ]) {
       _operationPhase = 'tools.${mode.name}.generate';
-      final output = await _checked(
-        () => engine.generate(
-          fixture['prompt'] as String,
-          profile,
-          tools: [tool],
-          toolChoice: mode,
-          enableThinking: false,
-          maxTokens: 128,
-        ),
-      );
+      final Map<String, dynamic> output;
+      try {
+        output = await _checked(
+          () => engine.generate(
+            fixture['prompt'] as String,
+            profile,
+            tools: [tool],
+            toolChoice: mode,
+            enableThinking: false,
+            maxTokens: 128,
+          ),
+        );
+      } on LlamaUnsupportedException catch (error) {
+        if (!engine.isWeb ||
+            mode != ToolChoice.required ||
+            !error.message.contains('ToolChoice.required') ||
+            !error.message.contains('needs a lazy tool-call grammar')) {
+          rethrow;
+        }
+        webRequiredRejected = true;
+        trials.add({
+          'tool_choice': mode.name,
+          'mode_passed': true,
+          'documented_web_rejection': true,
+          'message': redactDiagnostic(error.message),
+        });
+        continue;
+      }
       final deltas = output['tool_call_deltas'] as List;
       final name = StringBuffer();
       final arguments = StringBuffer();
@@ -789,6 +1017,7 @@ class ValidationRunner {
     return {
       'trials': trials,
       'recovery': recovery,
+      'required_documented_web_rejection': webRequiredRejected,
       'status':
           passed &&
               RegExp(
@@ -814,16 +1043,268 @@ class ValidationRunner {
       canonicalJson(finishReasons) == canonicalJson(['stop']) ||
       canonicalJson(finishReasons) == canonicalJson(['length']);
 
+  bool _completedText(Map<String, dynamic>? output) =>
+      output != null &&
+      output['error_type'] == null &&
+      output['stream_completed'] == true &&
+      output['completion_order_valid'] == true &&
+      (output['content'] as String).trim().isNotEmpty;
+
+  Future<Map<String, dynamic>> _earlyCancel() async {
+    final cancel = profile.fixtures['cancel'] as Map;
+    final deadline = cancel['deadline_ms'] as num;
+    _operationPhase = 'cancel_on_listen';
+    final cancelled = await _checked(
+      () => engine.generate(
+        _shortPrompt,
+        profile,
+        raw: !profile.isChat,
+        cancelOnListen: true,
+      ),
+    );
+    _partialCaseEvidence = {'cancelled': cancelled};
+    _operationPhase = 'uncancelled_control';
+    final control = await _short();
+    final duration = cancelled['cancel_to_done_ms'] as num?;
+    final issuedEarly =
+        cancelled['cancel_requested'] == true &&
+        cancelled['cancel_on_listen'] == true &&
+        cancelled['chunks_before_cancel'] == 0;
+    return {
+      'cancelled': cancelled,
+      'uncancelled_control': control,
+      'cancel_before_first_delta': issuedEarly,
+      'deadline_ms': deadline,
+      'expected':
+          'A request cancelled right after listening ends without output '
+          'within the deadline; the same request then completes with output',
+      'status': !issuedEarly
+          ? 'NOT_RUN'
+          : cancelled['stream_completed'] == true &&
+                cancelled['completion_order_valid'] == true &&
+                cancelled['content'] == '' &&
+                cancelled['thinking'] == '' &&
+                (cancelled['tool_call_deltas'] as List).isEmpty &&
+                duration != null &&
+                duration <= deadline &&
+                control['cancel_requested'] == false &&
+                _completedText(control)
+          ? 'PASS'
+          : 'FAIL',
+      if (!issuedEarly) 'reason': 'Cancel was not issued before any delta',
+    };
+  }
+
+  Future<Map<String, dynamic>> _overlapping({required bool restart}) async {
+    if (engine.isWeb) {
+      return {
+        'status': 'NOT_RUN',
+        'reason':
+            'Only native llama.cpp defines generation restart and overlap; '
+            'the Web bridge does not',
+      };
+    }
+    final cancel = profile.fixtures['cancel'] as Map;
+    _operationPhase = restart ? 'cancel_then_restart' : 'overlap';
+    final pair = await _checked(
+      () => engine.generateOverlapping(
+        profile.isChat
+            ? profile.fixtureText('cancel', 'chat_prompt')
+            : profile.fixtureText('raw', 'prompt'),
+        _shortPrompt,
+        profile,
+        raw: !profile.isChat,
+        firstMaxTokens: cancel['max_tokens'] as int,
+        cancelFirst: restart,
+      ),
+    );
+    final first = pair['first'] as Map<String, dynamic>;
+    final second = pair['second'] as Map<String, dynamic>?;
+    final timeline = pair['timeline_ms'] as Map;
+    final firstEnded = timeline['first_ended'] as num?;
+    final secondEnded = timeline['second_ended'] as num?;
+    final issuedWhileRunning =
+        pair['second_issued'] == true &&
+        pair['first_ended_before_second_issued'] == false;
+    if (restart) {
+      final secondFirstDelta =
+          (second?['timeline_ms'] as Map?)?['first_delta'] as num?;
+      final precondition =
+          issuedWhileRunning &&
+          pair['first_cancelled_before_second_issued'] == true;
+      return {
+        ...pair,
+        'expected':
+            'A request issued right after cancelling a running generation '
+            'starts once the cancelled run stops and completes with output',
+        'status': !precondition
+            ? 'NOT_RUN'
+            : first['error_type'] == null &&
+                  first['stream_completed'] == true &&
+                  first['completion_order_valid'] == true &&
+                  _completedText(second) &&
+                  firstEnded != null &&
+                  secondFirstDelta != null &&
+                  secondFirstDelta >= firstEnded
+            ? 'PASS'
+            : 'FAIL',
+        if (!precondition)
+          'reason':
+              'The second request was not issued after the cancel and before '
+              'the cancelled stream ended',
+      };
+    }
+    final precondition =
+        issuedWhileRunning &&
+        pair['first_cancelled_before_second_issued'] == false &&
+        firstEnded != null &&
+        secondEnded != null &&
+        secondEnded <= firstEnded;
+    _partialCaseEvidence = pair;
+    _operationPhase = 'overlap_recovery';
+    final recovery = await _short();
+    return {
+      ...pair,
+      'recovery': recovery,
+      'expected':
+          'A request issued while another runs uncancelled fails with '
+          'LlamaStateException, the running generation continues, and a '
+          'later request completes',
+      'status': !precondition
+          ? 'NOT_RUN'
+          : second?['state_exception'] == true &&
+                second?['content'] == '' &&
+                (pair['first_deltas_after_second_ended'] as int) >= 1 &&
+                first['error_type'] == null &&
+                first['stream_completed'] == true &&
+                first['completion_order_valid'] == true &&
+                recovery['cancel_requested'] == false &&
+                _completedText(recovery)
+          ? 'PASS'
+          : 'FAIL',
+      if (!precondition)
+        'reason':
+            'The first generation ended before the overlapping request settled',
+    };
+  }
+
+  Future<Map<String, dynamic>> _invalidGrammar() async {
+    final fixture = profile.fixtures['invalid_grammar'] as Map;
+    final watch = Stopwatch()..start();
+    Map<String, dynamic>? accepted;
+    Map<String, dynamic>? rejection;
+    _operationPhase = 'invalid_grammar';
+    try {
+      accepted = await _checked(
+        () => engine.generate(
+          profile.fixtureText('raw', 'prompt'),
+          profile,
+          raw: true,
+          grammar: fixture['grammar'] as String,
+        ),
+      );
+    } on LlamaException catch (error) {
+      rejection = {
+        'error_type': error.runtimeType.toString(),
+        'inference_exception': error is LlamaInferenceException,
+        'message': redactDiagnostic(error.message),
+        'details': error.details == null
+            ? null
+            : redactDiagnostic('${error.details}'),
+        'rejected_after_ms': watch.elapsedMicroseconds / 1000,
+      };
+    }
+    _partialCaseEvidence = {'accepted': accepted, 'rejection': rejection};
+    _operationPhase = 'invalid_grammar_recovery';
+    final recovery = await _short();
+    final contract = engine.isWeb
+        ? 'LlamaInferenceException whose details contain '
+              '${fixture['web_details_marker']}'
+        : 'LlamaInferenceException "${fixture['native_message']}"';
+    final rejected =
+        rejection != null &&
+        rejection['inference_exception'] == true &&
+        (engine.isWeb
+            ? '${rejection['details']}'.contains(
+                fixture['web_details_marker'] as String,
+              )
+            : rejection['message'] == fixture['native_message']);
+    return {
+      'accepted': accepted,
+      'rejection': rejection,
+      'recovery': recovery,
+      'expected': '$contract, then a normal request completes',
+      'status':
+          accepted == null &&
+              rejected &&
+              recovery['cancel_requested'] == false &&
+              _completedText(recovery)
+          ? 'PASS'
+          : 'FAIL',
+    };
+  }
+
+  Future<Map<String, dynamic>> _toolsAutoText() async {
+    final tool = _weatherTool();
+    final output = await _checked(
+      () => engine.generate(
+        profile.fixtureText('hello', 'prompt'),
+        profile,
+        tools: [tool],
+        toolChoice: ToolChoice.auto,
+        enableThinking: false,
+        maxTokens: 128,
+      ),
+    );
+    return {
+      ...output,
+      'expected_regex': profile.fixtureText('hello', 'regex'),
+      'expected':
+          'ToolChoice.auto with a tool available answers a prompt that needs '
+          'no tool in text, without a tool call',
+      'status':
+          (output['tool_call_deltas'] as List).isEmpty &&
+              _isTextFinish(output['finish_reasons']) &&
+              RegExp(
+                profile.fixtureText('hello', 'regex'),
+                caseSensitive: false,
+              ).hasMatch(output['content'] as String) &&
+              output['tool_choice'] == ToolChoice.auto.name &&
+              canonicalJson(output['tools']) ==
+                  canonicalJson([tool.toJson()]) &&
+              output['enable_thinking'] == false &&
+              output['stream_completed'] == true &&
+              output['completion_order_valid'] == true
+          ? 'PASS'
+          : 'FAIL',
+    };
+  }
+
   Future<Map<String, dynamic>> _runCase(String id, String location) async {
     if (id.startsWith('D')) return _decisionCase(id, location);
     if (profile.nativeReference &&
-        ['C02.generate', 'C05.thinking', 'C07.tools'].contains(id)) {
+        [
+          'C02.generate',
+          'C05.thinking',
+          'C07.tools',
+          'C07.tools.auto_text',
+        ].contains(id)) {
       return {
         'status': 'NOT_RUN',
         'reason': 'Requires public chat feature controls',
       };
     }
     switch (id) {
+      case 'C07.tools.auto_text':
+        return _toolsAutoText();
+      case 'C08.cancel.early':
+        return _earlyCancel();
+      case 'C08.cancel.restart':
+        return _overlapping(restart: true);
+      case 'C08.overlap':
+        return _overlapping(restart: false);
+      case 'C12.grammar':
+        return _invalidGrammar();
       case 'C02.generate':
         final output = await _checked(
           () => engine.generate(
