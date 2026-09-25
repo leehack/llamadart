@@ -36,6 +36,15 @@
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Cancel a generation's backend run as soon as its stream subscription is
+  cancelled, instead of at its next token, which during prompt evaluation
+  meant after the whole prompt. A native llama.cpp generation requested right
+  after such a cancel now waits for it instead of throwing
+  `LlamaStateException`, and native llama.cpp sees a cancel between text
+  prompt micro-batches (`ModelParams.microBatchSize`, 512 tokens by default)
+  or, with speculative decoding, between batches (`ModelParams.batchSize`)
+  ([#663](https://github.com/leehack/llamadart/issues/663),
+  [#660](https://github.com/leehack/llamadart/issues/660)).
 - Render every result of a tool message holding several
   `LlamaToolResultContent` parts, as one `tool` message per result like
   llama.cpp, instead of only the first; `LlamaChatMessage.toJson` lists them
