@@ -997,7 +997,7 @@ registered in the local E2E runner; use `--model-path`, `--mmproj-path`, or
 `--tokenizer-path` to reuse local inputs. The voice scenario uses Gemma 4 CPU;
 the direct command also accepts the other primary CPU chat profiles.
 
-Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
+Speech reports contain per-case PASS/FAIL/SKIP/NOT_RUN, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
@@ -1028,10 +1028,16 @@ GGUF TTS adds three interrupt checks. `unload_during_synthesis` and
 `dispose_during_synthesis` call `unloadModel()` or `dispose()` once a progress
 event reports a frame; the task must end cancelled within the 500 ms budget,
 and a synthesis after the reload must pass. `decode_cancel` times the audio
-decode of two uncancelled 12-frame syntheses, cancels a third a quarter of the
-shorter decode time after its twelfth frame is reported, and must end within
-half the decode time that reference had left. It targets the chunk-boundary
-decode cancellation of native `v0.4.1-1`
+decode of four uncancelled 12-frame syntheses, two before and two after a
+fifth that it cancels a quarter of the shorter earlier decode time after its
+twelfth frame is reported. Timed from that report, the cancelled synthesis
+must end sooner than the shortest reference by more than a margin: twice the
+spread of the four decode times, or a tenth of that decode if larger. If the
+decode left after the cancel, less the largest latency of three syntheses
+cancelled on hand-back, is within that margin, even an immediate cancellation
+could not pass, so the check records `NOT_RUN`, as it does for any unmet
+precondition, with the reason and measured numbers; `NOT_RUN` fails the run.
+It targets the chunk-boundary decode cancellation of native `v0.4.1-1`
 ([#322](https://github.com/leehack/llamadart/issues/322)). A run executes 22
 checks for `stt`, 18 for `tts` and 15 for `litert-asr`.
 TTS rejects silent, nonfinite or truncated output; playability is not a

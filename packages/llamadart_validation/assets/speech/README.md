@@ -84,15 +84,26 @@ records its budget there, not under `bounds`:
   must then end cancelled with no final audio within
   `speechCancelLatencyBudgetMs` of the call, and a synthesis after the reload
   must pass.
-- `decode_cancel` times the audio decode of `speechDecodeCancelReferenceRuns`
-  uncancelled syntheses capped at `speechDecodeCancelFrameCap` frames, from
-  the progress event reporting the cap to the terminal state. Another capped
-  synthesis is cancelled `speechDecodeCancelLeadFraction` of the shorter
-  decode after that event, and must end within
-  `speechDecodeCancelRemainderBudget` of the decode time that reference had
-  left. The latest normal synthesis must exceed the cap. Because the runs are
-  separate, a decode that runs fast enough can pass without chunk-boundary
-  cancellation.
+- `decode_cancel` first cancels `speechDecodeCancelOverheadRuns` syntheses
+  capped at `speechDecodeCancelFrameCap` frames as soon as each is handed
+  back, and takes the largest latency among them as the fixed cost of a
+  cancellation. It then times the audio decode of
+  `speechDecodeCancelReferenceRuns` uncancelled capped syntheses, from the
+  progress event reporting the cap to the terminal state, running half before
+  and half after one more synthesis. That one is cancelled
+  `speechDecodeCancelLeadFraction` of the shortest earlier decode after that
+  event. The margin is `speechDecodeCancelNoiseMultiple` times the spread of
+  all reference decodes, and at least `speechDecodeCancelMarginFloorFraction`
+  of the shortest. Timed from that event, the cancelled synthesis must end
+  more than the margin sooner than the shortest reference, or the check
+  fails; it also fails if the cancelled synthesis emits a final result. It
+  records `NOT_RUN` with a `not_run_reason` and the measured numbers when the
+  latest normal synthesis does not exceed the cap, a probe does not end
+  cancelled, a reference does not stop at the cap, the cancellation does not
+  reach a synthesis that has reported the cap at its scheduled lead, or the
+  shortest reference decode left after the cancellation, less the overhead,
+  is within the margin. In that last case even an immediate cancellation
+  could not pass. `NOT_RUN` leaves `functional_pass` false.
 - `max_output_tokens_truncation` sets `maxOutputTokens` to
   `speechTruncationTokenFraction` of the reference's token count, rounded
   down, and requires the latest complete transcript to tokenize to more.

@@ -285,19 +285,33 @@ class FakeInterruptSpeech extends FakeSpeech
   Map<String, Object?> teardownReport = {};
   Map<String, Object?> decodeReport = {};
 
+  /// Shortest reference 400 ms (run after the cancel), spread 100 ms, so the
+  /// margin is 200 ms. The lead is 0.25 of the 450 ms shortest reference run
+  /// before the cancel, leaving 287.5 ms; less the 3 ms overhead, that is
+  /// 284.5 ms. The cancelled synthesis must end before 200 ms, a latency below
+  /// 87.5 ms.
   static Map<String, Object?> passingDecode() => {
     'frame_cap': speechDecodeCancelFrameCap,
     'uncapped_frames': speechDecodeCancelFrameCap + 1,
+    'overhead_probes': [
+      for (final latency in [1.0, 3.0, 2.0])
+        {
+          'completion_state': 'cancelled',
+          'final_events': 0,
+          'cancel_latency_ms': latency,
+        },
+    ],
     'references': [
-      for (final decode in [500.0, 400.0])
+      for (final decode in [500.0, 450.0, 400.0, 420.0])
         {
           'frames': speechDecodeCancelFrameCap,
           'truncated': true,
           'decode_ms': decode,
         },
     ],
+    'references_before_cancel': 2,
     'frames_before_cancel': speechDecodeCancelFrameCap,
-    'cancel_after_decode_start_ms': 100.0,
+    'cancel_after_decode_start_ms': 112.5,
     'cancel_in_flight': true,
     'completion_state': 'cancelled',
     'final_events': 0,
@@ -411,9 +425,10 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   final bool teardownCancels;
   static const naturalFrames = 20;
   static const frameDelay = Duration(milliseconds: 4);
-  static const decodeDelay = Duration(milliseconds: 600);
+  static const decodeDelay = Duration(milliseconds: 300);
   final teardowns = <String>[];
   final requestedFrames = <int>[];
+  final cancelledRuns = <bool>[];
   var _cancelled = false;
   Completer<void>? _wake;
 
@@ -484,6 +499,7 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     if (!_cancelled) {
       await _wait(decodeDelay, interruptible: decodeHonoursCancel);
     }
+    cancelledRuns.add(_cancelled);
     return BackendTextToSpeechResult(
       samples: Float32List.fromList([.25, -.25]),
       sampleRateHz: 24000,
@@ -1819,89 +1835,227 @@ void main() {
     }
   });
 
-  test('a decode cancellation without its preconditions fails', () async {
-    Map<String, Object?> reference({
-      Object? frames = speechDecodeCancelFrameCap,
-      Object? truncated = true,
-      Object? decode = 400.0,
-    }) => {'frames': frames, 'truncated': truncated, 'decode_ms': decode};
-    for (final (report, message) in <(Map<String, Object?>, String)>[
-      ({'uncapped_frames': speechDecodeCancelFrameCap}, 'does not truncate'),
-      ({'uncapped_frames': null}, 'does not truncate'),
-      ({'frame_cap': speechDecodeCancelFrameCap + 1}, 'does not truncate'),
-      (
-        {
-          'references': [reference()],
-        },
-        'did not stop at the frame cap',
-      ),
-      (
-        {
-          'references': [reference(), reference(truncated: false)],
-        },
-        'did not stop at the frame cap',
-      ),
-      (
-        {
-          'references': [reference(), reference(frames: 11)],
-        },
-        'did not stop at the frame cap',
-      ),
-      (
-        {
-          'references': [reference(), reference(decode: 0.0)],
-        },
-        'did not stop at the frame cap',
-      ),
-      (
-        {
-          'references': [reference(), reference(decode: null)],
-        },
-        'did not stop at the frame cap',
-      ),
-      ({'cancel_after_decode_start_ms': 99.999}, 'inside the reference'),
-      ({'cancel_after_decode_start_ms': 400.0}, 'inside the reference'),
-      ({'cancel_after_decode_start_ms': null}, 'inside the reference'),
-      ({'frames_before_cancel': null}, 'decoding synthesis'),
-      ({'cancel_in_flight': false}, 'decoding synthesis'),
-      ({'completion_state': 'completed'}, 'final result'),
-      ({'final_events': 1}, 'final result'),
-      ({'cancel_latency_ms': double.infinity}, 'not measured'),
-    ]) {
-      final result = await runSpeechValidation(
+  Future<Map<String, Object?>> decodeRun(Map<String, Object?> report) =>
+      runSpeechValidation(
         FakeInterruptSpeech()..decodeReport = report,
         checkSynthesisInterrupts: true,
         residentBytes: stableResidentBytes,
       );
+  List<Map<String, Object?>> probes(List<double> latencies) => [
+    for (final latency in latencies)
+      {
+        'completion_state': 'cancelled',
+        'final_events': 0,
+        'cancel_latency_ms': latency,
+      },
+  ];
+  List<Map<String, Object?>> references(List<Object?> decodes) => [
+    for (final decode in decodes)
+      {
+        'frames': speechDecodeCancelFrameCap,
+        'truncated': true,
+        'decode_ms': decode,
+      },
+  ];
+
+  test(
+    'a decode cancellation without its preconditions is recorded NOT_RUN',
+    () async {
+      Map<String, Object?> reference({
+        Object? frames = speechDecodeCancelFrameCap,
+        Object? truncated = true,
+      }) => {'frames': frames, 'truncated': truncated, 'decode_ms': 420.0};
+      final passing = FakeInterruptSpeech.passingDecode();
+      final probe = (passing['overhead_probes'] as List).first as Map;
+      final refs = (passing['references'] as List).cast<Object?>();
+      for (final (report, reason) in <(Map<String, Object?>, String)>[
+        ({'uncapped_frames': speechDecodeCancelFrameCap}, 'does not truncate'),
+        ({'uncapped_frames': null}, 'does not truncate'),
+        ({'frame_cap': speechDecodeCancelFrameCap + 1}, 'does not truncate'),
+        ({'overhead_probes': null}, 'measure the overhead'),
+        (
+          {
+            'overhead_probes': probes([1.0, 2.0]),
+          },
+          'measure the overhead',
+        ),
+        (
+          {
+            'overhead_probes': [
+              ...probes([1.0, 2.0]),
+              {...probe, 'completion_state': 'completed'},
+            ],
+          },
+          'measure the overhead',
+        ),
+        (
+          {
+            'overhead_probes': [
+              ...probes([1.0, 2.0]),
+              {...probe, 'final_events': 1},
+            ],
+          },
+          'measure the overhead',
+        ),
+        (
+          {
+            'overhead_probes': probes([1.0, 2.0, double.nan]),
+          },
+          'measure the overhead',
+        ),
+        (
+          {'references': refs.take(3).toList()},
+          'did not stop at the frame cap',
+        ),
+        ({'references_before_cancel': 1}, 'did not stop at the frame cap'),
+        (
+          {
+            'references': [...refs.take(3), reference(truncated: false)],
+          },
+          'did not stop at the frame cap',
+        ),
+        (
+          {
+            'references': [...refs.take(3), reference(frames: 11)],
+          },
+          'did not stop at the frame cap',
+        ),
+        (
+          {
+            'references': references([500.0, 450.0, 400.0, 0.0]),
+          },
+          'did not stop at the frame cap',
+        ),
+        (
+          {
+            'references': references([500.0, 450.0, 400.0, null]),
+          },
+          'did not stop at the frame cap',
+        ),
+        ({'cancel_after_decode_start_ms': 112.499}, 'not issued at its lead'),
+        ({'cancel_after_decode_start_ms': null}, 'not issued at its lead'),
+        ({'frames_before_cancel': null}, 'decoding synthesis'),
+        ({'cancel_in_flight': false}, 'decoding synthesis'),
+        ({'cancel_latency_ms': double.infinity}, 'not measured'),
+        ({'cancel_latency_ms': null}, 'not measured'),
+      ]) {
+        final result = await decodeRun(report);
+        final row = rowOf(result, 'decode_cancel');
+        expect(row['status'], 'NOT_RUN', reason: '$report');
+        expect(row['not_run_reason'], contains(reason), reason: '$report');
+        expect(row.containsKey('predicate_passed'), isFalse, reason: '$report');
+        expect(row['frame_cap'], isNotNull, reason: '$report');
+        expect(result['functional_pass'], false, reason: '$report');
+      }
+    },
+  );
+
+  test('a decode cancellation that emits a final result fails', () async {
+    for (final report in <Map<String, Object?>>[
+      {'completion_state': 'completed'},
+      {'final_events': 1},
+      {'completion_state': 'completed', 'cancel_latency_ms': 300.0},
+    ]) {
+      final result = await decodeRun(report);
       final row = rowOf(result, 'decode_cancel');
       expect(row['status'], 'FAIL', reason: '$report');
-      expect(row['message'], contains(message), reason: '$report');
+      expect(
+        row['failure_reason'],
+        contains('final result'),
+        reason: '$report',
+      );
       expect(result['functional_pass'], false, reason: '$report');
     }
   });
 
   test(
-    'decode cancellation passes at half the shorter reference remainder',
+    'decode cancellation passes only when it ends past the margin early',
     () async {
-      for (final (latency, within) in [
-        (1.0, true),
-        (150.0, true),
-        (150.001, false),
-        (160.0, false),
+      for (final (latency, status) in [
+        (1.0, 'PASS'),
+        (87.499, 'PASS'),
+        (87.5, 'FAIL'),
+        (87.501, 'FAIL'),
+        (400.0, 'FAIL'),
       ]) {
-        final result = await runSpeechValidation(
-          FakeInterruptSpeech()..decodeReport = {'cancel_latency_ms': latency},
-          checkSynthesisInterrupts: true,
-          residentBytes: stableResidentBytes,
-        );
+        final result = await decodeRun({'cancel_latency_ms': latency});
         final row = rowOf(result, 'decode_cancel');
         expect(row['reference_decode_ms'], 400.0, reason: '$latency');
-        expect(row['reference_remainder_ms'], 300.0, reason: '$latency');
-        expect(row['budget_ms'], 150.0, reason: '$latency');
+        expect(row['reference_spread_ms'], 100.0, reason: '$latency');
+        expect(row['margin_ms'], 200.0, reason: '$latency');
+        expect(row['cancel_overhead_ms'], 3.0, reason: '$latency');
+        expect(row['reference_remainder_ms'], 287.5, reason: '$latency');
+        expect(row['cancel_end_ms'], 112.5 + latency, reason: '$latency');
         expect(row['lead_fraction'], 0.25, reason: '$latency');
-        expect(row['remainder_budget'], 0.5, reason: '$latency');
-        expect(row['status'], within ? 'PASS' : 'FAIL', reason: '$latency');
-        expect(result['functional_pass'], within, reason: '$latency');
+        expect(row['noise_multiple'], 2.0, reason: '$latency');
+        expect(row['margin_floor_fraction'], 0.1, reason: '$latency');
+        expect(row['status'], status, reason: '$latency');
+        expect(result['functional_pass'], status == 'PASS', reason: '$latency');
+      }
+    },
+  );
+
+  test('decode cancellation margin has a floor of 0.1 of the decode', () async {
+    for (final (latency, status) in [(259.999, 'PASS'), (260.0, 'FAIL')]) {
+      final result = await decodeRun({
+        'references': references([400.0, 400.5, 401.0, 400.2]),
+        'cancel_after_decode_start_ms': 100.0,
+        'cancel_latency_ms': latency,
+      });
+      final row = rowOf(result, 'decode_cancel');
+      expect(row['margin_ms'], 40.0, reason: '$latency');
+      expect(row['status'], status, reason: '$latency');
+    }
+  });
+
+  test(
+    'a decode left too short to tell a cancellation apart is NOT_RUN',
+    () async {
+      for (final (report, status) in <(Map<String, Object?>, String)>[
+        (
+          {
+            'overhead_probes': probes([1.0, 87.499, 2.0]),
+          },
+          'PASS',
+        ),
+        (
+          {
+            'overhead_probes': probes([1.0, 87.5, 2.0]),
+          },
+          'NOT_RUN',
+        ),
+        (
+          {
+            'overhead_probes': probes([87.5, 1.0, 2.0]),
+          },
+          'NOT_RUN',
+        ),
+        (
+          {
+            'references': references([500.0, 450.0, 100.0, 420.0]),
+          },
+          'NOT_RUN',
+        ),
+        (
+          {
+            'references': references([900.0, 450.0, 400.0, 420.0]),
+          },
+          'NOT_RUN',
+        ),
+      ]) {
+        final result = await decodeRun(report);
+        final row = rowOf(result, 'decode_cancel');
+        expect(row['status'], status, reason: '$report');
+        expect(result['functional_pass'], status == 'PASS', reason: '$report');
+        if (status == 'NOT_RUN') {
+          expect(
+            row['not_run_reason'],
+            contains('within the margin'),
+            reason: '$report',
+          );
+          expect(row['margin_ms'], isA<double>(), reason: '$report');
+          expect(row['cancel_overhead_ms'], isA<double>(), reason: '$report');
+        }
       }
     },
   );
@@ -1991,6 +2145,11 @@ void main() {
     final engine = SynthesisSpeechEngine();
     final adapter = synthesisAdapter(engine);
     await adapter.load();
+    expect(await adapter.executeDecodeCancel(), {
+      'frame_cap': speechDecodeCancelFrameCap,
+      'uncapped_frames': null,
+    });
+    expect(engine.requestedFrames, isEmpty);
     await adapter.execute();
     final unloaded = await adapter.executeTeardown(dispose: false);
     expect(engine.teardowns, ['unload']);
@@ -2018,33 +2177,56 @@ void main() {
       'created:2',
     ]);
 
+    final runsBefore = engine.requestedFrames.length;
     final decode = await adapter.executeDecodeCancel();
-    expect(
-      engine.requestedFrames.skip(
-        engine.requestedFrames.length - speechDecodeCancelReferenceRuns - 1,
-      ),
-      List.filled(
-        speechDecodeCancelReferenceRuns + 1,
-        speechDecodeCancelFrameCap,
-      ),
-    );
+    expect(engine.requestedFrames.sublist(runsBefore), List.filled(8, 12));
+    expect(engine.cancelledRuns.sublist(runsBefore), [
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+    ]);
     expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
+    final probes = decode['overhead_probes'] as List;
+    expect(probes, hasLength(speechDecodeCancelOverheadRuns));
+    for (final probe in probes) {
+      expect(probe['completion_state'], 'cancelled');
+      expect(probe['final_events'], 0);
+      expect(
+        probe['cancel_latency_ms'],
+        lessThan(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
+      );
+    }
     final references = decode['references'] as List;
     expect(references, hasLength(speechDecodeCancelReferenceRuns));
-    final shortest = references
-        .map((reference) => reference['decode_ms'] as double)
-        .reduce(math.min);
+    expect(
+      decode['references_before_cancel'],
+      speechDecodeCancelReferenceRuns ~/ 2,
+    );
     for (final reference in references) {
       expect(reference['frames'], speechDecodeCancelFrameCap);
       expect(reference['truncated'], isTrue);
+      expect(
+        reference['decode_ms'],
+        greaterThanOrEqualTo(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
+      );
     }
+    final shortestBefore = references
+        .take(speechDecodeCancelReferenceRuns ~/ 2)
+        .map((reference) => reference['decode_ms'] as double)
+        .reduce(math.min);
     expect(
       decode['cancel_after_decode_start_ms'],
-      greaterThanOrEqualTo(shortest * speechDecodeCancelLeadFraction),
+      greaterThanOrEqualTo(shortestBefore * speechDecodeCancelLeadFraction),
     );
     expect(decode['frames_before_cancel'], speechDecodeCancelFrameCap);
     expect(decode['cancel_in_flight'], isTrue);
     expect(decode['completion_state'], 'cancelled');
+    expect(decode['final_events'], 0);
     await adapter.dispose();
     final stt = edgeAdapter();
     await stt.load();
@@ -2084,7 +2266,7 @@ void main() {
       }
       expect(result['functional_pass'], failing.isEmpty, reason: '$failing');
     }
-  });
+  }, timeout: const Timeout.factor(3));
 
   PublicSpeechValidationAdapter limitAdapter(LimitedRecognitionEngine engine) {
     final wav = Uint8List.fromList(
