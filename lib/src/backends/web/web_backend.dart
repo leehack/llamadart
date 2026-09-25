@@ -3,6 +3,7 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
@@ -23,6 +24,8 @@ class WebAutoBackend
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
+        BackendNextTokenScoring,
+        BackendNextTokenScoringSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   static const String _decisionUnsupportedMessage =
@@ -64,6 +67,39 @@ class WebAutoBackend
           .supportsStatePersistence;
     }
     return delegate is BackendStatePersistence;
+  }
+
+  @override
+  bool get supportsNextTokenScoring {
+    final delegate = _delegate;
+    if (delegate is BackendNextTokenScoringSupport) {
+      return (delegate as BackendNextTokenScoringSupport)
+          .supportsNextTokenScoring;
+    }
+    return delegate is BackendNextTokenScoring;
+  }
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendNextTokenScoring) {
+      return (delegate as BackendNextTokenScoring).scoreNextToken(
+        contextHandle,
+        prompt,
+        candidates: candidates,
+        topK: topK,
+        reusePromptPrefix: reusePromptPrefix,
+      );
+    }
+    throw UnsupportedError(
+      'Next-token scoring is not supported by the active web backend.',
+    );
   }
 
   @override

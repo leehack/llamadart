@@ -51,6 +51,7 @@ Android-only; web rejects it.
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | No | Runtime default or MTP | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
+| Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
 | Per-request usage | `usage` on the final `create` chunk | No | No | No |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |

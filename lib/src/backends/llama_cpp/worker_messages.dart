@@ -5,6 +5,7 @@ import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
@@ -124,6 +125,34 @@ class EmbedBatchRequest extends WorkerRequest {
     this.contextHandle,
     this.texts,
     this.normalize,
+    super.sendPort,
+  );
+}
+
+/// Request to score the token that would follow a prompt.
+class ScoreNextTokenRequest extends WorkerRequest {
+  /// The handle of the context.
+  final int contextHandle;
+
+  /// The prompt to evaluate.
+  final String prompt;
+
+  /// Token ids to report, in order.
+  final List<int> candidates;
+
+  /// How many of the most probable tokens to report.
+  final int topK;
+
+  /// Whether a matching prompt prefix in the context is reused.
+  final bool reusePromptPrefix;
+
+  /// Creates a new [ScoreNextTokenRequest].
+  ScoreNextTokenRequest(
+    this.contextHandle,
+    this.prompt,
+    this.candidates,
+    this.topK,
+    this.reusePromptPrefix,
     super.sendPort,
   );
 }
@@ -624,6 +653,15 @@ class EmbedBatchResponse {
   EmbedBatchResponse(this.embeddings);
 }
 
+/// Response containing next-token scores.
+class ScoreNextTokenResponse {
+  /// The scores.
+  final LlamaNextTokenScores scores;
+
+  /// Creates a new [ScoreNextTokenResponse].
+  ScoreNextTokenResponse(this.scores);
+}
+
 /// Response containing detokenized text.
 class DetokenizeResponse {
   /// The resulting text.
@@ -710,6 +748,9 @@ enum WorkerErrorKind {
 
   /// Text-to-speech synthesis failed.
   textToSpeech,
+
+  /// An argument was outside its valid range.
+  range,
 }
 
 /// Response containing an error message and category.

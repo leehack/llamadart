@@ -24,6 +24,9 @@ chat history management.
 - **Template-aware**: Uses model chat templates and parsing behavior automatically.
 - **Tool support**: Works with structured tool-call outputs.
 - **Embedding APIs**: `embed(...)` and `embedBatch(...)` on the same engine.
+- **Next-token scores**: `scoreNextToken(...)` returns next-token
+  log-probabilities; see
+  [Next-token scores](./generation-and-streaming#next-token-scores).
 - **State persistence**: `stateSaveFile(...)` / `stateLoadFile(...)`; see
   [State persistence](./model-lifecycle#save-and-restore-prompt-state).
 

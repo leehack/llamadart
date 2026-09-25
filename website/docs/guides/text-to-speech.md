@@ -158,7 +158,7 @@ The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 - Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
   pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
   memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.51`, whose bridge retries a synthesis once on
+- The chat example pins `v0.1.52`, whose bridge retries a synthesis once on
   the main thread, more slowly, after eligible WebGPU errors and worker
   timeouts; see
   [WebGPU bridge fallback behavior](../platforms/webgpu-bridge#fallback-behavior).
