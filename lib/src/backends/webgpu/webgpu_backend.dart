@@ -852,7 +852,7 @@ class WebGpuLlamaBackend
     final threadConstructorFailure =
         runtimeNotes.contains('threads_capped_no_coi') ||
         runtimeNotes.contains('thread_constructor_failed') ||
-        loweredText.contains('thread constructor failed');
+        isThreadConstructorFailureText(loweredText);
 
     if (threadConstructorFailure) {
       final workerFallbackReason = _getGlobalString(
@@ -2514,9 +2514,15 @@ class WebGpuLlamaBackend
     var retainedCachedBlobUrl = false;
 
     try {
-      final result = await _toFuture(
-        bridge.loadMultimodalProjector(projectorPath),
-      );
+      final JSAny? result;
+      try {
+        result = await _toFuture(bridge.loadMultimodalProjector(projectorPath));
+      } catch (error) {
+        throw LlamaModelException(
+          'The Web runtime could not load the multimodal projector.',
+          webGpuBridgeErrorText(error, sourceUrls: <String>[mmProjPath]),
+        );
+      }
       _releaseCachedMmProjectorBlobUrl();
       if (cachedBlobUrl != null) {
         _cachedMmProjectorBlobUrl = cachedBlobUrl;

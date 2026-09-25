@@ -224,9 +224,13 @@ and reports which as `deviceName`.
   `configJson`; with both a missing config and a bad head, Web reports the
   config where native reports the head. A failed fetch or an HTTP error is
   `LlamaModelException` "Cannot read the decision head config at <url>." with
-  the status or error in `details`. URLs in error messages and details drop
-  user info, query and fragment, including URLs that browser and bridge
-  errors quote.
+  the status or error in `details`. The head and config URLs that messages
+  and details show drop user info, query and fragment. Browser and bridge
+  error text loses the user info and password of `headPath` and
+  `configPath`, their `?query` and `#fragment`, their `key=value` query
+  parts, and bare query values and fragments of 10 or more characters;
+  shorter bare values stay. Other URLs it quotes lose user info, query and
+  fragment on a best-effort basis.
 - Handles: the backend numbers heads itself, never reusing a number, and maps
   each to the bridge instance and bridge handle that loaded it. `modelFree` and
   `dispose` dispose the bridge, and a model load on the same bridge frees every

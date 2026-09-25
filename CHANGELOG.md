@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Count generated tokens with an empty text piece in llama.cpp
+  `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
+  decoding, as the speculative path already did
+  ([#706](https://github.com/leehack/llamadart/issues/706)).
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching
   Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
@@ -31,6 +36,18 @@
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
+  turn without reasoning no longer gets an empty `<think>` block
+  ([#691](https://github.com/leehack/llamadart/issues/691)).
+- Require `dinja` 1.1.0. Its Jinja string comparison makes three more chat
+  templates render as llama.cpp does: MiniMax-M1 adds no empty
+  system block for an empty or whitespace-only system message; NVIDIA
+  Nemotron Nano v2 drops the blank line before a tool call, the blank lines
+  before its tool instructions when tools come with an empty or
+  whitespace-only system message, and an empty final assistant turn without
+  a generation prompt; and Functionary v3.2 tool declarations drop stray
+  `// Format=<|NONE|>` lines and spell out nested object parameters
+  ([#351](https://github.com/leehack/llamadart/issues/351)).
 - Cancel a generation's backend run as soon as its stream subscription is
   cancelled, instead of at its next token, which during prompt evaluation
   meant after the whole prompt. A native llama.cpp generation requested right
@@ -288,6 +305,25 @@
   fresh checkout. A failed report step is now the run's error, with its exit
   code and a redacted stderr tail
   ([#688](https://github.com/leehack/llamadart/issues/688)).
+- Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
+  on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
+  ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
+  selection. A HIP load on a ROCm build now reports its backend as `HIP`
+  instead of `CPU`
+  ([#611](https://github.com/leehack/llamadart/issues/611)).
+- Report a WebGPU model load that fails with `error 138` as the documented
+  cross-origin isolation (COOP/COEP) `UnsupportedError`, as
+  `thread constructor failed` already was, instead of rethrowing the raw
+  bridge error
+  ([#598](https://github.com/leehack/llamadart/issues/598)).
+- Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
+  projector, instead of the raw JavaScript error. Its details drop the
+  userinfo and password of the projector URL the app passed, its `?query`
+  and `#fragment`, its `key=value` query parts, and bare query values and
+  fragments of 10 or more characters, as written, percent-encoded or
+  percent-decoded; shorter bare values, such as the `1` of `?v=1`, stay.
+  Other URLs in them lose userinfo, query and fragment on a best-effort basis
+  ([#642](https://github.com/leehack/llamadart/issues/642)).
 - Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
   tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with
   any number of extra closing braces) without a grammar. Calls are extracted as
