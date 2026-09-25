@@ -1,0 +1,50 @@
+{
+  "upstream_commit": "7fe450e19305b828c199d602c23a8337aaa1f03b",
+  "template": "test/fixtures/hermes_double_brace_qwen2_5.jinja",
+  "template_sha256": "d5495a1e5db0611132a97e46a65dbb64a642a499421228b9c8b93229097fa9a4",
+  "user_prompt": "What is the weather in Paris right now?",
+  "tool": {
+    "name": "get_weather",
+    "description": "Returns current weather for a city.",
+    "parameters": {
+      "city": { "type": "string", "description": "City name" }
+    }
+  },
+  "cases": [
+    {
+      "name": "webgpu-bridge-v0.1.49",
+      "emission": "<tool_call>\n{{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}\n</tool_call>",
+      "pieces": null,
+      "upstream_result": {
+        "error": "The model produced output that does not match the expected peg-native format",
+        "tool_calls": []
+      },
+      "expected": {
+        "content": "",
+        "tool_calls": [
+          { "name": "get_weather", "arguments": { "city": "Paris" } }
+        ]
+      }
+    },
+    {
+      "name": "native-no-grammar",
+      "emission": "<tool_call>\n{{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}}}\n</tool_call>",
+      "pieces": [
+        "<tool_call>",
+        "\n{{\"name\": \"get_weather",
+        "\", \"arguments\": {\"city\": \"",
+        "Paris\"}}}\n</tool_call>"
+      ],
+      "upstream_result": {
+        "error": "The model produced output that does not match the expected peg-native format",
+        "tool_calls": []
+      },
+      "expected": {
+        "content": "",
+        "tool_calls": [
+          { "name": "get_weather", "arguments": { "city": "Paris" } }
+        ]
+      }
+    }
+  ]
+}

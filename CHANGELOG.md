@@ -266,6 +266,12 @@
   `LlamaUnsupportedException`; backends report this through the new
   `BackendLazyGrammarSupport`
   ([#654](https://github.com/leehack/llamadart/issues/654)).
+- Leave no stray envelope text in `content` or `ChatSession` history when
+  Qwen2.5 wraps a Hermes tool call in double braces
+  (`<tool_call>{{"name": ...}}</tool_call>`) without a grammar; the call is
+  still extracted. This deliberately differs from upstream llama.cpp, which
+  rejects that output and extracts no call
+  ([#662](https://github.com/leehack/llamadart/issues/662)).
 
 ## 0.8.24
 

@@ -5,6 +5,7 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_parse_result.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
@@ -258,6 +259,111 @@ void main() {
       '{"type":"function","function":"get_weather","parameters":{"city":"Seoul"}}; '
       '{"type":"function","function":"get_time","parameters":{"city":"Seoul"}}',
     );
+  });
+
+  group('double-brace <tool_call> payloads', () {
+    const doubleBrace =
+        '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}\n</tool_call>';
+    const balancedDoubleBrace =
+        '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}}\n</tool_call>';
+
+    void expectWeatherCall(ChatParseResult parsed) {
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.toolCalls.single.function?.name, 'get_weather');
+      expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+        'city': 'Paris',
+      });
+    }
+
+    for (final (name, output) in [
+      ('without', doubleBrace),
+      ('with', balancedDoubleBrace),
+    ]) {
+      test('extracts the call $name the outer closing brace', () {
+        final parsed = HermesHandler().parse(output);
+
+        expectWeatherCall(parsed);
+        expect(parsed.content, isEmpty);
+      });
+
+      test('streams no brace $name the outer closing brace', () {
+        final handler = HermesHandler();
+        for (var end = 1; end <= output.length; end++) {
+          final parsed = handler.parse(
+            output.substring(0, end),
+            isPartial: true,
+          );
+          expect(
+            parsed.content,
+            isNot(matches(RegExp('[{}]'))),
+            reason: '$end',
+          );
+        }
+
+        final complete = handler.parse(output, isPartial: true);
+        expectWeatherCall(complete);
+        expect(complete.content, isEmpty);
+      });
+    }
+
+    test('keeps the text around the call', () {
+      final parsed = HermesHandler().parse(
+        'Checking {weather}.\n$doubleBrace\nDone: {"ok": true}',
+      );
+
+      expectWeatherCall(parsed);
+      expect(parsed.content, 'Checking {weather}.\nDone: {"ok": true}');
+    });
+
+    test('extracts several single- and double-brace calls', () {
+      final parsed = HermesHandler().parse(
+        '$doubleBrace\n'
+        '<tool_call>\n{"name": "get_time", "arguments": {}}\n</tool_call>\n'
+        '$balancedDoubleBrace',
+      );
+
+      expect(parsed.toolCalls.map((call) => call.function?.name), [
+        'get_weather',
+        'get_time',
+        'get_weather',
+      ]);
+      expect(parsed.content, isEmpty);
+    });
+
+    test('keeps literal braces that are not a tagged call as content', () {
+      const output = 'Use {{name}} in Jinja and {"name"} is not JSON.';
+
+      final parsed = HermesHandler().parse(output);
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, output);
+    });
+
+    test('consumes no outer brace without a tool tag', () {
+      final parsed = HermesHandler().parse(
+        'Use {{"name": "get_weather", "arguments": {}}} here',
+      );
+
+      expect(parsed.toolCalls.single.function?.name, 'get_weather');
+      expect(parsed.content, 'Use {} here');
+    });
+
+    for (final output in [
+      '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Par',
+      '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Par\n</tool_call>',
+      '<tool_call>\n{{"name": 5, "arguments": {}}}\n</tool_call>',
+      '<tool_call>\n{{"arguments": {"city": "Paris"}}}\n</tool_call>',
+      '<tool_call>\n{{"name": "get_weather", "arguments": {}}}}\n</tool_call>',
+      '<tool_call>\n{{"name": "get_weather", "arguments": {}}} x\n</tool_call>',
+      '<tool_call>\n{"name": "get_weather", "arguments": {}}}\n</tool_call>',
+    ]) {
+      test('keeps malformed ${jsonEncode(output)} as content', () {
+        final parsed = HermesHandler().parse(output);
+
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, output);
+      });
+    }
   });
 }
 

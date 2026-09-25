@@ -18,9 +18,17 @@ import '../tool_schema_utils.dart';
 ///
 /// Uses `<tool_call>` / `</tool_call>` XML tags with JSON payloads.
 /// Tool call format: `<tool_call>{"name": "fn", "arguments": {...}}</tool_call>`
+///
+/// A tagged payload may add one outer `{`, with or without its closing `}`:
+/// `<tool_call>{{"name": "fn", "arguments": {...}}}</tool_call>`. The
+/// Qwen2.5-0.5B-Instruct GGUF template prints this form in its tool prompt, and
+/// the model copies it when no grammar constrains it. The call is extracted
+/// and the envelope leaves no content, as for the single-brace form. This
+/// differs from upstream: llama.cpp `7fe450e1` fails to parse this output and
+/// extracts no call.
 class HermesHandler extends ChatTemplateHandler {
   static final RegExp _openRegex = RegExp(
-    r'(?:(```(?:xml|json)?\n\s*)?((?:<tool_call>|<function_call>|<tool>|<tools>|<response>|<json>|<xml>|<JSON>)?)(\s*\{\s*"name"))|<function=([^>]+)>|<function name="([^"]+)">',
+    r'(?:(```(?:xml|json)?\n\s*)?(?:(<tool_call>|<function_call>|<tool>|<tools>|<response>|<json>|<xml>|<JSON>)(\s*\{)?)?(\s*\{\s*"name"))|<function=([^>]+)>|<function name="([^"]+)">',
     dotAll: true,
   );
 
@@ -130,10 +138,11 @@ class HermesHandler extends ChatTemplateHandler {
 
       final blockStart = match.group(1) ?? '';
       final openTag = match.group(2) ?? '';
-      final namedToolStart = match.group(3);
-      var functionName = match.group(4) ?? '';
+      final hasOuterBrace = match.group(3) != null;
+      final namedToolStart = match.group(4);
+      var functionName = match.group(5) ?? '';
       functionName = functionName.isEmpty
-          ? (match.group(5) ?? '')
+          ? (match.group(6) ?? '')
           : functionName;
 
       if (namedToolStart != null) {
@@ -161,6 +170,9 @@ class HermesHandler extends ChatTemplateHandler {
         }
         toolCalls.add(toolCall);
         cursor = _consumeWhitespaces(text, jsonRange.end);
+        if (hasOuterBrace && text.startsWith('}', cursor)) {
+          cursor = _consumeWhitespaces(text, cursor + 1);
+        }
 
         if (openTag.isNotEmpty) {
           final closeTag = '</${openTag.substring(1)}';
