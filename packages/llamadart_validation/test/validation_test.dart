@@ -1111,6 +1111,46 @@ void main() {
       },
     );
   }
+  test('WebGPU chat profiles load every layer on WebGPU and run only on the '
+      'Web host', () async {
+    for (final (id, cpu) in [
+      ('chat-gguf-webgpu', 'chat-gguf-cpu'),
+      ('gemma4-gguf-webgpu', 'gemma4-gguf-cpu'),
+    ]) {
+      Map<String, dynamic> read(String id) =>
+          jsonDecode(File('assets/profiles/$id.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final json = read(id);
+      expect({...json, 'id': cpu, 'backend': 'cpu'}, read(cpu), reason: id);
+      final selected = ValidationProfile.fromJson(json);
+      expect(selected.loadParams.preferredBackend, GpuBackend.auto);
+      expect(selected.loadParams.gpuLayers, ModelParams.maxGpuLayers);
+      expect(selected.requiresAcceleratorProof, true);
+      selected.requireRunnable(web: true);
+      expect(
+        selected.requireRunnable,
+        throwsA(isA<LlamaUnsupportedException>()),
+        reason: id,
+      );
+      final directory = Directory.systemTemp.createTempSync('webgpu-native-');
+      try {
+        await expectLater(
+          prepareModel(selected, directory),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('only in the Web validation host'),
+            ),
+          ),
+          reason: id,
+        );
+        expect(directory.listSync(), isEmpty, reason: id);
+      } finally {
+        directory.deleteSync();
+      }
+    }
+  });
   test(
     'NPU candidates are locked and reject preparation before any download',
     () async {

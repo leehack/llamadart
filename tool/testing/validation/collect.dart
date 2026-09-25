@@ -49,6 +49,7 @@ Future<bool> assessCollectedRun(
     );
   }
   final candidates = <String, String>{};
+  final consoles = <String>[];
   for (final file in files) {
     if (file.lengthSync() > 16 * 1024 * 1024) continue;
     final name = p.basename(file.path).toLowerCase();
@@ -63,6 +64,7 @@ Future<bool> assessCollectedRun(
     } catch (_) {
       continue;
     }
+    if (name == 'xcodebuild_output.log') consoles.add(text);
     if (!name.endsWith('.jsonl')) {
       final lines = <String>[];
       for (final line in const LineSplitter().convert(text)) {
@@ -96,20 +98,31 @@ Future<bool> assessCollectedRun(
   File(
     p.join(output.path, 'events.jsonl'),
   ).writeAsStringSync(candidates.values.single, flush: true);
-  final nativeLogs = files
-      .where(
-        (f) =>
-            p.basename(f.path) == 'stderr.log' &&
-            f.lengthSync() <= 8 * 1024 * 1024,
-      )
-      .toList();
+  final stderrLogs = [
+    for (final f in files)
+      if (p.basename(f.path) == 'stderr.log' &&
+          f.lengthSync() <= 8 * 1024 * 1024)
+        f.path,
+  ];
+  final consoleLogs = [
+    for (final console in consoles)
+      ?boundConsoleNativeLog(console, candidates.values.single),
+  ];
+  String? nativeLog;
+  if (stderrLogs.length + consoleLogs.length == 1) {
+    nativeLog = stderrLogs.isNotEmpty
+        ? stderrLogs.single
+        : (File(
+            p.join(output.path, 'native.log'),
+          )..writeAsStringSync(consoleLogs.single, flush: true)).path;
+  }
   final generated = await execute(
     Platform.resolvedExecutable,
     [
       'run',
       'bin/report.dart',
       output.path,
-      if (nativeLogs.length == 1) ...['--native-log', nativeLogs.single.path],
+      if (nativeLog != null) ...['--native-log', nativeLog],
     ],
     directory: p.join(repository, 'packages/llamadart_validation'),
     timeout: const Duration(minutes: 3),
@@ -163,4 +176,35 @@ Future<bool> assessCollectedRun(
           (manifest['environment'] as Map?)?['runtime_bundle_sha256'] ==
               plan.json['bundle_sha256']) &&
       canonical(manifest['profile']) == canonical(profile);
+}
+
+/// The native log an iOS XCTest run printed to [console] between its first
+/// and last validation record, or null unless those records are exactly
+/// [journal]'s lines. Lines outside that window belong to no proven run.
+String? boundConsoleNativeLog(String console, String journal) {
+  const prefix = 'LLAMADART_VALIDATION ';
+  final lines = const LineSplitter().convert(console);
+  final records = <String>[];
+  final native = <String>[];
+  var pending = <String>[];
+  for (final line in lines) {
+    final index = line.indexOf(prefix);
+    if (index < 0) {
+      if (records.isNotEmpty) pending.add(line);
+      continue;
+    }
+    records.add(line.substring(index + prefix.length));
+    native.addAll(pending);
+    pending = [];
+  }
+  final expected = const LineSplitter()
+      .convert(journal)
+      .where((line) => line.trim().isNotEmpty)
+      .toList();
+  if (records.isEmpty ||
+      records.length != expected.length ||
+      Iterable.generate(records.length).any((i) => records[i] != expected[i])) {
+    return null;
+  }
+  return native.map((line) => '$line\n').join();
 }

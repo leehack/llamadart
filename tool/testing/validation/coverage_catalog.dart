@@ -39,7 +39,9 @@ List<Map<String, Object?>> validationCoverage() {
       'target_soc': target,
       'profile':
           profile ??
-          (useCase == 'chat' && status == 'NOT_RUN' && platform != 'web'
+          (useCase == 'chat' &&
+                  status == 'NOT_RUN' &&
+                  (platform != 'web' || backend == 'webgpu')
               ? _chatProfile(runtime, backend, model)
               : null),
       'priority': priority,
@@ -193,7 +195,7 @@ List<Map<String, Object?>> validationCoverage() {
 
 String? _chatProfile(String runtime, String backend, String model) {
   if (runtime == 'gguf' &&
-      ['cpu', 'metal', 'vulkan', 'cuda'].contains(backend)) {
+      ['cpu', 'metal', 'vulkan', 'cuda', 'webgpu'].contains(backend)) {
     if (model == 'gemma4-e2b') return 'gemma4-gguf-$backend';
     if (model == 'qwen35-08b') return 'chat-gguf-$backend';
   }
