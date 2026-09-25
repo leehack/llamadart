@@ -319,8 +319,8 @@ against the reference by word error rate, after lowercasing both and replacing
 | `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
 | `jfk.wav` three times (33 s) | The reference three times |
 
-Each run then repeats three cancel/dispose/load/generate cycles. It fails if
-either budget is exceeded:
+Each run then repeats eight cancel/dispose/load/generate cycles. It fails if
+any budget is exceeded:
 
 - **Cancellation, 500 ms**: from `cancel()` to the task's terminal state, for
   every cancel issued as soon as `transcribe` returns and every cancel issued
@@ -328,7 +328,12 @@ either budget is exceeded:
   when the task ends for its caller, not when native work stops.
 - **Memory, 1.10x**: the largest whole-process resident set sampled after the
   checks that follow the first generation, as a multiple of the one sampled
-  right after that generation.
+  right after that generation. Not applied on Linux CUDA, where the weights
+  stay in device memory
+  ([#686](https://github.com/leehack/llamadart/issues/686)).
+- **Memory growth, 7 MiB per cycle**: the run fails if the resident set grows
+  by more than 7 MiB in every one of the seven cycles after the first. A
+  plateau passes; a steady leak fails. Slower growth passes this check.
 
 With native `v0.4.1-1`, the pack has passed on macOS arm64 with CPU and with
 Metal, and on Linux x64 with CPU (AMD EPYC 7B12). The Metal runs report the
