@@ -66,6 +66,8 @@ Future<void> main(List<String> args) async {
         wav: wav,
         reference: fixture['reference'] as String,
       ),
+      operatingSystem: Platform.operatingSystem,
+      backend: 'cpu',
     );
     result.addAll({
       'pack': 'litert-asr',

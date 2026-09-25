@@ -411,10 +411,29 @@ class PublicSpeechValidationAdapter
 }
 
 /// Lifecycle checks every [runSpeechValidation] run executes.
-const speechLifecycleCheckCount = 15;
+const speechLifecycleCheckCount = 19;
+
+/// Cleanup cycles that run before the `leak_slope_bound` window starts.
+///
+/// With `reload`, they cover the first two reloads, which took the largest
+/// host resident step in six of seven Linux CUDA `tts` runs (#686).
+const speechLeakWarmupCycles = 1;
+
+/// Consecutive cycle-to-cycle resident deltas `leak_slope_bound` examines.
+///
+/// One more than the longest run of deltas above
+/// [speechLeakCycleGrowthBytes] measured without a leak: 4, in a `tts` run
+/// recovering from memory pressure on macOS (#686).
+const speechLeakWindowCycles = 5;
 
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
-const speechCleanupCycles = 3;
+const speechCleanupCycles = speechLeakWarmupCycles + speechLeakWindowCycles;
+
+/// Resident growth per cycle above which a cycle counts toward a leak.
+///
+/// Half the smallest per-cycle growth of the LiteRT ASR leak in #634, 14.0 MiB
+/// over 12 warm cycles on macOS arm64. Growth equal to it does not count.
+const speechLeakCycleGrowthBytes = 7 * 1024 * 1024;
 
 /// How long [PublicSpeechValidationAdapter] waits before cancelling with
 /// `cancel`, as a fraction of the elapsed time of its most recent completed
@@ -447,7 +466,24 @@ const speechImmediateCancelLatencyBudgetMs = 500.0;
 /// Every check in that span contributes a sample, whatever phase it exercised,
 /// so the peak is the maximum over heterogeneous phases rather than over
 /// generations alone.
+///
+/// It is not applied where [speechPeakRatioExemption] names a reason.
 const speechPeakRssGrowthBudget = 1.10;
+
+/// Why [speechPeakRssGrowthBudget] is not applied on [operatingSystem] with
+/// [backend], or null when it is, including for any unknown or null pair.
+///
+/// Linux CUDA keeps the weights in device memory, so its resident set after
+/// `generate` is only about 1.13 GB, and reload overhead that plateaus at
+/// 1.13-1.16x fails the ratio without a leak (#686). `leak_slope_bound`
+/// still applies there.
+String? speechPeakRatioExemption({
+  required String? operatingSystem,
+  required String? backend,
+}) => operatingSystem == 'linux' && backend == 'cuda'
+    ? 'Peak ratio not applied: Linux CUDA keeps the weights in device memory, '
+          'so the resident baseline excludes them'
+    : null;
 
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
 ///
@@ -463,9 +499,15 @@ const speechPeakRssGrowthBudget = 1.10;
 /// second a nonzero `cancel_after_ms`; otherwise that check fails.
 ///
 /// [residentBytes] is called after each check. If any call made before
-/// `peak_memory_bound` runs returns null, that check records `SKIP` with a
-/// reason. It is the only check that may `SKIP` in a run whose
+/// `peak_memory_bound` runs returns null, that check and `leak_slope_bound`
+/// record `SKIP` with a reason. `peak_memory_bound` also records `SKIP` when
+/// [speechPeakRatioExemption] names a reason for [operatingSystem] and
+/// [backend]. These two are the only checks that may `SKIP` in a run whose
 /// `functional_pass` is true.
+///
+/// `leak_slope_bound` fails when the resident set grew by more than
+/// [speechLeakCycleGrowthBytes] in each of the [speechLeakWindowCycles]
+/// cleanup cycles after the first [speechLeakWarmupCycles].
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
@@ -473,7 +515,13 @@ Future<Map<String, Object?>> runSpeechValidation(
   bool checkBytes = false,
   List<SpeechEdgeFixture> edgeFixtures = const [],
   int? Function() residentBytes = residentSetBytes,
+  String? operatingSystem,
+  String? backend,
 }) async {
+  final ratioExemption = speechPeakRatioExemption(
+    operatingSystem: operatingSystem,
+    backend: backend,
+  );
   if (edgeFixtures.isNotEmpty && adapter is! SpeechEdgeCaseAdapter) {
     throw ArgumentError('Adapter cannot execute speech edge fixtures');
   }
@@ -486,6 +534,11 @@ Future<Map<String, Object?>> runSpeechValidation(
   final immediateLeads = <double>[];
   final residentSamples = <Map<String, Object?>>[];
   var residentMeasurable = true;
+  const unmeasured = <String, Object?>{
+    'skipped': true,
+    'measurement': residentSetSource,
+    'skip_reason': 'Resident set size was not measurable',
+  };
   Future<void> check(
     String id,
     Future<Map<String, Object?>> Function() action,
@@ -656,13 +709,7 @@ Future<Map<String, Object?>> runSpeechValidation(
         final baselineIndex = residentSamples.indexWhere(
           (sample) => sample['id'] == 'generate',
         );
-        if (!residentMeasurable || baselineIndex < 0) {
-          return {
-            'skipped': true,
-            'measurement': residentSetSource,
-            'skip_reason': 'Resident set size was not measurable',
-          };
-        }
+        if (!residentMeasurable || baselineIndex < 0) return unmeasured;
         final baseline = residentSamples[baselineIndex]['rss_bytes']! as int;
         final later = residentSamples.skip(baselineIndex + 1);
         if (later.isEmpty) {
@@ -678,7 +725,38 @@ Future<Map<String, Object?>> runSpeechValidation(
           'peak_rss_growth': peak / baseline,
           'growth_budget': speechPeakRssGrowthBudget,
           'samples': [...residentSamples],
-          'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
+          if (ratioExemption != null) ...{
+            'skipped': true,
+            'skip_reason': ratioExemption,
+          } else
+            'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
+        };
+      });
+      await check('leak_slope_bound', () async {
+        if (!residentMeasurable) return unmeasured;
+        final window = [
+          for (
+            var cycle = speechLeakWarmupCycles;
+            cycle <= speechCleanupCycles;
+            cycle++
+          )
+            residentSamples.singleWhere(
+                  (sample) => sample['id'] == 'cleanup_cycle_$cycle',
+                )['rss_bytes']!
+                as int,
+        ];
+        final growth = [
+          for (var i = 1; i < window.length; i++) window[i] - window[i - 1],
+        ];
+        return {
+          'measurement': residentSetSource,
+          'warmup_cycles': speechLeakWarmupCycles,
+          'window_rss_bytes': window,
+          'cycle_growth_bytes': growth,
+          'growth_threshold_bytes': speechLeakCycleGrowthBytes,
+          'predicate_passed': growth.any(
+            (delta) => delta <= speechLeakCycleGrowthBytes,
+          ),
         };
       });
     }
@@ -695,7 +773,11 @@ Future<Map<String, Object?>> runSpeechValidation(
   final latencyRow = row('cancel_latency_bound');
   final immediateRow = row('immediate_cancel_latency_bound');
   final memoryRow = row('peak_memory_bound');
-  final memoryMeasured = memoryRow.isNotEmpty && memoryRow['skipped'] != true;
+  bool measured(Map<String, Object?> row) =>
+      row.isNotEmpty && row['skip_reason'] != unmeasured['skip_reason'];
+  final memoryMeasured = measured(memoryRow);
+  final leakRow = row('leak_slope_bound');
+  final leakMeasured = measured(leakRow);
   return {
     'schema_version': 1,
     'kind': 'speech_validation',
@@ -704,7 +786,11 @@ Future<Map<String, Object?>> runSpeechValidation(
         results.every(
           (entry) =>
               entry['status'] == 'PASS' ||
-              (entry['id'] == 'peak_memory_bound' && entry['status'] == 'SKIP'),
+              ([
+                    'peak_memory_bound',
+                    'leak_slope_bound',
+                  ].contains(entry['id']) &&
+                  entry['status'] == 'SKIP'),
         ),
     'expected_checks': expectedChecks,
     'edge_fixture_ids': [for (final fixture in edgeFixtures) fixture.id],
@@ -737,7 +823,20 @@ Future<Map<String, Object?>> runSpeechValidation(
         'peak': memoryRow['peak_rss_bytes'],
         'growth': memoryRow['peak_rss_growth'],
         'growth_budget': speechPeakRssGrowthBudget,
-        'within_budget': memoryMeasured ? memoryRow['status'] == 'PASS' : null,
+        'applies': ratioExemption == null,
+        'within_budget': memoryMeasured && ratioExemption == null
+            ? memoryRow['status'] == 'PASS'
+            : null,
+      },
+      'leak_slope': {
+        'measurement': residentSetSource,
+        'measured': leakMeasured,
+        'skip_reason': leakRow['skip_reason'],
+        'warmup_cycles': speechLeakWarmupCycles,
+        'window_cycles': speechLeakWindowCycles,
+        'growth_threshold_bytes': speechLeakCycleGrowthBytes,
+        'cycle_growth_bytes': leakRow['cycle_growth_bytes'],
+        'within_budget': leakMeasured ? leakRow['status'] == 'PASS' : null,
       },
     },
     'qualified': false,

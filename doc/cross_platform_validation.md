@@ -1001,18 +1001,22 @@ Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
-input/recovery, independent reload and cleanup. Further
+input/recovery, independent reload and cleanup. Six further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
-measured cancellation latency and peak resident set against the budgets
-described in `packages/llamadart_validation/assets/speech/README.md`. The
+measured cancellation latency, peak resident set and per-cycle resident growth
+against the budgets described in
+`packages/llamadart_validation/assets/speech/README.md`. The peak ratio is not
+applied on Linux CUDA, whose resident set excludes the weights; the per-cycle
+growth bound applies on every backend
+([#686](https://github.com/leehack/llamadart/issues/686)). The
 single-shot checks and every cycle each cancel twice: once as soon as the task
 is handed back, the window in which `tts` cancellations were dropped until
 [#596](https://github.com/leehack/llamadart/pull/596), and once after a wait.
 The second must report `cancel_in_flight`, which is true only if the adapter
 had not seen the task finish when it cancelled; it cannot show that the
 generation had begun. Exceeding any budget fails the run; if resident memory
-cannot be sampled, the memory bound records `SKIP` with a reason, and that is
-the only check a passing run may leave unmeasured.
+cannot be sampled, both memory bounds record `SKIP` with a reason, and they
+are the only checks a passing run may leave unmeasured or unapplied.
 GGUF STT additionally compares file and bytes inputs and runs four generated
 edge fixtures: digital silence must fail with the typed empty-transcript
 `LlamaSpeechException`, a truncated RIFF must yield an inexact non-empty
