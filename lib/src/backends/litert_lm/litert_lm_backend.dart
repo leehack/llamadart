@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -21,6 +22,7 @@ import 'worker.dart';
 /// handles, and generation work do not live on the caller isolate.
 class LiteRtLmBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendGrammarConstraintsSupport,
@@ -458,6 +460,9 @@ class LiteRtLmBackend
           LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
     );
   }
+
+  @override
+  LlamaRuntime get runtime => LlamaRuntime.liteRtLm;
 
   @override
   Future<String> getBackendName() async {

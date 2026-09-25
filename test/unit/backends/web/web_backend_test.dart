@@ -8,6 +8,7 @@ import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -37,6 +38,17 @@ void main() {
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
     expect(backend.supportsNextTokenScoring, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
+  });
+
+  test('WebAutoBackend reports the runtime of its delegate', () {
+    expect(
+      WebAutoBackend(
+        webBackend: _RuntimeBackend(LlamaRuntime.llamaCpp),
+      ).runtime,
+      LlamaRuntime.llamaCpp,
+    );
+    expect(WebAutoBackend(webBackend: _NoStateBackend()).runtime, isNull);
+    expect(WebAutoBackend().runtime, isNull);
   });
 
   test('WebAutoBackend forwards grammar support from its delegate', () {
@@ -466,6 +478,14 @@ class _DeferredEngineBackend extends _NoStateBackend
     implements BackendDeferredEngineCreation {
   @override
   bool get defersEngineCreation => true;
+}
+
+class _RuntimeBackend extends _NoStateBackend
+    implements BackendRuntimeIdentity {
+  _RuntimeBackend(this.runtime);
+
+  @override
+  final LlamaRuntime runtime;
 }
 
 class _GrammarSupportBackend extends _NoStateBackend

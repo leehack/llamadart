@@ -7,6 +7,7 @@ import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -22,6 +23,10 @@ import 'package:web/web.dart';
 void main() {
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
+
+  test('reports the LiteRT-LM runtime', () {
+    expect(LiteRtLmBackend().runtime, LlamaRuntime.liteRtLm);
+  });
 
   test('loads .litertlm URL through preloaded LiteRT-LM Engine', () async {
     JSObject? lastEngineSettings;
