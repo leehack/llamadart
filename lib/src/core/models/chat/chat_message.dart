@@ -155,6 +155,12 @@ class LlamaChatMessage {
   /// This implementation follows OpenAI's Chat Completions format while
   /// supporting extensions like `reasoning_content` for reasoning models
   /// (e.g. DeepSeek R1).
+  ///
+  /// A message with one [LlamaToolResultContent] becomes a `tool` message with
+  /// top-level `tool_call_id`, `name` and `content`. With several results,
+  /// `content` is a list of one such `tool_call_id`/`name`/`content` map per
+  /// result, in order; chat templates receive one `tool` message per result
+  /// instead.
   Map<String, dynamic> toJson() {
     final partsList = parts;
     final json = <String, dynamic>{'role': role.name};
@@ -177,13 +183,15 @@ class LlamaChatMessage {
 
     // 3. Extract Tool Results (Tool)
     final toolResults = partsList.whereType<LlamaToolResultContent>().toList();
+    if (toolResults.length == 1) {
+      json['role'] = 'tool';
+      json.addAll(_toolResultJson(toolResults.single));
+      // Tool messages are usually flat in OpenAI format
+      return json;
+    }
     if (toolResults.isNotEmpty) {
       json['role'] = 'tool';
-      final res = toolResults.first;
-      json['tool_call_id'] = res.id;
-      json['name'] = res.name;
-      json['content'] = res.result;
-      // Tool messages are usually flat in OpenAI format
+      json['content'] = toolResults.map(_toolResultJson).toList();
       return json;
     }
 
@@ -219,6 +227,13 @@ class LlamaChatMessage {
 
     return json;
   }
+
+  static Map<String, dynamic> _toolResultJson(LlamaToolResultContent result) =>
+      {
+        'tool_call_id': result.id,
+        'name': result.name,
+        'content': result.result,
+      };
 
   /// Serializes the message to JSON, always keeping content as a list of parts.
   ///

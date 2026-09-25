@@ -76,6 +76,8 @@ class TemplateRenderContext {
   /// Serializes [messages] into the JSON shape expected by a template handler.
   /// Typed tool results become JSON text (or text parts for multimodal
   /// templates); string results and the original typed messages are unchanged.
+  /// A message with several tool results becomes one message per result, as
+  /// [splitToolResults] describes.
   static List<Map<String, dynamic>> messagesForTemplate(
     List<LlamaChatMessage> messages, {
     TemplateToolCallSerialization toolCallSerialization =
@@ -84,7 +86,7 @@ class TemplateRenderContext {
   }) {
     final renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
-    for (final message in messages) {
+    for (final message in splitToolResults(messages)) {
       final rendered = multimodal
           ? message.toJsonMultimodal()
           : message.toJson();
@@ -119,6 +121,45 @@ class TemplateRenderContext {
     }
 
     return renderedMessages;
+  }
+
+  /// Splits each message holding several [LlamaToolResultContent] parts into
+  /// one message per result, as llama.cpp's OpenAI-style input has one `tool`
+  /// message per tool call.
+  ///
+  /// The first message keeps the original's other parts; each following
+  /// message holds only its result. Messages with fewer than two results are
+  /// returned unchanged.
+  static List<LlamaChatMessage> splitToolResults(
+    List<LlamaChatMessage> messages,
+  ) {
+    if (!messages.any(_hasSeveralToolResults)) return messages;
+    return [
+      for (final message in messages)
+        if (_hasSeveralToolResults(message))
+          ..._splitToolResultMessage(message)
+        else
+          message,
+    ];
+  }
+
+  static bool _hasSeveralToolResults(LlamaChatMessage message) =>
+      message.parts.whereType<LlamaToolResultContent>().skip(1).isNotEmpty;
+
+  static List<LlamaChatMessage> _splitToolResultMessage(
+    LlamaChatMessage message,
+  ) {
+    final first = <LlamaContentPart>[];
+    final rest = <LlamaChatMessage>[];
+    for (final part in message.parts) {
+      if (part is LlamaToolResultContent &&
+          first.any((kept) => kept is LlamaToolResultContent)) {
+        rest.add(message.copyWith(parts: [part]));
+      } else {
+        first.add(part);
+      }
+    }
+    return [message.copyWith(parts: first), ...rest];
   }
 
   /// Merges a leading system message into the next message when a template does

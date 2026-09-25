@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -177,6 +178,134 @@ void main() {
 
     expect(single.prompt, parallel.prompt);
     expect(single.parser, isNot(parallel.parser));
+  });
+
+  group('parallel tool results match llama.cpp', () {
+    final upstream =
+        jsonDecode(
+              File(
+                'test/fixtures/multi_tool_result_render_upstream.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final templates = upstream['templates'] as Map<String, dynamic>;
+
+    // Where each template opens its first tool result.
+    const cases = <String, (ChatFormat, String)>{
+      'templates/Qwen3-4B.jinja': (
+        ChatFormat.hermes,
+        '<|im_start|>user\n<tool_response>',
+      ),
+      'templates/Qwen3_5-0_8B.jinja': (
+        ChatFormat.qwen3CoderXml,
+        '<|im_start|>user\n<tool_response>',
+      ),
+      'templates/Ministral-3-3B-Reasoning.jinja': (
+        ChatFormat.ministral,
+        '[TOOL_RESULTS]',
+      ),
+      'templates/functiongemma-270m-it.jinja': (
+        ChatFormat.functionGemma,
+        '<start_function_response>',
+      ),
+      'templates/Phi-4-mini-instruct-reasoning.jinja': (
+        ChatFormat.generic,
+        '<|tool|>',
+      ),
+      'templates/LFM2_5-1_2B-Thinking.jinja': (
+        ChatFormat.generic,
+        '<|im_start|>tool',
+      ),
+    };
+
+    ToolDefinition tool(String name, String description) => ToolDefinition(
+      name: name,
+      description: description,
+      parameters: <ToolParam>[ToolParam.string('city', required: true)],
+      handler: _noopHandler,
+    );
+    final tools = <ToolDefinition>[
+      tool('get_weather', 'Return the weather for a city.'),
+      tool('get_time', 'Return the local time for a city.'),
+    ];
+    const results = <LlamaToolResultContent>[
+      LlamaToolResultContent(
+        id: 'call_0',
+        name: 'get_weather',
+        result: 'RESULT_ONE',
+      ),
+      LlamaToolResultContent(
+        id: 'call_1',
+        name: 'get_time',
+        result: 'RESULT_TWO',
+      ),
+    ];
+    List<LlamaChatMessage> conversation(List<LlamaChatMessage> toolMessages) =>
+        <LlamaChatMessage>[
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What are the weather and the local time in Paris?',
+          ),
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: <LlamaContentPart>[
+              LlamaToolCallContent(
+                id: 'call_0',
+                name: 'get_weather',
+                arguments: <String, dynamic>{'city': 'Paris'},
+                rawJson: '{"city":"Paris"}',
+              ),
+              LlamaToolCallContent(
+                id: 'call_1',
+                name: 'get_time',
+                arguments: <String, dynamic>{'city': 'Paris'},
+                rawJson: '{"city":"Paris"}',
+              ),
+            ],
+          ),
+          ...toolMessages,
+        ];
+    final layouts = <String, List<LlamaChatMessage>>{
+      'one tool message': conversation(const <LlamaChatMessage>[
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: results,
+        ),
+      ]),
+      'one tool message per result': conversation(<LlamaChatMessage>[
+        for (final result in results)
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: <LlamaContentPart>[result],
+          ),
+      ]),
+    };
+
+    for (final MapEntry(key: fixture, value: (format, anchor))
+        in cases.entries) {
+      final expected =
+          (templates[fixture] as Map<String, dynamic>)['prompt'] as String;
+      for (final MapEntry(key: layout, value: messages) in layouts.entries) {
+        test('$fixture: $layout', () {
+          final result = ChatTemplateEngine.render(
+            templateSource: File('test/fixtures/$fixture').readAsStringSync(),
+            messages: messages,
+            metadata: const <String, String>{},
+            tools: tools,
+            parallelToolCalls: true,
+            enableThinking: false,
+          );
+
+          expect(result.format, format.index);
+          expect(result.prompt, contains('RESULT_ONE'));
+          expect(result.prompt, contains('RESULT_TWO'));
+          expect(
+            result.prompt.substring(result.prompt.indexOf(anchor)),
+            expected.substring(expected.indexOf(anchor)),
+          );
+        });
+      }
+    }
   });
 }
 
