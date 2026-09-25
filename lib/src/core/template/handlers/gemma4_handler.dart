@@ -4,10 +4,8 @@ import 'package:dinja/dinja.dart';
 
 import '../../grammar/json_schema_converter.dart';
 import '../../models/chat/chat_message.dart';
-import '../../models/chat/chat_role.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/chat/completion_chunk.dart';
-import '../../models/chat/content_part.dart';
 import '../../models/inference/tool_choice.dart';
 import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
@@ -167,29 +165,10 @@ class Gemma4Handler extends ChatTemplateHandler
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
   }) {
-    final rendered = templateMessages([
-      for (final message in messages) ..._splitToolResults(message),
-    ], multimodal: multimodalContent);
+    final rendered = templateMessages(messages, multimodal: multimodalContent);
     return templateSource.contains(_openAiToolMessagesMarker)
         ? rendered
         : _embedToolResponses(rendered);
-  }
-
-  /// Splits a tool message holding several results into one OpenAI-style
-  /// tool message per result.
-  static Iterable<LlamaChatMessage> _splitToolResults(
-    LlamaChatMessage message,
-  ) {
-    final results = message.parts.whereType<LlamaToolResultContent>().toList();
-    if (message.role != LlamaChatRole.tool || results.length < 2) {
-      return [message];
-    }
-    return results.map(
-      (result) => LlamaChatMessage.withContent(
-        role: LlamaChatRole.tool,
-        content: [result],
-      ),
-    );
   }
 
   /// Port of llama.cpp `workaround::convert_tool_responses_gemma4`, applied to

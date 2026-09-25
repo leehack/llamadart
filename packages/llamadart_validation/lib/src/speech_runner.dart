@@ -335,12 +335,12 @@ class PublicSpeechValidationAdapter
         onError: (Object _) => settled = true,
       ),
     );
-    await Future<void>.delayed(
-      Duration(
-        microseconds: (reference * speechCancelInFlightLeadFraction * 1000)
-            .round(),
-      ),
-    );
+    final leadMicroseconds =
+        (reference * speechCancelInFlightLeadFraction * 1000).ceil();
+    await Future<void>.delayed(Duration(microseconds: leadMicroseconds));
+    while (watch.elapsedMicroseconds < leadMicroseconds) {
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
     final afterMs = watch.elapsedMicroseconds / 1000;
     final inFlight = !settled;
     cancelWatch.start();
@@ -811,7 +811,8 @@ const speechLeakCycleGrowthBytes = 7 * 1024 * 1024;
 
 /// How long [PublicSpeechValidationAdapter] waits before cancelling with
 /// `cancel`, as a fraction of the elapsed time of its most recent completed
-/// generation.
+/// generation. Its `cancel_after_ms` is never below that fraction, even when
+/// timers fire early.
 ///
 /// [PublicDedicatedSpeechAdapter] does not use it: that adapter pushes PCM
 /// until the first partial transcript arrives, or until the fixture is

@@ -10,6 +10,7 @@ import '../chat_format.dart';
 import '../media_placeholders.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../template_render_context.dart';
 import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 
@@ -115,7 +116,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
   }) {
-    return messages
+    return TemplateRenderContext.splitToolResults(messages)
         .map((message) {
           if (message.role == LlamaChatRole.tool) {
             return _serializeToolMessage(message);
@@ -129,34 +130,19 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
   }
 
   Map<String, dynamic> _serializeToolMessage(LlamaChatMessage message) {
-    final toolResults = message.parts
+    final result = message.parts
         .whereType<LlamaToolResultContent>()
-        .toList();
-    if (toolResults.isEmpty) {
+        .firstOrNull;
+    if (result == null) {
       return message.toJson();
-    }
-
-    if (toolResults.length == 1) {
-      final result = toolResults.first;
-      return {
-        'role': 'tool',
-        'content': {
-          'name': result.name,
-          'response': _normalizeToolResponse(result.result),
-        },
-      };
     }
 
     return {
       'role': 'tool',
-      'content': toolResults
-          .map(
-            (result) => {
-              'name': result.name,
-              'response': _normalizeToolResponse(result.result),
-            },
-          )
-          .toList(growable: false),
+      'content': {
+        'name': result.name,
+        'response': _normalizeToolResponse(result.result),
+      },
     };
   }
 

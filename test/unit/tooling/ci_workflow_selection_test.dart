@@ -109,6 +109,19 @@ void main() {
     expect(tests, greaterThanOrEqualTo(0));
     expect(secretSteps, hasLength(1));
     expect(secretSteps.single, greaterThan(tests));
+    int secretReferences(Object? value) =>
+        'secrets.'.allMatches(jsonEncode(value)).length;
+    expect(
+      secretReferences(workflow),
+      secretReferences(steps[secretSteps.single]),
+    );
+    final checkout = steps.singleWhere(
+      (step) => '${step['uses']}'.contains('checkout@'),
+    );
+    expect(checkout['with'], {
+      'ref': r'${{ github.sha }}',
+      'persist-credentials': false,
+    });
     final upload = '${steps[secretSteps.single]['run']}';
     expect(upload, contains('git/ref/heads/main'));
     expect(upload, contains('private=False'));

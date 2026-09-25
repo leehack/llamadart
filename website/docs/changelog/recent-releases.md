@@ -38,6 +38,10 @@ For canonical full release notes, use:
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render every result of a tool message holding several
+  `LlamaToolResultContent` parts, as one `tool` message per result like
+  llama.cpp, instead of only the first; `LlamaChatMessage.toJson` lists them
+  all ([#683](https://github.com/leehack/llamadart/issues/683)).
 - Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
   GGUF models can read tool output
   ([#669](https://github.com/leehack/llamadart/issues/669)).
@@ -269,6 +273,15 @@ For canonical full release notes, use:
   `LlamaUnsupportedException`; backends report this through the new
   `BackendLazyGrammarSupport`
   ([#654](https://github.com/leehack/llamadart/issues/654)).
+- Name the CUDA 12 runtime libraries (`libcudart.so.12`, `libcublas.so.12`)
+  that the Linux `cuda` backend needs on the default loader path; llamadart
+  does not ship them, and validation bundles refuse `LD_LIBRARY_PATH`
+  ([#587](https://github.com/leehack/llamadart/issues/587)).
+- Remote validation runs resolve `packages/llamadart_validation` before
+  building the report, instead of reporting `FAILED` with a null error on a
+  fresh checkout. A failed report step is now the run's error, with its exit
+  code and a redacted stderr tail
+  ([#688](https://github.com/leehack/llamadart/issues/688)).
 - Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
   on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
   ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
