@@ -159,6 +159,7 @@ void main() {
       'LLAMADART_NATIVE_LIB_DIR',
       'LLAMADART_BACKEND_MODULE_DIR',
       'LD_PRELOAD',
+      'LD_LIBRARY_PATH',
       'DYLD_LIBRARY_PATH',
       'WEBGPU_BRIDGE_ASSETS_TAG',
     ]) {

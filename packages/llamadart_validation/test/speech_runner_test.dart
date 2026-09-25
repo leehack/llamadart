@@ -2007,6 +2007,7 @@ void main() {
     FakeSpeechEngine? engine,
     Duration tokenDelay = Duration.zero,
     Duration? laterTokenDelay,
+    Stopwatch Function() newStopwatch = Stopwatch.new,
   }) => PublicSpeechValidationAdapter(
     model: 'model.gguf',
     projector: 'mmproj.gguf',
@@ -2024,6 +2025,7 @@ void main() {
           tokenDelay: tokenDelay,
           laterTokenDelay: laterTokenDelay,
         ),
+    newStopwatch: newStopwatch,
   );
   Future<Map<String, Object?>> recognizeEdge(
     SpeechEdgeFixture fixture, {
@@ -2142,6 +2144,42 @@ void main() {
     expect(cancelled['cancel_latency_ms'], isA<double>());
     expect(cancelled['cancel_latency_ms'], greaterThanOrEqualTo(0));
   });
+
+  test(
+    'the public adapter waits the whole cancel lead on millisecond timers',
+    () async {
+      final cancelled = await runInFakeTime(
+        (async) => runZoned(
+          () async {
+            final adapter = edgeAdapter(
+              deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans'],
+              tokenDelay: const Duration(milliseconds: 21),
+              laterTokenDelay: const Duration(milliseconds: 250),
+              newStopwatch: () => FakeTimeStopwatch(async),
+            );
+            await adapter.load();
+            expect((await adapter.execute())['elapsed_ms'], 105);
+            final result = await adapter.execute(cancel: true);
+            await adapter.dispose();
+            return result;
+          },
+          zoneSpecification: ZoneSpecification(
+            createTimer: (self, parent, zone, duration, callback) =>
+                parent.createTimer(
+                  zone,
+                  Duration(milliseconds: duration.inMilliseconds),
+                  callback,
+                ),
+          ),
+        ),
+      );
+      expect(cancelled['cancel_in_flight'], isTrue);
+      expect(
+        cancelled['cancel_after_ms'],
+        greaterThanOrEqualTo(105 * speechCancelInFlightLeadFraction),
+      );
+    },
+  );
 
   test('the public adapter cancels on hand-back without waiting', () async {
     final adapter = edgeAdapter(

@@ -452,16 +452,22 @@ void main() {
             ..writeAsStringSync(value);
         }
         String? log;
-        await assessCollectedRun(
-          Directory.current.path,
-          plan(target: 'firebase-ios', profile: 'decision-gguf-metal'),
-          run,
-          execute: (executable, arguments, {directory, timeout}) async {
-            final index = arguments.indexOf('--native-log');
-            if (index >= 0) log = File(arguments[index + 1]).readAsStringSync();
-            return const CommandResult(0, '', '');
-          },
-        );
+        try {
+          await assessCollectedRun(
+            Directory.current.path,
+            plan(target: 'firebase-ios', profile: 'decision-gguf-metal'),
+            run,
+            execute: (executable, arguments, {directory, timeout}) async {
+              final index = arguments.indexOf('--native-log');
+              if (index >= 0) {
+                log = File(arguments[index + 1]).readAsStringSync();
+              }
+              return const CommandResult(0, '', '');
+            },
+          );
+        } on ValidationAssessmentFailure catch (error) {
+          expect('$error', contains('wrote no results.json'));
+        }
         return log;
       }
 
@@ -527,6 +533,9 @@ void main() {
             plan(),
             run,
             execute: (executable, arguments, {directory, timeout}) async {
+              if (arguments.first == 'pub') {
+                return const CommandResult(0, '', '');
+              }
               expect(arguments, contains('bin/report.dart'));
               File(p.join(arguments[2], 'results.json')).writeAsStringSync(
                 jsonEncode({
@@ -549,6 +558,177 @@ void main() {
         );
         expect(await assess({...identity}..remove(key)), false, reason: key);
       }
+    },
+  );
+
+  group('collected qualification report step', () {
+    late Directory run;
+    late String package;
+    late Map<String, Object?> profile;
+    final calls = <String>[];
+
+    setUp(() {
+      profile = jsonDecode(
+        File(p.join(bundle.path, 'profile.json')).readAsStringSync(),
+      );
+      run = Directory(p.join(scratch.path, 'collected'));
+      File(p.join(run.path, 'remote-results', 'events.jsonl'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({'type': 'manifest', 'profile': profile}),
+        );
+      package = p.join(scratch.path, 'packages/llamadart_validation');
+      calls.clear();
+    });
+
+    Future<bool> assess({
+      CommandResult pubGet = const CommandResult(0, '', ''),
+      CommandResult report = const CommandResult(0, '', ''),
+      bool? qualified,
+    }) => assessCollectedRun(
+      scratch.path,
+      plan(),
+      run,
+      execute: (executable, arguments, {directory, timeout}) async {
+        expect(directory, package);
+        calls.add(arguments.take(2).join(' '));
+        if (arguments.first == 'pub') return pubGet;
+        if (qualified != null) {
+          File(p.join(arguments[2], 'results.json')).writeAsStringSync(
+            jsonEncode({
+              'manifest': {'environment': {}, 'profile': profile},
+              'summary': {'qualified': qualified},
+            }),
+          );
+        }
+        return report;
+      },
+    );
+
+    Matcher failure(List<Object> parts) => throwsA(
+      isA<ValidationAssessmentFailure>().having(
+        (error) => error.message,
+        'message',
+        allOf(parts.map(contains).toList()),
+      ),
+    );
+
+    test('resolves the validation package before the report', () async {
+      expect(await assess(qualified: true), false);
+      expect(calls, ['pub get', 'run bin/report.dart']);
+    });
+
+    test('names a failed pub get with its exit code and stderr', () async {
+      await expectLater(
+        assess(pubGet: const CommandResult(69, '', 'Could not resolve x')),
+        failure(['`dart pub get`', 'exited 69', 'Could not resolve x']),
+      );
+      expect(calls, ['pub get']);
+    });
+
+    test(
+      'names a report that wrote no results, with a redacted tail',
+      () async {
+        final stderr = [
+          for (var i = 0; i < 30; i++) 'line $i',
+          "Error: Couldn't resolve the package 'llamadart_validation'",
+          'at /Users/someone/secret-dir/run/report/events.jsonl',
+          'fetching https://example.com/model?token=abc123',
+          'download from https://signed.example?sig=4f2e failed',
+          'Authorization: Bearer abc123',
+          r'C:\Users\someone\secret-dir\run.log',
+        ].join('\n');
+        final report = assess(report: CommandResult(254, '', stderr));
+        await expectLater(
+          report,
+          failure([
+            '`dart run bin/report.dart`',
+            'exited 254',
+            'wrote no results.json',
+            "Couldn't resolve the package",
+          ]),
+        );
+        final message = await report.then<String>(
+          (_) => fail('The report step must fail'),
+          onError: (Object error) => '$error',
+        );
+        for (final hidden in [
+          'someone',
+          'secret-dir',
+          'abc123',
+          'signed.example',
+          'line 10',
+        ]) {
+          expect(message, isNot(contains(hidden)), reason: hidden);
+        }
+        expect(message, contains('line 29'));
+      },
+    );
+
+    test('accepts exit 1 only for an unqualified report', () async {
+      expect(
+        await assess(report: const CommandResult(1, '', ''), qualified: false),
+        false,
+      );
+      await expectLater(
+        assess(report: const CommandResult(1, '', 'boom'), qualified: true),
+        failure(['exited 1', 'boom']),
+      );
+      await expectLater(
+        assess(report: const CommandResult(255, '', ''), qualified: false),
+        failure(['exited 255']),
+      );
+    });
+
+    test('ignores results.json left by an earlier report', () async {
+      File(p.join(run.path, 'report', 'results.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'manifest': {'environment': {}, 'profile': profile},
+            'summary': {'qualified': false},
+          }),
+        );
+      await expectLater(
+        assess(report: const CommandResult(1, '', '')),
+        failure(['exited 1', 'wrote no results.json']),
+      );
+    });
+  });
+
+  test(
+    'a failed report step becomes the run error until a clean recollect',
+    () async {
+      var reportFails = true;
+      final control = RemoteController(
+        runs,
+        FakeProvider(),
+        now: () => now,
+        delay: (_) async {},
+        assess: (_, _) async {
+          if (reportFails) {
+            throw const ValidationAssessmentFailure(
+              'Validation report step `dart run bin/report.dart` exited 254',
+            );
+          }
+          return true;
+        },
+      );
+      final failed = await control.run(plan());
+      expect(failed['phase'], 'FAILED');
+      expect(failed['qualified'], false);
+      expect(failed['error'], contains('`dart run bin/report.dart`'));
+      final summary = jsonDecode(
+        File(
+          p.join(runs.path, 'qa-one', 'remote-summary.json'),
+        ).readAsStringSync(),
+      );
+      expect(summary['error'], contains('exited 254'));
+
+      reportFails = false;
+      final recollected = await control.recover('qa-one', 'collect');
+      expect(recollected['error'], isNull);
+      expect(recollected['qualified'], true);
     },
   );
 
