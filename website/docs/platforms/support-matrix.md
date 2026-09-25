@@ -311,8 +311,9 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   default runtime satisfies that ABI. WebGPU and LiteRT-LM reject this
   llama.cpp-specific strategy explicitly.
 - **Next-token scores** (`LlamaEngine.scoreNextToken(...)`) run on native
-  llama.cpp backends. WebGPU and LiteRT-LM report
-  `supportsNextTokenScoring == false` and throw `LlamaUnsupportedException`.
+  llama.cpp backends and on WebGPU bridge assets `v0.1.52+`. LiteRT-LM and
+  older bridge assets report `supportsNextTokenScoring == false` and throw
+  `LlamaUnsupportedException`.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.

@@ -171,7 +171,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-6` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.51` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.52` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve
@@ -205,7 +205,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
 | Answer typed questions with a decision model | [Decision models](https://llamadart.leehack.com/docs/guides/decision-models) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
-| Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores-native-llamacpp) |
+| Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |

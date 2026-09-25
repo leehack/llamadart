@@ -2482,7 +2482,7 @@ void main() {
             isA<UnsupportedError>().having(
               (UnsupportedError error) => error.message,
               'message',
-              contains('v0.1.52'),
+              contains('v0.1.52+'),
             ),
           ),
         );

@@ -248,7 +248,7 @@ final count = await engine.getTokenCount('hello world');
 
 These helpers are useful for context budgeting and prompt diagnostics.
 
-## Next-token scores (native llama.cpp)
+## Next-token scores
 
 `engine.scoreNextToken(...)` evaluates a prompt and returns the
 log-probabilities of the token that would follow it, without generating. Ask
@@ -277,8 +277,9 @@ The values are a softmax over the raw logits at the last prompt position, the
 same as llama-server's `n_probs`; sampling settings do not apply. The prompt is
 tokenized like a `generate` prompt, and a prefix shared with the previous
 prompt is reused unless `reusePromptPrefix` is false. Check
-`engine.supportsNextTokenScoring` first: WebGPU and LiteRT-LM report false and
-throw `LlamaUnsupportedException`.
+`engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
+assets `v0.1.52+` support it; LiteRT-LM and older bridge assets report false
+and throw `LlamaUnsupportedException`.
 
 ## Stateless vs stateful chat
 

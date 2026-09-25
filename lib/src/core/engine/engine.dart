@@ -1189,8 +1189,9 @@ class LlamaEngine {
 
   /// Whether the active backend reports [scoreNextToken] support.
   ///
-  /// Native llama.cpp backends support it. WebGPU and LiteRT-LM backends
-  /// report false, and calls throw [LlamaUnsupportedException].
+  /// Native llama.cpp backends support it, as do WebGPU bridge assets
+  /// `v0.1.52+`. LiteRT-LM backends and older bridge assets report false,
+  /// and calls throw [LlamaUnsupportedException].
   bool get supportsNextTokenScoring {
     final candidate = backend;
     if (candidate is BackendNextTokenScoringSupport) {
