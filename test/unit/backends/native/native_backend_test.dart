@@ -23,6 +23,7 @@ import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -438,8 +439,19 @@ void main() {
       expect(await backend.getPerformanceContext(1), isNull);
       expect(backend.supportsEmbeddings, isFalse);
       expect(backend.supportsStatePersistence, isFalse);
+      expect(backend.supportsNextTokenScoring, isFalse);
 
       expect(() => backend.embed(1, 'hello'), throwsUnsupportedError);
+      expect(
+        () => backend.scoreNextToken(
+          1,
+          'hello',
+          candidates: const [1],
+          topK: 0,
+          reusePromptPrefix: true,
+        ),
+        throwsUnsupportedError,
+      );
       await expectLater(
         backend.embedBatch(1, const ['hello']),
         throwsUnsupportedError,
@@ -486,6 +498,16 @@ void main() {
       expect((await backend.stateLoadFile(1, '/tmp/state.bin', 16)).tokens, [
         3,
       ]);
+      expect(backend.supportsNextTokenScoring, isTrue);
+      final scores = await backend.scoreNextToken(
+        4,
+        'Answer:',
+        candidates: const [8, 9],
+        topK: 2,
+        reusePromptPrefix: false,
+      );
+      expect(scores.candidates.map((t) => t.token), [8, 9]);
+      expect(llama.scoreCalls.single, (4, 'Answer:', 2, false));
     } finally {
       await backend.dispose();
     }
@@ -1420,8 +1442,34 @@ class _CapabilityFakeBackend extends _FakeBackend
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendStatePersistence,
-        BackendStatePersistenceSupport {
+        BackendStatePersistenceSupport,
+        BackendNextTokenScoring,
+        BackendNextTokenScoringSupport {
   _CapabilityFakeBackend({required super.handle});
+
+  final List<(int, String, int, bool)> scoreCalls = [];
+
+  @override
+  bool get supportsNextTokenScoring => true;
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    scoreCalls.add((contextHandle, prompt, topK, reusePromptPrefix));
+    return LlamaNextTokenScores(
+      candidates: [
+        for (final token in candidates)
+          LlamaTokenLogprob(token: token, bytes: const [], logprob: -1),
+      ],
+      top: const [],
+      promptTokens: 1,
+    );
+  }
 
   @override
   Future<String> getAvailableBackends() async => 'capability-backends';

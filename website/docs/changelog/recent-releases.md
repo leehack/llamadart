@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add `LlamaEngine.scoreNextToken(...)` for next-token log-probabilities on
+  native llama.cpp and WebGPU bridge assets `v0.1.52+`, matching llama-server
+  `n_probs`; check
+  `supportsNextTokenScoring` first
+  ([#694](https://github.com/leehack/llamadart/issues/694)).
 - Count generated tokens with an empty text piece in llama.cpp
   `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
   decoding, as the speculative path already did
@@ -112,12 +117,12 @@ For canonical full release notes, use:
   BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
   instead of aborting the process or embedding only the last chunk
   ([#607](https://github.com/leehack/llamadart/issues/607)).
-- Aligned default WebGPU bridge assets to `v0.1.51` for the decision API
-  and the Web runtime fixes below. The assets embed llama.cpp `v0.5.0`, are
+- Aligned default WebGPU bridge assets to `v0.1.52` for the decision API,
+  next-token scoring and the Web runtime fixes below. The assets embed llama.cpp `v0.5.0`, are
   qualified against native `v0.5.0`, and keep Web/native llama.cpp
   `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity and Web
   `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
-  `8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`.
+  `b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`.
 - On Web, an invalid GBNF grammar now fails generation with a
   `LlamaInferenceException` whose details contain `(invalid grammar)`, and the
   loaded model stays usable, instead of aborting the WebGPU bridge runtime

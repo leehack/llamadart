@@ -8,6 +8,7 @@ import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../backend.dart';
@@ -32,6 +33,8 @@ class NativeAutoBackend
         BackendEmbeddings,
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
+        BackendNextTokenScoring,
+        BackendNextTokenScoringSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
@@ -584,6 +587,39 @@ class NativeAutoBackend
     }
     throw UnsupportedError(
       'The selected native backend does not support embeddings.',
+    );
+  }
+
+  @override
+  bool get supportsNextTokenScoring {
+    final delegate = _delegate;
+    if (delegate is BackendNextTokenScoringSupport) {
+      return (delegate as BackendNextTokenScoringSupport)
+          .supportsNextTokenScoring;
+    }
+    return delegate is BackendNextTokenScoring;
+  }
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendNextTokenScoring) {
+      return (delegate as BackendNextTokenScoring).scoreNextToken(
+        contextHandle,
+        prompt,
+        candidates: candidates,
+        topK: topK,
+        reusePromptPrefix: reusePromptPrefix,
+      );
+    }
+    throw UnsupportedError(
+      'The selected native backend does not support next-token scoring.',
     );
   }
 

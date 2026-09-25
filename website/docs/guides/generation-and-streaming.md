@@ -248,6 +248,39 @@ final count = await engine.getTokenCount('hello world');
 
 These helpers are useful for context budgeting and prompt diagnostics.
 
+## Next-token scores
+
+`engine.scoreNextToken(...)` evaluates a prompt and returns the
+log-probabilities of the token that would follow it, without generating. Ask
+for specific token ids with `candidates`, the most probable tokens with `topK`,
+or both. Reading the probabilities of answer letters turns an
+instruction-tuned model into a classifier:
+
+```dart
+final prompt = (await engine.chatTemplate([
+  const LlamaChatMessage.fromText(
+    role: LlamaChatRole.user,
+    text: 'Is "remind me to call mom at 5" a (A) reminder or (B) search? '
+        'Answer with the letter only.',
+  ),
+], enableThinking: false)).prompt;
+final letters = [
+  for (final letter in ['A', 'B'])
+    (await engine.tokenize(letter, addSpecial: false)).single,
+];
+
+final scores = await engine.scoreNextToken(prompt, candidates: letters);
+final probabilities = [for (final t in scores.candidates) t.probability];
+```
+
+The values are a softmax over the raw logits at the last prompt position, the
+same as llama-server's `n_probs`; sampling settings do not apply. The prompt is
+tokenized like a `generate` prompt, and a prefix shared with the previous
+prompt is reused unless `reusePromptPrefix` is false. Check
+`engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
+assets `v0.1.52+` support it; LiteRT-LM and older bridge assets report false
+and throw `LlamaUnsupportedException`.
+
 ## Stateless vs stateful chat
 
 `engine.create(...)` is stateless: it uses exactly the messages you pass for that

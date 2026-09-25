@@ -295,6 +295,44 @@ class UnsupportedTokenizationBackend extends MockLlamaBackend {
   }
 }
 
+class ScoringMockBackend extends MockLlamaBackend
+    implements BackendNextTokenScoring, BackendNextTokenScoringSupport {
+  ScoringMockBackend({this.supported = true, this.error});
+
+  final bool supported;
+  final Object? error;
+  final List<(int, String, List<int>, int, bool)> scoreCalls = [];
+
+  @override
+  bool get supportsNextTokenScoring => supported;
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    scoreCalls.add((
+      contextHandle,
+      prompt,
+      candidates,
+      topK,
+      reusePromptPrefix,
+    ));
+    if (error != null) throw error!;
+    return LlamaNextTokenScores(
+      candidates: [
+        for (final token in candidates)
+          LlamaTokenLogprob(token: token, bytes: const [65], logprob: -1),
+      ],
+      top: const [],
+      promptTokens: 3,
+    );
+  }
+}
+
 class UnsupportedStateBackend extends MockLlamaBackend
     implements BackendStatePersistenceSupport {
   UnsupportedStateBackend({required super.backendName});
@@ -1988,6 +2026,109 @@ void main() {
         () => engine.embed('hello'),
         throwsA(isA<LlamaUnsupportedException>()),
       );
+    });
+
+    test('next-token scoring is unsupported without the capability', () async {
+      await engine.loadModel('qwen-test.gguf');
+
+      expect(engine.supportsNextTokenScoring, isFalse);
+      await expectLater(
+        engine.scoreNextToken('hello', topK: 1),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'Next-token scoring is not supported by the active backend.',
+          ),
+        ),
+      );
+    });
+
+    test('next-token scoring forwards to a supporting backend', () async {
+      final scoringBackend = ScoringMockBackend();
+      final scoringEngine = LlamaEngine(scoringBackend);
+      await scoringEngine.loadModel('qwen-test.gguf');
+      final candidates = [4, 7];
+
+      final scores = await scoringEngine.scoreNextToken(
+        'Answer:',
+        candidates: candidates,
+        topK: 2,
+      );
+      candidates.add(9);
+
+      expect(scoringEngine.supportsNextTokenScoring, isTrue);
+      expect(scores.candidates.map((t) => t.token), [4, 7]);
+      final (_, prompt, sentCandidates, topK, reuse) =
+          scoringBackend.scoreCalls.single;
+      expect(prompt, 'Answer:');
+      expect(sentCandidates, [4, 7]);
+      expect(topK, 2);
+      expect(reuse, GenerationParams.defaultReusePromptPrefix);
+
+      await scoringEngine.scoreNextToken(
+        'Answer:',
+        topK: 1,
+        reusePromptPrefix: false,
+      );
+      expect(scoringBackend.scoreCalls.last.$5, isFalse);
+      await scoringEngine.dispose();
+    });
+
+    test('next-token scoring honours a false support probe', () async {
+      final scoringBackend = ScoringMockBackend(supported: false);
+      final scoringEngine = LlamaEngine(scoringBackend);
+      await scoringEngine.loadModel('qwen-test.gguf');
+
+      expect(scoringEngine.supportsNextTokenScoring, isFalse);
+      await expectLater(
+        scoringEngine.scoreNextToken('hello', topK: 1),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(scoringBackend.scoreCalls, isEmpty);
+      await scoringEngine.dispose();
+    });
+
+    test('next-token scoring maps backend UnsupportedError', () async {
+      final scoringBackend = ScoringMockBackend(
+        error: UnsupportedError('not on this delegate'),
+      );
+      final scoringEngine = LlamaEngine(scoringBackend);
+      await scoringEngine.loadModel('qwen-test.gguf');
+
+      await expectLater(
+        scoringEngine.scoreNextToken('hello', topK: 1),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'Next-token scoring is not supported by the active backend: '
+                'not on this delegate',
+          ),
+        ),
+      );
+      await scoringEngine.dispose();
+    });
+
+    test('next-token scoring validates arguments before the backend', () async {
+      final scoringBackend = ScoringMockBackend();
+      final scoringEngine = LlamaEngine(scoringBackend);
+      await expectLater(
+        scoringEngine.scoreNextToken('hello', topK: 1),
+        throwsA(isA<LlamaContextException>()),
+      );
+      await scoringEngine.loadModel('qwen-test.gguf');
+
+      for (final call in <Future<LlamaNextTokenScores> Function()>[
+        () => scoringEngine.scoreNextToken('', topK: 1),
+        () => scoringEngine.scoreNextToken('hi', candidates: const [-1]),
+        () => scoringEngine.scoreNextToken('hi', topK: -1),
+        () => scoringEngine.scoreNextToken('hi'),
+      ]) {
+        await expectLater(call(), throwsArgumentError);
+      }
+      expect(scoringBackend.scoreCalls, isEmpty);
+      await scoringEngine.dispose();
     });
 
     test('state persistence unsupported message is backend-aware', () async {

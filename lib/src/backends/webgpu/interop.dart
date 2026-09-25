@@ -95,6 +95,12 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
     WebGpuEmbeddingOptions? options,
   ]);
 
+  /// Scores the token that would follow [prompt].
+  external JSPromise<JSAny?>? scoreNextToken(
+    String prompt, [
+    WebGpuNextTokenScoreOptions? options,
+  ]);
+
   /// Returns model metadata as a plain JS object.
   external JSObject? getModelMetadata();
 
@@ -221,6 +227,18 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
 extension type WebGpuEmbeddingOptions._(JSObject _) implements JSObject {
   /// Creates embedding options.
   external factory WebGpuEmbeddingOptions({bool? normalize});
+}
+
+/// Next-token scoring options.
+@JS()
+@anonymous
+extension type WebGpuNextTokenScoreOptions._(JSObject _) implements JSObject {
+  /// Creates next-token scoring options.
+  external factory WebGpuNextTokenScoreOptions({
+    JSArray<JSNumber>? candidates,
+    int? topK,
+    bool? reusePromptPrefix,
+  });
 }
 
 /// Dedicated text-to-speech options accepted by the WebGPU bridge.

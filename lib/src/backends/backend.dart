@@ -4,6 +4,7 @@ import '../core/decision/decision_question.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/generation_usage.dart';
+import '../core/models/inference/next_token_scores.dart';
 import '../core/models/inference/tool_choice.dart';
 import '../core/models/chat/chat_message.dart';
 import '../core/models/chat/content_part.dart';
@@ -711,6 +712,33 @@ abstract class BackendBatchEmbeddings extends BackendEmbeddings {
     List<String> texts, {
     bool normalize = true,
   });
+}
+
+/// Optional backend capability for scoring the token that would follow a
+/// prompt, without sampling.
+abstract class BackendNextTokenScoring {
+  /// Evaluates [prompt] on [contextHandle] as generation would, then returns
+  /// the log-probabilities of [candidates] and of the [topK] most probable
+  /// tokens at the next position. [reusePromptPrefix] reuses a matching
+  /// prompt prefix already in the context, as
+  /// [GenerationParams.reusePromptPrefix] does.
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  });
+}
+
+/// Optional backend capability for reporting whether
+/// [BackendNextTokenScoring] is actually available for the active runtime.
+///
+/// Delegating backends implement the scoring method whatever they delegate
+/// to; this reports what the selected concrete backend supports.
+abstract class BackendNextTokenScoringSupport {
+  /// Whether next-token scoring calls are expected to be supported.
+  bool get supportsNextTokenScoring;
 }
 
 /// Result of [BackendStatePersistence.stateLoadFile]. Contains the token

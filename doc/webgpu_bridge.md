@@ -19,17 +19,17 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.51`.
+Default pinned tag in the example is `v0.1.52`.
 
 That release embeds llama.cpp `v0.5.0`, matching the `hook/build.dart` native pin
 (`v0.5.0`, both built from upstream llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
-even though the bridge asset tag `v0.1.51` differs from the native runtime tag
-`v0.5.0`. Provenance for this immutable consumer artifact: release `395938081`,
-tag commit `d3b857d79f569f4aa54f8c22743f1bdff1af56cd`, bridge source
-`6ed621318648723d77c0373c2aedc7bfce2b93c7`, and manifest SHA-256
-`8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`. The bridge
+even though the bridge asset tag `v0.1.52` differs from the native runtime tag
+`v0.5.0`. Provenance for this immutable consumer artifact: release `396846786`,
+tag commit `8526e92057df6d74d5e435d6ca67baf68cb7dca3`, bridge source
+`cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff`, and manifest SHA-256
+`b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`. The bridge
 assets were qualified against native `v0.5.0`. The assets add the decision API
-(apiVersion 1), retain the Qwen3-ASR typed speech-to-text contract introduced
+(apiVersion 1) and next-token scoring (`scoreNextToken`), retain the Qwen3-ASR typed speech-to-text contract introduced
 in `v0.1.30`, and provision the explicit 1 MiB Wasm stack needed for memory64
 context construction in direct and worker modes. The chat bootstrap opts
 `SpeechToTextEngine` into that contract from the immutable tag; older or custom
@@ -48,7 +48,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.51 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.52 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -129,7 +129,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.51';
+  window.__llamadartBridgeAssetsTag = 'v0.1.52';
 </script>
 ```
 
