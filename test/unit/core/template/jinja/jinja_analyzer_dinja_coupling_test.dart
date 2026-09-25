@@ -1,17 +1,13 @@
-// ignore: implementation_imports
-import 'package:dinja/src/ast/nodes.dart';
-// ignore: implementation_imports
-import 'package:dinja/src/lexer.dart';
-// ignore: implementation_imports
-import 'package:dinja/src/parser.dart';
+import 'package:dinja/ast.dart';
 import 'package:test/test.dart';
 
 import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 
-/// Guards `jinja_analyzer.dart`'s imports of dinja's private sources: the
-/// imports above stop compiling if those files move, and `dinja private-source
-/// coupling` fails if the lexer/parser shape or AST node types change.
+/// Guards what `jinja_analyzer.dart` assumes of `package:dinja/ast.dart`:
+/// `dinja public AST coupling` fails if `parseTemplate`, the AST node types the
+/// analyzer matches on, or the operator text in `BinaryExpression.op.value`
+/// change.
 ///
 /// The capability goldens are descriptive of the analyzer's current output,
 /// not a dinja guarantee - a deliberate analyzer change is expected to update
@@ -30,26 +26,22 @@ void main() {
 {% for tool in tools %}{{ tool.function.name }}{% endfor %}
 ''';
 
-  group('dinja private-source coupling', () {
-    test('lexer and parser entry points keep the shape the analyzer uses', () {
-      // Mirrors the call chain in JinjaAnalyzer.analyze().
-      final LexerResult lexed = Lexer(representativeTemplate).tokenize();
-      expect(lexed.tokens, isNotEmpty);
-
-      final Program program = Parser(
-        lexed.tokens,
-        representativeTemplate,
-      ).parse();
+  group('dinja public AST coupling', () {
+    test('parseTemplate returns the Program the analyzer walks', () {
+      final Program program = parseTemplate(representativeTemplate);
       expect(program.body, isNotEmpty);
     });
 
     test('AST node types the analyzer matches on are still produced', () {
-      final lexed = Lexer(representativeTemplate).tokenize();
-      final program = Parser(lexed.tokens, representativeTemplate).parse();
+      final program = parseTemplate(representativeTemplate);
 
       final seen = <Type>{};
+      final operators = <String>{};
       void visit(Statement node) {
         seen.add(node.runtimeType);
+        if (node is BinaryExpression) {
+          operators.add(node.op.value);
+        }
         if (node is Program) {
           node.body.forEach(visit);
         } else if (node is IfStatement) {
@@ -83,6 +75,11 @@ void main() {
           StringLiteral,
         ]),
         reason: 'JinjaAnalyzer pattern-matches on each of these node types',
+      );
+      expect(
+        operators,
+        contains('=='),
+        reason: 'JinjaAnalyzer reads BinaryExpression.op.value',
       );
     });
   });

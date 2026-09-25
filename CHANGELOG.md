@@ -31,6 +31,14 @@
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
+  turn without reasoning no longer gets an empty `<think>` block
+  ([#691](https://github.com/leehack/llamadart/issues/691)).
+- Require `dinja` 1.1.0 or later. Its string-equality fix also makes
+  NVIDIA Nemotron Nano v2 prompts drop an extra newline before a tool call,
+  and Functionary v3.2 tool declarations drop a stray
+  `// Format=<|NONE|>` line, as in llama.cpp
+  ([#351](https://github.com/leehack/llamadart/issues/351)).
 - Render every result of a tool message holding several
   `LlamaToolResultContent` parts, as one `tool` message per result like
   llama.cpp, instead of only the first; `LlamaChatMessage.toJson` lists them
