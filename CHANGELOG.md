@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Count generated tokens with an empty text piece in llama.cpp
+  `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
+  decoding, as the speculative path already did
+  ([#706](https://github.com/leehack/llamadart/issues/706)).
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching
   Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM

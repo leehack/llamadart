@@ -130,6 +130,20 @@ void main() {
     });
   });
 
+  group('llama.cpp perf token counts', () {
+    test('evalTokens counts tokens whose text piece is empty', () async {
+      final bos = (await backend.tokenize(model, '')).single;
+      final (text, _) = await run(
+        endless.copyWith(maxTokens: 4, grammar: 'root ::= <[$bos]>+'),
+      );
+      final perf = (await performance.getPerformanceContext(context))!;
+
+      expect(text, isEmpty);
+      expect(perf.evalTokens, 4);
+      expect(perf.sampleCount, 4);
+    });
+  });
+
   group('speculative llama.cpp generation limits', () {
     const speculative = GenerationParams(
       maxTokens: 100000,
