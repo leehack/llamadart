@@ -59,7 +59,7 @@ To keep the old desktop behavior, pass `defaultCacheDirectory` explicitly.
 Tests that expected the old temporary path or the mobile
 `LlamaUnsupportedException` need updating. Details:
 [`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md)
-and [Model lifecycle](../guides/model-lifecycle).
+and [Download and cache models](../guides/model-downloads).
 
 ### 0.6.4: Android arm64 CPU profile
 

@@ -66,7 +66,8 @@ hooks:
 - Selecting `litert_lm` by name for a target without a LiteRT-LM runtime, such
   as the iOS x86_64 simulator or Windows arm64, fails the build. When it is only
   implied by the default or `all`, the hook drops it with a warning.
-- A selection that leaves no runtime fails the build.
+- An empty or all-unknown selection falls back to every family; one that
+  leaves no runtime, such as `none`, fails the build.
 
 ## Choose llama.cpp backend modules
 

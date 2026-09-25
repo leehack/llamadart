@@ -182,8 +182,10 @@ Important fields:
   is incompatible with speculative decoding, and unsupported backends reject
   it explicitly.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
-  decoding. Native LiteRT-LM uses the boolean; native llama.cpp takes a
-  `SpeculativeDecodingConfig` strategy. WebGPU and LiteRT-LM web reject both.
+  decoding. Native LiteRT-LM uses the boolean, or a
+  `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
+  draft tuning; native llama.cpp takes any `SpeculativeDecodingConfig`
+  strategy. WebGPU and LiteRT-LM web reject both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.

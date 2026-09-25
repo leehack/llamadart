@@ -50,9 +50,9 @@ await engine.loadModel(
 `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects CPU; a GPU
 `preferredBackend` (Vulkan, Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM
 GPU backend; and `preferredBackend: auto` selects GPU on Android, iOS, macOS
-and web, and CPU on Linux and Windows. Linux arm64 and Windows arm64 have no
-LiteRT-LM GPU backend, so a GPU selection there fails the load with
-`LlamaModelException`; set `liteRtLmBackend: cpu`.
+and web, and CPU on Linux and Windows. Linux arm64 has no LiteRT-LM GPU
+backend, so a GPU selection there fails the load with `LlamaModelException`;
+set `liteRtLmBackend: cpu`. Windows arm64 has no LiteRT-LM runtime.
 `npu` is Android-only; LiteRT-LM web rejects it.
 
 Formats are not interchangeable: a GGUF file cannot run through LiteRT-LM, and
