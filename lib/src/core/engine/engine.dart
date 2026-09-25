@@ -668,7 +668,7 @@ class LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
-    return _generationCancellation.request((isCancelled) async* {
+    return _generationCancellation.request((request) async* {
       _ensureReady();
       await _rejectUnsupportedVideoInput(
         messages.expand((message) => message.parts),
@@ -727,7 +727,7 @@ class LlamaEngine {
               templateNow: templateNow,
               onLimit: recordLimit,
               onUsage: recordUsage,
-              isCancelled: isCancelled,
+              request: request,
             )
           : _generate(
               result.prompt,
@@ -735,7 +735,7 @@ class LlamaEngine {
               parts: plan.mediaParts,
               onLimit: recordLimit,
               onUsage: recordUsage,
-              isCancelled: isCancelled,
+              request: request,
             );
 
       final completionId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -884,12 +884,8 @@ class LlamaEngine {
     List<LlamaContentPart>? parts,
   }) {
     return _generationCancellation.request(
-      (isCancelled) => _generate(
-        prompt,
-        params: params,
-        parts: parts,
-        isCancelled: isCancelled,
-      ),
+      (request) =>
+          _generate(prompt, params: params, parts: parts, request: request),
     );
   }
 
@@ -899,11 +895,11 @@ class LlamaEngine {
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
-    required bool Function() isCancelled,
+    required GenerationRequest request,
   }) async* {
     _ensureReady();
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
-    if (isCancelled()) return;
+    if (request.isCancelled()) return;
 
     try {
       final stream = backend.generate(
@@ -913,22 +909,20 @@ class LlamaEngine {
         parts: parts,
       );
 
-      await for (final token in stream.transform(
-        const Utf8Decoder(allowMalformed: true),
+      await for (final token in _cancellableText(
+        stream,
+        request,
+        'Generation',
       )) {
         yield token;
       }
       _reportGenerationOutcome(stream, onLimit, onUsage);
-    } on UnsupportedError catch (error) {
-      throw _unsupportedBackendOperation('Generation', error);
-    } on LlamaException {
-      rethrow;
     } catch (error, stackTrace) {
       // Wrap raw backend failures so callers catching LlamaException (the
       // documented error contract) don't see unexpected error types escape,
       // while preserving the original backend stack trace.
       Error.throwWithStackTrace(
-        LlamaInferenceException('Generation failed', error),
+        _generationFailure('Generation', error),
         stackTrace,
       );
     }
@@ -948,10 +942,10 @@ class LlamaEngine {
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
-    required bool Function() isCancelled,
+    required GenerationRequest request,
   }) async* {
     _ensureReady();
-    if (isCancelled()) return;
+    if (request.isCancelled()) return;
 
     try {
       final stream = nativeBackend.generateChat(
@@ -968,22 +962,67 @@ class LlamaEngine {
         templateNow: templateNow,
       );
 
-      await for (final token in stream.transform(
-        const Utf8Decoder(allowMalformed: true),
+      await for (final token in _cancellableText(
+        stream,
+        request,
+        'Native chat generation',
       )) {
         yield token;
       }
       _reportGenerationOutcome(stream, onLimit, onUsage);
-    } on UnsupportedError catch (error) {
-      throw _unsupportedBackendOperation('Native chat generation', error);
-    } on LlamaException {
-      rethrow;
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
-        LlamaInferenceException('Native chat generation failed', error),
+        _generationFailure('Native chat generation', error),
         stackTrace,
       );
     }
+  }
+
+  /// Returns the [LlamaException] a generation reports for a backend
+  /// [error] raised during [operation].
+  LlamaException _generationFailure(String operation, Object error) =>
+      switch (error) {
+        LlamaException() => error,
+        UnsupportedError() => _unsupportedBackendOperation(operation, error),
+        _ => LlamaInferenceException('$operation failed', error),
+      };
+
+  /// Decodes [tokens] into a stream that also ends, cancelling [tokens], as
+  /// soon as the subscription of [request] or of an ancestor is cancelled.
+  ///
+  /// That subscription cancel fails with the [LlamaException] for
+  /// [operation] if cancelling [tokens] fails.
+  Stream<String> _cancellableText(
+    Stream<List<int>> tokens,
+    GenerationRequest request,
+    String operation,
+  ) {
+    final text = StreamController<String>(sync: true);
+    final subscription = tokens
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(text.add, onError: text.addError, onDone: text.close);
+    // Hand out the cancel future of [tokens] once. The stop below returns it;
+    // the cancel that closing [text] triggers would drop it, leaving a
+    // backend error in it unhandled.
+    Future<void>? tokensCancelled;
+    Future<void>? cancelTokens() => tokensCancelled == null
+        ? tokensCancelled = subscription.cancel()
+        : null;
+    text
+      ..onPause = subscription.pause
+      ..onResume = subscription.resume
+      ..onCancel = cancelTokens;
+    request.onSubscriptionCancel(() {
+      final cancelled = cancelTokens();
+      unawaited(text.close());
+      return (cancelled ?? Future<void>.value()).catchError(
+        (Object error, StackTrace stackTrace) => Error.throwWithStackTrace(
+          _generationFailure(operation, error),
+          stackTrace,
+        ),
+      );
+    });
+    return text.stream;
   }
 
   void _reportGenerationOutcome(

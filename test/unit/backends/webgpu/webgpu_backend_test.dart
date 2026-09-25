@@ -2253,6 +2253,42 @@ void main() {
       },
     );
 
+    test('an engine subscription cancel before the first token aborts the '
+        'bridge completion before the cancel returns', () async {
+      final completion = Completer<void>();
+      var completionStarted = false;
+      bridge.setProperty(
+        'cancel'.toJS,
+        (() {
+          cancelCallCount += 1;
+          if (!completion.isCompleted) {
+            completion.complete();
+          }
+        }).toJS,
+      );
+      bridge.setProperty(
+        'createCompletion'.toJS,
+        ((String prompt, JSObject opts) {
+          completionStarted = true;
+          return completion.future.toJS;
+        }).toJS,
+      );
+      final engine = LlamaEngine(backend);
+      await engine.loadModelFromUrl(
+        'https://example.com/model.gguf',
+        modelParams: const ModelParams(),
+      );
+
+      final subscription = engine.generate('Hello').listen((_) {});
+      while (!completionStarted) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final cancelled = subscription.cancel();
+
+      expect(cancelCallCount, 1);
+      await cancelled;
+    });
+
     test('generates embedding vector from bridge', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',

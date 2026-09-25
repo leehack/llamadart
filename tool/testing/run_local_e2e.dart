@@ -344,6 +344,36 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'native-prompt-cancel',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Cancel native GGUF generations during a ~1,600-token prompt and '
+          'report cancel latency.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-p',
+            'vm',
+            '-j',
+            '1',
+            '-t',
+            'local-only',
+            'test/e2e/backends/prompt_cancel_e2e_test.dart',
+          ],
+          environment: {
+            'PROMPT_CANCEL_MODEL': context.modelPath!,
+            'PROMPT_CANCEL_BACKEND': context.backend,
+          },
+          description: 'Native prompt-evaluation cancel',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1439,7 +1469,8 @@ Future<LocalE2eResult> runLocalE2e(
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
-          scenario.name == 'litert-lm-chat-features-smoke') &&
+          scenario.name == 'litert-lm-chat-features-smoke' ||
+          scenario.name == 'native-prompt-cancel') &&
       parsed.modelPath == null) {
     return LocalE2eResult(
       64,
@@ -1703,6 +1734,9 @@ Options:
   --allow-any-response           Accept any non-empty real-model Web response.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
+
+Direct environment for test/e2e/backends/prompt_cancel_e2e_test.dart:
+  PROMPT_CANCEL_THREADS          CPU threads for the model (default: 4).
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
   LITERT_LM_IMAGE_PATH           Optional local image fixture.

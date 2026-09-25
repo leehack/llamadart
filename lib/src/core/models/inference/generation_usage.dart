@@ -3,6 +3,9 @@ class LlamaGenerationUsage {
   /// Prompt tokens in the context when generation started, including
   /// [cachedPromptTokens].
   ///
+  /// A cancel during prompt evaluation leaves only the tokens evaluated
+  /// before it.
+  ///
   /// For a multimodal prompt this is the number of context positions the
   /// prompt filled. Models with M-RoPE vision, such as Qwen2-VL, give an image
   /// fewer positions than image tokens.

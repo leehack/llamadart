@@ -897,6 +897,36 @@ void main() {
     },
   );
 
+  test('an engine subscription cancel before the first token cancels the '
+      'worker generation', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+    final engine = LlamaEngine(backend);
+
+    try {
+      await engine.loadModel(modelFile.path);
+      final subscription = engine.generate('pending').listen((_) {});
+      await worker.generateReceived.future;
+
+      await subscription.cancel();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+        hasLength(1),
+      );
+    } finally {
+      worker.releaseGeneration();
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test('cancels active generation before context free', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -1308,6 +1338,8 @@ class _FakeLiteRtLmWorker {
           message.sendPort.send(LiteRtLmDoneResponse());
         }
       case LiteRtLmModelLoadRequest():
+        message.sendPort.send(LiteRtLmHandleResponse(1));
+      case LiteRtLmContextCreateRequest():
         message.sendPort.send(LiteRtLmHandleResponse(1));
       case LiteRtLmTokenizeRequest():
         message.sendPort.send(LiteRtLmTokenizeResponse(tokenizeResponse));
