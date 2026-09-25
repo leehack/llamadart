@@ -208,7 +208,8 @@ Cancelling a stream's subscription also sends the cancel to its backend at
 once, even before the first token.
 
 On native llama.cpp, a cancel during text prompt evaluation takes effect at the
-next prompt micro-batch (`ModelParams.microBatchSize` tokens). A generation
+next prompt micro-batch (`ModelParams.microBatchSize` tokens), or at the next
+batch (`ModelParams.batchSize` tokens) with speculative decoding. A generation
 started while a cancelled one is still stopping waits for it to stop, then
 runs. Starting one while another is running and not cancelled throws
 `LlamaStateException`.
