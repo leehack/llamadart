@@ -1110,7 +1110,7 @@ registered in the local E2E runner; use `--model-path`, `--mmproj-path`, or
 `--tokenizer-path` to reuse local inputs. The voice scenario uses Gemma 4 CPU;
 the direct command also accepts the other primary CPU chat profiles.
 
-Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
+Speech reports contain per-case PASS/FAIL/SKIP/NOT_RUN, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
@@ -1129,14 +1129,42 @@ is handed back, the window in which `tts` cancellations were dropped until
 The second must report `cancel_in_flight`, which is true only if the adapter
 had not seen the task finish when it cancelled; it cannot show that the
 generation had begun. Exceeding any budget fails the run; if resident memory
-cannot be sampled, both memory bounds record `SKIP` with a reason, and they
+cannot be sampled, the memory bounds record `SKIP` with a reason, and they
 are the only checks a passing run may leave unmeasured or unapplied.
 GGUF STT additionally compares file and bytes inputs and runs four generated
 edge fixtures: digital silence must fail with the typed empty-transcript
 `LlamaSpeechException`, a truncated RIFF must yield an inexact non-empty
 transcript or `LlamaAudioFormatException`, a 44.1 kHz stereo copy of
 `jfk.wav` must yield the reference, and three concatenated copies (33 s) must
-yield it three times.
+yield it three times. Two truncation checks follow: `jfk.wav` with
+`maxOutputTokens` at half the reference's token count, and the 33 s input on a
+512-token context, must each fail with
+`LlamaSpeechTranscriptTruncatedException` at that limit and a partial
+transcript that is a strict prefix of the expected one, and the next
+recognition on the same engine must pass.
+GGUF TTS adds three interrupt checks after `leak_slope_bound`, then
+`interrupt_memory_bound`. `unload_during_synthesis` and
+`dispose_during_synthesis` call `unloadModel()` or `dispose()` once a progress
+event reports a frame; the task must end cancelled within the 500 ms budget,
+and a synthesis after the reload must pass. `decode_cancel` times the audio
+decode of four uncancelled 12-frame syntheses, two before and two after a
+fifth that it cancels a quarter of the shorter earlier decode time after its
+twelfth frame is reported. Timed from that report, the cancelled synthesis
+must end sooner than the shortest reference by more than a margin: twice the
+spread of the four decode times, or a tenth of that decode if larger. If the
+decode left after the cancel, less the largest latency of three syntheses
+cancelled on hand-back, is within that margin, even an immediate cancellation
+could not pass, so the check records `NOT_RUN`, as it does for any unmet
+precondition, with the reason and measured numbers; `NOT_RUN` fails the run.
+It targets the chunk-boundary decode cancellation of native `v0.4.1-1`
+([#322](https://github.com/leehack/llamadart/issues/322)).
+`interrupt_memory_bound` holds the resident set after the three checks to
+1.10x the sample taken after `leak_slope_bound`. Running them after the
+lifecycle bounds keeps their reloads out of the lifecycle baselines and peak,
+and puts the lifecycle's own reload overhead in their baseline. Like the peak
+ratio, it records `SKIP` on Linux CUDA, where the interrupt checks then have
+no memory bound. A run executes 28 checks for `stt`, 25 for `tts` and 21 for
+`litert-asr`.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the
