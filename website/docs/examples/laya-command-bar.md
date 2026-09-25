@@ -23,7 +23,7 @@ calculation. A switch in the header compares three readers:
   without training.
 - **Qwen2.5**: [Qwen2.5 1.5B Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct)
   reads a prompt listing the intents and labelled examples, and
-  [`LlamaEngine.scoreNextToken`](../guides/generation-and-streaming#next-token-scores-native-llamacpp)
+  [`LlamaEngine.scoreNextToken`](../guides/generation-and-streaming#next-token-scores)
   returns the probability of each intent name's first token as the reply.
   Nothing is generated.
 
