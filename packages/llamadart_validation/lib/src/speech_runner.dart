@@ -175,7 +175,9 @@ class PublicSpeechValidationAdapter
     this.reference,
     this.text = 'Hello from llamadart. The answer is forty two.',
     LlamaEngine Function()? createEngine,
-  }) : _createEngine = createEngine ?? (() => LlamaEngine(LlamaBackend()));
+    Stopwatch Function() newStopwatch = Stopwatch.new,
+  }) : _createEngine = createEngine ?? (() => LlamaEngine(LlamaBackend())),
+       _newStopwatch = newStopwatch;
 
   final String model;
   final String projector;
@@ -188,6 +190,10 @@ class PublicSpeechValidationAdapter
   final String text;
   final Future<void> Function(Uint8List) saveAudio;
   final LlamaEngine Function() _createEngine;
+
+  /// Creates every stopwatch this adapter times with; tests pass one that
+  /// reads fake time.
+  final Stopwatch Function() _newStopwatch;
   LlamaEngine? _engine;
   double? _lastGenerationMs;
   String? _lastTranscript;
@@ -258,7 +264,7 @@ class PublicSpeechValidationAdapter
       engine,
       modelProfile: SpeechToTextModelProfile.qwen3Asr,
     );
-    final watch = Stopwatch()..start();
+    final watch = _newStopwatch()..start();
     final String transcript;
     try {
       final task = await recognizer.transcribe(
@@ -357,7 +363,7 @@ class PublicSpeechValidationAdapter
       throw ArgumentError('cancel and cancelImmediately are exclusive');
     }
     final engine = _engine ?? (throw StateError('Speech engine is not loaded'));
-    final watch = Stopwatch()..start();
+    final watch = _newStopwatch()..start();
     if (pack == 'stt') {
       final recognizer = SpeechToTextEngine(
         engine,
@@ -378,7 +384,7 @@ class PublicSpeechValidationAdapter
           maxOutputTokens: _maxOutputTokens,
         ),
       );
-      final cancelWatch = Stopwatch();
+      final cancelWatch = _newStopwatch();
       final cancellation = cancel || cancelImmediately
           ? await _cancelTask(
               watch,
@@ -432,7 +438,7 @@ class PublicSpeechValidationAdapter
     final task = await synthesizer.synthesize(
       _synthesisRequest(text: invalid ? '' : text),
     );
-    final cancelWatch = Stopwatch();
+    final cancelWatch = _newStopwatch();
     final cancellation = cancel || cancelImmediately
         ? await _cancelTask(
             watch,
@@ -528,7 +534,7 @@ class PublicSpeechValidationAdapter
     final done = task.done.whenComplete(() => settled = true);
     final frames = await Future.any([firstFrame.future, done.then((_) => 0)]);
     final inFlight = !settled && frames > 0;
-    final watch = Stopwatch()..start();
+    final watch = _newStopwatch()..start();
     if (dispose) _engine = null;
     final teardown = (dispose ? engine.dispose() : engine.unloadModel()).then(
       (_) => watch.elapsedMicroseconds / 1000,
@@ -569,7 +575,7 @@ class PublicSpeechValidationAdapter
     for (var run = 0; run < speechDecodeCancelOverheadRuns; run++) {
       final task = await _synthesize(maxFrames: speechDecodeCancelFrameCap);
       final events = task.events.handleError((Object _) {}).toList();
-      final watch = Stopwatch()..start();
+      final watch = _newStopwatch()..start();
       task.cancel();
       final completion = await task.done;
       final latencyMs = watch.elapsedMicroseconds / 1000;
@@ -636,7 +642,7 @@ class PublicSpeechValidationAdapter
     })
   >
   _cappedSynthesis({double? cancelLeadMs}) async {
-    final watch = Stopwatch()..start();
+    final watch = _newStopwatch()..start();
     final task = await _synthesize(maxFrames: speechDecodeCancelFrameCap);
     var settled = false;
     final done = task.done.whenComplete(() => settled = true);
@@ -742,7 +748,7 @@ class PublicSpeechValidationAdapter
     required int maxOutputTokens,
     required int repeats,
   }) async {
-    final watch = Stopwatch()..start();
+    final watch = _newStopwatch()..start();
     final recognizer = SpeechToTextEngine(
       engine,
       modelProfile: SpeechToTextModelProfile.qwen3Asr,

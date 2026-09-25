@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/speech_engine_lease.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
@@ -508,6 +509,85 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
       truncated: naturalFrames > request.maxFrames,
     );
   }
+}
+
+/// A [Stopwatch] that reads [FakeAsync.elapsed], so timed checks see the
+/// exact delays [SynthesisSpeechEngine] schedules.
+class FakeTimeStopwatch implements Stopwatch {
+  FakeTimeStopwatch(this._async);
+  final FakeAsync _async;
+  Duration? _startedAt;
+  Duration _stopped = Duration.zero;
+
+  @override
+  int get frequency => Duration.microsecondsPerSecond;
+
+  @override
+  void start() => _startedAt ??= _async.elapsed;
+
+  @override
+  void stop() {
+    final startedAt = _startedAt;
+    if (startedAt == null) return;
+    _stopped += _async.elapsed - startedAt;
+    _startedAt = null;
+  }
+
+  @override
+  void reset() {
+    _stopped = Duration.zero;
+    if (_startedAt != null) _startedAt = _async.elapsed;
+  }
+
+  @override
+  Duration get elapsed =>
+      _stopped +
+      (_startedAt == null ? Duration.zero : _async.elapsed - _startedAt!);
+
+  @override
+  int get elapsedTicks => elapsed.inMicroseconds;
+
+  @override
+  int get elapsedMicroseconds => elapsed.inMicroseconds;
+
+  @override
+  int get elapsedMilliseconds => elapsed.inMilliseconds;
+
+  @override
+  bool get isRunning => _startedAt != null;
+}
+
+/// Runs [start] on fake time, 1 ms at a time, and returns its result.
+///
+/// Between steps it yields one real event-loop turn: an `await` on a future
+/// the SDK completes in the root zone, such as a finished subscription's
+/// `cancel()`, resumes only there.
+Future<T> runInFakeTime<T>(Future<T> Function(FakeAsync async) start) async {
+  final async = FakeAsync();
+  T? value;
+  Object? error;
+  var done = false;
+  async.run(
+    (async) => start(async).then(
+      (result) {
+        value = result;
+        done = true;
+      },
+      onError: (Object caught) {
+        error = caught;
+        done = true;
+      },
+    ),
+  );
+  while (!done) {
+    if (async.elapsed > const Duration(minutes: 10)) {
+      throw StateError('The run did not finish in 10 minutes of fake time');
+    }
+    async.elapse(const Duration(milliseconds: 1));
+    await Future<void>.delayed(Duration.zero);
+  }
+  if (error != null) throw error!;
+  return value as T;
 }
 
 const jfkReference =
@@ -2801,7 +2881,10 @@ void main() {
     }
   });
 
-  PublicSpeechValidationAdapter synthesisAdapter(SynthesisSpeechEngine engine) {
+  PublicSpeechValidationAdapter synthesisAdapter(
+    SynthesisSpeechEngine engine, {
+    Stopwatch Function() newStopwatch = Stopwatch.new,
+  }) {
     var created = 0;
     return PublicSpeechValidationAdapter(
       model: 'model.gguf',
@@ -2814,96 +2897,104 @@ void main() {
         engine.loaded.add('created:$created');
         return engine;
       },
+      newStopwatch: newStopwatch,
     );
   }
 
   test('the public adapter interrupts a synthesis in flight', () async {
-    final engine = SynthesisSpeechEngine();
-    final adapter = synthesisAdapter(engine);
-    await adapter.load();
-    expect(await adapter.executeDecodeCancel(), {
-      'frame_cap': speechDecodeCancelFrameCap,
-      'uncapped_frames': null,
-    });
-    expect(engine.requestedFrames, isEmpty);
-    await adapter.execute();
-    final unloaded = await adapter.executeTeardown(dispose: false);
-    expect(engine.teardowns, ['unload']);
-    expect(unloaded['in_flight'], isTrue);
-    expect(unloaded['frames_before_teardown'], 1);
-    expect(unloaded['completion_state'], 'cancelled');
-    expect(unloaded['final_events'], 0);
-    expect(
-      unloaded['teardown_latency_ms'],
-      lessThan(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
-    );
-    expect(unloaded['teardown_call_ms'], isA<double>());
-    expect((unloaded['after_teardown'] as Map)['predicate_passed'], isTrue);
-    expect(engine.loaded.where((path) => path.startsWith('created')), [
-      'created:1',
-    ]);
-    expect(engine.loaded.where((path) => path == 'model.gguf'), hasLength(2));
-
-    final disposed = await adapter.executeTeardown(dispose: true);
-    expect(engine.teardowns, ['unload', 'dispose']);
-    expect(engine.disposals, 1);
-    expect(disposed['completion_state'], 'cancelled');
-    expect(engine.loaded.where((path) => path.startsWith('created')), [
-      'created:1',
-      'created:2',
-    ]);
-
-    final runsBefore = engine.requestedFrames.length;
-    final decode = await adapter.executeDecodeCancel();
-    expect(engine.requestedFrames.sublist(runsBefore), List.filled(8, 12));
-    expect(engine.cancelledRuns.sublist(runsBefore), [
-      true,
-      true,
-      true,
-      false,
-      false,
-      true,
-      false,
-      false,
-    ]);
-    expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
-    final probes = decode['overhead_probes'] as List;
-    expect(probes, hasLength(speechDecodeCancelOverheadRuns));
-    for (final probe in probes) {
-      expect(probe['completion_state'], 'cancelled');
-      expect(probe['final_events'], 0);
+    await runInFakeTime((async) async {
+      final engine = SynthesisSpeechEngine();
+      final adapter = synthesisAdapter(
+        engine,
+        newStopwatch: () => FakeTimeStopwatch(async),
+      );
+      await adapter.load();
+      expect(await adapter.executeDecodeCancel(), {
+        'frame_cap': speechDecodeCancelFrameCap,
+        'uncapped_frames': null,
+      });
+      expect(engine.requestedFrames, isEmpty);
+      await adapter.execute();
+      final unloaded = await adapter.executeTeardown(dispose: false);
+      expect(engine.teardowns, ['unload']);
+      expect(unloaded['in_flight'], isTrue);
+      expect(unloaded['frames_before_teardown'], 1);
+      expect(unloaded['completion_state'], 'cancelled');
+      expect(unloaded['final_events'], 0);
       expect(
-        probe['cancel_latency_ms'],
+        unloaded['teardown_latency_ms'],
         lessThan(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
       );
-    }
-    final references = decode['references'] as List;
-    expect(references, hasLength(speechDecodeCancelReferenceRuns));
-    expect(
-      decode['references_before_cancel'],
-      speechDecodeCancelReferenceRuns ~/ 2,
-    );
-    for (final reference in references) {
-      expect(reference['frames'], speechDecodeCancelFrameCap);
-      expect(reference['truncated'], isTrue);
+      expect(unloaded['teardown_call_ms'], isA<double>());
+      expect((unloaded['after_teardown'] as Map)['predicate_passed'], isTrue);
+      expect(engine.loaded.where((path) => path.startsWith('created')), [
+        'created:1',
+      ]);
+      expect(engine.loaded.where((path) => path == 'model.gguf'), hasLength(2));
+
+      final disposed = await adapter.executeTeardown(dispose: true);
+      expect(engine.teardowns, ['unload', 'dispose']);
+      expect(engine.disposals, 1);
+      expect(disposed['completion_state'], 'cancelled');
+      expect(engine.loaded.where((path) => path.startsWith('created')), [
+        'created:1',
+        'created:2',
+      ]);
+
+      final runsBefore = engine.requestedFrames.length;
+      final decode = await adapter.executeDecodeCancel();
+      expect(engine.requestedFrames.sublist(runsBefore), List.filled(8, 12));
+      expect(engine.cancelledRuns.sublist(runsBefore), [
+        true,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+      ]);
+      expect(decode['uncapped_frames'], SynthesisSpeechEngine.naturalFrames);
+      final probes = decode['overhead_probes'] as List;
+      expect(probes, hasLength(speechDecodeCancelOverheadRuns));
+      for (final probe in probes) {
+        expect(probe['completion_state'], 'cancelled');
+        expect(probe['final_events'], 0);
+        expect(
+          probe['cancel_latency_ms'],
+          lessThan(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
+        );
+      }
+      final references = decode['references'] as List;
+      expect(references, hasLength(speechDecodeCancelReferenceRuns));
       expect(
-        reference['decode_ms'],
-        greaterThanOrEqualTo(SynthesisSpeechEngine.decodeDelay.inMilliseconds),
+        decode['references_before_cancel'],
+        speechDecodeCancelReferenceRuns ~/ 2,
       );
-    }
-    final shortestBefore = references
-        .take(speechDecodeCancelReferenceRuns ~/ 2)
-        .map((reference) => reference['decode_ms'] as double)
-        .reduce(math.min);
-    expect(
-      decode['cancel_after_decode_start_ms'],
-      greaterThanOrEqualTo(shortestBefore * speechDecodeCancelLeadFraction),
-    );
-    expect(decode['frames_before_cancel'], speechDecodeCancelFrameCap);
-    expect(decode['cancel_in_flight'], isTrue);
-    expect(decode['completion_state'], 'cancelled');
-    expect(decode['final_events'], 0);
-    await adapter.dispose();
+      for (final reference in references) {
+        expect(reference['frames'], speechDecodeCancelFrameCap);
+        expect(reference['truncated'], isTrue);
+        expect(
+          reference['decode_ms'],
+          greaterThanOrEqualTo(
+            SynthesisSpeechEngine.decodeDelay.inMilliseconds,
+          ),
+        );
+      }
+      final shortestBefore = references
+          .take(speechDecodeCancelReferenceRuns ~/ 2)
+          .map((reference) => reference['decode_ms'] as double)
+          .reduce(math.min);
+      expect(
+        decode['cancel_after_decode_start_ms'],
+        greaterThanOrEqualTo(shortestBefore * speechDecodeCancelLeadFraction),
+      );
+      expect(decode['frames_before_cancel'], speechDecodeCancelFrameCap);
+      expect(decode['cancel_in_flight'], isTrue);
+      expect(decode['completion_state'], 'cancelled');
+      expect(decode['final_events'], 0);
+      await adapter.dispose();
+    });
     final stt = edgeAdapter();
     await stt.load();
     await expectLater(
@@ -2928,11 +3019,24 @@ void main() {
       ),
       (SynthesisSpeechEngine(decodeHonoursCancel: false), ['decode_cancel']),
     ]) {
-      final result = await runSpeechValidation(
-        DelegatingSpeech(synthesisAdapter(engine)),
-        checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+      final result = await runInFakeTime(
+        (async) => runSpeechValidation(
+          DelegatingSpeech(
+            synthesisAdapter(
+              engine,
+              newStopwatch: () => FakeTimeStopwatch(async),
+            ),
+          ),
+          checkSynthesisInterrupts: true,
+          residentBytes: stableResidentBytes,
+        ),
       );
+      final decode = rowOf(result, 'decode_cancel');
+      expect(
+        decode['reference_decode_ms'],
+        SynthesisSpeechEngine.decodeDelay.inMilliseconds,
+      );
+      expect(decode['reference_spread_ms'], 0);
       for (final id in interruptIds) {
         expect(
           rowOf(result, id)['status'],
@@ -2942,7 +3046,7 @@ void main() {
       }
       expect(result['functional_pass'], failing.isEmpty, reason: '$failing');
     }
-  }, timeout: const Timeout.factor(3));
+  });
 
   PublicSpeechValidationAdapter limitAdapter(LimitedRecognitionEngine engine) {
     final wav = Uint8List.fromList(
