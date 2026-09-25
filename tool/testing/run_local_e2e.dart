@@ -337,7 +337,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           environment: {
             if (context.modelPath != null)
               'GGUF_STOP_MODEL': context.modelPath!,
-            'GGUF_STOP_BACKEND': context.backend,
+            if (context.backendProvided) 'GGUF_STOP_BACKEND': context.backend,
           },
           description: 'GGUF public stop-sequence regression',
         ),

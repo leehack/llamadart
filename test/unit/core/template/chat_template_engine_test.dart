@@ -238,6 +238,80 @@ void main() {
       }
     });
 
+    group('every handler renders one tool message per tool result', () {
+      // The comment keeps Gemma 4 on OpenAI-style tool messages.
+      const template =
+          '{#- OpenAI Chat Completions: #}{% for m in messages %}'
+          '<{{ m.role }}>{{ m.content }}</{{ m.role }}>{% endfor %}';
+      const history = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Paris?'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaToolCallContent(
+              id: 'call_0',
+              name: 'get_weather',
+              arguments: {'city': 'Paris'},
+              rawJson: '{"city":"Paris"}',
+            ),
+            LlamaToolCallContent(
+              id: 'call_1',
+              name: 'get_time',
+              arguments: {'city': 'Paris'},
+              rawJson: '{"city":"Paris"}',
+            ),
+          ],
+        ),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: [
+            LlamaToolResultContent(
+              id: 'call_0',
+              name: 'get_weather',
+              result: 'RESULT_ONE',
+            ),
+            LlamaToolResultContent(
+              id: 'call_1',
+              name: 'get_time',
+              result: {'value': 'RESULT_TWO'},
+            ),
+          ],
+        ),
+      ];
+
+      for (final format in ChatFormat.values) {
+        test('$format', () {
+          final handler = ChatTemplateEngine.handlerFor(format);
+          final prompts = {
+            'render': handler
+                .render(
+                  templateSource: template,
+                  messages: history,
+                  metadata: const {},
+                )
+                .prompt,
+            'renderWithMultimodalContent': handler
+                .renderWithMultimodalContent(
+                  templateSource: template,
+                  messages: history,
+                  metadata: const {},
+                )
+                .prompt,
+          };
+          for (final MapEntry(key: path, value: prompt) in prompts.entries) {
+            expect(
+              prompt,
+              matches(
+                '<tool>[^<]*RESULT_ONE[^<]*</tool>'
+                '<tool>[^<]*RESULT_TWO[^<]*</tool>',
+              ),
+              reason: path,
+            );
+          }
+        });
+      }
+    });
+
     test(
       'preserves GLM-OCR image markers through render-context serialization',
       () {

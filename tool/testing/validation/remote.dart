@@ -254,6 +254,16 @@ class RemoteProviderFailure implements Exception {
   };
 }
 
+/// An assessment step failure whose [message] is redacted, so the controller
+/// records it as the run's `error`.
+class ValidationAssessmentFailure implements Exception {
+  const ValidationAssessmentFailure(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 Map<String, dynamic> _safeFailure(Object error, String operation) => {
   'operation': operation,
   'error_type': error.runtimeType.toString(),
@@ -677,12 +687,21 @@ class RemoteController {
               (providerMatrix?['outcomeSummary'] == 'SUCCESS')
         : remote['test_exit_code'] == 0;
     var assertions = false;
+    final previousFailure = state.remove('assessment_error');
+    if (previousFailure != null && state['error'] == previousFailure) {
+      state['error'] = null;
+    }
     if (state['collection'] == 'COMPLETE' && assess != null) {
       try {
         assertions = await assess!(
           plan,
           Directory(p.join(root.path, plan.runId)),
         );
+      } on ValidationAssessmentFailure catch (failure) {
+        state['assessment'] = 'INCOMPLETE';
+        if (state['error'] == null) {
+          state['error'] = state['assessment_error'] = failure.message;
+        }
       } catch (_) {
         state['assessment'] = 'INCOMPLETE';
       }

@@ -152,9 +152,17 @@ class LlamaChatMessage {
 
   /// Serializes the message to JSON.
   ///
-  /// This implementation follows OpenAI's Chat Completions format while
-  /// supporting extensions like `reasoning_content` for reasoning models
-  /// (e.g. DeepSeek R1).
+  /// Messages follow OpenAI's Chat Completions format, with extensions like
+  /// `reasoning_content` for reasoning models (e.g. DeepSeek R1), except a
+  /// message with several [LlamaToolResultContent] parts.
+  ///
+  /// A message with one tool result becomes an OpenAI-style `tool` message
+  /// with top-level `tool_call_id`, `name` and `content`. With several
+  /// results, `content` is a list of one such `tool_call_id`/`name`/`content`
+  /// map per result, in order. That shape is not valid Chat Completions input
+  /// (llama-server rejects it), so send one `tool` message per result to an
+  /// OpenAI-compatible endpoint. Chat templates already receive one `tool`
+  /// message per result.
   Map<String, dynamic> toJson() {
     final partsList = parts;
     final json = <String, dynamic>{'role': role.name};
@@ -177,13 +185,15 @@ class LlamaChatMessage {
 
     // 3. Extract Tool Results (Tool)
     final toolResults = partsList.whereType<LlamaToolResultContent>().toList();
+    if (toolResults.length == 1) {
+      json['role'] = 'tool';
+      json.addAll(_toolResultJson(toolResults.single));
+      // Tool messages are usually flat in OpenAI format
+      return json;
+    }
     if (toolResults.isNotEmpty) {
       json['role'] = 'tool';
-      final res = toolResults.first;
-      json['tool_call_id'] = res.id;
-      json['name'] = res.name;
-      json['content'] = res.result;
-      // Tool messages are usually flat in OpenAI format
+      json['content'] = toolResults.map(_toolResultJson).toList();
       return json;
     }
 
@@ -219,6 +229,13 @@ class LlamaChatMessage {
 
     return json;
   }
+
+  static Map<String, dynamic> _toolResultJson(LlamaToolResultContent result) =>
+      {
+        'tool_call_id': result.id,
+        'name': result.name,
+        'content': result.result,
+      };
 
   /// Serializes the message to JSON, always keeping content as a list of parts.
   ///

@@ -10,6 +10,7 @@ import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../template_internal_metadata.dart';
+import '../template_render_context.dart';
 import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
 
@@ -45,15 +46,19 @@ class GptOssHandler extends ChatTemplateHandler {
     List<ToolDefinition>? tools,
     bool enableThinking = true,
   }) {
-    final renderedMessages = messages.map((m) {
-      final json = m.toJson();
-      final reasoning = json['reasoning_content'];
-      final toolCalls = json['tool_calls'];
-      if (reasoning is String && toolCalls is List && toolCalls.isNotEmpty) {
-        json['thinking'] = reasoning;
-      }
-      return json;
-    }).toList();
+    final renderedMessages = TemplateRenderContext.splitToolResults(messages)
+        .map((m) {
+          final json = m.toJson();
+          final reasoning = json['reasoning_content'];
+          final toolCalls = json['tool_calls'];
+          if (reasoning is String &&
+              toolCalls is List &&
+              toolCalls.isNotEmpty) {
+            json['thinking'] = reasoning;
+          }
+          return json;
+        })
+        .toList();
 
     final template = Template(templateSource);
     final prompt = renderTemplate(
