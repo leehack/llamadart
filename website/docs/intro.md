@@ -40,19 +40,17 @@ macOS, Linux, Windows and the web, behind one Dart API.
 - `ChatSession`: stateful chat wrapper over `LlamaEngine`.
 - `LlamaBackend`: platform backend abstraction used by the engine.
 
-## Read by workflow
+## Where to go next
 
-- First setup: [Install llamadart](./getting-started/installation)
-- First inference: [Quickstart](./getting-started/quickstart)
-- Multi-turn chat: [Your first chat session](./getting-started/first-chat-session)
-- Backend choice: [Choosing llama.cpp or LiteRT-LM](./guides/backend-selection)
-- Embedding pipelines: [Embeddings](./guides/embeddings)
-- Function calling: [Tool calling](./guides/tool-calling)
-- Template diagnostics: [Chat templates and output parsing](./guides/chat-template-and-parsing)
-- Template internals: [Template engine internals](./guides/template-engine-internals)
-- LoRA runtime workflows: [LoRA adapters](./guides/lora-adapters)
-- Performance work: [Performance tuning](./guides/performance-tuning)
-- Backend benchmark results: [Backend benchmarks](./guides/backend-benchmarks)
-- Platform/backend planning: [Platform and backend support matrix](./platforms/support-matrix)
-- Upgrade planning: [Upgrade checklist](./migration/upgrade-checklist)
-- Maintainer operations: [Maintainer overview](./maintainers/docs-site)
+- **New to llamadart:** [Install it](./getting-started/installation), then
+  run the [Quickstart](./getting-started/quickstart).
+- **Building a Flutter app:** follow the
+  [Flutter chat app tutorial](./tutorials/flutter-chat-app).
+- **Choosing a model:** [Finding models](./getting-started/finding-models) and
+  [Model families](./getting-started/model-families).
+- **Answering from your own documents:** the
+  [RAG tutorial](./tutorials/rag).
+- **Shipping:** the [support matrix](./platforms/support-matrix),
+  [performance tuning](./guides/performance-tuning) and
+  [troubleshooting](./troubleshooting/common-issues).
+- **Upgrading:** the [upgrade checklist](./migration/upgrade-checklist).

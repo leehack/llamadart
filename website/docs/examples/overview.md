@@ -1,31 +1,43 @@
 ---
-title: Examples Overview
+title: Examples overview
 sidebar_label: Overview
-description: The example apps in the llamadart repository, from a console app to a Flutter chat app, a CLI, a server and a coding agent.
+description: The example apps in the llamadart repository, from Dart console apps to a Flutter chat app, a decision-model game, a CLI, a server, a coding agent and a LoRA training notebook.
 ---
 
-The repository ships multiple examples for different integration styles.
+The repository ships runnable examples under `example/`, one per integration
+style.
 
 ## Example catalog
 
-- [Basic App](./basic-app): minimal Dart console usage.
-- [Chat App](./chat-app): Flutter UI with settings and streaming.
-- [Laya Tetris](./laya-tetris): Flutter game played by a decision model.
-- [llamadart CLI](./llamadart-cli): llama.cpp-style command-line workflow.
-- [llamadart Server](./llamadart-server): OpenAI-compatible local HTTP server.
-- [TUI Coding Agent](./tui-coding-agent): nocterm-based coding assistant flow.
+- [Basic app](./basic-app): Dart console apps for chat, embeddings, SQLite
+  vector retrieval and decision models.
+- [Chat app](./chat-app): Flutter chat app with a model library, runtime
+  controls, multimodal input and speech.
+- [Laya Tetris](./laya-tetris): Flutter game played in real time by a
+  decision model.
+- [llama.cpp-Style CLI](./llamadart-cli): terminal chat with llama.cpp-style
+  arguments and parity tooling.
+- [OpenAI-compatible server](./llamadart-server): OpenAI-style HTTP API over
+  an on-device model.
+- [TUI coding agent](./tui-coding-agent): `nocterm` terminal coding agent with
+  four tools.
+- [LoRA Training Notebook](https://github.com/leehack/llamadart/blob/main/example/training_notebook/lora_training.ipynb):
+  a Jupyter notebook that fine-tunes a LoRA adapter for Qwen2.5 0.5B Instruct
+  with Hugging Face `peft` and converts it to GGUF for
+  [LoRA adapters](../guides/lora-adapters).
 
 ## Which one should I start with?
 
-- Learn API surface first: start with Basic App.
-- Learn local embedding flows quickly: use Basic App embedding CLI.
-- Learn local embedding + vector database retrieval: use Basic App SQLite vector CLI.
-- Learn decision models: use Basic App decision CLI.
-- Build a product UI: start with Chat App.
-- Run decision models in a real-time app: start with Laya Tetris.
-- Need terminal workflow parity: start with llamadart CLI.
-- Need HTTP integration for tools/agents: start with llamadart Server.
-- Need an interactive coding-agent terminal UI: start with TUI Coding Agent.
+- Learn the API surface: Basic App.
+- Try embeddings: Basic App embedding CLI.
+- Build retrieval with a vector database: Basic App SQLite vector CLI.
+- Learn decision models: Basic App decision CLI.
+- Build a product UI: Chat App.
+- Run decision models in a real-time app: Laya Tetris.
+- Keep a llama.cpp terminal workflow: llama.cpp-Style CLI.
+- Serve tools and agents over HTTP: OpenAI-Compatible Server.
+- Build an interactive coding agent in the terminal: TUI Coding Agent.
+- Train your own adapter: LoRA Training Notebook.
 
 ## Global example requirements
 
@@ -34,5 +46,5 @@ The repository ships multiple examples for different integration styles.
 - Flutter Apple example builds that use SwiftPM companion packages require
   deployment targets of iOS `16.4` or macOS `14.0` or newer
 - Internet on first run (runtime bundle resolution)
-- The Chat App keeps the default all-runtime native-assets configuration
+- The Chat App enables both native runtime families, llama.cpp and LiteRT-LM,
   because it demonstrates GGUF and `.litertlm` models.

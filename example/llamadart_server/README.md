@@ -5,6 +5,7 @@ This example runs a local API server in Dart using
 
 It exposes OpenAI-compatible endpoints:
 
+- `GET /healthz`
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /v1/embeddings`

@@ -1,9 +1,11 @@
 ---
-title: Linux Prerequisites
+title: Linux prerequisites
 description: The system libraries each Linux backend module needs, such as OpenMP, Vulkan and OpenBLAS, with package names and a link check.
 ---
 
-Linux runtime requirements depend on selected backend modules.
+Each llama.cpp backend module the app bundles needs its own system libraries on
+Linux. Install them on every machine that runs the app. Choosing modules:
+[Native runtime configuration](./native-build-hooks#choose-llamacpp-backend-modules).
 
 ## Dependency mapping
 
@@ -17,7 +19,7 @@ Linux runtime requirements depend on selected backend modules.
   `libggml-cuda.so` links `libcudart.so.12` and `libcublas.so.12`, and
   llamadart does not ship them on Linux. Without them the CUDA module fails to
   load and llama.cpp runs on CPU. A GPU-ready cloud image can ship the driver
-  alone: the GCE `ubuntu-accelerator-2404-amd64-with-nvidia-580` image does.
+  without them.
 - `hip`: ROCm runtime libs (for example `libhipblas.so.2`).
 
 ## Package examples
@@ -41,8 +43,8 @@ Arch Linux:
 sudo pacman -S --needed libgomp vulkan-icd-loader vulkan-tools openblas
 ```
 
-Minimal cloud and container images can omit `libgomp1`; the stock GCE Ubuntu
-24.04 accelerator image does.
+Minimal cloud and container images, such as the stock GCE Ubuntu 24.04
+accelerator image, may lack `libgomp1`.
 
 ## Quick link check
 
@@ -52,5 +54,4 @@ for f in .dart_tool/lib/libggml-*.so; do
 done
 ```
 
-For containerized checks, see repository scripts under `docker/validation` and
-`scripts/check_native_link_deps.sh`.
+Any `not found` line names a missing system library for that module.

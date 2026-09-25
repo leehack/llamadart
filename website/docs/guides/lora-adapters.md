@@ -97,10 +97,10 @@ every adapter from the start of generation, so an aLoRA adapter used this way
 would change output without any error — the failure is silent and looks like a
 badly behaved LoRA.
 
-Rather than guess, `engine.setLora` (backend `setLoraAdapter`) inspects the adapter after loading it and
-rejects an aLoRA adapter with `LlamaUnsupportedException`:
+`engine.setLora` inspects each adapter after loading it and throws
+`LlamaUnsupportedException` for an aLoRA adapter:
 
-```
+```text
 The adapter at <path> is an aLoRA adapter (N invocation token(s)). llamadart
 applies LoRA adapters from the start of generation, but an aLoRA adapter must
 activate only after its invocation sequence appears in the prompt, so applying
@@ -112,13 +112,8 @@ Native LoRA support should not be read as aLoRA support. Invocation-aware
 activation, prompt-cache safety, and multiple-aLoRA behavior are not yet
 implemented.
 
-Custom native runtime overrides must also export both
-`llama_adapter_get_alora_n_invocation_tokens` and
-`llama_adapter_get_alora_invocation_tokens`. If that metadata inspection ABI is
-missing, partial, or incompatible, llamadart fails closed with
-`LlamaUnsupportedException` and asks you to use a runtime artifact matching the
-package bindings or another ABI-compatible build. It does not activate an
-adapter whose type cannot be checked safely.
+Custom native runtimes must export the aLoRA metadata functions; see
+[Native Build Hooks](../platforms/native-build-hooks).
 
 ## Lifecycle notes
 

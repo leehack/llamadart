@@ -2,11 +2,12 @@
 
 This document covers the major breaking upgrade paths.
 
-## Next release: model download/cache defaults
+## `0.8.9` -> `0.8.10`: model download/cache defaults
 
 No source migration is required for existing calls: `DefaultModelDownloadManager`
-constructors remain source-compatible, and the new mobile-specific directory
-arguments on `DefaultModelDownloadManager.auto(...)` are optional.
+constructors remain source-compatible, and the mobile-specific directory
+arguments added to `DefaultModelDownloadManager.auto(...)` in `0.8.10` are
+optional.
 
 There are two intentional runtime default changes to be aware of:
 
