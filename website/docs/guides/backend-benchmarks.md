@@ -1,10 +1,11 @@
 ---
-title: Backend Benchmarks
-description: Measured llama.cpp/GGUF and LiteRT-LM results for Gemma 4 on Android, macOS, and web.
+title: Backend benchmarks
+description: Measured llama.cpp/GGUF and LiteRT-LM results for Gemma 4 on Android, macOS and web, llama.cpp speculative decoding results, and the scripts that reproduce them.
 ---
 
 This page records app-level benchmark results for choosing between
-`llama.cpp` / GGUF and LiteRT-LM / `.litertlm` in `llamadart`.
+`llama.cpp` / GGUF and LiteRT-LM / `.litertlm` in `llamadart`. Scripts that
+reproduce them are under [Reproducing](#reproducing).
 
 These are deployment benchmarks, not pure kernel benchmarks. The artifacts are
 different runtime formats:
@@ -96,11 +97,8 @@ Conclusion: draftless n-gram speculation can be faster in llamadart when the
 prompt has reusable repeated context and the n-gram knobs match the workload.
 For natural short prompts or code prompts without a matching recent history,
 the draftless n-gram strategies can produce no drafts, so the extra speculative
-loop work is slower than baseline. For draft-model and `ngram-cache`
-strategies, use `draftTokenMax` as the per-step draft cap. For `ngram-mod`, use
-`ngramTokenMax` when set, otherwise `draftTokenMax` or the llama.cpp default.
-For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, tune the effective
-draft length with `ngramSizeM` to match upstream's n-gram draft window.
+loop work is slower than baseline. Knob semantics per strategy are in
+[Speculative decoding](./performance-tuning#speculative-decoding).
 
 Remaining actionable work was split out instead of being folded into this
 benchmark documentation. [llamadart-native#26](https://github.com/leehack/llamadart-native/issues/26)
@@ -125,6 +123,11 @@ server or browser cache path.
 
 ## Reproducing
 
+Run these from a repository checkout. Keep the model, prompt, `contextSize`,
+`maxTokens` and warmup/run counts identical across compared runs.
+
+### Backend comparison (Gemma 4)
+
 macOS:
 
 ```bash
@@ -145,6 +148,12 @@ RUNS=3 \
 TARGETS=llamadart,litert_lm \
 tool/web_fair_litert_vs_llamadart.sh
 ```
+
+Use `TARGETS=litert_lm` or `TARGETS=llamadart` to run one runtime. For local
+large GGUF files, use the included benchmark server or another range-capable
+server; simple single-threaded file servers can make large browser model loads
+fail before the runtime sees real GGUF bytes. `python -m http.server` does not
+provide the same browser isolation and large-file behavior.
 
 Pixel / Android:
 
@@ -171,17 +180,62 @@ DEVICE="$DEVICE" ADB="$ADB" TARGETS=litert_lm BACKEND=gpu \
   tool/litert_lm_pixel_benchmark.sh
 ```
 
-For web GGUF experiments, use `TARGETS=llamadart`. If serving local large GGUF
-files, use the included benchmark server or another range-capable server; simple
-single-threaded file servers can make large browser model loads fail before the
-runtime sees real GGUF bytes. `python -m http.server` is not a good substitute
-for this benchmark because it does not provide the same browser isolation and
-large-file behavior.
+### Native llama.cpp generation and prompt reuse
 
-Speculative n-gram parity:
+```bash
+# Check prompt-prefix reuse parity before relying on it in production
+dart run tool/testing/native_prompt_reuse_parity.dart \
+  --model path/to/model.gguf \
+  --prompt-file tool/testing/prompts/native_prompt_reuse_parity_prompts.txt \
+  --max-prompts 8 \
+  --runs 3 \
+  --fail-on-mismatch
+
+# Benchmark native generate/create TTFT and throughput
+dart run tool/testing/native_inference_benchmark.dart \
+  --model path/to/model.gguf \
+  --gpu-layers 0 \
+  --mode all \
+  --runs 3 \
+  --max-tokens 128
+```
+
+### llama.cpp speculative decoding
+
+```bash
+# Draftless n-gram strategies
+dart run tool/testing/llama_cpp_speculative_benchmark.dart \
+  --model path/to/model.gguf \
+  --cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram \
+  --backend cpu \
+  --gpu-layers 0 \
+  --max-tokens 128 \
+  --runs 3 \
+  --draft-token-max 1,2 \
+  --ngram-size-m 8,16 \
+  --warmups 1
+
+# Experimental DSpark against the same target baseline
+dart run tool/testing/llama_cpp_speculative_benchmark.dart \
+  --model path/to/target.gguf \
+  --draft-model path/to/dspark-draft.gguf \
+  --cases baseline,draft-dspark \
+  --backend metal \
+  --gpu-layers 99 \
+  --max-tokens 256 \
+  --runs 3 \
+  --warmups 1 \
+  --include-output
+```
+
+External draft-model cases need `--draft-model`. Bundled MTP omits it and
+loads the target's MTP tensors automatically. The `ngram-cache` case needs
+cache paths.
+
+### Speculative n-gram upstream parity
 
 Set `MODEL_PATH` to the cached GGUF location on your machine. Set `LLAMA_CLI`
-to the upstream `llama-cli` build you are comparing; the table above used a
+to the upstream `llama-cli` build you are comparing; the parity table above used a
 local b9571-line tool because the b9873 native release did not publish
 standalone CLI artifacts.
 
@@ -252,4 +306,39 @@ dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --spec-ngram-map-k-size-m 8 \
   --spec-ngram-map-k-min-hits 1 \
   -p "$PROMPT_REPEAT"
+```
+
+### LiteRT-LM runtime controls smoke test
+
+The smoke tool reads LiteRT-LM runtime controls from environment variables and
+reports the selected values in its JSON result:
+
+```bash
+LITERT_LM_ACTIVATION_DATA_TYPE=float16 \
+LITERT_LM_PREFILL_CHUNK_SIZE=128 \
+LITERT_LM_PARALLEL_FILE_SECTION_LOADING=false \
+LITERT_LM_DISPATCH_LIB_DIR=/path/to/dispatch \
+dart run tool/litert_lm_engine_smoke.dart /models/model.litertlm cpu
+```
+
+### Embedding throughput
+
+Compare sequential vs batch embedding throughput and sweep `max-seq`
+(`ModelParams.maxParallelSequences`) values:
+
+```bash
+# Single benchmark report
+dart run tool/testing/native_embedding_benchmark.dart \
+  --model path/to/model.gguf \
+  --cpu \
+  --mode both \
+  --input-count 8 \
+  --max-seq 8
+
+# max-seq sweep with CSV output
+dart run tool/testing/native_embedding_sweep.dart \
+  --model path/to/model.gguf \
+  --cpu \
+  --max-seq-values 1,2,4,8 \
+  --csv-out embedding_speedup.csv
 ```

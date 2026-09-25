@@ -71,6 +71,11 @@ Pass `--thinking` to opt into the higher-quality reasoning profile:
 - temperature `0.6`, top-K `20`, top-P `0.95`, min-P `0`
 - repeat penalty `1.0`, presence penalty `0`
 - thinking enabled
+- intended for systems with at least 48 GB of available unified memory or RAM
+
+The sampling values follow the published
+[Qwen3.6 model guidance](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF#best-practices)
+for non-thinking general use and thinking-mode precise coding.
 
 Thinking is opt-in because it is slower, uses substantially more context and
 memory, and can spend much of the output budget reasoning before it reaches a

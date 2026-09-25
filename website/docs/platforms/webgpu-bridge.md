@@ -1,391 +1,264 @@
 ---
 title: WebGPU bridge for browser inference
 sidebar_label: WebGPU bridge
-description: Check browser readiness, bridge asset loading, fallback behavior, and Flutter Web smoke-test paths for llamadart's experimental WebGPU runtime.
+description: Add the llamadart WebGPU bridge to a Flutter Web app, check browser readiness, size models for memory64, and read fallback and troubleshooting behavior.
 ---
 
-Web mode uses an external JavaScript bridge runtime consumed by `llamadart`.
-The bridge can run llama.cpp through WebGPU when the browser/device supports it,
-and can also route through a bridge CPU path when GPU offload is disabled or
-fallback is required.
+On the web, `llamadart` runs GGUF models through an external JavaScript
+bridge that wraps llama.cpp. The bridge uses WebGPU when the browser and device
+support it and runs on the WebAssembly CPU path otherwise. `.litertlm` models
+use `@litert-lm/core` instead; see
+[Support matrix](./support-matrix#features-by-runtime).
 
 :::warning Experimental web runtime
-The WebGPU bridge is still experimental. Treat WebGPU availability as a runtime
-capability, not a compile-time promise: a browser can load the app but still lack
-an adapter, required device features, memory headroom, or compatible bridge
-assets for a specific model/configuration.
+Treat WebGPU as a runtime capability, not a compile-time promise: a browser can
+load the app and still lack an adapter, device features, memory headroom or
+compatible bridge assets for a given model.
 :::
 
-## Ownership
+## Requirements
 
-- Bridge source and build: `leehack/llama-web-bridge`
-- Published bridge assets: `leehack/llama-web-bridge-assets`
-- This repository consumes those artifacts and wires them into Dart/Flutter
-  examples
+| Browser | Minimum | Notes |
+| --- | --- | --- |
+| Chrome, Chromium, Edge | 128 | Best-supported path. |
+| Firefox | 129 | WebGPU can depend on browser configuration. |
+| Safari | 17.4 | GPU generation can be unstable with older bridge assets. |
 
-## Quick readiness checklist
+- **Secure context**: serve from `https://`, `http://localhost` or
+  `http://127.0.0.1`. WebGPU is unavailable on other insecure origins.
+- **Cross-origin isolation**: send these headers from the app origin so the
+  bridge can run worker threads:
 
-A page is ready for WebGPU model loading only when all of these checks pass:
+  ```http
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  ```
 
-1. **Secure browser context**: serve from `https://`, `http://localhost`, or
-   `http://127.0.0.1`. WebGPU is not available to arbitrary insecure origins.
-2. **Bridge runtime loaded**: `window.__llamadartBridgeReady === true`,
-   `window.LlamaWebGpuBridge` exists, and
-   `window.__llamadartBridgeLoadError == null`. Custom app code that starts
-   before bridge bootstrap finishes can await
-   `window.__llamadartBridgeReadyPromise`.
-3. **WebGPU is exposed**: `navigator.gpu` exists and `requestAdapter()` returns
-   an adapter. If this fails, use CPU fallback or another browser/device.
-4. **Large-model threading is available**: for large single-file GGUF loads,
-   `window.crossOriginIsolated === true` so the bridge can create worker
-   threads and use the fetch-backed loader.
-5. **Model/config fits browser limits**: start with a small quantized GGUF and a
-   bounded context size before increasing model size, context, or GPU layers.
-6. **Runtime status matches expectations**: after load, the chat app runtime
-   panel or bridge metadata should show whether the active path is GPU, CPU,
-   wasm32/wasm64, CDN/local assets, and cache state.
+  `Cross-Origin-Embedder-Policy: credentialless` also works. Without isolation
+  (`window.crossOriginIsolated === false`) the bridge caps inference at one
+  thread and records `threads_capped_no_coi` in its runtime notes.
 
-You can paste this browser-console probe into a running app:
+A supported browser version does not guarantee that a GGUF loads with WebGPU
+offload; the GPU, driver, OS, flags and memory pressure all matter.
+
+## Add the bridge to your app
+
+`llamadart` does not inject the bridge script. The app must load it in
+`web/index.html` before the first model load. Serve the bridge assets from the
+app origin: the bridge core starts its worker threads from its own URL, and a
+cross-origin isolated page cannot start workers from a CDN URL.
+
+Download the assets into `web/webgpu_bridge/`, with `TAG` set to the tag in
+[Pinned bridge assets](#pinned-bridge-assets):
+
+```bash
+TAG=vX.Y.Z
+mkdir -p web/webgpu_bridge
+for f in llama_webgpu_bridge.js llama_webgpu_bridge_worker.js \
+         llama_webgpu_core.js llama_webgpu_core.wasm \
+         llama_webgpu_core_mem64.js llama_webgpu_core_mem64.wasm; do
+  curl -fL -o "web/webgpu_bridge/$f" \
+    "https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$TAG/$f"
+done
+```
+
+In a llamadart checkout, `scripts/fetch_webgpu_bridge_assets.sh` with
+`WEBGPU_BRIDGE_OUT_DIR=<app>/web/webgpu_bridge` does the same and verifies
+checksums.
+
+Then load the bridge in `web/index.html`, before `flutter_bootstrap.js`:
+
+```html
+<script type="module">
+  try {
+    const base = new URL('webgpu_bridge/', document.baseURI);
+    window.__llamadartBridgeCoreModuleUrlMem64 =
+      new URL('llama_webgpu_core_mem64.js', base).href;
+    window.__llamadartBridgeSpeechToTextSupported = true;
+    const mod = await import(new URL('llama_webgpu_bridge.js', base).href);
+    window.__llamadartBridgeAdaptiveSafariGpu =
+      mod.LlamaWebGpuBridge.supportsSafariAdaptiveGpu === true;
+    window.LlamaWebGpuBridge = mod.LlamaWebGpuBridge;
+  } catch (error) {
+    window.__llamadartBridgeLoadError = String(error);
+  }
+</script>
+<script src="flutter_bootstrap.js" async></script>
+```
+
+- `__llamadartBridgeCoreModuleUrlMem64` enables the memory64 core; without it
+  only the 32-bit core loads.
+- `__llamadartBridgeSpeechToTextSupported` opts into Qwen3-ASR; set it only
+  for official assets `v0.1.30` or newer.
+- `__llamadartBridgeAdaptiveSafariGpu` lets Safari keep GPU layers when the
+  assets support the adaptive probe.
+
+At model load, `llamadart` waits up to 12 seconds for
+`window.LlamaWebGpuBridge`, and stops early once `__llamadartBridgeLoadError`
+is set. If the bridge never appears, the load throws `LlamaUnsupportedException`
+whose message contains
+`Web bridge is unavailable. Ensure LlamaWebGpuBridge assets are loaded and reachable.`
+or `Web bridge is unavailable: <load error>`.
+
+`example/chat_app/web/index.html` is a fuller bootstrap: CDN-first loading with
+local fallback, Safari patching and a readiness promise; see
+[`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
+
+## Check readiness
+
+Paste this into the browser console of the running app:
 
 ```js
 const adapter = await navigator.gpu?.requestAdapter();
 console.table({
   secureContext: window.isSecureContext,
   crossOriginIsolated: window.crossOriginIsolated,
-  hasNavigatorGpu: !!navigator.gpu,
   hasAdapter: !!adapter,
   adapterFeatures: adapter ? [...adapter.features].join(', ') : '',
   bridgeLoaded: typeof window.LlamaWebGpuBridge === 'function',
-  bridgeReady: window.__llamadartBridgeReady,
   bridgeLoadError: window.__llamadartBridgeLoadError || '',
-  bridgeAssetSource: window.__llamadartBridgeAssetSource || '',
-  bridgeModuleUrl: window.__llamadartBridgeModuleUrl || '',
-  bridgeLocalVersion: window.__llamadartBridgeLocalVersion || '',
-  bridgeCoreModuleUrl: window.__llamadartBridgeCoreModuleUrl || '',
-  bridgeWorkerUrl: window.__llamadartBridgeWorkerUrl || '',
-  prefersMem64: window.__llamadartBridgePreferMemory64,
-  threadPoolSize: window.__llamadartBridgeThreadPoolSize,
+  mem64CoreUrl: window.__llamadartBridgeCoreModuleUrlMem64 || '',
   workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason || '',
 });
 ```
 
-## Browser support
+The page is ready when it is a secure context, `bridgeLoaded` is `true`,
+`bridgeLoadError` is empty, and an adapter exists. Without an adapter, load
+with `gpuLayers: 0` or switch browsers. Large single-file models also need
+`crossOriginIsolated`.
+For a first load, use a small quantized GGUF, `contextSize` of `2048` or less,
+and `gpuLayers: 0` to prove CPU loading before raising GPU offload.
 
-Current bundled bridge runtime targets:
+## Model size and memory64
 
-| Browser family | Target | Notes |
+The 32-bit core has a 4 GiB address space, which must also hold the KV cache
+and intermediate buffers. `llamadart` selects the 64-bit (memory64) core when
+`ModelParams.preferMemory64` is `true`, or when it is `null` and
+`ModelParams.modelBytesHint` is at least 2 GiB:
+
+```dart
+await engine.loadModelFromUrl(
+  modelUrl,
+  modelParams: const ModelParams(
+    modelBytesHint: 3043927168,
+    contextSize: 2048,
+  ),
+);
+```
+
+Pass the size up front: the retry from wasm32 to wasm64 after an out-of-memory
+failure is slower and best-effort. Both fields apply only on the web and need
+the memory64 core URL from
+[Add the bridge to your app](#add-the-bridge-to-your-app). Qwen3-TTS needs
+memory64.
+
+## What differs from native
+
+The feature-by-runtime table is in the
+[support matrix](./support-matrix#features-by-runtime). On WebGPU:
+
+- `grammar` applies from the first token, starting at `root`.
+  `GenerationParams.grammarLazy` and any other `grammarRoot` throw
+  `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call
+  grammar ([Tool calling](../guides/tool-calling#tool-choice-semantics)).
+- Thinking budgets, speculative decoding and runtime LoRA changes throw
+  `LlamaUnsupportedException`.
+- State files live in the bridge's WASMFS virtual filesystem and do not
+  survive a page reload.
+- Model and projector loads take URLs; local file paths are native-only.
+
+## Fallback behavior
+
+Before failing a load, the web backend retries with safer settings:
+
+- If GPU layers were requested, it retries on CPU (`nGpuLayers = 0`), first at
+  the same context size, then at smaller ones.
+- It steps the context size down through bounded candidates when the browser
+  cannot fit the requested context.
+- Qwen3.5-0.8B WebGPU loads are capped to a small GPU-layer count unless CPU is
+  requested.
+- With older Safari bridge assets, it forces CPU unless the assets support the
+  adaptive Safari GPU probe or `window.__llamadartAllowSafariWebGpu = true`.
+- It retries on the other core (wasm32 or wasm64) when bridge metadata points
+  to an interop or memory-pressure failure. A large wasm32 staging abort is
+  treated as memory pressure and retried on wasm64 when available.
+- Fetch-backed loading is off by default and never used for retries unless the
+  page opts in (see [Advanced overrides](#advanced-overrides)).
+- Qwen3-TTS on bridge assets `v0.1.34+` retries a failed worker WebGPU
+  synthesis once on the main thread with the cached model and projector bytes.
+  Eligible WebGPU errors and generic worker timeouts retry with CPU-only
+  settings; the exact `worker request timeout` and `worker init timeout`
+  errors keep the original GPU offload. Models already on CPU are not retried,
+  cancellation wins over recovery, and other errors propagate unchanged. The
+  retry is slower, does not loop, and does not make up for too little browser
+  memory; see the
+  [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/6ed621318648723d77c0373c2aedc7bfce2b93c7/docs/api.md#synthesizespeechoptions).
+
+When retries run out, the load throws an error with runtime hints such as
+`core`, `source`, `nThreads`, `nGpuLayers`, `cache` and bridge `notes`.
+
+## Troubleshooting map
+
+| Symptom | Likely class | Next check |
 | --- | --- | --- |
-| Chrome / Chromium / Edge | 128+ | Best-supported path. Use a secure context and current GPU drivers. |
-| Firefox | 129+ | WebGPU availability can depend on user/browser configuration. |
-| Safari | 17.4+ | This repo patches the bridge gate to allow Safari 17.4+, but GPU generation can be unstable with legacy bridge assets. |
+| `Web bridge is unavailable` | Bridge not loaded | [Add the bridge to your app](#add-the-bridge-to-your-app); check `window.__llamadartBridgeLoadError` and asset URLs. |
+| `navigator.gpu` missing or no adapter | Browser or device | Use a secure context, update browser and drivers, or run CPU or native. |
+| `thread constructor failed` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`. |
+| Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |
+| Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
+| Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |
+| GPU output unstable, CPU fine | Adapter, feature or driver | Check adapter features such as `shader-f16`; lower GPU layers. |
 
-Browser support still depends on device GPU, driver, OS, enterprise policy,
-flags, memory pressure, and model shape. A supported browser version does not
-guarantee that a particular GGUF will load with WebGPU offload.
+More cases: [Troubleshooting](../troubleshooting/common-issues#web).
 
-### Adapter/features/limits
+## Advanced overrides
 
-Useful checks when a model fails only on WebGPU:
+`llamadart` reads these globals when it creates the bridge. Set them before the
+first model load, for diagnosis or controlled deployments:
 
-- `navigator.gpu` missing: the browser/runtime does not expose WebGPU. Use CPU
-  fallback, enable the browser feature if appropriate, or switch browsers.
-- `requestAdapter()` returns `null`: the browser could not find a usable GPU
-  adapter for the current device/context.
-- `adapter.features` does not include an expected feature such as `shader-f16`:
-  try a different browser/device, reduce GPU offload, or run CPU. Some headless
-  Chromium setups on macOS need Metal ANGLE to expose the expected feature set.
-- Very low limits or memory errors: reduce `contextSize`, use a smaller
-  quantization/model, close other tabs, or use native runtime.
+| Global | Effect |
+| --- | --- |
+| `__llamadartBridgeCoreModuleUrl`, `__llamadartBridgeWasmUrl` | wasm32 core module and `.wasm` URLs; default next to the bridge module |
+| `__llamadartBridgeCoreModuleUrlMem64`, `__llamadartBridgeWasmUrlMem64` | memory64 core module and `.wasm` URLs |
+| `__llamadartBridgeWorkerUrl` | Dedicated worker module URL |
+| `__llamadartBridgePreferMemory64` | memory64 preference when neither `preferMemory64` nor `modelBytesHint` decides |
+| `__llamadartBridgeThreadPoolSize` | Thread-count hint; match the bridge build's pthread pool |
+| `__llamadartBridgeAllowAutoRemoteFetchBackend` | `true` enables fetch-backed loading and its retries, for an origin that serves valid GGUF byte ranges |
+| `__llamadartBridgeForceRemoteFetchBackend` | `true` forces fetch-backed loading from the first attempt; diagnostics only |
+| `__llamadartBridgeRemoteFetchChunkBytes` | Fetch-backed chunk size; default 4 MiB, clamped to 4 KiB to 16 MiB |
+| `__llamadartAllowSafariWebGpu` | `true` bypasses the Safari CPU safeguard |
 
-## Cross-origin isolation and headers
-
-Large single-file web model loading requires a cross-origin isolated page so the
-bridge can create worker threads and avoid excessive main-thread `ArrayBuffer`
-pressure.
-
-Required response headers on the app origin:
-
-```http
-Cross-Origin-Opener-Policy: same-origin
-Cross-Origin-Embedder-Policy: require-corp
-```
-
-`Cross-Origin-Embedder-Policy: credentialless` can also work for deployments
-that need credentialless subresource handling.
-
-Runtime check:
-
-```js
-window.crossOriginIsolated === true
-```
-
-Without cross-origin isolation, small streamed loads may still work, but the
-fetch-backed loader can fail with errors such as `thread constructor failed`,
-`error 138`, or notes like `threads_capped_no_coi`. The Dart backend normalizes
-these into an `UnsupportedError` that asks you to enable COOP/COEP or use a
-smaller/sharded model.
-
-### Hugging Face Static Spaces
-
-For `sdk: static`, set custom headers in Space README frontmatter:
-
-```yaml
-custom_headers:
-  cross-origin-embedder-policy: require-corp
-  cross-origin-opener-policy: same-origin
-  cross-origin-resource-policy: cross-origin
-```
-
-Header keys and values must be lowercase in Spaces config. The chat app deploy
-workflow injects these headers automatically for the hosted demo.
-
-## Runtime load order
-
-`example/chat_app/web/index.html` uses local-first loading on localhost for
-development validation, and CDN-first loading for normal hosted deployments:
-
-1. On localhost: local asset first, then CDN fallback.
-2. On hosted deployments: CDN asset first, then local fallback.
+## Pinned bridge assets
 
 The example currently pins bridge assets to `v0.1.51`, with local vendored assets
 identified as `v0.1.51-local-v0.5.0`.
 
-Fetch pinned local assets with:
-
-```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.51 ./scripts/fetch_webgpu_bridge_assets.sh
-```
-
-To verify the loaded runtime in a browser console, inspect:
-
-```js
-if (window.__llamadartBridgeReadyPromise != null) {
-  await window.__llamadartBridgeReadyPromise;
-}
-
-window.__llamadartBridgeReady;       // true after bridge bootstrap succeeds
-window.__llamadartBridgeLoadError;   // string/null bootstrap failure detail
-window.__llamadartBridgeAssetSource;   // "cdn", "local", or "mock"
-window.__llamadartBridgeModuleUrl;     // actual bridge module URL
-window.__llamadartBridgeCoreModuleUrl; // wasm32 JS core module URL
-window.__llamadartBridgeCoreModuleUrlMem64; // optional wasm64 JS core module URL
-window.__llamadartBridgeWorkerUrl;     // dedicated worker module, if available
-window.__llamadartBridgeSpeechToTextSupported; // validated Qwen3-ASR opt-in
-```
-
-The readiness promise rejects if both CDN and local bridge loading fail, and the
-example bootstrap also rejects it after a bounded timeout. The chat app awaits
-this signal before browser Cache Storage prefetch, so an early **Download** tap
-cannot report success before the bridge exposes `prefetchModelToCache(...)`.
-
-## Compatibility and safeguards
-
-- Web backend remains experimental.
-- `v0.1.30+` bridge assets opt into typed Qwen3-ASR whole-file transcription.
-  The public Web contract accepts WAV bytes only and still requires a loaded
-  projector with a positive audio-capability probe. Direct and worker runtime
-  smokes validate complete transcripts and cooperative cancellation.
-- `v0.1.32+` bridge assets recover valid short Qwen3-ASR speech when the model
-  initially emits only its end token, while preserving an empty transcript for
-  silence.
-- `v0.1.33+` bridge assets expose versioned Qwen3-TTS capability discovery,
-  complete float32 PCM generation, byte-backed speaker references, progress,
-  and cancellation through direct and worker runtimes. The pinned roughly
-  1.48 GB pair requires memory64 in the browser.
-- `v0.1.34+` bridge assets retry a failed worker WebGPU TTS synthesis once in a
-  CPU main-thread runtime using the already cached model and projector. This
-  recovery is slower than healthy WebGPU synthesis and does not loop. Certain
-  worker timeouts instead preserve GPU offload on the main-thread retry; see
-  [TTS recovery limits](../guides/text-to-speech.md#known-limits).
-- Published release qualification covers CPU/WASM state persistence, multimodal
-  input, ASR, and TTS. It does not establish hardware WebGPU acceleration,
-  physical playback, intelligibility, or speaker-reference fidelity. wasm32 TTS
-  remains unsupported; use memory64.
-- `v0.1.39+` remains the compatibility floor for bridge asset capabilities.
-- `v0.1.47+` bridge assets include the decision API (apiVersion 1) that
-  [`DecisionEngine`](../guides/decision-models#web) needs; older assets report
-  decision models as unsupported.
 - The pinned `v0.1.51` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
   (`v0.5.0`, both built from upstream `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
   even though the bridge asset tag `v0.1.51` differs from the native runtime tag
   `v0.5.0`. Pinned artifact provenance: release `395938081`, tag commit
   `d3b857d79f569f4aa54f8c22743f1bdff1af56cd`, bridge source
   `6ed621318648723d77c0373c2aedc7bfce2b93c7`, manifest SHA-256
-  `8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`. The
-  bridge assets were qualified against native `v0.5.0`. The bridge assets
-  provision an explicit 1 MiB stack for both wasm32 and memory64, preventing
-  graph-parameter growth from overflowing Emscripten's 64 KiB default during
-  memory64 Qwen3-ASR context construction.
-- `v0.1.12+` bridge assets forward native-compatible `ModelParams` load
-  tuning fields, including multi-sequence slots, KV cache type, flash attention,
-  RoPE overrides, split mode, and main GPU.
-- `v0.1.13+` bridge assets keep control-token output available for parser
-  consumers while narrowing multimodal CPU fallback to recovery paths.
-- `v0.1.14+` bridge assets cap automatically selected WebAssembly threads to
-  the compiled pthread pool size, preventing BERT-style embedding models from
-  aborting on hosts with higher hardware concurrency than the bridge pool.
-- `v0.1.15+` bridge assets expose state persistence APIs consumed by
-  `LlamaEngine.stateSaveFile(...)` / `stateLoadFile(...)`. Web paths are bridge
-  WASMFS virtual paths and are not durable across page reloads. Durable browser
-  storage currently requires app-level export/import outside the Dart
-  `stateSaveFile` / `stateLoadFile` helpers.
-- The bridge applies `grammar` from the first token, starting at `root`, and
-  has no lazy grammar or triggers. WebGPU rejects `GenerationParams.grammarLazy`
-  and any other `grammarRoot`, and `ToolChoice.auto` skips a lazy tool-call
-  grammar; see [Tool calling](../guides/tool-calling#tool-choice-semantics).
-- CPU fallback is available through bridge runtime routing.
-- Safari compatibility guard and fallback behavior are integrated in this repo.
-- Legacy bridge assets may be forced to CPU in Safari when GPU layers are
-  requested.
+  `8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`.
 
-## Fallback behavior
-
-The web backend retries model loading with safer settings before surfacing a
-failure:
-
-- If GPU layers were requested, load attempts include CPU fallback
-  (`nGpuLayers = 0`) for the same and then smaller context sizes.
-- Context size can step down through bounded candidates when the requested
-  context is too large for the browser/runtime.
-- Qwen3.5-0.8B WebGPU loads are capped to a small GPU-layer count for stable
-  browser output unless CPU is explicitly requested.
-- Legacy Safari bridge assets force CPU fallback unless adaptive Safari GPU probe
-  support is present or `window.__llamadartAllowSafariWebGpu = true` is set.
-- wasm64/wasm32 retries can happen automatically when bridge metadata indicates
-  an interop or memory-pressure problem. Large wasm32 model-staging aborts,
-  including virtual-filesystem write aborts during remote model/projector
-  setup, are treated as memory pressure and retried with the wasm64 core when
-  available, using safe streamed loading by default.
-- Fetch-backed loading and recovery retries default to disabled. A controlled
-  origin that serves valid GGUF byte ranges can opt in explicitly with
-  `window.__llamadartBridgeAllowAutoRemoteFetchBackend = true`.
-- `window.__llamadartBridgeForceRemoteFetchBackend = true` forces fetch-backed
-  loading from the first attempt and is intended for controlled diagnostics.
-  Prefer the automatic opt-in for ordinary deployments.
-
-Fallback is not silent success for every unsupported condition. If the bridge
-cannot load, the browser blocks worker threads, or the model exceeds browser
-memory limits after retries, `llamadart` throws an actionable error with runtime
-hints such as `core`, `source`, `nThreads`, `nGpuLayers`, `cache`, and bridge
-`notes`.
-
-## Model and configuration guidance
-
-For first WebGPU validation, prefer:
-
-- Small GGUFs such as the chat app's Qwen3.5 0.8B preset.
-- Quantized files (`Q4_K_M` or similarly small variants) before larger models.
-- `contextSize` around `2048` or lower for the first smoke test.
-- `gpuLayers = 0` to prove bridge CPU loading, then increase or use `Auto`.
-- One tab and a fresh browser process when testing memory-sensitive loads.
-
-When a failure only appears after increasing model size or context, classify it
-as a model/configuration pressure issue first, not a bridge-load failure.
-
-### Large models and the 64-bit (mem64) core
-
-The default 32-bit core has a 4 GiB address-space limit, but large models also
-need room for the KV cache and intermediate buffers. The current automatic
-threshold opts into the 64-bit (wasm64/mem64) core when `modelBytesHint` is at
-or above about 2 GiB of model bytes. You can also select mem64 explicitly with
-`ModelParams`:
-
-```dart
-await engine.loadModelFromUrl(
-  modelUrl,
-  modelParams: const ModelParams(
-    preferMemory64: true, // force the mem64 core
-    // or leave null and pass modelBytesHint so the size heuristic decides:
-    // modelBytesHint: 3043927168,
-    contextSize: 2048,
-  ),
-);
-```
-
-`preferMemory64` defaults to `null`, which lets llamadart pick the mem64 core
-automatically from `modelBytesHint` when it is at/above the wasm32-safe ceiling
-(selection is size-driven, not based on a hardcoded model-name list). Passing
-the model size up front is preferable to relying on the post-out-of-memory
-wasm32→wasm64 retry, which is slower and best-effort. Both fields are
-web/WebGPU only and ignored on native backends.
-
-## Flutter Web demo and smoke path
-
-Run the production-style chat app locally:
+In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-cd example/chat_app
-flutter pub get
-flutter run -d chrome
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.51 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-For built web smoke paths that match how hosted assets are served from the repo
-root, use the local E2E runner:
-
-```bash
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
-
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smoke \
-  --model-url http://127.0.0.1:7358/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf \
-  --allow-any-response
-```
-
-The runner uses `scripts/build_chat_app_web.sh` to build Flutter web with the
-matching `--base-href` and package and validate the pinned bridge assets. It
-then serves the repo root through `tool/testing/serve_static_with_headers.py`
-and invokes the appropriate Playwright helper. The static server provides the
-COOP/COEP headers needed for large web model loads. When debugging the helper
-scripts directly, keep the `--base-href` value aligned with the URL path,
-otherwise Flutter and bridge assets are resolved from the wrong location.
-
-On macOS headless Chromium, use the smoke script's default `--browser-angle auto`
-or pass `--browser-angle metal`; without Metal ANGLE the adapter can lack
-`shader-f16` and llama.cpp may abort in `ggml-webgpu` even when CPU fallback is
-used for `gpuLayers = 0` runs.
-
-## Runtime overrides
-
-You can override bridge asset source/version before loader startup:
+The chat app bootstrap takes its CDN source from these globals:
 
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
   window.__llamadartBridgeAssetsTag = 'v0.1.51';
-  // Custom assets stay speech-disabled unless the host has validated them:
-  // window.__llamadartBridgeSpeechToTextSupported = true;
-  // Prefer local runtime even off localhost:
-  // window.__llamadartPreferLocalBridgeRuntime = true;
-  // Enable verbose bridge bootstrap console logs:
-  // window.__llamadartBridgeBootstrapVerbose = true;
-  // Optional runtime knobs:
-  // window.__llamadartBridgeEnableMem64 = false;
-  // Explicit opt-in for controlled range-capable GGUF origins:
-  // window.__llamadartBridgeAllowAutoRemoteFetchBackend = true;
-  // Force fetch-backed loading from the first attempt (diagnostics only):
-  // window.__llamadartBridgeForceRemoteFetchBackend = true;
-  // window.__llamadartBridgeRemoteFetchChunkBytes = 4 * 1024 * 1024;
-  // window.__llamadartBridgeThreadPoolSize = 2;
 </script>
 ```
 
-Use overrides only for diagnosis or controlled deployments. Keep production apps
-on a known bridge asset tag and verify the actual loaded module URL before
-reporting runtime behavior.
-
-## Troubleshooting map
-
-| Symptom | Likely class | Next check |
-| --- | --- | --- |
-| `window.LlamaWebGpuBridge` missing | Bridge asset load | Check `window.__llamadartBridgeLoadError`, CDN/local URLs, base href, and CORS. |
-| `navigator.gpu` missing or no adapter | Browser/device capability | Use secure context, update browser/drivers, or run CPU/native. |
-| `thread constructor failed` / `error 138` | Cross-origin isolation / worker threads | Add COOP/COEP headers and verify `window.crossOriginIsolated`. |
-| Memory/OOM/bad_alloc/abort during load | Model/config pressure | Reduce model size, quantization, context, threads, or GPU layers. |
-| Safari forces CPU | Safari safeguard | Use adaptive bridge assets or explicitly opt in with `__llamadartAllowSafariWebGpu` for testing. |
-| CDN works locally but not hosted | Deployment headers/path | Check base href, static asset paths, COOP/COEP headers, and cache/service worker state. |
-| GPU path unstable but CPU works | Adapter/feature/driver/model issue | Check adapter features/limits, especially `shader-f16`, and lower GPU layers. |
-
-## Contract reference
-
-Bridge contract details (global shape, required methods, compatibility targets):
-
-- [`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md)
+Pin a known bridge asset tag in production and check the loaded module URL
+before reporting runtime behavior. The bridge JavaScript contract, the chat
+app's bootstrap knobs and hosting headers for Hugging Face Spaces are in
+[`doc/webgpu_bridge.md`](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
+Which repository owns bridge changes:
+[Runtime ownership](../maintainers/runtime-ownership).

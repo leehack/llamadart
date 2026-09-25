@@ -19,10 +19,13 @@ description: Stream tokens with generate, create and ChatSession; use structured
 | `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as an OpenAI-compatible server, a one-shot completion, or an app that owns its transcript. |
 | `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to append user/assistant turns, apply the system prompt, and trim history as the context grows. |
 
-For beginner or one-shot instruction examples, prefer `engine.create(...)` so the
-model's chat template is applied without introducing session state. For real
-chat applications, prefer `ChatSession` unless your app already stores and sends
-the full message list itself.
+For one-shot instructions, prefer `engine.create(...)`: it applies the chat
+template without session state, and a follow-up turn sees only the messages you
+pass again. For chat apps, prefer `ChatSession` unless your app already stores
+the transcript. `session.addMessage(...)` restores history or inserts tool
+results, and `session.reset()` starts over. See
+[First Chat Session](../getting-started/first-chat-session) for a multi-turn
+example.
 
 ## Generation pipeline (visual)
 
@@ -171,8 +174,10 @@ final classification = await engine.createStructuredJson(
 );
 ```
 
-For live rendering, keep the returned stream, call `engine.create(...,
-responseFormat: output.responseFormat)`, and then finalize it with
+Without the helper, pass `responseFormat: {'type': 'json_object'}` or
+`{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}` to
+`engine.create(...)`. For live rendering, keep the stream returned by
+`engine.create(..., responseFormat: output.responseFormat)` and finalize it with
 `await stream.parseStructuredJson(output)`. Validation is a final-output step
 because partial stream chunks are often not valid JSON yet.
 
@@ -225,19 +230,3 @@ final count = await engine.getTokenCount('hello world');
 ```
 
 These helpers are useful for context budgeting and prompt diagnostics.
-
-## Stateless vs stateful chat
-
-`engine.create(...)` is stateless: it uses exactly the messages you pass for that
-request and does not remember the assistant response. If you want a follow-up
-turn to see prior context, append both the user message and assistant response to
-your own `messages` list before calling `engine.create(...)` again.
-
-`ChatSession.create(...)` is stateful: it adds the new user content to session
-history, streams through `engine.create(...)`, then stores the assistant message
-for later turns. Use `session.addMessage(...)` when you need to restore history or
-insert tool results manually, and `session.reset(...)` when a conversation should
-start over.
-
-See [First Chat Session](../getting-started/first-chat-session) for a minimal
-multi-turn example.

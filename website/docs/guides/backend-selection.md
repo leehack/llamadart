@@ -4,37 +4,32 @@ sidebar_label: llama.cpp or LiteRT-LM
 description: Decide when to use GGUF with llama.cpp or .litertlm bundles with LiteRT-LM in llamadart.
 ---
 
-`llamadart` can route two model families through the same high-level
-`LlamaEngine` APIs. Native targets can also use `ChatSession` for both formats:
-
-- **GGUF models** run through `llama.cpp`.
-- **`.litertlm` bundles** run through LiteRT-LM.
-
-LiteRT-LM web is currently narrower than native LiteRT-LM: it forwards
-single-turn text prompts to `@litert-lm/core` and does not yet preserve
-`ChatSession` history, system prompts, or tool declarations.
-
-The backend is selected from the model format when you use `LlamaBackend()`.
-Use GGUF when you want the broad `llama.cpp` ecosystem and feature surface. Use
-LiteRT-LM when you are deploying a LiteRT-LM model bundle, especially for
-Google AI Edge / Gemma mobile paths where the LiteRT runtime and delegates are
-the target.
-
-## Quick Decision Table
+## Quick answer
 
 | Choose this | Best fit | Tradeoffs |
 | --- | --- | --- |
 | `llama.cpp` / GGUF | Broad model catalog, many quantizations, embeddings, LoRA, state persistence, grammar constraints, multimodal, and low-level runtime tuning. | Mobile GPU performance depends heavily on the device, driver, model size, and backend. It does not use LiteRT-LM NPU delegates. |
 | LiteRT-LM / `.litertlm` | LiteRT-LM bundles, Gemma 4 LiteRT-LM variants, Android GPU/NPU delegate experiments, and app flows that only need text generation/chat. | Smaller model catalog and fewer exposed runtime features today. Unsupported llama.cpp-only options are rejected. |
 
-If both formats exist for the model you want, treat the choice as a deployment
-benchmark, not only a file-format preference. Measure the exact model artifact,
-device, prompt shape, and output length your app will ship.
+- Start with GGUF / llama.cpp if you need the broadest model support or
+  embeddings, dynamic LoRA adapters, grammar constraints, state persistence, or
+  multimodal projectors.
+- Start with LiteRT-LM if your model already ships as a `.litertlm` bundle and
+  your app mainly needs text generation or chat on mobile or web.
+- On desktop, GGUF / llama.cpp is usually the more complete production backend
+  unless your product specifically ships LiteRT-LM bundles.
+- On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
+  device support them. NPU is a LiteRT-LM deployment path, not a general
+  replacement for GGUF/Vulkan.
+- If both formats exist for your model, [measure](#measure-before-choosing)
+  before choosing.
+- Log `engine.getBackendName()` so support reports name the actual runtime.
 
-See [Backend Benchmarks](./backend-benchmarks) for measured Gemma 4 E2B results
-on Pixel 9 Pro, macOS, and web.
+## How routing works
 
-## Format Routing
+`LlamaBackend()` picks the runtime from the file extension: `.litertlm` runs on
+LiteRT-LM; `.gguf` and any other file run on llama.cpp. The `LlamaEngine` API
+is the same for both, including `ChatSession` on native.
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());
@@ -51,19 +46,23 @@ await engine.loadModel(
 );
 ```
 
-Formats are not interchangeable:
+`LiteRtLmBackendPreference.auto`, the default, picks GPU on Android, iOS,
+macOS and web, and CPU on other LiteRT-LM targets or when `gpuLayers` is `0`.
+`npu` is Android-only; LiteRT-LM web rejects it.
 
-- A GGUF file cannot run through LiteRT-LM.
-- A `.litertlm` bundle cannot run through llama.cpp.
-- The high-level Dart API can stay the same, but model-load and generation
-  parameters are validated against the selected backend.
+Formats are not interchangeable: a GGUF file cannot run through LiteRT-LM, and
+a `.litertlm` bundle cannot run through llama.cpp. Load and generation
+parameters are validated against the selected runtime. `llamadart` rejects
+unsupported options for `.litertlm` loads instead of ignoring them, so a GGUF
+tuning profile cannot appear to work while doing something different under
+LiteRT-LM.
 
 Use `ModelSource` / `loadModelSource(...)` for download and cache flows. Native
 targets cache remote GGUF and `.litertlm` sources before loading a local file.
 Web targets pass simple unauthenticated `.litertlm` URLs to the LiteRT-LM
 JavaScript runtime.
 
-## Capability Matrix
+## What each runtime supports
 
 | Capability | llama.cpp / GGUF | LiteRT-LM / `.litertlm` |
 | --- | --- | --- |
@@ -78,159 +77,37 @@ JavaScript runtime.
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
 | Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
-| Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, native LiteRT-LM runtime fields, and generation length/sampling fields that LiteRT-LM exposes |
 
-See [Platform & Backend Matrix](../platforms/support-matrix) for the current
-bundle keys, module availability, and selector names.
+Load-time controls differ by runtime:
 
-## Package Size Controls
+- GGUF / llama.cpp: `preferredBackend`, `gpuLayers`, `contextSize`,
+  `numberOfThreads` / `numberOfThreadsBatch`, `batchSize` / `microBatchSize`,
+  `splitMode` / `mainGpu`, and the LoRA and state-persistence APIs.
+- `.litertlm` / LiteRT-LM: `liteRtLmBackend` (`auto`, `cpu`, `gpu`, or
+  Android-native `npu`), `contextSize`, `chatTemplate`, `numberOfThreads`, one
+  default-scale text LoRA adapter through `ModelParams.loras`, and the native
+  `liteRtLm*` fields in
+  [LiteRT-LM runtime controls](../configuration/runtime-parameters#litert-lm-runtime-controls).
+  Generation honors `maxTokens`, `temp`, `topK`, `topP`, `seed`, and
+  `stopSequences` (enforced by `llamadart`); `speculativeDecoding` is native
+  only.
 
-Native apps include every available runtime family by default, so one build can
-load GGUF and `.litertlm` models where both runtimes are available. Unset or
-empty `llamadart_native_runtimes` also means all available runtimes. Use
-`llamadart_native_runtimes` when your app needs a different package-size /
-model-format tradeoff:
+Bundle keys, module availability and selector names are in
+[Native runtime configuration](../platforms/native-build-hooks).
 
-```yaml
-hooks:
-  user_defines:
-    llamadart:
-      llamadart_native_runtimes: [llama_cpp] # GGUF only
-```
+## LiteRT-LM on web
 
-or:
+LiteRT-LM web is narrower than native LiteRT-LM: it forwards single-turn text
+prompts to `@litert-lm/core` and does not yet preserve `ChatSession` history,
+system prompts, or tool declarations. It rejects the native-only `liteRtLm*`
+runtime fields because the browser API does not expose matching controls.
 
-```yaml
-hooks:
-  user_defines:
-    llamadart:
-      llamadart_native_runtimes: [litert_lm] # .litertlm only
-```
+## Measure before choosing
 
-`llamadart_native_backends` is a different switch: it filters llama.cpp module
-files such as Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp`
-runtime. It does not enable or disable LiteRT-LM.
-
-`llamadart_native_runtimes` can also be configured per OS (`ios`, `macos`,
-`android`, `linux`, `windows`) or per exact target (`android-arm64`,
-`linux-x64`, etc.); exact target keys override OS keys. Use `all` or `both` to
-include every available runtime family for a target.
-
-For Flutter iOS apps, installed companion packages choose the SwiftPM runtime
-families and win over this setting. Flutter macOS LiteRT-LM builds currently
-keep the core native-assets fallback while the hook path remains responsible
-for the complete runtime. For non-Flutter projects and non-Apple targets,
-`llamadart_native_runtimes` remains the selector.
-
-## Parameter Differences
-
-For GGUF / llama.cpp, common load-time controls include:
-
-- `preferredBackend`
-- `gpuLayers`
-- `contextSize`
-- `numberOfThreads` / `numberOfThreadsBatch`
-- `batchSize` / `microBatchSize`
-- `splitMode` / `mainGpu`
-- LoRA and state-persistence APIs
-
-For `.litertlm` / LiteRT-LM, use:
-
-- `liteRtLmBackend`: `auto`, `cpu`, `gpu`, or Android-native `npu`
-- `contextSize`
-- `chatTemplate`
-- `numberOfThreads`
-- one default-scale initial text LoRA adapter through `ModelParams.loras`
-- `liteRtLmActivationDataType`: native activation type override
-- `liteRtLmPrefillChunkSize`: CPU dynamic-model prefill chunk size
-- `liteRtLmParallelFileSectionLoading`: native `.litertlm` file-section
-  loading override
-- `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory
-- `liteRtLmCacheDir` / `liteRtLmMaxProgramCacheBytes`: native runtime cache
-  directory and opt-in GPU program cache size cap
-- `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
-- `GenerationParams.speculativeDecoding` on native LiteRT-LM only
-- `stopSequences`, enforced by `llamadart`
-
-`llamadart` rejects unsupported backend-specific options for `.litertlm` loads
-instead of silently ignoring them. This is intentional: it prevents a GGUF tuning
-profile from appearing to work while doing something different under LiteRT-LM.
-LiteRT-LM web rejects the native-only runtime fields because the browser
-`@litert-lm/core` API does not expose matching controls.
-
-## Native LiteRT-LM Runtime Controls
-
-These fields are all opt-in. Leave them `null` to preserve the pinned
-LiteRT-LM runtime defaults.
-
-| Candidate native knob | Dart field | Decision |
-| --- | --- | --- |
-| `litert_lm_engine_settings_set_activation_data_type` | `ModelParams.liteRtLmActivationDataType` | Exposed as `float32`, `float16`, `int16`, or `int8`; benchmark before changing it for a target model. |
-| `litert_lm_engine_settings_set_prefill_chunk_size` | `ModelParams.liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
-| `litert_lm_engine_settings_set_parallel_file_section_loading` | `ModelParams.liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; `null` keeps the native default parallel loading behavior. |
-| `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `ModelParams.liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need to point LiteRT-LM at a packaged LiteRT dispatch directory; non-empty strings only. |
-| `litert_lm_engine_settings_set_cache_dir` | `ModelParams.liteRtLmCacheDir` | Exposed as the runtime cache directory; non-empty strings only. See [LiteRT-LM Cache Directory](#litert-lm-cache-directory). |
-| none | `ModelParams.liteRtLmMaxProgramCacheBytes` | `llamadart`-side size cap for GPU program cache files; non-negative values only. |
-
-The real-model smoke path can exercise these options:
-
-```bash
-LITERT_LM_ACTIVATION_DATA_TYPE=float16 \
-LITERT_LM_PREFILL_CHUNK_SIZE=128 \
-LITERT_LM_PARALLEL_FILE_SECTION_LOADING=false \
-LITERT_LM_DISPATCH_LIB_DIR=/path/to/dispatch \
-dart run tool/litert_lm_engine_smoke.dart /models/model.litertlm cpu
-```
-
-## LiteRT-LM Cache Directory
-
-The native LiteRT-LM runtime writes cache files such as
-`*_mldrift_program_cache.bin` (GPU programs), `*_mldrift_weight_cache.bin`
-(GPU weights), and `*.xnnpack_cache`. `llamadart` only chooses the directory:
-
-| `liteRtLmCacheDir` | macOS, Android | Other native platforms |
-| --- | --- | --- |
-| `null` (default) | `llamadart_litert_lm` under `Directory.systemTemp` | no directory is passed; the runtime caches next to the model file |
-| a path | that directory, created when missing | that directory, created when missing |
-
-Known runtime issue
-([#552](https://github.com/leehack/llamadart/issues/552)): with
-Qwen3.5-0.8B on the macOS GPU backend, every engine create appended about
-0.5 GB to `*_mldrift_program_cache.bin`, later creates logged
-`Deserialization failed: DATA_LOSS`, and deleting the file did not slow engine
-create. `llamadart` can create an engine more than once per loaded model:
-lazily on the first generation or tokenization after each context create, and
-again when speculative decoding, vision, audio, or image-count settings
-change.
-
-`liteRtLmMaxProgramCacheBytes` is an opt-in mitigation. `null` (default) never
-deletes anything. Otherwise, before each engine create, `llamadart` deletes
-regular files directly inside the effective cache directory whose name ends
-with `_mldrift_program_cache.bin` and whose size exceeds the cap. Weight and
-XNNPACK caches, subdirectories, and symbolic links are left alone. Each
-deletion logs a warning with the file size, and prune failures log a warning
-without failing the load. Both are `warn` records of the Dart logger: they
-reach the `LlamaEngine.configureLogging` handler (or `print` without one) when
-the Dart level is `debug`, `info`, or `warn` both in the backend worker and on
-the main isolate (see [Logging](../configuration/logging)); the default `none`
-suppresses them, and the native log level does not gate them. When no
-directory is passed to the
-runtime (default on platforms other than macOS and Android), nothing is
-pruned; set `liteRtLmCacheDir` to enable pruning there.
-
-```dart
-const params = ModelParams(
-  liteRtLmCacheDir: '/data/app/litert-cache',
-  liteRtLmMaxProgramCacheBytes: 1024 * 1024 * 1024,
-);
-```
-
-LiteRT-LM web rejects both fields.
-
-## Benchmarking Fairly
-
-For app-level benchmarks, compare the deployment choices users would actually
-run. That means:
+If both formats exist for your model, treat the choice as a deployment
+benchmark: measure the exact model artifact, device, prompt shape, and output
+length your app will ship. The files may not be identical quantizations or
+runtime graphs, so this compares deployments, not kernels.
 
 - Keep the device awake, unlocked, foregrounded, and out of battery saver.
 - Record thermal status and cooling state before and after the run.
@@ -241,37 +118,15 @@ run. That means:
 - Record early EOS separately from requested output length.
 - Compare wall-clock latency and backend timing counters; they answer different
   questions.
+- Treat `GenerationParams.speculativeDecoding` as a per-model, per-device
+  tuning knob, not a guaranteed speedup; the `LlamaEngine` default is off.
 
-When comparing GGUF and LiteRT-LM artifacts, remember that the model files may
-not be identical quantizations or runtime graphs. A GGUF-vs-LiteRT-LM benchmark
-is usually the right comparison for product deployment, but it is not a pure
-kernel benchmark.
+[Backend benchmarks](./backend-benchmarks) has measured Gemma 4 E2B results on
+Pixel 9 Pro, macOS, and web, including speculative decoding.
 
-## Practical Recommendations
+## Reduce app size
 
-- Start with GGUF / llama.cpp if you need the broadest model support or advanced
-  features such as embeddings, dynamic LoRA adapters, grammar constraints, state
-  persistence, or multimodal projector flows.
-- Start with LiteRT-LM if your target model is already distributed as a
-  `.litertlm` bundle and your app mainly needs text generation/chat on mobile or
-  web.
-- For Gemma 4 E2B on Pixel 9 Pro, the measured LiteRT-LM GPU path was about 9x
-  faster than the measured llama.cpp Vulkan GGUF path.
-- For Gemma 4 E2B on an Apple M4 Max Mac, measured llama.cpp Metal and
-  LiteRT-LM Metal throughput were close; choose based on model format and
-  feature needs.
-- For web Gemma 4 E2B, both LiteRT-LM WebGPU and GGUF WebGPU loaded and
-  generated through the chat app. LiteRT-LM was about 2x faster on the measured
-  web decode counter and loaded much faster, while GGUF kept the broader
-  llama.cpp feature surface.
-- Treat `GenerationParams.speculativeDecoding` as a per-model/per-device tuning
-  knob, not a guaranteed speedup. For the measured Gemma 4 E2B LiteRT-LM runs,
-  speculative decoding was slower on Pixel 9 Pro GPU and Apple M4 Max Metal, so
-  the `LlamaEngine` default remains off.
-- On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
-  device support them. NPU is not a general replacement for GGUF/Vulkan; it is a
-  LiteRT-LM deployment path.
-- On desktop, GGUF / llama.cpp is usually the more complete production backend
-  unless your product specifically ships LiteRT-LM bundles.
-- Keep the backend choice visible in logs or diagnostics with
-  `engine.getBackendName()` so support reports include the actual runtime path.
+Native apps include every available runtime family by default, so one build can
+load both GGUF and `.litertlm` models. To ship only one, set
+`llamadart_native_runtimes` as described in
+[Native Build Hooks](../platforms/native-build-hooks).

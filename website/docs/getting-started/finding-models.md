@@ -56,23 +56,35 @@ When downloading a model, check its file size. Your target device needs enough *
 | **Old Laptop/Desktop** | 3B - 8B parameters | 2.5GB - 6GB (e.g., Llama-3.1-8B Q4_K_M) |
 | **Modern Mac (M1/M2/M3)** | 8B - 32B parameters | 6GB - 20GB+ |
 
+## Starting points
+
+These files are the ones the examples in this repository use. Sizes are for the
+file as downloaded. Paste a path into `ModelSource.parse(...)`.
+
+| Task | Model file | Size |
+| --- | --- | --- |
+| Smoke test only, not for judging quality | `hf://unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q2_K.gguf` | about 88 MB |
+| Chat, tool calling, vision | `hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf`, projector `mmproj-F16.gguf` in the same repo | about 533 MB plus 205 MB |
+| Tool-calling demos | `hf://unsloth/functiongemma-270m-it-GGUF/functiongemma-270m-it-Q4_K_M.gguf` | about 253 MB |
+| Image and audio input | `hf://unsloth/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_S.gguf`, projector `mmproj-F16.gguf` in the same repo | about 3.0 GB plus 1.0 GB |
+| LiteRT-LM | `hf://litert-community/gemma-4-E2B-it-litert-lm/gemma-4-E2B-it.litertlm` | about 2.6 GB |
+| Embeddings | `hf://ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf` | about 334 MB |
+
 ## Downloading a model
 
 Once you find a model on Hugging Face:
+
 1. Go to the **Files and versions** tab of the model repository.
 2. Look for a file ending in `.gguf` (e.g., `model-q4_k_m.gguf`) or
    `.litertlm`.
-3. Use the exact repository path with
-   `ModelSource.parse('hf://owner/repo/path/to/model.gguf')`, or click the
-   download icon and place the model file in your application's assets or a
-   reachable file path for `engine.loadModel()`. Use the real file extension in
-   the `hf://` path so `LlamaBackend()` can route to the correct runtime.
+3. Pass the exact repository path to
+   `ModelSource.parse('hf://owner/repo/path/to/model.gguf')` and load it with
+   `engine.loadModelSource(...)`. Keep the real file extension in the path so
+   `LlamaBackend()` can route to the correct runtime.
 
-For package-managed downloads, `hf://` defaults to the repository's `main`
-revision. Use `hf://owner/repo@tag/model.gguf` for simple branch/tag names, or
-`hf://owner/repo/model.gguf?revision=refs/pr/12` when the revision contains `/`.
-Private or gated repositories need `ModelLoadOptions(bearerToken: hfToken)` (or
-custom headers); do not put tokens in source strings. Multimodal repos often
-ship a separate `mmproj` GGUF file—treat it as a separate asset/source. Sharded
-GGUF repos are not expanded automatically by `llamadart`; choose a single-file
-GGUF unless you are handling shards yourself.
+`engine.loadModel()` takes a filesystem path. To ship a model as a Flutter
+asset, copy the asset to a file first (for example into the app support
+directory) and pass that path; `llamadart` has no asset loader.
+
+Revisions, private repositories, `mmproj` projector files and sharded GGUFs:
+see [Download and cache models](../guides/model-downloads).

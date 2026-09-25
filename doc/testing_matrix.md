@@ -273,8 +273,8 @@ dart run tool/testing/run_local_e2e.dart \
 
 # The Web scenario validates both file selection and Chromium's fake
 # microphone path with the same WAV fixture. The selected-file result is exact;
-# the fake microphone must contain the full expected transcript because its
-# artificial input can loop at the capture boundary.
+# the fake microphone only needs a non-empty transcript because its artificial
+# input can loop at the capture boundary.
 
 dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
   --model-path /path/to/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf \
@@ -342,6 +342,28 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-warmups 1 \
   --benchmark-gpu-layers 0
 ```
+
+Speech evidence outside the `validation-speech-stt` pack
+(`doc/cross_platform_validation.md`):
+
+- Chat-app microphone transcription on CPU has passed on a physical Pixel and
+  in the iOS Simulator ([#328](https://github.com/leehack/llamadart/pull/328)),
+  and CPU file transcription plus chat-app microphone transcription have passed
+  on a physical iPad ([#462](https://github.com/leehack/llamadart/pull/462)).
+  No Qwen3-ASR run covers Android x64, Linux arm64, Windows arm64 or x64, macOS
+  x86_64, or a physical iPhone, nor the Vulkan, CUDA, HIP, OpenCL, or BLAS
+  backends.
+- `web-speech-to-text-smoke` verifies both browser file selection and Chromium
+  fake-device microphone capture with the same WAV fixture. File selection
+  returns the exact expected transcript; the microphone assertion requires only
+  a non-empty transcript without raw `<asr_text>` markers, because Chromium
+  loops its artificial input at the capture boundary. Real microphone hardware
+  and browser/device combinations remain deployment-specific checks.
+- **Ask with voice**: the experimental llama.cpp GGUF voice path has
+  engine-level Metal evidence on macOS, while current packaged microphone UI
+  evidence is LiteRT-LM on macOS. Android, iOS, and Windows still require
+  real-model/device evidence through the `chat-app-voice-question-smoke` row
+  before making a platform validation claim.
 
 `native-embedding-benchmark` compares sequential embedding calls against
 `embedBatch(...)` at a fixed `--max-seq`, while `native-embedding-sweep` runs the

@@ -1,5 +1,5 @@
 ---
-title: Template Engine Internals
+title: Template engine internals
 description: How the Dart port of the llama.cpp chat template, render and parse pipeline is structured, and how to debug template routing.
 ---
 
@@ -81,6 +81,26 @@ sequenceDiagram
 - On completion, final parse produces stable tool-call structures and finish
   reason semantics.
 - PEG-backed parse paths are used when parser payloads are present.
+
+## Tool-call parsing
+
+Qwen XML tool calls are validated against the tools supplied to `engine.create`.
+Schema-declared strings such as `"123"` retain their type. Unknown functions,
+unknown or duplicate parameters, missing required values, and invalid value
+types remain response content instead of producing callable tool deltas.
+Tool calls are emitted after final validation; malformed output is preserved
+through the existing rollback behavior. Direct schema-free template parsing
+retains its legacy behavior, so pass tool definitions when validating calls.
+
+Without a tool-call grammar, as with `ToolChoice.auto` on WebGPU, Qwen2.5 can
+copy the double braces its GGUF template prints in the tool prompt:
+`<tool_call>{{"name": "get_weather", "arguments": {"city": "Paris"}}}</tool_call>`,
+sometimes with fewer or more closing braces. The Hermes/Qwen parser extracts
+the call. When only closing braces and whitespace follow the call before
+`</tool_call>`, the envelope leaves no content, as for the single-brace form;
+otherwise its text stays in content. This deliberately differs from upstream
+llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
+call.
 
 ## `dinja` integration
 

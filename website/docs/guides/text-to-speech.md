@@ -130,10 +130,8 @@ responsible for its own files, byte buffers, permissions, and disclosures.
 ## Cancellation, concurrency, and buffering
 
 Call `task.cancel()` to request cooperative cancellation. Cancelling only the
-event-stream subscription does not cancel synthesis. On native llama.cpp with
-llamadart-native v0.4.1-1 or later, a cancel stops a Qwen3-TTS audio decode in
-progress at its next chunk boundary. Older runtimes finish the native step in
-progress first, which can include the whole audio decode.
+event-stream subscription does not cancel synthesis. On native llama.cpp, a
+cancel stops a Qwen3-TTS audio decode in progress at its next chunk boundary.
 `LlamaEngine.unloadModel()` and `dispose()` cancel an active synthesis the same
 way, and its task reports `cancelled`.
 
@@ -146,27 +144,7 @@ frames have been generated. `supportsIncrementalAudio` and
 `supportsOutputBackpressure` are therefore false. Progress events are useful
 for status and cancellation, but are not playable audio chunks.
 
-## Chat example
-
-The cross-platform catalog contains a checksum-pinned **Qwen3-TTS 1.7B Base**
-model/projector pair. Selecting it switches the composer into a dedicated TTS
-mode:
-
-- type the utterance instead of sending a chat message;
-- optionally choose a language and select or record a speaker reference;
-- cancel while frames are being generated;
-- automatically play the completed output, replay it, or save it as a WAV file.
-
-Native microphone references are capped at 30 seconds. Web users can select an
-existing audio file, which is read as encoded bytes. The example reads the
-completed WAV into memory for synthesis and best-effort deletes the temporary
-recording. Selecting an existing audio file remains available as a separate
-option.
-
-The TTS model is not presented as a general chat assistant, and the example
-does not automatically read arbitrary assistant responses. Automatic
-read-aloud would require a separate model-lifecycle policy, especially on
-memory-constrained mobile devices.
+The [chat app](../examples/chat-app) has a Qwen3-TTS mode built on this API.
 
 ## Known limits
 
@@ -178,14 +156,9 @@ memory-constrained mobile devices.
 - Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
   pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
   memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.51`, which retains the `v0.1.34` worker
-  recovery. Eligible WebGPU errors and generic worker timeouts retry once on
-  the main thread using cached model/projector bytes with CPU-only settings.
-  The exact `worker request timeout` and `worker init timeout` errors preserve
-  the original GPU offload settings on that retry. Already CPU-only models are
-  not retried, and cancellation takes precedence over recovery. Other errors
-  propagate unchanged. See the [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/6ed621318648723d77c0373c2aedc7bfce2b93c7/docs/api.md#synthesizespeechoptions).
-  Recovery is slower and does not replace sufficient browser memory or
-  validation of queue-watchdog timeouts on the target browser/device.
+- The chat example pins `v0.1.51`, whose bridge retries a synthesis once on
+  the main thread, more slowly, after eligible WebGPU errors and worker
+  timeouts; see
+  [WebGPU bridge fallback behavior](../platforms/webgpu-bridge#fallback-behavior).
 - Web speaker references are selected-file bytes only; microphone speaker
   recording remains a native chat-example feature.
