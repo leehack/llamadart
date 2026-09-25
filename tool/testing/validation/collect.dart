@@ -124,10 +124,10 @@ Future<bool> assessCollectedRun(
     timeout: const Duration(minutes: 3),
   );
   if (resolved.code != 0) {
-    throw StateError(
-      'dart pub get in packages/llamadart_validation exited ${resolved.code}',
-    );
+    throw ValidationAssessmentFailure(_stepFailure('dart pub get', resolved));
   }
+  final resultFile = File(p.join(output.path, 'results.json'));
+  if (resultFile.existsSync()) resultFile.deleteSync();
   final generated = await execute(
     Platform.resolvedExecutable,
     [
@@ -139,9 +139,21 @@ Future<bool> assessCollectedRun(
     directory: package,
     timeout: const Duration(minutes: 3),
   );
-  final resultFile = File(p.join(output.path, 'results.json'));
-  if (!resultFile.existsSync()) return false;
-  final result = jsonDecode(resultFile.readAsStringSync()) as Map;
+  final result = resultFile.existsSync()
+      ? jsonDecode(resultFile.readAsStringSync()) as Map
+      : null;
+  final unqualified =
+      generated.code == 1 &&
+      (result?['summary'] as Map?)?['qualified'] == false;
+  if (result == null || (generated.code != 0 && !unqualified)) {
+    throw ValidationAssessmentFailure(
+      _stepFailure(
+        'dart run bin/report.dart',
+        generated,
+        detail: result == null ? 'wrote no results.json' : null,
+      ),
+    );
+  }
   final manifest = result['manifest'] as Map;
   final bundle =
       jsonDecode(
@@ -219,4 +231,38 @@ String? boundConsoleNativeLog(String console, String journal) {
     return null;
   }
   return native.map((line) => '$line\n').join();
+}
+
+String _stepFailure(String step, CommandResult result, {String? detail}) {
+  final tail = _redactedTail(result.error);
+  return [
+    'Validation report step `$step` in packages/llamadart_validation exited '
+        '${result.code}',
+    ?detail,
+    if (tail.isNotEmpty) 'stderr tail:\n$tail',
+  ].join('; ');
+}
+
+/// The last 20 non-blank lines of [text], at most 2000 characters, with URLs,
+/// absolute paths and credential-like values replaced.
+String _redactedTail(String text) {
+  final lines = const LineSplitter()
+      .convert(text)
+      .where((line) => line.trim().isNotEmpty)
+      .toList();
+  var tail = lines.skip(lines.length > 20 ? lines.length - 20 : 0).join('\n');
+  if (tail.length > 2000) tail = tail.substring(tail.length - 2000);
+  return tail
+      .replaceAll(RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://\S+'), '<url>')
+      .replaceAllMapped(
+        RegExp(
+          r'\b(bearer|token|password|secret|key)(\s*[=:]\s*|\s+)\S+',
+          caseSensitive: false,
+        ),
+        (match) => '${match[1]}${match[2]}<redacted>',
+      )
+      .replaceAll(
+        RegExp(r'''(?:[A-Za-z]:)?[\\/](?:[^\s\\/:"']+[\\/])+[^\s\\/:"']*'''),
+        '<path>',
+      );
 }

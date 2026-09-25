@@ -272,7 +272,8 @@
   ([#587](https://github.com/leehack/llamadart/issues/587)).
 - Remote validation runs resolve `packages/llamadart_validation` before
   building the report, instead of reporting `FAILED` with a null error on a
-  fresh checkout
+  fresh checkout. A failed report step is now the run's error, with its exit
+  code and a redacted stderr tail
   ([#688](https://github.com/leehack/llamadart/issues/688)).
 
 ## 0.8.24
