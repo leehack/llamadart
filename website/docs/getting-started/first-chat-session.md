@@ -1,5 +1,7 @@
 ---
-title: First Chat Session
+title: Your first chat session
+sidebar_label: First chat session
+description: "Build a multi-turn chat with ChatSession: automatic history, streaming replies, resetting state, and when to call engine.create directly."
 ---
 
 `ChatSession` wraps `LlamaEngine` for multi-turn conversations with automatic

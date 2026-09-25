@@ -1,5 +1,6 @@
 ---
 title: Template Engine Internals
+description: How the Dart port of the llama.cpp chat template, render and parse pipeline is structured, and how to debug template routing.
 ---
 
 `llamadart` reimplements the `llama.cpp` chat-template/render/parse stack in

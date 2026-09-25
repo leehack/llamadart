@@ -1,5 +1,6 @@
 ---
 title: Logging
+description: Control Dart-side and native log levels separately, configure logging in worker isolates, and quiet noisy runtime output.
 ---
 
 `llamadart` supports separate log controls for Dart-side and native runtime

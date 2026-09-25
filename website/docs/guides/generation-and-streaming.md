@@ -1,5 +1,7 @@
 ---
-title: Generation and Streaming
+title: Text generation and streaming
+sidebar_label: Generation and streaming
+description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, cancellation and tokenization helpers.
 ---
 
 `llamadart` exposes three generation entry points:
@@ -204,9 +206,15 @@ input: that stream ends without generating. A stream listened to after the
 call is not affected. How quickly a running generation stops depends on the
 backend.
 
-On native llama.cpp, a generation started while a cancelled one is still
-stopping waits for it to stop, then runs. Starting one while another is
-running and not cancelled throws `LlamaStateException`.
+Cancelling a stream's subscription also sends the cancel to its backend at
+once, even before the first token.
+
+On native llama.cpp, a cancel during text prompt evaluation takes effect at the
+next prompt micro-batch (`ModelParams.microBatchSize` tokens), or at the next
+batch (`ModelParams.batchSize` tokens) with speculative decoding. A generation
+started while a cancelled one is still stopping waits for it to stop, then
+runs. Starting one while another is running and not cancelled throws
+`LlamaStateException`.
 
 ## Tokenization helpers
 
