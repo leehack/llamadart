@@ -1,0 +1,29 @@
+name: laya_command_bar_example
+description: A command bar that reshapes itself as a Laya decision model reads what you type, through llamadart's DecisionEngine.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.7
+  flutter: ^3.38.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  llamadart:
+    path: ../..
+  args: ^2.4.2
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]

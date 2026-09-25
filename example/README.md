@@ -142,6 +142,29 @@ flutter run -d macos
 Web needs the WebGPU bridge assets and cross-origin isolation headers; see
 [`laya_tetris/README.md`](laya_tetris/README.md#web).
 
+### 7. Laya Command Bar (`laya_command_bar/`)
+A Flutter app (macOS, iOS, Android) with one text field that reshapes as you
+type, read by one of three switchable readers:
+
+- A Laya `choice` question through `DecisionEngine`, EmbeddingGemma nearest
+  labelled examples, or a small LLM's next-token scores through
+  `LlamaEngine.scoreNextToken`
+- At most one read running, with the latest text read next
+- A confidence gate that changes the bar only when the reader is sure, and
+  keeps it steady between keystrokes
+- Reminder, event, message, calculation, search, task, question and settings
+  controls, filled by rule-based parsers
+- `bin/bench.dart` to score a reader and its gate with local model files
+
+**Best for:** Interactive UI driven by a decision model or a small LLM
+
+**Run:**
+```bash
+cd laya_command_bar
+flutter pub get
+flutter run -d macos
+```
+
 ## Testing
 
 - `basic_app` (Dart console):
@@ -186,12 +209,19 @@ cd laya_tetris
 flutter test
 ```
 
-Note: `chat_app` and `laya_tetris` use Flutter libraries (`dart:ui`), so
+- `laya_command_bar` (Flutter command bar):
+
+```bash
+cd laya_command_bar
+flutter test
+```
+
+Note: `chat_app`, `laya_tetris` and `laya_command_bar` use Flutter libraries (`dart:ui`), so
 `dart test` is not the correct runner for those examples.
 
 ## Quick Start
 
-1. **Choose an example**: Basic (console), Chat (Flutter), API Server (Relic), llama.cpp-style CLI clone (Dart), TUI coding agent (Dart + nocterm), or Laya Tetris (Flutter decision model)
+1. **Choose an example**: Basic (console), Chat (Flutter), API Server (Relic), llama.cpp-style CLI clone (Dart), TUI coding agent (Dart + nocterm), Laya Tetris (Flutter decision-model game), or Laya Command Bar (Flutter command bar)
 2. **Download a model** (see each example's README)
 3. **Run the example**: Follow instructions in each subdirectory
 
@@ -244,6 +274,11 @@ example/
 │   ├── lib/            # Game, players, and Laya loading
 │   ├── pubspec.yaml    # Dependencies
 │   └── README.md       # Instructions
+├── laya_command_bar/   # Flutter command bar
+│   ├── bin/            # Intent and gate benchmark
+│   ├── lib/            # Bar, gate, runner, readers, and parsers
+│   ├── pubspec.yaml    # Dependencies
+│   └── README.md       # Instructions
 └── chat_app/           # Flutter application
     ├── lib/            # Flutter code
     ├── android/        # Android config
@@ -261,7 +296,7 @@ example/
 ## Requirements
 
 - Dart SDK 3.10.7 or higher
-- For chat_app and laya_tetris: Flutter 3.38.0 or higher
+- For chat_app, laya_tetris and laya_command_bar: Flutter 3.38.0 or higher
 - Flutter Apple builds require deployment targets of iOS 16.4 or newer and
   macOS 14.0 or newer
 - Internet connection (for first run - downloads selected native runtime
