@@ -3567,6 +3567,61 @@ void main() {
         );
       }
 
+      test('keeps the message of credential-free projector URLs', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        for (final message in const [
+          'Failed to fetch multimodal projector: 404 Not Found',
+          'Projector expects 512 tokens, got 256 at v2.',
+        ]) {
+          bridge.setProperty(
+            'loadMultimodalProjector'.toJS,
+            ((String path) => _rejectPromise(_jsError(message))).toJS,
+          );
+          for (final url in const [
+            'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/'
+                'mmproj.gguf?v=1',
+            'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/'
+                'mmproj.gguf?revision=main',
+            'https://acct.blob.core.windows.net/heads/mmproj.gguf'
+                '?sv=2022-11-02&ss=b&sig=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789',
+            'https://example.com/mmproj.gguf?download',
+            'https://example.com:8080/mmproj.gguf?port=8080',
+            'http://127.0.0.1:9/mmproj.gguf?t=1',
+            'https://[::1]:8443/mmproj.gguf?x=2',
+            '/heads/mmproj.gguf?token=t',
+          ]) {
+            await expectLater(
+              backend.multimodalContextCreate(1, url),
+              throwsA(
+                isA<LlamaModelException>().having(
+                  (error) => error.details,
+                  'details',
+                  message,
+                ),
+              ),
+              reason: '$url: $message',
+            );
+          }
+        }
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) => window.fetch(path.toJS)).toJS,
+        );
+        await expectLater(
+          backend.multimodalContextCreate(1, 'http://127.0.0.1:9/m.gguf?t=1'),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.details,
+              'details',
+              'Failed to fetch',
+            ),
+          ),
+        );
+      });
+
       test('keeps credentials of a real Chrome fetch error out', () async {
         bridge.setProperty(
           'loadMultimodalProjector'.toJS,

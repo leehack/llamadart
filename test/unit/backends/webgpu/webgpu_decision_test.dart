@@ -18,6 +18,35 @@ import '../../../support/fake_webgpu_decision_bridge.dart';
 @JS('Error')
 external JSObject _jsError(String message);
 
+const _credentialFreeUrls = <(String, String)>[
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin?v=1',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin?v=2',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin'
+        '?revision=main',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://acct.blob.core.windows.net/heads/h.bin?sv=2022-11-02&ss=b'
+        '&srt=o&sp=r&se=2030-01-01T00%3A00%3A00Z'
+        '&sig=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789%3D',
+    'https://acct.blob.core.windows.net/heads/h.bin',
+  ),
+  ('https://example.com/h.bin?download', 'https://example.com/h.bin'),
+  (
+    'https://example.com:8080/h.bin?port=8080',
+    'https://example.com:8080/h.bin',
+  ),
+  ('http://127.0.0.1:9/h.bin?t=1', 'http://127.0.0.1:9/h.bin'),
+  ('https://[::1]:8443/h.bin?x=1', 'https://[::1]:8443/h.bin'),
+];
+
 void main() {
   late FakeDecisionBridge fake;
   late WebGpuDecisionHeads heads;
@@ -553,17 +582,86 @@ void main() {
         await expectLater(
           heads.load(fake.bridge, 'https://u:model@example.com/h.bin?k=loaded'),
           throwsTyped<LlamaStateException>(
-            'No  . Call loadModelFromUrl first.',
+            'No  loaded. Call loadModelFromUrl first.',
           ),
         );
       },
     );
 
+    test('keeps messages and hosts of credential-free source URLs', () async {
+      for (final (url, display) in <(String, String)>[
+        ..._credentialFreeUrls,
+        ('/heads/h.bin?token=t', pageUrl('/heads/h.bin')),
+      ]) {
+        for (final message in const [
+          'Failed to fetch decision head: 404 Not Found',
+          'Decision head "max_len" 512 exceeds 256 tokens.',
+          'Decision head v2 has 1 output, not 2.',
+        ]) {
+          fake.loadError = message;
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having((error) => error.message, 'message', message)
+                  .having((error) => error.details, 'details', display),
+            ),
+            reason: '$url: $message',
+          );
+        }
+      }
+      fake.loadError = null;
+      fake.bridge.setProperty(
+        'loadDecisionHead'.toJS,
+        ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+      );
+      for (final (url, display, details) in <(String, String, String)>[
+        ('http://127.0.0.1:9/h.bin?t=1', 'http://127.0.0.1:9/h.bin', 'Failed'),
+        ('https://[::1]:8443/h.bin?x=1', 'https://[::1]:8443/h.bin', 'Failed'),
+        ('/heads/h.bin?token=t', pageUrl('/heads/h.bin'), 'HTTP 404'),
+      ]) {
+        if (!details.startsWith('HTTP')) {
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    'Failed to fetch',
+                  )
+                  .having((error) => error.details, 'details', display),
+            ),
+            reason: 'head $url',
+          );
+        }
+        await expectLater(
+          heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+          throwsA(
+            isA<LlamaModelException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  'Cannot read the decision head config at $display.',
+                )
+                .having(
+                  (error) => '${error.details}',
+                  'details',
+                  details.startsWith('HTTP')
+                      ? startsWith(details)
+                      : 'Failed to fetch',
+                ),
+          ),
+          reason: 'config $url',
+        );
+      }
+    });
+
     test('removes the secrets of source URLs wherever they occur', () {
       for (final (source, message, expected) in const [
         (
-          'https://u:SEKRIT/w@example.com/m.gguf#F6',
-          'Bad password SEKRIT/w for u at F6',
+          'https://u:SEKRIT/w@example.com/m.gguf#F6fragment',
+          'Bad password SEKRIT/w for u at F6fragment',
           'Bad password  for u at ',
         ),
         (
@@ -573,14 +671,32 @@ void main() {
           'Bad password  (encoded )',
         ),
         (
-          'https://u:P7@example.com/h.bin?k=example.com',
-          'Failed to fetch https://u:P7@example.com/h.bin?k=example.com',
+          'https://u:example@example.com/h.bin',
+          'Failed to fetch https://u:example@example.com/h.bin',
           'Failed to fetch https://',
         ),
         (
-          'https://example.com/m.gguf?sig=Q9&token=T8#F7',
-          'Signature Q9, token T8 and fragment F7 expired',
+          'https://example.com/h.bin?token=t&v=1&sig=Q9signature',
+          'Fetch /h.bin?token=t&v=1&sig=Q9signature: token=t, max_len 512, '
+              'v=1 of 1, signature Q9signature',
+          'Fetch /h.bin: , max_len 512,  of 1, signature ',
+        ),
+        (
+          'https://example.com/m.gguf?sig=Q9signature&token=T8tokenvalue'
+              '#F7fragment',
+          'Signature Q9signature, token T8tokenvalue and fragment F7fragment '
+              'expired',
           'Signature , token  and fragment  expired',
+        ),
+        (
+          'https://example.com/h.bin?v=1',
+          'Built with dev=10 and v=12.',
+          'Built with dev=10 and v=12.',
+        ),
+        (
+          'https://example.com/h.bin?download#k1',
+          'GET h?download failed at node#k1, not #k1',
+          'GET h failed at node, not #k1',
         ),
         (
           'https://u:SEK"RIT@example.com/m.gguf',

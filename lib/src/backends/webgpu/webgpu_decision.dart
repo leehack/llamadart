@@ -438,13 +438,20 @@ class WebGpuDecisionHeads {
 /// Returns the message of a bridge [error] with URLs redacted.
 ///
 /// First, for each of [sourceUrls], these texts are replaced wherever they
-/// occur as written, percent-decoded, percent-encoded or JSON-escaped: the
-/// URL and its browser-resolved `href`, when the URL starts with `//` or
-/// `scheme://`, become its display form (below); its userinfo, password,
-/// query, query values and fragment, also as the browser parses them, are
-/// removed. Userinfo runs from after `//` to the last `@` of the authority,
-/// and to the last `@` of the URL. A query value is the text after the first
-/// `=` of an `&`-separated part, or the whole part when it has no `=`.
+/// occur as written, percent-decoded, percent-encoded or JSON-escaped, also
+/// as the browser parses the URL:
+/// - the URL and its browser-resolved `href`, when the URL starts with `//`
+///   or `scheme://`, become its display form (below);
+/// - `?query` and `#fragment` are removed after any non-space character;
+/// - the userinfo and password are removed as whole tokens of any length;
+/// - the query and each `&`-separated part that contain `=` are removed as
+///   whole tokens, and so are a bare value (after `=`, or a part without `=`)
+///   and the fragment when they have at least 10 characters. Shorter bare
+///   values, such as `1` in `?v=1`, stay in the text.
+///
+/// A whole token is not preceded or followed by an ASCII letter or digit.
+/// Userinfo runs from after `//` to the last `@` of the authority, and to the
+/// last `@` of the URL.
 ///
 /// Then, as a best-effort backstop for other URLs, each whitespace-separated
 /// word, without its leading opening and trailing closing quotes, brackets
@@ -462,9 +469,8 @@ class WebGpuDecisionHeads {
 /// host follows the last `@` before the first `?` or `#` instead. The host is
 /// left out when neither applies, when an authority with an `@` and an empty
 /// or `/` path is followed by `?` or `#` and then another `@`, or, for a
-/// source URL, when the display
-/// form would contain its userinfo, password, query, a query value or its
-/// fragment as the browser reads them.
+/// source URL, when the display form would contain its userinfo or password
+/// as the browser parses them.
 String webGpuBridgeErrorText(
   Object error, {
   Iterable<String> sourceUrls = const <String>[],
@@ -490,96 +496,147 @@ final RegExp _hostAndPort = RegExp(
 final RegExp _percentEscapes = RegExp('(?:%[0-9A-Fa-f]{2})+');
 
 String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
-  final replacements = <String, String>{};
+  final wholes = <String, String>{};
+  final delimited = <String>{};
+  final tokens = <String>{};
   for (final url in sourceUrls) {
     final browserUrl = _parseBrowserUrl(url);
+    final secrets = _SourceUrlSecrets(url, browserUrl);
     if (_authorityStart(url) >= 0) {
-      final display = _sourceDisplayUrl(url, browserUrl);
+      final display = _sourceDisplayUrl(url, secrets);
       for (final whole in <String>[
         url,
         if (browserUrl != null) browserUrl.href,
       ]) {
         for (final form in _encodedForms(whole)) {
-          replacements[form] = display;
+          wholes[form] = display;
         }
       }
     }
-    final secrets = _sourceUrlSecrets(url, browserUrl);
-    for (final secret in <String>{...secrets.parsed, ...secrets.extended}) {
-      for (final form in _encodedForms(secret)) {
-        replacements.putIfAbsent(form, () => '');
-      }
+    for (final secret in secrets.delimited) {
+      delimited.addAll(_encodedForms(secret));
+    }
+    for (final secret in <String>{...secrets.credentials, ...secrets.tokens}) {
+      tokens.addAll(_encodedForms(secret));
     }
   }
-  replacements.remove('');
-  if (replacements.isEmpty) return text;
-  final forms = replacements.keys.toList()
-    ..sort((a, b) => b.length.compareTo(a.length));
+  String alternatives(Iterable<String> forms) {
+    final sorted = forms.where((form) => form.isNotEmpty).toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return sorted.map(RegExp.escape).join('|');
+  }
+
+  final patterns = <String>[
+    if (alternatives(wholes.keys) case final whole when whole.isNotEmpty)
+      '(?:$whole)',
+    if (alternatives(delimited) case final after when after.isNotEmpty)
+      '(?<=\\S)(?:$after)(?![A-Za-z0-9])',
+    if (alternatives(tokens) case final token when token.isNotEmpty)
+      '(?<![A-Za-z0-9])(?:$token)(?![A-Za-z0-9])',
+  ];
+  if (patterns.isEmpty) return text;
   return text.replaceAllMapped(
-    RegExp(forms.map(RegExp.escape).join('|')),
-    (match) => replacements[match[0]!]!,
+    RegExp(patterns.join('|')),
+    (match) => wholes[match[0]!] ?? '',
   );
 }
 
-/// Secrets of a source URL: `parsed` where the browser reads them, and
-/// `extended` from userinfo that runs to the last `@` of the whole URL.
-typedef _SourceUrlSecrets = ({Set<String> parsed, Set<String> extended});
+/// Bare query values and fragments shorter than this stay in error text.
+const int _minimumBareValueLength = 10;
 
-_SourceUrlSecrets _sourceUrlSecrets(String url, URL? browserUrl) {
-  final parsed = <String>{};
-  final extended = <String>{};
-  void addUserInfo(Set<String> secrets, String userInfo) {
-    secrets.add(userInfo);
-    final colon = userInfo.indexOf(':');
-    if (colon >= 0) secrets.add(userInfo.substring(colon + 1));
+/// Secrets of a source URL, grouped by how error text loses them.
+class _SourceUrlSecrets {
+  _SourceUrlSecrets(this.url, URL? browserUrl) {
+    _addQueryAndFragment(0);
+    final start = _authorityStart(url);
+    if (start >= 0) {
+      final end = url.indexOf(_authorityEnd, start);
+      final authority = url.substring(start, end < 0 ? url.length : end);
+      final authorityAt = authority.lastIndexOf('@');
+      if (authorityAt >= 0) {
+        _addUserInfo(authority.substring(0, authorityAt), parsed: true);
+      }
+      final lastAt = url.lastIndexOf('@');
+      if (lastAt >= start && lastAt != start + authorityAt) {
+        _addUserInfo(url.substring(start, lastAt), parsed: false);
+        _addQueryAndFragment(lastAt + 1);
+      }
+    }
+    if (browserUrl != null) {
+      final username = browserUrl.username;
+      final password = browserUrl.password;
+      _addUserInfo(
+        password.isEmpty ? username : '$username:$password',
+        parsed: true,
+      );
+      if (browserUrl.search.isNotEmpty) {
+        _addQuery(browserUrl.search.substring(1));
+      }
+      if (browserUrl.hash.isNotEmpty) {
+        _addFragment(browserUrl.hash.substring(1));
+      }
+    }
   }
 
-  void addQueryAndFragment(Set<String> secrets, int from) {
+  final String url;
+
+  /// Userinfo spans and passwords, removed as whole tokens at any length.
+  final Set<String> credentials = <String>{};
+
+  /// The [credentials] of the authority as the browser parses it, which a
+  /// display form must not contain.
+  final Set<String> parsedCredentials = <String>{};
+
+  /// `?query` and `#fragment`, removed wherever they follow a non-space.
+  final Set<String> delimited = <String>{};
+
+  /// Queries and `&`-separated parts that contain `=`, and bare values and
+  /// fragments of at least [_minimumBareValueLength] characters, removed as
+  /// whole tokens.
+  final Set<String> tokens = <String>{};
+
+  void _addUserInfo(String userInfo, {required bool parsed}) {
+    final colon = userInfo.indexOf(':');
+    for (final secret in <String>[
+      userInfo,
+      if (colon >= 0) userInfo.substring(colon + 1),
+    ]) {
+      if (secret.isEmpty) continue;
+      credentials.add(secret);
+      if (parsed) parsedCredentials.add(secret);
+    }
+  }
+
+  void _addQueryAndFragment(int from) {
     final fragment = url.indexOf('#', from);
     final query = url.indexOf('?', from);
-    if (fragment >= 0) secrets.add(url.substring(fragment + 1));
+    if (fragment >= 0) _addFragment(url.substring(fragment + 1));
     if (query >= 0 && (fragment < 0 || query < fragment)) {
-      _addQuery(
-        secrets,
-        url.substring(query + 1, fragment < 0 ? null : fragment),
-      );
+      _addQuery(url.substring(query + 1, fragment < 0 ? null : fragment));
     }
   }
 
-  addQueryAndFragment(parsed, 0);
-  final start = _authorityStart(url);
-  if (start >= 0) {
-    final end = url.indexOf(_authorityEnd, start);
-    final authority = url.substring(start, end < 0 ? url.length : end);
-    final authorityAt = authority.lastIndexOf('@');
-    if (authorityAt >= 0) {
-      addUserInfo(parsed, authority.substring(0, authorityAt));
-    }
-    final lastAt = url.lastIndexOf('@');
-    if (lastAt >= start && lastAt != start + authorityAt) {
-      addUserInfo(extended, url.substring(start, lastAt));
-      addQueryAndFragment(extended, lastAt + 1);
+  void _addQuery(String query) {
+    if (query.isEmpty) return;
+    delimited.add('?$query');
+    _addToken(query);
+    for (final part in query.split('&')) {
+      _addToken(part);
+      final equals = part.indexOf('=');
+      if (equals >= 0) _addToken(part.substring(equals + 1));
     }
   }
-  if (browserUrl != null) {
-    final username = browserUrl.username;
-    final password = browserUrl.password;
-    addUserInfo(parsed, password.isEmpty ? username : '$username:$password');
-    if (browserUrl.search.isNotEmpty) {
-      _addQuery(parsed, browserUrl.search.substring(1));
-    }
-    if (browserUrl.hash.isNotEmpty) parsed.add(browserUrl.hash.substring(1));
-  }
-  parsed.remove('');
-  extended.remove('');
-  return (parsed: parsed, extended: extended);
-}
 
-void _addQuery(Set<String> secrets, String query) {
-  secrets.add(query);
-  for (final part in query.split('&')) {
-    final equals = part.indexOf('=');
-    secrets.add(equals < 0 ? part : part.substring(equals + 1));
+  void _addFragment(String fragment) {
+    if (fragment.isEmpty) return;
+    delimited.add('#$fragment');
+    _addToken(fragment);
+  }
+
+  void _addToken(String value) {
+    if (value.contains('=') || value.length >= _minimumBareValueLength) {
+      tokens.add(value);
+    }
   }
 }
 
@@ -667,13 +724,13 @@ String _bridgeErrorMessage(Object error) {
 }
 
 /// The display form of a source [url], without its host when the display
-/// form would contain one of its `parsed` secrets.
-String _sourceDisplayUrl(String url, [URL? browserUrl]) {
+/// form would contain one of its parsed credentials.
+String _sourceDisplayUrl(String url, [_SourceUrlSecrets? secrets]) {
   final display = _displayUrl(url);
   final start = _authorityStart(url);
   if (start < 0) return display;
-  final secrets = _sourceUrlSecrets(url, browserUrl ?? _parseBrowserUrl(url));
-  for (final secret in secrets.parsed) {
+  secrets ??= _SourceUrlSecrets(url, _parseBrowserUrl(url));
+  for (final secret in secrets.parsedCredentials) {
     for (final form in _encodedForms(secret)) {
       if (form.isNotEmpty && display.contains(form)) {
         return url.substring(0, start).toLowerCase();
