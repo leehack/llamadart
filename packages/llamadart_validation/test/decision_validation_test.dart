@@ -802,7 +802,7 @@ void main() {
           jsonDecode(line) as Map<String, dynamic>,
       ];
       final cases = events.where((event) => event['type'] == 'case').toList();
-      final nativeLog = File('$fixtures.native.log').readAsStringSync();
+      final nativeLog = File('$fixtures.native.txt').readAsStringSync();
       final placement = inspectPlacement(events.first, cases, nativeLog);
       expect(placement['verified'], isTrue, reason: '$placement');
       expect(placement['offload_records'], [

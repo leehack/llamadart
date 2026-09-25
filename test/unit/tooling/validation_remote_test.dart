@@ -395,10 +395,10 @@ void main() {
   group('iOS XCTest native log', () {
     const fixtures = 'packages/llamadart_validation/test/fixtures/ios_xctest';
     String read(String name) => File('$fixtures/$name').readAsStringSync();
-    final console = read('decision-gguf-metal.xcodebuild_output.log');
+    final console = read('decision-gguf-metal.xcodebuild_output.txt');
     final journal = read('decision-gguf-metal.events.jsonl');
-    final native = read('decision-gguf-metal.native.log');
-    final chat = read('chat-gguf-metal.xcodebuild_output.log');
+    final native = read('decision-gguf-metal.native.txt');
+    final chat = read('chat-gguf-metal.xcodebuild_output.txt');
     const stray = 'load_tensors: offloaded 1/29 layers to GPU\n';
 
     test('is the lines between the records that match the journal', () {

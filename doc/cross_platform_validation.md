@@ -611,8 +611,10 @@ Collection keeps the lines between that log's first and last
 `LLAMADART_VALIDATION` records, only if those records are exactly the
 collected journal, writes them to `report/native.log` and passes that to the
 reporter. With no such log, or more than one native log source, GGUF reports
-keep `accelerator_evidence_missing`. From the iPhone 16 Pro
-`decision-gguf-metal` run, this verifies 29/29 layers on `MTL0`.
+keep `accelerator_evidence_missing`. Trimmed iPhone 16 Pro Firebase logs in
+`packages/llamadart_validation/test/fixtures/ios_xctest/` pin this; the
+`decision-gguf-metal` log yields both 29/29-layer `MTL0` loads and verifies
+placement.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
 
