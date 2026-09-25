@@ -41,8 +41,8 @@ For canonical full release notes, use:
 - Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
   turn without reasoning no longer gets an empty `<think>` block
   ([#691](https://github.com/leehack/llamadart/issues/691)).
-- Require `dinja` 1.1.0 or later. Its Jinja string comparison makes three
-  more chat templates render as llama.cpp does: MiniMax-M1 adds no empty
+- Require `dinja` 1.1.0. Its Jinja string comparison makes three more chat
+  templates render as llama.cpp does: MiniMax-M1 adds no empty
   system block for an empty or whitespace-only system message; NVIDIA
   Nemotron Nano v2 drops the blank line before a tool call, the blank lines
   before its tool instructions when tools come with an empty or
