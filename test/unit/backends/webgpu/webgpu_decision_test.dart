@@ -408,6 +408,17 @@ void main() {
         "Bad URL '/p.gguf?token=S11'.": "Bad URL '/p.gguf'.",
         'Is a model loaded? Load one first.':
             'Is a model loaded? Load one first.',
+        'URL includes credentials: //u:S13@example.com/m.gguf?t=Q1':
+            'URL includes credentials: //example.com/m.gguf',
+        'Bad URL (u:S15@cdn.example.com:8080/m.gguf#k=Q3)':
+            'Bad URL (cdn.example.com:8080/m.gguf)',
+        'Bad URL ./m.gguf?t=Q4 and ../m.gguf#t=Q5':
+            'Bad URL ./m.gguf and ../m.gguf',
+        'Bad URL mmproj?token=S16': 'Bad URL mmproj',
+        'Bad URL u@cdn.example.com/m.gguf?t=Q6':
+            'Bad URL cdn.example.com/m.gguf',
+        'Bad URL a@b.example.com?k=Q7': 'Bad URL b.example.com',
+        'Bad URL <//u@example.com/m.gguf>': 'Bad URL <//example.com/m.gguf>',
       };
       for (final MapEntry(key: message, value: expected) in cases.entries) {
         expect(
@@ -415,6 +426,19 @@ void main() {
           expected,
           reason: message,
         );
+      }
+    });
+
+    test('leaves text that is not a URL unchanged in bridge errors', () {
+      for (final message in const [
+        "Expected '?' after the key.",
+        'Only C# and F#? are supported.',
+        'See issue#43 for details.',
+        'Loaded what?! Twice?',
+        'Contact admin@example.com or user:name at 10:30.',
+        'Decision sequence 0 has 4 markers for its 3 tokens.',
+      ]) {
+        expect(webGpuBridgeErrorText(_jsError(message)), message);
       }
     });
 

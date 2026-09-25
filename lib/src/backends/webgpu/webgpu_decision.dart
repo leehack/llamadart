@@ -423,20 +423,55 @@ class WebGpuDecisionHeads {
   }
 }
 
-/// Returns the message of a bridge [error] with URLs redacted: a query string
-/// or fragment attached to a word is removed up to the next whitespace, keeping
-/// only trailing closing quotes, brackets and punctuation, and each absolute URL
-/// is cut to its scheme, host, port and path.
-String webGpuBridgeErrorText(Object error) => _bridgeErrorMessage(error)
-    .replaceAllMapped(_attachedQueryOrFragment, (match) => match[1]!)
-    .replaceAllMapped(
+/// Returns the message of a bridge [error] with URLs redacted.
+///
+/// Each whitespace-separated word, without its leading opening and trailing
+/// closing quotes, brackets and punctuation, is treated as a URL when it
+/// contains `://`, starts with `/`, `./`, `../` or `host.name[:port]/`
+/// (optionally after userinfo), is a dotted file name followed by `?` or `#`,
+/// or has a `?` or `#` part containing `=`. Such a URL loses everything from
+/// its first `?` or `#`, and its userinfo: the `user@` or `user:password@`
+/// after `://` or a leading `//`, otherwise at the start of the word.
+String webGpuBridgeErrorText(Object error) => _bridgeErrorMessage(
+  error,
+).replaceAllMapped(_word, (match) => _redactWord(match[0]!));
+
+final RegExp _word = RegExp(r'\S+');
+final RegExp _wordParts = RegExp(r'''^(["'(<\[]*)(.*?)(["')\]>.,;:!]*)$''');
+final RegExp _hostPath = RegExp(
+  r'^(?:[^\s/@]+@)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?/',
+);
+final RegExp _fileWithQueryOrFragment = RegExp(r'^[\w.-]*\w\.\w+[?#]');
+final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
+final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
+
+String _redactWord(String word) {
+  final parts = _wordParts.firstMatch(word)!;
+  final url = parts[2]!;
+  final isUrl =
+      url.contains('://') ||
+      url.startsWith('/') ||
+      url.startsWith('./') ||
+      url.startsWith('../') ||
+      _hostPath.hasMatch(url) ||
+      _fileWithQueryOrFragment.hasMatch(url) ||
+      _queryOrFragmentWithValue.hasMatch(url);
+  if (!isUrl) return word;
+  return '${parts[1]}${_redactUrl(url)}${parts[3]}';
+}
+
+String _redactUrl(String url) {
+  final end = url.indexOf(RegExp('[?#]'));
+  final base = end < 0 ? url : url.substring(0, end);
+  if (base.contains('://')) {
+    return base.replaceAllMapped(
       WebGpuDecisionHeads._absoluteUrl,
       (match) => _displayUrl(match[0]!),
     );
-
-final RegExp _attachedQueryOrFragment = RegExp(
-  r'''(?<=\S)[?#]\S+?(["'\)\]>.,;:!]*)(?=\s|$)''',
-);
+  }
+  if (base.startsWith('//')) return _displayUrl(base);
+  return base.replaceFirst(_leadingUserInfo, '');
+}
 
 String _bridgeErrorMessage(Object error) {
   try {

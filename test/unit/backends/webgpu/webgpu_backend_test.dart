@@ -3526,6 +3526,42 @@ void main() {
           throwsRedactedModelException,
         );
       });
+
+      test('keeps credentials of a real Chrome fetch error out', () async {
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) => window.fetch(path.toJS)).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        for (final (url, redacted) in const [
+          ('//u:S13@example.com/m.gguf?t=Q1', '//example.com/m.gguf'),
+          (
+            'https://u:S14@example.com/m.gguf#t=Q2',
+            'https://example.com/m.gguf',
+          ),
+        ]) {
+          await expectLater(
+            backend.multimodalContextCreate(1, url),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => '${error.details}',
+                'details',
+                allOf(
+                  contains('includes credentials'),
+                  contains(redacted),
+                  isNot(contains('S1')),
+                  isNot(contains('u:')),
+                  isNot(contains('t=Q')),
+                ),
+              ),
+            ),
+            reason: url,
+          );
+        }
+      });
     });
 
     test('runs WebGPU multimodal warmup once per projector load', () async {
