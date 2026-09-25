@@ -391,6 +391,27 @@ void main() {
         },
       );
 
+      test('an engine subscription cancel before the first token raises the '
+          'flag, and a generation right after it waits for the run', () async {
+        final engine = LlamaEngine(flagBackend);
+        await engine.loadModel('model.gguf');
+        final subscription = engine.generate('pending').listen((_) {});
+        while (generateRequests().isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        final first = generateRequests().single;
+
+        unawaited(subscription.cancel());
+        final next = engine.generate('ok').join();
+
+        expect(flagValue(first), 1);
+        await Future<void>.delayed(Duration.zero);
+        expect(generateRequests(), hasLength(1));
+        first.sendPort.send(DoneResponse());
+        expect(await next, 'AB');
+        expect(generateRequests(), hasLength(2));
+      });
+
       test('cancelGeneration ends a queued generation unsent', () async {
         final first = await startPending();
         flagBackend.cancelGeneration();
