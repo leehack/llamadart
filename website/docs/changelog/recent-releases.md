@@ -115,9 +115,10 @@ For canonical full release notes, use:
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
 - Add GGUF speech validation pack checks: `tts` unloads and disposes the engine
-  during a synthesis and cancels one during its audio decode, and `stt` must
-  fail with `LlamaSpeechTranscriptTruncatedException` at `maxOutputTokens` and
-  at the context size. `stt` runs now execute 22 checks and `tts` runs 18
+  during a synthesis, cancels one during its audio decode and bounds the
+  resident set those checks add, and `stt` must fail with
+  `LlamaSpeechTranscriptTruncatedException` at `maxOutputTokens` and at the
+  context size. `stt` runs now execute 22 checks and `tts` runs 19
   ([#628](https://github.com/leehack/llamadart/issues/628),
   [#636](https://github.com/leehack/llamadart/issues/636),
   [#322](https://github.com/leehack/llamadart/issues/322)).

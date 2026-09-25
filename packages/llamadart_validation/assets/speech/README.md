@@ -71,11 +71,13 @@ and Dart allocations together, what it counts is platform dependent, and it does
 not exist without `dart:io`. If any sample taken before `peak_memory_bound` is
 unavailable, that check records `SKIP` with a reason and
 `bounds.peak_resident_bytes.measured` is `false`; it never passes silently.
+`interrupt_memory_bound` follows the same rule for the samples before it.
 
 ## Interrupt and truncation checks
 
-The `tts` pack adds `unload_during_synthesis`, `dispose_during_synthesis` and
-`decode_cancel`; the `stt` pack adds `max_output_tokens_truncation` and
+The `tts` pack adds `unload_during_synthesis`, `dispose_during_synthesis`,
+`decode_cancel` and `interrupt_memory_bound` after `peak_memory_bound`; the
+`stt` pack adds `max_output_tokens_truncation` and
 `context_size_truncation`. Each asserts its precondition in its own row and
 records its budget there, not under `bounds`:
 
@@ -104,6 +106,14 @@ records its budget there, not under `bounds`:
   shortest reference decode left after the cancellation, less the overhead,
   is within the margin. In that last case even an immediate cancellation
   could not pass. `NOT_RUN` leaves `functional_pass` false.
+- `interrupt_memory_bound` divides the largest resident set sampled after the
+  three checks above by the one sampled after `peak_memory_bound`, against
+  `speechPeakRssGrowthBudget`. Each of those checks reloads the model. On
+  Linux CUDA a reload can leave the resident set tens of MB higher, levelling
+  off after several reloads, so running these checks before the lifecycle
+  bound pushed it past its budget. After it, their reloads stay out of its
+  baseline and peak, the lifecycle's reloads are already in their baseline,
+  and growth they add still fails the run.
 - `max_output_tokens_truncation` sets `maxOutputTokens` to
   `speechTruncationTokenFraction` of the reference's token count, rounded
   down, and requires the latest complete transcript to tokenize to more.

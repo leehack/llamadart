@@ -1726,18 +1726,21 @@ void main() {
         checkSynthesisInterrupts: true,
         residentBytes: stableResidentBytes,
       );
-      expect(interrupted['expected_checks'], speechLifecycleCheckCount + 3);
-      expect(interrupted['checks'], hasLength(speechLifecycleCheckCount + 3));
+      expect(interrupted['expected_checks'], speechLifecycleCheckCount + 4);
+      expect(interrupted['checks'], hasLength(speechLifecycleCheckCount + 4));
       expect(interrupted['functional_pass'], true);
       final ttsIds = [
         for (final row in interrupted['checks'] as List) row['id'] as String,
       ];
+      expect(ttsIds.sublist(ttsIds.indexOf('after_invalid') + 1).take(1), [
+        'reload',
+      ]);
       expect(
         ttsIds.sublist(
-          ttsIds.indexOf('after_invalid') + 1,
-          ttsIds.indexOf('reload'),
+          ttsIds.indexOf('peak_memory_bound') + 1,
+          ttsIds.indexOf('dispose'),
         ),
-        interruptIds,
+        [...interruptIds, 'interrupt_memory_bound'],
       );
       expect(
         tts.calls.sublist(
@@ -1781,6 +1784,83 @@ void main() {
       );
     },
   );
+
+  Future<Map<String, Object?>> interruptMemoryRun(
+    int? Function(FakeInterruptSpeech adapter) sample,
+  ) {
+    final adapter = FakeInterruptSpeech();
+    return runSpeechValidation(
+      adapter,
+      checkSynthesisInterrupts: true,
+      residentBytes: () => sample(adapter),
+    );
+  }
+
+  test(
+    'resident growth in the interrupt checks fails only their bound',
+    () async {
+      for (final persists in [true, false]) {
+        var jumped = false;
+        final result = await interruptMemoryRun((adapter) {
+          final unload = adapter.calls.last == 'unload_synthesis';
+          jumped = persists ? jumped || unload : unload;
+          return jumped ? 1151 : 1000;
+        });
+        expect(rowOf(result, 'peak_memory_bound')['status'], 'PASS');
+        final bound = rowOf(result, 'interrupt_memory_bound');
+        expect(bound['status'], 'FAIL', reason: '$persists');
+        expect(bound['baseline_check'], 'peak_memory_bound');
+        expect(bound['baseline_rss_bytes'], 1000);
+        expect(bound['peak_rss_bytes'], 1151);
+        expect(bound['growth_budget'], 1.10);
+        expect(result['functional_pass'], false, reason: '$persists');
+      }
+    },
+  );
+
+  test(
+    'reload growth before the interrupt checks stays in the lifecycle bound',
+    () async {
+      var reloaded = false;
+      final result = await interruptMemoryRun((adapter) {
+        reloaded = reloaded || adapter.calls.contains('dispose');
+        return reloaded ? 1151 : 1000;
+      });
+      expect(rowOf(result, 'peak_memory_bound')['status'], 'FAIL');
+      final bound = rowOf(result, 'interrupt_memory_bound');
+      expect(bound['baseline_rss_bytes'], 1151);
+      expect(bound['peak_rss_growth'], 1.0);
+      expect(bound['status'], 'PASS');
+    },
+  );
+
+  test(
+    'the interrupt memory bound passes at 1.10x and fails past it',
+    () async {
+      for (final (peak, status) in [(1100, 'PASS'), (1101, 'FAIL')]) {
+        final result = await interruptMemoryRun(
+          (adapter) => adapter.calls.last == 'decode_cancel' ? peak : 1000,
+        );
+        expect(
+          rowOf(result, 'interrupt_memory_bound')['status'],
+          status,
+          reason: '$peak',
+        );
+        expect(result['functional_pass'], status == 'PASS', reason: '$peak');
+      }
+    },
+  );
+
+  test('an unmeasurable interrupt sample skips only that bound', () async {
+    final result = await interruptMemoryRun(
+      (adapter) => adapter.calls.last == 'dispose_synthesis' ? null : 1000,
+    );
+    expect(rowOf(result, 'peak_memory_bound')['status'], 'PASS');
+    final bound = rowOf(result, 'interrupt_memory_bound');
+    expect(bound['status'], 'SKIP');
+    expect(bound['skip_reason'], 'Resident set size was not measurable');
+    expect(result['functional_pass'], true);
+  });
 
   test('a teardown that does not cancel a synthesis in flight fails', () async {
     for (final (report, message) in <(Map<String, Object?>, String?)>[

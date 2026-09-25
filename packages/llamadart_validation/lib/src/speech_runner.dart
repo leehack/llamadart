@@ -814,10 +814,16 @@ const speechImmediateCancelLatencyBudgetMs = 500.0;
 /// Every check in that span contributes a sample, whatever phase it exercised,
 /// so the peak is the maximum over heterogeneous phases rather than over
 /// generations alone.
+///
+/// `interrupt_memory_bound` applies the same ceiling to the samples after
+/// the interrupt checks, as a multiple of the one sampled after
+/// `peak_memory_bound`.
 const speechPeakRssGrowthBudget = 1.10;
 
 /// Checks a run with `checkSynthesisInterrupts` adds.
-const speechSynthesisInterruptCheckCount = 3;
+const speechSynthesisInterruptCheckCount = 4;
+
+const _memoryBoundIds = {'peak_memory_bound', 'interrupt_memory_bound'};
 
 /// Checks a run with `checkTranscriptLimits` adds.
 const speechTranscriptLimitCheckCount = 2;
@@ -1049,7 +1055,8 @@ Map<String, Object?> _truncationOutcome(
 /// recognition passes.
 ///
 /// [checkSynthesisInterrupts] adds `unload_during_synthesis`,
-/// `dispose_during_synthesis` and `decode_cancel`, and requires a
+/// `dispose_during_synthesis`, `decode_cancel` and `interrupt_memory_bound`
+/// after `peak_memory_bound`, and requires a
 /// [SpeechSynthesisInterruptAdapter]. The first two pass only if the synthesis
 /// ends cancelled within [speechCancelLatencyBudgetMs] of the call and the
 /// synthesis after the reload passes. `decode_cancel` compares the cancelled
@@ -1062,6 +1069,10 @@ Map<String, Object?> _truncationOutcome(
 /// the cancellation, less the largest hand-back cancellation latency, is
 /// within the margin, since then even an immediate cancellation could not
 /// pass. It fails if the cancelled synthesis emits a final result.
+/// `interrupt_memory_bound` bounds the resident set after those three checks
+/// by [speechPeakRssGrowthBudget] times the one sampled after
+/// `peak_memory_bound`, so reload overhead the lifecycle checks already
+/// incurred is in its baseline, and growth the interrupts add is not.
 ///
 /// The single-shot checks and every cleanup cycle each call
 /// [SpeechValidationAdapter.execute] once with `cancelImmediately`, which must
@@ -1070,10 +1081,11 @@ Map<String, Object?> _truncationOutcome(
 /// finite, non-negative `cancel_latency_ms` and `cancel_after_ms`, and the
 /// second a nonzero `cancel_after_ms`; otherwise that check fails.
 ///
-/// [residentBytes] is called after each check. If any call made before
-/// `peak_memory_bound` runs returns null, that check records `SKIP` with a
-/// reason. It is the only check that may `SKIP` in a run whose
-/// `functional_pass` is true, and no check may record `NOT_RUN` in one.
+/// [residentBytes] is called after each check. If any call made before a
+/// memory bound, `peak_memory_bound` or `interrupt_memory_bound`, runs returns
+/// null, that bound records `SKIP` with a reason. The memory bounds are the
+/// only checks that may `SKIP` in a run whose `functional_pass` is true, and
+/// no check may record `NOT_RUN` in one.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
@@ -1184,6 +1196,37 @@ Future<Map<String, Object?>> runSpeechValidation(
     };
   }
 
+  Map<String, Object?> memoryBound(String baselineId, String baselineName) {
+    final baselineIndex = residentSamples.indexWhere(
+      (sample) => sample['id'] == baselineId,
+    );
+    if (!residentMeasurable || baselineIndex < 0) {
+      return {
+        'skipped': true,
+        'measurement': residentSetSource,
+        'skip_reason': 'Resident set size was not measurable',
+      };
+    }
+    final baseline = residentSamples[baselineIndex]['rss_bytes']! as int;
+    final later = residentSamples.skip(baselineIndex + 1);
+    if (later.isEmpty) {
+      throw StateError('No resident samples follow $baselineName');
+    }
+    final peak = later
+        .map((sample) => sample['rss_bytes']! as int)
+        .reduce(math.max);
+    return {
+      'measurement': residentSetSource,
+      'baseline_check': baselineId,
+      'baseline_rss_bytes': baseline,
+      'peak_rss_bytes': peak,
+      'peak_rss_growth': peak / baseline,
+      'growth_budget': speechPeakRssGrowthBudget,
+      'samples': [...residentSamples],
+      'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
+    };
+  }
+
   try {
     await check('load', () async {
       await adapter.load();
@@ -1247,22 +1290,6 @@ Future<Map<String, Object?>> runSpeechValidation(
           );
         }
       }
-      if (checkSynthesisInterrupts) {
-        final interrupts = adapter as SpeechSynthesisInterruptAdapter;
-        for (final dispose in [false, true]) {
-          await check(
-            dispose ? 'dispose_during_synthesis' : 'unload_during_synthesis',
-            () async => _teardownOutcome(
-              await interrupts.executeTeardown(dispose: dispose),
-            ),
-          );
-        }
-        await check(
-          'decode_cancel',
-          () async =>
-              _decodeCancelOutcome(await interrupts.executeDecodeCancel()),
-        );
-      }
       await check('reload', () async {
         await adapter.dispose();
         await adapter.load();
@@ -1307,35 +1334,30 @@ Future<Map<String, Object?>> runSpeechValidation(
           speechImmediateCancelLatencyBudgetMs,
         ),
       );
-      await check('peak_memory_bound', () async {
-        final baselineIndex = residentSamples.indexWhere(
-          (sample) => sample['id'] == 'generate',
+      await check(
+        'peak_memory_bound',
+        () async => memoryBound('generate', 'the first generation'),
+      );
+      if (checkSynthesisInterrupts) {
+        final interrupts = adapter as SpeechSynthesisInterruptAdapter;
+        for (final dispose in [false, true]) {
+          await check(
+            dispose ? 'dispose_during_synthesis' : 'unload_during_synthesis',
+            () async => _teardownOutcome(
+              await interrupts.executeTeardown(dispose: dispose),
+            ),
+          );
+        }
+        await check(
+          'decode_cancel',
+          () async =>
+              _decodeCancelOutcome(await interrupts.executeDecodeCancel()),
         );
-        if (!residentMeasurable || baselineIndex < 0) {
-          return {
-            'skipped': true,
-            'measurement': residentSetSource,
-            'skip_reason': 'Resident set size was not measurable',
-          };
-        }
-        final baseline = residentSamples[baselineIndex]['rss_bytes']! as int;
-        final later = residentSamples.skip(baselineIndex + 1);
-        if (later.isEmpty) {
-          throw StateError('No resident samples follow the first generation');
-        }
-        final peak = later
-            .map((sample) => sample['rss_bytes']! as int)
-            .reduce(math.max);
-        return {
-          'measurement': residentSetSource,
-          'baseline_rss_bytes': baseline,
-          'peak_rss_bytes': peak,
-          'peak_rss_growth': peak / baseline,
-          'growth_budget': speechPeakRssGrowthBudget,
-          'samples': [...residentSamples],
-          'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
-        };
-      });
+        await check(
+          'interrupt_memory_bound',
+          () async => memoryBound('peak_memory_bound', 'peak_memory_bound'),
+        );
+      }
     }
   } finally {
     await check('dispose', () async {
@@ -1359,7 +1381,8 @@ Future<Map<String, Object?>> runSpeechValidation(
         results.every(
           (entry) =>
               entry['status'] == 'PASS' ||
-              (entry['id'] == 'peak_memory_bound' && entry['status'] == 'SKIP'),
+              (_memoryBoundIds.contains(entry['id']) &&
+                  entry['status'] == 'SKIP'),
         ),
     'expected_checks': expectedChecks,
     'edge_fixture_ids': [for (final fixture in edgeFixtures) fixture.id],

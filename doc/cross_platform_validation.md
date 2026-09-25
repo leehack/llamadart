@@ -1024,7 +1024,8 @@ yield it three times. Two truncation checks follow: `jfk.wav` with
 `LlamaSpeechTranscriptTruncatedException` at that limit and a partial
 transcript that is a strict prefix of the expected one, and the next
 recognition on the same engine must pass.
-GGUF TTS adds three interrupt checks. `unload_during_synthesis` and
+GGUF TTS adds three interrupt checks after `peak_memory_bound`, then
+`interrupt_memory_bound`. `unload_during_synthesis` and
 `dispose_during_synthesis` call `unloadModel()` or `dispose()` once a progress
 event reports a frame; the task must end cancelled within the 500 ms budget,
 and a synthesis after the reload must pass. `decode_cancel` times the audio
@@ -1038,8 +1039,12 @@ cancelled on hand-back, is within that margin, even an immediate cancellation
 could not pass, so the check records `NOT_RUN`, as it does for any unmet
 precondition, with the reason and measured numbers; `NOT_RUN` fails the run.
 It targets the chunk-boundary decode cancellation of native `v0.4.1-1`
-([#322](https://github.com/leehack/llamadart/issues/322)). A run executes 22
-checks for `stt`, 18 for `tts` and 15 for `litert-asr`.
+([#322](https://github.com/leehack/llamadart/issues/322)).
+`interrupt_memory_bound` holds the resident set after the three checks to
+1.10x the sample taken after `peak_memory_bound`. Running them after the
+lifecycle bound keeps their reloads out of its baseline and peak, and puts
+the lifecycle's own reload overhead in their baseline. A run executes 22
+checks for `stt`, 19 for `tts` and 15 for `litert-asr`.
 TTS rejects silent, nonfinite or truncated output; playability is not a
 listening-quality assertion. Its first playable audio is
 the final buffer, never a progress callback. The voice report preserves the
