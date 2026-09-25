@@ -269,6 +269,11 @@ For canonical full release notes, use:
   `LlamaUnsupportedException`; backends report this through the new
   `BackendLazyGrammarSupport`
   ([#654](https://github.com/leehack/llamadart/issues/654)).
+- Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
+  on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
+  ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
+  selection
+  ([#611](https://github.com/leehack/llamadart/issues/611)).
 
 ## 0.8.24
 

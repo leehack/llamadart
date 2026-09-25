@@ -490,6 +490,79 @@ void main() {
     });
   });
 
+  group('explicit GpuBackend device lookup', () {
+    test('names the ggml registries of the pinned llama.cpp', () {
+      // Registry names returned by each ggml *_reg_get_name at the llama.cpp
+      // commit pinned by native v0.5.0; HIP builds define GGML_CUDA_NAME as
+      // "ROCm" and Metal defines GGML_METAL_NAME as "MTL".
+      expect(
+        {
+          for (final backend in GpuBackend.values)
+            backend: LlamaCppService.ggmlGpuRegistryName(backend),
+        },
+        {
+          GpuBackend.auto: null,
+          GpuBackend.cpu: null,
+          GpuBackend.vulkan: 'Vulkan',
+          GpuBackend.metal: 'MTL',
+          GpuBackend.cuda: 'CUDA',
+          GpuBackend.blas: 'BLAS',
+          GpuBackend.opencl: 'OpenCL',
+          GpuBackend.hip: 'ROCm',
+        },
+      );
+    });
+
+    test('resolves devices exactly for registered GPU registries', () {
+      final service = LlamaCppService();
+      _invokePrivateForTesting<void>(service, '_prepareBackendsForModelLoad', [
+        GpuBackend.auto,
+      ]);
+      final registeredWithDevices = <GpuBackend>{};
+      final registryCount = _invokePrivateForTesting<int>(
+        service,
+        '_ggmlBackendRegCount',
+        [],
+      );
+      for (var i = 0; i < registryCount; i++) {
+        final reg = _invokePrivateForTesting<ggml_backend_reg_t>(
+          service,
+          '_ggmlBackendRegGet',
+          [i],
+        );
+        final name = _invokePrivateForTesting<Pointer<Char>>(
+          service,
+          '_ggmlBackendRegName',
+          [reg],
+        ).cast<Utf8>().toDartString();
+        final deviceCount = _invokePrivateForTesting<int>(
+          service,
+          '_ggmlBackendRegDevCount',
+          [reg],
+        );
+        if (deviceCount > 0) {
+          registeredWithDevices.add(
+            LlamaCppService.gpuBackendFromRegName(name),
+          );
+        }
+      }
+
+      for (final backend in GpuBackend.values) {
+        if (backend == GpuBackend.auto || backend == GpuBackend.cpu) continue;
+        final devices = _invokePrivateForTesting<List<ggml_backend_dev_t>?>(
+          service,
+          '_resolvePreferredDevices',
+          [backend],
+        );
+        expect(
+          devices?.isNotEmpty ?? false,
+          registeredWithDevices.contains(backend),
+          reason: '$backend; registries with devices: $registeredWithDevices',
+        );
+      }
+    });
+  });
+
   group('loadModel preflight validation', () {
     late Directory tempDir;
 
