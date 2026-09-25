@@ -423,13 +423,20 @@ class WebGpuDecisionHeads {
   }
 }
 
-/// Returns the message of a bridge [error] with each absolute URL cut to its
-/// scheme, host, port and path.
-String webGpuBridgeErrorText(Object error) =>
-    _bridgeErrorMessage(error).replaceAllMapped(
+/// Returns the message of a bridge [error] with URLs redacted: a query string
+/// or fragment attached to a word is removed up to the next whitespace, keeping
+/// only trailing closing quotes, brackets and punctuation, and each absolute URL
+/// is cut to its scheme, host, port and path.
+String webGpuBridgeErrorText(Object error) => _bridgeErrorMessage(error)
+    .replaceAllMapped(_attachedQueryOrFragment, (match) => match[1]!)
+    .replaceAllMapped(
       WebGpuDecisionHeads._absoluteUrl,
       (match) => _displayUrl(match[0]!),
     );
+
+final RegExp _attachedQueryOrFragment = RegExp(
+  r'''(?<=\S)[?#]\S+?(["'\)\]>.,;:!]*)(?=\s|$)''',
+);
 
 String _bridgeErrorMessage(Object error) {
   try {

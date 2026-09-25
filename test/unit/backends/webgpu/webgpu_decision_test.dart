@@ -15,6 +15,9 @@ import 'package:web/web.dart'
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
+@JS('Error')
+external JSObject _jsError(String message);
+
 void main() {
   late FakeDecisionBridge fake;
   late WebGpuDecisionHeads heads;
@@ -381,6 +384,38 @@ void main() {
           'https://[cdn/head',
         ),
       );
+      fake.loadError =
+          'Failed to fetch decision head /heads/laya-head.safetensors'
+          '?token=abc#frag (404)';
+      await expectLater(
+        heads.load(fake.bridge, 'laya-head.safetensors'),
+        redacted(
+          'Failed to fetch decision head /heads/laya-head.safetensors (404)',
+        ),
+      );
+    });
+
+    test('redacts relative and quote-delimited URLs in bridge errors', () {
+      const cases = <String, String>{
+        'Failed to fetch /relative/mmproj.gguf?token=S7':
+            'Failed to fetch /relative/mmproj.gguf',
+        'Failed to fetch mmproj.gguf#sig=S8 (404 Not Found)':
+            'Failed to fetch mmproj.gguf (404 Not Found)',
+        'Bad URL "https://cdn.example.com/p.gguf?token=S5"tail=S6 end':
+            'Bad URL "https://cdn.example.com/p.gguf end',
+        'Bad URL "https://u:S9@cdn.example.com/p.gguf?token=S10" end':
+            'Bad URL "https://cdn.example.com/p.gguf" end',
+        "Bad URL '/p.gguf?token=S11'.": "Bad URL '/p.gguf'.",
+        'Is a model loaded? Load one first.':
+            'Is a model loaded? Load one first.',
+      };
+      for (final MapEntry(key: message, value: expected) in cases.entries) {
+        expect(
+          webGpuBridgeErrorText(_jsError(message)),
+          expected,
+          reason: message,
+        );
+      }
     });
 
     test('names configPath in bridge config errors', () async {
