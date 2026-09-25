@@ -199,6 +199,44 @@ void main() {
     await engine.dispose();
   });
 
+  for (final call in <String>['unloadModel', 'dispose']) {
+    test('validated Web bridge cancels a transcription on $call', () async {
+      final generationGate = Completer<void>();
+      final backend = _WebSpeechBackend(
+        promptSpeechToTextSupported: true,
+        generationGate: generationGate,
+        partialText: 'And so, my fellow',
+      );
+      final engine = LlamaEngine(backend);
+      await engine.loadModel('https://example.com/qwen3-asr.gguf');
+      await engine.loadMultimodalProjector(
+        'https://example.com/qwen3-asr-mmproj.gguf',
+      );
+      final recognizer = SpeechToTextEngine(
+        engine,
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
+
+      final task = await recognizer.transcribe(
+        SpeechToTextRequest(
+          audio: SpeechAudioBytesInput(
+            Uint8List.fromList(<int>[0x52, 0x49, 0x46, 0x46]),
+            format: const SpeechAudioFormat(encoding: 'wav'),
+          ),
+        ),
+      );
+      final events = task.events.toList();
+      await backend.partialSent.future;
+      await (call == 'unloadModel' ? engine.unloadModel() : engine.dispose());
+
+      final completion = await task.done;
+      expect(completion.state, SpeechToTextCompletionState.cancelled);
+      expect(completion.result, isNull);
+      expect(await events, isEmpty);
+      await engine.dispose();
+    });
+  }
+
   test('Web rejects local paths and unvalidated encoded formats', () async {
     final engine = await _loadedEngine(promptSpeechToTextSupported: true);
     final recognizer = SpeechToTextEngine(
@@ -286,6 +324,8 @@ class _WebSpeechBackend
   @override
   final bool supportsPromptSpeechToText;
   final Completer<void>? generationGate;
+  final String? partialText;
+  final Completer<void> partialSent = Completer<void>();
   String generationText;
   bool cancelCalled = false;
   String? lastPrompt;
@@ -295,6 +335,7 @@ class _WebSpeechBackend
   _WebSpeechBackend({
     required bool promptSpeechToTextSupported,
     this.generationGate,
+    this.partialText,
     this.generationText = 'Hello.',
   }) : supportsPromptSpeechToText = promptSpeechToTextSupported;
 
@@ -363,6 +404,11 @@ class _WebSpeechBackend
     lastPrompt = prompt;
     lastParts = parts;
     lastGenerationParams = params;
+    final partial = partialText;
+    if (partial != null) {
+      yield utf8.encode(partial);
+      partialSent.complete();
+    }
     final gate = generationGate;
     if (gate != null) {
       await gate.future;

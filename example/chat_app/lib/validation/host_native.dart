@@ -20,11 +20,16 @@ class _NativeHost implements ValidationHost {
   static const _npuChannel = MethodChannel('llamadart_validation/npu');
   AndroidNpuMonitor? _npu;
   String? _probeLibrary;
+  ({String head, String? config, Map<String, dynamic> evidence})? _decision;
   @override
   ValidationEngine createEngine(ValidationProfile profile) =>
       profile.nativeReference
       ? NativeNpuReferenceEngine(_npu!, _probeLibrary!)
-      : PublicValidationEngine(npu: _npu);
+      : PublicValidationEngine(
+          npu: _npu,
+          decisionHead: _decision?.head,
+          decisionConfig: _decision?.config,
+        );
   FileValidationJournal? _journal;
   Directory? _output;
   http.Client? _client;
@@ -45,6 +50,7 @@ class _NativeHost implements ValidationHost {
   ) async {
     _npu = null;
     _probeLibrary = null;
+    _decision = null;
     if (profile.backend == 'npu') {
       if (!Platform.isAndroid) {
         throw UnsupportedError('NPU app validation requires Android');
@@ -88,20 +94,33 @@ class _NativeHost implements ValidationHost {
       _npu = AndroidNpuMonitor(directory, _probeLibrary!, identity);
       return (path: path, evidence: {...value, 'npu': identity});
     }
+    final cache = Directory(
+      p.join(
+        (await getApplicationSupportDirectory()).path,
+        'validation',
+        'models',
+      ),
+    );
     _client = http.Client();
     try {
-      return await prepareModel(
+      final model = await prepareModel(
         profile,
-        Directory(
-          p.join(
-            (await getApplicationSupportDirectory()).path,
-            'validation',
-            'models',
-          ),
-        ),
+        cache,
         client: _client,
         onProgress: _journal!.emitPreparation,
         timeout: const Duration(minutes: 10),
+      );
+      if (!profile.isDecision) return model;
+      final decision = _decision = await prepareDecisionAssets(
+        profile,
+        cache,
+        client: () => _client = http.Client(),
+        onProgress: _journal!.emitPreparation,
+        timeout: const Duration(minutes: 10),
+      );
+      return (
+        path: model.path,
+        evidence: {...model.evidence, ...decision.evidence},
       );
     } finally {
       _client?.close();

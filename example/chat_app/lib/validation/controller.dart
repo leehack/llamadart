@@ -85,9 +85,16 @@ class ValidationController extends ChangeNotifier {
       }
       final model = await host.prepare(profile);
       if (_cancelled) throw StateError('Run cancelled during preparation');
+      final decisionReference = profile.isDecision
+          ? await rootBundle.loadString(
+              'packages/llamadart_validation/'
+              '${profile.fixtureText('decision', 'reference')}',
+            )
+          : null;
       _runner = ValidationRunner(
         profile: profile,
         engine: host.createEngine(profile),
+        decisionReference: decisionReference,
         emit: (event) async {
           await host.emit(event);
           if (event['type'] == 'case' || event['type'] == 'case_start') {

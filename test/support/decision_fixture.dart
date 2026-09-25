@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 // Laya 0.3.5 reference rows; provenance is in fixtures/decision/README.md.
-const decisionFixturePath = 'test/fixtures/decision/laya_0_3_5_reference.json';
+const decisionFixturePath =
+    'packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json';
 
 // Laya rounds answers to 4 decimals and decodes in float32.
 const decisionAnswerTolerance = 6e-5;

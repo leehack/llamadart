@@ -122,6 +122,46 @@ void main() {
     );
   });
 
+  test('WebGPU profiles need a Web bundle, and Web decision bundles WebGPU', () {
+    Map profile(String backend) =>
+        jsonDecode(
+              File(
+                'packages/llamadart_validation/assets/profiles/decision-gguf-$backend.json',
+              ).readAsStringSync(),
+            )
+            as Map;
+    Matcher rejects(String message) => throwsA(
+      isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        contains(message),
+      ),
+    );
+    expect(
+      () => requireExecutableValidationProfile(profile('webgpu')),
+      rejects('only in Web bundles'),
+    );
+    expect(
+      () => requireExecutableValidationProfile(profile('webgpu'), web: true),
+      returnsNormally,
+    );
+    expect(
+      () => requireExecutableValidationProfile(profile('cpu'), web: true),
+      rejects('only on WebGPU'),
+    );
+    expect(
+      () => requireExecutableValidationProfile(profile('cpu')),
+      returnsNormally,
+    );
+    expect(
+      () => requireExecutableValidationProfile({
+        'backend': 'cpu',
+        'model': {'access': 'public', 'kind': 'raw'},
+      }, web: true),
+      returnsNormally,
+    );
+  });
+
   test('gated CPU mobile builds fail before any build command', () async {
     final profile = File(
       p.join(
@@ -158,6 +198,53 @@ void main() {
       expect(invoked, false);
     }
   });
+
+  test(
+    'decision bundles off their host fail before any build command',
+    () async {
+      for (final (target, backend, message) in [
+        ('desktop', 'webgpu', 'only in Web bundles'),
+        ('android', 'webgpu', 'only in Web bundles'),
+        ('ios-inputs', 'webgpu', 'only in Web bundles'),
+        ('web', 'cpu', 'only on WebGPU'),
+        ('web', 'metal', 'only on WebGPU'),
+      ]) {
+        final id = 'decision-gguf-$backend';
+        File(
+          p.join(
+            root.path,
+            'packages/llamadart_validation/assets/profiles/$id.json',
+          ),
+        ).writeAsStringSync(
+          File(
+            'packages/llamadart_validation/assets/profiles/$id.json',
+          ).readAsStringSync(),
+        );
+        var invoked = false;
+        await expectLater(
+          buildValidationBundle(
+            root.path,
+            target,
+            p.join(root.path, 'output-$target-$backend'),
+            profile: id,
+            execute: (binary, args, {directory, timeout}) async {
+              invoked = true;
+              throw StateError('Build command must not run');
+            },
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains(message),
+            ),
+          ),
+          reason: '$target $id',
+        );
+        expect(invoked, false);
+      }
+    },
+  );
 
   test(
     'matching input inventory never qualifies or permits dispatch',

@@ -1,5 +1,7 @@
+import 'decision_catalog.dart';
+
 /// Current reproducible catalog contract; older journals retain their version.
-const int validationCatalogVersion = 4;
+const int validationCatalogVersion = 5;
 
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
@@ -73,6 +75,12 @@ const validationFixtures = <String, Map<String, Object>>{
     'marker': 'cedar17',
   },
   'limit': {'max_tokens': 1, 'expected_native_decode_tokens': 1},
+  'invalid_grammar': {
+    'grammar': 'root ::= "unterminated',
+    'native_message':
+        'llama.cpp failed to initialize the requested grammar sampler.',
+    'web_details_marker': '(invalid grammar)',
+  },
   'benchmark': {
     'chat_prompt': 'List the numbers from one to twenty in English.',
     'warmups': 1,
@@ -137,11 +145,31 @@ const coreValidationCases = [
     ['streaming', 'lifecycle'],
     ['cancel', 'raw', 'hello'],
   ),
+  ValidationCaseDefinition(
+    'C08.cancel.early',
+    ['streaming', 'lifecycle'],
+    ['cancel', 'raw', 'hello'],
+  ),
+  ValidationCaseDefinition(
+    'C08.cancel.restart',
+    ['streaming', 'lifecycle'],
+    ['cancel', 'raw', 'hello'],
+  ),
+  ValidationCaseDefinition(
+    'C08.overlap',
+    ['streaming', 'lifecycle'],
+    ['cancel', 'raw', 'hello'],
+  ),
   ValidationCaseDefinition('C09.reload', ['lifecycle'], ['raw', 'hello']),
   ValidationCaseDefinition(
     'C10.limit',
     ['streaming'],
     ['limit', 'raw', 'hello'],
+  ),
+  ValidationCaseDefinition(
+    'C12.grammar',
+    ['guards'],
+    ['invalid_grammar', 'raw', 'hello'],
   ),
   ValidationCaseDefinition(
     'C12.recovery',
@@ -162,7 +190,17 @@ const extendedValidationCases = [
     ['arithmetic'],
     version: 2,
   ),
-  ValidationCaseDefinition('C07.tools', ['tools'], ['tools'], version: 2),
+  ValidationCaseDefinition(
+    'C07.tools',
+    ['tools'],
+    ['tools', 'hello'],
+    version: 3,
+  ),
+  ValidationCaseDefinition(
+    'C07.tools.auto_text',
+    ['tools'],
+    ['tools', 'hello'],
+  ),
   ValidationCaseDefinition(
     'C10.stop',
     ['streaming'],
@@ -200,19 +238,46 @@ const validationCaseCatalog = [
   ...extendedValidationCases,
 ];
 
+/// Cases that catalogs 1 to 4 do not declare.
+const catalogFiveCaseIds = {
+  'C08.cancel.early',
+  'C08.cancel.restart',
+  'C08.overlap',
+  'C12.grammar',
+  'C07.tools.auto_text',
+};
+
+/// Whether [catalogVersion] declares case [id]. Decision cases exist only in
+/// the current catalog, and only decision profiles select them.
+bool catalogDeclaresCase(String id, int catalogVersion) =>
+    decisionValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion == validationCatalogVersion
+    : catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
+
 /// Finds a declared case; an unknown ID is a programming error.
 ValidationCaseDefinition validationCase(
   String id, {
   int catalogVersion = validationCatalogVersion,
 }) {
-  if (![1, 2, 3, validationCatalogVersion].contains(catalogVersion)) {
+  if (catalogVersion < 1 || catalogVersion > validationCatalogVersion) {
     throw const FormatException('Unsupported catalog version');
   }
+  if (!catalogDeclaresCase(id, catalogVersion)) {
+    throw FormatException('Catalog $catalogVersion does not declare $id');
+  }
+  final current = catalogVersion < 5 && id == 'C07.tools'
+      ? const ValidationCaseDefinition(
+          'C07.tools',
+          ['tools'],
+          ['tools'],
+          version: 2,
+        )
+      : [
+          ...validationCaseCatalog,
+          ...decisionValidationCases,
+        ].singleWhere((definition) => definition.id == id);
   if (catalogVersion < 4 &&
       ['C05.thinking', 'C07.tools', 'C02.generate'].contains(id)) {
-    final current = validationCaseCatalog.singleWhere(
-      (definition) => definition.id == id,
-    );
     return ValidationCaseDefinition(
       id,
       current.features,
@@ -236,5 +301,5 @@ ValidationCaseDefinition validationCase(
       implemented: false,
     );
   }
-  return validationCaseCatalog.singleWhere((definition) => definition.id == id);
+  return current;
 }

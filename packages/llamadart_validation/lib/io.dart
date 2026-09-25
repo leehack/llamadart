@@ -21,20 +21,79 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
   Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
   profile.requireRunnable();
+  return _prepareArtifact(
+    profile,
+    profile.model,
+    cache,
+    suppliedPath: suppliedPath,
+    timeout: timeout,
+    client: client,
+    onProgress: onProgress,
+  );
+}
+
+/// Verifies the decision head and optional config of a decision profile
+/// like [prepareModel]; `evidence` holds their verification records under
+/// `decision_head` and `decision_config`.
+Future<({String head, String? config, Map<String, dynamic> evidence})>
+prepareDecisionAssets(
+  ValidationProfile profile,
+  Directory cache, {
+  Duration timeout = const Duration(minutes: 5),
+  http.Client Function()? client,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
+}) async {
+  final prepared = {
+    for (final MapEntry(:key, :value) in profile.decisionArtifacts.entries)
+      key: await _prepareArtifact(
+        profile,
+        value as Map<String, dynamic>,
+        cache,
+        artifact: 'decision_$key',
+        timeout: timeout,
+        client: client?.call(),
+        onProgress: onProgress,
+      ),
+  };
+  final head =
+      prepared['head'] ?? (throw StateError('Profile has no decision head'));
+  return (
+    head: head.path,
+    config: prepared['config']?.path,
+    evidence: {
+      for (final MapEntry(:key, :value) in prepared.entries)
+        'decision_$key': value.evidence,
+    },
+  );
+}
+
+Future<({String path, Map<String, dynamic> evidence})> _prepareArtifact(
+  ValidationProfile profile,
+  Map<String, dynamic> lock,
+  Directory cache, {
+  String artifact = 'model',
+  String? suppliedPath,
+  required Duration timeout,
+  http.Client? client,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
+}) async {
+  final hash = lock['sha256'] as String;
+  final size = lock['bytes'] as int;
   final started = Stopwatch()..start();
   final target = suppliedPath == null
-      ? File(p.join(cache.path, profile.modelHash, profile.filename))
+      ? File(p.join(cache.path, hash, lock['filename'] as String))
       : File(suppliedPath);
   var hit = target.existsSync();
   Future<void> progress(String stage, int bytes, String state) async {
     await onProgress?.call({
       'type': 'preparation_progress',
       'profile_id': profile.id,
-      'model_sha256': profile.modelHash,
+      if (artifact != 'model') 'artifact': artifact,
+      'model_sha256': hash,
       'stage': stage,
       'state': state,
       'bytes': bytes,
-      'expected_bytes': profile.model['bytes'],
+      'expected_bytes': size,
       'elapsed_ms': started.elapsedMilliseconds,
     });
   }
@@ -42,13 +101,13 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
   Future<bool> valid(File file) async {
     final length = await file.length();
     await progress('checksum', 0, 'started');
-    if (length != profile.model['bytes']) {
+    if (length != size) {
       await progress('checksum', length, 'rejected');
       return false;
     }
     var hashed = 0;
     var lastReport = started.elapsedMilliseconds;
-    final hash = await sha256
+    final digest = await sha256
         .bind(
           file.openRead().asyncMap((chunk) async {
             hashed += chunk.length;
@@ -60,7 +119,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
           }),
         )
         .first;
-    final matches = hash.toString() == profile.modelHash;
+    final matches = digest.toString() == hash;
     await progress('checksum', hashed, matches ? 'verified' : 'rejected');
     return matches;
   }
@@ -97,7 +156,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       await progress('download', 0, 'started');
       await (() async {
         final response = await transport.send(
-          http.Request('GET', Uri.parse(profile.model['url'] as String)),
+          http.Request('GET', Uri.parse(lock['url'] as String)),
         );
         if (response.statusCode != 200) {
           throw HttpException('Model download HTTP ${response.statusCode}');
@@ -105,7 +164,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
         sink = temporary.openWrite();
         await for (final chunk in response.stream) {
           receivedBytes += chunk.length;
-          if (receivedBytes > (profile.model['bytes'] as int)) {
+          if (receivedBytes > size) {
             throw const FormatException(
               'Model download exceeded locked byte size',
             );
@@ -134,7 +193,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       if (deadlineExpired) {
         throw TimeoutException(
           'Model download deadline exceeded after receiving $receivedBytes '
-          'of ${profile.model['bytes']} bytes',
+          'of $size bytes',
           timeout,
         );
       }
@@ -146,12 +205,12 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       if (temporary.existsSync()) await temporary.delete();
     }
   }
-  await progress('ready', profile.model['bytes'] as int, 'verified');
+  await progress('ready', size, 'verified');
   return (
     path: target.absolute.path,
     evidence: {
-      'sha256': profile.modelHash,
-      'bytes': profile.model['bytes'],
+      'sha256': hash,
+      'bytes': size,
       'verified': true,
       'cache_hit': hit,
       'download_timeout_ms': timeout.inMilliseconds,

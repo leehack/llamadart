@@ -100,7 +100,8 @@
         "kind": {
           "enum": [
             "raw",
-            "chat"
+            "chat",
+            "decision"
           ]
         },
         "access": {
@@ -112,6 +113,81 @@
         "url": {
           "type": "string",
           "pattern": "^https://"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "head"
+      ],
+      "properties": {
+        "head": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "revision",
+            "sha256",
+            "bytes",
+            "url"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]+\\.safetensors$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filename",
+            "revision",
+            "sha256",
+            "bytes",
+            "url"
+          ],
+          "properties": {
+            "filename": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]+\\.json$"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^https://"
+            }
+          }
         }
       }
     },
@@ -259,6 +335,21 @@
           "additionalProperties": false,
           "properties": {}
         },
+        "invalid_grammar": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "grammar": {
+              "type": "string"
+            },
+            "native_message": {
+              "type": "string"
+            },
+            "web_details_marker": {
+              "type": "string"
+            }
+          }
+        },
         "benchmark": {
           "type": "object",
           "additionalProperties": false,
@@ -388,6 +479,45 @@
         "required": [
           "npu_target"
         ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "decision"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "decision"
+        ],
+        "properties": {
+          "runtime": {
+            "const": "gguf"
+          },
+          "selection": {
+            "const": "quick"
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "decision"
+          ]
+        }
       }
     }
   ]
