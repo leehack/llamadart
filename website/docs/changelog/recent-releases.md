@@ -120,6 +120,13 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
+- Add cross-platform validation cases for a cancel issued right after
+  listening, a generation requested right after a cancel, an overlapping
+  generation, an invalid GBNF grammar and `ToolChoice.auto` on a prompt that
+  needs no tool, and run the tool cases on the GGUF chat profiles
+  ([#602](https://github.com/leehack/llamadart/issues/602),
+  [#655](https://github.com/leehack/llamadart/issues/655),
+  [#654](https://github.com/leehack/llamadart/issues/654)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).

@@ -259,6 +259,21 @@
           "additionalProperties": false,
           "properties": {}
         },
+        "invalid_grammar": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "grammar": {
+              "type": "string"
+            },
+            "native_message": {
+              "type": "string"
+            },
+            "web_details_marker": {
+              "type": "string"
+            }
+          }
+        },
         "benchmark": {
           "type": "object",
           "additionalProperties": false,

@@ -45,6 +45,12 @@ class ValidationReport {
     final catalogVersion = declaredCatalog is Map
         ? declaredCatalog['version']
         : null;
+    final knownCatalog =
+        catalogVersion is int &&
+            catalogVersion >= 1 &&
+            catalogVersion <= validationCatalogVersion
+        ? catalogVersion
+        : null;
     if (!const [1, 2].contains(manifest['schema_version'])) {
       problems.add('Unsupported result schema');
     }
@@ -98,7 +104,7 @@ class ValidationReport {
         }
       }
       if (canonicalJson(inventory) !=
-          canonicalJson(legacy ? profile.legacyCaseIds : profile.caseIds)) {
+          canonicalJson(_inventory(profile, legacy, knownCatalog))) {
         problems.add('Case inventory does not match the profile');
       }
       if (canonicalJson(manifest['effective_config']) !=
@@ -114,9 +120,7 @@ class ValidationReport {
     }
     final expected = profile == null
         ? declared
-        : legacy
-        ? profile.legacyCaseIds
-        : profile.caseIds;
+        : _inventory(profile, legacy, knownCatalog);
     var sequence = 0;
     for (var index = 0; index < events.length; index++) {
       final event = events[index];
@@ -152,27 +156,19 @@ class ValidationReport {
       if (records.containsKey(id)) {
         problems.add('Duplicate terminal record: $id');
       }
-      if (!legacy &&
-          profile != null &&
-          const [1, 2, 3, 4].contains(catalogVersion)) {
+      if (!legacy && profile != null && knownCatalog != null) {
         if (event['case_version'] !=
-                validationCase(
-                  id,
-                  catalogVersion: catalogVersion as int,
-                ).version ||
+                validationCase(id, catalogVersion: knownCatalog).version ||
             event['fixture_hash'] !=
                 jsonHash(
-                  profile.caseFixtures(id, catalogVersion: catalogVersion),
+                  profile.caseFixtures(id, catalogVersion: knownCatalog),
                 )) {
           problems.add('Case version or fixture identity mismatch: $id');
         }
       }
       if (!legacy &&
-          const [1, 2, 3, 4].contains(catalogVersion) &&
-          !validationCase(
-            id,
-            catalogVersion: catalogVersion as int,
-          ).implemented &&
+          knownCatalog != null &&
+          !validationCase(id, catalogVersion: knownCatalog).implemented &&
           event['status'] != 'NOT_RUN') {
         problems.add(
           'Unimplemented catalog case cannot claim an executed result: $id',
@@ -218,6 +214,15 @@ class ValidationReport {
       ], nativeLog),
     );
   }
+
+  /// Obligations the profile derives for the journal's schema and catalog.
+  static List<String> _inventory(
+    ValidationProfile profile,
+    bool legacy,
+    int? catalogVersion,
+  ) => legacy
+      ? profile.legacyCaseIds
+      : profile.caseIdsForCatalog(catalogVersion ?? validationCatalogVersion);
 
   /// True only for complete mandatory functional obligations.
   bool get assertionsPassed =>

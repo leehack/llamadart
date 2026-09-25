@@ -33,7 +33,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 
 | Area | Current evidence | Remaining qualification |
 | --- | --- | --- |
-| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; retain model/backend failures |
+| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; catalog 5 adds early cancel, GGUF restart/overlap and invalid grammar; retain model/backend failures |
 | Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
 | Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
@@ -92,7 +92,7 @@ untrusted producer's report.
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
 | `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
 | `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
-| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
+| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history, instruction and C07 tool checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
 
@@ -128,10 +128,13 @@ private mobile model transfer must be implemented before enabling that lane.
 
 The quick inventory is C01 load/diagnostics, C02 Unicode tokenize/detokenize,
 C03 raw generation, C04 hello/arithmetic and C06 multi-turn history for chat
-fixtures, C08 cancellation/control/recovery, C09 dispose/new engine/reload,
-C10 one-token limit, C12 missing-model rejection/recovery, and B01 one warmup
-plus three measured generations. Independent assertion failures do not suppress
-later metrics; load failure or timeout prevents unsafe later inference.
+fixtures, C08 cancellation/control/recovery and early cancel, C09 dispose/new
+engine/reload, C10 one-token limit, C12 missing-model rejection/recovery, and
+B01 one warmup plus three measured generations. GGUF profiles also run C08
+restart/overlap and C12 invalid grammar
+([catalog 5](#catalog-5-cancellation-grammar-and-tool-cases)). Independent
+assertion failures do not suppress later metrics; load failure or timeout
+prevents unsafe later inference.
 
 Sampling is temperature 0, seed 1, top-k 40, top-p .9, repeat penalty 1.1,
 context 1024, four threads, 32 generated tokens, thinking disabled, prompt reuse
@@ -975,8 +978,10 @@ Gemma 4 E2B now has immutable `gemma4-gguf-{cpu,metal,vulkan,cuda}` and
 `gemma4-litert-{cpu,gpu}` text profiles. Qwen3.5 0.8B retains the existing
 `chat-gguf-*` Q4_0 profiles and adds `qwen35-litert-{cpu,gpu}` INT8 profiles.
 The new profiles disable thinking, retain strict core predicates, and record
-resolved sampling and TPS with the existing reporter. Native LiteRT profiles
-are not Web or NPU artifacts. Multimodal/projector profiles remain separate work.
+resolved sampling and TPS with the existing reporter. The GGUF chat profiles
+select `focused` with `tools`, adding C07.tools and C07.tools.auto_text. Native
+LiteRT profiles are not Web or NPU artifacts. Multimodal/projector profiles
+remain separate work.
 
 ```bash
 dart run tool/testing/validation.dart local --profile gemma4-gguf-cpu --model /models/gemma-4-E2B-it-Q4_K_S.gguf
@@ -1103,6 +1108,50 @@ these cases as unimplemented and cannot claim their execution. Catalog 4 adds
 Unicode generation, thinking on/off and tool choice/result controls. Thinking
 budgets, tool-bearing batching and model-specific qualification remain separate.
 
+
+### Catalog 5 cancellation, grammar and tool cases
+
+Catalog 5 adds these cases. Each records the precondition it needs and its
+timings; a missed precondition is NOT_RUN, never PASS.
+
+| Case | Request | Passes when | Runs on |
+| --- | --- | --- | --- |
+| `C08.cancel.early` | `cancelGeneration()` right after listening to the short request, before any delta ([#602](https://github.com/leehack/llamadart/issues/602)) | The stream ends without content, thinking or tool calls within the 5 s cancel deadline; the same request then completes with output | Every public-API profile |
+| `C08.cancel.restart` | At the first delta of the 256-token cancel request, `cancelGeneration()`, then the short request without waiting ([#655](https://github.com/leehack/llamadart/issues/655)) | The short request, issued before the cancelled stream ended, completes with output and its first delta follows that end | GGUF quick core |
+| `C08.overlap` | The short request at the first delta of the uncancelled 256-token request | It fails with `LlamaStateException` before the first ends, the first streams at least one more delta and ends cleanly after the harness cancels it, and a later request completes | GGUF quick core |
+| `C12.grammar` | Raw request with GBNF `root ::= "unterminated` | Native: `LlamaInferenceException` `llama.cpp failed to initialize the requested grammar sampler.`; Web: `LlamaInferenceException` whose details contain `(invalid grammar)`; then a request completes | GGUF quick core |
+| `C07.tools.auto_text` | `ToolChoice.auto` with `get_weather` on the hello prompt ([#654](https://github.com/leehack/llamadart/issues/654)) | Text finish matching the hello regex, no tool call | `tools` selection |
+
+Only native llama.cpp defines restart and overlap, so GGUF Web records both as
+NOT_RUN. LiteRT profiles omit them (`litert_restart_contract_undefined`,
+[#656](https://github.com/leehack/llamadart/issues/656)) and `C12.grammar`
+(`litert_grammar_unsupported`: LiteRT-LM rejects every grammar). C07.tools
+version 3 also binds the hello fixture its recovery uses. On Web, a required
+trial rejected with the documented `LlamaUnsupportedException` for a lazy
+required-tool grammar counts as that trial's result; elsewhere the rejection
+stays ERROR. Catalog 1 to 4 reports keep their inventories, C07.tools version 2
+and fixtures; a catalog 5 case in them fails the report.
+
+The `chat-gguf-*` and `gemma4-gguf-*` profiles select `focused` with `tools`.
+Their C07 fixtures are reference-qualified against unmodified upstream
+`llama-server` at native v0.5.0's llama.cpp commit
+`7fe450e19305b828c199d602c23a8337aaa1f03b` (CPU build, same sampler, thinking
+off). For both locked models it calls `get_weather` with `{"city":"Montréal"}`
+under `auto` and `required`, answers `17` after the tool result, emits no tool
+call under `none`, and answers the hello prompt in text under `auto`. The LiteRT
+chat profiles do not select tools: LiteRT-LM rejects `ToolChoice.required` for
+Qwen tool calling, and no LiteRT reference emission exists.
+
+Local macOS arm64 JIT runs (2026-09-24, dirty source, not qualification):
+`tiny-gguf-cpu` 15/15 PASS; `chat-gguf-cpu` 19 PASS with the known C06 failure;
+`gemma4-gguf-cpu` 19 PASS with C07.tools FAIL, because llamadart renders the
+Gemma 4 tool result as `response:None{value:}` and the model answers `null`
+where upstream renders the result and answers `17`; `chat-litert-cpu` 15/15
+PASS. Every catalog 5 case passed on every profile that selects it. With the
+native backend reverted to its pre-#657 source, C08.cancel.restart and
+C08.overlap fail with the wrapped `generation is already in progress` error;
+with the engine-level cancel record disabled, C08.cancel.early fails with full
+output.
 
 ### Current Qwen tool and history reference (2026-09-19)
 
