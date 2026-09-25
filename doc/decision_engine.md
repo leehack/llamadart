@@ -17,7 +17,7 @@ Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 
 | File | Source | Notes |
 | --- | --- | --- |
-| Backbone GGUF | `fr0stbit3/laya-gguf@ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, `laya-Q8_0.gguf` (421 MB) or `laya-F16.gguf` | `modern-bert` architecture, 1024 hidden |
+| Backbone GGUF | `fr0stbit3/laya-gguf@ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, `laya-Q8_0.gguf` (421 MB) or `laya-F16.gguf` (791 MB) | `modern-bert` architecture, 1024 hidden |
 | Head | same repo, `laya-head.safetensors` (106 MB, F32) | 36 tensors under the PyTorch names; `__metadata__["laya.config"]` holds `rl_agent_config.json` |
 | Official checkpoint | `convaiinnovations/laya/model.safetensors` + `rl_agent_config.json` | also accepted as a head file: `encoder.*` tensors are ignored, config comes from `configPath` |
 
@@ -357,6 +357,10 @@ PyTorch reference; time is `systemOne` wall time per question.
 The official checkpoint's F16 head tensors give the same differences as the F32
 head file. On these 24 fixture rows, in every configuration, no choice changed,
 no noul crossed 0.5 and no score rounded to a different level.
+The published `laya-F16.gguf` gives the F16 conversion's worst differences:
+0.0518, 0.0115 and 0.0097 on the CPU (`decision-model-smoke` and
+`decision-gguf-cpu`) and 0.0118, 0.0030 and 0.0031 on Metal
+(`decision-gguf-metal`).
 
 The fixture's short sequences understate the error. A broader review set of
 187 questions in 62 random requests (seed 20260922, mean 327 tokens, 73
@@ -377,7 +381,7 @@ and 8 times for probabilities; on the fixture the worst is 11 (CPU) to 14
 (Metal) times. Q8_0 can change clear decisions. An F16 conversion matched F32
 on Metal and flipped only near-ties on CPU. Use an F32 backbone, or F16 on
 Metal, when answers must match Laya; the published `laya-F16.gguf` has not
-been measured.
+been measured on this set.
 
 On Metal, disposing the engine with a head still loaded exits cleanly; skipping
 the head frees in `freeModel` and `dispose` makes the same exit abort in
@@ -405,7 +409,10 @@ wasm64 in both bridge modes, so the drift comes from the bridge's WASM CPU
 Q8_0 path rather than llamadart. With the bridge assets from
 [#665](https://github.com/leehack/llamadart/pull/665), the validation harness
 gave the same worst differences: 0.2326, 0.0628 and 0.1224 on the WASM CPU,
-and 0.1636, 0.0436 and 0.0247 with `decision-gguf-webgpu`, which passed.
+and 0.1636, 0.0436 and 0.0247 with `decision-gguf-webgpu`, which passed. With
+the published `laya-F16.gguf` on WebGPU it gave the F16 conversion's 0.0169,
+0.0046 and 0.0013, but each model load took 45 to 51 s
+([Decision profiles](cross_platform_validation.md#decision-profiles)).
 Typed key reads with the question identity check, sequence validation
 messages, error mapping, URL redaction, `<base href>` resolution, and heads
 freed or bridges disposed behind the engine's back were checked against the
