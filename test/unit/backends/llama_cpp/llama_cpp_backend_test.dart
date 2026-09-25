@@ -891,7 +891,13 @@ void main() {
           topK: 0,
           reusePromptPrefix: true,
         ),
-        throwsRangeError,
+        throwsA(
+          isA<RangeError>().having(
+            (error) => error.toString(),
+            'toString',
+            'RangeError: bad token',
+          ),
+        ),
       );
       await expectLater(
         backend.scoreNextToken(

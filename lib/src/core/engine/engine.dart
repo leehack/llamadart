@@ -1159,10 +1159,11 @@ class LlamaEngine {
   /// [reusePromptPrefix] is true, a prefix shared with the previous prompt on
   /// this context is not evaluated again.
   ///
+  /// A call made while a generation runs waits for it to finish.
+  ///
   /// Throws [ArgumentError] for an empty [prompt], a negative token id or
   /// [topK], or when both [candidates] and [topK] ask for nothing;
-  /// [RangeError] for a token id or [topK] beyond the vocabulary;
-  /// [LlamaStateException] while generation runs on the context; and
+  /// [RangeError] for a token id or [topK] beyond the vocabulary; and
   /// [LlamaUnsupportedException] when [supportsNextTokenScoring] is false.
   Future<LlamaNextTokenScores> scoreNextToken(
     String prompt, {

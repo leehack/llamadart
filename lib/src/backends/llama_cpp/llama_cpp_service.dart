@@ -4485,7 +4485,8 @@ class LlamaCppService {
     ctx = _resetContext(contextHandle, ctx, clearMemory: !reusePromptPrefix);
     final nCtx = llama_n_ctx(ctx.pointer);
     final tokensPtr = malloc<Int32>(nCtx);
-    final pieceBuf = malloc<Uint8>(256);
+    var pieceCapacity = 256;
+    var pieceBuf = malloc<Uint8>(pieceCapacity);
     try {
       final promptTokens = _ingestTextPrompt(
         _batches[contextHandle]!,
@@ -4523,14 +4524,27 @@ class LlamaCppService {
       final logSum = maxLogit + math.log(sum);
 
       LlamaTokenLogprob scored(int token) {
-        final n = llama_token_to_piece(
+        var n = llama_token_to_piece(
           vocab,
           token,
           pieceBuf.cast(),
-          256,
+          pieceCapacity,
           0,
           true,
         );
+        if (n < 0) {
+          malloc.free(pieceBuf);
+          pieceCapacity = -n;
+          pieceBuf = malloc<Uint8>(pieceCapacity);
+          n = llama_token_to_piece(
+            vocab,
+            token,
+            pieceBuf.cast(),
+            pieceCapacity,
+            0,
+            true,
+          );
+        }
         return LlamaTokenLogprob(
           token: token,
           bytes: n > 0 ? List<int>.of(pieceBuf.asTypedList(n)) : const [],

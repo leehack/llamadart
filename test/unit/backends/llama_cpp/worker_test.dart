@@ -379,6 +379,21 @@ void main() {
       }
     });
 
+    test('keeps range errors of other requests generic', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        _ScoringService(error: RangeError.range(9, 0, 4, 'budget')),
+      );
+      try {
+        final response = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => TokenizeRequest(1, 'x', true, sendPort),
+        );
+        expect((response as ErrorResponse).kind, WorkerErrorKind.generic);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test(
       'preserves unsupported generation errors across worker messages',
       () async {
@@ -1102,6 +1117,12 @@ class _ScoringService extends LlamaCppService {
 
   @override
   void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  List<int> tokenize(int modelHandle, String text, bool addSpecial) {
+    if (error case final error?) throw error;
+    return const [];
+  }
 
   @override
   LlamaNextTokenScores scoreNextToken(

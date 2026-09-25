@@ -120,7 +120,7 @@ class NativeLlamaBackend
       case WorkerErrorKind.backendInitialization:
         return LlamaBackendInitializationException(response.message);
       case WorkerErrorKind.range:
-        return RangeError(response.message);
+        return _WorkerRangeError(response.message);
     }
   }
 
@@ -1266,4 +1266,14 @@ final class _QueuedGeneration {
   final void Function() close;
 
   _QueuedGeneration(this.start, this.close);
+}
+
+/// A [RangeError] raised on the worker isolate, described as it was there.
+class _WorkerRangeError extends RangeError {
+  _WorkerRangeError(this._description) : super(null);
+
+  final String _description;
+
+  @override
+  String toString() => _description;
 }

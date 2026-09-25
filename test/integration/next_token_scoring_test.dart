@@ -2,6 +2,7 @@
 @Timeout(Duration(minutes: 5))
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:llamadart/llamadart.dart';
@@ -104,6 +105,28 @@ void main() {
 
     await engine.scoreNextToken('$prompt girl named Lily', topK: 1);
     expect(await greedy(prompt, 8, reuse: true), before);
+  });
+
+  test('waits for a running generation', () async {
+    final before = await greedy(prompt, 32);
+    final scored = Completer<LlamaNextTokenScores>();
+    final chunks = <String>[];
+    await for (final chunk in engine.generate(
+      prompt,
+      params: const GenerationParams(
+        maxTokens: 32,
+        temp: 0,
+        reusePromptPrefix: false,
+      ),
+    )) {
+      chunks.add(chunk);
+      if (!scored.isCompleted) {
+        scored.complete(engine.scoreNextToken(prompt, topK: 1));
+      }
+    }
+
+    expect(chunks.join(), before);
+    expect((await scored.future).top, hasLength(1));
   });
 
   test('rejects arguments outside the vocabulary', () async {
