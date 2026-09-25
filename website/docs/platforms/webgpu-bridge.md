@@ -134,7 +134,8 @@ and `gpuLayers: 0` to prove CPU loading before raising GPU offload.
 The 32-bit core has a 4 GiB address space, which must also hold the KV cache
 and intermediate buffers. `llamadart` selects the 64-bit (memory64) core when
 `ModelParams.preferMemory64` is `true`, or when it is `null` and
-`ModelParams.modelBytesHint` is at least 2 GiB:
+`ModelParams.modelBytesHint` is at least 2 GiB. `false` selects the 32-bit
+core, though a fetch-backed load that aborts on it is retried on memory64:
 
 ```dart
 await engine.loadModelFromUrl(
@@ -203,7 +204,7 @@ When retries run out, the load throws an error with runtime hints such as
 | --- | --- | --- |
 | `Web bridge is unavailable` | Bridge not loaded | [Add the bridge to your app](#add-the-bridge-to-your-app); check `window.__llamadartBridgeLoadError` and asset URLs. |
 | `navigator.gpu` missing or no adapter | Browser or device | Use a secure context, update browser and drivers, or run CPU or native. |
-| `thread constructor failed` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`. |
+| `thread constructor failed`, `error 138`, or `Browser runtime blocked worker thread creation` | Cross-origin isolation | Send COOP/COEP headers and check `window.crossOriginIsolated`, or use a smaller or sharded model. |
 | Memory, OOM, `bad_alloc` or abort during load | Model or config pressure | Reduce model size, context, threads or GPU layers; use memory64. |
 | Safari forces CPU | Safari safeguard | Set `__llamadartBridgeAdaptiveSafariGpu` from the loaded assets, or `__llamadartAllowSafariWebGpu` for testing. |
 | Works on `localhost` but not hosted | Deployment | Check base href, asset paths, COOP/COEP headers and service-worker cache. |

@@ -30,10 +30,14 @@ on llama.cpp and WebGPU only; on LiteRT-LM `DecisionEngine.load` throws
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
 
-`LiteRtLmBackendPreference.auto` currently maps to GPU on Android, iOS, macOS,
-and web, and CPU on other LiteRT-LM targets. Linux x64 and Windows x64 run
-LiteRT-LM on GPU only when `liteRtLmBackend` asks for it; that path uses the
-LiteRT-LM GPU backend, not CUDA. NPU is Android-only; web rejects it.
+`LiteRtLmBackendPreference.auto`, the default, follows `ModelParams`:
+`gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects CPU; a GPU
+`preferredBackend` (Vulkan, Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM
+GPU backend on every platform; and `preferredBackend: auto` selects GPU on
+Android, iOS, macOS and web, and CPU on Linux and Windows. On Linux x64
+and Windows x64, GPU uses the LiteRT-LM GPU backend, not CUDA; set
+`liteRtLmBackend: cpu` on hosts without a hardware Vulkan driver. NPU is
+Android-only; web rejects it.
 
 ## Features by runtime
 

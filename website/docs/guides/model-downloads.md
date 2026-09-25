@@ -71,8 +71,8 @@ try {
   `cancelled` reuses the last source and options.
 - The controller owns cancellation: call `controller.cancel()` and leave
   `ModelLoadOptions.cancelToken` unset, or `start(...)` throws.
-- On web, pass a custom manager for browser storage; the default manager is
-  file-backed.
+- On web, pass a custom manager for browser storage; the default manager's
+  operations throw `LlamaUnsupportedException` there.
 
 ## Hugging Face `hf://` references
 
@@ -231,8 +231,9 @@ both up front. Without one, `auto(...)` falls back to
   manager, uses the same defaults as `auto()`, but falls back to the system
   temp directory when no home or cache directory exists; `auto()` and
   `sharedCache()` report an error instead.
-- `auto()` throws `LlamaUnsupportedException` on web. Browser model caches are
-  origin-scoped.
+- On web, `DefaultModelDownloadManager` is a placeholder whose operations
+  (`ensureModel`, `list` and the rest) throw `LlamaUnsupportedException`.
+  Browser model caches are origin-scoped.
 
 ## Inspect and clean the cache
 
@@ -294,8 +295,8 @@ await manager.clear();
 model only after the HTTP stream and any SHA-256 check succeed.
 
 **Resume.** A retry or resume sends an HTTP `Range` request only when the
-partial file has a validator (`ETag` or `Last-Modified`) or the caller passed
-`sha256`; otherwise it restarts from byte zero. A server that answers a Range
+partial file has a validator (`ETag` or `Last-Modified`); otherwise it
+restarts from byte zero. A server that answers a Range
 request with `200 OK` also restarts it from byte zero.
 
 **Locking.** Stable-cache downloads are serialized per cache entry within the

@@ -55,11 +55,12 @@ To see what a model will receive, render the prompt with
 | LFM2.5 Instruct, Phi-3.5, SmolLM3 | GGUF | None (generic JSON tool calls) | Template-tested | — |
 
 Other families whose published templates are template-tested with their own
-format: GPT-OSS, Seed-OSS, Nemotron Nano v2 and Nemotron 3 Nano, Apertus,
+format: GPT-OSS, Seed-OSS, Nemotron Nano v2, Apertus,
 Kimi K2 and K3, MiniMax M1, M2 and M3, Command R7B, Cohere2 MoE, MiniCPM5,
-Hunyuan Hy3, Solar Open, Poolside Laguna, Muse Glimmer, StepFun 3.5 Flash,
-Functionary v3.1 and v3.2, and FireFunction v2. Hermes 2 Pro, Hermes 3,
-Bielik, Reka Edge, MiMo-VL and Apriel 1.5 use the Hermes format.
+Hunyuan Hy3, Solar Open, Poolside Laguna, Muse Glimmer, Functionary v3.1
+and v3.2, and FireFunction v2. Nemotron 3 Nano and StepFun 3.5 Flash use the
+Qwen3-Coder XML format; Hermes 2 Pro, Hermes 3, Bielik, Reka Edge, MiMo-VL
+and Apriel 1.5 use the Hermes format.
 
 "Generic JSON tool calls" means the family has no native tool-call syntax:
 when you pass tools, llamadart asks the model to answer with a `tool_call` or

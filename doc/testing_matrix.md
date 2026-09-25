@@ -272,9 +272,10 @@ dart run tool/testing/run_local_e2e.dart \
   --expect "Exact expected transcript."
 
 # The Web scenario validates both file selection and Chromium's fake
-# microphone path with the same WAV fixture. The selected-file result is exact;
-# the fake microphone only needs a non-empty transcript because its artificial
-# input can loop at the capture boundary.
+# microphone path with the same WAV fixture. The selected-file transcript must
+# contain the expected text (case-insensitive); the fake microphone only needs
+# a non-empty transcript because its artificial input can loop at the capture
+# boundary.
 
 dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
   --model-path /path/to/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf \
@@ -355,9 +356,10 @@ Speech evidence outside the `validation-speech-stt` pack
   backends.
 - `web-speech-to-text-smoke` verifies both browser file selection and Chromium
   fake-device microphone capture with the same WAV fixture. File selection
-  returns the exact expected transcript; the microphone assertion requires only
-  a non-empty transcript without raw `<asr_text>` markers, because Chromium
-  loops its artificial input at the capture boundary. Real microphone hardware
+  returns a transcript containing the expected text (case-insensitive); the
+  microphone assertion requires only a non-empty transcript without raw
+  `<asr_text>` markers, because Chromium loops its artificial input at the
+  capture boundary. Real microphone hardware
   and browser/device combinations remain deployment-specific checks.
 - **Ask with voice**: the experimental llama.cpp GGUF voice path has
   engine-level Metal evidence on macOS, while current packaged microphone UI
