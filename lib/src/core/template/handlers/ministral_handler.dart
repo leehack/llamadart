@@ -11,6 +11,7 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../peg_parser_builder.dart';
 import '../template_internal_metadata.dart';
+import '../template_render_context.dart';
 import '../thinking_utils.dart';
 import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
@@ -165,7 +166,7 @@ class MinistralHandler extends ChatTemplateHandler {
   List<Map<String, dynamic>> _serializeMessages(
     List<LlamaChatMessage> messages,
   ) {
-    return messages
+    return TemplateRenderContext.splitToolResults(messages)
         .map((message) {
           final json = message.toJson();
           final role = json['role'];

@@ -192,5 +192,37 @@ void main() {
         'content': 'Sunny, 20°C',
       });
     });
+
+    test('tool message with several results lists every result', () {
+      const msg = LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [
+          LlamaToolResultContent(
+            id: 'call_1',
+            name: 'get_weather',
+            result: 'RESULT_ONE',
+          ),
+          LlamaToolResultContent(
+            name: 'get_time',
+            result: {'value': 'RESULT_TWO'},
+          ),
+        ],
+      );
+      expect(msg.toJson(), {
+        'role': 'tool',
+        'content': [
+          {
+            'tool_call_id': 'call_1',
+            'name': 'get_weather',
+            'content': 'RESULT_ONE',
+          },
+          {
+            'tool_call_id': null,
+            'name': 'get_time',
+            'content': {'value': 'RESULT_TWO'},
+          },
+        ],
+      });
+    });
   });
 }

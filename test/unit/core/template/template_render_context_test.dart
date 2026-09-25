@@ -59,6 +59,114 @@ void main() {
         );
       }
     }
+    for (final multimodal in [false, true]) {
+      test('renders one tool message per tool result, '
+          'multimodal=$multimodal', () {
+        const message = LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: [
+            LlamaToolResultContent(
+              id: 'call_0',
+              name: 'get_weather',
+              result: 'RESULT_ONE',
+            ),
+            LlamaToolResultContent(
+              id: 'call_1',
+              name: 'get_time',
+              result: {'value': 'RESULT_TWO'},
+            ),
+          ],
+        );
+        Object content(String text) => multimodal
+            ? [
+                {'type': 'text', 'text': text},
+              ]
+            : text;
+
+        expect(
+          TemplateRenderContext.messagesForTemplate([
+            message,
+          ], multimodal: multimodal),
+          [
+            {
+              'role': 'tool',
+              'tool_call_id': 'call_0',
+              'name': 'get_weather',
+              'content': content('RESULT_ONE'),
+            },
+            {
+              'role': 'tool',
+              'tool_call_id': 'call_1',
+              'name': 'get_time',
+              'content': content('{"value":"RESULT_TWO"}'),
+            },
+          ],
+        );
+      });
+    }
+
+    group('splitToolResults', () {
+      test('returns messages with at most one result unchanged', () {
+        const messages = [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [LlamaToolResultContent(name: 'a', result: 'A')],
+          ),
+        ];
+
+        expect(
+          TemplateRenderContext.splitToolResults(messages),
+          same(messages),
+        );
+      });
+
+      test('keeps other parts, role and turn marker with the first result', () {
+        const thinking = LlamaThinkingContent('why');
+        const first = LlamaToolResultContent(name: 'a', result: 'A');
+        const second = LlamaToolResultContent(name: 'b', result: 'B');
+        const text = LlamaTextContent('note');
+        const user = LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'hi',
+        );
+
+        final split = TemplateRenderContext.splitToolResults(const [
+          user,
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [thinking, first, second, text],
+            continuesPreviousTurn: true,
+          ),
+        ]);
+
+        expect(split, hasLength(3));
+        expect(split[0], same(user));
+        expect(split[1].parts, [thinking, first, text]);
+        expect(split[2].parts, [second]);
+        for (final message in split.skip(1)) {
+          expect(message.role, LlamaChatRole.user);
+          expect(message.continuesPreviousTurn, isTrue);
+        }
+      });
+
+      test('splits repeated identical results', () {
+        const result = LlamaToolResultContent(name: 'a', result: 'A');
+
+        final split = TemplateRenderContext.splitToolResults(const [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [result, result],
+          ),
+        ]);
+
+        expect(split.map((message) => message.parts), [
+          [result],
+          [result],
+        ]);
+      });
+    });
+
     test(
       'tool-result normalization does not stringify ordinary media parts',
       () {

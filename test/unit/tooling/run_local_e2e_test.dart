@@ -712,6 +712,33 @@ void main() {
       expect(result.stderr, contains('--model-path and --mmproj-path'));
     });
 
+    test('passes the GGUF stop-sequence backend only when given', () async {
+      Future<String> dryRun(List<String> backend) async {
+        final result = await runLocalE2e([
+          '--scenario',
+          'gguf-stop-sequences',
+          '--model-path',
+          'models/chat.gguf',
+          ...backend,
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(result.exitCode, 0);
+        return result.stdout;
+      }
+
+      expect(
+        await dryRun(const []),
+        contains(
+          'GGUF_STOP_MODEL=models/chat.gguf dart test -p vm --run-skipped '
+          'test/e2e/backends/gguf_stop_sequences_e2e_test.dart',
+        ),
+      );
+      expect(
+        await dryRun(const ['--backend', 'metal']),
+        contains('GGUF_STOP_MODEL=models/chat.gguf GGUF_STOP_BACKEND=metal '),
+      );
+    });
+
     test('dry-runs the decision model smoke with model and head', () async {
       final result = await runLocalE2e(const [
         '--scenario',

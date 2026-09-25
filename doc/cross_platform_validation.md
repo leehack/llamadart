@@ -1204,7 +1204,12 @@ Linux x64 and Windows x64 validation bundles explicitly include CPU, Vulkan and
 CUDA modules through the private harness hook configuration. Bundling fails if
 any is missing; selecting a CUDA profile alone does not override Dart build-hook
 defaults. The GPU driver remains a host prerequisite, and a shipped CUDA module
-is not execution or placement evidence. Earlier 31867c10c CI bundles use the
+is not execution or placement evidence. On Linux the CUDA 12 runtime
+(`libcudart.so.12`, `libcublas.so.12`) is a host prerequisite too, and the
+portable bundle refuses `LD_LIBRARY_PATH`, so the runtime must resolve through
+the default loader path (an `/etc/ld.so.conf.d` entry, then `ldconfig`).
+Without it the CUDA module fails to load, the cases run on CPU, and the run
+reports `accelerator_evidence_missing`. Earlier 31867c10c CI bundles use the
 CPU/Vulkan defaults and must not be used for CUDA qualification.
 
 ### Terminal Firebase recovery and release catalog 3

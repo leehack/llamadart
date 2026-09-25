@@ -10,6 +10,7 @@ import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../template_internal_metadata.dart';
+import '../template_render_context.dart';
 import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
@@ -75,7 +76,9 @@ class Lfm2Handler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': effectiveMessages.map((m) => m.toJson()).toList(),
+        'messages': TemplateRenderContext.splitToolResults(
+          effectiveMessages,
+        ).map((m) => m.toJson()).toList(),
         'add_generation_prompt': addAssistant,
         'tools': _serializeToolsForTemplate(tools),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',
