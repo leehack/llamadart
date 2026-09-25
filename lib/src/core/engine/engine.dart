@@ -373,13 +373,19 @@ class LlamaEngine {
         : name;
   }
 
-  /// The last path segment of [source], or null when it is empty or holds
-  /// URL syntax that could carry more than a file name.
+  /// The last path segment of [source], or null when it is empty, is not
+  /// valid percent-encoding or holds URL syntax that could carry more than a
+  /// file name.
   static String? _observedNameForSource(String source) {
     final uri = Uri.tryParse(source);
-    final segments = uri != null && uri.hasScheme
-        ? uri.pathSegments
-        : source.replaceAll('\\', '/').split('/');
+    final List<String> segments;
+    try {
+      segments = uri != null && uri.hasScheme
+          ? uri.pathSegments
+          : source.replaceAll('\\', '/').split('/');
+    } on FormatException {
+      return null;
+    }
     final name = segments.isEmpty ? '' : segments.last;
     return name.isEmpty || name.contains(RegExp(r'[/\\?#@;&=]')) ? null : name;
   }

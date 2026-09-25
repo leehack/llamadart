@@ -251,6 +251,22 @@ void main() {
       }
     });
 
+    test('reports no name for a segment that is not valid encoding', () async {
+      final names = _Recorder();
+      final observed = LlamaEngine(
+        MockLlamaBackend(urlLoadingSupported: true),
+        observers: [names],
+      );
+      addTearDown(observed.dispose);
+
+      await expectLater(
+        observed.loadModelFromUrl('https://host/m%C3.gguf'),
+        throwsFormatException,
+      );
+
+      expect(names.operations.single.model, isNull);
+    });
+
     test('reports the last segment of a local path', () async {
       final names = _Recorder();
       final observed = LlamaEngine(MockLlamaBackend(), observers: [names]);

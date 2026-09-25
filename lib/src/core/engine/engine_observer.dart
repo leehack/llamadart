@@ -50,7 +50,8 @@ abstract base class LlamaOperationObserver {
   /// Called once when the operation ends: completed, failed or cancelled.
   ///
   /// A chat stream whose subscription is cancelled after its final chunk
-  /// arrived ends completed.
+  /// arrived ends completed, unless `LlamaEngine.cancelGeneration` stopped
+  /// it before that chunk.
   void onEnd(LlamaOperationResult result);
 }
 
@@ -72,9 +73,10 @@ abstract final class LlamaOperation {
   /// the path or URL it was loaded from. For a [LlamaModelLoadOperation],
   /// that last segment of the model being loaded.
   ///
-  /// Null when no model is loaded, or when that segment is empty or contains
-  /// one of `/ \ ? # @ ; & =`, so it is never a directory path, URL query,
-  /// fragment or userinfo.
+  /// Null when no model is loaded, or when that segment is empty, is not
+  /// valid percent-encoding or contains one of `/ \ ? # @ ; & =`, so the
+  /// segment is never a directory path, URL query, fragment or userinfo.
+  /// `general.name` is reported as the model file declares it.
   final String? model;
 
   /// The runtime of the loaded model, or null when the backend does not
