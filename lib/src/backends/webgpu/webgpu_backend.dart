@@ -2520,7 +2520,7 @@ class WebGpuLlamaBackend
       } catch (error) {
         throw LlamaModelException(
           'The Web runtime could not load the multimodal projector.',
-          webGpuBridgeErrorText(error),
+          webGpuBridgeErrorText(error, sourceUrls: <String>[mmProjPath]),
         );
       }
       _releaseCachedMmProjectorBlobUrl();

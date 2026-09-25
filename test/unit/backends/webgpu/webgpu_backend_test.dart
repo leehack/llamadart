@@ -11,7 +11,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' show Response, document, window;
+import 'package:web/web.dart' show Response, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
@@ -3527,6 +3527,46 @@ void main() {
         );
       });
 
+      const credentials = 'includes credentials';
+      const password = <String>[
+        'S1ab',
+        'S2cd',
+        's2cd',
+        'S3ef',
+        'S4gh',
+        'S5ij',
+        'S6kl',
+        '\u00fc',
+        '%C3%BC',
+        '%40',
+      ];
+      const passwordUrl =
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ij\u00fcS6kl@example.com/m.gguf';
+
+      Future<void> expectRedactedFetchError(
+        String url,
+        String phrase,
+        String redacted,
+        List<String> secrets,
+      ) async {
+        await expectLater(
+          backend.multimodalContextCreate(1, url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '${error.details}',
+              'details',
+              allOf(<Matcher>[
+                contains(phrase),
+                contains(redacted),
+                isNot(contains('u:')),
+                for (final secret in secrets) isNot(contains(secret)),
+              ]),
+            ),
+          ),
+          reason: url,
+        );
+      }
+
       test('keeps credentials of a real Chrome fetch error out', () async {
         bridge.setProperty(
           'loadMultimodalProjector'.toJS,
@@ -3536,32 +3576,83 @@ void main() {
           'https://example.com/model.gguf',
           const ModelParams(),
         );
-        for (final (url, redacted) in const [
-          ('//u:S13@example.com/m.gguf?t=Q1', '//example.com/m.gguf'),
+        const unparsable = 'Failed to parse URL from';
+        for (final (url, phrase, redacted, secrets) in const [
+          (
+            '//u:S13@example.com/m.gguf?t=Q1',
+            credentials,
+            '//example.com/m.gguf',
+            <String>['S13', 't=Q1'],
+          ),
           (
             'https://u:S14@example.com/m.gguf#t=Q2',
+            credentials,
             'https://example.com/m.gguf',
+            <String>['S14', 't=Q2'],
           ),
+          (
+            'https://u:SEK"RIT@example.com/m.gguf',
+            credentials,
+            'https://example.com/m.gguf',
+            <String>['SEK', 'RIT'],
+          ),
+          (
+            'https://u:SEKRIT/w@example.com/m.gguf',
+            unparsable,
+            'https://example.com/m.gguf',
+            <String>['SEKRIT', '/w@'],
+          ),
+          (
+            '//u:SEKRIT/w@example.com/m.gguf',
+            unparsable,
+            '//example.com/m.gguf',
+            <String>['SEKRIT', '/w@'],
+          ),
+          (
+            'https://u:SEK RIT@example.com/m.gguf',
+            credentials,
+            'https://example.com/m.gguf',
+            <String>['SEK', 'RIT'],
+          ),
+          (passwordUrl, credentials, 'https://example.com/m.gguf', password),
         ]) {
-          await expectLater(
-            backend.multimodalContextCreate(1, url),
-            throwsA(
-              isA<LlamaModelException>().having(
-                (error) => '${error.details}',
-                'details',
-                allOf(
-                  contains('includes credentials'),
-                  contains(redacted),
-                  isNot(contains('S1')),
-                  isNot(contains('u:')),
-                  isNot(contains('t=Q')),
-                ),
-              ),
-            ),
-            reason: url,
-          );
+          await expectRedactedFetchError(url, phrase, redacted, secrets);
         }
       });
+
+      test(
+        'keeps credentials of a Chrome fetch error that normalises the URL out',
+        () async {
+          bridge.setProperty(
+            'loadMultimodalProjector'.toJS,
+            ((String path) => window.fetch(URL(path, document.baseURI))).toJS,
+          );
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          for (final (url, redacted, secrets) in const [
+            (
+              'https://u:SEKRIT@ex\u00e4mple.com/m.gguf',
+              'https://ex%C3%A4mple.com/m.gguf',
+              <String>['SEKRIT'],
+            ),
+            (
+              'https://u:P\u00e4ss@EXAMPLE.com/m.gguf?t=Q1',
+              'https://example.com/m.gguf',
+              <String>['P\u00e4ss', 'P%C3%A4ss', 'Q1'],
+            ),
+            (
+              'HTTPS://u:SEKRIT@example.com:443/./a/../m.gguf#frag',
+              'https://example.com/m.gguf',
+              <String>['SEKRIT', 'frag'],
+            ),
+            (passwordUrl, 'https://example.com/m.gguf', password),
+          ]) {
+            await expectRedactedFetchError(url, credentials, redacted, secrets);
+          }
+        },
+      );
     });
 
     test('runs WebGPU multimodal warmup once per projector load', () async {

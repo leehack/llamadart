@@ -291,11 +291,10 @@
   bridge error
   ([#598](https://github.com/leehack/llamadart/issues/598)).
 - Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
-  projector, instead of the raw JavaScript error. URLs in its details lose
-  their userinfo, query strings and fragments. A word counts as a URL when it
-  contains `://`, starts with `/`, `./`, `../` or `host.name[:port]/` (optionally
-  after userinfo), is a dotted file name followed by `?` or `#`, or has a `?`
-  or `#` part containing `=`
+  projector, instead of the raw JavaScript error. Its details drop the
+  userinfo, password, query values and fragment of the projector URL the app
+  passed, as written, percent-encoded or percent-decoded. Other URLs in them
+  lose userinfo, query and fragment on a best-effort basis
   ([#642](https://github.com/leehack/llamadart/issues/642)).
 
 ## 0.8.24

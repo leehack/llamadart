@@ -11,7 +11,7 @@ import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart'
-    show Blob, BlobPropertyBag, HTMLBaseElement, URL, document;
+    show Blob, BlobPropertyBag, HTMLBaseElement, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
@@ -395,6 +395,130 @@ void main() {
       );
     });
 
+    test('keeps source URL secrets out of real Chrome fetch errors', () async {
+      fake.bridge.setProperty(
+        'loadDecisionHead'.toJS,
+        ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+      );
+      const credentials = 'includes credentials';
+      const unparsable = 'Failed to parse URL from';
+      for (final (url, phrase, redacted, secrets) in const [
+        (
+          'https://u:SEK"RIT@example.com/h.bin',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT'],
+        ),
+        (
+          'https://u:SEKRIT/w@example.com/h.bin',
+          unparsable,
+          'https://example.com/h.bin',
+          <String>['SEKRIT', '/w@'],
+        ),
+        (
+          '//u:SEKRIT/w@example.com/h.bin',
+          unparsable,
+          '//example.com/h.bin',
+          <String>['SEKRIT', '/w@'],
+        ),
+        (
+          'https://u:SEK RIT/w@example.com/h.bin',
+          unparsable,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT', '/w@'],
+        ),
+        (
+          'https://u:SEK RIT@example.com/h.bin?sig=Q9',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT', 'Q9'],
+        ),
+        (
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ij\u00fcS6kl@example.com/h.bin',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['S1ab', 'S2cd', 's2cd', 'S3ef', 'S4gh', 'S5ij', 'S6kl'],
+        ),
+      ]) {
+        final leaksNoSecret = allOf(<Matcher>[
+          contains(phrase),
+          contains(redacted),
+          isNot(contains('u:')),
+          isNot(contains('\u00fc')),
+          isNot(contains('%C3%BC')),
+          isNot(contains('%40')),
+          for (final secret in secrets) isNot(contains(secret)),
+        ]);
+        await expectLater(
+          heads.load(fake.bridge, url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '$error',
+              'toString',
+              leaksNoSecret,
+            ),
+          ),
+          reason: 'head $url',
+        );
+        await expectLater(
+          heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '$error',
+              'toString',
+              leaksNoSecret,
+            ),
+          ),
+          reason: 'config $url',
+        );
+      }
+    });
+
+    test(
+      'classifies bridge errors before removing source URL secrets',
+      () async {
+        fake.loadError = 'No model loaded. Call loadModelFromUrl first.';
+        await expectLater(
+          heads.load(fake.bridge, 'https://u:model@example.com/h.bin?k=loaded'),
+          throwsTyped<LlamaStateException>(
+            'No  . Call loadModelFromUrl first.',
+          ),
+        );
+      },
+    );
+
+    test('removes the secrets of source URLs wherever they occur', () {
+      for (final (source, message, expected) in const [
+        (
+          'https://u:SEKRIT/w@example.com/m.gguf#F6',
+          'Bad password SEKRIT/w for u at F6',
+          'Bad password  for u at ',
+        ),
+        (
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ijüS6kl@example.com/m.gguf',
+          'Bad password S1ab@S2cd#S3ef@S4gh?S5ijüS6kl (encoded '
+              'S1ab%40S2cd%23S3ef%2540S4gh%3FS5ij%C3%BCS6kl)',
+          'Bad password  (encoded )',
+        ),
+        (
+          'https://example.com/m.gguf?sig=Q9&token=T8#F7',
+          'Signature Q9, token T8 and fragment F7 expired',
+          'Signature , token  and fragment  expired',
+        ),
+        (
+          'https://u:SEK"RIT@example.com/m.gguf',
+          r'{"password":"SEK\"RIT"}',
+          '{"password":""}',
+        ),
+      ]) {
+        expect(
+          webGpuBridgeErrorText(_jsError(message), sourceUrls: [source]),
+          expected,
+          reason: message,
+        );
+      }
+    });
+
     test('redacts relative and quote-delimited URLs in bridge errors', () {
       const cases = <String, String>{
         'Failed to fetch /relative/mmproj.gguf?token=S7':
@@ -419,6 +543,12 @@ void main() {
             'Bad URL cdn.example.com/m.gguf',
         'Bad URL a@b.example.com?k=Q7': 'Bad URL b.example.com',
         'Bad URL <//u@example.com/m.gguf>': 'Bad URL <//example.com/m.gguf>',
+        'Bad URL https://u:SEK"RIT@example.com/m.gguf':
+            'Bad URL https://example.com/m.gguf',
+        'Bad URL //u:SEKRIT/w@example.com/m.gguf?t=Q8':
+            'Bad URL //example.com/m.gguf',
+        'Bad URL x=https://u:p/w@example.com/m.gguf':
+            'Bad URL x=https://example.com/m.gguf',
       };
       for (final MapEntry(key: message, value: expected) in cases.entries) {
         expect(

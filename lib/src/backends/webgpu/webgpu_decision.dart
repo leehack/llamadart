@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -97,15 +98,17 @@ class WebGpuDecisionHeads {
   /// [bridge] is the backend's active bridge, or null when it has none. Both
   /// URLs resolve against the document base URL. [configUrl], when given, is
   /// fetched here before the head and passed to the bridge as text; the
-  /// bridge fetches the head. URLs in errors drop user info, query and
-  /// fragment. Throws [LlamaStateException] when [bridge] is null or rejects
-  /// the probe or load for its state: disposed, busy, cancelled, or without a
-  /// model; [LlamaUnsupportedException] when [capabilities] reports
-  /// unsupported or the head reports another decision API version;
-  /// [LlamaModelException] when the head or config cannot be fetched, is
-  /// malformed, or does not fit the encoder; [LlamaContextException] when the
-  /// head's encoder context cannot be created; and [LlamaDecisionException]
-  /// for a malformed bridge response.
+  /// bridge fetches the head. URLs that errors show drop user info, query
+  /// and fragment; browser and bridge error text is redacted by
+  /// [webGpuBridgeErrorText] with [headUrl] or [configUrl], whichever was
+  /// being fetched, as a source URL. Throws [LlamaStateException] when
+  /// [bridge] is null or rejects the probe or load for its state: disposed,
+  /// busy, cancelled, or without a model; [LlamaUnsupportedException] when
+  /// [capabilities] reports unsupported or the head reports another decision
+  /// API version; [LlamaModelException] when the head or config cannot be
+  /// fetched, is malformed, or does not fit the encoder;
+  /// [LlamaContextException] when the head's encoder context cannot be
+  /// created; and [LlamaDecisionException] for a malformed bridge response.
   Future<BackendDecisionHeadInfo> load(
     LlamaWebGpuBridge? bridge,
     String headUrl, {
@@ -128,7 +131,7 @@ class WebGpuDecisionHeads {
     final resolvedConfigUrl = configUrl == null ? null : _resolveUrl(configUrl);
     final configJson = resolvedConfigUrl == null
         ? null
-        : await _fetchConfigText(resolvedConfigUrl);
+        : await _fetchConfigText(resolvedConfigUrl, configUrl!);
 
     final JSAny? raw;
     try {
@@ -139,9 +142,10 @@ class WebGpuDecisionHeads {
         ),
       );
     } catch (error) {
-      var message = _errorText(
-        error,
-      ).replaceAll('Pass configJson ', 'Pass configPath ');
+      var message = _errorText(error, <String>[
+        headUrl,
+        resolvedHeadUrl,
+      ]).replaceAll('Pass configJson ', 'Pass configPath ');
       if (resolvedConfigUrl != null) {
         message = message.replaceAll(
           'config in configJson ',
@@ -150,6 +154,7 @@ class WebGpuDecisionHeads {
       }
       throw _bridgeException(
         message,
+        classifiedText: _coreMessage(_bridgeErrorMessage(error)),
         fallback: (message) =>
             LlamaModelException(message, _displayUrl(resolvedHeadUrl)),
       );
@@ -331,14 +336,17 @@ class WebGpuDecisionHeads {
     );
   }
 
-  static Future<String> _fetchConfigText(String url) async {
+  static Future<String> _fetchConfigText(String url, String sourceUrl) async {
     final message =
         'Cannot read the decision head config at ${_displayUrl(url)}.';
     final Response response;
     try {
       response = await window.fetch(url.toJS).toDart;
     } catch (error) {
-      throw LlamaModelException(message, _errorText(error));
+      throw LlamaModelException(
+        message,
+        _errorText(error, <String>[sourceUrl, url]),
+      );
     }
     if (!response.ok) {
       throw LlamaModelException(
@@ -349,29 +357,36 @@ class WebGpuDecisionHeads {
     try {
       return (await response.text().toDart).toDart;
     } catch (error) {
-      throw LlamaModelException(message, _errorText(error));
+      throw LlamaModelException(
+        message,
+        _errorText(error, <String>[sourceUrl, url]),
+      );
     }
   }
 
   static LlamaException _bridgeException(
     String message, {
+    String? classifiedText,
     required LlamaException Function(String message) fallback,
   }) {
-    if (message.contains(_reloadHint) ||
-        message.startsWith('No model loaded') ||
-        message.contains('Bridge has been disposed') ||
-        message.contains('was cancelled') ||
-        message.contains('during active generation')) {
+    final text = classifiedText ?? message;
+    if (text.contains(_reloadHint) ||
+        text.startsWith('No model loaded') ||
+        text.contains('Bridge has been disposed') ||
+        text.contains('was cancelled') ||
+        text.contains('during active generation')) {
       return LlamaStateException(message);
     }
-    if (message.contains('decision encoder context')) {
+    if (text.contains('decision encoder context')) {
       return LlamaContextException(message);
     }
     return fallback(message);
   }
 
-  static String _errorText(Object error) =>
-      _coreMessage(webGpuBridgeErrorText(error));
+  static String _errorText(
+    Object error, [
+    Iterable<String> sourceUrls = const <String>[],
+  ]) => _coreMessage(webGpuBridgeErrorText(error, sourceUrls: sourceUrls));
 
   static String _resolveUrl(String url) {
     if (url.isEmpty) return url;
@@ -425,15 +440,30 @@ class WebGpuDecisionHeads {
 
 /// Returns the message of a bridge [error] with URLs redacted.
 ///
-/// Each whitespace-separated word, without its leading opening and trailing
-/// closing quotes, brackets and punctuation, is treated as a URL when it
-/// contains `://`, starts with `/`, `./`, `../` or `host.name[:port]/`
-/// (optionally after userinfo), is a dotted file name followed by `?` or `#`,
-/// or has a `?` or `#` part containing `=`. Such a URL loses everything from
-/// its first `?` or `#`, and its userinfo: the `user@` or `user:password@`
-/// after `://` or a leading `//`, otherwise at the start of the word.
-String webGpuBridgeErrorText(Object error) => _bridgeErrorMessage(
-  error,
+/// First, for each of [sourceUrls], these texts are replaced wherever they
+/// occur as written, percent-decoded, percent-encoded or JSON-escaped: the
+/// URL and its browser-resolved `href`, when the URL starts with `//` or
+/// `scheme://`, become `[scheme:]//host[:port]/path`; its userinfo, password,
+/// query, query values and fragment, also as the browser parses them, are
+/// removed. Userinfo runs from after `//` to the last `@` of the authority,
+/// and to the last `@` of the URL. A query value is the text after the first
+/// `=` of an `&`-separated part, or the whole part when it has no `=`.
+///
+/// Then, as a best-effort backstop for other URLs, each whitespace-separated
+/// word, without its leading opening and trailing closing quotes, brackets
+/// and punctuation, is treated as a URL when it contains `://`, starts with
+/// `/`, `./`, `../` or `host.name[:port]/` (optionally after userinfo), is a
+/// dotted file name followed by `?` or `#`, or has a `?` or `#` part
+/// containing `=`. Such a URL loses its userinfo, then everything from its
+/// first `?` or `#`. When the word contains `://` or starts with `//`, the
+/// userinfo is everything from after `//` to the last `@` of the word;
+/// otherwise it is a `user@` or `user:password@` at the start of the word.
+String webGpuBridgeErrorText(
+  Object error, {
+  Iterable<String> sourceUrls = const <String>[],
+}) => _removeSourceUrlSecrets(
+  _bridgeErrorMessage(error),
+  sourceUrls,
 ).replaceAllMapped(_word, (match) => _redactWord(match[0]!));
 
 final RegExp _word = RegExp(r'\S+');
@@ -444,6 +474,134 @@ final RegExp _hostPath = RegExp(
 final RegExp _fileWithQueryOrFragment = RegExp(r'^[\w.-]*\w\.\w+[?#]');
 final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
 final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
+final RegExp _schemeAndSlashes = RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://');
+final RegExp _authorityEnd = RegExp(r'[/?#\\]');
+final RegExp _percentEscapes = RegExp('(?:%[0-9A-Fa-f]{2})+');
+
+String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
+  final replacements = <String, String>{};
+  for (final url in sourceUrls) {
+    final browserUrl = _parseBrowserUrl(url);
+    if (_authorityStart(url) >= 0) {
+      final display = _displayUrl(url);
+      for (final whole in <String>[
+        url,
+        if (browserUrl != null) browserUrl.href,
+      ]) {
+        for (final form in _encodedForms(whole)) {
+          replacements[form] = display;
+        }
+      }
+    }
+    for (final secret in _sourceUrlSecrets(url, browserUrl)) {
+      for (final form in _encodedForms(secret)) {
+        replacements.putIfAbsent(form, () => '');
+      }
+    }
+  }
+  replacements.remove('');
+  if (replacements.isEmpty) return text;
+  final forms = replacements.keys.toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+  return text.replaceAllMapped(
+    RegExp(forms.map(RegExp.escape).join('|')),
+    (match) => replacements[match[0]!]!,
+  );
+}
+
+Set<String> _sourceUrlSecrets(String url, URL? browserUrl) {
+  final secrets = <String>{};
+  void addUserInfo(String userInfo) {
+    secrets.add(userInfo);
+    final colon = userInfo.indexOf(':');
+    if (colon >= 0) secrets.add(userInfo.substring(colon + 1));
+  }
+
+  void addQuery(String query) {
+    secrets.add(query);
+    for (final part in query.split('&')) {
+      final equals = part.indexOf('=');
+      secrets.add(equals < 0 ? part : part.substring(equals + 1));
+    }
+  }
+
+  final queryStarts = <int>[0];
+  final start = _authorityStart(url);
+  if (start >= 0) {
+    final end = url.indexOf(_authorityEnd, start);
+    final authority = url.substring(start, end < 0 ? url.length : end);
+    for (final at in <int>[
+      start + authority.lastIndexOf('@'),
+      url.lastIndexOf('@'),
+    ]) {
+      if (at < start) continue;
+      addUserInfo(url.substring(start, at));
+      queryStarts.add(at + 1);
+    }
+  }
+  for (final from in queryStarts) {
+    final fragment = url.indexOf('#', from);
+    final query = url.indexOf('?', from);
+    if (fragment >= 0) secrets.add(url.substring(fragment + 1));
+    if (query >= 0 && (fragment < 0 || query < fragment)) {
+      addQuery(url.substring(query + 1, fragment < 0 ? url.length : fragment));
+    }
+  }
+  if (browserUrl != null) {
+    final username = browserUrl.username;
+    final password = browserUrl.password;
+    addUserInfo(password.isEmpty ? username : '$username:$password');
+    if (browserUrl.search.isNotEmpty) addQuery(browserUrl.search.substring(1));
+    if (browserUrl.hash.isNotEmpty) secrets.add(browserUrl.hash.substring(1));
+  }
+  return secrets;
+}
+
+Set<String> _encodedForms(String text) {
+  final forms = <String>{text};
+  void add(String Function() form) {
+    try {
+      forms.add(form());
+    } catch (_) {}
+  }
+
+  add(() => Uri.encodeComponent(text));
+  add(() => Uri.encodeFull(text));
+  add(() {
+    final json = jsonEncode(text);
+    return json.substring(1, json.length - 1);
+  });
+  for (final decoded in <String>[
+    _percentDecoded(text),
+    _percentDecoded(text.replaceAll('+', ' ')),
+  ]) {
+    forms.add(decoded);
+    add(() => Uri.encodeComponent(decoded));
+  }
+  return forms;
+}
+
+String _percentDecoded(String text) => text.replaceAllMapped(
+  _percentEscapes,
+  (match) => utf8.decode(<int>[
+    for (var i = 0; i < match[0]!.length; i += 3)
+      int.parse(match[0]!.substring(i + 1, i + 3), radix: 16),
+  ], allowMalformed: true),
+);
+
+int _authorityStart(String url) {
+  if (url.startsWith('//')) return 2;
+  return _schemeAndSlashes.matchAsPrefix(url)?.end ?? -1;
+}
+
+URL? _parseBrowserUrl(String url) {
+  if (url.isEmpty) return null;
+  try {
+    return URL(url, document.baseURI);
+  } catch (_) {
+    return null;
+  }
+}
 
 String _redactWord(String word) {
   final parts = _wordParts.firstMatch(word)!;
@@ -461,8 +619,7 @@ String _redactWord(String word) {
 }
 
 String _redactUrl(String url) {
-  final end = url.indexOf(RegExp('[?#]'));
-  final base = end < 0 ? url : url.substring(0, end);
+  final base = _withoutUserInfoQueryAndFragment(url);
   if (base.contains('://')) {
     return base.replaceAllMapped(
       WebGpuDecisionHeads._absoluteUrl,
@@ -471,6 +628,18 @@ String _redactUrl(String url) {
   }
   if (base.startsWith('//')) return _displayUrl(base);
   return base.replaceFirst(_leadingUserInfo, '');
+}
+
+String _withoutUserInfoQueryAndFragment(String url) {
+  var base = url;
+  final slashes = base.startsWith('//') ? 0 : base.indexOf('://');
+  if (slashes >= 0) {
+    final start = base.indexOf('//', slashes) + 2;
+    final at = base.lastIndexOf('@');
+    if (at >= start) base = base.substring(0, start) + base.substring(at + 1);
+  }
+  final end = base.indexOf(RegExp('[?#]'));
+  return end < 0 ? base : base.substring(0, end);
 }
 
 String _bridgeErrorMessage(Object error) {
@@ -484,14 +653,9 @@ String _bridgeErrorMessage(Object error) {
 }
 
 String _displayUrl(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null) {
-    final end = url.indexOf(RegExp('[?#]'));
-    return (end < 0 ? url : url.substring(0, end)).replaceFirst(
-      RegExp('//[^/]*@'),
-      '//',
-    );
-  }
+  final base = _withoutUserInfoQueryAndFragment(url);
+  final uri = Uri.tryParse(base);
+  if (uri == null) return base;
   return Uri(
     scheme: uri.hasScheme ? uri.scheme : null,
     host: uri.hasAuthority ? uri.host : null,
