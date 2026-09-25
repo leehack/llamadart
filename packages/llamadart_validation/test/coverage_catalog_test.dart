@@ -131,6 +131,29 @@ void main() {
     },
   );
 
+  test('Web chat rows bind only the Qwen3.5 WebGPU GGUF profile', () {
+    expect(
+      {
+        for (final row in validationCoverage().where(
+          (row) => row['platform'] == 'web' && row['use_case'] == 'chat',
+        ))
+          '${row['runtime']}/${row['backend']}/${row['model']}': row['profile'],
+      },
+      {
+        'gguf/wasm/gemma4-e2b': null,
+        'gguf/wasm/qwen35-08b': null,
+        'gguf/webgpu/gemma4-e2b': null,
+        'gguf/webgpu/qwen35-08b': 'chat-gguf-webgpu',
+        'litert/cpu/gemma4-e2b': null,
+        'litert/cpu/qwen35-08b': null,
+        'litert/gpu/gemma4-e2b': null,
+        'litert/gpu/qwen35-08b': null,
+        'litert/npu/gemma4-e2b': null,
+        'litert/npu/qwen35-08b': null,
+      },
+    );
+  });
+
   test('Apple desktop and browser NPU remain explicitly unsupported', () {
     final rows = validationCoverage().where(
       (row) => row['backend'] == 'npu' && row['platform'] != 'android-arm64',

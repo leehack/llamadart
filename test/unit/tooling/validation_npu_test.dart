@@ -123,10 +123,10 @@ void main() {
   });
 
   test('WebGPU profiles need a Web bundle, and Web decision bundles WebGPU', () {
-    Map profile(String backend) =>
+    Map profile(String backend, {String family = 'decision'}) =>
         jsonDecode(
               File(
-                'packages/llamadart_validation/assets/profiles/decision-gguf-$backend.json',
+                'packages/llamadart_validation/assets/profiles/$family-gguf-$backend.json',
               ).readAsStringSync(),
             )
             as Map;
@@ -137,14 +137,23 @@ void main() {
         contains(message),
       ),
     );
-    expect(
-      () => requireExecutableValidationProfile(profile('webgpu')),
-      rejects('only in Web bundles'),
-    );
-    expect(
-      () => requireExecutableValidationProfile(profile('webgpu'), web: true),
-      returnsNormally,
-    );
+    for (final family in ['decision', 'chat']) {
+      expect(
+        () => requireExecutableValidationProfile(
+          profile('webgpu', family: family),
+        ),
+        rejects('only in Web bundles'),
+        reason: family,
+      );
+      expect(
+        () => requireExecutableValidationProfile(
+          profile('webgpu', family: family),
+          web: true,
+        ),
+        returnsNormally,
+        reason: family,
+      );
+    }
     expect(
       () => requireExecutableValidationProfile(profile('cpu'), web: true),
       rejects('only on WebGPU'),
@@ -200,16 +209,19 @@ void main() {
   });
 
   test(
-    'decision bundles off their host fail before any build command',
+    'WebGPU and decision bundles off their host fail before any build command',
     () async {
-      for (final (target, backend, message) in [
-        ('desktop', 'webgpu', 'only in Web bundles'),
-        ('android', 'webgpu', 'only in Web bundles'),
-        ('ios-inputs', 'webgpu', 'only in Web bundles'),
-        ('web', 'cpu', 'only on WebGPU'),
-        ('web', 'metal', 'only on WebGPU'),
+      for (final (target, id, message) in [
+        ('desktop', 'decision-gguf-webgpu', 'only in Web bundles'),
+        ('android', 'decision-gguf-webgpu', 'only in Web bundles'),
+        ('ios-inputs', 'decision-gguf-webgpu', 'only in Web bundles'),
+        ('web', 'decision-gguf-cpu', 'only on WebGPU'),
+        ('web', 'decision-gguf-metal', 'only on WebGPU'),
+        ('desktop', 'chat-gguf-webgpu', 'only in Web bundles'),
+        ('android', 'chat-gguf-webgpu', 'only in Web bundles'),
+        ('ios', 'chat-gguf-webgpu', 'only in Web bundles'),
+        ('ios-inputs', 'chat-gguf-webgpu', 'only in Web bundles'),
       ]) {
-        final id = 'decision-gguf-$backend';
         File(
           p.join(
             root.path,
@@ -225,7 +237,7 @@ void main() {
           buildValidationBundle(
             root.path,
             target,
-            p.join(root.path, 'output-$target-$backend'),
+            p.join(root.path, 'output-$target-$id'),
             profile: id,
             execute: (binary, args, {directory, timeout}) async {
               invoked = true;

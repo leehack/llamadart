@@ -392,6 +392,114 @@ void main() {
         assess: (_, _) async => pass,
       );
 
+  group('iOS XCTest native log', () {
+    const fixtures = 'packages/llamadart_validation/test/fixtures/ios_xctest';
+    String read(String name) =>
+        File('$fixtures/$name').readAsStringSync().replaceAll('\r\n', '\n');
+    final console = read('decision-gguf-metal.xcodebuild_output.txt');
+    final journal = read('decision-gguf-metal.events.jsonl');
+    final native = read('decision-gguf-metal.native.txt');
+    final chat = read('chat-gguf-metal.xcodebuild_output.txt');
+    const stray = 'load_tensors: offloaded 1/29 layers to GPU\n';
+
+    test('is the lines between the records that match the journal', () {
+      expect(boundConsoleNativeLog(console, journal), native);
+      expect(boundConsoleNativeLog('$stray$console$stray', journal), native);
+      expect(
+        boundConsoleNativeLog(
+          chat,
+          [
+            for (final line in LineSplitter.split(chat))
+              if (line.startsWith('LLAMADART_VALIDATION '))
+                line.substring('LLAMADART_VALIDATION '.length),
+          ].join('\n'),
+        ),
+        allOf(
+          contains('offloaded 25/25 layers'),
+          isNot(contains('LLAMADART_VALIDATION')),
+          isNot(contains('RunnerTests')),
+        ),
+      );
+    });
+
+    test('is unbound when the records differ from the journal', () {
+      final lines = LineSplitter.split(console).toList();
+      final markers = [
+        for (var i = 0; i < lines.length; i++)
+          if (lines[i].startsWith('LLAMADART_VALIDATION ')) i,
+      ];
+      for (final (name, text) in [
+        ('another run first', '$chat$console'),
+        ('another run last', '$console$chat'),
+        ('missing record', (lines..removeAt(markers[3])).join('\n')),
+        ('no records', native),
+      ]) {
+        expect(boundConsoleNativeLog(text, journal), isNull, reason: name);
+      }
+      expect(boundConsoleNativeLog(console, ''), isNull);
+    });
+
+    test('reaches the reporter only from one bound source', () async {
+      File(
+        'packages/llamadart_validation/assets/profiles/decision-gguf-metal.json',
+      ).copySync(p.join(bundle.path, 'profile.json'));
+      Future<String?> collect(Map<String, String> files) async {
+        final run = Directory(p.join(scratch.path, 'collected-ios'));
+        if (run.existsSync()) run.deleteSync(recursive: true);
+        for (final MapEntry(:key, :value) in files.entries) {
+          File(p.join(run.path, key))
+            ..createSync(recursive: true)
+            ..writeAsStringSync(value);
+        }
+        String? log;
+        await assessCollectedRun(
+          Directory.current.path,
+          plan(target: 'firebase-ios', profile: 'decision-gguf-metal'),
+          run,
+          execute: (executable, arguments, {directory, timeout}) async {
+            final index = arguments.indexOf('--native-log');
+            if (index >= 0) log = File(arguments[index + 1]).readAsStringSync();
+            return const CommandResult(0, '', '');
+          },
+        );
+        return log;
+      }
+
+      const device = 'remote-results/qa-one/iphone16pro-18.3-en-portrait';
+      const attachment = 'xctest-attachments-0/events.jsonl';
+      expect(
+        await collect({
+          '$device/xcodebuild_output.log': console,
+          attachment: journal,
+        }),
+        native,
+      );
+      expect(
+        await collect({'$device/xcodebuild_output.log': '$chat$console'}),
+        isNull,
+      );
+      expect(
+        await collect({
+          '$device/xcodebuild_output.log': '$chat$console',
+          attachment: journal,
+        }),
+        isNull,
+      );
+      expect(
+        await collect({
+          '$device/xcodebuild_output.log': console,
+          '$device/stderr.log': stray,
+          attachment: journal,
+        }),
+        isNull,
+      );
+      expect(
+        await collect({'$device/stderr.log': stray, attachment: journal}),
+        stray,
+      );
+    });
+  });
+
   test(
     'collected qualification binds every uploaded runtime identity',
     () async {
@@ -1287,6 +1395,28 @@ void main() {
       expect(provider.calls, isEmpty);
     },
   );
+  test('Firebase rejects WebGPU chat bundles before preflight', () async {
+    for (final (target, id, rejected) in [
+      ('firebase-android', 'chat-gguf-webgpu', true),
+      ('firebase-ios', 'chat-gguf-webgpu', true),
+      ('firebase-android', 'chat-gguf-vulkan', false),
+    ]) {
+      File(
+        'packages/llamadart_validation/assets/profiles/$id.json',
+      ).copySync(p.join(bundle.path, 'profile.json'));
+      await writeBundleManifest(bundle, {
+        'target': target.substring(9),
+        'profile': id,
+        'source_dirty': false,
+      });
+      final provider = FakeProvider()..preflightFails = true;
+      final state = await controller(provider).run(
+        plan(id: 'qa-${target.substring(9)}-$id', target: target, profile: id),
+      );
+      expect(state['phase'], 'PREFLIGHT_FAILED', reason: id);
+      expect(provider.calls, rejected ? isEmpty : ['preflight'], reason: id);
+    }
+  });
   test(
     'GCE accepts the CUDA decision profile and rejects its CPU and WebGPU twins',
     () async {

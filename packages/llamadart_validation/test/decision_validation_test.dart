@@ -822,6 +822,23 @@ void main() {
       );
     });
 
+    test('the native log of an iPhone XCTest run verifies Metal', () {
+      const fixtures = 'test/fixtures/ios_xctest/decision-gguf-metal';
+      final events = [
+        for (final line in File('$fixtures.events.jsonl').readAsLinesSync())
+          jsonDecode(line) as Map<String, dynamic>,
+      ];
+      final cases = events.where((event) => event['type'] == 'case').toList();
+      final nativeLog = File('$fixtures.native.txt').readAsStringSync();
+      final placement = inspectPlacement(events.first, cases, nativeLog);
+      expect(placement['verified'], isTrue, reason: '$placement');
+      expect(placement['offload_records'], [
+        'load_tensors: offloaded 29/29 layers to GPU',
+        'load_tensors: offloaded 29/29 layers to GPU',
+      ]);
+      expect(inspectPlacement(events.first, cases, null)['verified'], isFalse);
+    });
+
     test('schema-1 decision journals cannot verify placement', () {
       final manifest = <String, dynamic>{
         'schema_version': 1,

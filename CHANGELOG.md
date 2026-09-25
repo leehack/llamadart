@@ -129,6 +129,10 @@
   0.3.5 reference, plus batching, reload and typed rejections, on desktop,
   mobile, Web WebGPU and GCE CUDA
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add a Web-only `chat-gguf-webgpu` validation profile, hash Web validation
+  models while they stream so GGUFs over 2 GiB pass preparation, list every
+  bundled profile in the validation app, and verify iOS GGUF GPU placement
+  from the XCTest console log.
 - Run eight cleanup cycles instead of three in every speech validation pack,
   and fail a run whose resident set grows by more than 7 MiB in each of seven
   warm cycles. The 1.10x peak ratio no longer applies on Linux CUDA, where reload

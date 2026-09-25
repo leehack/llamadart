@@ -51,7 +51,8 @@ critical feature packs with representative locked models before broadening devic
 - `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
   runner/reporter, JSONL validation and JSON/JUnit/CSV/HTML rendering.
 - `example/chat_app/lib/validation_main.dart`: interactive QA app. Run with
-  `flutter run -t lib/validation_main.dart` from `example/chat_app`.
+  `flutter run -t lib/validation_main.dart` from `example/chat_app`. It lists
+  every bundled profile except `npu-*`; an NPU build lists only its own.
 - `example/chat_app/integration_test/validation_test.dart`: unattended entrypoint;
   Android instrumentation and iOS XCTest invoke the same controller.
 - `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
@@ -92,7 +93,7 @@ untrusted producer's report.
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
 | `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
 | `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
-| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history, instruction and C07 tool checks |
+| `chat-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history, instruction and C07 tool checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
 | `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Laya ModernBERT F16, 791,461,088 bytes (`webgpu`: Q8_0, 421,407,968 bytes), plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
@@ -484,6 +485,29 @@ headers, for example:
 python3 tool/testing/serve_static_with_headers.py --directory .dart_tool/validation/bundles/web --port 7367
 ```
 
+The Web host hashes each model and decision file as it streams, so a file
+larger than one browser buffer (about 2 GiB) verifies. A status other than
+200, more or fewer bytes than locked, a SHA256 mismatch or an interrupted
+stream fails preparation. The bridge then downloads the URL again itself.
+`chat-gguf-webgpu` loads every layer on WebGPU and, like
+`decision-gguf-webgpu`, runs only on the Web host and in Web bundles; other
+bundles, Firebase and GCE reject it before any build, download or
+submission. The Web host does not capture the bridge's native log, which
+goes to the browser console, so its reports cannot verify placement and do
+not qualify.
+
+Observed on an Apple Silicon Mac in headless Chromium with WebGPU on Metal and
+the pinned bridge assets, at load averages of 7 to 57, with catalog 4 and
+`quick` selection (before this profile selected `tools`): a clean
+`chat-gguf-webgpu` bundle passed 12 cases; `C06.history` failed (`17` for `cedar17`) and
+`C10.limit` was NOT_RUN. The bridge capped Qwen3.5 0.8B at 2 WebGPU layers.
+A `gemma4-gguf-webgpu` draft (those settings with the Gemma 4 GGUF) verified
+its 3,043,932,288-byte model in 70 to 71 s, but `C01.load` hit the 60 s case
+timeout. A dirty build with a 10-minute case timeout passed 13 cases with
+36/36 layers on WebGPU; its three loads took 218 to 264 s each, and the
+bridge reported `model_cache_store_failed`. There is no Gemma 4 WebGPU
+profile until its loads fit a case bound.
+
 ## Firebase setup, submission and collection
 
 The [device rotation and NPU cases](cross_platform_validation_plan.md#8-firebase-device-selection-and-free-rotation)
@@ -587,6 +611,15 @@ complete journal through this path, but its collected console log contained no
 validation JSONL; console-only recovery is not yet qualified on Flutter devices.
 iOS attaches bounded result files to XCTest; collection exports `.xcresult`
 attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
+iOS writes no `stderr.log`; its native log is in `xcodebuild_output.log`.
+Collection keeps the lines between that log's first and last
+`LLAMADART_VALIDATION` records, only if those records are exactly the
+collected journal, writes them to `report/native.log` and passes that to the
+reporter. With no such log, or more than one native log source, GGUF reports
+keep `accelerator_evidence_missing`. Trimmed iPhone 16 Pro Firebase logs in
+`packages/llamadart_validation/test/fixtures/ios_xctest/` pin this (their
+`bridge_tag` reads `fixture-bridge`); the `decision-gguf-metal` log yields
+both 29/29-layer `MTL0` loads and verifies placement.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
 
