@@ -296,6 +296,13 @@
   passed, as written, percent-encoded or percent-decoded. Other URLs in them
   lose userinfo, query and fragment on a best-effort basis
   ([#642](https://github.com/leehack/llamadart/issues/642)).
+- Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
+  tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with
+  any number of extra closing braces) without a grammar. Calls are extracted as
+  before; a double-brace call with other malformed envelope text keeps that
+  text. This deliberately differs from upstream llama.cpp, which rejects that
+  output and extracts no call
+  ([#662](https://github.com/leehack/llamadart/issues/662)).
 
 ## 0.8.24
 
