@@ -4,9 +4,15 @@
 [![API docs](https://img.shields.io/badge/API-pub.dev-blue.svg)](https://pub.dev/documentation/llamadart/latest/)
 [![Docs](https://img.shields.io/badge/docs-website-blue.svg)](https://llamadart.leehack.com/docs/intro)
 
-Run local LLMs from Dart and Flutter with one API across native and web
-runtimes. `llamadart` routes GGUF models through llama.cpp and `.litertlm`
-models through LiteRT-LM.
+Cross-platform, on-device LLM inference for Dart and Flutter. One API runs
+GGUF models through llama.cpp and `.litertlm` models through LiteRT-LM on
+Android, iOS, macOS, Windows, Linux, and the web, so your app needs no
+inference server. Native targets run offline once the model is on the device;
+web support is experimental.
+
+Acceleration follows the platform: Metal on Apple, Vulkan on Android, Linux,
+and Windows, WebGPU in the browser, and LiteRT-LM GPU, or NPU on compatible
+Android deployments.
 
 ## Start Here
 
@@ -17,7 +23,7 @@ models through LiteRT-LM.
 | Build chat history | [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session) |
 | Check runtime support | [Platform & backend matrix](https://llamadart.leehack.com/docs/platforms/support-matrix) |
 | Read API reference | [pub.dev API docs](https://pub.dev/documentation/llamadart/latest/) |
-| Try the Flutter demo | [Hosted chat app](https://llamadart.leehack.com/) |
+| Try the Flutter demo | [Hosted chat app](https://leehack-llamadart.static.hf.space) |
 
 ## What It Supports
 
