@@ -99,7 +99,6 @@ void main() {
 
     expect(stops, 1);
     expect(made.isCancelled(), isTrue);
-    expect(made.isSubscriptionCancelled, isTrue);
     await pumpEventQueue();
     expect(cancelReturned, isFalse);
     stopped.complete();
@@ -133,7 +132,6 @@ void main() {
     await subscription.cancel();
 
     expect(stopped, ['child']);
-    expect(child.isSubscriptionCancelled, isFalse);
   });
 
   test('cancel runs no stops', () {

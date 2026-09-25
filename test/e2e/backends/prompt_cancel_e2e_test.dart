@@ -93,8 +93,7 @@ void main() {
 
   tearDownAll(() => engine.dispose());
 
-  Future<void> duringPrompt() =>
-      Future<void>.delayed(promptTime * 0.2);
+  Future<void> duringPrompt() => Future<void>.delayed(promptTime * 0.2);
 
   test('cancelGeneration during prompt evaluation ends the stream before '
       'the prompt is evaluated', () async {
@@ -106,9 +105,12 @@ void main() {
     final stopwatch = Stopwatch()..start();
     engine.cancelGeneration();
     await done.future;
-    report('cancelGeneration', stopwatch.elapsed);
+    final cancelled = stopwatch.elapsed;
+    report('cancelGeneration', cancelled);
+    final (text, _) = await timedRun(fullPrompt);
 
-    expect(stopwatch.elapsed, lessThan(promptTime * 0.6));
+    expect(cancelled, lessThan(promptTime * 0.6));
+    expect(text, uncancelled);
   });
 
   test('an awaited subscription cancel during prompt evaluation returns '

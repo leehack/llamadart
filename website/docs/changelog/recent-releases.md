@@ -38,6 +38,14 @@ For canonical full release notes, use:
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Cancel a generation's backend run as soon as its stream subscription is
+  cancelled, instead of at its next token, which during prompt evaluation
+  meant after the whole prompt. A native llama.cpp generation requested right
+  after such a cancel now waits for it instead of throwing
+  `LlamaStateException`, and native llama.cpp sees any cancel between prompt
+  micro-batches (`ModelParams.microBatchSize`, 512 tokens by default)
+  ([#663](https://github.com/leehack/llamadart/issues/663),
+  [#660](https://github.com/leehack/llamadart/issues/660)).
 - Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
   GGUF models can read tool output
   ([#669](https://github.com/leehack/llamadart/issues/669)).

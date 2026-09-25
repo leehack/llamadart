@@ -95,6 +95,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'speculative test/integration/stop_sequences_test.dart suite.',
   ),
   TestMatrixRow(
+    id: 'native-prompt-cancel',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'native GGUF cancel during a ~1,600-token prompt: cancelGeneration and '
+        'subscription-cancel latency, and a generation right after the cancel',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'native-prompt-cancel --model-path <chat.gguf> --backend cpu',
+    useWhen:
+        'Native llama.cpp prompt evaluation, generation cancel or engine '
+        'stream-forwarding changes. Repeat with --backend metal on macOS.',
+  ),
+  TestMatrixRow(
     id: 'static-format-analyze',
     tier: 'essential',
     mode: 'CI + local',

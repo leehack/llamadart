@@ -137,7 +137,8 @@ Pick targeted rows based on the touched surface:
 | Change area | Matrix rows to consider |
 | --- | --- |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
-| llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
+| llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
+| Generation cancel or engine stream forwarding | `native-prompt-cancel` |
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
@@ -476,3 +477,19 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-stop-sequences \
 
 Repeat with `--backend metal` on macOS when available. Record the source commit,
 native runtime tag, printed model SHA-256, and native offload logs with results.
+
+### Native prompt-evaluation cancel
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario native-prompt-cancel \
+  --model-path /path/to/qwen2.5-0.5b-instruct-q4_k_m.gguf --backend cpu
+```
+
+This local-only row builds a prompt of at least 1,600 tokens and times an
+uncancelled run's first token. It then cancels three runs at 20% of that time:
+`cancelGeneration()` and an awaited subscription cancel must each end in under
+60% of it, and the run after each cancel must produce the uncancelled output.
+It prints each latency as JSON. `PROMPT_CANCEL_THREADS` sets the CPU threads
+(default 4). Repeat with `--backend metal` on macOS. The timings depend on
+machine load, so record `uptime` with the results and rerun a timing failure
+once before treating it as a regression.

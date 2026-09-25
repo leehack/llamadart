@@ -4320,7 +4320,6 @@ class LlamaCppService {
       }
 
       // 3. Ingest Prompt (Text or Multimodal)
-      final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
       final promptEvalStopwatch = Stopwatch()..start();
       final (nPast: initialTokens, :promptTokenCount) = _ingestPrompt(
         contextHandle,
@@ -4340,15 +4339,12 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
-        cancelToken: cancelToken,
+        cancelToken: Pointer<Int8>.fromAddress(cancelTokenAddress),
       );
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
           promptEvalStopwatch.elapsedMicroseconds / 1000.0;
       ctx.lastPerfPromptEvalTokens = initialTokens;
-      if (cancelToken.value == 1) {
-        return;
-      }
 
       _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
       if (speculativeSession != nullptr &&

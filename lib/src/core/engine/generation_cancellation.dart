@@ -61,9 +61,6 @@ final class GenerationRequest {
 
   GenerationRequest._(this._owner, this._parent);
 
-  /// Whether this request's stream subscription has been cancelled.
-  bool get isSubscriptionCancelled => _subscriptionCancelled;
-
   /// Whether this request or an ancestor is cancelled: its subscription was
   /// cancelled, or [GenerationCancellation.cancel] ran after its stream was
   /// listened to.

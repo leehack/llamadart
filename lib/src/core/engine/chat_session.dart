@@ -226,7 +226,6 @@ class ChatSession {
 
         yield chunk;
       }
-      if (request.isSubscriptionCancelled) return;
 
       // Reconstruct final message with all parts
       final contentParts = <LlamaContentPart>[];

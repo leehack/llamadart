@@ -965,9 +965,8 @@ class LlamaEngine {
     }
   }
 
-  /// Decodes [tokens] into a stream that also ends as soon as the
-  /// subscription of [request] or of an ancestor is cancelled, cancelling
-  /// [tokens] first.
+  /// Decodes [tokens] into a stream that also ends, cancelling [tokens], as
+  /// soon as the subscription of [request] or of an ancestor is cancelled.
   Stream<String> _cancellableText(
     Stream<List<int>> tokens,
     GenerationRequest request,
@@ -980,11 +979,7 @@ class LlamaEngine {
       ..onPause = subscription.pause
       ..onResume = subscription.resume
       ..onCancel = subscription.cancel;
-    request.onSubscriptionCancel(() {
-      final cancelled = subscription.cancel();
-      unawaited(text.close());
-      return cancelled;
-    });
+    request.onSubscriptionCancel(text.close);
     return text.stream;
   }
 

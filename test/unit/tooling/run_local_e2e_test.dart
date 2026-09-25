@@ -86,6 +86,34 @@ void main() {
     );
 
     test(
+      'requires a model and wires the native prompt cancel scenario',
+      () async {
+        final missing = await runLocalE2e(const [
+          '--scenario',
+          'native-prompt-cancel',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(missing.exitCode, 64);
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'native-prompt-cancel',
+          '--model-path',
+          '/model.gguf',
+          '--backend',
+          'metal',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('PROMPT_CANCEL_MODEL=/model.gguf'));
+        expect(result.stdout, contains('PROMPT_CANCEL_BACKEND=metal'));
+        expect(
+          result.stdout,
+          contains('test/e2e/backends/prompt_cancel_e2e_test.dart'),
+        );
+      },
+    );
+
+    test(
       'dry-runs a Flutter device scenario with the requested device',
       () async {
         final result = await runLocalE2e(const [

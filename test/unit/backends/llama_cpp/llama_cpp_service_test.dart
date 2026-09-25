@@ -2500,6 +2500,16 @@ void main() {
         cachedPromptTokens(),
         service.tokenize(modelHandle, prompt, true).sublist(0, 100),
       );
+
+      final (resumed, resumedChecks) = ingest(longerPrompt, cancelAt: 2);
+
+      expect(resumedChecks, [100, 164]);
+      expect(resumed, 164);
+      expect(positionsInMemory(), 164);
+      expect(
+        cachedPromptTokens(),
+        service.tokenize(modelHandle, longerPrompt, true).sublist(0, 164),
+      );
     });
 
     test('a generation after a prompt cancelled between micro-batches matches '
@@ -2540,26 +2550,42 @@ void main() {
       expect(await generate(longerPrompt), uncancelled);
     });
 
-    test('a cancel raised before prompt evaluation of a cleared context '
+    test('a cancel raised before prompt evaluation of a repeated prompt '
         'caches no tokens', () async {
-      final uncancelled = await generate(
-        prompt,
-        params: greedy.copyWith(reusePromptPrefix: false),
-      );
+      final uncancelled = await generate(prompt);
       cancelFlag.value = 1;
 
-      expect(
-        await generate(
-          prompt,
-          params: greedy.copyWith(reusePromptPrefix: false),
-        ),
-        isEmpty,
-      );
+      expect(await generate(prompt), isEmpty);
       expect(cachedPromptTokens(), isEmpty);
       expect(positionsInMemory(), 0);
 
       cancelFlag.value = 0;
       expect(await generate(prompt), uncancelled);
+    });
+
+    test('a cancel raised before the last token of a loaded state is decoded '
+        'keeps the other tokens cached', () async {
+      await generate(prompt);
+      final promptTokens = service.tokenize(modelHandle, prompt, true);
+      final statePath = path.join(tempDir.path, 'state.bin');
+      expect(
+        service.stateSaveFile(contextHandle, statePath, promptTokens),
+        isTrue,
+      );
+      service.stateLoadFile(contextHandle, statePath, params.contextSize);
+      final resumed = await generate(prompt);
+      service.stateLoadFile(contextHandle, statePath, params.contextSize);
+      cancelFlag.value = 1;
+
+      expect(await generate(prompt), isEmpty);
+      expect(
+        cachedPromptTokens(),
+        promptTokens.sublist(0, promptTokens.length - 1),
+      );
+      expect(positionsInMemory(), promptTokens.length - 1);
+
+      cancelFlag.value = 0;
+      expect(await generate(prompt), resumed);
     });
   });
 
