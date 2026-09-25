@@ -77,3 +77,13 @@ a lazy tool-call grammar, and tool calls are parsed from the output
 best-effort. `ToolChoice.required` keeps a grammar that starts at the first
 token and fails early with `LlamaUnsupportedException` when the chat format's
 required-tool grammar is lazy.
+
+Without that grammar, Qwen2.5 can copy the double braces its GGUF template
+prints in the tool prompt:
+`<tool_call>{{"name": "get_weather", "arguments": {"city": "Paris"}}}</tool_call>`,
+sometimes with fewer or more closing braces. The Hermes/Qwen parser extracts
+the call. When only closing braces and whitespace follow the call before
+`</tool_call>`, the envelope leaves no content, as for the single-brace form;
+otherwise its text stays in content. This deliberately differs from upstream
+llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
+call.
