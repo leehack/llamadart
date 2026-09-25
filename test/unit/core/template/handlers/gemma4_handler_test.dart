@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/src/core/exceptions.dart';
@@ -255,15 +256,28 @@ void main() {
 
     test('serializes tool responses for Gemma 4 templates', () {
       const template =
-          '<|turn>tool\n'
-          '{% for response in messages[0]["tool_responses"] %}'
+          '{% for message in messages %}'
+          '<|turn>{{ message["role"] }}\n'
+          '{% for response in message["tool_responses"] %}'
           '{{ response["name"] }}={{ response["response"]["timestamp"] }}'
           '{% endfor %}'
-          '<turn|>';
+          '<turn|>'
+          '{% endfor %}';
 
       final result = ChatTemplateEngine.render(
         templateSource: template,
         messages: const [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                id: 'call_0',
+                name: 'get_current_time',
+                arguments: {},
+                rawJson: '{}',
+              ),
+            ],
+          ),
           LlamaChatMessage.withContent(
             role: LlamaChatRole.tool,
             content: [
@@ -280,7 +294,193 @@ void main() {
       );
 
       expect(result.format, equals(ChatFormat.gemma4.index));
-      expect(result.prompt, contains('get_current_time=2026-04-02T13:10:00'));
+      expect(
+        result.prompt,
+        '<|turn>assistant\nget_current_time=2026-04-02T13:10:00<turn|>',
+      );
+    });
+
+    group('matches llama.cpp tool turns', () {
+      final upstream =
+          jsonDecode(
+                File(
+                  'test/fixtures/gemma4_tool_render_upstream.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final templates = upstream['templates'] as Map<String, dynamic>;
+
+      ToolDefinition tool(String name, String description) => ToolDefinition(
+        name: name,
+        description: description,
+        parameters: [ToolParam.string('city', required: true)],
+        handler: (_) async => null,
+      );
+      final tools = [
+        tool('get_weather', 'Return the weather for a city.'),
+        tool('get_time', 'Return the local time for a city.'),
+      ];
+
+      const weatherCall = LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: [
+          LlamaToolCallContent(
+            id: 'call_0',
+            name: 'get_weather',
+            arguments: {'city': 'Montréal'},
+            rawJson: '{"city":"Montréal"}',
+          ),
+        ],
+      );
+      const prompt = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'Call get_weather for Montréal.',
+      );
+      const followUp = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text:
+            'What is the temperature_celsius from the tool result? '
+            'Reply with only the number.',
+      );
+      LlamaChatMessage weatherResult(Object result) =>
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [
+              LlamaToolResultContent(
+                id: 'call_0',
+                name: 'get_weather',
+                result: result,
+              ),
+            ],
+          );
+      const parallelResults = [
+        LlamaToolResultContent(
+          id: 'call_0',
+          name: 'get_weather',
+          result: {'temperature_celsius': 17},
+        ),
+        LlamaToolResultContent(id: 'call_1', name: 'get_time', result: '09:30'),
+      ];
+      List<LlamaChatMessage> parallel(List<LlamaChatMessage> results) => [
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather and time in Montréal?',
+        ),
+        const LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaToolCallContent(
+              id: 'call_0',
+              name: 'get_weather',
+              arguments: {
+                'city': 'Montréal',
+                'days': 2,
+                'metric': true,
+                'units': {'temp': 'C'},
+                'tags': ['now', 'hourly'],
+              },
+              rawJson:
+                  '{"city":"Montréal","days":2,"metric":true,'
+                  '"units":{"temp":"C"},"tags":["now","hourly"]}',
+            ),
+            LlamaToolCallContent(
+              id: 'call_1',
+              name: 'get_time',
+              arguments: {'city': 'Montréal'},
+              rawJson: '{"city":"Montréal"}',
+            ),
+          ],
+        ),
+        ...results,
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'It is 17 °C at 09:30.',
+        ),
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Thanks.',
+        ),
+      ];
+
+      final cases = <String, (String, List<LlamaChatMessage>)>{
+        'map result': (
+          'map_result',
+          [
+            prompt,
+            weatherCall,
+            weatherResult({'city': 'Montréal', 'temperature_celsius': 17}),
+            followUp,
+          ],
+        ),
+        'string result': (
+          'string_result',
+          [prompt, weatherCall, weatherResult('Sunny, 17 °C'), followUp],
+        ),
+        'parallel results in one tool message': (
+          'parallel_results',
+          parallel([
+            const LlamaChatMessage.withContent(
+              role: LlamaChatRole.tool,
+              content: parallelResults,
+            ),
+          ]),
+        ),
+        'parallel results in separate tool messages': (
+          'parallel_results',
+          parallel([
+            for (final result in parallelResults)
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.tool,
+                content: [result],
+              ),
+          ]),
+        ),
+      };
+
+      for (final MapEntry(key: fixture, value: expected) in templates.entries) {
+        final source = File('test/fixtures/$fixture').readAsStringSync();
+        final prompts = (expected as Map<String, dynamic>)['prompts'] as Map;
+        for (final MapEntry(key: name, value: (key, messages))
+            in cases.entries) {
+          test('$fixture: $name', () {
+            final result = ChatTemplateEngine.render(
+              templateSource: source,
+              messages: messages,
+              metadata: const {'tokenizer.ggml.bos_token': '<bos>'},
+              tools: tools,
+              enableThinking: false,
+            );
+
+            expect(result.format, ChatFormat.gemma4.index);
+            // llama.cpp drops the leading BOS text; its tokenizer adds BOS.
+            expect(result.prompt, '<bos>${prompts[key]}');
+          });
+        }
+      }
+    });
+
+    test('rejects tool-call arguments that are not a JSON object', () {
+      expect(
+        () => ChatTemplateEngine.render(
+          templateSource: File(
+            'test/fixtures/templates/gemma-4-E2B-it.jinja',
+          ).readAsStringSync(),
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaToolCallContent(
+                  name: 'get_weather',
+                  arguments: {},
+                  rawJson: 'not json',
+                ),
+              ],
+            ),
+          ],
+          metadata: const {},
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
     });
 
     group('tool-call grammar', () {

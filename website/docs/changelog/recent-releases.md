@@ -31,6 +31,9 @@ For canonical full release notes, use:
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
+  GGUF models can read tool output
+  ([#669](https://github.com/leehack/llamadart/issues/669)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older
