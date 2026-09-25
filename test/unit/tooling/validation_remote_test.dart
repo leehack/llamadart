@@ -394,7 +394,8 @@ void main() {
 
   group('iOS XCTest native log', () {
     const fixtures = 'packages/llamadart_validation/test/fixtures/ios_xctest';
-    String read(String name) => File('$fixtures/$name').readAsStringSync();
+    String read(String name) =>
+        File('$fixtures/$name').readAsStringSync().replaceAll('\r\n', '\n');
     final console = read('decision-gguf-metal.xcodebuild_output.txt');
     final journal = read('decision-gguf-metal.events.jsonl');
     final native = read('decision-gguf-metal.native.txt');
