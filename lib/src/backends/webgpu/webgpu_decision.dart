@@ -370,9 +370,8 @@ class WebGpuDecisionHeads {
     return fallback(message);
   }
 
-  static String _errorText(Object error) => _coreMessage(
-    _bridgeErrorMessage(error),
-  ).replaceAllMapped(_absoluteUrl, (match) => _displayUrl(match[0]!));
+  static String _errorText(Object error) =>
+      _coreMessage(webGpuBridgeErrorText(error));
 
   static String _resolveUrl(String url) {
     if (url.isEmpty) return url;
@@ -423,6 +422,14 @@ class WebGpuDecisionHeads {
     return text == null || text.isEmpty ? null : text;
   }
 }
+
+/// Returns the message of a bridge [error] with each absolute URL cut to its
+/// scheme, host, port and path.
+String webGpuBridgeErrorText(Object error) =>
+    _bridgeErrorMessage(error).replaceAllMapped(
+      WebGpuDecisionHeads._absoluteUrl,
+      (match) => _displayUrl(match[0]!),
+    );
 
 String _bridgeErrorMessage(Object error) {
   try {

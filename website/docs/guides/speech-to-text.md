@@ -128,7 +128,9 @@ actionable reason.
 On native llama.cpp, `loadMultimodalProjector` itself throws when it cannot
 load the projector: `LlamaModelException` for a missing file or a projector the
 runtime rejects, such as the Qwen3-TTS projector with the Qwen3-ASR model, and
-`LlamaUnsupportedException` when the runtime lacks the mtmd functions.
+`LlamaUnsupportedException` when the runtime lacks the mtmd functions. On Web,
+it throws `LlamaModelException` when the bridge cannot fetch or load the
+projector.
 
 ## Transcribe a complete file
 

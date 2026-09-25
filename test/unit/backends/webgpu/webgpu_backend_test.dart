@@ -18,6 +18,9 @@ import '../../../support/fake_webgpu_decision_bridge.dart';
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
 
+@JS('Error')
+external JSObject _jsError(String message);
+
 void main() {
   group('WebGpuLlamaBackend Unit', () {
     late JSObject bridge;
@@ -3447,6 +3450,55 @@ void main() {
         window.fetch(lastMmprojPath!.toJS).toDart,
         throwsA(anything),
       );
+    });
+
+    group('a rejected projector load', () {
+      setUp(() {
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) {
+            return _rejectPromise(
+              _jsError(
+                'Failed to fetch multimodal projector '
+                'https://user:pw@example.com/mmproj.gguf?X-Amz-Signature=secret '
+                '(404 Not Found)',
+              ),
+            );
+          }).toJS,
+        );
+      });
+
+      final throwsRedactedModelException = throwsA(
+        isA<LlamaModelException>().having(
+          (error) => error.details,
+          'details',
+          'Failed to fetch multimodal projector '
+              'https://example.com/mmproj.gguf (404 Not Found)',
+        ),
+      );
+
+      test('throws LlamaModelException from the backend', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        await expectLater(
+          backend.multimodalContextCreate(1, 'https://example.com/mmproj.gguf'),
+          throwsRedactedModelException,
+        );
+      });
+
+      test('throws LlamaModelException from LlamaEngine', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+          modelParams: const ModelParams(),
+        );
+        await expectLater(
+          engine.loadMultimodalProjector('https://example.com/mmproj.gguf'),
+          throwsRedactedModelException,
+        );
+      });
     });
 
     test('runs WebGPU multimodal warmup once per projector load', () async {

@@ -2514,9 +2514,15 @@ class WebGpuLlamaBackend
     var retainedCachedBlobUrl = false;
 
     try {
-      final result = await _toFuture(
-        bridge.loadMultimodalProjector(projectorPath),
-      );
+      final JSAny? result;
+      try {
+        result = await _toFuture(bridge.loadMultimodalProjector(projectorPath));
+      } catch (error) {
+        throw LlamaModelException(
+          'The Web runtime could not load the multimodal projector.',
+          webGpuBridgeErrorText(error),
+        );
+      }
       _releaseCachedMmProjectorBlobUrl();
       if (cachedBlobUrl != null) {
         _cachedMmProjectorBlobUrl = cachedBlobUrl;

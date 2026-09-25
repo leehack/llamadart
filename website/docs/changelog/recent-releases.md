@@ -279,6 +279,10 @@ For canonical full release notes, use:
   `thread constructor failed` already was, instead of rethrowing the raw
   bridge error
   ([#598](https://github.com/leehack/llamadart/issues/598)).
+- Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
+  projector, instead of the raw JavaScript error, with URLs in the details
+  cut to scheme, host, port and path
+  ([#642](https://github.com/leehack/llamadart/issues/642)).
 
 ## 0.8.24
 
