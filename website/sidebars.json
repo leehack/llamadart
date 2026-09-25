@@ -76,7 +76,8 @@
         "examples/llamadart-cli",
         "examples/llamadart-server",
         "examples/tui-coding-agent",
-        "examples/laya-tetris"
+        "examples/laya-tetris",
+        "examples/laya-command-bar"
       ]
     },
     {
