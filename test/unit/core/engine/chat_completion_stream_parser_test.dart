@@ -436,6 +436,44 @@ void main() {
       expect(chunks.last.choices.single.finishReason, 'tool_calls');
     });
 
+    for (final (name, tokens) in <(String, List<String>)>[
+      ('one token', [_hermesDoubleBrace]),
+      ('characters', _hermesDoubleBrace.split('')),
+    ]) {
+      test(
+        'streams no content for a double-brace Hermes call as $name',
+        () async {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(tokens),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: ChatFormat.hermes.index,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'double-brace',
+            tools: [_weatherTool],
+          ).toList();
+
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.content ?? '')
+                .join(),
+            isEmpty,
+          );
+          final toolCall = chunks
+              .expand(
+                (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+              )
+              .single;
+          expect(toolCall.function?.name, 'weather');
+          expect(jsonDecode(toolCall.function!.arguments!), {'city': 'Paris'});
+          expect(chunks.last.choices.single.finishReason, 'tool_calls');
+        },
+      );
+    }
+
     test('preserves MiniMax M3 schema types across split tokens', () async {
       const namespace = ']<]minimax[>[';
       const output =
@@ -1007,3 +1045,6 @@ final _typedStreamTool = ToolDefinition(
   ],
   handler: (_) async => null,
 );
+
+const _hermesDoubleBrace =
+    '<tool_call>\n{{"name": "weather", "arguments": {"city": "Paris"}}\n</tool_call>';
