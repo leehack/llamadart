@@ -1,9 +1,11 @@
 ---
-title: Native Build Hooks & Bridges
+title: Native build hooks and prebuilt runtimes
+sidebar_label: Native build hooks
+description: How the llamadart build hook downloads prebuilt llama.cpp and LiteRT-LM runtimes so apps never compile C++ locally.
 ---
 
-`llamadart` leverages Dart's `native_assets_cli` and a specialized build hook
-to integrate native llama.cpp and LiteRT-LM runtimes into Flutter and Dart
+`llamadart` ships a Dart build hook (`package:hooks` and `package:code_assets`)
+that integrates native llama.cpp and LiteRT-LM runtimes into Flutter and Dart
 applications without requiring users to compile C++ locally.
 
 ## The Build Hook Process
@@ -19,7 +21,7 @@ sequenceDiagram
     participant Hook as hook/build.dart
     participant Cache as Local bundle cache
     participant Release as runtime release asset
-    participant Assets as native_assets_cli
+    participant Assets as code_assets
     participant Runtime as App runtime
 
     Build->>Hook: invoke native-assets hook
@@ -110,7 +112,7 @@ binary target URL/checksum pins. Customize Apple SPM binary sources with
 path/git overrides or forks of those companion packages.
 
 ### 3. Dynamic Linking
-Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
+Using `package:code_assets`, the downloaded dynamic libraries (`.so`, `.dylib`,
 `.dll`) are configured for **Dynamic Loading Bundled** when the runtime supports
 that layout. This ensures the Flutter engine bundles the libraries into your
 final IPA/APK/desktop app, and Dart FFI loads resolved library files at runtime

@@ -42,11 +42,6 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
-        run: |
-          flutter pub get
-          (cd website && npm ci)
-
       - name: Build documentation site
         run: ./tool/docs/build_site.sh
 
@@ -56,7 +51,7 @@ jobs:
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: website/build
+          path: website/build/jaspr
           include-hidden-files: true
 
   deploy:

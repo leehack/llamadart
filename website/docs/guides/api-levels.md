@@ -1,5 +1,7 @@
 ---
-title: Low-Level vs High-Level API
+title: High-level vs backend API
+sidebar_label: API levels
+description: Choose between the high-level LlamaEngine and ChatSession API and the LlamaBackend API for advanced runtime control.
 ---
 
 `llamadart` exposes two API layers:

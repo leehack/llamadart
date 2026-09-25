@@ -1,5 +1,7 @@
 ---
 title: Basic App Example
+sidebar_label: Basic app
+description: A minimal Dart console app that loads a model and generates text, the quickest way to see the core llamadart API.
 ---
 
 Path: `example/basic_app`

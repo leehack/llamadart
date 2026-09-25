@@ -1,5 +1,7 @@
 ---
-title: Runtime Parameters
+title: Model and generation parameters
+sidebar_label: Runtime parameters
+description: The ModelParams and GenerationParams settings that matter most, with practical defaults for chat and embedding workloads.
 ---
 
 Runtime behavior is primarily controlled by:
@@ -29,13 +31,6 @@ await engine.loadModel(
   ),
 );
 ```
-
-Native GGUF `stopSequences` suppress the first completed marker and any text
-following it, including markers split across tokens or embedded inside a token.
-Empty stops are ignored. Unfinished marker prefixes are emitted when generation
-ends without a match. Template tokens listed in `preservedTokens` remain
-available to the chat parser; identical stop entries are excluded from native
-text matching. This applies to ordinary and speculative generation.
 
 Important fields:
 
@@ -147,8 +142,9 @@ Important fields:
 - `thinkingBudget`: native llama.cpp-only reasoning-token cap. Use
   `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use template
   delimiters automatically, or specify `startTag` and `endTag` for raw
-  generation. `0` forces the end delimiter immediately; it is incompatible
-  with speculative decoding and unsupported backends reject it explicitly.
+  generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
+  is incompatible with speculative decoding, and unsupported backends reject
+  it explicitly.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in backend-native
   speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
   llama.cpp supports the upstream strategy surface:
@@ -164,6 +160,13 @@ Important fields:
   speculative decoding until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
+
+Native GGUF `stopSequences` suppress the first completed marker and any text
+following it, including markers split across tokens or embedded inside a token.
+Empty stops are ignored. Unfinished marker prefixes are emitted when generation
+ends without a match. Template tokens listed in `preservedTokens` remain
+available to the chat parser; identical stop entries are excluded from native
+text matching. This applies to ordinary and speculative generation.
 
 ## Practical tuning defaults
 

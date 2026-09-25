@@ -6,8 +6,8 @@
 ///
 /// ### Core Components
 ///
-/// * [LlamaEngine]: The low-level orchestrator for model loading, tokenization,
-///   and raw inference.
+/// * [LlamaEngine]: The stateless engine for model loading, tokenization,
+///   and generation.
 /// * [ChatSession]: A high-level, stateful interface for chat-based interactions.
 ///   It automatically manages conversation history and context window limits.
 /// * [LlamaBackend]: The platform-agnostic interface for inference.
