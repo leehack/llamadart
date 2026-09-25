@@ -114,11 +114,16 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
+- Run eight cleanup cycles instead of three in every speech validation pack,
+  and fail a run whose resident set grows by more than 7 MiB in each of seven
+  warm cycles. The 1.10x peak ratio no longer applies on Linux CUDA, where reload
+  overhead that levels off failed it without a leak
+  ([#686](https://github.com/leehack/llamadart/issues/686)).
 - Add GGUF speech validation pack checks: `tts` unloads and disposes the engine
   during a synthesis, cancels one during its audio decode and bounds the
   resident set those checks add, and `stt` must fail with
   `LlamaSpeechTranscriptTruncatedException` at `maxOutputTokens` and at the
-  context size. `stt` runs now execute 22 checks and `tts` runs 19
+  context size. `stt` runs now execute 28 checks and `tts` runs 25
   ([#628](https://github.com/leehack/llamadart/issues/628),
   [#636](https://github.com/leehack/llamadart/issues/636),
   [#322](https://github.com/leehack/llamadart/issues/322)).

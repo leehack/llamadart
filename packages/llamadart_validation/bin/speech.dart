@@ -114,6 +114,8 @@ Future<void> main(List<String> args) async {
       edgeFixtures: edgeFixtures,
       checkTranscriptLimits: pack == 'stt',
       checkSynthesisInterrupts: pack == 'tts',
+      operatingSystem: Platform.operatingSystem,
+      backend: backend.name,
     );
     result.addAll({
       'edge_fixtures': [

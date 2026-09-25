@@ -27,12 +27,13 @@ validating the header.
 ## Cancellation and cleanup bounds
 
 After the single-shot lifecycle checks, a run whose `load` check passes repeats
-`speechCleanupCycles` cancel/dispose/load/generate cycles. `speech-results.json` reports the bounds
-under `bounds`, and `immediate_cancel_latency_bound`, `cancel_latency_bound`
-and `peak_memory_bound` are ordinary checks that fail the run when a budget is
+`speechCleanupCycles` (8) cancel/dispose/load/generate cycles.
+`speech-results.json` reports the bounds under `bounds`, and
+`immediate_cancel_latency_bound`, `cancel_latency_bound`, `peak_memory_bound`
+and `leak_slope_bound` are ordinary checks that fail the run when a budget is
 exceeded. The budgets are `speechImmediateCancelLatencyBudgetMs`,
-`speechCancelLatencyBudgetMs` and `speechPeakRssGrowthBudget` in
-`lib/src/speech_runner.dart`.
+`speechCancelLatencyBudgetMs`, `speechPeakRssGrowthBudget` and
+`speechLeakCycleGrowthBytes` in `lib/src/speech_runner.dart`.
 
 The single-shot checks and every cycle each cancel twice:
 
@@ -66,17 +67,53 @@ is the maximum over all of them, not over generations alone. The baseline
 follows the first generation rather than load, so memory that generation first
 brings in is not counted as growth.
 
+The peak ratio is not applied on Linux CUDA, where it records `SKIP` with a
+reason and `bounds.peak_resident_bytes.applies` is `false`. There the weights
+stay in device memory, so the resident set after `generate` is only about
+1.13 GB. Each reload then adds 0-100 MB of host memory until the total levels
+off at 1.13-1.16x, which fails 1.10x without a leak
+([#686](https://github.com/leehack/llamadart/issues/686)). Every other
+operating system and backend pair, including any the runner does not know, gets
+the ratio.
+
+`leak_slope_bound` runs on every backend. It skips the first
+`speechLeakWarmupCycles` (1) cycles, then fails if the resident set grew by more
+than `speechLeakCycleGrowthBytes` (7 MiB) in every one of the next
+`speechLeakWindowCycles` (7) cycles. A plateau, a one-off spike or growth in
+steps with a flat cycle between them passes; a steady leak of more than 7 MiB
+per cycle fails. The constants come from measured runs:
+
+- 7 MiB is half the smallest per-cycle growth of the LiteRT ASR leak in
+  [#634](https://github.com/leehack/llamadart/issues/634): 14.0 MiB across 12
+  warm cycles on macOS arm64.
+- The longest run of consecutive steps above 7 MiB in 46 recorded `stt` and
+  `tts` runs without a known leak is 4 (macOS, Linux and Windows; CPU, Metal
+  and CUDA). It occurred three times: in a macOS `tts` run recovering from memory
+  pressure, in a Linux CUDA `tts` run, and in a Linux x64 CPU `tts` run whose
+  resident set climbed for four cycles and then stopped. A 5-cycle window
+  would leave one cycle of margin. 7 leaves three, at a cost of two cycles
+  per run: about 30 s for `tts` on Linux x64 CPU and about 75 s on Linux
+  arm64 CPU, the slowest recorded, which stays inside the 15-minute deadline.
+- With `reload`, the warm-up cycle covers the first two reloads, which took
+  the largest step in six of nine recorded Linux CUDA `tts` runs.
+
+The slope bound alone does not catch a leak of 7 MiB or less per cycle, a
+leak that releases memory in any window cycle, or growth that arrives in one
+jump. On Linux, the #634 LiteRT ASR growth is one jump of about 85 MiB at
+`cancel`, then 0.7 MiB per cycle; only the peak ratio fails it. On Linux CUDA,
+where the ratio is not applied, a leak like that would pass.
+
 Resident memory comes from `dart:io` `ProcessInfo.currentRss`. It counts native
 and Dart allocations together, what it counts is platform dependent, and it does
 not exist without `dart:io`. If any sample taken before `peak_memory_bound` is
-unavailable, that check records `SKIP` with a reason and
-`bounds.peak_resident_bytes.measured` is `false`; it never passes silently.
+unavailable, both memory bounds record `SKIP` with a reason and their
+`bounds` entries report `measured` as `false`; they never pass silently.
 `interrupt_memory_bound` follows the same rule for the samples before it.
 
 ## Interrupt and truncation checks
 
 The `tts` pack adds `unload_during_synthesis`, `dispose_during_synthesis`,
-`decode_cancel` and `interrupt_memory_bound` after `peak_memory_bound`; the
+`decode_cancel` and `interrupt_memory_bound` after `leak_slope_bound`; the
 `stt` pack adds `max_output_tokens_truncation` and
 `context_size_truncation`. Each asserts its precondition in its own row and
 records its budget there, not under `bounds`:
@@ -107,13 +144,15 @@ records its budget there, not under `bounds`:
   is within the margin. In that last case even an immediate cancellation
   could not pass. `NOT_RUN` leaves `functional_pass` false.
 - `interrupt_memory_bound` divides the largest resident set sampled after the
-  three checks above by the one sampled after `peak_memory_bound`, against
-  `speechPeakRssGrowthBudget`. Each of those checks reloads the model. On
-  Linux CUDA a reload can leave the resident set tens of MB higher, levelling
-  off after several reloads, so running these checks before the lifecycle
-  bound pushed it past its budget. After it, their reloads stay out of its
-  baseline and peak, the lifecycle's reloads are already in their baseline,
-  and growth they add still fails the run.
+  three checks above by the one sampled after `leak_slope_bound`, against
+  `speechPeakRssGrowthBudget`. Each of those checks reloads the model.
+  Running them after the lifecycle bounds keeps their reloads out of those
+  bounds, puts the lifecycle's reloads in their baseline, and still fails
+  growth they add. Like `peak_memory_bound`, it records `SKIP` with the
+  `speechPeakRatioExemption` reason on Linux CUDA and keeps its numbers,
+  since reload overhead there exceeds the ratio without a leak. The
+  interrupt checks run once each, so they get no slope bound: on Linux CUDA
+  they have no memory bound.
 - `max_output_tokens_truncation` sets `maxOutputTokens` to
   `speechTruncationTokenFraction` of the reference's token count, rounded
   down, and requires the latest complete transcript to tokenize to more.
