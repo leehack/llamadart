@@ -71,7 +71,7 @@ void main() {
 
     test('#${entry['issue']} ${p.basename(template)} renders $conversation '
         'as llama-server does', () {
-      final source = File(template).readAsStringSync();
+      final source = File(template).readAsStringSync().replaceAll('\r\n', '\n');
       expect(
         sha256.convert(utf8.encode(source)).toString(),
         entry['template_sha256'],
