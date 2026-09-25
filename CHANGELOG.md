@@ -36,6 +36,18 @@
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
+  turn without reasoning no longer gets an empty `<think>` block
+  ([#691](https://github.com/leehack/llamadart/issues/691)).
+- Require `dinja` 1.1.0. Its Jinja string comparison makes three more chat
+  templates render as llama.cpp does: MiniMax-M1 adds no empty
+  system block for an empty or whitespace-only system message; NVIDIA
+  Nemotron Nano v2 drops the blank line before a tool call, the blank lines
+  before its tool instructions when tools come with an empty or
+  whitespace-only system message, and an empty final assistant turn without
+  a generation prompt; and Functionary v3.2 tool declarations drop stray
+  `// Format=<|NONE|>` lines and spell out nested object parameters
+  ([#351](https://github.com/leehack/llamadart/issues/351)).
 - Cancel a generation's backend run as soon as its stream subscription is
   cancelled, instead of at its next token, which during prompt evaluation
   meant after the whole prompt. A native llama.cpp generation requested right
