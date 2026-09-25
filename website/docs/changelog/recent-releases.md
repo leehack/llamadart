@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Report per-request token usage and timings on the final `create` chunk as
+  `LlamaCompletionChunk.usage` on native llama.cpp
+  ([#696](https://github.com/leehack/llamadart/issues/696)).
 - Throw `LlamaModelException` when native llama.cpp cannot find or load a
   multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
   the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.

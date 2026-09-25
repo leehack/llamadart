@@ -3,6 +3,7 @@ import 'dart:async';
 import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/completion_chunk.dart';
+import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
@@ -40,7 +41,8 @@ class ChatCompletionStreamParser {
   ///
   /// Without tool calls, the final chunk's finish reason is `length` when
   /// [stoppedAtLimit] returns true after [tokenStream] ends, and `stop`
-  /// otherwise.
+  /// otherwise. The final chunk carries what [usage] returns after
+  /// [tokenStream] ends.
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
@@ -50,6 +52,7 @@ class ChatCompletionStreamParser {
     required String completionId,
     List<ToolDefinition>? tools,
     bool Function()? stoppedAtLimit,
+    LlamaGenerationUsage? Function()? usage,
   }) async* {
     final buffer = StringBuffer();
     var streamedContent = '';
@@ -369,6 +372,7 @@ class ChatCompletionStreamParser {
         modelName: modelName,
         delta: LlamaCompletionChunkDelta(toolCalls: toolCallsWithIds),
         finishReason: 'tool_calls',
+        usage: usage?.call(),
       );
     } else {
       yield _chunk(
@@ -376,6 +380,7 @@ class ChatCompletionStreamParser {
         modelName: modelName,
         delta: LlamaCompletionChunkDelta(),
         finishReason: stoppedAtLimit?.call() == true ? 'length' : 'stop',
+        usage: usage?.call(),
       );
     }
   }
@@ -385,6 +390,7 @@ class ChatCompletionStreamParser {
     required String modelName,
     required LlamaCompletionChunkDelta delta,
     String? finishReason,
+    LlamaGenerationUsage? usage,
   }) {
     return LlamaCompletionChunk(
       id: 'chatcmpl-$completionId',
@@ -398,6 +404,7 @@ class ChatCompletionStreamParser {
           finishReason: finishReason,
         ),
       ],
+      usage: usage,
     );
   }
 

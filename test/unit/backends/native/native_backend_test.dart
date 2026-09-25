@@ -21,6 +21,7 @@ import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
+import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
@@ -538,6 +539,37 @@ void main() {
         const ModelParams(),
       );
       expect(backend.generationLimitOf(generation), isNull);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('forwards generation usage from a reporting delegate only', () async {
+    final llama = _UsageReportingFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+    final generation = Stream<List<int>>.empty();
+    const usage = LlamaGenerationUsage(
+      promptTokens: 3,
+      completionTokens: 1,
+      duration: Duration(milliseconds: 5),
+    );
+    llama.usages[generation] = usage;
+
+    try {
+      expect(backend.generationUsageOf(generation), isNull);
+
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+      expect(backend.generationUsageOf(generation), same(usage));
+      expect(backend.generationUsageOf(Stream<List<int>>.empty()), isNull);
+
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(backend.generationUsageOf(generation), isNull);
     } finally {
       await backend.dispose();
     }
@@ -1124,6 +1156,18 @@ void main() {
       }
     },
   );
+}
+
+class _UsageReportingFakeBackend extends _FakeBackend
+    implements BackendGenerationUsageReporting {
+  _UsageReportingFakeBackend({required super.handle});
+
+  final Map<Stream<List<int>>, LlamaGenerationUsage> usages =
+      <Stream<List<int>>, LlamaGenerationUsage>{};
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
+      usages[generation];
 }
 
 class _LimitReportingFakeBackend extends _FakeBackend

@@ -8,6 +8,7 @@ import 'package:llamadart/src/backends/backend.dart'
         BackendDeferredEngineCreation,
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
+        BackendGenerationUsageReporting,
         BackendVideoRuntimeSupport;
 import 'package:llamadart/src/core/engine/engine.dart'
     show completionGenerationLimit;
@@ -382,11 +383,15 @@ class NativeChatMockBackend extends MockLlamaBackend
 }
 
 class LimitReportingMockBackend extends NativeChatMockBackend
-    implements BackendGenerationLimitReporting {
+    implements
+        BackendGenerationLimitReporting,
+        BackendGenerationUsageReporting {
   BackendGenerationLimit? nextLimit;
+  LlamaGenerationUsage? nextUsage;
   bool nativeChat = false;
   final Expando<BackendGenerationLimit> _limits =
       Expando<BackendGenerationLimit>();
+  final Expando<LlamaGenerationUsage> _usages = Expando<LlamaGenerationUsage>();
 
   @override
   bool get supportsNativeChatGeneration => nativeChat;
@@ -431,11 +436,15 @@ class LimitReportingMockBackend extends NativeChatMockBackend
   Stream<List<int>> _track(Stream<List<int>> source) {
     late final Stream<List<int>> tracked;
     final limit = nextLimit;
+    final usage = nextUsage;
     tracked = source.transform(
       StreamTransformer<List<int>, List<int>>.fromHandlers(
         handleDone: (sink) {
           if (limit != null) {
             _limits[tracked] = limit;
+          }
+          if (usage != null) {
+            _usages[tracked] = usage;
           }
           sink.close();
         },
@@ -447,6 +456,10 @@ class LimitReportingMockBackend extends NativeChatMockBackend
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       _limits[generation];
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
+      _usages[generation];
 }
 
 /// Models the llama.cpp backend: a cancel reaches only a generation whose
@@ -3450,6 +3463,61 @@ void main() {
       final chunks = await limitEngine.create(messages).toList();
 
       expect(chunks.map(completionGenerationLimit), everyElement(isNull));
+    });
+
+    const usage = LlamaGenerationUsage(
+      promptTokens: 6,
+      completionTokens: 2,
+      duration: Duration(milliseconds: 9),
+    );
+
+    for (final nativeChat in <bool>[false, true]) {
+      final path = nativeChat ? 'native chat' : 'rendered prompt';
+
+      test('create puts usage on the final chunk on the $path path', () async {
+        limitBackend
+          ..nativeChat = nativeChat
+          ..nextUsage = usage;
+
+        final chunks = await limitEngine.create(messages).toList();
+
+        expect(limitBackend.nativeGenerateChatCalls, nativeChat ? 1 : 0);
+        expect(chunks.last.usage, same(usage));
+        expect(
+          chunks.take(chunks.length - 1).map((chunk) => chunk.usage),
+          everyElement(isNull),
+        );
+      });
+    }
+
+    test('create puts usage on a final tool-call chunk', () async {
+      limitBackend
+        ..generationText =
+            '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}'
+        ..nextUsage = usage;
+
+      final chunks = await limitEngine
+          .create(
+            messages,
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Get weather',
+                parameters: [ToolParam.string('city')],
+                handler: (_) async => 'ok',
+              ),
+            ],
+          )
+          .toList();
+
+      expect(chunks.last.choices.first.finishReason, 'tool_calls');
+      expect(chunks.last.usage, same(usage));
+    });
+
+    test('create leaves usage null when the backend reports none', () async {
+      final chunks = await limitEngine.create(messages).toList();
+
+      expect(chunks.map((chunk) => chunk.usage), everyElement(isNull));
     });
   });
 }
