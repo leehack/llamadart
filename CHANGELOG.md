@@ -112,6 +112,10 @@
   0.3.5 reference, plus batching, reload and typed rejections, on desktop,
   mobile, Web WebGPU and GCE CUDA
   ([#604](https://github.com/leehack/llamadart/issues/604)).
+- Add Web-only `chat-gguf-webgpu` and `gemma4-gguf-webgpu` validation
+  profiles, hash Web validation models while they stream so GGUFs over 2 GiB
+  run, list every bundled profile in the validation app, and verify iOS GGUF
+  GPU placement from the XCTest console log.
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).

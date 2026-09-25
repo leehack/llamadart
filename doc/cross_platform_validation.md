@@ -51,7 +51,8 @@ critical feature packs with representative locked models before broadening devic
 - `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
   runner/reporter, JSONL validation and JSON/JUnit/CSV/HTML rendering.
 - `example/chat_app/lib/validation_main.dart`: interactive QA app. Run with
-  `flutter run -t lib/validation_main.dart` from `example/chat_app`.
+  `flutter run -t lib/validation_main.dart` from `example/chat_app`. It lists
+  every bundled profile except `npu-*`; an NPU build lists only its own.
 - `example/chat_app/integration_test/validation_test.dart`: unattended entrypoint;
   Android instrumentation and iOS XCTest invoke the same controller.
 - `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
@@ -92,7 +93,7 @@ untrusted producer's report.
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
 | `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
 | `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
-| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
+| `chat-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
 | `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Laya ModernBERT F16, 791,461,088 bytes (`webgpu`: Q8_0, 421,407,968 bytes), plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
@@ -583,6 +584,13 @@ complete journal through this path, but its collected console log contained no
 validation JSONL; console-only recovery is not yet qualified on Flutter devices.
 iOS attaches bounded result files to XCTest; collection exports `.xcresult`
 attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
+iOS writes no `stderr.log`; its native log is in `xcodebuild_output.log`.
+Collection keeps the lines between that log's first and last
+`LLAMADART_VALIDATION` records, only if those records are exactly the
+collected journal, writes them to `report/native.log` and passes that to the
+reporter. With no such log, or more than one native log source, GGUF reports
+keep `accelerator_evidence_missing`. From the iPhone 16 Pro
+`decision-gguf-metal` run, this verifies 29/29 layers on `MTL0`.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
 
