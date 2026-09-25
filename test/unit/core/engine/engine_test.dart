@@ -487,6 +487,51 @@ class TokenCancelBackend extends MockLlamaBackend {
   }
 }
 
+/// Holds every generation open with no output, as during prompt evaluation,
+/// and counts the backend subscriptions that are listened to and cancelled.
+class PromptEvaluationBackend extends NativeChatMockBackend {
+  PromptEvaluationBackend({required this.nativeChat});
+
+  final bool nativeChat;
+  int generateCalls = 0;
+  int listens = 0;
+  int cancels = 0;
+
+  @override
+  bool get supportsNativeChatGeneration => nativeChat;
+
+  Stream<List<int>> _held() {
+    generateCalls += 1;
+    return StreamController<List<int>>(
+      onListen: () => listens += 1,
+      onCancel: () => cancels += 1,
+    ).stream;
+  }
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _held();
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _held();
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -3372,6 +3417,86 @@ void main() {
       await engine.loadMultimodalProjector('proj.gguf');
       await engine.dispose();
       expect(engine.isReady, false);
+    });
+  });
+
+  group('LlamaEngine subscription cancel during prompt evaluation', () {
+    const user = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'hello',
+    );
+    final paths = <String, (bool, Stream<Object?> Function(LlamaEngine))>{
+      'generate': (false, (engine) => engine.generate('hello')),
+      'create': (false, (engine) => engine.create(const [user])),
+      'native chat create': (true, (engine) => engine.create(const [user])),
+      'ChatSession.create': (
+        false,
+        (engine) => ChatSession(engine).create([LlamaTextContent('hello')]),
+      ),
+    };
+
+    for (final MapEntry(key: path, value: (nativeChat, start))
+        in paths.entries) {
+      Future<(PromptEvaluationBackend, LlamaEngine)> load() async {
+        final backend = PromptEvaluationBackend(nativeChat: nativeChat);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+        return (backend, engine);
+      }
+
+      test(
+        '$path cancels the backend stream before the cancel returns',
+        () async {
+          final (backend, engine) = await load();
+          final subscription = start(engine).listen(null);
+          while (backend.listens == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+
+          final cancelled = subscription.cancel();
+
+          expect(backend.cancels, 1);
+          await cancelled;
+          expect(backend.generateCalls, 1);
+        },
+      );
+    }
+
+    for (final path in const ['generate', 'ChatSession.create']) {
+      test('$path cancelled before the backend starts skips it', () async {
+        final backend = PromptEvaluationBackend(nativeChat: false);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+
+        await paths[path]!.$2(engine).listen(null).cancel();
+        await pumpEventQueue();
+
+        expect(backend.generateCalls, 0);
+      });
+    }
+
+    test('ChatSession.create cancelled during prompt evaluation adds no '
+        'assistant message', () async {
+      final backend = PromptEvaluationBackend(nativeChat: false);
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+      final session = ChatSession(engine);
+      final subscription = session
+          .create([LlamaTextContent('hello')])
+          .listen(null);
+      while (backend.listens == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      await subscription.cancel();
+      await pumpEventQueue();
+
+      expect(session.history.map((message) => message.role), [
+        LlamaChatRole.user,
+      ]);
     });
   });
 

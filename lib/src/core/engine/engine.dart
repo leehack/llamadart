@@ -662,7 +662,7 @@ class LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
-    return _generationCancellation.request((isCancelled) async* {
+    return _generationCancellation.request((request) async* {
       _ensureReady();
       await _rejectUnsupportedVideoInput(
         messages.expand((message) => message.parts),
@@ -718,14 +718,14 @@ class LlamaEngine {
               targetLangCode: targetLangCode,
               templateNow: templateNow,
               onLimit: recordLimit,
-              isCancelled: isCancelled,
+              request: request,
             )
           : _generate(
               result.prompt,
               params: plan.generationParams,
               parts: plan.mediaParts,
               onLimit: recordLimit,
-              isCancelled: isCancelled,
+              request: request,
             );
 
       final completionId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -873,12 +873,8 @@ class LlamaEngine {
     List<LlamaContentPart>? parts,
   }) {
     return _generationCancellation.request(
-      (isCancelled) => _generate(
-        prompt,
-        params: params,
-        parts: parts,
-        isCancelled: isCancelled,
-      ),
+      (request) =>
+          _generate(prompt, params: params, parts: parts, request: request),
     );
   }
 
@@ -887,11 +883,11 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
-    required bool Function() isCancelled,
+    required GenerationRequest request,
   }) async* {
     _ensureReady();
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
-    if (isCancelled()) return;
+    if (request.isCancelled()) return;
 
     try {
       final stream = backend.generate(
@@ -901,9 +897,7 @@ class LlamaEngine {
         parts: parts,
       );
 
-      await for (final token in stream.transform(
-        const Utf8Decoder(allowMalformed: true),
-      )) {
+      await for (final token in _cancellableText(stream, request)) {
         yield token;
       }
       _reportGenerationLimit(stream, onLimit);
@@ -935,10 +929,10 @@ class LlamaEngine {
     String? targetLangCode,
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
-    required bool Function() isCancelled,
+    required GenerationRequest request,
   }) async* {
     _ensureReady();
-    if (isCancelled()) return;
+    if (request.isCancelled()) return;
 
     try {
       final stream = nativeBackend.generateChat(
@@ -955,9 +949,7 @@ class LlamaEngine {
         templateNow: templateNow,
       );
 
-      await for (final token in stream.transform(
-        const Utf8Decoder(allowMalformed: true),
-      )) {
+      await for (final token in _cancellableText(stream, request)) {
         yield token;
       }
       _reportGenerationLimit(stream, onLimit);
@@ -971,6 +963,29 @@ class LlamaEngine {
         stackTrace,
       );
     }
+  }
+
+  /// Decodes [tokens] into a stream that also ends as soon as the
+  /// subscription of [request] or of an ancestor is cancelled, cancelling
+  /// [tokens] first.
+  Stream<String> _cancellableText(
+    Stream<List<int>> tokens,
+    GenerationRequest request,
+  ) {
+    final text = StreamController<String>(sync: true);
+    final subscription = tokens
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(text.add, onError: text.addError, onDone: text.close);
+    text
+      ..onPause = subscription.pause
+      ..onResume = subscription.resume
+      ..onCancel = subscription.cancel;
+    request.onSubscriptionCancel(() {
+      final cancelled = subscription.cancel();
+      unawaited(text.close());
+      return cancelled;
+    });
+    return text.stream;
   }
 
   void _reportGenerationLimit(

@@ -151,7 +151,7 @@ class ChatSession {
     bool continuesPreviousTurn = false,
   }) {
     final cancellation = GenerationCancellation.forEngine(_engine);
-    return cancellation.request((isCancelled) async* {
+    return cancellation.request((request) async* {
       // Add user message if parts provided
       if (parts.isNotEmpty) {
         final userMsg = parts.length == 1 && parts.first is LlamaTextContent
@@ -189,7 +189,7 @@ class ChatSession {
       final Map<int, _ToolCallBuilder> toolCallBuilders = {};
 
       final completion = cancellation.inherit(
-        isCancelled,
+        request,
         () => _engine.create(
           messages,
           params: params,
@@ -226,6 +226,7 @@ class ChatSession {
 
         yield chunk;
       }
+      if (request.isSubscriptionCancelled) return;
 
       // Reconstruct final message with all parts
       final contentParts = <LlamaContentPart>[];

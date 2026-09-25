@@ -8,6 +8,16 @@ void main() {
   late LlamaEngine engine;
   late GenerationCancellation cancellation;
 
+  /// Returns a request stream over [source] and its request.
+  (Stream<int>, GenerationRequest) requestOf(Stream<int> Function() source) {
+    late GenerationRequest made;
+    final stream = cancellation.request((request) {
+      made = request;
+      return source();
+    });
+    return (stream, made);
+  }
+
   setUp(() {
     engine = LlamaEngine(LlamaBackend());
     cancellation = GenerationCancellation.forEngine(engine);
@@ -17,12 +27,10 @@ void main() {
 
   /// Returns a request stream and a reader of its check.
   (Stream<int>, bool Function()) request() {
-    late bool Function() check;
-    final stream = cancellation.request((isCancelled) {
-      check = isCancelled;
-      return Stream<int>.fromIterable(const <int>[1, 2]);
-    });
-    return (stream, check);
+    final (stream, made) = requestOf(
+      () => Stream<int>.fromIterable(const <int>[1, 2]),
+    );
+    return (stream, made.isCancelled);
   }
 
   test('is shared by every caller of one engine', () {
@@ -53,10 +61,13 @@ void main() {
     expect(await events, <int>[1, 2]);
   });
 
-  test('passes an inherited check to requests made inside inherit', () {
-    var outerCancelled = false;
+  test('passes an inherited check to requests made inside inherit', () async {
+    final source = StreamController<int>();
+    addTearDown(source.close);
+    final (outer, parent) = requestOf(() => source.stream);
+    final subscription = outer.listen(null);
     late bool Function() inner;
-    cancellation.inherit(() => outerCancelled, () {
+    cancellation.inherit(parent, () {
       final (stream, isCancelled) = request();
       stream.listen(null);
       inner = isCancelled;
@@ -65,9 +76,78 @@ void main() {
     outside.listen(null);
 
     expect(inner(), isFalse);
-    outerCancelled = true;
+    await subscription.cancel();
     expect(inner(), isTrue);
     expect(outsideCancelled(), isFalse);
+  });
+
+  test('a subscription cancel runs the request stops once and waits for '
+      'them', () async {
+    final source = StreamController<int>();
+    addTearDown(source.close);
+    final (stream, made) = requestOf(() => source.stream);
+    final stopped = Completer<void>();
+    var stops = 0;
+    made.onSubscriptionCancel(() {
+      stops += 1;
+      return stopped.future;
+    });
+    final subscription = stream.listen(null);
+    var cancelReturned = false;
+
+    final cancelled = subscription.cancel().then((_) => cancelReturned = true);
+
+    expect(stops, 1);
+    expect(made.isCancelled(), isTrue);
+    expect(made.isSubscriptionCancelled, isTrue);
+    await pumpEventQueue();
+    expect(cancelReturned, isFalse);
+    stopped.complete();
+    await cancelled;
+    await subscription.cancel();
+    expect(stops, 1);
+  });
+
+  test('a parent subscription cancel runs the stops of inherited requests '
+      'only', () async {
+    final source = StreamController<int>();
+    addTearDown(source.close);
+    final (outer, parent) = requestOf(() => source.stream);
+    final subscription = outer.listen(null);
+    late GenerationRequest child;
+    cancellation.inherit(parent, () {
+      final (stream, made) = requestOf(
+        () => Stream<int>.fromIterable(const <int>[1]),
+      );
+      stream.listen(null);
+      child = made;
+    });
+    final (outside, other) = requestOf(
+      () => Stream<int>.fromIterable(const <int>[1]),
+    );
+    outside.listen(null);
+    final stopped = <String>[];
+    child.onSubscriptionCancel(() async => stopped.add('child'));
+    other.onSubscriptionCancel(() async => stopped.add('other'));
+
+    await subscription.cancel();
+
+    expect(stopped, ['child']);
+    expect(child.isSubscriptionCancelled, isFalse);
+  });
+
+  test('cancel runs no stops', () {
+    final (stream, made) = requestOf(
+      () => Stream<int>.fromIterable(const <int>[1]),
+    );
+    stream.listen(null);
+    var stops = 0;
+    made.onSubscriptionCancel(() async => stops += 1);
+
+    cancellation.cancel();
+
+    expect(made.isCancelled(), isTrue);
+    expect(stops, 0);
   });
 
   test('forwards errors and pause to the source stream', () async {
