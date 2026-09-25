@@ -1,3 +1,4 @@
+import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
@@ -14,6 +15,7 @@ LlamaBackend createBackend() => WebAutoBackend();
 /// Uses the unified web backend implementation.
 class WebAutoBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendEmbeddingsSupport,
@@ -450,6 +452,14 @@ class WebAutoBackend
   @override
   Future<void> clearLoraAdapters(int contextHandle) {
     return _requireDelegate().clearLoraAdapters(contextHandle);
+  }
+
+  @override
+  LlamaRuntime? get runtime {
+    final delegate = _delegate;
+    return delegate is BackendRuntimeIdentity
+        ? (delegate as BackendRuntimeIdentity).runtime
+        : null;
   }
 
   @override

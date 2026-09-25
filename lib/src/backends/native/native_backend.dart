@@ -1,3 +1,4 @@
+import '../../core/engine/engine_observer.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
@@ -24,6 +25,7 @@ LlamaBackend createBackend() => NativeAutoBackend();
 /// `.litertlm` model bundles use the LiteRT-LM backend.
 class NativeAutoBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
@@ -253,6 +255,14 @@ class NativeAutoBackend
   @override
   Future<void> clearLoraAdapters(int contextHandle) {
     return _requireDelegate().clearLoraAdapters(contextHandle);
+  }
+
+  @override
+  LlamaRuntime? get runtime {
+    final delegate = _delegate;
+    return delegate is BackendRuntimeIdentity
+        ? (delegate as BackendRuntimeIdentity).runtime
+        : null;
   }
 
   @override
