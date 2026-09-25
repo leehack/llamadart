@@ -1,14 +1,13 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:js_interop';
 
-import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:web/web.dart' as web;
 
 import 'host.dart';
+import 'locked_download.dart';
 
 /// Creates the browser host, which exports its in-memory result journal.
 ValidationHost createHost() => _WebHost();
@@ -61,23 +60,7 @@ class _WebHost implements ValidationHost {
     final client = _client = http.Client();
     final timer = Timer(const Duration(minutes: 5), client.close);
     try {
-      final response = await client.send(
-        http.Request('GET', Uri.parse(lock['url'] as String)),
-      );
-      if (response.statusCode != 200) {
-        throw StateError('Model download HTTP mismatch');
-      }
-      final bytes = BytesBuilder(copy: false);
-      await for (final chunk in response.stream) {
-        if (bytes.length + chunk.length > (lock['bytes'] as int)) {
-          throw StateError('Model size exceeded');
-        }
-        bytes.add(chunk);
-      }
-      if (bytes.length != lock['bytes'] ||
-          sha256.convert(bytes.takeBytes()).toString() != lock['sha256']) {
-        throw const FormatException('Model checksum/size mismatch');
-      }
+      await verifyLockedDownload(client, lock);
     } finally {
       timer.cancel();
       client.close();
