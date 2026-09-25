@@ -194,18 +194,34 @@ Future<int> prepareWorkspace(
   return 0;
 }
 
+/// Starts one workspace process; [Process.start] outside tests.
+typedef WorkspaceProcessStarter =
+    Future<Process> Function(
+      String executable,
+      List<String> arguments, {
+      String? workingDirectory,
+      ProcessStartMode mode,
+      bool runInShell,
+    });
+
 /// Runs a workspace command with output attached to the current terminal.
+///
+/// On Windows, Flutter's `flutter` and `dart` are `.bat` scripts, which
+/// [Process.start] launches only with `runInShell`.
 Future<int> runWorkspaceCommand(
   String executable,
   List<String> arguments,
-  String workingDirectory,
-) async {
+  String workingDirectory, {
+  bool? isWindows,
+  WorkspaceProcessStarter startProcess = Process.start,
+}) async {
   try {
-    final process = await Process.start(
+    final process = await startProcess(
       executable,
       arguments,
       workingDirectory: workingDirectory,
       mode: ProcessStartMode.inheritStdio,
+      runInShell: isWindows ?? Platform.isWindows,
     );
     return await process.exitCode;
   } on ProcessException catch (error) {
