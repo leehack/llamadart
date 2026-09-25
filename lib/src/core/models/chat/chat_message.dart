@@ -152,15 +152,17 @@ class LlamaChatMessage {
 
   /// Serializes the message to JSON.
   ///
-  /// This implementation follows OpenAI's Chat Completions format while
-  /// supporting extensions like `reasoning_content` for reasoning models
-  /// (e.g. DeepSeek R1).
+  /// Messages follow OpenAI's Chat Completions format, with extensions like
+  /// `reasoning_content` for reasoning models (e.g. DeepSeek R1), except a
+  /// message with several [LlamaToolResultContent] parts.
   ///
-  /// A message with one [LlamaToolResultContent] becomes a `tool` message with
-  /// top-level `tool_call_id`, `name` and `content`. With several results,
-  /// `content` is a list of one such `tool_call_id`/`name`/`content` map per
-  /// result, in order; chat templates receive one `tool` message per result
-  /// instead.
+  /// A message with one tool result becomes an OpenAI-style `tool` message
+  /// with top-level `tool_call_id`, `name` and `content`. With several
+  /// results, `content` is a list of one such `tool_call_id`/`name`/`content`
+  /// map per result, in order. That shape is not valid Chat Completions input
+  /// (llama-server rejects it), so send one `tool` message per result to an
+  /// OpenAI-compatible endpoint. Chat templates already receive one `tool`
+  /// message per result.
   Map<String, dynamic> toJson() {
     final partsList = parts;
     final json = <String, dynamic>{'role': role.name};
