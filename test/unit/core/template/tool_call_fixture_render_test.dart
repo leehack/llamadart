@@ -145,6 +145,32 @@ void main() {
     );
   });
 
+  test('FunctionGemma keeps string tool-call arguments verbatim', () {
+    final result = _render('functiongemma-270m-it.jinja', parallel: false);
+
+    // llama-server 7fe450e19 /apply-template output for this conversation;
+    // it reports supports_object_arguments=false for this template and drops
+    // the leading BOS text that its tokenizer adds.
+    expect(
+      result.prompt,
+      '<bos><start_of_turn>developer\n'
+      'You are a model that can do function calling with the following '
+      'functions<start_function_declaration>declaration:get_weather'
+      '{description:<escape>Get weather<escape>,parameters:{properties:'
+      '{city:{description:<escape><escape>,type:<escape>STRING<escape>}},'
+      'type:<escape>OBJECT<escape>}}<end_function_declaration>'
+      '<end_of_turn>\n'
+      '<start_of_turn>user\nWeather in Paris?<end_of_turn>\n'
+      '<start_of_turn>model\n'
+      '<start_function_call>call:get_weather{                    '
+      '{"city":"Paris"}}<end_function_call>'
+      '<start_function_response>response:get_weather{value:<escape>sunny'
+      '<escape>}<end_function_response>It is sunny.<end_of_turn>\n'
+      '<start_of_turn>user\nAnd Rome?<end_of_turn>\n'
+      '<start_of_turn>model\n',
+    );
+  });
+
   test('Ministral 3 allows one tool call unless parallel calls are on', () {
     final single = _render('Ministral-3-3B-Reasoning.jinja', parallel: false);
     final parallel = _render('Ministral-3-3B-Reasoning.jinja', parallel: true);

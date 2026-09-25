@@ -26,11 +26,17 @@ For canonical full release notes, use:
 - Cancel an active text-to-speech synthesis on `LlamaEngine.unloadModel()` and
   `dispose()` instead of waiting for it to finish
   ([#628](https://github.com/leehack/llamadart/issues/628)).
+- Cancel an active Qwen3-ASR transcription on `LlamaEngine.unloadModel()` and
+  `dispose()` instead of completing it with the transcript cut at the unload
+  ([#670](https://github.com/leehack/llamadart/issues/670)).
 - Start a native llama.cpp generation requested right after a cancel once the
   cancelled run stops, instead of failing with `generation is already in
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
+  GGUF models can read tool output
+  ([#669](https://github.com/leehack/llamadart/issues/669)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older
@@ -114,6 +120,13 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
+- Add cross-platform validation cases for a cancel issued right after
+  listening, a generation requested right after a cancel, an overlapping
+  generation, an invalid GBNF grammar and `ToolChoice.auto` on a prompt that
+  needs no tool, and run the tool cases on the GGUF chat profiles
+  ([#602](https://github.com/leehack/llamadart/issues/602),
+  [#655](https://github.com/leehack/llamadart/issues/655),
+  [#654](https://github.com/leehack/llamadart/issues/654)).
 - Add `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` validation profiles that
   check `DecisionEngine` token ids, raw logits and answers against the Laya
   0.3.5 reference, plus batching, reload and typed rejections, on desktop,

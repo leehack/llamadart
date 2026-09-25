@@ -96,11 +96,23 @@ class FakeDecisionEngine implements ValidationEngine, DecisionValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
+  }) => throw StateError('decision profiles do not generate text');
+
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
   }) => throw StateError('decision profiles do not generate text');
 
   Map<String, dynamic> _head() => {
@@ -314,7 +326,22 @@ void main() {
   });
 
   test('decision cases require the current catalog version', () {
-    expect(() => _profile().catalogForVersion(3), throwsFormatException);
+    for (var version = 1; version < validationCatalogVersion; version++) {
+      expect(
+        () => _profile().catalogForVersion(version),
+        throwsFormatException,
+      );
+      for (final id in _decisionIds) {
+        expect(catalogDeclaresCase(id, version), isFalse, reason: id);
+        expect(
+          () => validationCase(id, catalogVersion: version),
+          throwsFormatException,
+        );
+      }
+    }
+    for (final id in _decisionIds) {
+      expect(catalogDeclaresCase(id, validationCatalogVersion), isTrue);
+    }
   });
 
   test('decision profiles reject incomplete or conflicting locks', () {
@@ -915,10 +942,29 @@ class _LoadOnlyEngine implements ValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
   }) => _delegate.generate(prompt, profile);
+
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
+  }) => _delegate.generateOverlapping(
+    first,
+    second,
+    profile,
+    raw: raw,
+    firstMaxTokens: firstMaxTokens,
+    cancelFirst: cancelFirst,
+  );
 }

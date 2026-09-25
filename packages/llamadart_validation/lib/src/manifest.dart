@@ -279,7 +279,7 @@ class ValidationProfile {
   bool get historyControls =>
       nativeReference || data['history_controls'] == true;
 
-  List<String> get _quickCaseIds => isDecision
+  List<String> _quickCaseIds(int catalogVersion) => isDecision
       ? [
           'C01.load',
           for (final definition in decisionValidationCases) definition.id,
@@ -295,8 +295,16 @@ class ValidationProfile {
             'C06.history.combined',
           ],
           if (!nativeReference) 'C08.cancel',
+          if (!nativeReference && catalogVersion >= 5) ...[
+            'C08.cancel.early',
+            if (runtime == 'gguf') ...['C08.cancel.restart', 'C08.overlap'],
+          ],
           'C09.reload',
-          if (!nativeReference) ...['C10.limit', 'C12.recovery'],
+          if (!nativeReference) ...[
+            'C10.limit',
+            if (catalogVersion >= 5 && runtime == 'gguf') 'C12.grammar',
+            'C12.recovery',
+          ],
           'B01.warmup',
           'B01.1',
           'B01.2',
@@ -305,7 +313,7 @@ class ValidationProfile {
 
   /// Original journal-v1 obligations, retained for existing report imports.
   List<String> get legacyCaseIds => [
-    ..._quickCaseIds,
+    ..._quickCaseIds(1),
     if (selection == 'release') ...[
       'C05.thinking',
       'C07.tools',
@@ -316,17 +324,18 @@ class ValidationProfile {
   ];
 
   /// Expanded obligations; a focused run adds relevant cases to the quick core.
-  List<String> get caseIds {
-    final quick = _quickCaseIds;
-    return [
-      ...quick,
-      for (final definition in extendedValidationCases)
-        if (selection == 'release' ||
-            (selection == 'focused' &&
-                definition.features.any(focusFeatures.contains)))
-          definition.id,
-    ];
-  }
+  List<String> get caseIds => caseIdsForCatalog(validationCatalogVersion);
+
+  /// Obligations that catalog [version] derived from this profile.
+  List<String> caseIdsForCatalog(int version) => [
+    ..._quickCaseIds(version),
+    for (final definition in extendedValidationCases)
+      if (catalogDeclaresCase(definition.id, version) &&
+          (selection == 'release' ||
+              (selection == 'focused' &&
+                  definition.features.any(focusFeatures.contains))))
+        definition.id,
+  ];
 
   /// Resolved synthetic fixtures, including explicit model-specific overrides.
   Map<String, dynamic> get fixtures {
@@ -340,6 +349,7 @@ class ValidationProfile {
 
   Map<String, dynamic> _fixturesForVersion(int version) {
     final resolved = fixtures;
+    if (version < 5) resolved.remove('invalid_grammar');
     if (version < 4) {
       final tools = resolved['tools'] as Map;
       final tool = tools['tool'] as Map;
@@ -403,6 +413,13 @@ class ValidationProfile {
         'Batching selection requires catalog version 2',
       );
     }
+    if (version < 5 &&
+        (data['fixtures'] as Map?)?.containsKey('invalid_grammar') == true) {
+      throw const FormatException(
+        'Invalid grammar fixture requires catalog version 5',
+      );
+    }
+    final selected = caseIdsForCatalog(version);
     return {
       'version': version,
       'features': {
@@ -423,12 +440,16 @@ class ValidationProfile {
           ...validationCaseCatalog,
           if (isDecision) ...decisionValidationCases,
         ])
-          {
-            ...validationCase(definition.id, catalogVersion: version).toJson(),
-            'selected': caseIds.contains(definition.id),
-            if (!caseIds.contains(definition.id))
-              'omission_reason': _omissionReason(definition.id),
-          },
+          if (catalogDeclaresCase(definition.id, version))
+            {
+              ...validationCase(
+                definition.id,
+                catalogVersion: version,
+              ).toJson(),
+              'selected': selected.contains(definition.id),
+              if (!selected.contains(definition.id))
+                'omission_reason': _omissionReason(definition.id),
+            },
       ],
     };
   }
@@ -446,10 +467,21 @@ class ValidationProfile {
           'C02.unicode',
           'C03.raw',
           'C08.cancel',
+          'C08.cancel.early',
+          'C08.cancel.restart',
+          'C08.overlap',
           'C10.limit',
+          'C12.grammar',
           'C12.recovery',
         ].contains(id)) {
       return 'outside_native_reference_scope';
+    }
+    if (runtime == 'litert' &&
+        const ['C08.cancel.restart', 'C08.overlap'].contains(id)) {
+      return 'litert_restart_contract_undefined';
+    }
+    if (runtime == 'litert' && id == 'C12.grammar') {
+      return 'litert_grammar_unsupported';
     }
     return 'outside_selected_features';
   }
