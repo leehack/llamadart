@@ -129,6 +129,8 @@ void main() {
       expect(isThreadConstructorFailureText('thread constructor failed'), true);
       expect(isThreadConstructorFailureText('pthread error 138 raised'), true);
       expect(isThreadConstructorFailureText('error 139'), isFalse);
+      expect(isThreadConstructorFailureText('error 138.'), isTrue);
+      expect(isThreadConstructorFailureText('error 1380'), isFalse);
     });
 
     test('fs write notes cover every recognised marker', () {

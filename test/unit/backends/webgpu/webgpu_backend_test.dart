@@ -1526,6 +1526,33 @@ void main() {
       }
     }
 
+    test('treats "error 1380" as an ordinary fetch abort', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      globalContext.setProperty(
+        '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+        (16 * 1024 * 1024).toJS,
+      );
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'model_fetch_backend_attempt;model_fetch_backend_abort';
+      failLoads(
+        message: 'bridge model load failed: error 1380',
+        firstAttempts: 99,
+      );
+
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/error-1380-model.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        ),
+        throwsA(isNot(isA<UnsupportedError>())),
+      );
+      expect(requestedRemoteFetchChunkBytes, hasLength(11));
+    });
+
     test(
       'surfaces the memory limit error after an opted-in wasm64 staging failure',
       () async {
