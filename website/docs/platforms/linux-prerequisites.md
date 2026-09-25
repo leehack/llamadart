@@ -12,7 +12,11 @@ Linux runtime requirements depend on selected backend modules.
   object file`.
 - `vulkan`: Vulkan loader and valid GPU driver/ICD.
 - `blas`: OpenBLAS runtime (`libopenblas.so.0`).
-- `cuda`: NVIDIA driver + compatible CUDA runtime libs.
+- `cuda`: NVIDIA driver plus the CUDA 12 runtime libraries.
+  `libggml-cuda.so` links `libcudart.so.12` and `libcublas.so.12`, and
+  llamadart does not ship them on Linux. Without them the CUDA module fails to
+  load and llama.cpp runs on CPU. A GPU-ready cloud image can ship the driver
+  alone: the GCE `ubuntu-accelerator-2404-amd64-with-nvidia-580` image does.
 - `hip`: ROCm runtime libs (for example `libhipblas.so.2`).
 
 ## Package examples
