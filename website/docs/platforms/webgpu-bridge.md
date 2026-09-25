@@ -136,7 +136,7 @@ and intermediate buffers. `llamadart` selects the 64-bit (memory64) core when
 `ModelParams.preferMemory64` is `true`, or when it is `null` and
 `ModelParams.modelBytesHint` is at least 2 GiB. `false` selects the 32-bit
 core, though a load that aborts or runs out of memory on it is retried on
-memory64. With neither set, the pinned bridge starts on memory64 whenever
+memory64. Otherwise, the pinned bridge starts on memory64 whenever
 `__llamadartBridgeCoreModuleUrlMem64` is set, as in the snippet above; set
 `window.__llamadartBridgePreferMemory64 = false` to start on the 32-bit core
 instead. Pass the model size when you know it:

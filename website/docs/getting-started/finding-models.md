@@ -82,9 +82,10 @@ Once you find a model on Hugging Face:
    `engine.loadModelSource(...)`. Keep the real file extension in the path so
    `LlamaBackend()` can route to the correct runtime.
 
-On native, `engine.loadModel()` takes a filesystem path; on web, a URL. To ship a model as a Flutter
-asset, copy the asset to a file first (for example into the app support
-directory) and pass that path; `llamadart` has no asset loader.
+On native, `engine.loadModel()` takes a filesystem path; on web, a URL.
+`llamadart` has no asset loader: to ship a model as a Flutter asset on native,
+copy the asset to a file first (for example into the app support directory)
+and pass that path.
 
 Revisions, private repositories, `mmproj` projector files and sharded GGUFs:
 see [Download and cache models](../guides/model-downloads).
