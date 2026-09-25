@@ -527,6 +527,92 @@ void main() {
       expect((await retry.done).result?.text, 'transcript');
     });
 
+    for (final call in <String>['unloadModel', 'dispose']) {
+      test('$call cancels an active transcription', () async {
+        await _loadSpeechModel(llamaEngine);
+        final partialSent = Completer<void>();
+        final backendCancelled = Completer<void>();
+        // llama.cpp ends a cancelled generation as a normal end of stream.
+        Stream<List<int>> endsAtCancel() async* {
+          yield utf8.encode('language English<asr_text>And so, my fellow');
+          partialSent.complete();
+          await backendCancelled.future;
+        }
+
+        backend
+          ..generationStream = endsAtCancel()
+          ..onCancelGeneration = () {
+            if (!backendCancelled.isCompleted) {
+              backendCancelled.complete();
+            }
+          };
+        final task = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+          ),
+        );
+        final events = task.events.toList();
+        await partialSent.future;
+
+        await (call == 'unloadModel'
+            ? llamaEngine.unloadModel()
+            : llamaEngine.dispose());
+
+        final completion = await task.done;
+        expect(completion.state, SpeechToTextCompletionState.cancelled);
+        expect(completion.result, isNull);
+        expect(await events, isEmpty);
+        expect(task.isCancellationRequested, isTrue);
+
+        backend
+          ..generationStream = null
+          ..onCancelGeneration = null;
+        if (call == 'dispose') {
+          await expectLater(
+            speechEngine.transcribe(
+              const SpeechToTextRequest(
+                audio: SpeechAudioFileInput('/tmp/retry.wav'),
+              ),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          return;
+        }
+        await _loadSpeechModel(llamaEngine);
+        final retry = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/retry.wav'),
+          ),
+        );
+        expect((await retry.done).result?.text, 'transcript');
+      });
+    }
+
+    test('unloadModel before the backend call cancels the task', () async {
+      await _loadSpeechModel(llamaEngine);
+      backend.blockMetadata = true;
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      final events = task.events.toList();
+      await backend.metadataStarted.future;
+
+      await llamaEngine.unloadModel();
+      backend.releaseMetadata();
+
+      expect(await events, isEmpty);
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      expect(backend.generationStarted.isCompleted, isFalse);
+
+      await _loadSpeechModel(llamaEngine);
+      final retry = await speechEngine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/retry.wav'),
+        ),
+      );
+      expect((await retry.done).result?.text, 'transcript');
+    });
+
     test('awaits stream cleanup before releasing the backend lease', () async {
       await _loadSpeechModel(llamaEngine);
       final generationRelease = Completer<void>();
