@@ -310,6 +310,25 @@ For canonical full release notes, use:
   fresh checkout. A failed report step is now the run's error, with its exit
   code and a redacted stderr tail
   ([#688](https://github.com/leehack/llamadart/issues/688)).
+- Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
+  on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
+  ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
+  selection. A HIP load on a ROCm build now reports its backend as `HIP`
+  instead of `CPU`
+  ([#611](https://github.com/leehack/llamadart/issues/611)).
+- Report a WebGPU model load that fails with `error 138` as the documented
+  cross-origin isolation (COOP/COEP) `UnsupportedError`, as
+  `thread constructor failed` already was, instead of rethrowing the raw
+  bridge error
+  ([#598](https://github.com/leehack/llamadart/issues/598)).
+- Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
+  projector, instead of the raw JavaScript error. Its details drop the
+  userinfo and password of the projector URL the app passed, its `?query`
+  and `#fragment`, its `key=value` query parts, and bare query values and
+  fragments of 10 or more characters, as written, percent-encoded or
+  percent-decoded; shorter bare values, such as the `1` of `?v=1`, stay.
+  Other URLs in them lose userinfo, query and fragment on a best-effort basis
+  ([#642](https://github.com/leehack/llamadart/issues/642)).
 - Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
   tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with
   any number of extra closing braces) without a grammar. Calls are extracted as

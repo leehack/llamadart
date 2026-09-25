@@ -2021,22 +2021,18 @@ class LlamaCppService {
   ) {
     final lower = value.toLowerCase();
     switch (backend) {
-      case GpuBackend.metal:
-        return lower.contains('metal') || lower.contains('mtl');
-      case GpuBackend.vulkan:
-        return lower.contains('vulkan');
-      case GpuBackend.opencl:
-        return lower.contains('opencl');
-      case GpuBackend.hip:
-        return lower.contains('hip');
-      case GpuBackend.cuda:
-        return lower.contains('cuda');
-      case GpuBackend.blas:
-        return lower.contains('blas');
       case GpuBackend.cpu:
         return lower.contains('cpu') || lower.contains('llvm');
       case GpuBackend.auto:
         return false;
+      case GpuBackend.metal:
+      case GpuBackend.vulkan:
+      case GpuBackend.opencl:
+      case GpuBackend.hip:
+      case GpuBackend.cuda:
+      case GpuBackend.blas:
+        return lower.contains(backend.name) ||
+            lower.contains(ggmlGpuRegistryName(backend)!.toLowerCase());
     }
   }
 
@@ -3520,31 +3516,33 @@ class LlamaCppService {
   }
 
   List<ggml_backend_dev_t>? _resolvePreferredDevices(GpuBackend backend) {
-    switch (backend) {
-      case GpuBackend.auto:
+    if (backend == GpuBackend.cpu) {
+      final cpuDev = _ggmlBackendDevByType(
+        ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
+      );
+      if (cpuDev == nullptr) {
         return null;
-      case GpuBackend.cpu:
-        final cpuDev = _ggmlBackendDevByType(
-          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
-        );
-        if (cpuDev == nullptr) {
-          return null;
-        }
-        return [cpuDev];
-      case GpuBackend.vulkan:
-        return _devicesForBackendRegName('Vulkan');
-      case GpuBackend.metal:
-        return _devicesForBackendRegName('Metal');
-      case GpuBackend.cuda:
-        return _devicesForBackendRegName('CUDA');
-      case GpuBackend.blas:
-        return _devicesForBackendRegName('BLAS');
-      case GpuBackend.opencl:
-        return _devicesForBackendRegName('OpenCL');
-      case GpuBackend.hip:
-        return _devicesForBackendRegName('HIP');
+      }
+      return [cpuDev];
     }
+    final registryName = ggmlGpuRegistryName(backend);
+    return registryName == null
+        ? null
+        : _devicesForBackendRegName(registryName);
   }
+
+  /// Returns the name of the ggml backend registry that lists the devices of
+  /// an explicit GPU [backend], or `null` for [GpuBackend.auto] and
+  /// [GpuBackend.cpu].
+  static String? ggmlGpuRegistryName(GpuBackend backend) => switch (backend) {
+    GpuBackend.vulkan => 'Vulkan',
+    GpuBackend.metal => 'MTL',
+    GpuBackend.cuda => 'CUDA',
+    GpuBackend.blas => 'BLAS',
+    GpuBackend.opencl => 'OpenCL',
+    GpuBackend.hip => 'ROCm',
+    GpuBackend.auto || GpuBackend.cpu => null,
+  };
 
   List<ggml_backend_dev_t>? _devicesForBackendRegName(String regName) {
     final regNamePtr = regName.toNativeUtf8();
