@@ -5,14 +5,16 @@
 [![Docs](https://img.shields.io/badge/docs-website-blue.svg)](https://llamadart.leehack.com/docs/intro)
 
 Cross-platform, on-device LLM inference for Dart and Flutter. One API runs
-GGUF models through llama.cpp and `.litertlm` models through LiteRT-LM on
-Android, iOS, macOS, Windows, Linux, and the web, so your app needs no
-inference server. Native targets run offline once the model is on the device;
-web support is experimental.
+models on Android, iOS, macOS, Windows, Linux, and the web, so your app needs
+no inference server. GGUF models run through llama.cpp and `.litertlm` models
+through LiteRT-LM, whose platform coverage is narrower. Native targets run
+offline once the model is on the device; web support is experimental.
 
-Acceleration follows the platform: Metal on Apple, Vulkan on Android, Linux,
-and Windows, WebGPU in the browser, and LiteRT-LM GPU, or NPU on compatible
-Android deployments.
+llama.cpp uses Metal on Apple platforms, Vulkan on Android, Linux, and Windows,
+and WebGPU in the browser. LiteRT-LM can also use GPU and, on compatible
+Android deployments, NPU. See the
+[support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix)
+for each target.
 
 ## Start Here
 
