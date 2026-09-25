@@ -3,6 +3,7 @@ include: package:lints/recommended.yaml
 analyzer:
   exclude:
     - packages/**
+    - website/**
     - build/**
     - android/**
     - ios/**

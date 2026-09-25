@@ -1,5 +1,6 @@
 ---
 title: Laya Tetris Example
+sidebar_label: Laya Tetris
 description: A Flutter app in which a Laya decision model plays real-time Tetris through DecisionEngine, with first-launch model downloads and a published fine-tuned head.
 ---
 

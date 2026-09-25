@@ -1,5 +1,6 @@
 ---
 title: Upgrade Checklist
+description: "A step-by-step checklist for upgrading llamadart: release notes, migration guides, runtime checks, templates and pins."
 ---
 
 Use this checklist when upgrading `llamadart` across minor/major versions.

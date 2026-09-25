@@ -1,5 +1,7 @@
 ---
-title: Finding and Choosing Models
+title: Find and choose GGUF and LiteRT-LM models
+sidebar_label: Finding models
+description: Where to download GGUF and .litertlm models, how quantization trades quality for size, and which model sizes fit each platform.
 ---
 
 `llamadart` supports two model artifact families:

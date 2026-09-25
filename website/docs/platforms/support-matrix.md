@@ -1,5 +1,6 @@
 ---
-title: Platform & Backend Matrix
+title: Platform and backend support matrix
+sidebar_label: Support matrix
 description: Check which native and web runtimes are supported by llamadart and how backend selection works per platform.
 ---
 
@@ -25,8 +26,8 @@ validated Qwen3-ASR path with WAV bytes only;
 older or custom runtimes stay unsupported unless the host explicitly declares
 the capability. Native llama.cpp and WebGPU bridge assets `v0.1.33+` also expose
 experimental Qwen3-TTS synthesis through the separate typed
-[`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM v0.16 also
-supports experimental CPU-only streaming ASR through
+[`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM (ASR engines since
+v0.16) also supports experimental CPU-only streaming ASR through
 `SpeechToTextEngine.liteRtLm`, with the native session owned by a worker
 isolate. LiteRT-LM Web does not expose typed speech. See the
 [speech recognition support matrix](../guides/speech-to-text#current-support-matrix).
@@ -126,7 +127,7 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-The `v0.4.0` native llama.cpp pin retains BailingMoE3 and
+The pinned native llama.cpp runtime (`v0.5.0`) retains BailingMoE3 and
 GraniteSWA/GraniteMoeSWA model loading and LFM2 target/draft support for
 DSpark speculative decoding. These architectures use the existing GGUF APIs;
 LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
@@ -137,7 +138,7 @@ backend validation remains necessary before enabling DSpark in production.
 
 | Runtime path | Public video input | Current evidence |
 | --- | --- | --- |
-| Native llama.cpp / GGUF | Not consumable | The pinned `v0.4.0` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
+| Native llama.cpp / GGUF | Not consumable | The pinned `v0.5.0` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
 | Native LiteRT-LM | Not consumable | The public direct-media path accepts image/audio content only. |
 | WebGPU / Web LiteRT-LM | Not consumable | No validated public Dart video transport or frame-lifetime contract exists. |
 | Android / iOS | Not consumable | Explicitly unsupported pending native packaging and device validation. |
@@ -319,6 +320,9 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   durable across page reloads. Durable browser storage currently requires
   app-level export/import outside the Dart `stateSaveFile` / `stateLoadFile`
   helpers. LiteRT-LM currently reports state persistence as unsupported.
+- **Per-request usage** (`LlamaCompletionChunk.usage` on the final
+  `engine.create` chunk) is reported by native llama.cpp. It is null on
+  LiteRT-LM and WebGPU.
 - **WebGPU readiness** is browser/device/runtime dependent. Check secure
   context, `navigator.gpu`, adapter/features, `window.crossOriginIsolated`,
   loaded bridge asset source/version, and model memory pressure before treating

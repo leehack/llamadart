@@ -47,7 +47,7 @@ lib/src/backends/wllama/
 test/integration/backends/wllama/
 test/unit/backends/wllama/
 
-# Root-only: scratch docs output and the Docusaurus site source. Anchored so
+# Root-only: scratch docs output and the docs site source. Anchored so
 # nested docs/ directories (tool/docs, example .../presentation/docs) still ship.
 /docs/
 /website/

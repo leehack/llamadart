@@ -36,8 +36,8 @@ for each target.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
   multimodal GGUF projectors, structured JSON output, embeddings, next-token
-  log-probabilities, LoRA, state persistence, and runtime diagnostics where the
-  active backend supports them.
+  log-probabilities, LoRA, state persistence, per-request token usage and
+  timings, and runtime diagnostics where the active backend supports them.
 - Experimental typed speech recognition through `SpeechToTextEngine`:
   llama.cpp whole-file Qwen3-ASR (validated up to 30 seconds per input) on
   native and validated WebGPU bridge assets, plus worker-isolated, CPU-only

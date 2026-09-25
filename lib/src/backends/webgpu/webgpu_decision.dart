@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -97,15 +98,17 @@ class WebGpuDecisionHeads {
   /// [bridge] is the backend's active bridge, or null when it has none. Both
   /// URLs resolve against the document base URL. [configUrl], when given, is
   /// fetched here before the head and passed to the bridge as text; the
-  /// bridge fetches the head. URLs in errors drop user info, query and
-  /// fragment. Throws [LlamaStateException] when [bridge] is null or rejects
-  /// the probe or load for its state: disposed, busy, cancelled, or without a
-  /// model; [LlamaUnsupportedException] when [capabilities] reports
-  /// unsupported or the head reports another decision API version;
-  /// [LlamaModelException] when the head or config cannot be fetched, is
-  /// malformed, or does not fit the encoder; [LlamaContextException] when the
-  /// head's encoder context cannot be created; and [LlamaDecisionException]
-  /// for a malformed bridge response.
+  /// bridge fetches the head. URLs that errors show drop user info, query
+  /// and fragment; browser and bridge error text is redacted by
+  /// [webGpuBridgeErrorText] with [headUrl] or [configUrl], whichever was
+  /// being fetched, as a source URL. Throws [LlamaStateException] when
+  /// [bridge] is null or rejects the probe or load for its state: disposed,
+  /// busy, cancelled, or without a model; [LlamaUnsupportedException] when
+  /// [capabilities] reports unsupported or the head reports another decision
+  /// API version; [LlamaModelException] when the head or config cannot be
+  /// fetched, is malformed, or does not fit the encoder;
+  /// [LlamaContextException] when the head's encoder context cannot be
+  /// created; and [LlamaDecisionException] for a malformed bridge response.
   Future<BackendDecisionHeadInfo> load(
     LlamaWebGpuBridge? bridge,
     String headUrl, {
@@ -128,7 +131,7 @@ class WebGpuDecisionHeads {
     final resolvedConfigUrl = configUrl == null ? null : _resolveUrl(configUrl);
     final configJson = resolvedConfigUrl == null
         ? null
-        : await _fetchConfigText(resolvedConfigUrl);
+        : await _fetchConfigText(resolvedConfigUrl, configUrl!);
 
     final JSAny? raw;
     try {
@@ -139,19 +142,21 @@ class WebGpuDecisionHeads {
         ),
       );
     } catch (error) {
-      var message = _errorText(
-        error,
-      ).replaceAll('Pass configJson ', 'Pass configPath ');
+      var message = _errorText(error, <String>[
+        headUrl,
+        resolvedHeadUrl,
+      ]).replaceAll('Pass configJson ', 'Pass configPath ');
       if (resolvedConfigUrl != null) {
         message = message.replaceAll(
           'config in configJson ',
-          'config in ${_displayUrl(resolvedConfigUrl)} ',
+          'config in ${_sourceDisplayUrl(resolvedConfigUrl)} ',
         );
       }
       throw _bridgeException(
         message,
+        classifiedText: _coreMessage(_bridgeErrorMessage(error)),
         fallback: (message) =>
-            LlamaModelException(message, _displayUrl(resolvedHeadUrl)),
+            LlamaModelException(message, _sourceDisplayUrl(resolvedHeadUrl)),
       );
     }
 
@@ -277,9 +282,6 @@ class WebGpuDecisionHeads {
   void clear() => _heads.clear();
 
   static const String _reloadHint = 'Load the decision head again';
-  static final RegExp _absoluteUrl = RegExp(
-    r'[A-Za-z][A-Za-z0-9+.-]*://[^\s"<>]+',
-  );
 
   static bool _exposesDecisionApi(LlamaWebGpuBridge bridge) {
     for (final name in const <String>[
@@ -331,14 +333,17 @@ class WebGpuDecisionHeads {
     );
   }
 
-  static Future<String> _fetchConfigText(String url) async {
+  static Future<String> _fetchConfigText(String url, String sourceUrl) async {
     final message =
-        'Cannot read the decision head config at ${_displayUrl(url)}.';
+        'Cannot read the decision head config at ${_sourceDisplayUrl(url)}.';
     final Response response;
     try {
       response = await window.fetch(url.toJS).toDart;
     } catch (error) {
-      throw LlamaModelException(message, _errorText(error));
+      throw LlamaModelException(
+        message,
+        _errorText(error, <String>[sourceUrl, url]),
+      );
     }
     if (!response.ok) {
       throw LlamaModelException(
@@ -349,30 +354,36 @@ class WebGpuDecisionHeads {
     try {
       return (await response.text().toDart).toDart;
     } catch (error) {
-      throw LlamaModelException(message, _errorText(error));
+      throw LlamaModelException(
+        message,
+        _errorText(error, <String>[sourceUrl, url]),
+      );
     }
   }
 
   static LlamaException _bridgeException(
     String message, {
+    String? classifiedText,
     required LlamaException Function(String message) fallback,
   }) {
-    if (message.contains(_reloadHint) ||
-        message.startsWith('No model loaded') ||
-        message.contains('Bridge has been disposed') ||
-        message.contains('was cancelled') ||
-        message.contains('during active generation')) {
+    final text = classifiedText ?? message;
+    if (text.contains(_reloadHint) ||
+        text.startsWith('No model loaded') ||
+        text.contains('Bridge has been disposed') ||
+        text.contains('was cancelled') ||
+        text.contains('during active generation')) {
       return LlamaStateException(message);
     }
-    if (message.contains('decision encoder context')) {
+    if (text.contains('decision encoder context')) {
       return LlamaContextException(message);
     }
     return fallback(message);
   }
 
-  static String _errorText(Object error) => _coreMessage(
-    _bridgeErrorMessage(error),
-  ).replaceAllMapped(_absoluteUrl, (match) => _displayUrl(match[0]!));
+  static String _errorText(
+    Object error, [
+    Iterable<String> sourceUrls = const <String>[],
+  ]) => _coreMessage(webGpuBridgeErrorText(error, sourceUrls: sourceUrls));
 
   static String _resolveUrl(String url) {
     if (url.isEmpty) return url;
@@ -424,6 +435,284 @@ class WebGpuDecisionHeads {
   }
 }
 
+/// Returns the message of a bridge [error] with URLs redacted.
+///
+/// First, for each of [sourceUrls], these texts are replaced wherever they
+/// occur as written, percent-decoded, percent-encoded or JSON-escaped, also
+/// as the browser parses the URL:
+/// - the URL and its browser-resolved `href`, when the URL starts with `//`
+///   or `scheme://`, become its display form (below);
+/// - `?query` and `#fragment` are removed after any non-space character;
+/// - the userinfo and password are removed as whole tokens of any length;
+/// - the query and each `&`-separated part that contain `=` are removed as
+///   whole tokens, and so are a bare value (after `=`, or a part without `=`)
+///   and the fragment when they have at least 10 characters. Shorter bare
+///   values, such as `1` in `?v=1`, stay in the text.
+///
+/// A whole token is not preceded or followed by an ASCII letter or digit.
+/// Userinfo runs from after `//` to the last `@` of the authority, and to the
+/// last `@` of the URL.
+///
+/// Then, as a best-effort backstop for other URLs, each whitespace-separated
+/// word, without its leading opening and trailing closing quotes, brackets
+/// and punctuation, is treated as a URL when it contains `://`, starts with
+/// `/`, `./`, `../` or `host.name[:port]/` (optionally after userinfo), is a
+/// dotted file name followed by `?` or `#`, or has a `?` or `#` part
+/// containing `=`. From a leading `//`, or its first `scheme://` before any
+/// `?` or `#`, the rest of the word becomes its display form; otherwise the
+/// word loses everything from its first `?` or `#`, then a leading `user@`
+/// or `user:password@`.
+///
+/// The display form is `[scheme:]//host[:port]/path`. The authority runs from
+/// after `//` to the first `/`, `?`, `#` or `\`, and the host follows its
+/// last `@`. When the authority has no `@` and is not a `host[:port]`, the
+/// host follows the last `@` before the first `?` or `#` instead. The host is
+/// left out when neither applies, when an authority with an `@` and an empty
+/// or `/` path is followed by `?` or `#` and then another `@`, or, for a
+/// source URL, when the display form would contain its userinfo or password
+/// as the browser parses them.
+String webGpuBridgeErrorText(
+  Object error, {
+  Iterable<String> sourceUrls = const <String>[],
+}) => _removeSourceUrlSecrets(
+  _bridgeErrorMessage(error),
+  sourceUrls,
+).replaceAllMapped(_word, (match) => _redactWord(match[0]!));
+
+final RegExp _word = RegExp(r'\S+');
+final RegExp _wordParts = RegExp(r'''^(["'(<\[]*)(.*?)(["')\]>.,;:!]*)$''');
+final RegExp _hostPath = RegExp(
+  r'^(?:[^\s/@]+@)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d+)?/',
+);
+final RegExp _fileWithQueryOrFragment = RegExp(r'^[\w.-]*\w\.\w+[?#]');
+final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
+final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
+final RegExp _schemeAndSlashes = RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://');
+final RegExp _authorityEnd = RegExp(r'[/?#\\]');
+final RegExp _queryOrFragment = RegExp('[?#]');
+final RegExp _hostAndPort = RegExp(
+  r'^(?:[^\s/?#@\\:\[\]"<>]*|\[[0-9A-Fa-f:.]+\])(?::\d*)?$',
+);
+final RegExp _percentEscapes = RegExp('(?:%[0-9A-Fa-f]{2})+');
+
+String _removeSourceUrlSecrets(String text, Iterable<String> sourceUrls) {
+  final wholes = <String, String>{};
+  final delimited = <String>{};
+  final tokens = <String>{};
+  for (final url in sourceUrls) {
+    final browserUrl = _parseBrowserUrl(url);
+    final secrets = _SourceUrlSecrets(url, browserUrl);
+    if (_authorityStart(url) >= 0) {
+      final display = _sourceDisplayUrl(url, secrets);
+      for (final whole in <String>[
+        url,
+        if (browserUrl != null) browserUrl.href,
+      ]) {
+        for (final form in _encodedForms(whole)) {
+          wholes[form] = display;
+        }
+      }
+    }
+    for (final secret in secrets.delimited) {
+      delimited.addAll(_encodedForms(secret));
+    }
+    for (final secret in <String>{...secrets.credentials, ...secrets.tokens}) {
+      tokens.addAll(_encodedForms(secret));
+    }
+  }
+  String alternatives(Iterable<String> forms) {
+    final sorted = forms.where((form) => form.isNotEmpty).toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return sorted.map(RegExp.escape).join('|');
+  }
+
+  final patterns = <String>[
+    if (alternatives(wholes.keys) case final whole when whole.isNotEmpty)
+      '(?:$whole)',
+    if (alternatives(delimited) case final after when after.isNotEmpty)
+      '(?<=\\S)(?:$after)(?![A-Za-z0-9])',
+    if (alternatives(tokens) case final token when token.isNotEmpty)
+      '(?<![A-Za-z0-9])(?:$token)(?![A-Za-z0-9])',
+  ];
+  if (patterns.isEmpty) return text;
+  return text.replaceAllMapped(
+    RegExp(patterns.join('|')),
+    (match) => wholes[match[0]!] ?? '',
+  );
+}
+
+/// Bare query values and fragments shorter than this stay in error text.
+const int _minimumBareValueLength = 10;
+
+/// Secrets of a source URL, grouped by how error text loses them.
+class _SourceUrlSecrets {
+  _SourceUrlSecrets(this.url, URL? browserUrl) {
+    _addQueryAndFragment(0);
+    final start = _authorityStart(url);
+    if (start >= 0) {
+      final end = url.indexOf(_authorityEnd, start);
+      final authority = url.substring(start, end < 0 ? url.length : end);
+      final authorityAt = authority.lastIndexOf('@');
+      if (authorityAt >= 0) {
+        _addUserInfo(authority.substring(0, authorityAt), parsed: true);
+      }
+      final lastAt = url.lastIndexOf('@');
+      if (lastAt >= start && lastAt != start + authorityAt) {
+        _addUserInfo(url.substring(start, lastAt), parsed: false);
+        _addQueryAndFragment(lastAt + 1);
+      }
+    }
+    if (browserUrl != null) {
+      final username = browserUrl.username;
+      final password = browserUrl.password;
+      _addUserInfo(
+        password.isEmpty ? username : '$username:$password',
+        parsed: true,
+      );
+      if (browserUrl.search.isNotEmpty) {
+        _addQuery(browserUrl.search.substring(1));
+      }
+      if (browserUrl.hash.isNotEmpty) {
+        _addFragment(browserUrl.hash.substring(1));
+      }
+    }
+  }
+
+  final String url;
+
+  /// Userinfo spans and passwords, removed as whole tokens at any length.
+  final Set<String> credentials = <String>{};
+
+  /// The [credentials] of the authority as the browser parses it, which a
+  /// display form must not contain.
+  final Set<String> parsedCredentials = <String>{};
+
+  /// `?query` and `#fragment`, removed wherever they follow a non-space.
+  final Set<String> delimited = <String>{};
+
+  /// Queries and `&`-separated parts that contain `=`, and bare values and
+  /// fragments of at least [_minimumBareValueLength] characters, removed as
+  /// whole tokens.
+  final Set<String> tokens = <String>{};
+
+  void _addUserInfo(String userInfo, {required bool parsed}) {
+    final colon = userInfo.indexOf(':');
+    for (final secret in <String>[
+      userInfo,
+      if (colon >= 0) userInfo.substring(colon + 1),
+    ]) {
+      if (secret.isEmpty) continue;
+      credentials.add(secret);
+      if (parsed) parsedCredentials.add(secret);
+    }
+  }
+
+  void _addQueryAndFragment(int from) {
+    final fragment = url.indexOf('#', from);
+    final query = url.indexOf('?', from);
+    if (fragment >= 0) _addFragment(url.substring(fragment + 1));
+    if (query >= 0 && (fragment < 0 || query < fragment)) {
+      _addQuery(url.substring(query + 1, fragment < 0 ? null : fragment));
+    }
+  }
+
+  void _addQuery(String query) {
+    if (query.isEmpty) return;
+    delimited.add('?$query');
+    _addToken(query);
+    for (final part in query.split('&')) {
+      _addToken(part);
+      final equals = part.indexOf('=');
+      if (equals >= 0) _addToken(part.substring(equals + 1));
+    }
+  }
+
+  void _addFragment(String fragment) {
+    if (fragment.isEmpty) return;
+    delimited.add('#$fragment');
+    _addToken(fragment);
+  }
+
+  void _addToken(String value) {
+    if (value.contains('=') || value.length >= _minimumBareValueLength) {
+      tokens.add(value);
+    }
+  }
+}
+
+Set<String> _encodedForms(String text) {
+  final forms = <String>{text};
+  void add(String Function() form) {
+    try {
+      forms.add(form());
+    } catch (_) {}
+  }
+
+  add(() => Uri.encodeComponent(text));
+  add(() => Uri.encodeFull(text));
+  add(() {
+    final json = jsonEncode(text);
+    return json.substring(1, json.length - 1);
+  });
+  for (final decoded in <String>[
+    _percentDecoded(text),
+    _percentDecoded(text.replaceAll('+', ' ')),
+  ]) {
+    forms.add(decoded);
+    add(() => Uri.encodeComponent(decoded));
+  }
+  return forms;
+}
+
+String _percentDecoded(String text) => text.replaceAllMapped(
+  _percentEscapes,
+  (match) => utf8.decode(<int>[
+    for (var i = 0; i < match[0]!.length; i += 3)
+      int.parse(match[0]!.substring(i + 1, i + 3), radix: 16),
+  ], allowMalformed: true),
+);
+
+int _authorityStart(String url) {
+  if (url.startsWith('//')) return 2;
+  return _schemeAndSlashes.matchAsPrefix(url)?.end ?? -1;
+}
+
+URL? _parseBrowserUrl(String url) {
+  if (url.isEmpty) return null;
+  try {
+    return URL(url, document.baseURI);
+  } catch (_) {
+    return null;
+  }
+}
+
+String _redactWord(String word) {
+  final parts = _wordParts.firstMatch(word)!;
+  final url = parts[2]!;
+  final isUrl =
+      url.contains('://') ||
+      url.startsWith('/') ||
+      url.startsWith('./') ||
+      url.startsWith('../') ||
+      _hostPath.hasMatch(url) ||
+      _fileWithQueryOrFragment.hasMatch(url) ||
+      _queryOrFragmentWithValue.hasMatch(url);
+  if (!isUrl) return word;
+  return '${parts[1]}${_redactUrl(url)}${parts[3]}';
+}
+
+String _redactUrl(String url) {
+  if (url.startsWith('//')) return _displayUrl(url);
+  final scheme = _schemeAndSlashes.firstMatch(url);
+  final end = url.indexOf(_queryOrFragment);
+  if (scheme != null && (end < 0 || scheme.start < end)) {
+    return url.substring(0, scheme.start) +
+        _displayUrl(url.substring(scheme.start));
+  }
+  final base = end < 0 ? url : url.substring(0, end);
+  return base.replaceFirst(_leadingUserInfo, '');
+}
+
 String _bridgeErrorMessage(Object error) {
   try {
     final message = (error as JSObject).getProperty<JSAny?>('message'.toJS);
@@ -434,18 +723,73 @@ String _bridgeErrorMessage(Object error) {
   return error.toString();
 }
 
-String _displayUrl(String url) {
-  final uri = Uri.tryParse(url);
-  if (uri == null) {
-    final end = url.indexOf(RegExp('[?#]'));
-    return (end < 0 ? url : url.substring(0, end)).replaceFirst(
-      RegExp('//[^/]*@'),
-      '//',
-    );
+/// The display form of a source [url], without its host when the display
+/// form would contain one of its parsed credentials.
+String _sourceDisplayUrl(String url, [_SourceUrlSecrets? secrets]) {
+  final display = _displayUrl(url);
+  final start = _authorityStart(url);
+  if (start < 0) return display;
+  secrets ??= _SourceUrlSecrets(url, _parseBrowserUrl(url));
+  for (final secret in secrets.parsedCredentials) {
+    for (final form in _encodedForms(secret)) {
+      if (form.isNotEmpty && display.contains(form)) {
+        return url.substring(0, start).toLowerCase();
+      }
+    }
   }
+  return display;
+}
+
+String _displayUrl(String url) {
+  final start = _authorityStart(url);
+  if (start < 0) {
+    final end = url.indexOf(_queryOrFragment);
+    final base = end < 0 ? url : url.substring(0, end);
+    final uri = Uri.tryParse(base);
+    if (uri == null) return base;
+    return Uri(
+      scheme: uri.hasScheme ? uri.scheme : null,
+      host: uri.hasAuthority ? uri.host : null,
+      port: uri.hasPort ? uri.port : null,
+      path: uri.path,
+    ).toString();
+  }
+  final prefix = url.substring(0, start).toLowerCase();
+  var end = url.indexOf(_authorityEnd, start);
+  if (end < 0) end = url.length;
+  final authority = url.substring(start, end);
+  final at = authority.lastIndexOf('@');
+  String? host = at < 0 ? authority : authority.substring(at + 1);
+  if (at >= 0) {
+    final pathEnd = url.indexOf(_queryOrFragment, end);
+    final path = pathEnd < 0 ? '' : url.substring(end, pathEnd);
+    if (pathEnd >= 0 &&
+        (path.isEmpty || path == '/') &&
+        url.indexOf('@', pathEnd) >= 0) {
+      host = null;
+    }
+  } else if (!_hostAndPort.hasMatch(authority)) {
+    final queryStart = url.indexOf(_queryOrFragment, start);
+    final lastAt = url
+        .substring(0, queryStart < 0 ? url.length : queryStart)
+        .lastIndexOf('@');
+    host = null;
+    if (lastAt >= start) {
+      end = url.indexOf(_authorityEnd, lastAt + 1);
+      if (end < 0) end = url.length;
+      host = url.substring(lastAt + 1, end);
+    }
+  }
+  if (host == null) return prefix;
+  final rest = url.substring(end);
+  final queryStart = rest.indexOf(_queryOrFragment);
+  var path = queryStart < 0 ? rest : rest.substring(0, queryStart);
+  if (path.contains('://')) path = _redactUrl(path);
+  final uri = Uri.tryParse('$prefix$host$path');
+  if (uri == null) return '$prefix$host$path';
   return Uri(
     scheme: uri.hasScheme ? uri.scheme : null,
-    host: uri.hasAuthority ? uri.host : null,
+    host: uri.host,
     port: uri.hasPort ? uri.port : null,
     path: uri.path,
   ).toString();

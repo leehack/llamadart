@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import '../core/decision/decision_question.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
+import '../core/models/inference/generation_usage.dart';
 import '../core/models/inference/next_token_scores.dart';
 import '../core/models/inference/tool_choice.dart';
 import '../core/models/chat/chat_message.dart';
@@ -257,6 +258,16 @@ abstract class BackendGenerationLimitReporting {
   /// end-of-generation token, a stop sequence, cancellation or an error, or
   /// when the backend cannot tell.
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation);
+}
+
+/// Internal backend probe for the usage of a finished generation stream.
+abstract class BackendGenerationUsageReporting {
+  /// The usage of [generation], a stream this backend returned from
+  /// `generate`.
+  ///
+  /// Returns null while [generation] is still open, when it ended with an
+  /// error, or when the backend cannot report usage.
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation);
 }
 
 /// Model family reported by a backend text-to-speech implementation.

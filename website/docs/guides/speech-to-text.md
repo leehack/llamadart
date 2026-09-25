@@ -1,5 +1,6 @@
 ---
-title: Speech to Text
+title: On-device speech to text
+sidebar_label: Speech to text
 description: Transcribe encoded audio or stream PCM with the experimental typed speech API.
 ---
 
@@ -21,7 +22,7 @@ multimodal models.
 | Runtime | Generic audio-input chat | Typed `SpeechToTextEngine` | Text to speech |
 | --- | --- | --- | --- |
 | Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes (real-model validation covers WAV only), final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
-| WebGPU / GGUF | Bridge + model dependent | Experimental Qwen3-ASR adapter with bridge assets `v0.1.30+`; complete WAV bytes, final transcript only | Unsupported |
+| WebGPU / GGUF | Bridge + model dependent | Experimental Qwen3-ASR adapter with bridge assets `v0.1.30+`; complete WAV bytes, final transcript only | Experimental Qwen3-TTS adapter with bridge assets `v0.1.33+`; see [Text to Speech](./text-to-speech) |
 | Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental dedicated CPU ASR through `SpeechToTextEngine.liteRtLm`; mono 16 kHz float PCM, partial/final text, streaming input | Unsupported |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
 
@@ -35,8 +36,8 @@ chat model.
 
 ## Stream with dedicated LiteRT-LM ASR
 
-LiteRT-LM v0.16 adds dedicated ASR engines that consume PCM windows instead of
-an audio part in normal chat. Configure the local model/tokenizer pair, start a
+LiteRT-LM added dedicated ASR engines in v0.16. They consume PCM windows
+instead of an audio part in normal chat. Configure the local model/tokenizer pair, start a
 stream, and await every input push so bounded native backpressure can throttle
 the producer.
 
@@ -79,7 +80,8 @@ stable, while `pendingText` may change after the next inference window.
 native windows. Pausing the event subscription does not throttle inference;
 awaiting `addPcm` is the input-backpressure boundary.
 
-The validated v0.16 contract is CPU-only. Supported metadata presets cover
+The validated contract is CPU-only (`LiteRtLmAsrBackend.cpu` is the only
+value). Supported metadata presets cover
 Parakeet TDT, Parakeet CTC, Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B,
 but callers must supply a matching model and tokenizer. The API does not
 capture a microphone, resample audio, or provide timestamps, confidence, or
@@ -128,7 +130,9 @@ actionable reason.
 On native llama.cpp, `loadMultimodalProjector` itself throws when it cannot
 load the projector: `LlamaModelException` for a missing file or a projector the
 runtime rejects, such as the Qwen3-TTS projector with the Qwen3-ASR model, and
-`LlamaUnsupportedException` when the runtime lacks the mtmd functions.
+`LlamaUnsupportedException` when the runtime lacks the mtmd functions. On Web,
+it throws `LlamaModelException` when the bridge cannot fetch or load the
+projector.
 
 ## Transcribe a complete file
 
@@ -341,7 +345,7 @@ any budget is exceeded:
   by more than 7 MiB in every one of the seven cycles after the first. A
   plateau passes; a steady leak fails. Slower growth passes this check.
 
-With native `v0.4.1-1`, the pack has passed on macOS arm64 with CPU and with
+With native `v0.4.1-1` (before the current `v0.5.0` pin), the pack has passed on macOS arm64 with CPU and with
 Metal, and on Linux x64 with CPU (AMD EPYC 7B12). The Metal runs report the
 Metal backend; the pack does not verify GPU execution.
 
@@ -376,8 +380,8 @@ Metal backend; the pack does not verify GPU execution.
   `web-speech-to-text-smoke` validation row. That row verifies both browser
   file selection and Chromium fake-device microphone capture with the same WAV
   fixture. File selection returns the exact expected transcript; the microphone
-  assertion requires the full expected transcript because Chromium loops its
-  artificial input at the capture boundary. Real microphone hardware and
+  assertion requires only a non-empty transcript without raw `<asr_text>`
+  markers, because Chromium loops its artificial input at the capture boundary. Real microphone hardware and
   browser/device combinations remain deployment-specific checks.
 - TTS is a separate typed API with different models, projector capabilities,
   inputs, and output events. See [Text to Speech](./text-to-speech).

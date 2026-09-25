@@ -13,6 +13,13 @@ For canonical full release notes, use:
   native llama.cpp, matching llama-server `n_probs`; check
   `supportsNextTokenScoring` first
   ([#694](https://github.com/leehack/llamadart/issues/694)).
+- Count generated tokens with an empty text piece in llama.cpp
+  `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
+  decoding, as the speculative path already did
+  ([#706](https://github.com/leehack/llamadart/issues/706)).
+- Report per-request token usage and timings on the final `create` chunk as
+  `LlamaCompletionChunk.usage` on native llama.cpp
+  ([#696](https://github.com/leehack/llamadart/issues/696)).
 - Throw `LlamaModelException` when native llama.cpp cannot find or load a
   multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
   the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.
@@ -42,6 +49,27 @@ For canonical full release notes, use:
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
+  turn without reasoning no longer gets an empty `<think>` block
+  ([#691](https://github.com/leehack/llamadart/issues/691)).
+- Require `dinja` 1.1.0. Its Jinja string comparison makes three more chat
+  templates render as llama.cpp does: MiniMax-M1 adds no empty
+  system block for an empty or whitespace-only system message; NVIDIA
+  Nemotron Nano v2 drops the blank line before a tool call, the blank lines
+  before its tool instructions when tools come with an empty or
+  whitespace-only system message, and an empty final assistant turn without
+  a generation prompt; and Functionary v3.2 tool declarations drop stray
+  `// Format=<|NONE|>` lines and spell out nested object parameters
+  ([#351](https://github.com/leehack/llamadart/issues/351)).
+- Cancel a generation's backend run as soon as its stream subscription is
+  cancelled, instead of at its next token, which during prompt evaluation
+  meant after the whole prompt. A native llama.cpp generation requested right
+  after such a cancel now waits for it instead of throwing
+  `LlamaStateException`, and native llama.cpp sees a cancel between text
+  prompt micro-batches (`ModelParams.microBatchSize`, 512 tokens by default)
+  or, with speculative decoding, between batches (`ModelParams.batchSize`)
+  ([#663](https://github.com/leehack/llamadart/issues/663),
+  [#660](https://github.com/leehack/llamadart/issues/660)).
 - Render every result of a tool message holding several
   `LlamaToolResultContent` parts, as one `tool` message per result like
   llama.cpp, instead of only the first; `LlamaChatMessage.toJson` lists them
@@ -286,6 +314,29 @@ For canonical full release notes, use:
   fresh checkout. A failed report step is now the run's error, with its exit
   code and a redacted stderr tail
   ([#688](https://github.com/leehack/llamadart/issues/688)).
+- Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
+  on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
+  ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
+  selection. A HIP load on a ROCm build now reports its backend as `HIP`
+  instead of `CPU`
+  ([#611](https://github.com/leehack/llamadart/issues/611)).
+- Report a WebGPU model load that fails with `error 138` as the documented
+  cross-origin isolation (COOP/COEP) `UnsupportedError`, as
+  `thread constructor failed` already was, instead of rethrowing the raw
+  bridge error
+  ([#598](https://github.com/leehack/llamadart/issues/598)).
+- Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
+  projector, instead of the raw JavaScript error. Its details drop these
+  parts of the projector URL the app passed, as written, JSON-escaped,
+  percent-encoded or percent-decoded: the userinfo and password, as whole
+  tokens of any length; the `?query` and `#fragment`, where they directly
+  follow a non-space character; the query and each `&`-separated part that
+  contain `=`, as whole tokens; and bare query values and the fragment of 10
+  or more characters, as whole tokens. A whole token has no ASCII letter or
+  digit directly before or after it. Shorter bare values printed on their
+  own, such as the `1` of `?v=1`, stay. Other URLs in the details lose
+  userinfo, query and fragment on a best-effort basis
+  ([#642](https://github.com/leehack/llamadart/issues/642)).
 - Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
   tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with
   any number of extra closing braces) without a grammar. Calls are extracted as

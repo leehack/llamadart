@@ -16,7 +16,7 @@ spec.loader.exec_module(ci)
 
 class SelectionTest(unittest.TestCase):
     def test_documentation_omits_native_and_bundles(self):
-        for path in ('README.md', 'doc/testing_matrix.md', 'website/package-lock.json',
+        for path in ('README.md', 'doc/testing_matrix.md', 'website/pubspec.lock',
                      'packages/llamadart_validation/README.md'):
             with self.subTest(path=path):
                 plan = ci.select([path])

@@ -1,5 +1,6 @@
 ---
-title: Decision Models
+title: Decision models for typed answers
+sidebar_label: Decision models
 description: Answer typed choice, score, and yes/no questions about a state with Laya-style encoder decision models on llama.cpp.
 ---
 

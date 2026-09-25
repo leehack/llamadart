@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
+import '../../core/models/inference/generation_usage.dart';
 import '../backend.dart';
 import '../native_token_stream_batcher.dart';
 import 'llama_cpp_service.dart';
@@ -241,6 +242,8 @@ void runLlamaWorkerForTesting(
             // await its terminal response before tearing down the isolate.
             final generateFuture = () async {
               try {
+                final stopwatch = Stopwatch()..start();
+                Duration? timeToFirstToken;
                 BackendGenerationLimit? limit;
                 final stream = service.generate(
                   message.contextHandle,
@@ -257,6 +260,9 @@ void runLlamaWorkerForTesting(
                 );
 
                 await for (final tokens in stream) {
+                  if (tokens.isNotEmpty) {
+                    timeToFirstToken ??= stopwatch.elapsed;
+                  }
                   final readyChunks = batcher.add(tokens);
                   for (final chunk in readyChunks) {
                     message.sendPort.send(TokenResponse(chunk));
@@ -268,7 +274,23 @@ void runLlamaWorkerForTesting(
                   message.sendPort.send(TokenResponse(finalChunk));
                 }
 
-                message.sendPort.send(DoneResponse(generationLimit: limit));
+                final counts = service.lastGenerationTokenCounts(
+                  message.contextHandle,
+                );
+                message.sendPort.send(
+                  DoneResponse(
+                    generationLimit: limit,
+                    generationUsage: counts == null
+                        ? null
+                        : LlamaGenerationUsage(
+                            promptTokens: counts.promptTokens,
+                            cachedPromptTokens: counts.cachedPromptTokens,
+                            completionTokens: counts.completionTokens,
+                            timeToFirstToken: timeToFirstToken,
+                            duration: stopwatch.elapsed,
+                          ),
+                  ),
+                );
               } catch (error) {
                 message.sendPort.send(_toErrorResponse(error));
               }

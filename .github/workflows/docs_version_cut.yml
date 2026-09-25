@@ -19,13 +19,15 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          node-version: '20'
+          flutter-version: 3.47.1
+          channel: 'stable'
+          cache: true
 
       - name: Install website dependencies
-        run: (cd website && npm ci)
+        run: (cd website && dart pub get)
 
       - name: Cut docs version
         run: |
@@ -37,7 +39,7 @@ jobs:
             exit 0
           fi
 
-          (cd website && npm run docusaurus docs:version "${VERSION}")
+          (cd website && dart run tool/cut_version.dart "${VERSION}")
 
       - name: Commit versioned docs
         run: |
