@@ -133,6 +133,11 @@
   models while they stream so GGUFs over 2 GiB pass preparation, list every
   bundled profile in the validation app, and verify iOS GGUF GPU placement
   from the XCTest console log.
+- Run eight cleanup cycles instead of three in every speech validation pack,
+  and fail a run whose resident set grows by more than 7 MiB in each of seven
+  warm cycles. The 1.10x peak ratio no longer applies on Linux CUDA, where reload
+  overhead that levels off failed it without a leak
+  ([#686](https://github.com/leehack/llamadart/issues/686)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).

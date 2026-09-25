@@ -112,6 +112,8 @@ Future<void> main(List<String> args) async {
       adapter,
       checkBytes: pack == 'stt',
       edgeFixtures: edgeFixtures,
+      operatingSystem: Platform.operatingSystem,
+      backend: backend.name,
     );
     result.addAll({
       'edge_fixtures': [
