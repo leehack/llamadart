@@ -74,14 +74,16 @@ For an end-to-end OpenAI-compatible reference, see
 On Web with WebGPU (llama.cpp), the bridge applies a grammar from the first
 token and cannot wait for a tool-call trigger. `ToolChoice.auto` therefore skips
 a lazy tool-call grammar, and tool calls are parsed from the output
-best-effort.
+best-effort. `ToolChoice.required` keeps a grammar that starts at the first
+token and fails early with `LlamaUnsupportedException` when the chat format's
+required-tool grammar is lazy.
 
 Without that grammar, Qwen2.5 can copy the double braces its GGUF template
 prints in the tool prompt:
 `<tool_call>{{"name": "get_weather", "arguments": {"city": "Paris"}}}</tool_call>`,
-with or without the last `}`. The Hermes/Qwen parser extracts the call and
-returns empty content, as for the single-brace form. This deliberately differs
-from upstream llama.cpp (`7fe450e1`), which fails to parse this output and
-returns no tool call. `ToolChoice.required` keeps a grammar that starts at the first
-token and fails early with `LlamaUnsupportedException` when the chat format's
-required-tool grammar is lazy.
+sometimes with fewer or more closing braces. The Hermes/Qwen parser extracts
+the call. When only closing braces and whitespace follow the call before
+`</tool_call>`, the envelope leaves no content, as for the single-brace form;
+otherwise its text stays in content. This deliberately differs from upstream
+llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
+call.

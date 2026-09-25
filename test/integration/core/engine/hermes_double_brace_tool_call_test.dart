@@ -79,35 +79,48 @@ void main() {
 
   for (final entry in _cases) {
     final name = entry['name'] as String;
+    final prompt = entry['prompt'] as String;
     final emission = entry['emission'] as String;
     final expected = entry['expected'] as Map<String, dynamic>;
-    final expectedCalls = (expected['tool_calls'] as List)
-        .cast<Map<String, dynamic>>();
+    final expectedContent = expected['content'] as String;
+    final expectedCalls = _calls(expected);
+    final upstream = entry['upstream_result'] as Map<String, dynamic>?;
 
-    test('$name extracts the call that upstream rejects', () {
-      final upstream = entry['upstream_result'] as Map<String, dynamic>;
-      expect(upstream['tool_calls'], isEmpty);
+    ChatParseResult parse() => ChatTemplateEngine.parse(
+      ChatFormat.hermes.index,
+      emission,
+      tools: [_weatherTool],
+    );
 
-      final parsed = ChatTemplateEngine.parse(
-        ChatFormat.hermes.index,
-        emission,
-        tools: [_weatherTool],
-      );
+    test('$name parses to its recorded result', () {
+      if (upstream != null) expect(upstream['tool_calls'], isEmpty);
 
-      expect(parsed.content, expected['content']);
-      expect(parsed.toolCalls, hasLength(expectedCalls.length));
-      for (var i = 0; i < expectedCalls.length; i++) {
-        expect(parsed.toolCalls[i].function?.name, expectedCalls[i]['name']);
-        expect(
-          jsonDecode(parsed.toolCalls[i].function!.arguments!),
-          expectedCalls[i]['arguments'],
+      final parsed = parse();
+
+      expect(parsed.content, expectedContent);
+      expect(_parsedCalls(parsed.toolCalls), expectedCalls);
+    });
+
+    test('$name keeps every call the base parser kept', () {
+      final remaining = _parsedCalls(parse().toolCalls);
+      final baseCalls = _calls(entry['base_result'] as Map<String, dynamic>);
+      expect(baseCalls, isNotEmpty);
+      for (final call in baseCalls) {
+        final index = remaining.indexWhere(
+          (candidate) =>
+              candidate['name'] == call['name'] &&
+              equals(call['arguments']).matches(candidate['arguments'], {}),
         );
+        expect(index, isNot(-1), reason: '$call');
+        remaining.removeAt(index);
       }
     });
 
+    if (!emission.startsWith('<tool_call>')) continue;
+
     final splits = <String, List<String>>{
       'one piece': [emission],
-      'characters': emission.split(''),
+      if (expectedCalls.length == 1) 'characters': emission.split(''),
       if (entry['pieces'] != null)
         'recorded pieces': (entry['pieces'] as List).cast<String>(),
     };
@@ -126,7 +139,7 @@ void main() {
 
             final chunks = await session
                 .create(
-                  [LlamaTextContent(_fixture['user_prompt'] as String)],
+                  [LlamaTextContent(prompt)],
                   tools: [_weatherTool],
                   toolChoice: ToolChoice.auto,
                 )
@@ -134,13 +147,18 @@ void main() {
 
             expect(
               chunks.map((c) => c.choices.single.delta.content ?? '').join(),
-              isEmpty,
+              expectedContent,
             );
             final reply = session.history.last;
             expect(reply.role, LlamaChatRole.assistant);
-            final call = reply.parts.single as LlamaToolCallContent;
-            expect(call.name, expectedCalls.single['name']);
-            expect(call.arguments, expectedCalls.single['arguments']);
+            expect(
+              reply.parts.whereType<LlamaTextContent>().map((p) => p.text),
+              expectedContent.isEmpty ? isEmpty : [expectedContent],
+            );
+            expect([
+              for (final call in reply.parts.whereType<LlamaToolCallContent>())
+                {'name': call.name, 'arguments': call.arguments},
+            ], expectedCalls);
           },
         );
       }
@@ -153,8 +171,8 @@ void main() {
         addTearDown(engine.dispose);
         await engine.loadModel('mock-qwen3.gguf');
         backend.queueResponse([
-          '<think>\nParis weather.\n</think>\n\n',
-          ...emission.split(''),
+          '<think>\nWeather lookup.\n</think>\n\n',
+          emission,
         ]);
 
         final chunks = await engine
@@ -162,7 +180,7 @@ void main() {
               [
                 LlamaChatMessage.fromText(
                   role: LlamaChatRole.user,
-                  text: _fixture['user_prompt'] as String,
+                  text: prompt,
                 ),
               ],
               tools: [_weatherTool],
@@ -173,17 +191,34 @@ void main() {
         String join(String? Function(LlamaCompletionChunkDelta) field) =>
             chunks.map((c) => field(c.choices.single.delta) ?? '').join();
         final calls = chunks
-            .expand((c) => c.choices.single.delta.toolCalls ?? const [])
+            .expand(
+              (c) =>
+                  c.choices.single.delta.toolCalls ??
+                  const <LlamaCompletionChunkToolCall>[],
+            )
             .toList();
-        expect(join((d) => d.thinking).trim(), 'Paris weather.');
+        expect(join((d) => d.thinking).trim(), 'Weather lookup.');
         if (choice == ToolChoice.none) {
           expect(join((d) => d.content).trim(), emission);
           expect(calls, isEmpty);
         } else {
-          expect(join((d) => d.content), isEmpty);
-          expect(calls.single.function?.name, expectedCalls.single['name']);
+          expect(join((d) => d.content), expectedContent);
+          expect(_parsedCalls(calls), expectedCalls);
         }
       });
     }
   }
 }
+
+List<Map<String, dynamic>> _calls(Map<String, dynamic> result) =>
+    (result['tool_calls'] as List).cast<Map<String, dynamic>>();
+
+List<Map<String, dynamic>> _parsedCalls(
+  List<LlamaCompletionChunkToolCall> calls,
+) => [
+  for (final call in calls)
+    {
+      'name': call.function?.name,
+      'arguments': jsonDecode(call.function!.arguments!),
+    },
+];

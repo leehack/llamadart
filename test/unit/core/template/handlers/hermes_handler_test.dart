@@ -353,8 +353,6 @@ void main() {
       '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Par\n</tool_call>',
       '<tool_call>\n{{"name": 5, "arguments": {}}}\n</tool_call>',
       '<tool_call>\n{{"arguments": {"city": "Paris"}}}\n</tool_call>',
-      '<tool_call>\n{{"name": "get_weather", "arguments": {}}}}\n</tool_call>',
-      '<tool_call>\n{{"name": "get_weather", "arguments": {}}} x\n</tool_call>',
       '<tool_call>\n{"name": "get_weather", "arguments": {}}}\n</tool_call>',
     ]) {
       test('keeps malformed ${jsonEncode(output)} as content', () {
@@ -364,6 +362,63 @@ void main() {
         expect(parsed.content, output);
       });
     }
+
+    test('consumes any number of extra closing braces', () {
+      for (final closing in ['}}}', '}}}}', '}} } }', '}}}}}\n']) {
+        final parsed = HermesHandler().parse(
+          '<tool_call>\n{{"name": "get_weather", '
+          '"arguments": {"city": "Paris"}$closing\n</tool_call>',
+        );
+
+        expectWeatherCall(parsed);
+        expect(parsed.content, isEmpty, reason: closing);
+      }
+    });
+
+    for (final (name, output, content) in [
+      (
+        'text before the close tag',
+        '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}} x\n</tool_call>',
+        '<tool_call>\n{} x\n</tool_call>',
+      ),
+      (
+        'no close tag',
+        '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}}',
+        '<tool_call>\n{}',
+      ),
+      (
+        'a mismatched close tag',
+        '<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}}\n</function_call>',
+        '<tool_call>\n{}\n</function_call>',
+      ),
+      (
+        'an unclosed code fence',
+        '```xml\n<tool_call>\n{{"name": "get_weather", "arguments": {"city": "Paris"}}}\n</tool_call>',
+        '```xml\n<tool_call>\n{}\n</tool_call>',
+      ),
+    ]) {
+      test('keeps the call and the envelope text with $name', () {
+        final parsed = HermesHandler().parse(output);
+
+        expectWeatherCall(parsed);
+        expect(parsed.content, content);
+      });
+    }
+
+    test('keeps other calls after a malformed double-brace envelope', () {
+      final parsed = HermesHandler().parse(
+        '<tool_call>\n{{"name": "get_time", "arguments": {}}} x\n</tool_call>\n'
+        '$doubleBrace\n'
+        '<tool_call>\n{"name": "get_date", "arguments": {}}\n</tool_call>',
+      );
+
+      expect(parsed.toolCalls.map((call) => call.function?.name), [
+        'get_time',
+        'get_weather',
+        'get_date',
+      ]);
+      expect(parsed.content, '<tool_call>\n{} x\n</tool_call>');
+    });
   });
 }
 
