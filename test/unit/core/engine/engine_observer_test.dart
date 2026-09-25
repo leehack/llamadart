@@ -229,9 +229,12 @@ void main() {
       addTearDown(observed.dispose);
       const sources = <String, String?>{
         'https://example.com/org/tiny.gguf?token=secret#part': 'tiny.gguf',
-        'https://user:pass@host/models/': 'models',
+        'https://user:pass@host/models/': null,
         'https://user:pass@host': null,
-        'https://host/models/?token=secret': 'models',
+        'https://host/models/?token=secret': null,
+        'https://host/m.gguf;jsessionid=abc': null,
+        'https://host/m%26sig%3Dabc': null,
+        'user:pass@host': null,
         'https://host/?sig=abc': null,
         'https://host?sig=abc': null,
         'https://host/a%2Fb%3Ftoken%3Dx': null,
@@ -255,7 +258,8 @@ void main() {
 
       for (final (source, name) in [
         (r'C:\models\tiny.gguf', 'tiny.gguf'),
-        ('/models/dir/', 'dir'),
+        ('C:/models/tiny.gguf', 'tiny.gguf'),
+        ('/home/alice/', null),
       ]) {
         await observed.loadModel(source);
         await observed.unloadModel();
@@ -324,6 +328,22 @@ void main() {
       expect(chat.messages, const [_user]);
       expect(() => chat.messages.add(_user), throwsUnsupportedError);
     });
+
+    test(
+      'a ChatSession cancelled after the final chunk ends completed',
+      () async {
+        backend.nextUsage = _usage;
+
+        await ChatSession(engine)
+            .create([const LlamaTextContent('Hi')])
+            .firstWhere((chunk) => chunk.choices.first.finishReason != null);
+
+        final result = recorder.results.single;
+        expect(result.cancelled, isFalse);
+        expect(result.finishReason, 'stop');
+        expect(result.usage, same(_usage));
+      },
+    );
 
     test(
       'ChatSession.create runs observers in the zone that called it',

@@ -373,18 +373,15 @@ class LlamaEngine {
         : name;
   }
 
-  /// The last non-empty path segment of [source], or null when that segment
-  /// could carry more than a file name.
+  /// The last path segment of [source], or null when it is empty or holds
+  /// URL syntax that could carry more than a file name.
   static String? _observedNameForSource(String source) {
     final uri = Uri.tryParse(source);
-    final segments = uri != null && uri.scheme.length > 1
+    final segments = uri != null && uri.hasScheme
         ? uri.pathSegments
         : source.replaceAll('\\', '/').split('/');
-    final name = segments.lastWhere(
-      (segment) => segment.isNotEmpty,
-      orElse: () => '',
-    );
-    return name.isEmpty || name.contains(RegExp(r'[/\\?#@]')) ? null : name;
+    final name = segments.isEmpty ? '' : segments.last;
+    return name.isEmpty || name.contains(RegExp(r'[/\\?#@;&=]')) ? null : name;
   }
 
   Future<void> _loadModelFromUrl(
@@ -853,6 +850,7 @@ class LlamaEngine {
       if (operation == null) return chunks();
       String? finishReason;
       LlamaGenerationUsage? usage;
+      LlamaOperationResult? finalResult;
       return observeStream(
         chunks(),
         observers: observers,
@@ -863,11 +861,13 @@ class LlamaEngine {
           finishReason =
               chunk.choices.firstOrNull?.finishReason ?? finishReason;
           usage = chunk.usage ?? usage;
+          if (finishReason != null) {
+            finalResult = _generationResult(request, finishReason, usage);
+          }
         },
         result: () => _generationResult(request, finishReason, usage),
-        cancelResult: () => finishReason == null
-            ? LlamaOperationResult(cancelled: true, usage: usage)
-            : _generationResult(request, finishReason, usage),
+        cancelResult: () =>
+            finalResult ?? LlamaOperationResult(cancelled: true, usage: usage),
       );
     });
   }

@@ -159,11 +159,12 @@ final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
   there.
 - `onChunk` receives each `create` chunk and `onText` each `generate` piece.
 - `onEnd` runs once, with the error, the cancel, or the finish reason and
-  usage. Usage is reported where the final `create` chunk carries it. A
-  `create` subscription cancelled after the final chunk ends completed.
+  usage. Usage is reported where the final `create` chunk carries it. A chat
+  subscription cancelled after the final chunk ends completed.
 - `LlamaOperation.model` is the model's `general.name` metadata, or else the
-  last segment of the path or URL it was loaded from. It is null rather than
-  a directory path, URL query, fragment or credential. `runtime` is
+  last segment of the path or URL it was loaded from. It is null when that
+  segment is empty or contains one of `/ \ ? # @ ; & =`, so it is never a
+  directory path, URL query, fragment or userinfo. `runtime` is
   `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm` on the built-in
   backends.
 - Operations carry copies of the prompts and messages. Record them only when
