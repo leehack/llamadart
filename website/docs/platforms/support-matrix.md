@@ -33,8 +33,10 @@ on llama.cpp and WebGPU only; on LiteRT-LM `DecisionEngine.load` throws
 `LiteRtLmBackendPreference.auto`, the default, follows `ModelParams`:
 `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects CPU; a GPU
 `preferredBackend` (Vulkan, Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM
-GPU backend on every platform; and `preferredBackend: auto` selects GPU on
-Android, iOS, macOS and web, and CPU on Linux and Windows. On Linux x64
+GPU backend; and `preferredBackend: auto` selects GPU on Android, iOS, macOS
+and web, and CPU on Linux and Windows. Linux arm64 and Windows arm64 have no
+LiteRT-LM GPU backend, so a GPU selection there fails the load with an
+`ArgumentError`; set `liteRtLmBackend: cpu`. On Linux x64
 and Windows x64, GPU uses the LiteRT-LM GPU backend, not CUDA; set
 `liteRtLmBackend: cpu` on hosts without a hardware Vulkan driver. NPU is
 Android-only; web rejects it.

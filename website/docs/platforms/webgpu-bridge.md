@@ -135,7 +135,8 @@ The 32-bit core has a 4 GiB address space, which must also hold the KV cache
 and intermediate buffers. `llamadart` selects the 64-bit (memory64) core when
 `ModelParams.preferMemory64` is `true`, or when it is `null` and
 `ModelParams.modelBytesHint` is at least 2 GiB. `false` selects the 32-bit
-core, though a fetch-backed load that aborts on it is retried on memory64:
+core, though a load that aborts or runs out of memory on it is retried on
+memory64:
 
 ```dart
 await engine.loadModelFromUrl(
