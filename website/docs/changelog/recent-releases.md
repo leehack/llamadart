@@ -322,12 +322,16 @@ For canonical full release notes, use:
   bridge error
   ([#598](https://github.com/leehack/llamadart/issues/598)).
 - Throw `LlamaModelException` when WebGPU cannot fetch or load a multimodal
-  projector, instead of the raw JavaScript error. Its details drop the
-  userinfo and password of the projector URL the app passed, its `?query`
-  and `#fragment`, its `key=value` query parts, and bare query values and
-  fragments of 10 or more characters, as written, percent-encoded or
-  percent-decoded; shorter bare values, such as the `1` of `?v=1`, stay.
-  Other URLs in them lose userinfo, query and fragment on a best-effort basis
+  projector, instead of the raw JavaScript error. Its details drop these
+  parts of the projector URL the app passed, as written, JSON-escaped,
+  percent-encoded or percent-decoded: the userinfo and password, as whole
+  tokens of any length; the `?query` and `#fragment`, where they directly
+  follow a non-space character; the query and each `&`-separated part that
+  contain `=`, as whole tokens; and bare query values and the fragment of 10
+  or more characters, as whole tokens. A whole token has no ASCII letter or
+  digit directly before or after it. Shorter bare values printed on their
+  own, such as the `1` of `?v=1`, stay. Other URLs in the details lose
+  userinfo, query and fragment on a best-effort basis
   ([#642](https://github.com/leehack/llamadart/issues/642)).
 - Leave no envelope text in the parsed `content` when Qwen2.5 wraps a Hermes
   tool call in double braces (`<tool_call>{{"name": ...}}</tool_call>`, with

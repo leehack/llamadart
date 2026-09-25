@@ -226,11 +226,15 @@ and reports which as `deviceName`.
   `LlamaModelException` "Cannot read the decision head config at <url>." with
   the status or error in `details`. The head and config URLs that messages
   and details show drop user info, query and fragment. Browser and bridge
-  error text loses the user info and password of `headPath` and
-  `configPath`, their `?query` and `#fragment`, their `key=value` query
-  parts, and bare query values and fragments of 10 or more characters;
-  shorter bare values stay. Other URLs it quotes lose user info, query and
-  fragment on a best-effort basis.
+  error text loses these parts of `headPath` and `configPath`, as written,
+  JSON-escaped, percent-encoded or percent-decoded: the user info and
+  password, as whole tokens of any length; the `?query` and `#fragment`,
+  where they directly follow a non-space character; the query and each
+  `&`-separated part that contain `=`, as whole tokens; and bare query
+  values and the fragment of 10 or more characters, as whole tokens. A whole
+  token has no ASCII letter or digit directly before or after it. Shorter
+  bare values printed on their own stay. Other URLs it quotes lose user
+  info, query and fragment on a best-effort basis.
 - Handles: the backend numbers heads itself, never reusing a number, and maps
   each to the bridge instance and bridge handle that loaded it. `modelFree` and
   `dispose` dispose the bridge, and a model load on the same bridge frees every
