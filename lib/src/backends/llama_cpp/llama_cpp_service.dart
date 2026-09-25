@@ -5667,10 +5667,10 @@ class LlamaCppService {
       );
       pieceTick.stop();
       sampleMicros += pieceTick.elapsedMicroseconds;
+      generatedTokens++;
 
       if (n > 0) {
         final bytes = pieceBuf.asTypedList(n).toList();
-        generatedTokens++;
         final visible = stopBuffer.add(bytes);
         if (visible.isNotEmpty) yield visible;
         if (stopBuffer.isStopped) {

@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Count generated tokens with an empty text piece in llama.cpp
+  `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
+  decoding, as the speculative path already did
+  ([#706](https://github.com/leehack/llamadart/issues/706)).
 - Report per-request token usage and timings on the final `create` chunk as
   `LlamaCompletionChunk.usage` on native llama.cpp
   ([#696](https://github.com/leehack/llamadart/issues/696)).

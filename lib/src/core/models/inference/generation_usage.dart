@@ -18,9 +18,6 @@ class LlamaGenerationUsage {
 
   /// Generated tokens, including tokens that formed a stop sequence and
   /// excluding the end-of-generation token.
-  ///
-  /// Without speculative decoding, tokens whose text piece is empty are not
-  /// counted.
   final int completionTokens;
 
   /// Time from the backend starting the request to its first streamed text,
