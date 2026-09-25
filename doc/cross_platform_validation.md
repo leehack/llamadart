@@ -216,7 +216,8 @@ were 0.052/0.011/0.010 on the CPU and 0.012/0.003/0.003 on Metal, against
 0.142/0.036/0.061 and 0.164/0.044/0.025 with `laya-Q8_0.gguf` (load averages
 15 to 210). No `local` run qualifies, since it is not a portable bundle.
 
-In headless Chromium with WebGPU on Metal and bridge assets `v0.1.51`, every
+In headless Chromium with WebGPU on Metal and the bridge assets from
+[#665](https://github.com/leehack/llamadart/pull/665), every
 `decision-gguf-webgpu` run kept the head on `WebGPU: WebGPU`. With Q8_0, two
 runs at load averages of 6 to 28 passed with worst differences of
 0.164/0.044/0.025 and `D06.reload` at 25 and 32 s; a third, at 33 to 40,
