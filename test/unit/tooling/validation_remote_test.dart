@@ -527,6 +527,9 @@ void main() {
             plan(),
             run,
             execute: (executable, arguments, {directory, timeout}) async {
+              if (arguments.first == 'pub') {
+                return const CommandResult(0, '', '');
+              }
               expect(arguments, contains('bin/report.dart'));
               File(p.join(arguments[2], 'results.json')).writeAsStringSync(
                 jsonEncode({
@@ -549,6 +552,52 @@ void main() {
         );
         expect(await assess({...identity}..remove(key)), false, reason: key);
       }
+    },
+  );
+
+  test(
+    'collected qualification resolves the validation package first',
+    () async {
+      final profile = jsonDecode(
+        File(p.join(bundle.path, 'profile.json')).readAsStringSync(),
+      );
+      final run = Directory(p.join(scratch.path, 'collected'));
+      File(p.join(run.path, 'remote-results', 'events.jsonl'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({'type': 'manifest', 'profile': profile}),
+        );
+      final package = p.join(scratch.path, 'packages/llamadart_validation');
+      final calls = <String>[];
+      Future<bool> assess(int pubGetCode) => assessCollectedRun(
+        scratch.path,
+        plan(),
+        run,
+        execute: (executable, arguments, {directory, timeout}) async {
+          expect(directory, package);
+          calls.add(arguments.take(2).join(' '));
+          return CommandResult(
+            arguments.first == 'pub' ? pubGetCode : 0,
+            '',
+            '',
+          );
+        },
+      );
+
+      expect(await assess(0), false);
+      expect(calls, ['pub get', 'run bin/report.dart']);
+      calls.clear();
+      await expectLater(
+        assess(69),
+        throwsA(
+          isA<StateError>().having(
+            (error) => '$error',
+            'message',
+            allOf(contains('dart pub get'), contains('exited 69')),
+          ),
+        ),
+      );
+      expect(calls, ['pub get']);
     },
   );
 

@@ -116,6 +116,18 @@ Future<bool> assessCollectedRun(
             p.join(output.path, 'native.log'),
           )..writeAsStringSync(consoleLogs.single, flush: true)).path;
   }
+  final package = p.join(repository, 'packages/llamadart_validation');
+  final resolved = await execute(
+    Platform.resolvedExecutable,
+    const ['pub', 'get'],
+    directory: package,
+    timeout: const Duration(minutes: 3),
+  );
+  if (resolved.code != 0) {
+    throw StateError(
+      'dart pub get in packages/llamadart_validation exited ${resolved.code}',
+    );
+  }
   final generated = await execute(
     Platform.resolvedExecutable,
     [
@@ -124,7 +136,7 @@ Future<bool> assessCollectedRun(
       output.path,
       if (nativeLog != null) ...['--native-log', nativeLog],
     ],
-    directory: p.join(repository, 'packages/llamadart_validation'),
+    directory: package,
     timeout: const Duration(minutes: 3),
   );
   final resultFile = File(p.join(output.path, 'results.json'));
