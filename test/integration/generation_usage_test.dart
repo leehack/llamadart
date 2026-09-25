@@ -111,6 +111,21 @@ void main() {
       },
     );
 
+    test('counts generated tokens whose text piece is empty', () async {
+      final bos = (await backend.tokenize(model, '')).single;
+      final generation = backend.generate(
+        context,
+        'Once upon a time',
+        repeating.copyWith(maxTokens: 4, grammar: 'root ::= <[$bos]>+'),
+      );
+      final chunks = await generation.toList();
+      final usage = usages.generationUsageOf(generation)!;
+
+      expect(chunks, isEmpty);
+      expect(usage.completionTokens, 4);
+      expect(usage.timeToFirstToken, isNull);
+    });
+
     test('create puts usage on the final chunk', () async {
       final engine = LlamaEngine(LlamaBackend());
       addTearDown(engine.dispose);
