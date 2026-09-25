@@ -4,6 +4,9 @@
   `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
   decoding, as the speculative path already did
   ([#706](https://github.com/leehack/llamadart/issues/706)).
+- Report per-request token usage and timings on the final `create` chunk as
+  `LlamaCompletionChunk.usage` on native llama.cpp
+  ([#696](https://github.com/leehack/llamadart/issues/696)).
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching

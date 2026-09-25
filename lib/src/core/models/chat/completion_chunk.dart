@@ -1,3 +1,5 @@
+import '../inference/generation_usage.dart';
+
 /// Represents a tool call within a completion chunk.
 /// Aligns with OpenAI's `ToolCall` in streaming chunks.
 class LlamaCompletionChunkToolCall {
@@ -100,6 +102,10 @@ class LlamaCompletionChunk {
   /// A list of completion choices.
   final List<LlamaCompletionChunkChoice> choices;
 
+  /// Token counts and timings of the request, set only on the final chunk
+  /// and only when the backend reports them.
+  final LlamaGenerationUsage? usage;
+
   /// Creates a new [LlamaCompletionChunk].
   LlamaCompletionChunk({
     required this.id,
@@ -107,6 +113,7 @@ class LlamaCompletionChunk {
     required this.created,
     required this.model,
     required this.choices,
+    this.usage,
   });
 
   /// Creates a [LlamaCompletionChunk] from a JSON map.
@@ -122,6 +129,11 @@ class LlamaCompletionChunk {
                 LlamaCompletionChunkChoice.fromJson(e as Map<String, dynamic>),
           )
           .toList(),
+      usage: json['usage'] == null
+          ? null
+          : LlamaGenerationUsage.fromJson(
+              json['usage'] as Map<String, dynamic>,
+            ),
     );
   }
 
@@ -133,12 +145,14 @@ class LlamaCompletionChunk {
       'created': created,
       'model': model,
       'choices': choices.map((e) => e.toJson()).toList(),
+      if (usage != null) 'usage': usage!.toJson(),
     };
   }
 
   @override
   String toString() =>
-      'LlamaCompletionChunk(id: $id, object: $object, created: $created, model: $model, choices: $choices)';
+      'LlamaCompletionChunk(id: $id, object: $object, created: $created, model: $model, choices: $choices'
+      '${usage == null ? '' : ', usage: $usage'})';
 }
 
 /// Represents a choice in a completion chunk.
