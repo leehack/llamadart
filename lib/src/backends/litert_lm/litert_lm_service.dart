@@ -1198,6 +1198,45 @@ class LiteRtLmService {
 
   Map<String, dynamic> _chatMessageToNativeJson(LlamaChatMessage message) {
     if (!_hasMediaParts(message.parts)) {
+      final toolResults = message.parts.whereType<LlamaToolResultContent>();
+      if (toolResults.isNotEmpty) {
+        return {
+          'role': LlamaChatRole.tool.name,
+          'content': [
+            for (final result in toolResults)
+              {
+                'type': 'tool_response',
+                'name': result.name,
+                'response': result.result,
+              },
+          ],
+        };
+      }
+      final toolCalls = message.parts.whereType<LlamaToolCallContent>();
+      if (toolCalls.isNotEmpty) {
+        final thinking = message.parts.whereType<LlamaThinkingContent>();
+        return {
+          'role': LlamaChatRole.assistant.name,
+          // Always a string: LiteRT-LM's generic data processor reads
+          // `content` without a presence check, and drops `tool_calls` when
+          // it rewrites a one-part text list.
+          'content': message.parts
+              .whereType<LlamaTextContent>()
+              .map((part) => part.text)
+              .join(),
+          if (thinking.isNotEmpty)
+            'reasoning_content': thinking
+                .map((part) => part.thinking)
+                .join('\n'),
+          'tool_calls': [
+            for (final call in toolCalls)
+              {
+                'type': 'function',
+                'function': {'name': call.name, 'arguments': call.arguments},
+              },
+          ],
+        };
+      }
       return Map<String, dynamic>.from(message.toJsonMultimodal());
     }
     if (message.role == LlamaChatRole.system) {
