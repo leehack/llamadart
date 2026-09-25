@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../core/decision/decision_question.dart';
+import '../core/engine/engine_observer.dart';
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/generation_usage.dart';
@@ -257,6 +258,13 @@ abstract class BackendGenerationLimitReporting {
   /// end-of-generation token, a stop sequence, cancellation or an error, or
   /// when the backend cannot tell.
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation);
+}
+
+/// Internal backend probe for the runtime that runs the loaded model.
+abstract class BackendRuntimeIdentity {
+  /// The runtime that runs this backend's model, or null when the backend
+  /// cannot tell, as for an auto backend with no model loaded.
+  LlamaRuntime? get runtime;
 }
 
 /// Internal backend probe for the usage of a finished generation stream.

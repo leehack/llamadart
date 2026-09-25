@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../backend.dart';
+import '../../core/engine/engine_observer.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
@@ -24,6 +25,7 @@ typedef LlamaWorkerEntrypoint = void Function(SendPort initialSendPort);
 /// Native implementation of [LlamaBackend] using isolates and FFI.
 class NativeLlamaBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
@@ -754,6 +756,9 @@ class NativeLlamaBackend
     rp.close();
     _expectDoneResponse(res, 'clear LoRA adapters');
   }
+
+  @override
+  LlamaRuntime get runtime => LlamaRuntime.llamaCpp;
 
   @override
   Future<String> getBackendName() async {

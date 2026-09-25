@@ -14,6 +14,7 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -1082,6 +1083,10 @@ void main() {
       );
     },
   );
+
+  test('reports the llama.cpp runtime', () {
+    expect(NativeLlamaBackend().runtime, LlamaRuntime.llamaCpp);
+  });
 
   test('modelFree and contextFree are no-op without worker port', () async {
     final backend = NativeLlamaBackend();

@@ -576,6 +576,10 @@ void main() {
       clearBridgeGlobals();
     });
 
+    test('reports the llama.cpp runtime', () {
+      expect(WebGpuLlamaBackend().runtime, LlamaRuntime.llamaCpp);
+    });
+
     test('uses bridge when available', () async {
       final modelHandle = await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',

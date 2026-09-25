@@ -12,6 +12,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
@@ -65,6 +66,10 @@ void main() {
       (backend as BackendNativeChatGeneration).supportsNativeChatGeneration,
       isTrue,
     );
+  });
+
+  test('reports the LiteRT-LM runtime', () {
+    expect(LiteRtLmBackend().runtime, LlamaRuntime.liteRtLm);
   });
 
   test('reports platform default diagnostics before model load', () async {

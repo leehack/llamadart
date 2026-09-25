@@ -34,6 +34,7 @@ library;
 
 // Engine & Chat
 export 'src/core/engine/engine.dart' show LlamaEngine;
+export 'src/core/engine/engine_observer.dart';
 export 'src/core/engine/chat_session.dart' show ChatSession;
 
 // Speech

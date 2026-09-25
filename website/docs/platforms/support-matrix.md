@@ -320,6 +320,8 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
 - **Per-request usage** (`LlamaCompletionChunk.usage` on the final
   `engine.create` chunk) is reported by native llama.cpp. It is null on
   LiteRT-LM and WebGPU.
+- **Operation observers** (`LlamaEngine(observers: ...)`) run on every
+  backend. They report usage where the backend reports it, as above.
 - **WebGPU readiness** is browser/device/runtime dependent. Check secure
   context, `navigator.gpu`, adapter/features, `window.crossOriginIsolated`,
   loaded bridge asset source/version, and model memory pressure before treating

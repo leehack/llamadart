@@ -5,6 +5,8 @@ import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
 import 'chat_template_renderer.dart';
+import 'engine_observation.dart';
+import 'engine_observer.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
@@ -79,6 +81,11 @@ class LlamaEngine {
 
   /// Downloads and caches remote model sources for native/file-backed backends.
   final ModelDownloadManager modelDownloadManager;
+
+  /// The observers of this engine's operations.
+  final List<LlamaEngineObserver> observers;
+  String? _observedModel;
+  LlamaRuntime? _observedRuntime;
   int? _modelHandle;
   int? _contextHandle;
   int? _mmContextHandle;
@@ -120,13 +127,19 @@ class LlamaEngine {
   }
 
   /// Creates a new [LlamaEngine] instance with the given [backend].
+  ///
+  /// [observers] see chat completions, text completions, embeddings and
+  /// model loads; see [LlamaEngineObserver]. Without observers the engine
+  /// does no observation work.
   LlamaEngine(
     this.backend, {
     ModelResolver? modelResolver,
     ModelDownloadManager? modelDownloadManager,
+    Iterable<LlamaEngineObserver> observers = const <LlamaEngineObserver>[],
   }) : modelResolver = modelResolver ?? const DefaultModelResolver(),
        modelDownloadManager =
-           modelDownloadManager ?? DefaultModelDownloadManager();
+           modelDownloadManager ?? DefaultModelDownloadManager(),
+       observers = List<LlamaEngineObserver>.unmodifiable(observers);
 
   /// Sets both Dart and native log levels to [level].
   ///
@@ -185,9 +198,13 @@ class LlamaEngine {
     String path, {
     ModelParams modelParams = const ModelParams(),
   }) {
-    return _withModelLifecycle(
-      'load a model',
-      () => _loadModel(path, modelParams: modelParams),
+    return _observeModelLoad(
+      path,
+      modelParams,
+      () => _withModelLifecycle(
+        'load a model',
+        () => _loadModel(path, modelParams: modelParams),
+      ),
     );
   }
 
@@ -303,14 +320,58 @@ class LlamaEngine {
     ModelParams modelParams = const ModelParams(),
     Function(double progress)? onProgress,
   }) {
-    return _withModelLifecycle(
-      'load a model from URL',
-      () => _loadModelFromUrl(
-        url,
-        modelParams: modelParams,
-        onProgress: onProgress,
+    return _observeModelLoad(
+      url,
+      modelParams,
+      () => _withModelLifecycle(
+        'load a model from URL',
+        () => _loadModelFromUrl(
+          url,
+          modelParams: modelParams,
+          onProgress: onProgress,
+        ),
       ),
     );
+  }
+
+  Future<void> _observeModelLoad(
+    String source,
+    ModelParams modelParams,
+    Future<void> Function() load,
+  ) {
+    if (observers.isEmpty) return load();
+    return observeFuture(
+      () async {
+        await load();
+        await _captureObservedModel(source);
+      },
+      observers: observers,
+      operation: () => LlamaModelLoadOperation(
+        model: _displayNameForSource(source),
+        modelParams: modelParams,
+      ),
+    );
+  }
+
+  /// Records the model name and runtime that observed operations report.
+  Future<void> _captureObservedModel(String source) async {
+    final candidate = backend;
+    _observedRuntime = candidate is BackendRuntimeIdentity
+        ? (candidate as BackendRuntimeIdentity).runtime
+        : null;
+    String? name;
+    try {
+      name = (await _getCachedMetadata())['general.name']?.trim();
+    } catch (error, stackTrace) {
+      LlamaLogger.instance.warning(
+        'Could not read the model name for observers.',
+        error,
+        stackTrace,
+      );
+    }
+    _observedModel = name == null || name.isEmpty
+        ? _displayNameForSource(source)
+        : name;
   }
 
   Future<void> _loadModelFromUrl(
@@ -576,6 +637,8 @@ class LlamaEngine {
     }
     _modelPath = null;
     _cachedModelMetadata = null;
+    _observedModel = null;
+    _observedRuntime = null;
     _isReady = false;
     LlamaLogger.instance.info('Model unloaded.');
   }
@@ -668,96 +731,125 @@ class LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
-    return _generationCancellation.request((request) async* {
-      _ensureReady();
-      await _rejectUnsupportedVideoInput(
-        messages.expand((message) => message.parts),
+    final zone = Zone.current;
+    return _generationCancellation.request((request) {
+      Stream<LlamaCompletionChunk> chunks() async* {
+        _ensureReady();
+        await _rejectUnsupportedVideoInput(
+          messages.expand((message) => message.parts),
+        );
+
+        // Keep tools available to template routing even with toolChoice.none,
+        // matching llama.cpp behavior.
+        final effectiveTools = tools;
+        final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
+
+        // Apply chat template with tools - returns grammar for constraining
+        final result = await chatTemplate(
+          messages,
+          tools: effectiveTools,
+          toolChoice: effectiveToolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          responseFormat: responseFormat,
+          sourceLangCode: sourceLangCode,
+          targetLangCode: targetLangCode,
+          chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
+          includeTokenCount: false,
+        );
+        final plan = ChatCompletionRequestPlanner.build(
+          backend: backend,
+          templateResult: result,
+          messages: messages,
+          params: params,
+          tools: effectiveTools,
+          toolChoice: effectiveToolChoice,
+          parallelToolCalls: parallelToolCalls,
+          responseFormat: responseFormat,
+        );
+
+        // Generate raw tokens with grammar constraint. Backends that can consume
+        // structured chat natively may receive the original messages/tools, while
+        // all other backends keep the rendered prompt path.
+        BackendGenerationLimit? generationLimit;
+        void recordLimit(BackendGenerationLimit limit) =>
+            generationLimit = limit;
+        LlamaGenerationUsage? generationUsage;
+        void recordUsage(LlamaGenerationUsage usage) => generationUsage = usage;
+
+        final tokenStream = plan.usesNativeChatGeneration
+            ? _generateNativeChat(
+                plan.nativeChatBackend!,
+                messages,
+                params: plan.generationParams,
+                tools: effectiveTools,
+                toolChoice: effectiveToolChoice,
+                parallelToolCalls: parallelToolCalls,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+                sourceLangCode: sourceLangCode,
+                targetLangCode: targetLangCode,
+                templateNow: templateNow,
+                onLimit: recordLimit,
+                onUsage: recordUsage,
+                request: request,
+              )
+            : _generate(
+                result.prompt,
+                params: plan.generationParams,
+                parts: plan.mediaParts,
+                onLimit: recordLimit,
+                onUsage: recordUsage,
+                request: request,
+              );
+
+        final completionId = DateTime.now().millisecondsSinceEpoch.toString();
+        yield* ChatCompletionStreamParser.parse(
+          tokenStream: tokenStream,
+          templateResult: plan.templateResult,
+          parseToolCallsEnabled: plan.parseToolCallsEnabled,
+          enableThinking: enableThinking,
+          modelName: _modelPath ?? 'llama_model',
+          completionId: completionId,
+          tools: effectiveTools,
+          stoppedAtLimit: () => generationLimit != null,
+          usage: () => generationUsage,
+        ).map((chunk) {
+          final limit = generationLimit;
+          if (limit != null &&
+              chunk.choices.isNotEmpty &&
+              chunk.choices.first.finishReason == 'length') {
+            _completionGenerationLimits[chunk] = limit;
+          }
+          return chunk;
+        });
+      }
+
+      if (observers.isEmpty) return chunks();
+      String? finishReason;
+      LlamaGenerationUsage? usage;
+      return observeStream(
+        chunks(),
+        observers: observers,
+        zone: zone,
+        operation: () => LlamaChatOperation(
+          model: _observedModel,
+          runtime: _observedRuntime,
+          messages: messages,
+          params: params ?? const GenerationParams(),
+          tools: tools,
+          toolChoice: toolChoice,
+          responseFormat: responseFormat,
+        ),
+        onItem: (observation, chunk) {
+          observation.chunk(chunk);
+          finishReason =
+              chunk.choices.firstOrNull?.finishReason ?? finishReason;
+          usage = chunk.usage ?? usage;
+        },
+        result: () => _generationResult(request, finishReason, usage),
       );
-
-      // Keep tools available to template routing even with toolChoice.none,
-      // matching llama.cpp behavior.
-      final effectiveTools = tools;
-      final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
-
-      // Apply chat template with tools - returns grammar for constraining
-      final result = await chatTemplate(
-        messages,
-        tools: effectiveTools,
-        toolChoice: effectiveToolChoice,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-        responseFormat: responseFormat,
-        sourceLangCode: sourceLangCode,
-        targetLangCode: targetLangCode,
-        chatTemplateKwargs: chatTemplateKwargs,
-        templateNow: templateNow,
-        includeTokenCount: false,
-      );
-      final plan = ChatCompletionRequestPlanner.build(
-        backend: backend,
-        templateResult: result,
-        messages: messages,
-        params: params,
-        tools: effectiveTools,
-        toolChoice: effectiveToolChoice,
-        parallelToolCalls: parallelToolCalls,
-        responseFormat: responseFormat,
-      );
-
-      // Generate raw tokens with grammar constraint. Backends that can consume
-      // structured chat natively may receive the original messages/tools, while
-      // all other backends keep the rendered prompt path.
-      BackendGenerationLimit? generationLimit;
-      void recordLimit(BackendGenerationLimit limit) => generationLimit = limit;
-      LlamaGenerationUsage? generationUsage;
-      void recordUsage(LlamaGenerationUsage usage) => generationUsage = usage;
-
-      final tokenStream = plan.usesNativeChatGeneration
-          ? _generateNativeChat(
-              plan.nativeChatBackend!,
-              messages,
-              params: plan.generationParams,
-              tools: effectiveTools,
-              toolChoice: effectiveToolChoice,
-              parallelToolCalls: parallelToolCalls,
-              enableThinking: enableThinking,
-              chatTemplateKwargs: chatTemplateKwargs,
-              sourceLangCode: sourceLangCode,
-              targetLangCode: targetLangCode,
-              templateNow: templateNow,
-              onLimit: recordLimit,
-              onUsage: recordUsage,
-              request: request,
-            )
-          : _generate(
-              result.prompt,
-              params: plan.generationParams,
-              parts: plan.mediaParts,
-              onLimit: recordLimit,
-              onUsage: recordUsage,
-              request: request,
-            );
-
-      final completionId = DateTime.now().millisecondsSinceEpoch.toString();
-      yield* ChatCompletionStreamParser.parse(
-        tokenStream: tokenStream,
-        templateResult: plan.templateResult,
-        parseToolCallsEnabled: plan.parseToolCallsEnabled,
-        enableThinking: enableThinking,
-        modelName: _modelPath ?? 'llama_model',
-        completionId: completionId,
-        tools: effectiveTools,
-        stoppedAtLimit: () => generationLimit != null,
-        usage: () => generationUsage,
-      ).map((chunk) {
-        final limit = generationLimit;
-        if (limit != null &&
-            chunk.choices.isNotEmpty &&
-            chunk.choices.first.finishReason == 'length') {
-          _completionGenerationLimits[chunk] = limit;
-        }
-        return chunk;
-      });
     });
   }
 
@@ -883,11 +975,53 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
   }) {
-    return _generationCancellation.request(
-      (request) =>
-          _generate(prompt, params: params, parts: parts, request: request),
-    );
+    final zone = Zone.current;
+    return _generationCancellation.request((request) {
+      if (observers.isEmpty) {
+        return _generate(
+          prompt,
+          params: params,
+          parts: parts,
+          request: request,
+        );
+      }
+      BackendGenerationLimit? limit;
+      LlamaGenerationUsage? usage;
+      return observeStream(
+        _generate(
+          prompt,
+          params: params,
+          parts: parts,
+          onLimit: (reported) => limit = reported,
+          onUsage: (reported) => usage = reported,
+          request: request,
+        ),
+        observers: observers,
+        zone: zone,
+        operation: () => LlamaTextCompletionOperation(
+          model: _observedModel,
+          runtime: _observedRuntime,
+          prompt: prompt,
+          params: params,
+          parts: parts,
+        ),
+        onItem: (observation, text) => observation.text(text),
+        result: () => _generationResult(
+          request,
+          limit == null ? 'stop' : 'length',
+          usage,
+        ),
+      );
+    });
   }
+
+  LlamaOperationResult _generationResult(
+    GenerationRequest request,
+    String? finishReason,
+    LlamaGenerationUsage? usage,
+  ) => request.isCancelled()
+      ? LlamaOperationResult(cancelled: true, usage: usage)
+      : LlamaOperationResult(finishReason: finishReason, usage: usage);
 
   Stream<String> _generate(
     String prompt, {
@@ -1098,7 +1232,14 @@ class LlamaEngine {
   /// Generates a single embedding vector for [text].
   ///
   /// When [normalize] is true, the returned vector is L2-normalized.
-  Future<List<double>> embed(String text, {bool normalize = true}) async {
+  Future<List<double>> embed(String text, {bool normalize = true}) =>
+      _observeEmbeddings(
+        <String>[text],
+        normalize,
+        () => _embed(text, normalize: normalize),
+      );
+
+  Future<List<double>> _embed(String text, {required bool normalize}) async {
     _ensureReady();
     try {
       final embeddingBackend = _resolveEmbeddingBackend();
@@ -1118,6 +1259,33 @@ class LlamaEngine {
   Future<List<List<double>>> embedBatch(
     List<String> texts, {
     bool normalize = true,
+  }) => _observeEmbeddings(
+    texts,
+    normalize,
+    () => _embedBatch(texts, normalize: normalize),
+  );
+
+  Future<T> _observeEmbeddings<T>(
+    List<String> inputs,
+    bool normalize,
+    Future<T> Function() embed,
+  ) {
+    if (observers.isEmpty) return embed();
+    return observeFuture(
+      embed,
+      observers: observers,
+      operation: () => LlamaEmbeddingsOperation(
+        model: _observedModel,
+        runtime: _observedRuntime,
+        inputs: List<String>.unmodifiable(inputs),
+        normalize: normalize,
+      ),
+    );
+  }
+
+  Future<List<List<double>>> _embedBatch(
+    List<String> texts, {
+    required bool normalize,
   }) async {
     _ensureReady();
     if (texts.isEmpty) {

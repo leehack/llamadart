@@ -9,6 +9,7 @@ import 'dart:math' as math;
 
 import 'package:web/web.dart';
 
+import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
 import '../../core/models/config/flash_attention.dart';
@@ -28,6 +29,7 @@ import 'litert_lm_sampler_params.dart';
 /// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm`.
 class LiteRtLmBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendGrammarConstraintsSupport,
@@ -342,6 +344,9 @@ class LiteRtLmBackend
       'LiteRtLmBackend web does not support LoRA adapters.',
     );
   }
+
+  @override
+  LlamaRuntime get runtime => LlamaRuntime.liteRtLm;
 
   @override
   Future<String> getBackendName() async {

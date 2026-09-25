@@ -1,7 +1,7 @@
 ---
 title: Text generation and streaming
 sidebar_label: Generation and streaming
-description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, cancellation and tokenization helpers.
+description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, operation observers, cancellation and tokenization helpers.
 ---
 
 `llamadart` exposes three generation entry points:
@@ -115,6 +115,58 @@ if (usage != null) {
 The backend times `timeToFirstToken` and `duration` from when it starts the
 request. They exclude template rendering and time spent queued behind another
 request, and `timeToFirstToken` excludes stream batching.
+
+## Observing operations
+
+Pass observers to `LlamaEngine` to trace, measure or log its work. An observer
+sees chat completions (`create`, `createStructuredJson` and
+`ChatSession.create`), `generate`, `embed`, `embedBatch` and model loads.
+
+```dart
+class TimingObserver extends LlamaEngineObserver {
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation operation) {
+    final name = switch (operation) {
+      LlamaChatOperation() => 'chat',
+      LlamaTextCompletionOperation() => 'text_completion',
+      LlamaEmbeddingsOperation() => 'embeddings',
+      LlamaModelLoadOperation() => 'model_load',
+    };
+    return _Timing('$name ${operation.model}', Stopwatch()..start());
+  }
+}
+
+class _Timing extends LlamaOperationObserver {
+  _Timing(this.name, this.watch);
+
+  final String name;
+  final Stopwatch watch;
+
+  @override
+  void onEnd(LlamaOperationResult result) {
+    print('$name: ${watch.elapsed}, finish ${result.finishReason}, '
+        'tokens ${result.usage?.totalTokens}');
+  }
+}
+
+final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
+```
+
+- A `create` or `generate` operation starts when its stream is listened to;
+  the others start when their method is called. Every callback runs in the
+  zone that called the engine method, so a tracer can read its parent context
+  there.
+- `onChunk` receives each `create` chunk and `onText` each `generate` piece.
+- `onEnd` runs once, with the error, the cancel, or the finish reason and
+  usage. Usage is reported where the final `create` chunk carries it.
+- `LlamaOperation.model` is the model's `general.name` metadata, or its file
+  name, never a directory, URL query or credential. `runtime` is
+  `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm` on the built-in
+  backends.
+- Operations carry prompts and messages. Record them only when your users opt
+  in.
+- An exception thrown by an observer is logged and never reaches the caller.
+  Without observers the engine does no observation work.
 
 ## Thinking budget (native llama.cpp)
 

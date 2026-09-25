@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:web/web.dart';
 
+import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
@@ -26,6 +27,7 @@ external JSArray _objectKeys(JSObject obj);
 /// Web backend backed by the llama.cpp bridge runtime.
 class WebGpuLlamaBackend
     implements
+        BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
@@ -2457,6 +2459,9 @@ class WebGpuLlamaBackend
   Future<void> clearLoraAdapters(int contextHandle) async {
     throw UnsupportedError(_runtimeLoraUnsupportedMessage);
   }
+
+  @override
+  LlamaRuntime get runtime => LlamaRuntime.llamaCpp;
 
   @override
   Future<String> getBackendName() async {
