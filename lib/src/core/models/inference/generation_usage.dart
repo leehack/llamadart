@@ -23,8 +23,8 @@ class LlamaGenerationUsage {
   /// Time from the backend starting the request to its first streamed text,
   /// or null when it streamed none.
   ///
-  /// Measured where the backend generates, before any batching of streamed
-  /// tokens, so it excludes time spent queued behind another request.
+  /// Measured where the backend generates. It excludes time spent queued
+  /// behind another request and the batching of streamed tokens.
   final Duration? timeToFirstToken;
 
   /// Time from the backend starting the request to the end of generation, or
