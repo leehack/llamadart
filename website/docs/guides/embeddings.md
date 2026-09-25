@@ -1,5 +1,6 @@
 ---
-title: Embeddings
+title: On-device text embeddings
+sidebar_label: Embeddings
 description: Generate local embeddings with llamadart, understand backend support, and build retrieval-style workflows.
 ---
 

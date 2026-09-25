@@ -43,6 +43,8 @@ scripts/fetch_webgpu_bridge_assets.sh @leehack
 website/docs/changelog/recent-releases.md @leehack
 website/docs/maintainers/native-and-web-sync.md @leehack
 website/docs/maintainers/release-workflow.md @leehack
+website/lib/src/tooling/version_cut.dart @leehack
+website/tool/cut_version.dart @leehack
 packages/*/CHANGELOG.md @leehack
 packages/*/darwin/*/Package.swift @leehack
 packages/*/pubspec.yaml @leehack
