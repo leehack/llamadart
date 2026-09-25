@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';
+import 'decision_catalog.dart';
 
 /// Canonical encoding for stable experiment identity.
 String canonicalJson(Object? value) {
@@ -48,7 +49,7 @@ class ValidationProfile {
     }
     final validBackends = runtime == 'litert'
         ? ['cpu', 'gpu', 'npu', 'auto']
-        : GpuBackend.values.map((value) => value.name).toList();
+        : [...GpuBackend.values.map((value) => value.name), 'webgpu'];
     if (!validBackends.contains(backend)) {
       throw FormatException('Invalid $runtime backend: $backend');
     }
@@ -72,8 +73,32 @@ class ValidationProfile {
         (model['bytes'] as int) <= 0) {
       throw const FormatException('Invalid model filename, format or size');
     }
-    if (!const ['raw', 'chat'].contains(model['kind'])) {
-      throw const FormatException('Model kind must be raw or chat');
+    if (!const ['raw', 'chat', 'decision'].contains(model['kind'])) {
+      throw const FormatException('Model kind must be raw, chat or decision');
+    }
+    if (isDecision != data.containsKey('decision') ||
+        (isDecision &&
+            (runtime != 'gguf' ||
+                selection != 'quick' ||
+                data.containsKey('fixtures') ||
+                data['history_controls'] == true ||
+                data['execution_path'] == 'native_c_api'))) {
+      throw const FormatException(
+        'A decision model needs a decision head lock and a quick public GGUF '
+        'profile without fixture overrides',
+      );
+    }
+    if (isDecision) {
+      final decision = data['decision'];
+      if (decision is! Map ||
+          decision.keys.any((key) => key != 'head' && key != 'config') ||
+          !_isArtifact(decision['head'], '.safetensors') ||
+          (decision.containsKey('config') &&
+              !_isArtifact(decision['config'], '.json'))) {
+        throw const FormatException(
+          'Decision head and config need immutable HTTPS locks',
+        );
+      }
     }
     if (contextSize < 128 ||
         contextSize > 8192 ||
@@ -182,6 +207,45 @@ class ValidationProfile {
   /// Whether semantic chat cases apply.
   bool get isChat => model['kind'] == 'chat';
 
+  /// Whether the model is a decision encoder that runs only decision cases.
+  bool get isDecision => model['kind'] == 'decision';
+
+  /// Locked decision head and optional config, keyed `head` and `config`.
+  Map<String, dynamic> get decisionArtifacts =>
+      data['decision'] as Map<String, dynamic>? ?? const {};
+
+  static bool _isArtifact(Object? value, String extension) {
+    if (value is! Map ||
+        value.keys.any(
+          (key) =>
+              !['filename', 'revision', 'sha256', 'bytes', 'url'].contains(key),
+        )) {
+      return false;
+    }
+    final filename = value['filename'];
+    final revision = value['revision'];
+    final url = value['url'];
+    final bytes = value['bytes'];
+    if (filename is! String ||
+        revision is! String ||
+        url is! String ||
+        bytes is! int) {
+      return false;
+    }
+    final uri = Uri.tryParse(url);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        uri.path.endsWith('/$revision/$filename') &&
+        RegExp(r'^[0-9a-f]{40}$').hasMatch(revision) &&
+        RegExp(r'^[0-9a-f]{64}$').hasMatch('${value['sha256']}') &&
+        RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(filename) &&
+        filename.endsWith(extension) &&
+        bytes > 0;
+  }
+
   /// Context token budget.
   int get contextSize => data['context_size'] as int? ?? 1024;
 
@@ -215,32 +279,37 @@ class ValidationProfile {
   bool get historyControls =>
       nativeReference || data['history_controls'] == true;
 
-  List<String> _quickCaseIds(int catalogVersion) => [
-    'C01.load',
-    if (!nativeReference) ...['C02.unicode', 'C03.raw'],
-    if (isChat) ...['C04.hello', 'C04.arithmetic'],
-    if (isChat) 'C06.history',
-    if (historyControls && isChat) ...[
-      'C06.history.public_system_wire',
-      'C06.history.no_system',
-      'C06.history.combined',
-    ],
-    if (!nativeReference) 'C08.cancel',
-    if (!nativeReference && catalogVersion >= 5) ...[
-      'C08.cancel.early',
-      if (runtime == 'gguf') ...['C08.cancel.restart', 'C08.overlap'],
-    ],
-    'C09.reload',
-    if (!nativeReference) ...[
-      'C10.limit',
-      if (catalogVersion >= 5 && runtime == 'gguf') 'C12.grammar',
-      'C12.recovery',
-    ],
-    'B01.warmup',
-    'B01.1',
-    'B01.2',
-    'B01.3',
-  ];
+  List<String> _quickCaseIds(int catalogVersion) => isDecision
+      ? [
+          'C01.load',
+          for (final definition in decisionValidationCases) definition.id,
+        ]
+      : [
+          'C01.load',
+          if (!nativeReference) ...['C02.unicode', 'C03.raw'],
+          if (isChat) ...['C04.hello', 'C04.arithmetic'],
+          if (isChat) 'C06.history',
+          if (historyControls && isChat) ...[
+            'C06.history.public_system_wire',
+            'C06.history.no_system',
+            'C06.history.combined',
+          ],
+          if (!nativeReference) 'C08.cancel',
+          if (!nativeReference && catalogVersion >= 5) ...[
+            'C08.cancel.early',
+            if (runtime == 'gguf') ...['C08.cancel.restart', 'C08.overlap'],
+          ],
+          'C09.reload',
+          if (!nativeReference) ...[
+            'C10.limit',
+            if (catalogVersion >= 5 && runtime == 'gguf') 'C12.grammar',
+            'C12.recovery',
+          ],
+          'B01.warmup',
+          'B01.1',
+          'B01.2',
+          'B01.3',
+        ];
 
   /// Original journal-v1 obligations, retained for existing report imports.
   List<String> get legacyCaseIds => [
@@ -274,6 +343,7 @@ class ValidationProfile {
     return {
       for (final entry in validationFixtures.entries)
         entry.key: {...entry.value, ...?overrides[entry.key] as Map?},
+      if (isDecision) 'decision': {...decisionValidationFixture},
     };
   }
 
@@ -331,6 +401,11 @@ class ValidationProfile {
   /// Reconstructs a supported historical catalog without inventing new evidence.
   Map<String, dynamic> catalogForVersion(int version) {
     validationCase('C11.batching', catalogVersion: version);
+    if (isDecision && version != validationCatalogVersion) {
+      throw const FormatException(
+        'Decision cases require catalog version $validationCatalogVersion',
+      );
+    }
     if (version == 1 &&
         (focusFeatures.contains('batching') ||
             (data['fixtures'] as Map?)?.containsKey('batching') == true)) {
@@ -350,6 +425,7 @@ class ValidationProfile {
       'features': {
         for (final entry in validationFeatures.entries)
           if (version != 1 || entry.key != 'batching') entry.key: entry.value,
+        if (isDecision) 'decision': 1,
       },
       'selection': selection,
       'focus_features': focusFeatures,
@@ -360,7 +436,10 @@ class ValidationProfile {
             entry.key: entry.value,
       },
       'cases': [
-        for (final definition in validationCaseCatalog)
+        for (final definition in [
+          ...validationCaseCatalog,
+          if (isDecision) ...decisionValidationCases,
+        ])
           if (catalogDeclaresCase(definition.id, version))
             {
               ...validationCase(
@@ -376,6 +455,7 @@ class ValidationProfile {
   }
 
   String _omissionReason(String id) {
+    if (isDecision) return 'decision_model_has_no_text_generation';
     if (id.startsWith('C06.history.') && !historyControls) {
       return 'history_controls_disabled';
     }
@@ -411,12 +491,30 @@ class ValidationProfile {
       !['cpu', 'auto', 'blas'].contains(backend);
 
   /// NPU candidates require the installed Android host to verify the kit first.
-  void requireRunnable({bool verifiedAndroidNpuHost = false}) {
+  /// `webgpu` profiles run only on the [web] host, which runs decision
+  /// profiles only on WebGPU.
+  void requireRunnable({
+    bool verifiedAndroidNpuHost = false,
+    bool web = false,
+  }) {
     if (backend == 'npu' && !verifiedAndroidNpuHost) {
       throw LlamaUnsupportedException(
         'NPU validation needs installed-app vendor packaging, SoC checks and '
         'per-generation execution proof. Use validation.dart npu-preflight '
         'to inspect the locked inputs without downloading or loading a model.',
+      );
+    }
+    if (backend == 'webgpu' && !web) {
+      throw LlamaUnsupportedException(
+        'The webgpu backend runs only in the Web validation host.',
+      );
+    }
+    if (web && isDecision && backend != 'webgpu') {
+      throw LlamaUnsupportedException(
+        'Web decision validation runs only on WebGPU: decision cases on the '
+        'WASM CPU exceed the case deadline '
+        '(doc/cross_platform_validation.md#decision-profiles). Use '
+        'decision-gguf-webgpu.',
       );
     }
   }
@@ -425,9 +523,11 @@ class ValidationProfile {
   ModelParams get loadParams => ModelParams(
     contextSize: contextSize,
     gpuLayers: backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
-    preferredBackend: runtime == 'gguf'
-        ? GpuBackend.values.byName(backend)
-        : GpuBackend.cpu,
+    preferredBackend: runtime != 'gguf'
+        ? GpuBackend.cpu
+        : backend == 'webgpu'
+        ? GpuBackend.auto
+        : GpuBackend.values.byName(backend),
     liteRtLmBackend: runtime == 'litert'
         ? LiteRtLmBackendPreference.values.byName(backend)
         : LiteRtLmBackendPreference.auto,

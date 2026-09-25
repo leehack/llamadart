@@ -131,6 +131,11 @@ For canonical full release notes, use:
   ([#602](https://github.com/leehack/llamadart/issues/602),
   [#655](https://github.com/leehack/llamadart/issues/655),
   [#654](https://github.com/leehack/llamadart/issues/654)).
+- Add `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` validation profiles that
+  check `DecisionEngine` token ids, raw logits and answers against the Laya
+  0.3.5 reference, plus batching, reload and typed rejections, on desktop,
+  mobile, Web WebGPU and GCE CUDA
+  ([#604](https://github.com/leehack/llamadart/issues/604)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching
   the native clamp
   ([#548](https://github.com/leehack/llamadart/issues/548)).

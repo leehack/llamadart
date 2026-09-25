@@ -1,3 +1,5 @@
+import 'decision_catalog.dart';
+
 /// Current reproducible catalog contract; older journals retain their version.
 const int validationCatalogVersion = 5;
 
@@ -245,9 +247,12 @@ const catalogFiveCaseIds = {
   'C07.tools.auto_text',
 };
 
-/// Whether [catalogVersion] declares case [id].
+/// Whether [catalogVersion] declares case [id]. Decision cases exist only in
+/// the current catalog, and only decision profiles select them.
 bool catalogDeclaresCase(String id, int catalogVersion) =>
-    catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
+    decisionValidationCases.any((definition) => definition.id == id)
+    ? catalogVersion == validationCatalogVersion
+    : catalogVersion >= 5 || !catalogFiveCaseIds.contains(id);
 
 /// Finds a declared case; an unknown ID is a programming error.
 ValidationCaseDefinition validationCase(
@@ -267,7 +272,10 @@ ValidationCaseDefinition validationCase(
           ['tools'],
           version: 2,
         )
-      : validationCaseCatalog.singleWhere((definition) => definition.id == id);
+      : [
+          ...validationCaseCatalog,
+          ...decisionValidationCases,
+        ].singleWhere((definition) => definition.id == id);
   if (catalogVersion < 4 &&
       ['C05.thinking', 'C07.tools', 'C02.generate'].contains(id)) {
     return ValidationCaseDefinition(

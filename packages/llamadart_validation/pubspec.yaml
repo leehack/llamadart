@@ -16,6 +16,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/profiles/
+    - assets/decision/
 hooks:
   user_defines:
     llamadart:

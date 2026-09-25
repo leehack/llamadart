@@ -17,7 +17,16 @@ void main() {
       expect(profile['backend'], row['backend']);
       expect(
         (profile['model']['filename'] as String).toLowerCase(),
-        startsWith(row['model'] == 'gemma4-e2b' ? 'gemma-4' : 'qwen3.5'),
+        startsWith(switch (row['model']) {
+          'gemma4-e2b' => 'gemma-4',
+          'laya-f16' => 'laya-f16',
+          'laya-q8_0' => 'laya-q8_0',
+          _ => 'qwen3.5',
+        }),
+      );
+      expect(
+        profile['model']['kind'] == 'decision',
+        row['use_case'] == 'decision',
       );
       expect(row['status'], 'NOT_RUN');
     }
@@ -74,6 +83,53 @@ void main() {
       expect(row['status'], cpuAsr ? 'NOT_RUN' : 'UNSUPPORTED');
     }
   });
+
+  test(
+    'decision rows bind GGUF profiles and keep LiteRT and WASM unsupported',
+    () {
+      final rows = validationCoverage().where(
+        (row) => row['use_case'] == 'decision',
+      );
+      expect(rows, isNotEmpty);
+      for (final row in rows) {
+        final runnable = row['runtime'] == 'gguf' && row['backend'] != 'wasm';
+        expect(
+          row['status'],
+          runnable ? 'NOT_RUN' : 'UNSUPPORTED',
+          reason: '$row',
+        );
+        expect(
+          row['profile'],
+          runnable &&
+                  [
+                    'cpu',
+                    'metal',
+                    'vulkan',
+                    'cuda',
+                    'webgpu',
+                  ].contains(row['backend'])
+              ? 'decision-gguf-${row['backend']}'
+              : isNull,
+          reason: '${row['id']}',
+        );
+        if (row['profile'] case final String id) {
+          final profile =
+              jsonDecode(File('assets/profiles/$id.json').readAsStringSync())
+                  as Map;
+          expect(profile['backend'], row['backend'], reason: id);
+          expect((profile['model'] as Map)['kind'], 'decision', reason: id);
+        }
+      }
+      expect(
+        rows
+            .where((row) => row['platform'] == 'web')
+            .map(
+              (row) => '${row['runtime']}/${row['backend']}/${row['profile']}',
+            ),
+        containsAll(['gguf/webgpu/decision-gguf-webgpu', 'gguf/wasm/null']),
+      );
+    },
+  );
 
   test('Apple desktop and browser NPU remain explicitly unsupported', () {
     final rows = validationCoverage().where(

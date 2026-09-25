@@ -82,6 +82,11 @@ class _ValidationAppState extends State<ValidationApp> {
                                 'chat-gguf-cuda',
                                 'chat-litert-cpu',
                                 'chat-litert-gpu',
+                                'decision-gguf-cpu',
+                                'decision-gguf-metal',
+                                'decision-gguf-vulkan',
+                                'decision-gguf-cuda',
+                                'decision-gguf-webgpu',
                               ])
                       DropdownMenuItem(value: id, child: Text(id)),
                   ],
