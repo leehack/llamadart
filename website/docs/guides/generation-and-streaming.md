@@ -94,6 +94,28 @@ await for (final chunk in engine.create(
 }
 ```
 
+## Token usage and timings
+
+On native llama.cpp, the final `create` chunk carries the request's usage
+whenever the backend reports it. The backend can report none, for example for
+a request cancelled while it is queued. Usage is null on other backends and on
+every earlier chunk.
+
+```dart
+final chunks = await engine.create(messages).toList();
+final usage = chunks.last.usage;
+if (usage != null) {
+  print('prompt ${usage.promptTokens} '
+      '(cached ${usage.cachedPromptTokens}), '
+      'completion ${usage.completionTokens}, '
+      'first token ${usage.timeToFirstToken}, total ${usage.duration}');
+}
+```
+
+The backend times `timeToFirstToken` and `duration` from when it starts the
+request. They exclude template rendering and time spent queued behind another
+request, and `timeToFirstToken` excludes stream batching.
+
 ## Thinking budget (native llama.cpp)
 
 For GGUF models with a thinking channel, `ThinkingBudget` maps to llama.cpp's

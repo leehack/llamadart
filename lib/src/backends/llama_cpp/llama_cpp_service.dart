@@ -5277,6 +5277,7 @@ class LlamaCppService {
       );
     }
 
+    ctx.lastPerfCachedPromptTokens = decodeStart;
     final suffixTokenCount = nTokens - decodeStart;
     final decodedEnd =
         decodeStart +
@@ -7658,6 +7659,21 @@ class LlamaCppService {
     return llama_n_ctx(ctx.pointer);
   }
 
+  /// Token counts of the last generation on [contextHandle], or null when
+  /// no such context exists.
+  ({int promptTokens, int cachedPromptTokens, int completionTokens})?
+  lastGenerationTokenCounts(int contextHandle) {
+    final ctx = _contexts[contextHandle];
+    if (ctx == null) {
+      return null;
+    }
+    return (
+      promptTokens: ctx.lastPerfPromptEvalTokens,
+      cachedPromptTokens: ctx.lastPerfCachedPromptTokens,
+      completionTokens: ctx.lastPerfEvalTokens,
+    );
+  }
+
   /// Returns native llama.cpp perf timings for [contextHandle].
   ({
     double loadMs,
@@ -9334,6 +9350,7 @@ class _LlamaContextWrapper {
   double lastPerfSpeculativeDraftMs = 0;
   double lastPerfSpeculativeVerifyMs = 0;
   int lastPerfPromptEvalTokens = 0;
+  int lastPerfCachedPromptTokens = 0;
   int lastPerfEvalTokens = 0;
   int lastPerfSampleCount = 0;
   int lastPerfSpeculativeDraftTokens = 0;
@@ -9351,6 +9368,7 @@ class _LlamaContextWrapper {
     lastPerfSpeculativeDraftMs = 0;
     lastPerfSpeculativeVerifyMs = 0;
     lastPerfPromptEvalTokens = 0;
+    lastPerfCachedPromptTokens = 0;
     lastPerfEvalTokens = 0;
     lastPerfSampleCount = 0;
     lastPerfSpeculativeDraftTokens = 0;

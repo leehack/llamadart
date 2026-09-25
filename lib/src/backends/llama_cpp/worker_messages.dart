@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
@@ -856,8 +857,11 @@ class DoneResponse {
   /// The token limit that ended a generation, or null when none did.
   final BackendGenerationLimit? generationLimit;
 
+  /// The usage of a finished generation, or null for other operations.
+  final LlamaGenerationUsage? generationUsage;
+
   /// Creates a new [DoneResponse].
-  DoneResponse({this.generationLimit});
+  DoneResponse({this.generationLimit, this.generationUsage});
 }
 
 /// Handshake message sent from main to worker.

@@ -15,6 +15,7 @@ import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/generation_usage.dart';
 import 'worker.dart';
 
 /// Worker entry point used by [NativeLlamaBackend].
@@ -36,6 +37,7 @@ class NativeLlamaBackend
         BackendDecision,
         BackendVideoRuntimeSupport,
         BackendGenerationLimitReporting,
+        BackendGenerationUsageReporting,
         BackendDartLogLevel {
   Isolate? _isolate;
   SendPort? _sendPort;
@@ -56,6 +58,8 @@ class NativeLlamaBackend
   _NativeCancelFlag? _textToSpeechCancelFlag;
   final Expando<BackendGenerationLimit> _generationLimits =
       Expando<BackendGenerationLimit>();
+  final Expando<LlamaGenerationUsage> _generationUsages =
+      Expando<LlamaGenerationUsage>();
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -532,6 +536,10 @@ class NativeLlamaBackend
         if (limit != null && !detached) {
           _generationLimits[stream] = limit;
         }
+        final usage = msg.generationUsage;
+        if (usage != null) {
+          _generationUsages[stream] = usage;
+        }
         detachAndClose();
         freeToken();
         _startQueuedGeneration();
@@ -557,6 +565,10 @@ class NativeLlamaBackend
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       _generationLimits[generation];
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
+      _generationUsages[generation];
 
   @override
   Future<List<int>> tokenize(

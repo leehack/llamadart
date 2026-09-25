@@ -2664,6 +2664,21 @@ void main() {
       expect(await generate(longerPrompt), uncancelled);
     });
 
+    test('a cancel raised before prompt evaluation reports only the reused '
+        'prefix as prompt tokens', () async {
+      await generate(prompt);
+      final reused = cachedPromptTokens()!.length;
+      cancelFlag.value = 1;
+
+      expect(await generate(longerPrompt), isEmpty);
+      expect(reused, greaterThan(200));
+      expect(service.lastGenerationTokenCounts(contextHandle), (
+        promptTokens: reused,
+        cachedPromptTokens: reused,
+        completionTokens: 0,
+      ));
+    });
+
     test('a cancel raised before prompt evaluation of a repeated prompt '
         'caches no tokens', () async {
       final uncancelled = await generate(prompt);

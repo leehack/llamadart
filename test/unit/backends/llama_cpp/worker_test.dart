@@ -450,6 +450,64 @@ void main() {
       );
     }
 
+    test('sends no generation usage for an unknown context', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        _LimitedGenerationLlamaCppService(null),
+      );
+
+      try {
+        final done = await _generateUntilDone(
+          worker.sendPort,
+          (sendPort) => GenerateRequest(
+            1,
+            'hello',
+            const GenerationParams(),
+            0,
+            sendPort,
+          ),
+        );
+
+        expect(done.generationUsage, isNull);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test(
+      'sends generation usage timed from the first non-empty chunk',
+      () async {
+        const firstTextDelay = Duration(milliseconds: 50);
+        final worker = await _startWorkerInCurrentIsolate(
+          _UsageReportingLlamaCppService(firstTextDelay),
+        );
+
+        try {
+          final done = await _generateUntilDone(
+            worker.sendPort,
+            (sendPort) => GenerateRequest(
+              7,
+              'hello',
+              const GenerationParams(),
+              0,
+              sendPort,
+            ),
+          );
+
+          final usage = done.generationUsage!;
+          expect(usage.promptTokens, 11);
+          expect(usage.cachedPromptTokens, 4);
+          expect(usage.completionTokens, 2);
+          expect(
+            usage.timeToFirstToken,
+            greaterThanOrEqualTo(firstTextDelay ~/ 2),
+          );
+          expect(usage.duration, greaterThanOrEqualTo(usage.timeToFirstToken!));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
     test('routes text-to-speech progress, result, and cancellation', () async {
       final service = _BlockingTextToSpeechService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -752,6 +810,20 @@ Future<dynamic> _sendRequest(
   return response;
 }
 
+Future<DoneResponse> _generateUntilDone(
+  SendPort workerSendPort,
+  GenerateRequest Function(SendPort sendPort) buildRequest,
+) async {
+  final responsePort = ReceivePort();
+  workerSendPort.send(buildRequest(responsePort.sendPort));
+  try {
+    return await responsePort.firstWhere((response) => response is DoneResponse)
+        as DoneResponse;
+  } finally {
+    responsePort.close();
+  }
+}
+
 Future<void> _disposeWorker(
   ({Isolate? isolate, SendPort sendPort}) worker,
 ) async {
@@ -983,6 +1055,42 @@ class _ThrowingTextToSpeechService extends LlamaCppService {
   }) async {
     throw exception;
   }
+
+  @override
+  void dispose() {}
+}
+
+class _UsageReportingLlamaCppService extends LlamaCppService {
+  _UsageReportingLlamaCppService(this.firstTextDelay);
+
+  final Duration firstTextDelay;
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) async* {
+    yield const <int>[];
+    await Future<void>.delayed(firstTextDelay);
+    yield <int>[104];
+    yield <int>[105];
+  }
+
+  @override
+  ({int promptTokens, int cachedPromptTokens, int completionTokens})?
+  lastGenerationTokenCounts(int contextHandle) => contextHandle == 7
+      ? (promptTokens: 11, cachedPromptTokens: 4, completionTokens: 2)
+      : null;
 
   @override
   void dispose() {}

@@ -18,6 +18,7 @@ import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
+import '../models/inference/generation_usage.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/model_load_options.dart';
@@ -649,6 +650,11 @@ class LlamaEngine {
   /// at [GenerationParams.maxTokens] or a full context before the model ended
   /// its output, and `stop` in every other case, including backends that do
   /// not report a token limit.
+  ///
+  /// The final chunk's `usage` holds the request's token counts and timings
+  /// on the native llama.cpp backend. It is null on other backends and
+  /// whenever the backend reports none, as for a request cancelled before it
+  /// reached the backend.
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
@@ -703,6 +709,8 @@ class LlamaEngine {
       // all other backends keep the rendered prompt path.
       BackendGenerationLimit? generationLimit;
       void recordLimit(BackendGenerationLimit limit) => generationLimit = limit;
+      LlamaGenerationUsage? generationUsage;
+      void recordUsage(LlamaGenerationUsage usage) => generationUsage = usage;
 
       final tokenStream = plan.usesNativeChatGeneration
           ? _generateNativeChat(
@@ -718,6 +726,7 @@ class LlamaEngine {
               targetLangCode: targetLangCode,
               templateNow: templateNow,
               onLimit: recordLimit,
+              onUsage: recordUsage,
               request: request,
             )
           : _generate(
@@ -725,6 +734,7 @@ class LlamaEngine {
               params: plan.generationParams,
               parts: plan.mediaParts,
               onLimit: recordLimit,
+              onUsage: recordUsage,
               request: request,
             );
 
@@ -738,6 +748,7 @@ class LlamaEngine {
         completionId: completionId,
         tools: effectiveTools,
         stoppedAtLimit: () => generationLimit != null,
+        usage: () => generationUsage,
       ).map((chunk) {
         final limit = generationLimit;
         if (limit != null &&
@@ -883,6 +894,7 @@ class LlamaEngine {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(LlamaGenerationUsage usage)? onUsage,
     required GenerationRequest request,
   }) async* {
     _ensureReady();
@@ -904,7 +916,7 @@ class LlamaEngine {
       )) {
         yield token;
       }
-      _reportGenerationLimit(stream, onLimit);
+      _reportGenerationOutcome(stream, onLimit, onUsage);
     } catch (error, stackTrace) {
       // Wrap raw backend failures so callers catching LlamaException (the
       // documented error contract) don't see unexpected error types escape,
@@ -929,6 +941,7 @@ class LlamaEngine {
     String? targetLangCode,
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(LlamaGenerationUsage usage)? onUsage,
     required GenerationRequest request,
   }) async* {
     _ensureReady();
@@ -956,7 +969,7 @@ class LlamaEngine {
       )) {
         yield token;
       }
-      _reportGenerationLimit(stream, onLimit);
+      _reportGenerationOutcome(stream, onLimit, onUsage);
     } catch (error, stackTrace) {
       Error.throwWithStackTrace(
         _generationFailure('Native chat generation', error),
@@ -1012,21 +1025,25 @@ class LlamaEngine {
     return text.stream;
   }
 
-  void _reportGenerationLimit(
+  void _reportGenerationOutcome(
     Stream<List<int>> generation,
     void Function(BackendGenerationLimit limit)? onLimit,
+    void Function(LlamaGenerationUsage usage)? onUsage,
   ) {
-    if (onLimit == null) {
-      return;
-    }
     final reporting = backend;
-    if (reporting is! BackendGenerationLimitReporting) {
-      return;
+    if (onLimit != null && reporting is BackendGenerationLimitReporting) {
+      final limit = (reporting as BackendGenerationLimitReporting)
+          .generationLimitOf(generation);
+      if (limit != null) {
+        onLimit(limit);
+      }
     }
-    final limit = (reporting as BackendGenerationLimitReporting)
-        .generationLimitOf(generation);
-    if (limit != null) {
-      onLimit(limit);
+    if (onUsage != null && reporting is BackendGenerationUsageReporting) {
+      final usage = (reporting as BackendGenerationUsageReporting)
+          .generationUsageOf(generation);
+      if (usage != null) {
+        onUsage(usage);
+      }
     }
   }
 
