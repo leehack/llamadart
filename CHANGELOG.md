@@ -31,6 +31,10 @@
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render every result of a tool message holding several
+  `LlamaToolResultContent` parts, as one `tool` message per result like
+  llama.cpp, instead of only the first; `LlamaChatMessage.toJson` lists them
+  all ([#683](https://github.com/leehack/llamadart/issues/683)).
 - Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
   GGUF models can read tool output
   ([#669](https://github.com/leehack/llamadart/issues/669)).
