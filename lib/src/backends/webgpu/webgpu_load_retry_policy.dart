@@ -33,11 +33,13 @@ bool isBigIntInteropErrorText(String loweredErrorText) {
 }
 
 /// Whether [loweredErrorText] carries 'thread constructor failed' or
-/// 'error 138'.
+/// 'error 138' not followed by another digit.
 bool isThreadConstructorFailureText(String loweredErrorText) {
   return loweredErrorText.contains('thread constructor failed') ||
-      loweredErrorText.contains('error 138');
+      loweredErrorText.contains(_error138);
 }
+
+final RegExp _error138 = RegExp(r'error 138(?!\d)');
 
 /// Whether [runtimeNotes] carries 'model_response_nostream',
 /// 'model_fs_write_bigint_error', 'model_fs_write_abort',

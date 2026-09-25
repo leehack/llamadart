@@ -11,9 +11,41 @@ import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart'
-    show Blob, BlobPropertyBag, HTMLBaseElement, URL, document;
+    show Blob, BlobPropertyBag, HTMLBaseElement, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
+
+@JS('Error')
+external JSObject _jsError(String message);
+
+const _credentialFreeUrls = <(String, String)>[
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin?v=1',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin?v=2',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin'
+        '?revision=main',
+    'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/h.bin',
+  ),
+  (
+    'https://acct.blob.core.windows.net/heads/h.bin?sv=2022-11-02&ss=b'
+        '&srt=o&sp=r&se=2030-01-01T00%3A00%3A00Z'
+        '&sig=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789%3D',
+    'https://acct.blob.core.windows.net/heads/h.bin',
+  ),
+  ('https://example.com/h.bin?download', 'https://example.com/h.bin'),
+  (
+    'https://example.com:8080/h.bin?port=8080',
+    'https://example.com:8080/h.bin',
+  ),
+  ('http://127.0.0.1:9/h.bin?t=1', 'http://127.0.0.1:9/h.bin'),
+  ('https://[::1]:8443/h.bin?x=1', 'https://[::1]:8443/h.bin'),
+];
 
 void main() {
   late FakeDecisionBridge fake;
@@ -381,6 +413,366 @@ void main() {
           'https://[cdn/head',
         ),
       );
+      fake.loadError =
+          'Failed to fetch decision head /heads/laya-head.safetensors'
+          '?token=abc#frag (404)';
+      await expectLater(
+        heads.load(fake.bridge, 'laya-head.safetensors'),
+        redacted(
+          'Failed to fetch decision head /heads/laya-head.safetensors (404)',
+        ),
+      );
+    });
+
+    test('keeps source URL secrets out of real Chrome fetch errors', () async {
+      fake.bridge.setProperty(
+        'loadDecisionHead'.toJS,
+        ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+      );
+      const credentials = 'includes credentials';
+      const unparsable = 'Failed to parse URL from';
+      for (final (url, phrase, redacted, secrets) in const [
+        (
+          'https://u:SEK"RIT@example.com/h.bin',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT'],
+        ),
+        (
+          'https://u:SEKRIT/w@example.com/h.bin',
+          unparsable,
+          'https://example.com/h.bin',
+          <String>['SEKRIT', '/w@'],
+        ),
+        (
+          '//u:SEKRIT/w@example.com/h.bin',
+          unparsable,
+          '//example.com/h.bin',
+          <String>['SEKRIT', '/w@'],
+        ),
+        (
+          'https://u:SEK RIT/w@example.com/h.bin',
+          unparsable,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT', '/w@'],
+        ),
+        (
+          'https://u:SEK RIT@example.com/h.bin?sig=Q9',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['SEK', 'RIT', 'Q9'],
+        ),
+        (
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ij\u00fcS6kl@example.com/h.bin',
+          credentials,
+          'credentials: https://',
+          <String>['S1ab', 'S2cd', 's2cd', 'S3ef', 'S4gh', 'S5ij', 'S6kl'],
+        ),
+        (
+          'https://u:P7@example.com/h.bin?token=abc@SEKsecret',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['P7', 'abc', 'SEKsecret', 'seksecret'],
+        ),
+        (
+          'https://u:P7@example.com/h.bin#frag@SEKsecret',
+          credentials,
+          'https://example.com/h.bin',
+          <String>['P7', 'frag', 'SEKsecret', 'seksecret'],
+        ),
+        (
+          'https://u:P7@example.com/path@SEKpath/h.bin',
+          credentials,
+          'https://example.com/path@SEKpath/h.bin',
+          <String>['P7', 'sekpath'],
+        ),
+      ]) {
+        final leaksNoSecret = allOf(<Matcher>[
+          contains(phrase),
+          contains(redacted),
+          isNot(contains('u:')),
+          isNot(contains('\u00fc')),
+          isNot(contains('%C3%BC')),
+          isNot(contains('%40')),
+          for (final secret in secrets) isNot(contains(secret)),
+        ]);
+        await expectLater(
+          heads.load(fake.bridge, url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '$error',
+              'toString',
+              leaksNoSecret,
+            ),
+          ),
+          reason: 'head $url',
+        );
+        await expectLater(
+          heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '$error',
+              'toString',
+              leaksNoSecret,
+            ),
+          ),
+          reason: 'config $url',
+        );
+      }
+    });
+
+    test(
+      'shows the host of source URLs with @ in the query, fragment or path',
+      () async {
+        fake.bridge.setProperty(
+          'loadDecisionHead'.toJS,
+          ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+        );
+        for (final (url, display) in const [
+          (
+            'http://127.0.0.1:9/h.bin?token=abc@SEKsecret',
+            'http://127.0.0.1:9/h.bin',
+          ),
+          (
+            'http://127.0.0.1:9/h.bin#frag@SEKsecret',
+            'http://127.0.0.1:9/h.bin',
+          ),
+          (
+            'http://127.0.0.1:9/path@SEKpath/h.bin',
+            'http://127.0.0.1:9/path@SEKpath/h.bin',
+          ),
+        ]) {
+          final leaksNoSecret = allOf(<Matcher>[
+            isNot(contains('abc')),
+            isNot(contains('frag')),
+            isNot(contains('SEKsecret')),
+            isNot(contains('seksecret')),
+            isNot(contains('sekpath')),
+          ]);
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having((error) => error.details, 'details', display)
+                  .having((error) => '$error', 'toString', leaksNoSecret),
+            ),
+            reason: 'head $url',
+          );
+          await expectLater(
+            heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    'Cannot read the decision head config at $display.',
+                  )
+                  .having((error) => '$error', 'toString', leaksNoSecret),
+            ),
+            reason: 'config $url',
+          );
+        }
+      },
+    );
+
+    test(
+      'classifies bridge errors before removing source URL secrets',
+      () async {
+        fake.loadError = 'No model loaded. Call loadModelFromUrl first.';
+        await expectLater(
+          heads.load(fake.bridge, 'https://u:model@example.com/h.bin?k=loaded'),
+          throwsTyped<LlamaStateException>(
+            'No  loaded. Call loadModelFromUrl first.',
+          ),
+        );
+      },
+    );
+
+    test('keeps messages and hosts of credential-free source URLs', () async {
+      for (final (url, display) in <(String, String)>[
+        ..._credentialFreeUrls,
+        ('/heads/h.bin?token=t', pageUrl('/heads/h.bin')),
+      ]) {
+        for (final message in const [
+          'Failed to fetch decision head: 404 Not Found',
+          'Decision head "max_len" 512 exceeds 256 tokens.',
+          'Decision head v2 has 1 output, not 2.',
+        ]) {
+          fake.loadError = message;
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having((error) => error.message, 'message', message)
+                  .having((error) => error.details, 'details', display),
+            ),
+            reason: '$url: $message',
+          );
+        }
+      }
+      fake.loadError = null;
+      fake.bridge.setProperty(
+        'loadDecisionHead'.toJS,
+        ((JSAny? url, JSObject? options) => window.fetch(url!)).toJS,
+      );
+      for (final (url, display, details) in <(String, String, String)>[
+        ('http://127.0.0.1:9/h.bin?t=1', 'http://127.0.0.1:9/h.bin', 'Failed'),
+        ('https://[::1]:8443/h.bin?x=1', 'https://[::1]:8443/h.bin', 'Failed'),
+        ('/heads/h.bin?token=t', pageUrl('/heads/h.bin'), 'HTTP 404'),
+      ]) {
+        if (!details.startsWith('HTTP')) {
+          await expectLater(
+            heads.load(fake.bridge, url),
+            throwsA(
+              isA<LlamaModelException>()
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    'Failed to fetch',
+                  )
+                  .having((error) => error.details, 'details', display),
+            ),
+            reason: 'head $url',
+          );
+        }
+        await expectLater(
+          heads.load(fake.bridge, 'laya-head.safetensors', configUrl: url),
+          throwsA(
+            isA<LlamaModelException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  'Cannot read the decision head config at $display.',
+                )
+                .having(
+                  (error) => '${error.details}',
+                  'details',
+                  details.startsWith('HTTP')
+                      ? startsWith(details)
+                      : 'Failed to fetch',
+                ),
+          ),
+          reason: 'config $url',
+        );
+      }
+    });
+
+    test('removes the secrets of source URLs wherever they occur', () {
+      for (final (source, message, expected) in const [
+        (
+          'https://u:SEKRIT/w@example.com/m.gguf#F6fragment',
+          'Bad password SEKRIT/w for u at F6fragment',
+          'Bad password  for u at ',
+        ),
+        (
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ijüS6kl@example.com/m.gguf',
+          'Bad password S1ab@S2cd#S3ef@S4gh?S5ijüS6kl (encoded '
+              'S1ab%40S2cd%23S3ef%2540S4gh%3FS5ij%C3%BCS6kl)',
+          'Bad password  (encoded )',
+        ),
+        (
+          'https://u:example@example.com/h.bin',
+          'Failed to fetch https://u:example@example.com/h.bin',
+          'Failed to fetch https://',
+        ),
+        (
+          'https://example.com/h.bin?token=t&v=1&sig=Q9signature',
+          'Fetch /h.bin?token=t&v=1&sig=Q9signature: token=t, max_len 512, '
+              'v=1 of 1, signature Q9signature',
+          'Fetch /h.bin: , max_len 512,  of 1, signature ',
+        ),
+        (
+          'https://example.com/m.gguf?sig=Q9signature&token=T8tokenvalue'
+              '#F7fragment',
+          'Signature Q9signature, token T8tokenvalue and fragment F7fragment '
+              'expired',
+          'Signature , token  and fragment  expired',
+        ),
+        (
+          'https://example.com/h.bin?v=1',
+          'Built with dev=10 and v=12.',
+          'Built with dev=10 and v=12.',
+        ),
+        (
+          'https://example.com/h.bin?download#k1',
+          'GET h?download failed at node#k1, not #k1',
+          'GET h failed at node, not #k1',
+        ),
+        (
+          'https://u:SEK"RIT@example.com/m.gguf',
+          r'{"password":"SEK\"RIT"}',
+          '{"password":""}',
+        ),
+      ]) {
+        expect(
+          webGpuBridgeErrorText(_jsError(message), sourceUrls: [source]),
+          expected,
+          reason: message,
+        );
+      }
+    });
+
+    test('redacts relative and quote-delimited URLs in bridge errors', () {
+      const cases = <String, String>{
+        'Failed to fetch /relative/mmproj.gguf?token=S7':
+            'Failed to fetch /relative/mmproj.gguf',
+        'Failed to fetch mmproj.gguf#sig=S8 (404 Not Found)':
+            'Failed to fetch mmproj.gguf (404 Not Found)',
+        'Bad URL "https://cdn.example.com/p.gguf?token=S5"tail=S6 end':
+            'Bad URL "https://cdn.example.com/p.gguf end',
+        'Bad URL "https://u:S9@cdn.example.com/p.gguf?token=S10" end':
+            'Bad URL "https://cdn.example.com/p.gguf" end',
+        "Bad URL '/p.gguf?token=S11'.": "Bad URL '/p.gguf'.",
+        'Is a model loaded? Load one first.':
+            'Is a model loaded? Load one first.',
+        'URL includes credentials: //u:S13@example.com/m.gguf?t=Q1':
+            'URL includes credentials: //example.com/m.gguf',
+        'Bad URL (u:S15@cdn.example.com:8080/m.gguf#k=Q3)':
+            'Bad URL (cdn.example.com:8080/m.gguf)',
+        'Bad URL ./m.gguf?t=Q4 and ../m.gguf#t=Q5':
+            'Bad URL ./m.gguf and ../m.gguf',
+        'Bad URL mmproj?token=S16': 'Bad URL mmproj',
+        'Bad URL u@cdn.example.com/m.gguf?t=Q6':
+            'Bad URL cdn.example.com/m.gguf',
+        'Bad URL a@b.example.com?k=Q7': 'Bad URL b.example.com',
+        'Bad URL <//u@example.com/m.gguf>': 'Bad URL <//example.com/m.gguf>',
+        'Bad URL https://u:SEK"RIT@example.com/m.gguf':
+            'Bad URL https://example.com/m.gguf',
+        'Bad URL //u:SEKRIT/w@example.com/m.gguf?t=Q8':
+            'Bad URL //example.com/m.gguf',
+        'Bad URL x=https://u:p/w@example.com/m.gguf':
+            'Bad URL x=https://example.com/m.gguf',
+        'Bad URL https://example.com/h.bin?token=abc@SEKsecret':
+            'Bad URL https://example.com/h.bin',
+        'Bad URL https://example.com/h.bin#frag@SEKsecret':
+            'Bad URL https://example.com/h.bin',
+        'Bad URL https://u:p@[Q@example.com/m.gguf':
+            'Bad URL https://example.com/m.gguf',
+        'Bad URL https://example.com/path@SEKpath/h.bin':
+            'Bad URL https://example.com/path@SEKpath/h.bin',
+        'Bad URL https://u:p@example.com/h.bin?e=a@b.example':
+            'Bad URL https://example.com/h.bin',
+      };
+      for (final MapEntry(key: message, value: expected) in cases.entries) {
+        expect(
+          webGpuBridgeErrorText(_jsError(message)),
+          expected,
+          reason: message,
+        );
+      }
+    });
+
+    test('leaves text that is not a URL unchanged in bridge errors', () {
+      for (final message in const [
+        "Expected '?' after the key.",
+        'Only C# and F#? are supported.',
+        'See issue#43 for details.',
+        'Loaded what?! Twice?',
+        'Contact admin@example.com or user:name at 10:30.',
+        'Decision sequence 0 has 4 markers for its 3 tokens.',
+      ]) {
+        expect(webGpuBridgeErrorText(_jsError(message)), message);
+      }
     });
 
     test('names configPath in bridge config errors', () async {
