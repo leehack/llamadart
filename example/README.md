@@ -143,12 +143,13 @@ Web needs the WebGPU bridge assets and cross-origin isolation headers; see
 [`laya_tetris/README.md`](laya_tetris/README.md#web).
 
 ### 7. Laya Command Bar (`laya_command_bar/`)
-A Flutter app (macOS, iOS, Android) with one text field that reshapes as you
-type, read by one of three switchable readers:
+A Flutter app (macOS, iOS, Android, Web) with one text field that reshapes as
+you type, read by one of four switchable readers:
 
 - A Laya `choice` question through `DecisionEngine`, EmbeddingGemma nearest
-  labelled examples, or a small LLM's next-token scores through
-  `LlamaEngine.scoreNextToken`
+  labelled examples, or two small LLMs' next-token scores through
+  `LlamaEngine.scoreNextToken`: Qwen2.5 with examples, and the decision
+  model decider-2b
 - At most one read running, with the latest text read next
 - A confidence gate that changes the bar only when the reader is sure, and
   keeps it steady between keystrokes
@@ -164,6 +165,9 @@ cd laya_command_bar
 flutter pub get
 flutter run -d macos
 ```
+
+Web needs the WebGPU bridge assets and cross-origin isolation headers; see
+[`laya_command_bar/README.md`](laya_command_bar/README.md#web).
 
 ## Testing
 

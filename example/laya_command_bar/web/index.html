@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A command bar that reshapes itself as a Laya decision model reads what you type, through llamadart.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Laya Command Bar">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Laya Command Bar</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <!--
+    Loads the llama.cpp WebGPU bridge from webgpu_bridge/, which
+    scripts/fetch_webgpu_bridge_assets.sh fills, before llamadart looks for it.
+  -->
+  <script type="module">
+    let resolveReady, rejectReady;
+    window.__llamadartBridgeReady = false;
+    window.__llamadartBridgeReadyPromise = new Promise((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
+    });
+    window.__llamadartBridgeReadyPromise.catch(() => {});
+    const cores = Math.trunc(Number(navigator.hardwareConcurrency)) || 2;
+    window.__llamadartBridgeThreadPoolSize = window.crossOriginIsolated
+      ? Math.max(2, Math.min(4, cores))
+      : 1;
+    try {
+      const dir = new URL('webgpu_bridge/', document.baseURI);
+      const response = await fetch(new URL('manifest.json', dir), {
+        cache: 'no-cache',
+      });
+      if (!response.ok) {
+        throw new Error(`webgpu_bridge/manifest.json: HTTP ${response.status}`);
+      }
+      const { bridge_assets_tag: tag } = await response.json();
+      const asset = (name) => {
+        const url = new URL(name, dir);
+        url.searchParams.set('v', tag);
+        return url.href;
+      };
+      const mod = await import(asset('llama_webgpu_bridge.js'));
+      if (!mod.LlamaWebGpuBridge) {
+        throw new Error('The bridge module has no LlamaWebGpuBridge export.');
+      }
+      Object.assign(window, {
+        __llamadartBridgeCoreModuleUrl: asset('llama_webgpu_core.js'),
+        __llamadartBridgeCoreModuleUrlMem64: asset('llama_webgpu_core_mem64.js'),
+        __llamadartBridgeWasmUrl: asset('llama_webgpu_core.wasm'),
+        __llamadartBridgeWasmUrlMem64: asset('llama_webgpu_core_mem64.wasm'),
+        __llamadartBridgeWorkerUrl:
+          typeof mod.enableBridgeWorkerHost === 'function'
+            ? asset('llama_webgpu_bridge_worker.js')
+            : null,
+        LlamaWebGpuBridge: mod.LlamaWebGpuBridge,
+        __llamadartBridgeReady: true,
+      });
+      resolveReady();
+    } catch (error) {
+      window.__llamadartBridgeLoadError = `WebGPU bridge failed to load: ${error}`;
+      rejectReady(error);
+    }
+  </script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

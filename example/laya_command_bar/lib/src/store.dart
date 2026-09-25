@@ -1,51 +1,49 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
-import 'package:path_provider/path_provider.dart';
 
+import 'host.dart';
 import 'intents.dart';
 import 'laya.dart';
 
 /// The app's `laya/` folder: model downloads, the label log, and optionally
-/// a command-tuned head of your own.
+/// a command-tuned head of your own. In a browser there is no folder: the
+/// WebGPU bridge caches the models and the label log lives in
+/// `localStorage`.
 class AppStore {
-  /// Creates a store rooted at [directory].
+  /// Creates a store rooted at [directory], or a browser store when null.
   AppStore(this.directory)
-    : downloads = DefaultModelDownloadManager.appPrivate(
-        cacheDirectory: directory,
-      );
+    : downloads = directory == null
+          ? null
+          : DefaultModelDownloadManager.appPrivate(cacheDirectory: directory);
 
   /// Opens `laya/` in the app's cache directory, or on Android in its
   /// external files directory, where `adb pull` can reach the label log.
-  static Future<AppStore> open() async {
-    final external = Platform.isAndroid
-        ? await getExternalStorageDirectory()
-        : null;
-    final base = external ?? await getApplicationCacheDirectory();
-    final dir = Directory('${base.path}/laya');
-    await dir.create(recursive: true);
-    return AppStore(dir.path);
-  }
+  static Future<AppStore> open() async => AppStore(await openStoreDirectory());
 
-  /// Absolute path of the folder.
-  final String directory;
+  /// Absolute path of the folder, or null in a browser.
+  final String? directory;
 
-  /// Download manager caching into [directory].
-  final ModelDownloadManager downloads;
+  /// Download manager caching into [directory], or null in a browser, where
+  /// the engine loads models by URL.
+  final ModelDownloadManager? downloads;
 
-  /// A command-tuned head saved here replaces the published one.
-  String get commandHeadPath =>
-      '$directory${Platform.pathSeparator}$commandHeadFile';
+  /// A command-tuned head saved here replaces the published one; null in a
+  /// browser.
+  String? get commandHeadPath =>
+      directory == null ? null : joinPath(directory!, commandHeadFile);
 
   /// The head at [commandHeadPath] when present, else [publishedCommandHead].
-  ModelSource commandHead() => File(commandHeadPath).existsSync()
-      ? ModelSource.path(commandHeadPath)
-      : publishedCommandHead;
+  ModelSource commandHead() {
+    final path = commandHeadPath;
+    return path != null && fileExists(path)
+        ? ModelSource.path(path)
+        : publishedCommandHead;
+  }
 
-  /// The label log in [directory].
+  /// The label log in [directory], or in `localStorage` in a browser.
   LabelLog get labels =>
-      LabelLog('$directory${Platform.pathSeparator}labels.jsonl');
+      LabelLog(joinPath(directory ?? 'laya', 'labels.jsonl'));
 }
 
 /// Appends one JSON object per run command: the text, the intent it ran as,
@@ -56,7 +54,7 @@ class LabelLog {
   /// Creates a log that appends to [path].
   LabelLog(this.path);
 
-  /// File the log appends to.
+  /// File the log appends to, or its `localStorage` key in a browser.
   final String path;
 
   Future<void> _last = Future.value();
@@ -65,10 +63,8 @@ class LabelLog {
   /// not parse are skipped.
   Future<List<(CommandIntent, String)>> corrections() async {
     await _last;
-    final file = File(path);
-    if (!await file.exists()) return [];
     final out = <(CommandIntent, String)>[];
-    for (final line in await file.readAsLines()) {
+    for (final line in await readLines(path)) {
       try {
         final row = jsonDecode(line);
         if (row is! Map || row['source'] != 'picked') continue;
@@ -83,9 +79,6 @@ class LabelLog {
   }
 
   /// Appends [row] after every earlier append.
-  Future<void> add(Map<String, Object?> row) => _last = _last.then(
-    (_) => File(
-      path,
-    ).writeAsString('${jsonEncode(row)}\n', mode: FileMode.append, flush: true),
-  );
+  Future<void> add(Map<String, Object?> row) =>
+      _last = _last.then((_) => appendLine(path, jsonEncode(row)));
 }

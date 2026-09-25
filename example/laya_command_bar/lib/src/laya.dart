@@ -94,15 +94,18 @@ class Laya {
         throw LlamaUnsupportedException(capabilities.unsupportedReason!);
       }
       onStatus?.call('Loading ${head.fileName}', null);
-      final headFile = await engine.modelDownloadManager.ensureModel(
-        head,
-        onProgress: progressOf(head),
-      );
-      onStatus?.call('Loading ${head.fileName}', null);
-      decisions = await DecisionEngine.load(
-        engine,
-        headPath: headFile.filePath,
-      );
+      final url = head.resolvedUri;
+      final String headPath;
+      if (url != null && engine.backend.supportsUrlLoading) {
+        headPath = '$url';
+      } else {
+        headPath = (await engine.modelDownloadManager.ensureModel(
+          head,
+          onProgress: progressOf(head),
+        )).filePath;
+        onStatus?.call('Loading ${head.fileName}', null);
+      }
+      decisions = await DecisionEngine.load(engine, headPath: headPath);
       onStatus?.call('Warming up', null);
       await layaIntentReader(decisions)('remind me to call mom at 7');
       return Laya._(engine, decisions, await engine.getBackendName());

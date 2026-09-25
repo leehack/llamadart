@@ -142,6 +142,8 @@ Future<IntentSource> loadLlmSource({
       promptFor: await render(),
       answerTokens: answerTokens,
     );
+    onStatus?.call('Warming up', null);
+    await reader.read('remind me to call mom at 7');
     return IntentSource(
       reader: reader.read,
       enter: llmEnter,

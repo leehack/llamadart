@@ -37,7 +37,7 @@ void main() {
     expect(publishedCommandHead.kind, ModelSourceKind.huggingFace);
     expect(publishedCommandHead.fileName, commandHeadFile);
 
-    File(store.commandHeadPath).writeAsStringSync('head');
+    File(store.commandHeadPath!).writeAsStringSync('head');
     final local = store.commandHead();
     expect(local.kind, ModelSourceKind.path);
     expect(local.path, store.commandHeadPath);

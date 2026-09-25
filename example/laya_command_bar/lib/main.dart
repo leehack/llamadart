@@ -1,9 +1,11 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'src/decider.dart';
 import 'src/gemma.dart';
+import 'src/host.dart';
 import 'src/laya.dart';
 import 'src/llm.dart';
 import 'src/slots.dart';
@@ -13,7 +15,7 @@ import 'src/ui/command_bar_page.dart';
 
 void main() => runApp(const LayaCommandBarApp());
 
-/// Opens the model folder, then shows the command bar with its three readers.
+/// Opens the model folder, then shows the command bar with its four readers.
 class LayaCommandBarApp extends StatefulWidget {
   /// Creates the app.
   const LayaCommandBarApp({super.key});
@@ -29,25 +31,38 @@ class _LayaCommandBarAppState extends State<LayaCommandBarApp> {
   AppStore? _store;
   List<SourceOption>? _sources;
   String? _error;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onExitRequested: _onExit);
     unawaited(_open());
   }
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     for (final source in _sources ?? const <SourceOption>[]) {
       unawaited(source.dispose());
     }
     super.dispose();
   }
 
+  /// Frees every model before the app exits: llama.cpp's Metal backend
+  /// aborts the process when it exits with GPU buffers still allocated.
+  Future<AppExitResponse> _onExit() async {
+    await Future.wait([
+      for (final source in _sources ?? const <SourceOption>[])
+        source.dispose(),
+    ]);
+    return AppExitResponse.exit;
+  }
+
   Future<void> _open() async {
     try {
       final store = await AppStore.open();
-      final cpu = Platform.isAndroid;
+      final cpu = isAndroid;
       final sources = [
         SourceOption(
           'Laya',
@@ -76,6 +91,15 @@ class _LayaCommandBarAppState extends State<LayaCommandBarApp> {
             downloads: store.downloads,
             cpu: cpu,
             corrections: await store.labels.corrections(),
+            onStatus: onStatus,
+          ),
+        ),
+        SourceOption(
+          'decider',
+          'Decision LLM reading the option letters, 2.0 GB',
+          (onStatus) => loadDeciderSource(
+            downloads: store.downloads,
+            cpu: cpu,
             onStatus: onStatus,
           ),
         ),

@@ -16,8 +16,8 @@ For canonical full release notes, use:
   ([#694](https://github.com/leehack/llamadart/issues/694)).
 - Add `example/laya_command_bar`, a Flutter text field that reshapes into a
   reminder, message, calculation or other command as you type, read by a
-  Laya decision model, by EmbeddingGemma and labelled examples, or by a small
-  LLM's next-token scores.
+  Laya decision model, by EmbeddingGemma and labelled examples, or by small
+  LLMs' next-token scores, including the decision model decider-2b.
 - Count generated tokens with an empty text piece in llama.cpp
   `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
   decoding, as the speculative path already did

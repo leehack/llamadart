@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:laya_command_bar_example/src/decider.dart';
 import 'package:laya_command_bar_example/src/eval_cases.dart';
 import 'package:laya_command_bar_example/src/gemma.dart';
 import 'package:laya_command_bar_example/src/intent_gate.dart';
@@ -14,7 +15,7 @@ Future<void> main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption(
       'reader',
-      allowed: ['laya', 'embedding', 'llm'],
+      allowed: ['laya', 'embedding', 'llm', 'decider'],
       defaultsTo: 'laya',
       help: 'Which source reads the intent.',
     )
@@ -22,6 +23,7 @@ Future<void> main(List<String> arguments) async {
     ..addOption('head', help: 'Laya head safetensors path.')
     ..addOption('embedding-model', help: 'EmbeddingGemma GGUF path.')
     ..addOption('llm-model', help: 'Instruction-tuned LLM GGUF path.')
+    ..addOption('decider-model', help: 'decider GGUF path.')
     ..addOption('enter', help: 'Gate; defaults to the source default.')
     ..addFlag('cpu', help: 'Run on the CPU.', negatable: false)
     ..addFlag('verbose', abbr: 'v', help: 'Print every case.', negatable: false)
@@ -66,6 +68,13 @@ Future<void> main(List<String> arguments) async {
       label: '${laya.backendName} · ${laya.deviceName}',
       minWords: layaMinWords,
       dispose: laya.dispose,
+    );
+  } else if (args.option('reader') == 'decider') {
+    final model = required('decider-model');
+    if (model == null) return;
+    source = await loadDeciderSource(
+      model: ModelSource.path(model),
+      cpu: args.flag('cpu'),
     );
   } else if (args.option('reader') == 'llm') {
     final model = required('llm-model');
