@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dinja/dinja.dart';
 
 import '../../grammar/json_schema_converter.dart';
@@ -32,6 +34,10 @@ class Gemma4Handler extends ChatTemplateHandler
   static const String _channelStart = '<|channel>';
   static const String _channelEnd = '<channel|>';
   static const List<String> _customQuoteTokens = <String>['<|\\"|>', '<|"|>'];
+  // Present in Gemma 4 templates that read OpenAI-style `role: tool`
+  // messages; llama.cpp only embeds `tool_responses` for templates without it.
+  static const String _openAiToolMessagesMarker =
+      '{#- OpenAI Chat Completions:';
   static const Set<String> _invalidToolNames = <String>{
     'func_name',
     'function_name',
@@ -49,6 +55,12 @@ class Gemma4Handler extends ChatTemplateHandler
 
   @override
   List<String> get additionalStops => const [_turnEnd, _toolCallEnd];
+
+  // llama.cpp detects `supports_object_arguments` for Gemma 4 templates and
+  // parses string tool-call arguments into objects before rendering.
+  @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.normalizeOnly;
 
   @override
   List<String> getStops({bool hasTools = false, bool enableThinking = true}) {
@@ -110,6 +122,7 @@ class Gemma4Handler extends ChatTemplateHandler
       metadata: metadata,
       context: {
         'messages': _serializeMessages(
+          templateSource,
           messages,
           multimodalContent: multimodalContent,
         ),
@@ -150,63 +163,120 @@ class Gemma4Handler extends ChatTemplateHandler
   }
 
   List<Map<String, dynamic>> _serializeMessages(
+    String templateSource,
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
   }) {
-    return messages
-        .map((message) {
-          if (message.role == LlamaChatRole.tool) {
-            return _serializeToolMessage(message);
-          }
-
-          return multimodalContent
-              ? message.toJsonMultimodal()
-              : message.toJson();
-        })
-        .toList(growable: false);
+    final rendered = templateMessages([
+      for (final message in messages) ..._splitToolResults(message),
+    ], multimodal: multimodalContent);
+    return templateSource.contains(_openAiToolMessagesMarker)
+        ? rendered
+        : _embedToolResponses(rendered);
   }
 
-  Map<String, dynamic> _serializeToolMessage(LlamaChatMessage message) {
-    final toolResults = message.parts
-        .whereType<LlamaToolResultContent>()
-        .toList();
-    if (toolResults.isEmpty) {
-      return message.toJson();
+  /// Splits a tool message holding several results into one OpenAI-style
+  /// tool message per result.
+  static Iterable<LlamaChatMessage> _splitToolResults(
+    LlamaChatMessage message,
+  ) {
+    final results = message.parts.whereType<LlamaToolResultContent>().toList();
+    if (message.role != LlamaChatRole.tool || results.length < 2) {
+      return [message];
     }
-
-    return {
-      'role': 'tool',
-      'content': null,
-      'tool_responses': toolResults
-          .map(
-            (result) => {
-              'name': result.name,
-              'response': _normalizeToolResponse(result.result),
-            },
-          )
-          .toList(growable: false),
-    };
+    return results.map(
+      (result) => LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [result],
+      ),
+    );
   }
 
-  Map<String, dynamic> _normalizeToolResponse(Object? result) {
-    if (result == null) {
-      return {'value': null};
-    }
-
-    final map = ToolCallParsingUtils.coerceMap(result);
-    if (map != null) {
-      return map;
-    }
-
-    if (result is String) {
-      final decoded = ToolCallParsingUtils.decodeJsonObject(result);
-      if (decoded != null) {
-        return decoded;
+  /// Port of llama.cpp `workaround::convert_tool_responses_gemma4`, applied to
+  /// Gemma 4 templates that predate OpenAI-style tool messages. It folds an
+  /// assistant tool-call message, the tool messages after it, and a following
+  /// plain assistant reply into one assistant message with `tool_responses`.
+  static List<Map<String, dynamic>> _embedToolResponses(
+    List<Map<String, dynamic>> messages,
+  ) {
+    final converted = <Map<String, dynamic>>[];
+    var i = 0;
+    while (i < messages.length) {
+      final message = messages[i++];
+      if (message['role'] != 'assistant' || !_hasToolCalls(message)) {
+        converted.add(message);
+        continue;
       }
-      return {'value': result};
-    }
 
-    return {'value': result};
+      final toolCalls = message['tool_calls'] as List;
+      final responses = <Map<String, dynamic>>[];
+      while (i < messages.length && messages[i]['role'] == 'tool') {
+        final tool = messages[i++];
+        var name = '';
+        if (responses.length < toolCalls.length) {
+          final function = ToolCallParsingUtils.coerceMap(
+            ToolCallParsingUtils.coerceMap(
+              toolCalls[responses.length],
+            )?['function'],
+          );
+          name = function?['name'] as String? ?? '';
+        }
+        if (name.isEmpty) {
+          name = tool['tool_call_id'] as String? ?? '';
+        }
+        responses.add({'name': name, 'response': _toolResponse(tool)});
+      }
+
+      Object? content;
+      if (i < messages.length && messages[i]['role'] == 'assistant') {
+        final next = messages[i];
+        if (!_hasToolCalls(next) && _hasContent(next)) {
+          content = next['content'];
+          i++;
+        }
+      }
+
+      final reasoning = message['reasoning_content'];
+      converted.add({
+        'role': 'assistant',
+        'tool_calls': toolCalls,
+        if (responses.isNotEmpty) 'tool_responses': responses,
+        'content': ?content,
+        if (reasoning is String) 'reasoning_content': reasoning,
+      });
+    }
+    return converted;
+  }
+
+  /// A JSON result is decoded; any other text stays a string.
+  static Object? _toolResponse(Map<String, dynamic> tool) {
+    var content = tool['content'];
+    if (content is List) {
+      content = content
+          .whereType<Map>()
+          .where((part) => part['type'] == 'text')
+          .map((part) => part['text'] as String? ?? '')
+          .join();
+    }
+    if (content is! String) {
+      return content;
+    }
+    try {
+      return jsonDecode(content);
+    } on FormatException {
+      return content;
+    }
+  }
+
+  static bool _hasToolCalls(Map<String, dynamic> message) {
+    final toolCalls = message['tool_calls'];
+    return toolCalls is List && toolCalls.isNotEmpty;
+  }
+
+  static bool _hasContent(Map<String, dynamic> message) {
+    final content = message['content'];
+    return (content is String && content.isNotEmpty) ||
+        (content is List && content.isNotEmpty);
   }
 
   @override

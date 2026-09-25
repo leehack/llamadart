@@ -26,6 +26,9 @@ For canonical full release notes, use:
 - Cancel an active text-to-speech synthesis on `LlamaEngine.unloadModel()` and
   `dispose()` instead of waiting for it to finish
   ([#628](https://github.com/leehack/llamadart/issues/628)).
+- Cancel an active Qwen3-ASR transcription on `LlamaEngine.unloadModel()` and
+  `dispose()` instead of completing it with the transcript cut at the unload
+  ([#670](https://github.com/leehack/llamadart/issues/670)).
 - Send LiteRT-LM tool calls and tool results in the runtime's own message
   format, so Gemma 4 reads tool output and Qwen3 tool histories no longer
   fail
@@ -35,6 +38,9 @@ For canonical full release notes, use:
   progress`. An overlap with a running generation that was not cancelled now
   throws `LlamaStateException`
   ([#655](https://github.com/leehack/llamadart/issues/655)).
+- Render Gemma 4 tool calls and tool results as llama.cpp does, so Gemma 4
+  GGUF models can read tool output
+  ([#669](https://github.com/leehack/llamadart/issues/669)).
 - Stop a Qwen3-TTS audio decode at its next chunk boundary when native
   text-to-speech is cancelled, instead of finishing the native step in
   progress first. This needs llamadart-native v0.4.1-1 or later; older
