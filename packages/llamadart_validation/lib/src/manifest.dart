@@ -479,8 +479,9 @@ class ValidationProfile {
     }
     if (web && isDecision && backend != 'webgpu') {
       throw LlamaUnsupportedException(
-        'Web decision validation runs only on WebGPU: Q8_0 on the WASM CPU is '
-        'outside the Laya tolerances (doc/decision_engine.md#web-check). Use '
+        'Web decision validation runs only on WebGPU: decision cases on the '
+        'WASM CPU exceed the case deadline '
+        '(doc/cross_platform_validation.md#decision-profiles). Use '
         'decision-gguf-webgpu.',
       );
     }

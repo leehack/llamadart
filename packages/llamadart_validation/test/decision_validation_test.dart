@@ -646,7 +646,7 @@ void main() {
       final profile = _profile(backend)..requireRunnable();
       expect(
         () => profile.requireRunnable(web: true),
-        rejects('decision_engine.md#web-check'),
+        rejects('cross_platform_validation.md#decision-profiles'),
       );
     }
     ValidationProfile.fromJson(
