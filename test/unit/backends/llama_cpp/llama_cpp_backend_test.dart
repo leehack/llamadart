@@ -18,6 +18,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:test/test.dart';
 
@@ -864,6 +865,42 @@ void main() {
       );
       await expectLater(
         backend.decisionHeadFree(-1),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
+
+    test('next-token scoring maps responses and errors', () async {
+      final scores = await backend.scoreNextToken(
+        22,
+        'Answer:',
+        candidates: const [5, 6],
+        topK: 3,
+        reusePromptPrefix: false,
+      );
+      expect(scores.candidates.map((t) => t.token), [5, 6]);
+      expect(scores.candidates.first.logprob, -3);
+      expect(scores.promptTokens, 2);
+      final request = harness.received.whereType<ScoreNextTokenRequest>().last;
+      expect(request.contextHandle, 22);
+
+      await expectLater(
+        backend.scoreNextToken(
+          22,
+          'range',
+          candidates: const [1],
+          topK: 0,
+          reusePromptPrefix: true,
+        ),
+        throwsRangeError,
+      );
+      await expectLater(
+        backend.scoreNextToken(
+          22,
+          'busy',
+          candidates: const [1],
+          topK: 0,
+          reusePromptPrefix: true,
+        ),
         throwsA(isA<LlamaStateException>()),
       );
     });
@@ -1855,6 +1892,36 @@ class _FakeWorkerHarness {
           }
         case TextToSpeechCancelRequest():
           break;
+        case ScoreNextTokenRequest():
+          if (message.prompt == 'range') {
+            message.sendPort.send(
+              ErrorResponse(
+                'RangeError: bad token',
+                kind: WorkerErrorKind.range,
+              ),
+            );
+          } else if (message.prompt == 'busy') {
+            message.sendPort.send(
+              ErrorResponse('generation active', kind: WorkerErrorKind.state),
+            );
+          } else {
+            message.sendPort.send(
+              ScoreNextTokenResponse(
+                LlamaNextTokenScores(
+                  candidates: [
+                    for (final token in message.candidates)
+                      LlamaTokenLogprob(
+                        token: token,
+                        bytes: const [66],
+                        logprob: -message.topK.toDouble(),
+                      ),
+                  ],
+                  top: const [],
+                  promptTokens: message.reusePromptPrefix ? 1 : 2,
+                ),
+              ),
+            );
+          }
         case DecisionCapabilitiesRequest():
           if (message.modelHandle < 0) {
             message.sendPort.send(

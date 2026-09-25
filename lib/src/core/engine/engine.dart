@@ -18,6 +18,7 @@ import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
+import '../models/inference/next_token_scores.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/model_load_options.dart';
@@ -1124,6 +1125,83 @@ class LlamaEngine {
     throw LlamaUnsupportedException(
       'Embeddings are not supported by the active backend.',
     );
+  }
+
+  // ============================================================
+  // NEXT-TOKEN SCORING
+  // ============================================================
+
+  /// Whether the active backend reports [scoreNextToken] support.
+  ///
+  /// Native llama.cpp backends support it. WebGPU and LiteRT-LM backends
+  /// report false, and calls throw [LlamaUnsupportedException].
+  bool get supportsNextTokenScoring {
+    final candidate = backend;
+    if (candidate is BackendNextTokenScoringSupport) {
+      return (candidate as BackendNextTokenScoringSupport)
+          .supportsNextTokenScoring;
+    }
+    return candidate is BackendNextTokenScoring;
+  }
+
+  /// Evaluates [prompt] and returns the log-probabilities of the token that
+  /// would follow it.
+  ///
+  /// The result holds one entry per id in [candidates], in the same order,
+  /// and the [topK] most probable tokens. Values are a softmax over the raw
+  /// logits; sampling settings do not apply. Reading the probabilities of
+  /// answer-letter tokens after a multiple-choice prompt turns an LLM into a
+  /// classifier.
+  ///
+  /// [prompt] is tokenized like a [generate] prompt: special-token text is
+  /// parsed and the model's BOS token is added unless the prompt starts with
+  /// it. Apply the chat template first for an instruction-tuned model. When
+  /// [reusePromptPrefix] is true, a prefix shared with the previous prompt on
+  /// this context is not evaluated again.
+  ///
+  /// Throws [ArgumentError] for an empty [prompt], a negative token id or
+  /// [topK], or when both [candidates] and [topK] ask for nothing;
+  /// [RangeError] for a token id or [topK] beyond the vocabulary;
+  /// [LlamaStateException] while generation runs on the context; and
+  /// [LlamaUnsupportedException] when [supportsNextTokenScoring] is false.
+  Future<LlamaNextTokenScores> scoreNextToken(
+    String prompt, {
+    List<int> candidates = const [],
+    int topK = 0,
+    bool reusePromptPrefix = GenerationParams.defaultReusePromptPrefix,
+  }) async {
+    _ensureReady();
+    if (prompt.isEmpty) {
+      throw ArgumentError.value(prompt, 'prompt', 'must not be empty');
+    }
+    for (final token in candidates) {
+      if (token < 0) {
+        throw ArgumentError.value(token, 'candidates', 'must not be negative');
+      }
+    }
+    if (topK < 0) {
+      throw ArgumentError.value(topK, 'topK', 'must not be negative');
+    }
+    if (candidates.isEmpty && topK == 0) {
+      throw ArgumentError('Pass candidates, a positive topK, or both.');
+    }
+    final candidate = backend;
+    if (!supportsNextTokenScoring) {
+      throw LlamaUnsupportedException(
+        'Next-token scoring is not supported by the active backend.',
+      );
+    }
+    try {
+      return await (candidate as BackendNextTokenScoring).scoreNextToken(
+        _contextHandle!,
+        prompt,
+        candidates: List<int>.of(candidates),
+        topK: topK,
+        reusePromptPrefix: reusePromptPrefix,
+      );
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('Next-token scoring', error);
+    }
   }
 
   // ============================================================

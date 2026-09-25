@@ -40,6 +40,9 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaSpeechException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.speech);
   }
+  if (error is RangeError && error is! IndexError) {
+    return ErrorResponse(error.toString(), kind: WorkerErrorKind.range);
+  }
   // UnimplementedError is an unfinished code path, not a runtime capability
   // limit, so it stays generic. It implements UnsupportedError, so it must be
   // checked first.
@@ -355,6 +358,16 @@ void runLlamaWorkerForTesting(
               normalize: message.normalize,
             );
             message.sendPort.send(EmbedBatchResponse(embeddings));
+
+          case ScoreNextTokenRequest():
+            final scores = service.scoreNextToken(
+              message.contextHandle,
+              message.prompt,
+              candidates: message.candidates,
+              topK: message.topK,
+              reusePromptPrefix: message.reusePromptPrefix,
+            );
+            message.sendPort.send(ScoreNextTokenResponse(scores));
 
           case TokenizeRequest():
             final tokens = service.tokenize(

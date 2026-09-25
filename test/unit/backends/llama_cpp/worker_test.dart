@@ -11,6 +11,7 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -327,6 +328,51 @@ void main() {
             expect((response as ErrorResponse).kind, expectedKind);
             expect(response.message, isNot(contains('LlamaException:')));
           }
+        } finally {
+          await _disposeWorker(worker);
+        }
+      }
+    });
+
+    test('routes next-token scoring requests', () async {
+      final service = _ScoringService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final response = await _sendRequest(
+          worker.sendPort,
+          (sendPort) =>
+              ScoreNextTokenRequest(3, 'Answer:', [4, 7], 2, false, sendPort),
+        );
+
+        final scores = (response as ScoreNextTokenResponse).scores;
+        expect(scores.candidates.map((t) => t.token), [4, 7]);
+        expect(scores.candidates.first.text, 'A');
+        expect(scores.promptTokens, 5);
+        final (handle, prompt, candidates, topK, reuse) = service.calls.single;
+        expect((handle, prompt, topK, reuse), (3, 'Answer:', 2, false));
+        expect(candidates, [4, 7]);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('preserves next-token scoring error categories', () async {
+      final cases = <(Object, WorkerErrorKind)>[
+        (RangeError.range(9, 0, 4, 'candidates'), WorkerErrorKind.range),
+        (LlamaStateException('generation active'), WorkerErrorKind.state),
+        (LlamaUnsupportedException('no decoder'), WorkerErrorKind.unsupported),
+      ];
+      for (final (exception, expectedKind) in cases) {
+        final worker = await _startWorkerInCurrentIsolate(
+          _ScoringService(error: exception),
+        );
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => ScoreNextTokenRequest(1, 'x', [9], 0, true, sendPort),
+          );
+          expect((response as ErrorResponse).kind, expectedKind);
         } finally {
           await _disposeWorker(worker);
         }
@@ -1043,6 +1089,39 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
 
   @override
   void dispose() {}
+}
+
+class _ScoringService extends LlamaCppService {
+  _ScoringService({this.error});
+
+  final Object? error;
+  final List<(int, String, List<int>, int, bool)> calls = [];
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  LlamaNextTokenScores scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) {
+    if (error case final error?) throw error;
+    calls.add((contextHandle, prompt, candidates, topK, reusePromptPrefix));
+    return LlamaNextTokenScores(
+      candidates: [
+        for (final token in candidates)
+          LlamaTokenLogprob(token: token, bytes: const [65], logprob: -0.5),
+      ],
+      top: const [],
+      promptTokens: 5,
+    );
+  }
 }
 
 class _DecisionService extends LlamaCppService {

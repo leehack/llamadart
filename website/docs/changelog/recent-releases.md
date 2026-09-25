@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add `LlamaEngine.scoreNextToken(...)` for next-token log-probabilities on
+  native llama.cpp, matching llama-server `n_probs`; check
+  `supportsNextTokenScoring` first
+  ([#694](https://github.com/leehack/llamadart/issues/694)).
 - Throw `LlamaModelException` when native llama.cpp cannot find or load a
   multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
   the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.

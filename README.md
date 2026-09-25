@@ -27,8 +27,9 @@ models through LiteRT-LM.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
-  multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
-  persistence, and runtime diagnostics where the active backend supports them.
+  multimodal GGUF projectors, structured JSON output, embeddings, next-token
+  log-probabilities, LoRA, state persistence, and runtime diagnostics where the
+  active backend supports them.
 - Experimental typed speech recognition through `SpeechToTextEngine`:
   llama.cpp whole-file Qwen3-ASR (validated up to 30 seconds per input) on
   native and validated WebGPU bridge assets, plus worker-isolated, CPU-only
@@ -196,6 +197,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
 | Answer typed questions with a decision model | [Decision models](https://llamadart.leehack.com/docs/guides/decision-models) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
+| Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores-native-llamacpp) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |

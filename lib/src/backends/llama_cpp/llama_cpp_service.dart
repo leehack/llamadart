@@ -22,6 +22,7 @@ import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
 import 'decision_head.dart';
@@ -4435,6 +4436,161 @@ class LlamaCppService {
       if (rootPtr != nullptr) malloc.free(rootPtr);
       lazyGrammarConfig?.dispose();
     }
+  }
+
+  /// Evaluates [prompt] as [generate] would, then returns the
+  /// log-probabilities of [candidates] and of the [topK] most probable tokens
+  /// at the next position, from a softmax over the raw logits.
+  ///
+  /// Throws [RangeError] for a candidate outside the vocabulary,
+  /// [LlamaStateException] while text generation or text-to-speech is active
+  /// on the context, and [LlamaUnsupportedException] for a model without a
+  /// decoder.
+  LlamaNextTokenScores scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) {
+    var ctx = _contexts[contextHandle];
+    if (ctx == null) throw Exception('Invalid context handle');
+    if (_activeTtsContextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Cannot score tokens while text-to-speech is active on this context.',
+      );
+    }
+    if (_generatingContexts.containsKey(contextHandle)) {
+      throw LlamaStateException(
+        'Cannot score tokens while generation is active on context '
+        '$contextHandle',
+      );
+    }
+    final modelHandle = _contextToModel[contextHandle]!;
+    final model = _models[modelHandle]!;
+    if (!llama_model_has_decoder(model.pointer)) {
+      throw LlamaUnsupportedException(
+        'Next-token scoring needs a model with a decoder; the loaded model '
+        'has none.',
+      );
+    }
+    final vocabSize = model.vocabSize;
+    for (final token in candidates) {
+      RangeError.checkValueInInterval(token, 0, vocabSize - 1, 'candidates');
+    }
+    RangeError.checkValueInInterval(topK, 0, vocabSize, 'topK');
+
+    final vocab = llama_model_get_vocab(model.pointer);
+    final modelParams = _contextParams[contextHandle]!;
+    ctx = _resetContext(contextHandle, ctx, clearMemory: !reusePromptPrefix);
+    final nCtx = llama_n_ctx(ctx.pointer);
+    final tokensPtr = malloc<Int32>(nCtx);
+    final pieceBuf = malloc<Uint8>(256);
+    try {
+      final promptTokens = _ingestTextPrompt(
+        _batches[contextHandle]!,
+        vocab,
+        prompt,
+        tokensPtr,
+        nCtx,
+        ctx,
+        maxBatchTokens: modelParams.n_batch,
+        allowPromptReuse: reusePromptPrefix,
+        speculativeSession: nullptr,
+        speculativeApi: null,
+        speculativeConfig: null,
+      );
+      if (promptTokens == 0) {
+        throw LlamaInferenceException('The prompt tokenized to no tokens.');
+      }
+      _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
+      final logitsPtr = llama_get_logits_ith(ctx.pointer, -1);
+      if (logitsPtr == nullptr) {
+        throw LlamaInferenceException(
+          'Prompt evaluation produced no logits for the last token.',
+        );
+      }
+      final logits = logitsPtr.asTypedList(vocabSize);
+
+      var maxLogit = double.negativeInfinity;
+      for (var i = 0; i < vocabSize; i++) {
+        if (logits[i] > maxLogit) maxLogit = logits[i];
+      }
+      var sum = 0.0;
+      for (var i = 0; i < vocabSize; i++) {
+        sum += math.exp(logits[i] - maxLogit);
+      }
+      final logSum = maxLogit + math.log(sum);
+
+      LlamaTokenLogprob scored(int token) {
+        final n = llama_token_to_piece(
+          vocab,
+          token,
+          pieceBuf.cast(),
+          256,
+          0,
+          true,
+        );
+        return LlamaTokenLogprob(
+          token: token,
+          bytes: n > 0 ? List<int>.of(pieceBuf.asTypedList(n)) : const [],
+          logprob: logits[token] - logSum,
+        );
+      }
+
+      return LlamaNextTokenScores(
+        candidates: [for (final token in candidates) scored(token)],
+        top: [for (final token in _topTokens(logits, topK)) scored(token)],
+        promptTokens: promptTokens,
+      );
+    } finally {
+      malloc.free(tokensPtr);
+      malloc.free(pieceBuf);
+    }
+  }
+
+  /// Ids of the [k] largest [logits], largest first; ties keep the lower id.
+  static List<int> _topTokens(Float32List logits, int k) {
+    if (k == 0) return const [];
+    final heap = <int>[];
+    bool before(int a, int b) =>
+        logits[a] < logits[b] || (logits[a] == logits[b] && a > b);
+    void siftDown(int i) {
+      while (true) {
+        final left = 2 * i + 1, right = left + 1;
+        var smallest = i;
+        if (left < heap.length && before(heap[left], heap[smallest])) {
+          smallest = left;
+        }
+        if (right < heap.length && before(heap[right], heap[smallest])) {
+          smallest = right;
+        }
+        if (smallest == i) return;
+        final t = heap[i];
+        heap[i] = heap[smallest];
+        heap[smallest] = t;
+        i = smallest;
+      }
+    }
+
+    for (var token = 0; token < logits.length; token++) {
+      if (heap.length < k) {
+        heap.add(token);
+        var i = heap.length - 1;
+        while (i > 0) {
+          final parent = (i - 1) ~/ 2;
+          if (!before(heap[i], heap[parent])) break;
+          final t = heap[i];
+          heap[i] = heap[parent];
+          heap[parent] = t;
+          i = parent;
+        }
+      } else if (before(heap[0], token)) {
+        heap[0] = token;
+        siftDown(0);
+      }
+    }
+    return heap..sort((a, b) => before(a, b) ? 1 : (before(b, a) ? -1 : 0));
   }
 
   /// Generates a single embedding vector for [text].

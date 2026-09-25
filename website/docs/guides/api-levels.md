@@ -22,6 +22,8 @@ chat history management.
 - **Template-aware**: Uses model chat templates and parsing behavior automatically.
 - **Tool support**: Works with structured tool-call outputs.
 - **Embedding APIs**: `embed(...)` and `embedBatch(...)` on the same engine.
+- **Next-token scores**: native llama.cpp backends return next-token
+  log-probabilities with `scoreNextToken(...)`.
 - **State persistence**: Supported native llama.cpp backends and WebGPU bridge
   assets `v0.1.15+` can save/restore KV-cache state with
   `stateSaveFile(...)` / `stateLoadFile(...)` for raw-prompt resume workflows.
