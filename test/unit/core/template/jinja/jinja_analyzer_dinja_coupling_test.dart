@@ -7,8 +7,9 @@ import 'package:llamadart/src/core/template/template_caps.dart';
 /// Guards what `jinja_analyzer.dart` assumes of `package:dinja/ast.dart`:
 /// `dinja public AST coupling` fails if `parseTemplate` stops parsing a
 /// representative chat template into a non-empty `Program`, if walking it
-/// stops producing the six node types that group lists, or if
-/// `BinaryExpression.op.value` stops giving the operator text `==`.
+/// stops producing the six node types that group lists, if
+/// `BinaryExpression.op.value` stops giving the operator text `==`, or if
+/// `-n`, `items[]` and `items.0` stop parsing to the node shapes it checks.
 ///
 /// The capability goldens are descriptive of the analyzer's current output,
 /// not a dinja guarantee - a deliberate analyzer change is expected to update
@@ -83,6 +84,31 @@ void main() {
         reason: 'JinjaAnalyzer reads BinaryExpression.op.value',
       );
     });
+
+    test('unary minus, empty subscript and numeric member parse', () {
+      final body = parseTemplate(
+        '{{ -n }}{{ items[] }}{{ items.0 }}',
+      ).body.cast<Expression>();
+
+      expect(
+        body[0],
+        isA<UnaryExpression>()
+            .having((e) => e.op.value, 'op', '-')
+            .having((e) => e.argument, 'argument', isA<Identifier>()),
+      );
+      expect(
+        body[1],
+        isA<MemberExpression>()
+            .having((e) => e.computed, 'computed', isTrue)
+            .having((e) => e.property, 'property', isA<BlankExpression>()),
+      );
+      expect(
+        body[2],
+        isA<MemberExpression>()
+            .having((e) => e.computed, 'computed', isFalse)
+            .having((e) => e.property, 'property', isA<IntegerLiteral>()),
+      );
+    });
   });
 
   group('JinjaAnalyzer capability goldens', () {
@@ -150,6 +176,33 @@ void main() {
         );
       });
     }
+
+    test('a template using unary minus and str.format is probed', () {
+      const source =
+          '{%- set n = 1 -%}'
+          '{%- for message in messages -%}'
+          "{%- if message.role == 'system' and loop.index0 > -n -%}"
+          "{{ '<{}>'.format(message.content) }}"
+          '{%- endif -%}'
+          '{%- for tool_call in message.tool_calls -%}'
+          '{{ tool_call.function.name }}'
+          '{%- endfor -%}'
+          '{%- endfor -%}'
+          '{%- for tool in tools -%}{{ tool.function.name }}{%- endfor -%}';
+
+      final outcome = JinjaAnalyzer.analyzeWithOutcome(source);
+
+      expect(outcome.failed, isFalse);
+      expect(outcome.caps.toMap(), <String, bool>{
+        'supports_system_role': true,
+        'supports_tool_calls': true,
+        'supports_tools': true,
+        'supports_parallel_tool_calls': true,
+        'supports_string_content': true,
+        'supports_typed_content': false,
+        'supports_thinking': false,
+      });
+    });
 
     test('invalid syntax still falls back to the regex result', () {
       const invalid =

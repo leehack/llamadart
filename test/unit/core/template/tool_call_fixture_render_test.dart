@@ -95,7 +95,7 @@ void main() {
       contains(
         'Weather in Paris?<|eot_id|>'
         '<|start_header_id|>assistant<|end_header_id|>\n\n'
-        '{"name": "get_weather", "parameters": {"city":"Paris"}}<|eot_id|>'
+        '{"name": "get_weather", "parameters": {"city": "Paris"}}<|eot_id|>'
         '<|start_header_id|>ipython<|end_header_id|>\n\n'
         '"sunny"<|eot_id|>'
         '<|start_header_id|>assistant<|end_header_id|>\n\n'
@@ -123,9 +123,9 @@ void main() {
     expect(
       result.prompt,
       contains(
-        '[AVAILABLE_TOOLS][{"type":"function","function":'
-        '{"name":"get_weather","description":"Get weather","parameters":'
-        '{"type":"object","properties":{"city":{"type":"string"}}}}}]'
+        '[AVAILABLE_TOOLS][{"type": "function", "function": '
+        '{"name": "get_weather", "description": "Get weather", "parameters": '
+        '{"type": "object", "properties": {"city": {"type": "string"}}}}}]'
         '[/AVAILABLE_TOOLS]'
         '[INST]Weather in Paris?[/INST]'
         '[TOOL_CALLS]get_weather[ARGS]{"city":"Paris"}</s>'
@@ -179,6 +179,33 @@ void main() {
 
     expect(single.prompt, parallel.prompt);
     expect(single.parser, isNot(parallel.parser));
+  });
+
+  test('Functionary v3.1 without tools renders no tool instructions', () {
+    final result = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja',
+      ).readAsStringSync(),
+      messages: const <LlamaChatMessage>[
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: 'You are terse.',
+        ),
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ],
+      metadata: const <String, String>{},
+    );
+
+    // llama-server 7fe450e19 /apply-template output, which drops the leading
+    // BOS text.
+    expect(
+      result.prompt,
+      '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n\n'
+      'Cutting Knowledge Date: December 2023\n\n<|eot_id|>'
+      '<|start_header_id|>system<|end_header_id|>\n\nYou are terse.<|eot_id|>'
+      '<|start_header_id|>user<|end_header_id|>\n\nHi<|eot_id|>'
+      '<|start_header_id|>assistant<|end_header_id|>\n\n',
+    );
   });
 
   group('Qwen3 tool-call turn matches llama.cpp', () {

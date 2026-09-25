@@ -209,7 +209,7 @@ void main() {
       expect(backend.prompts.first, contains('Get weather'));
       expect(backend.prompts.first, contains('<|im_start|>system'));
       // Check for the tools JSON injection
-      expect(backend.prompts.first, contains('"name":"get_weather"'));
+      expect(backend.prompts.first, contains('"name": "get_weather"'));
     });
 
     test('response with tool call can be parsed by caller', () async {

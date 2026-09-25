@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Require `dinja` 1.2.0, so more chat prompts match llama.cpp: `tojson`
+  output such as tool declarations uses llama.cpp's spacing, number format
+  and non-ASCII text; Qwen3-Coder, GLM-4.6, GLM-4.7-Flash, MiniMax-M2,
+  Nemotron-3-Nano, Command R7B, Cohere2 MoE and Ling 3.0 prompts lose stray
+  indentation; Functionary v3.1 adds no tool instructions without tools;
+  Granite 3.3 spells out the month in its date; Hunyuan Hy3 keeps the system
+  prompt first instead of merging it into the user turn; and Bielik 11B v3
+  tool-call turns without text render instead of throwing.
 - Count generated tokens with an empty text piece in llama.cpp
   `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
   decoding, as the speculative path already did

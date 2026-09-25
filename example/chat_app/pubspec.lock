@@ -189,10 +189,10 @@ packages:
     dependency: transitive
     description:
       name: dinja
-      sha256: "55a677b05c5a797a1b2a265fe0c0eb3733655518a71871e212e40954b3cfeafc"
+      sha256: "42c9b2a0f4f5147fe8cee5ba07c06c16848cf79d5be97307681c26833b36a2fa"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.0"
+    version: "1.2.0"
   dio:
     dependency: "direct main"
     description:

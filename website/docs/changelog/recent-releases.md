@@ -9,6 +9,14 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Require `dinja` 1.2.0, so more chat prompts match llama.cpp: `tojson`
+  output such as tool declarations uses llama.cpp's spacing, number format
+  and non-ASCII text; Qwen3-Coder, GLM-4.6, GLM-4.7-Flash, MiniMax-M2,
+  Nemotron-3-Nano, Command R7B, Cohere2 MoE and Ling 3.0 prompts lose stray
+  indentation; Functionary v3.1 adds no tool instructions without tools;
+  Granite 3.3 spells out the month in its date; Hunyuan Hy3 keeps the system
+  prompt first instead of merging it into the user turn; and Bielik 11B v3
+  tool-call turns without text render instead of throwing.
 - Add `LlamaEngine.scoreNextToken(...)` for next-token log-probabilities on
   native llama.cpp and WebGPU bridge assets `v0.1.52+`, matching llama-server
   `n_probs`; check
