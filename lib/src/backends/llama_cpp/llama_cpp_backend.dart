@@ -11,6 +11,7 @@ import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/exceptions.dart';
@@ -34,6 +35,7 @@ class NativeLlamaBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendBatchEmbeddings,
+        BackendNextTokenScoring,
         BackendStatePersistence,
         BackendTextToSpeech,
         BackendDecision,
@@ -123,6 +125,8 @@ class NativeLlamaBackend
         return Exception(message);
       case WorkerErrorKind.backendInitialization:
         return LlamaBackendInitializationException(response.message);
+      case WorkerErrorKind.range:
+        return _WorkerRangeError(response.message);
     }
   }
 
@@ -603,6 +607,33 @@ class NativeLlamaBackend
     if (res is EmbedResponse) return res.embedding;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
+  }
+
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      ScoreNextTokenRequest(
+        contextHandle,
+        prompt,
+        List<int>.from(candidates),
+        topK,
+        reusePromptPrefix,
+        rp.sendPort,
+      ),
+    );
+    final res = await rp.first;
+    rp.close();
+    if (res is ScoreNextTokenResponse) return res.scores;
+    if (res is ErrorResponse) throw _workerError(res);
+    throw Exception('Next-token scoring failed');
   }
 
   @override
@@ -1252,4 +1283,14 @@ final class _QueuedGeneration {
   final void Function() close;
 
   _QueuedGeneration(this.start, this.close);
+}
+
+/// A [RangeError] raised on the worker isolate, described as it was there.
+class _WorkerRangeError extends RangeError {
+  _WorkerRangeError(this._description) : super(null);
+
+  final String _description;
+
+  @override
+  String toString() => _description;
 }

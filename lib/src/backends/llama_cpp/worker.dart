@@ -378,6 +378,22 @@ void runLlamaWorkerForTesting(
             );
             message.sendPort.send(EmbedBatchResponse(embeddings));
 
+          case ScoreNextTokenRequest():
+            try {
+              final scores = service.scoreNextToken(
+                message.contextHandle,
+                message.prompt,
+                candidates: message.candidates,
+                topK: message.topK,
+                reusePromptPrefix: message.reusePromptPrefix,
+              );
+              message.sendPort.send(ScoreNextTokenResponse(scores));
+            } on RangeError catch (error) {
+              message.sendPort.send(
+                ErrorResponse(error.toString(), kind: WorkerErrorKind.range),
+              );
+            }
+
           case TokenizeRequest():
             final tokens = service.tokenize(
               message.modelHandle,

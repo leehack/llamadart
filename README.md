@@ -35,10 +35,10 @@ for each target.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
-  multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
-  persistence, per-request token usage and timings, operation observers for
-  tracing and metrics, and runtime diagnostics
-  where the active backend supports them.
+  multimodal GGUF projectors, structured JSON output, embeddings, next-token
+  log-probabilities, LoRA, state persistence, per-request token usage and
+  timings, operation observers for tracing and metrics, and runtime
+  diagnostics where the active backend supports them.
 - Experimental typed speech recognition through `SpeechToTextEngine`:
   llama.cpp whole-file Qwen3-ASR (validated up to 30 seconds per input) on
   native and validated WebGPU bridge assets, plus worker-isolated, CPU-only
@@ -172,7 +172,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-6` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.51` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.52` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve
@@ -206,6 +206,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
 | Answer typed questions with a decision model | [Decision models](https://llamadart.leehack.com/docs/guides/decision-models) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
+| Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |
