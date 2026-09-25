@@ -34,10 +34,7 @@ class _ValidationAppState extends State<ValidationApp> {
     bundledValidationProfiles().then((ids) {
       if (!mounted) return;
       setState(
-        () => _profiles = {
-          _compiledProfile,
-          ...ids.where((id) => !id.startsWith('npu-')),
-        }.toList()..sort(),
+        () => _profiles = ids.where((id) => !id.startsWith('npu-')).toList(),
       );
     });
   }

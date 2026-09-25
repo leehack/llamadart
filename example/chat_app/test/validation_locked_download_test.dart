@@ -37,6 +37,7 @@ void main() {
       (chunks, _lock(data.length, sha256.convert([1]).toString())),
       (chunks.take(2), _lock(data.length, digest)),
       (chunks.take(2), _lock(600, digest)),
+      (chunks, _lock(data.length + 1, digest)),
     ]) {
       await expectLater(
         verifyLockedDownload(_serve(Stream.fromIterable(body)), lock),
