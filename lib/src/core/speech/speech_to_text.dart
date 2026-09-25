@@ -668,6 +668,10 @@ class SpeechToTextEngine {
   /// On native llama.cpp, a Qwen3-ASR task that reaches the context size or
   /// [SpeechToTextRequest.maxOutputTokens] before the transcript ends fails
   /// with [LlamaSpeechTranscriptTruncatedException].
+  ///
+  /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an active
+  /// Qwen3-ASR task, which then reports
+  /// [SpeechToTextCompletionState.cancelled] with no result.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
     _validateRequest(request);
     if (_usesLiteRtLm) {
@@ -693,6 +697,7 @@ class SpeechToTextEngine {
 
       final engine = _engine!;
       final task = SpeechToTextTask._(onCancel: engine.cancelGeneration);
+      lease.onUnload(_leaseOwner, task.cancel);
       unawaited(_runPromptAdapterTask(task, request));
       return task;
     } catch (_) {

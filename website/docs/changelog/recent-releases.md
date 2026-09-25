@@ -26,6 +26,9 @@ For canonical full release notes, use:
 - Cancel an active text-to-speech synthesis on `LlamaEngine.unloadModel()` and
   `dispose()` instead of waiting for it to finish
   ([#628](https://github.com/leehack/llamadart/issues/628)).
+- Cancel an active Qwen3-ASR transcription on `LlamaEngine.unloadModel()` and
+  `dispose()` instead of completing it with the transcript cut at the unload
+  ([#670](https://github.com/leehack/llamadart/issues/670)).
 - Start a native llama.cpp generation requested right after a cancel once the
   cancelled run stops, instead of failing with `generation is already in
   progress`. An overlap with a running generation that was not cancelled now
