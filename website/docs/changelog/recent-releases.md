@@ -285,7 +285,8 @@ For canonical full release notes, use:
 - Select the devices of an explicit `GpuBackend.metal` or `GpuBackend.hip`
   on llama.cpp: they looked up ggml registries named `Metal` and `HIP`, but
   ggml names them `MTL` and `ROCm`, so loading fell back to automatic device
-  selection
+  selection. A HIP load on a ROCm build now reports its backend as `HIP`
+  instead of `CPU`
   ([#611](https://github.com/leehack/llamadart/issues/611)).
 - Report a WebGPU model load that fails with `error 138` as the documented
   cross-origin isolation (COOP/COEP) `UnsupportedError`, as

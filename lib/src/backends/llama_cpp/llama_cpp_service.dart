@@ -2021,22 +2021,18 @@ class LlamaCppService {
   ) {
     final lower = value.toLowerCase();
     switch (backend) {
-      case GpuBackend.metal:
-        return lower.contains('metal') || lower.contains('mtl');
-      case GpuBackend.vulkan:
-        return lower.contains('vulkan');
-      case GpuBackend.opencl:
-        return lower.contains('opencl');
-      case GpuBackend.hip:
-        return lower.contains('hip');
-      case GpuBackend.cuda:
-        return lower.contains('cuda');
-      case GpuBackend.blas:
-        return lower.contains('blas');
       case GpuBackend.cpu:
         return lower.contains('cpu') || lower.contains('llvm');
       case GpuBackend.auto:
         return false;
+      case GpuBackend.metal:
+      case GpuBackend.vulkan:
+      case GpuBackend.opencl:
+      case GpuBackend.hip:
+      case GpuBackend.cuda:
+      case GpuBackend.blas:
+        return lower.contains(backend.name) ||
+            lower.contains(ggmlGpuRegistryName(backend)!.toLowerCase());
     }
   }
 

@@ -513,6 +513,44 @@ void main() {
       );
     });
 
+    test('names the backend of a load from ggml registry labels', () {
+      final service = LlamaCppService();
+      // Labels as getBackendInfo builds them: '<registry> (<device>)'.
+      const labels = <GpuBackend, String>{
+        GpuBackend.vulkan: 'Vulkan (Vulkan0)',
+        GpuBackend.metal: 'MTL (MTL0)',
+        GpuBackend.cuda: 'CUDA (CUDA0)',
+        GpuBackend.blas: 'BLAS',
+        GpuBackend.opencl: 'OpenCL (GPUOpenCL)',
+        GpuBackend.hip: 'ROCm (ROCm0)',
+      };
+      const displayNames = <GpuBackend, String>{
+        GpuBackend.vulkan: 'Vulkan',
+        GpuBackend.metal: 'Metal',
+        GpuBackend.cuda: 'CUDA',
+        GpuBackend.blas: 'BLAS',
+        GpuBackend.opencl: 'OpenCL',
+        GpuBackend.hip: 'HIP',
+      };
+      for (final MapEntry(key: backend, value: label) in labels.entries) {
+        expect(
+          _invokePrivateForTesting<String>(
+            service,
+            '_resolveExplicitBackendName',
+            [backend, 'CPU, $label'],
+          ),
+          displayNames[backend],
+          reason: label,
+        );
+      }
+      expect(
+        _invokePrivateForTesting<String?>(service, '_resolveAutoBackendName', [
+          'CPU, ROCm (ROCm0)',
+        ]),
+        'HIP',
+      );
+    });
+
     test('resolves devices exactly for registered GPU registries', () {
       final service = LlamaCppService();
       _invokePrivateForTesting<void>(service, '_prepareBackendsForModelLoad', [
