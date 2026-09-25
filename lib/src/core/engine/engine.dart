@@ -201,10 +201,10 @@ class LlamaEngine {
     return _observeModelLoad(
       path,
       modelParams,
-      () => _withModelLifecycle(
-        'load a model',
-        () => _loadModel(path, modelParams: modelParams),
-      ),
+      () => _withModelLifecycle('load a model', () async {
+        await _loadModel(path, modelParams: modelParams);
+        await _captureObservedModel(path);
+      }),
     );
   }
 
@@ -323,14 +323,14 @@ class LlamaEngine {
     return _observeModelLoad(
       url,
       modelParams,
-      () => _withModelLifecycle(
-        'load a model from URL',
-        () => _loadModelFromUrl(
+      () => _withModelLifecycle('load a model from URL', () async {
+        await _loadModelFromUrl(
           url,
           modelParams: modelParams,
           onProgress: onProgress,
-        ),
-      ),
+        );
+        await _captureObservedModel(url);
+      }),
     );
   }
 
@@ -341,20 +341,19 @@ class LlamaEngine {
   ) {
     if (observers.isEmpty) return load();
     return observeFuture(
-      () async {
-        await load();
-        await _captureObservedModel(source);
-      },
+      load,
       observers: observers,
-      operation: () => LlamaModelLoadOperation(
-        model: _displayNameForSource(source),
+      operation: LlamaModelLoadOperation(
+        model: _observedNameForSource(source),
         modelParams: modelParams,
       ),
     );
   }
 
-  /// Records the model name and runtime that observed operations report.
+  /// Records the model name and runtime that observed operations report,
+  /// when the engine has observers.
   Future<void> _captureObservedModel(String source) async {
+    if (observers.isEmpty) return;
     final candidate = backend;
     _observedRuntime = candidate is BackendRuntimeIdentity
         ? (candidate as BackendRuntimeIdentity).runtime
@@ -370,8 +369,22 @@ class LlamaEngine {
       );
     }
     _observedModel = name == null || name.isEmpty
-        ? _displayNameForSource(source)
+        ? _observedNameForSource(source)
         : name;
+  }
+
+  /// The last non-empty path segment of [source], or null when that segment
+  /// could carry more than a file name.
+  static String? _observedNameForSource(String source) {
+    final uri = Uri.tryParse(source);
+    final segments = uri != null && uri.scheme.length > 1
+        ? uri.pathSegments
+        : source.replaceAll('\\', '/').split('/');
+    final name = segments.lastWhere(
+      (segment) => segment.isNotEmpty,
+      orElse: () => '',
+    );
+    return name.isEmpty || name.contains(RegExp(r'[/\\?#@]')) ? null : name;
   }
 
   Future<void> _loadModelFromUrl(
@@ -732,6 +745,17 @@ class LlamaEngine {
     DateTime? templateNow,
   }) {
     final zone = Zone.current;
+    final operation = observers.isEmpty
+        ? null
+        : LlamaChatOperation(
+            model: _observedModel,
+            runtime: _observedRuntime,
+            messages: messages,
+            params: params ?? const GenerationParams(),
+            tools: tools,
+            toolChoice: toolChoice,
+            responseFormat: responseFormat,
+          );
     return _generationCancellation.request((request) {
       Stream<LlamaCompletionChunk> chunks() async* {
         _ensureReady();
@@ -826,22 +850,14 @@ class LlamaEngine {
         });
       }
 
-      if (observers.isEmpty) return chunks();
+      if (operation == null) return chunks();
       String? finishReason;
       LlamaGenerationUsage? usage;
       return observeStream(
         chunks(),
         observers: observers,
         zone: zone,
-        operation: () => LlamaChatOperation(
-          model: _observedModel,
-          runtime: _observedRuntime,
-          messages: messages,
-          params: params ?? const GenerationParams(),
-          tools: tools,
-          toolChoice: toolChoice,
-          responseFormat: responseFormat,
-        ),
+        operation: operation,
         onItem: (observation, chunk) {
           observation.chunk(chunk);
           finishReason =
@@ -849,6 +865,9 @@ class LlamaEngine {
           usage = chunk.usage ?? usage;
         },
         result: () => _generationResult(request, finishReason, usage),
+        cancelResult: () => finishReason == null
+            ? LlamaOperationResult(cancelled: true, usage: usage)
+            : _generationResult(request, finishReason, usage),
       );
     });
   }
@@ -976,8 +995,17 @@ class LlamaEngine {
     List<LlamaContentPart>? parts,
   }) {
     final zone = Zone.current;
+    final operation = observers.isEmpty
+        ? null
+        : LlamaTextCompletionOperation(
+            model: _observedModel,
+            runtime: _observedRuntime,
+            prompt: prompt,
+            params: params,
+            parts: parts,
+          );
     return _generationCancellation.request((request) {
-      if (observers.isEmpty) {
+      if (operation == null) {
         return _generate(
           prompt,
           params: params,
@@ -998,19 +1026,14 @@ class LlamaEngine {
         ),
         observers: observers,
         zone: zone,
-        operation: () => LlamaTextCompletionOperation(
-          model: _observedModel,
-          runtime: _observedRuntime,
-          prompt: prompt,
-          params: params,
-          parts: parts,
-        ),
+        operation: operation,
         onItem: (observation, text) => observation.text(text),
         result: () => _generationResult(
           request,
           limit == null ? 'stop' : 'length',
           usage,
         ),
+        cancelResult: () => const LlamaOperationResult(cancelled: true),
       );
     });
   }
@@ -1274,10 +1297,10 @@ class LlamaEngine {
     return observeFuture(
       embed,
       observers: observers,
-      operation: () => LlamaEmbeddingsOperation(
+      operation: LlamaEmbeddingsOperation(
         model: _observedModel,
         runtime: _observedRuntime,
-        inputs: List<String>.unmodifiable(inputs),
+        inputs: inputs,
         normalize: normalize,
       ),
     );

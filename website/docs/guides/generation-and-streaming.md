@@ -123,7 +123,7 @@ sees chat completions (`create`, `createStructuredJson` and
 `ChatSession.create`), `generate`, `embed`, `embedBatch` and model loads.
 
 ```dart
-class TimingObserver extends LlamaEngineObserver {
+final class TimingObserver extends LlamaEngineObserver {
   @override
   LlamaOperationObserver? onStart(LlamaOperation operation) {
     final name = switch (operation) {
@@ -131,12 +131,13 @@ class TimingObserver extends LlamaEngineObserver {
       LlamaTextCompletionOperation() => 'text_completion',
       LlamaEmbeddingsOperation() => 'embeddings',
       LlamaModelLoadOperation() => 'model_load',
+      _ => 'other',
     };
     return _Timing('$name ${operation.model}', Stopwatch()..start());
   }
 }
 
-class _Timing extends LlamaOperationObserver {
+final class _Timing extends LlamaOperationObserver {
   _Timing(this.name, this.watch);
 
   final String name;
@@ -158,15 +159,21 @@ final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
   there.
 - `onChunk` receives each `create` chunk and `onText` each `generate` piece.
 - `onEnd` runs once, with the error, the cancel, or the finish reason and
-  usage. Usage is reported where the final `create` chunk carries it.
-- `LlamaOperation.model` is the model's `general.name` metadata, or its file
-  name, never a directory, URL query or credential. `runtime` is
+  usage. Usage is reported where the final `create` chunk carries it. A
+  `create` subscription cancelled after the final chunk ends completed.
+- `LlamaOperation.model` is the model's `general.name` metadata, or else the
+  last segment of the path or URL it was loaded from. It is null rather than
+  a directory path, URL query, fragment or credential. `runtime` is
   `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm` on the built-in
   backends.
-- Operations carry prompts and messages. Record them only when your users opt
-  in.
-- An exception thrown by an observer is logged and never reaches the caller.
-  Without observers the engine does no observation work.
+- Operations carry copies of the prompts and messages. Record them only when
+  your users opt in.
+- Extend the observer classes rather than implementing them, and give a
+  `switch` over operations a default case: later versions may add callbacks
+  and operation types.
+- An exception an observer throws is reported to the library logger as a
+  warning and never reaches the caller. Without observers the engine does no
+  observation work.
 
 ## Thinking budget (native llama.cpp)
 

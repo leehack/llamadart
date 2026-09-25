@@ -11,12 +11,16 @@ class _ObservedBackend extends LimitReportingMockBackend
     implements BackendEmbeddings, BackendRuntimeIdentity {
   Map<String, String>? metadata;
   Object? generateError;
+  Completer<void>? metadataGate;
+  final Completer<void> metadataRead = Completer<void>();
 
   @override
   LlamaRuntime? get runtime => LlamaRuntime.llamaCpp;
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    if (!metadataRead.isCompleted) metadataRead.complete();
+    await metadataGate?.future;
     final base = await super.modelMetadata(modelHandle);
     return {...base, ...?metadata};
   }
@@ -41,7 +45,7 @@ class _ObservedBackend extends LimitReportingMockBackend
   }) async => <double>[text.length.toDouble()];
 }
 
-class _Recorder extends LlamaEngineObserver {
+final class _Recorder extends LlamaEngineObserver {
   final List<LlamaOperation> operations = <LlamaOperation>[];
   final List<Object?> startZoneValues = <Object?>[];
   final List<Object> events = <Object>[];
@@ -64,7 +68,7 @@ class _Recorder extends LlamaEngineObserver {
   }
 }
 
-class _OperationRecorder extends LlamaOperationObserver {
+final class _OperationRecorder extends LlamaOperationObserver {
   final _Recorder recorder;
 
   _OperationRecorder(this.recorder);
@@ -82,7 +86,7 @@ class _OperationRecorder extends LlamaOperationObserver {
   }
 }
 
-class _ThrowingObserver extends LlamaEngineObserver {
+final class _ThrowingObserver extends LlamaEngineObserver {
   final bool throwOnStart;
 
   _ThrowingObserver({required this.throwOnStart});
@@ -94,7 +98,7 @@ class _ThrowingObserver extends LlamaEngineObserver {
   }
 }
 
-class _ThrowingOperationObserver extends LlamaOperationObserver {
+final class _ThrowingOperationObserver extends LlamaOperationObserver {
   @override
   void onChunk(LlamaCompletionChunk chunk) => throw StateError('chunk');
 
@@ -176,14 +180,88 @@ void main() {
       expect(loads.results.single.error, isA<LlamaModelException>());
     });
 
-    test('names later operations by the file name without general.name, '
-        'and forgets the name on unload', () async {
-      await engine.unloadModel();
-      backend.metadata = {'general.name': '  '};
-      await engine.loadModel('/models/other.gguf');
-      await engine.generate('p').drain<void>();
+    test(
+      'names later operations by the file name without general.name',
+      () async {
+        await engine.unloadModel();
+        backend.metadata = {'general.name': '  '};
+        await engine.loadModel('/models/other.gguf');
+        await engine.generate('p').drain<void>();
 
-      expect(recorder.operations.last.model, 'other.gguf');
+        expect(recorder.operations.last.model, 'other.gguf');
+      },
+    );
+
+    test('forgets the model name and runtime on unload', () async {
+      await engine.unloadModel();
+
+      await expectLater(
+        engine.generate('p').drain<void>(),
+        throwsA(isA<LlamaContextException>()),
+      );
+
+      expect(recorder.operations.last.model, isNull);
+      expect(recorder.operations.last.runtime, isNull);
+    });
+
+    test('keeps the lifecycle guard while it reads the model name', () async {
+      final gated = _ObservedBackend()..metadataGate = Completer<void>();
+      final observed = LlamaEngine(gated, observers: [_Recorder()]);
+      addTearDown(observed.dispose);
+
+      final load = observed.loadModel('/models/tiny.gguf');
+      await gated.metadataRead.future;
+
+      await expectLater(
+        observed.unloadModel(),
+        throwsA(isA<LlamaStateException>()),
+      );
+      gated.metadataGate!.complete();
+      await load;
+    });
+
+    test('reports only a safe last segment of a path or URL', () async {
+      final names = _Recorder();
+      final observed = LlamaEngine(
+        MockLlamaBackend(urlLoadingSupported: true),
+        observers: [names],
+      );
+      addTearDown(observed.dispose);
+      const sources = <String, String?>{
+        'https://example.com/org/tiny.gguf?token=secret#part': 'tiny.gguf',
+        'https://user:pass@host/models/': 'models',
+        'https://user:pass@host': null,
+        'https://host/models/?token=secret': 'models',
+        'https://host/?sig=abc': null,
+        'https://host?sig=abc': null,
+        'https://host/a%2Fb%3Ftoken%3Dx': null,
+      };
+
+      for (final MapEntry(key: source, value: name) in sources.entries) {
+        await observed.loadModelFromUrl(source);
+        await observed.generate('p').drain<void>();
+        await observed.unloadModel();
+        final [load, generate] = names.operations;
+        expect(load.model, name, reason: source);
+        expect(generate.model, name, reason: source);
+        names.clear();
+      }
+    });
+
+    test('reports the last segment of a local path', () async {
+      final names = _Recorder();
+      final observed = LlamaEngine(MockLlamaBackend(), observers: [names]);
+      addTearDown(observed.dispose);
+
+      for (final (source, name) in [
+        (r'C:\models\tiny.gguf', 'tiny.gguf'),
+        ('/models/dir/', 'dir'),
+      ]) {
+        await observed.loadModel(source);
+        await observed.unloadModel();
+        expect(names.operations.single.model, name, reason: source);
+        names.clear();
+      }
     });
   });
 
@@ -222,6 +300,46 @@ void main() {
       expect(result.cancelled, isFalse);
       expect(result.error, isNull);
     });
+
+    test('ends completed when cancelled after the final chunk', () async {
+      backend.nextUsage = _usage;
+
+      await engine
+          .create(const [_user])
+          .firstWhere((chunk) => chunk.choices.first.finishReason != null);
+
+      final result = recorder.results.single;
+      expect(result.cancelled, isFalse);
+      expect(result.finishReason, 'stop');
+      expect(result.usage, same(_usage));
+    });
+
+    test('reports a copy of the request made when create is called', () async {
+      final messages = [_user];
+      final stream = engine.create(messages);
+      messages.add(_user);
+      await stream.drain<void>();
+
+      final chat = recorder.operations.single as LlamaChatOperation;
+      expect(chat.messages, const [_user]);
+      expect(() => chat.messages.add(_user), throwsUnsupportedError);
+    });
+
+    test(
+      'ChatSession.create runs observers in the zone that called it',
+      () async {
+        final session = ChatSession(engine);
+        final stream = runZoned(
+          () => session.create([const LlamaTextContent('Hi')]),
+          zoneValues: {#trace: 'parent'},
+        );
+
+        await stream.drain<void>();
+
+        expect(recorder.startZoneValues, ['parent']);
+        expect(recorder.endZoneValues, ['parent']);
+      },
+    );
 
     test('reports a length finish', () async {
       backend.nextLimit = BackendGenerationLimit.maxTokens;

@@ -4,7 +4,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/engine/engine_observation.dart';
 import 'package:test/test.dart';
 
-class _Recorder extends LlamaEngineObserver {
+final class _Recorder extends LlamaEngineObserver {
   final List<String> log = <String>[];
   final List<LlamaOperationResult> results = <LlamaOperationResult>[];
   final bool ignore;
@@ -18,7 +18,7 @@ class _Recorder extends LlamaEngineObserver {
   }
 }
 
-class _OperationRecorder extends LlamaOperationObserver {
+final class _OperationRecorder extends LlamaOperationObserver {
   final _Recorder recorder;
 
   _OperationRecorder(this.recorder);
@@ -33,7 +33,7 @@ class _OperationRecorder extends LlamaOperationObserver {
   }
 }
 
-const _operation = LlamaTextCompletionOperation(
+final _operation = LlamaTextCompletionOperation(
   model: 'm',
   runtime: null,
   prompt: 'p',
@@ -47,9 +47,10 @@ Stream<String> _observe(
   source,
   observers: observers,
   zone: Zone.current,
-  operation: () => _operation,
+  operation: _operation,
   onItem: (observation, text) => observation.text(text),
   result: () => const LlamaOperationResult(finishReason: 'stop'),
+  cancelResult: () => const LlamaOperationResult(cancelled: true),
 );
 
 void main() {
@@ -103,6 +104,7 @@ void main() {
     subscription.pause();
     subscription.resume();
     await subscription.cancel();
+    await source.close();
 
     expect(calls, ['pause', 'resume', 'cancel']);
     expect(recorder.results.single.cancelled, isTrue);
@@ -145,7 +147,7 @@ void main() {
         return 42;
       },
       observers: [recorder],
-      operation: () => _operation,
+      operation: _operation,
     );
 
     expect(value, 42);
@@ -160,7 +162,7 @@ void main() {
       observeFuture<void>(
         () async => throw StateError('boom'),
         observers: [recorder],
-        operation: () => _operation,
+        operation: _operation,
       ),
       throwsStateError,
     );

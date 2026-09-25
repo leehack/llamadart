@@ -62,16 +62,18 @@ class EngineObservation {
 
 /// Returns [source], observed from its listen to its end by [observers].
 ///
-/// The operation starts in [zone] when the returned stream is listened to.
+/// [operation] starts in [zone] when the returned stream is listened to.
 /// [onItem] sees each event before the listener does. [result] builds the
-/// result of a stream that completes.
+/// result of a stream that completes, and [cancelResult] that of a stream
+/// whose subscription is cancelled.
 Stream<T> observeStream<T>(
   Stream<T> source, {
   required List<LlamaEngineObserver> observers,
   required Zone zone,
-  required LlamaOperation Function() operation,
+  required LlamaOperation operation,
   required void Function(EngineObservation observation, T item) onItem,
   required LlamaOperationResult Function() result,
+  required LlamaOperationResult Function() cancelResult,
 }) {
   StreamSubscription<T>? subscription;
   EngineObservation? observation;
@@ -79,7 +81,7 @@ Stream<T> observeStream<T>(
   controller = StreamController<T>(
     sync: true,
     onListen: () {
-      final started = EngineObservation.start(observers, zone, operation());
+      final started = EngineObservation.start(observers, zone, operation);
       observation = started;
       subscription = source.listen(
         (item) {
@@ -101,7 +103,7 @@ Stream<T> observeStream<T>(
     onPause: () => subscription?.pause(),
     onResume: () => subscription?.resume(),
     onCancel: () {
-      observation?.end(const LlamaOperationResult(cancelled: true));
+      observation?.end(cancelResult());
       return subscription?.cancel();
     },
   );
@@ -113,12 +115,12 @@ Stream<T> observeStream<T>(
 Future<T> observeFuture<T>(
   Future<T> Function() body, {
   required List<LlamaEngineObserver> observers,
-  required LlamaOperation Function() operation,
+  required LlamaOperation operation,
 }) async {
   final observation = EngineObservation.start(
     observers,
     Zone.current,
-    operation(),
+    operation,
   );
   try {
     final value = await body();

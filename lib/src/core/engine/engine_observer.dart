@@ -12,12 +12,14 @@ import '../models/tools/tool_definition.dart';
 ///
 /// Pass observers to the `LlamaEngine` constructor. [onStart] runs in the
 /// zone that called the engine method, so it can read the caller's trace
-/// context. An exception thrown by an observer is logged and never reaches
-/// the caller.
+/// context. An exception an observer throws is reported to the library
+/// logger as a warning and never reaches the caller.
 ///
 /// Operations carry prompts and messages. An observer that exports telemetry
 /// should record them only when its user opts in.
-abstract class LlamaEngineObserver {
+///
+/// Extend this class; later versions may add methods with default bodies.
+abstract base class LlamaEngineObserver {
   /// Creates a [LlamaEngineObserver].
   const LlamaEngineObserver();
 
@@ -31,8 +33,9 @@ abstract class LlamaEngineObserver {
 
 /// Observes one [LlamaOperation] after [LlamaEngineObserver.onStart].
 ///
-/// Its methods run in the zone that called the engine method.
-abstract class LlamaOperationObserver {
+/// Its methods run in the zone that called the engine method. Extend this
+/// class; later versions may add methods with default bodies.
+abstract base class LlamaOperationObserver {
   /// Creates a [LlamaOperationObserver].
   const LlamaOperationObserver();
 
@@ -45,6 +48,9 @@ abstract class LlamaOperationObserver {
   void onText(String text) {}
 
   /// Called once when the operation ends: completed, failed or cancelled.
+  ///
+  /// A `create` stream whose subscription is cancelled after its final
+  /// chunk arrived ends completed.
   void onEnd(LlamaOperationResult result);
 }
 
@@ -58,12 +64,16 @@ enum LlamaRuntime {
 }
 
 /// An operation of a `LlamaEngine`.
-sealed class LlamaOperation {
-  /// The loaded model's `general.name` metadata, or its file name when the
-  /// metadata has none. For a [LlamaModelLoadOperation], the file name of
-  /// the model being loaded.
+///
+/// Later versions may add operation types, so a `switch` over operations
+/// needs a default case.
+abstract final class LlamaOperation {
+  /// The loaded model's `general.name` metadata, or else the last segment of
+  /// the path or URL it was loaded from. For a [LlamaModelLoadOperation],
+  /// that last segment of the model being loaded.
   ///
-  /// Never a directory path, URL query or credential.
+  /// Null when no model is loaded or the segment could carry more than a
+  /// name: it is never a directory path, URL query, fragment or credential.
   final String? model;
 
   /// The runtime of the loaded model, or null when the backend does not
@@ -76,31 +86,37 @@ sealed class LlamaOperation {
 /// A chat completion: `LlamaEngine.create`, `createStructuredJson` or
 /// `ChatSession.create`.
 final class LlamaChatOperation extends LlamaOperation {
-  /// The request messages.
+  /// The request messages, as an unmodifiable copy of the list.
   final List<LlamaChatMessage> messages;
 
   /// The generation parameters the caller passed.
   final GenerationParams params;
 
-  /// The tools offered to the model, if any.
+  /// The tools offered to the model, if any, as an unmodifiable copy.
   final List<ToolDefinition>? tools;
 
   /// The requested tool choice, or null when the caller passed none.
   final ToolChoice? toolChoice;
 
-  /// The requested structured-output format, if any.
+  /// The requested structured-output format, if any, as an unmodifiable
+  /// copy of the top-level map.
   final Map<String, dynamic>? responseFormat;
 
   /// Creates a [LlamaChatOperation].
-  const LlamaChatOperation({
+  LlamaChatOperation({
     required super.model,
     required super.runtime,
-    required this.messages,
+    required List<LlamaChatMessage> messages,
     required this.params,
-    this.tools,
+    List<ToolDefinition>? tools,
     this.toolChoice,
-    this.responseFormat,
-  }) : super._();
+    Map<String, dynamic>? responseFormat,
+  }) : messages = List<LlamaChatMessage>.unmodifiable(messages),
+       tools = tools == null ? null : List<ToolDefinition>.unmodifiable(tools),
+       responseFormat = responseFormat == null
+           ? null
+           : Map<String, dynamic>.unmodifiable(responseFormat),
+       super._();
 }
 
 /// A raw-prompt text completion: `LlamaEngine.generate`.
@@ -111,34 +127,38 @@ final class LlamaTextCompletionOperation extends LlamaOperation {
   /// The generation parameters.
   final GenerationParams params;
 
-  /// The media parts of the prompt, if any.
+  /// The media parts of the prompt, if any, as an unmodifiable copy.
   final List<LlamaContentPart>? parts;
 
   /// Creates a [LlamaTextCompletionOperation].
-  const LlamaTextCompletionOperation({
+  LlamaTextCompletionOperation({
     required super.model,
     required super.runtime,
     required this.prompt,
     required this.params,
-    this.parts,
-  }) : super._();
+    List<LlamaContentPart>? parts,
+  }) : parts = parts == null
+           ? null
+           : List<LlamaContentPart>.unmodifiable(parts),
+       super._();
 }
 
 /// An embeddings request: `LlamaEngine.embed` or `embedBatch`.
 final class LlamaEmbeddingsOperation extends LlamaOperation {
-  /// The texts to embed.
+  /// The texts to embed, as an unmodifiable copy.
   final List<String> inputs;
 
   /// Whether the vectors are L2-normalized.
   final bool normalize;
 
   /// Creates a [LlamaEmbeddingsOperation].
-  const LlamaEmbeddingsOperation({
+  LlamaEmbeddingsOperation({
     required super.model,
     required super.runtime,
-    required this.inputs,
+    required List<String> inputs,
     required this.normalize,
-  }) : super._();
+  }) : inputs = List<String>.unmodifiable(inputs),
+       super._();
 }
 
 /// A model load: `LlamaEngine.loadModel` or `loadModelFromUrl`, including
