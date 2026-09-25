@@ -2022,22 +2022,18 @@ class LlamaCppService {
   ) {
     final lower = value.toLowerCase();
     switch (backend) {
-      case GpuBackend.metal:
-        return lower.contains('metal') || lower.contains('mtl');
-      case GpuBackend.vulkan:
-        return lower.contains('vulkan');
-      case GpuBackend.opencl:
-        return lower.contains('opencl');
-      case GpuBackend.hip:
-        return lower.contains('hip');
-      case GpuBackend.cuda:
-        return lower.contains('cuda');
-      case GpuBackend.blas:
-        return lower.contains('blas');
       case GpuBackend.cpu:
         return lower.contains('cpu') || lower.contains('llvm');
       case GpuBackend.auto:
         return false;
+      case GpuBackend.metal:
+      case GpuBackend.vulkan:
+      case GpuBackend.opencl:
+      case GpuBackend.hip:
+      case GpuBackend.cuda:
+      case GpuBackend.blas:
+        return lower.contains(backend.name) ||
+            lower.contains(ggmlGpuRegistryName(backend)!.toLowerCase());
     }
   }
 
@@ -3521,31 +3517,33 @@ class LlamaCppService {
   }
 
   List<ggml_backend_dev_t>? _resolvePreferredDevices(GpuBackend backend) {
-    switch (backend) {
-      case GpuBackend.auto:
+    if (backend == GpuBackend.cpu) {
+      final cpuDev = _ggmlBackendDevByType(
+        ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
+      );
+      if (cpuDev == nullptr) {
         return null;
-      case GpuBackend.cpu:
-        final cpuDev = _ggmlBackendDevByType(
-          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
-        );
-        if (cpuDev == nullptr) {
-          return null;
-        }
-        return [cpuDev];
-      case GpuBackend.vulkan:
-        return _devicesForBackendRegName('Vulkan');
-      case GpuBackend.metal:
-        return _devicesForBackendRegName('Metal');
-      case GpuBackend.cuda:
-        return _devicesForBackendRegName('CUDA');
-      case GpuBackend.blas:
-        return _devicesForBackendRegName('BLAS');
-      case GpuBackend.opencl:
-        return _devicesForBackendRegName('OpenCL');
-      case GpuBackend.hip:
-        return _devicesForBackendRegName('HIP');
+      }
+      return [cpuDev];
     }
+    final registryName = ggmlGpuRegistryName(backend);
+    return registryName == null
+        ? null
+        : _devicesForBackendRegName(registryName);
   }
+
+  /// Returns the name of the ggml backend registry that lists the devices of
+  /// an explicit GPU [backend], or `null` for [GpuBackend.auto] and
+  /// [GpuBackend.cpu].
+  static String? ggmlGpuRegistryName(GpuBackend backend) => switch (backend) {
+    GpuBackend.vulkan => 'Vulkan',
+    GpuBackend.metal => 'MTL',
+    GpuBackend.cuda => 'CUDA',
+    GpuBackend.blas => 'BLAS',
+    GpuBackend.opencl => 'OpenCL',
+    GpuBackend.hip => 'ROCm',
+    GpuBackend.auto || GpuBackend.cpu => null,
+  };
 
   List<ggml_backend_dev_t>? _devicesForBackendRegName(String regName) {
     final regNamePtr = regName.toNativeUtf8();
@@ -4500,6 +4498,7 @@ class LlamaCppService {
         speculativeSession: nullptr,
         speculativeApi: null,
         speculativeConfig: null,
+        isCancelled: () => false,
       );
       if (promptTokens == 0) {
         throw LlamaInferenceException('The prompt tokenized to no tokens.');
@@ -5036,7 +5035,8 @@ class LlamaCppService {
   /// Ingests the prompt (text or multimodal).
   ///
   /// Returns the next KV position and how many prompt ids were written to
-  /// `tokensPtr`. Multimodal ingestion writes none.
+  /// `tokensPtr`. Multimodal ingestion writes none. A text prompt cancelled
+  /// through `cancelToken` reports only the tokens decoded before the cancel.
   ({int nPast, int promptTokenCount}) _ingestPrompt(
     int contextHandle,
     int modelHandle,
@@ -5086,6 +5086,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: () => cancelToken.value == 1,
       );
       return (nPast: nTokens, promptTokenCount: nTokens);
     }
@@ -5330,6 +5331,7 @@ class LlamaCppService {
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
     required _LlamaCppSpeculativeConfig? speculativeConfig,
+    required bool Function() isCancelled,
   }) {
     final promptPtr = prompt.toNativeUtf8();
     final shouldAddSpecial = !_promptStartsWithBosToken(vocab, prompt);
@@ -5359,6 +5361,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: isCancelled,
       );
     }
 
@@ -5374,6 +5377,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: isCancelled,
       );
     }
 
@@ -5402,6 +5406,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: isCancelled,
       );
     }
 
@@ -5417,6 +5422,7 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: isCancelled,
       );
     }
 
@@ -5438,29 +5444,34 @@ class LlamaCppService {
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
         speculativeConfig: speculativeConfig,
+        isCancelled: isCancelled,
       );
     }
 
+    ctx.lastPerfCachedPromptTokens = decodeStart;
     final suffixTokenCount = nTokens - decodeStart;
-    _decodePromptSegment(
-      batch,
-      tokensPtr,
-      ctx,
-      startTokenIndex: decodeStart,
-      tokenCount: suffixTokenCount,
-      maxBatchTokens: maxBatchTokens,
-      outputAllLogits: speculativeSession != nullptr,
-      speculativeSession: speculativeSession,
-      speculativeApi: speculativeApi,
-      speculativeConfig: speculativeConfig,
-    );
+    final decodedEnd =
+        decodeStart +
+        _decodePromptSegment(
+          batch,
+          tokensPtr,
+          ctx,
+          startTokenIndex: decodeStart,
+          tokenCount: suffixTokenCount,
+          maxBatchTokens: maxBatchTokens,
+          outputAllLogits: speculativeSession != nullptr,
+          speculativeSession: speculativeSession,
+          speculativeApi: speculativeApi,
+          speculativeConfig: speculativeConfig,
+          isCancelled: isCancelled,
+        );
 
-    ctx.cachedPromptTokens = exactStateLoadMatch
+    ctx.cachedPromptTokens = exactStateLoadMatch && decodedEnd == nTokens
         ? cachedTokens
-        : _copyPromptTokens(tokensPtr, nTokens);
+        : _copyPromptTokens(tokensPtr, decodedEnd);
     ctx.kvFromStateLoad = false;
 
-    return nTokens;
+    return decodedEnd;
   }
 
   int _decodeAndCacheFullPrompt(
@@ -5474,11 +5485,12 @@ class LlamaCppService {
     Pointer<llama_dart_speculative>? speculativeSession,
     _SpeculativeApi? speculativeApi,
     _LlamaCppSpeculativeConfig? speculativeConfig,
+    required bool Function() isCancelled,
   }) {
     ctx.cachedPromptTokens = null;
     ctx.kvFromStateLoad = false;
     _clearContextMemory(ctx.pointer);
-    _decodePromptSegment(
+    final decoded = _decodePromptSegment(
       batch,
       tokensPtr,
       ctx,
@@ -5489,11 +5501,13 @@ class LlamaCppService {
       speculativeSession: speculativeSession,
       speculativeApi: speculativeApi,
       speculativeConfig: speculativeConfig,
+      isCancelled: isCancelled,
     );
-    ctx.cachedPromptTokens =
-        existingCachedTokens ?? _copyPromptTokens(tokensPtr, nTokens);
+    ctx.cachedPromptTokens = decoded == nTokens && existingCachedTokens != null
+        ? existingCachedTokens
+        : _copyPromptTokens(tokensPtr, decoded);
     ctx.kvFromStateLoad = false;
-    return nTokens;
+    return decoded;
   }
 
   List<int> _copyPromptTokens(Pointer<Int32> tokensPtr, int tokenCount) {
@@ -5503,7 +5517,15 @@ class LlamaCppService {
     return List<int>.from(tokensPtr.asTypedList(tokenCount), growable: false);
   }
 
-  void _decodePromptSegment(
+  /// Decodes [tokenCount] prompt tokens from [startTokenIndex] and returns
+  /// how many were decoded before [isCancelled] reported a cancel.
+  ///
+  /// [isCancelled] is read before each `llama_decode` call. Without a
+  /// speculative session, each [maxBatchTokens] chunk is decoded in calls of
+  /// at most `n_ubatch` tokens, the size llama.cpp splits a larger call into.
+  /// A speculative session processes each call's batch, so it gets each chunk
+  /// in one call.
+  int _decodePromptSegment(
     llama_batch batch,
     Pointer<Int32> tokensPtr,
     _LlamaContextWrapper ctx, {
@@ -5514,21 +5536,33 @@ class LlamaCppService {
     Pointer<llama_dart_speculative>? speculativeSession,
     _SpeculativeApi? speculativeApi,
     _LlamaCppSpeculativeConfig? speculativeConfig,
+    required bool Function() isCancelled,
   }) {
     if (tokenCount <= 0) {
-      return;
+      return 0;
     }
 
     final effectiveBatchTokens = maxBatchTokens > 0
         ? maxBatchTokens
         : tokenCount;
+    final hasSpeculativeSession =
+        speculativeSession != null && speculativeSession != nullptr;
+    final callTokens = hasSpeculativeSession
+        ? effectiveBatchTokens
+        : llama_n_ubatch(ctx.pointer);
     var decoded = 0;
 
     while (decoded < tokenCount) {
-      final remaining = tokenCount - decoded;
-      final chunkTokenCount = remaining > effectiveBatchTokens
-          ? effectiveBatchTokens
-          : remaining;
+      if (isCancelled()) {
+        break;
+      }
+      final chunkTokenCount = math.min(
+        math.min(
+          callTokens,
+          effectiveBatchTokens - decoded % effectiveBatchTokens,
+        ),
+        tokenCount - decoded,
+      );
       batch.n_tokens = chunkTokenCount;
 
       for (int i = 0; i < chunkTokenCount; i++) {
@@ -5544,8 +5578,7 @@ class LlamaCppService {
       if (llama_decode(ctx.pointer, batch) != 0) {
         throw Exception("Initial decode failed");
       }
-      if (speculativeSession != null &&
-          speculativeSession != nullptr &&
+      if (hasSpeculativeSession &&
           !_processSpeculativeBatch(
             speculativeApi!,
             speculativeSession,
@@ -5557,6 +5590,7 @@ class LlamaCppService {
 
       decoded += chunkTokenCount;
     }
+    return decoded;
   }
 
   bool _processSpeculativeBatch(
@@ -5802,10 +5836,10 @@ class LlamaCppService {
       );
       pieceTick.stop();
       sampleMicros += pieceTick.elapsedMicroseconds;
+      generatedTokens++;
 
       if (n > 0) {
         final bytes = pieceBuf.asTypedList(n).toList();
-        generatedTokens++;
         final visible = stopBuffer.add(bytes);
         if (visible.isNotEmpty) yield visible;
         if (stopBuffer.isStopped) {
@@ -7796,6 +7830,21 @@ class LlamaCppService {
     return llama_n_ctx(ctx.pointer);
   }
 
+  /// Token counts of the last generation on [contextHandle], or null when
+  /// no such context exists.
+  ({int promptTokens, int cachedPromptTokens, int completionTokens})?
+  lastGenerationTokenCounts(int contextHandle) {
+    final ctx = _contexts[contextHandle];
+    if (ctx == null) {
+      return null;
+    }
+    return (
+      promptTokens: ctx.lastPerfPromptEvalTokens,
+      cachedPromptTokens: ctx.lastPerfCachedPromptTokens,
+      completionTokens: ctx.lastPerfEvalTokens,
+    );
+  }
+
   /// Returns native llama.cpp perf timings for [contextHandle].
   ({
     double loadMs,
@@ -9472,6 +9521,7 @@ class _LlamaContextWrapper {
   double lastPerfSpeculativeDraftMs = 0;
   double lastPerfSpeculativeVerifyMs = 0;
   int lastPerfPromptEvalTokens = 0;
+  int lastPerfCachedPromptTokens = 0;
   int lastPerfEvalTokens = 0;
   int lastPerfSampleCount = 0;
   int lastPerfSpeculativeDraftTokens = 0;
@@ -9489,6 +9539,7 @@ class _LlamaContextWrapper {
     lastPerfSpeculativeDraftMs = 0;
     lastPerfSpeculativeVerifyMs = 0;
     lastPerfPromptEvalTokens = 0;
+    lastPerfCachedPromptTokens = 0;
     lastPerfEvalTokens = 0;
     lastPerfSampleCount = 0;
     lastPerfSpeculativeDraftTokens = 0;

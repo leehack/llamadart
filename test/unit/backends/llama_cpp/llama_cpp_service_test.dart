@@ -490,6 +490,120 @@ void main() {
     });
   });
 
+  group('explicit GpuBackend device lookup', () {
+    test('names the ggml registries of the pinned llama.cpp', () {
+      // Registry names returned by each ggml *_reg_get_name at the llama.cpp
+      // commit pinned by native v0.5.0; HIP builds define GGML_CUDA_NAME as
+      // "ROCm" and Metal defines GGML_METAL_NAME as "MTL".
+      expect(
+        {
+          for (final backend in GpuBackend.values)
+            backend: LlamaCppService.ggmlGpuRegistryName(backend),
+        },
+        {
+          GpuBackend.auto: null,
+          GpuBackend.cpu: null,
+          GpuBackend.vulkan: 'Vulkan',
+          GpuBackend.metal: 'MTL',
+          GpuBackend.cuda: 'CUDA',
+          GpuBackend.blas: 'BLAS',
+          GpuBackend.opencl: 'OpenCL',
+          GpuBackend.hip: 'ROCm',
+        },
+      );
+    });
+
+    test('names the backend of a load from ggml registry labels', () {
+      final service = LlamaCppService();
+      // Labels as getBackendInfo builds them: '<registry> (<device>)'.
+      const labels = <GpuBackend, String>{
+        GpuBackend.vulkan: 'Vulkan (Vulkan0)',
+        GpuBackend.metal: 'MTL (MTL0)',
+        GpuBackend.cuda: 'CUDA (CUDA0)',
+        GpuBackend.blas: 'BLAS',
+        GpuBackend.opencl: 'OpenCL (GPUOpenCL)',
+        GpuBackend.hip: 'ROCm (ROCm0)',
+      };
+      const displayNames = <GpuBackend, String>{
+        GpuBackend.vulkan: 'Vulkan',
+        GpuBackend.metal: 'Metal',
+        GpuBackend.cuda: 'CUDA',
+        GpuBackend.blas: 'BLAS',
+        GpuBackend.opencl: 'OpenCL',
+        GpuBackend.hip: 'HIP',
+      };
+      for (final MapEntry(key: backend, value: label) in labels.entries) {
+        expect(
+          _invokePrivateForTesting<String>(
+            service,
+            '_resolveExplicitBackendName',
+            [backend, 'CPU, $label'],
+          ),
+          displayNames[backend],
+          reason: label,
+        );
+      }
+      expect(
+        _invokePrivateForTesting<String?>(service, '_resolveAutoBackendName', [
+          'CPU, ROCm (ROCm0)',
+        ]),
+        'HIP',
+      );
+    });
+
+    test('resolves devices exactly for registered GPU registries', () {
+      final service = LlamaCppService();
+      _invokePrivateForTesting<void>(service, '_prepareBackendsForModelLoad', [
+        GpuBackend.auto,
+      ]);
+      final registeredWithDevices = <GpuBackend>{};
+      final registryCount = _invokePrivateForTesting<int>(
+        service,
+        '_ggmlBackendRegCount',
+        [],
+      );
+      for (var i = 0; i < registryCount; i++) {
+        final reg = _invokePrivateForTesting<ggml_backend_reg_t>(
+          service,
+          '_ggmlBackendRegGet',
+          [i],
+        );
+        if (reg == nullptr) continue;
+        final namePtr = _invokePrivateForTesting<Pointer<Char>>(
+          service,
+          '_ggmlBackendRegName',
+          [reg],
+        );
+        if (namePtr == nullptr) continue;
+        final name = namePtr.cast<Utf8>().toDartString();
+        final deviceCount = _invokePrivateForTesting<int>(
+          service,
+          '_ggmlBackendRegDevCount',
+          [reg],
+        );
+        if (deviceCount > 0) {
+          registeredWithDevices.add(
+            LlamaCppService.gpuBackendFromRegName(name),
+          );
+        }
+      }
+
+      for (final backend in GpuBackend.values) {
+        if (backend == GpuBackend.auto || backend == GpuBackend.cpu) continue;
+        final devices = _invokePrivateForTesting<List<ggml_backend_dev_t>?>(
+          service,
+          '_resolvePreferredDevices',
+          [backend],
+        );
+        expect(
+          devices?.isNotEmpty ?? false,
+          registeredWithDevices.contains(backend),
+          reason: '$backend; registries with devices: $registeredWithDevices',
+        );
+      }
+    });
+  });
+
   group('loadModel preflight validation', () {
     late Directory tempDir;
 
@@ -2304,6 +2418,303 @@ void main() {
       expect(index('CPU', [GpuBackend.cpu]), isNull);
       expect(index(null, [GpuBackend.auto]), isNull);
       expect(index('Unknown', [GpuBackend.auto]), isNull);
+    });
+  });
+
+  group('prompt evaluation cancel', () {
+    const params = ModelParams(
+      contextSize: 512,
+      batchSize: 100,
+      microBatchSize: 64,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    const greedy = GenerationParams(maxTokens: 8, temp: 0, seed: 1);
+    final prompt = 'a' * 226;
+    final longerPrompt = prompt + 'b' * 30;
+    late Directory tempDir;
+    late LlamaCppService service;
+    late int modelHandle;
+    late int contextHandle;
+    late Pointer<Int8> cancelFlag;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('prompt_cancel_');
+      service = LlamaCppService();
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+      modelHandle = service.loadModel(modelPath, params);
+      contextHandle = service.createContext(modelHandle, params);
+      cancelFlag = calloc<Int8>();
+    });
+
+    tearDown(() {
+      calloc.free(cancelFlag);
+      service.dispose();
+      tempDir.deleteSync(recursive: true);
+    });
+
+    Object context() => _readPrivateForTesting<Map<int, Object>>(
+      service,
+      '_contexts',
+    )[contextHandle]!;
+
+    List<int>? cachedPromptTokens() =>
+        reflect(context()).getField(#cachedPromptTokens).reflectee
+            as List<int>?;
+
+    Pointer<llama_context> contextPointer() =>
+        reflect(context()).getField(#pointer).reflectee
+            as Pointer<llama_context>;
+
+    Pointer<llama_model> modelPointer() =>
+        reflect(
+              _readPrivateForTesting<Map<int, Object>>(
+                service,
+                '_models',
+              )[modelHandle]!,
+            ).getField(#pointer).reflectee
+            as Pointer<llama_model>;
+
+    llama_batch batch() => _readPrivateForTesting<Map<int, llama_batch>>(
+      service,
+      '_batches',
+    )[contextHandle]!;
+
+    int positionsInMemory() =>
+        llama_memory_seq_pos_max(llama_get_memory(contextPointer()), 0) + 1;
+
+    /// Ingests [text] as a generation does and reports a cancel at the
+    /// [cancelAt]th check. Returns the decoded token count and the positions
+    /// in memory at each check.
+    (int, List<int>) ingest(String text, {int? cancelAt}) {
+      final vocab = llama_model_get_vocab(modelPointer());
+      final tokens = malloc<Int32>(params.contextSize);
+      final checks = <int>[];
+      try {
+        final decoded = _invokePrivateForTesting<int>(
+          service,
+          '_ingestTextPrompt',
+          [batch(), vocab, text, tokens, params.contextSize, context()],
+          {
+            #maxBatchTokens: params.batchSize,
+            #allowPromptReuse: true,
+            #speculativeSession: nullptr,
+            #speculativeApi: null,
+            #speculativeConfig: null,
+            #isCancelled: () {
+              checks.add(positionsInMemory());
+              return checks.length == cancelAt;
+            },
+          },
+        );
+        return (decoded, checks);
+      } finally {
+        malloc.free(tokens);
+      }
+    }
+
+    Future<List<int>> generate(
+      String text, {
+      GenerationParams params = greedy,
+    }) async => [
+      for (final bytes
+          in await service
+              .generate(contextHandle, text, params, cancelFlag.address)
+              .toList())
+        ...bytes,
+    ];
+
+    test('decodes each n_batch chunk in n_ubatch calls and checks the cancel '
+        'before each call', () {
+      final promptTokens = service.tokenize(modelHandle, prompt, true);
+      expect(promptTokens, hasLength(230));
+
+      final (decoded, checks) = ingest(prompt);
+
+      expect(checks, [0, 64, 100, 164, 200]);
+      expect(decoded, 230);
+      expect(positionsInMemory(), 230);
+      expect(cachedPromptTokens(), promptTokens);
+    });
+
+    test(
+      'decodes each n_batch chunk in one call for a speculative session',
+      () {
+        const speculative = GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(),
+        );
+        final api = _invokePrivateForTesting<Object>(
+          service,
+          '_resolveSpeculativeApi',
+          const [],
+        );
+        final config = _invokePrivateForTesting<Object>(
+          service,
+          '_resolveLlamaCppSpeculativeConfig',
+          [speculative],
+          {#hasMediaParts: false},
+        );
+        final session =
+            reflect(api).invoke(#initSession, const [], {
+                  #targetModel: modelPointer(),
+                  #draftModel: null,
+                  #targetContext: contextPointer(),
+                  #contextParams:
+                      _readPrivateForTesting<Map<int, llama_context_params>>(
+                        service,
+                        '_contextParams',
+                      )[contextHandle]!,
+                  #config: config,
+                }).reflectee
+                as Pointer<llama_dart_speculative>;
+        final promptTokens = service.tokenize(modelHandle, prompt, true);
+        final tokens = malloc<Int32>(promptTokens.length);
+        tokens.asTypedList(promptTokens.length).setAll(0, promptTokens);
+        final checks = <int>[];
+        try {
+          final decoded = _invokePrivateForTesting<int>(
+            service,
+            '_decodePromptSegment',
+            [batch(), tokens, context()],
+            {
+              #startTokenIndex: 0,
+              #tokenCount: promptTokens.length,
+              #maxBatchTokens: params.batchSize,
+              #outputAllLogits: true,
+              #speculativeSession: session,
+              #speculativeApi: api,
+              #speculativeConfig: config,
+              #isCancelled: () {
+                checks.add(positionsInMemory());
+                return false;
+              },
+            },
+          );
+
+          expect(checks, [0, 100, 200]);
+          expect(decoded, 230);
+        } finally {
+          (reflect(api).getField(#free).reflectee as Function)(session);
+          malloc.free(tokens);
+        }
+      },
+    );
+
+    test('a cancel between micro-batches keeps only the decoded tokens '
+        'cached', () {
+      final (decoded, checks) = ingest(prompt, cancelAt: 3);
+
+      expect(checks, [0, 64, 100]);
+      expect(decoded, 100);
+      expect(positionsInMemory(), 100);
+      expect(
+        cachedPromptTokens(),
+        service.tokenize(modelHandle, prompt, true).sublist(0, 100),
+      );
+
+      final (resumed, resumedChecks) = ingest(longerPrompt, cancelAt: 2);
+
+      expect(resumedChecks, [100, 164]);
+      expect(resumed, 164);
+      expect(positionsInMemory(), 164);
+      expect(
+        cachedPromptTokens(),
+        service.tokenize(modelHandle, longerPrompt, true).sublist(0, 164),
+      );
+    });
+
+    test('a generation after a prompt cancelled between micro-batches matches '
+        'one from a cleared context', () async {
+      final uncancelled = await generate(
+        longerPrompt,
+        params: greedy.copyWith(reusePromptPrefix: false),
+      );
+      expect(uncancelled, isNotEmpty);
+
+      ingest(prompt, cancelAt: 3);
+
+      expect(await generate(longerPrompt), uncancelled);
+    });
+
+    test('a cancel raised before prompt evaluation ends the generation '
+        'without output and keeps only the reused prefix cached', () async {
+      final uncancelled = await generate(
+        longerPrompt,
+        params: greedy.copyWith(reusePromptPrefix: false),
+      );
+      await generate(prompt);
+      final promptTokens = service.tokenize(modelHandle, prompt, true);
+      final longerTokens = service.tokenize(modelHandle, longerPrompt, true);
+      var reused = 0;
+      while (reused < promptTokens.length &&
+          promptTokens[reused] == longerTokens[reused]) {
+        reused += 1;
+      }
+      cancelFlag.value = 1;
+
+      expect(await generate(longerPrompt), isEmpty);
+      expect(reused, greaterThan(200));
+      expect(cachedPromptTokens(), longerTokens.sublist(0, reused));
+      expect(positionsInMemory(), reused);
+
+      cancelFlag.value = 0;
+      expect(await generate(longerPrompt), uncancelled);
+    });
+
+    test('a cancel raised before prompt evaluation reports only the reused '
+        'prefix as prompt tokens', () async {
+      await generate(prompt);
+      final reused = cachedPromptTokens()!.length;
+      cancelFlag.value = 1;
+
+      expect(await generate(longerPrompt), isEmpty);
+      expect(reused, greaterThan(200));
+      expect(service.lastGenerationTokenCounts(contextHandle), (
+        promptTokens: reused,
+        cachedPromptTokens: reused,
+        completionTokens: 0,
+      ));
+    });
+
+    test('a cancel raised before prompt evaluation of a repeated prompt '
+        'caches no tokens', () async {
+      final uncancelled = await generate(prompt);
+      cancelFlag.value = 1;
+
+      expect(await generate(prompt), isEmpty);
+      expect(cachedPromptTokens(), isEmpty);
+      expect(positionsInMemory(), 0);
+
+      cancelFlag.value = 0;
+      expect(await generate(prompt), uncancelled);
+    });
+
+    test('a cancel raised before the last token of a loaded state is decoded '
+        'keeps the other tokens cached', () async {
+      await generate(prompt);
+      final promptTokens = service.tokenize(modelHandle, prompt, true);
+      final statePath = path.join(tempDir.path, 'state.bin');
+      expect(
+        service.stateSaveFile(contextHandle, statePath, promptTokens),
+        isTrue,
+      );
+      service.stateLoadFile(contextHandle, statePath, params.contextSize);
+      final resumed = await generate(prompt);
+      service.stateLoadFile(contextHandle, statePath, params.contextSize);
+      cancelFlag.value = 1;
+
+      expect(await generate(prompt), isEmpty);
+      expect(
+        cachedPromptTokens(),
+        promptTokens.sublist(0, promptTokens.length - 1),
+      );
+      expect(positionsInMemory(), promptTokens.length - 1);
+
+      cancelFlag.value = 0;
+      expect(await generate(prompt), resumed);
     });
   });
 

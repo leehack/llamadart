@@ -1,5 +1,7 @@
 ---
-title: Generation and Streaming
+title: Text generation and streaming
+sidebar_label: Generation and streaming
+description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, cancellation and tokenization helpers.
 ---
 
 `llamadart` exposes three generation entry points:
@@ -91,6 +93,28 @@ await for (final chunk in engine.create(
   }
 }
 ```
+
+## Token usage and timings
+
+On native llama.cpp, the final `create` chunk carries the request's usage
+whenever the backend reports it. The backend can report none, for example for
+a request cancelled while it is queued. Usage is null on other backends and on
+every earlier chunk.
+
+```dart
+final chunks = await engine.create(messages).toList();
+final usage = chunks.last.usage;
+if (usage != null) {
+  print('prompt ${usage.promptTokens} '
+      '(cached ${usage.cachedPromptTokens}), '
+      'completion ${usage.completionTokens}, '
+      'first token ${usage.timeToFirstToken}, total ${usage.duration}');
+}
+```
+
+The backend times `timeToFirstToken` and `duration` from when it starts the
+request. They exclude template rendering and time spent queued behind another
+request, and `timeToFirstToken` excludes stream batching.
 
 ## Thinking budget (native llama.cpp)
 
@@ -204,9 +228,15 @@ input: that stream ends without generating. A stream listened to after the
 call is not affected. How quickly a running generation stops depends on the
 backend.
 
-On native llama.cpp, a generation started while a cancelled one is still
-stopping waits for it to stop, then runs. Starting one while another is
-running and not cancelled throws `LlamaStateException`.
+Cancelling a stream's subscription also sends the cancel to its backend at
+once, even before the first token.
+
+On native llama.cpp, a cancel during text prompt evaluation takes effect at the
+next prompt micro-batch (`ModelParams.microBatchSize` tokens), or at the next
+batch (`ModelParams.batchSize` tokens) with speculative decoding. A generation
+started while a cancelled one is still stopping waits for it to stop, then
+runs. Starting one while another is running and not cancelled throws
+`LlamaStateException`.
 
 ## Tokenization helpers
 
@@ -218,7 +248,7 @@ final count = await engine.getTokenCount('hello world');
 
 These helpers are useful for context budgeting and prompt diagnostics.
 
-## Next-token scores (native llama.cpp)
+## Next-token scores
 
 `engine.scoreNextToken(...)` evaluates a prompt and returns the
 log-probabilities of the token that would follow it, without generating. Ask
@@ -247,8 +277,9 @@ The values are a softmax over the raw logits at the last prompt position, the
 same as llama-server's `n_probs`; sampling settings do not apply. The prompt is
 tokenized like a `generate` prompt, and a prefix shared with the previous
 prompt is reused unless `reusePromptPrefix` is false. Check
-`engine.supportsNextTokenScoring` first: WebGPU and LiteRT-LM report false and
-throw `LlamaUnsupportedException`.
+`engine.supportsNextTokenScoring` first: native llama.cpp and WebGPU bridge
+assets `v0.1.52+` support it; LiteRT-LM and older bridge assets report false
+and throw `LlamaUnsupportedException`.
 
 ## Stateless vs stateful chat
 

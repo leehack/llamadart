@@ -4,6 +4,9 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
 
+"${repo_root}/tool/testing/prepare_llama_cpp_source.sh"
+export REQUIRE_LLAMA_CPP_TEMPLATES=1
+
 echo "[template-parity] detection parity"
 dart test -p vm -j 1 test/integration/core/template/llama_cpp_template_detection_integration_test.dart
 

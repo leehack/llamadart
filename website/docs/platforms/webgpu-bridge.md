@@ -1,5 +1,6 @@
 ---
-title: WebGPU Bridge
+title: WebGPU bridge for browser inference
+sidebar_label: WebGPU bridge
 description: Check browser readiness, bridge asset loading, fallback behavior, and Flutter Web smoke-test paths for llamadart's experimental WebGPU runtime.
 ---
 
@@ -146,13 +147,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.51`, with local vendored assets
-identified as `v0.1.51-local-v0.5.0`.
+The example currently pins bridge assets to `v0.1.52`, with local vendored assets
+identified as `v0.1.52-local-v0.5.0`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.51 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.52 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -204,13 +205,16 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
 - `v0.1.47+` bridge assets include the decision API (apiVersion 1) that
   [`DecisionEngine`](../guides/decision-models#web) needs; older assets report
   decision models as unsupported.
-- The pinned `v0.1.51` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
+- `v0.1.52+` bridge assets expose `scoreNextToken`, which
+  `LlamaEngine.scoreNextToken(...)` needs; older assets report
+  `supportsNextTokenScoring == false`.
+- The pinned `v0.1.52` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
   (`v0.5.0`, both built from upstream `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
-  even though the bridge asset tag `v0.1.51` differs from the native runtime tag
-  `v0.5.0`. Pinned artifact provenance: release `395938081`, tag commit
-  `d3b857d79f569f4aa54f8c22743f1bdff1af56cd`, bridge source
-  `6ed621318648723d77c0373c2aedc7bfce2b93c7`, manifest SHA-256
-  `8a9278cb4832f512fb1b334c07265121176f204194ba1899a1de4153879c0eed`. The
+  even though the bridge asset tag `v0.1.52` differs from the native runtime tag
+  `v0.5.0`. Pinned artifact provenance: release `396846786`, tag commit
+  `8526e92057df6d74d5e435d6ca67baf68cb7dca3`, bridge source
+  `cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff`, manifest SHA-256
+  `b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`. The
   bridge assets were qualified against native `v0.5.0`. The bridge assets
   provision an explicit 1 MiB stack for both wasm32 and memory64, preventing
   graph-parameter growth from overflowing Emscripten's 64 KiB default during
@@ -349,7 +353,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.51';
+  window.__llamadartBridgeAssetsTag = 'v0.1.52';
   // Custom assets stay speech-disabled unless the host has validated them:
   // window.__llamadartBridgeSpeechToTextSupported = true;
   // Prefer local runtime even off localhost:

@@ -1,5 +1,6 @@
 ---
 title: Choosing llama.cpp or LiteRT-LM
+sidebar_label: llama.cpp or LiteRT-LM
 description: Decide when to use GGUF with llama.cpp or .litertlm bundles with LiteRT-LM in llamadart.
 ---
 
@@ -67,16 +68,16 @@ JavaScript runtime.
 | Capability | llama.cpp / GGUF | LiteRT-LM / `.litertlm` |
 | --- | --- | --- |
 | Native Android | CPU, Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
-| Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU |
+| Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU (macOS x64: CPU only) |
 | Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
-| Next-token log-probabilities | Supported on native; not exposed on the web bridge | Not exposed |
+| Next-token log-probabilities | Supported on native and on WebGPU bridge assets `v0.1.52+` | Not exposed |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
 | LoRA adapters | Supported on native GGUF flows | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
-| Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
+| Multimodal input | Supported through llama.cpp `mtmd` paths where the model/projector supports it | No external projector. Native bundles accept `LlamaImageContent`/`LlamaAudioContent` path or bytes input through bundle-native processors (see [Multimodal](./multimodal)); web is text-only. |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
 | Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, native LiteRT-LM runtime fields, and generation length/sampling fields that LiteRT-LM exposes |
 

@@ -1,5 +1,7 @@
 ---
 title: Examples Overview
+sidebar_label: Overview
+description: The example apps in the llamadart repository, from a console app to a Flutter chat app, a CLI, a server and a coding agent.
 ---
 
 The repository ships multiple examples for different integration styles.
@@ -24,7 +26,7 @@ The repository ships multiple examples for different integration styles.
 - Build a product UI: start with Chat App.
 - Run decision models in a real-time app: start with Laya Tetris.
 - Drive interactive UI from a classifier: start with Laya Command Bar.
-- Need terminal workflow parity: start with llama CLI.
+- Need terminal workflow parity: start with llamadart CLI.
 - Need HTTP integration for tools/agents: start with llamadart Server.
 - Need an interactive coding-agent terminal UI: start with TUI Coding Agent.
 

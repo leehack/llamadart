@@ -17,6 +17,7 @@ import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
+import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -256,6 +257,52 @@ void main() {
       },
     );
 
+    test(
+      'generationUsageOf reports the usage of each finished stream',
+      () async {
+        const usage = LlamaGenerationUsage(
+          promptTokens: 9,
+          cachedPromptTokens: 2,
+          completionTokens: 1,
+          duration: Duration(milliseconds: 4),
+        );
+        final reported = backend.generate(
+          1,
+          'pending',
+          const GenerationParams(),
+        );
+        final done = reported.drain<void>();
+        await Future<void>.delayed(Duration.zero);
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+        expect(backend.generationUsageOf(reported), isNull);
+        generateRequest.sendPort
+          ..send(TokenResponse(<int>[67]))
+          ..send(DoneResponse(generationUsage: usage));
+        await done;
+
+        expect(backend.generationUsageOf(reported), same(usage));
+
+        final unreported = backend.generate(1, 'ok', const GenerationParams());
+        await unreported.drain<void>();
+        expect(backend.generationUsageOf(unreported), isNull);
+        expect(backend.generationUsageOf(reported), same(usage));
+      },
+    );
+
+    test('generationUsageOf is null for a stream that failed', () async {
+      final failed = backend.generate(1, 'pending', const GenerationParams());
+      final done = failed.drain<void>();
+      await Future<void>.delayed(Duration.zero);
+      harness.received.whereType<GenerateRequest>().last.sendPort.send(
+        ErrorResponse('decode failed'),
+      );
+      await expectLater(done, throwsA(anything));
+
+      expect(backend.generationUsageOf(failed), isNull);
+    });
+
     group('generation cancel flags', () {
       late _RecordingAllocator allocator;
       late NativeLlamaBackend flagBackend;
@@ -391,6 +438,27 @@ void main() {
           expect(generateRequests(), hasLength(2));
         },
       );
+
+      test('an engine subscription cancel before the first token raises the '
+          'flag, and a generation right after it waits for the run', () async {
+        final engine = LlamaEngine(flagBackend);
+        await engine.loadModel('model.gguf');
+        final subscription = engine.generate('pending').listen((_) {});
+        while (generateRequests().isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        final first = generateRequests().single;
+
+        unawaited(subscription.cancel());
+        final next = engine.generate('ok').join();
+
+        expect(flagValue(first), 1);
+        await Future<void>.delayed(Duration.zero);
+        expect(generateRequests(), hasLength(1));
+        first.sendPort.send(DoneResponse());
+        expect(await next, 'AB');
+        expect(generateRequests(), hasLength(2));
+      });
 
       test('cancelGeneration ends a queued generation unsent', () async {
         final first = await startPending();

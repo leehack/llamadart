@@ -1,45 +1,56 @@
 ---
-title: Architecture & llama.cpp
+title: How llamadart works
+sidebar_label: Architecture
+description: How llamadart layers one Dart API over llama.cpp and LiteRT-LM, with FFI bindings and worker isolates on native and JavaScript runtimes on the web.
 ---
 
-`llamadart` is a comprehensive Dart and Flutter framework that deeply integrates with the renowned **`llama.cpp`** library. This page explains our architectural approach and how the underlying inference engine operates.
+`llamadart` exposes one Dart API (`LlamaEngine`, `ChatSession` and the typed
+speech and decision engines) over two inference runtimes:
 
-## The Core: llama.cpp and GGML
+- **llama.cpp** runs GGUF models. It is built on **GGML**, a tensor library
+  with CPU kernels (NEON, AVX) and GPU backends (Metal, Vulkan, CUDA and more).
+- **LiteRT-LM** runs `.litertlm` bundles. See
+  [Choosing llama.cpp or LiteRT-LM](./backend-selection).
 
-At the heart of `llamadart` is `llama.cpp`—a C/C++ library designed for extremely fast, low-dependency inference of large language models. `llama.cpp` is built on top of **GGML**, a tensor math library specifically optimized for everyday hardware (CPUs) while extending support to GPUs.
-
-## Architecture Overview
+## Architecture overview
 
 import ArchitectureDiagram from '@site/src/components/ArchitectureDiagram';
 
 <ArchitectureDiagram />
 
-### Why llama.cpp?
-- **Minimal Dependencies**: It does not rely on massive python ecosystems or heavy ML dependencies like PyTorch, making it perfectly suited for embedding in mobile apps (Android/iOS) and desktop clients.
-- **Hardware Acceleration**: It actively exploits hardware-specific intrinsics (like ARM NEON on Apple Silicon/Android) and GPU backends (Metal on Macs, Vulkan on Windows/Linux).
-- **GGUF Format**: It standardizes around the GGUF file format, which stores the neural network architecture, the quantized weights, and the tokenizer all in a single easily portable file.
+## Native targets
 
-## The Common Library
+1. **Prebuilt runtimes.** During `flutter build` or `dart run`, the package's
+   build hook downloads the prebuilt runtime bundles for the target platform
+   from `llamadart-native` (llama.cpp) and `litert-lm-native` (LiteRT-LM), so
+   apps never compile C++. See [Native build hooks](../platforms/native-build-hooks).
+2. **FFI bindings.** Dart FFI calls the llama.cpp C API (`llama.h`, `mtmd.h`
+   for multimodal input, and a thin `llamadart-native` wrapper) and the
+   LiteRT-LM C API. llamadart does not use llama.cpp's `common` helpers: model loading with memory
+   mapping (`ModelParams.useMmap`), tokenization and sampler chains are all
+   libllama calls.
+3. **Worker isolates.** Each backend runs native calls in a background
+   isolate, so inference never blocks the UI isolate. Results stream back as
+   Dart streams.
+4. **Explicit lifecycle.** Models and contexts are native memory. Release them
+   with `await engine.unloadModel()` and `await engine.dispose()`, typically in
+   `try/finally`, instead of relying on garbage collection. See
+   [Model lifecycle](./model-lifecycle).
 
-Within `llama.cpp` (and mirrored in `llamadart`), there is a concept of the "Common Library". This library acts as a crucial abstraction layer over the raw GGML tensor operations. 
+## Web
 
-It handles:
-1. **Model Loading & Memory Mapping (mmap):** Instead of loading the entire heavy model into active RAM, the common library maps the GGUF file directly into virtual memory. This drastically reduces the initial memory spike and allows the OS to smartly page chunks of the model in and out as needed.
-2. **Tokenization:** Mapping plain text to the integer IDs the neural network actually understands.
-3. **Sampling Automation:** Executing the math behind `top-k`, `top-p`, and `temperature` logic based on the logits outputted by the model.
+On the web, the same Dart API talks to JavaScript runtimes through interop:
 
-## Dart FFI and Native Bindings
+- GGUF models run in the [WebGPU bridge](../platforms/webgpu-bridge), a
+  llama.cpp build for WebGPU with a CPU (WebAssembly) path.
+- `.litertlm` models run through the official `@litert-lm/core` browser API.
 
-To bridge the gap between Dart/Flutter and the `llama.cpp` C++ engine, `llamadart` relies heavily on **Dart FFI (Foreign Function Interface)**.
+Capabilities differ by runtime; the
+[support matrix](../platforms/support-matrix) lists what each one supports.
 
-1. **Prebuilt Runtime Resolution**: During `flutter build` / `dart run`, this
-   repo's native-assets hook resolves platform-specific prebuilt runtime
-   bundles from `llamadart-native` and wires them into the application.
-2. **Isolates**: To prevent heavy inference work from freezing app UIs, native
-   backend operations run in background **Isolates**.
-3. **Explicit Lifecycle Management**: Model/context resources are native and
-   should be explicitly released with `await engine.unloadModel()` and
-   `await engine.dispose()` (typically in `try/finally`), rather than relying
-   on garbage collection timing.
+## Chat templates
 
-This architecture guarantees that `llamadart` maintains the absolute maximum performance of raw C++ while presenting a safe, ergonomic, and asynchronous Dart API to mobile developers.
+Chat template detection, rendering and output parsing are reimplemented in
+Dart, in line with llama.cpp, so tool calling and reasoning parsing behave the
+same on native and web. See
+[Chat templates and output parsing](./chat-template-and-parsing).

@@ -1,5 +1,7 @@
 ---
-title: Tool Calling
+title: Tool calling with local models
+sidebar_label: Tool calling
+description: Define tools with ToolDefinition, control them with ToolChoice, and run a template-aware tool-calling loop with a local model.
 ---
 
 `llamadart` supports template-aware tool calling through `ToolDefinition` and

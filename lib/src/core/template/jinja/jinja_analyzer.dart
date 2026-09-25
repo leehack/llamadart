@@ -1,12 +1,7 @@
 import 'dart:convert';
 
+import 'package:dinja/ast.dart';
 import 'package:dinja/dinja.dart';
-// ignore: implementation_imports
-import 'package:dinja/src/ast/nodes.dart';
-// ignore: implementation_imports
-import 'package:dinja/src/parser.dart';
-// ignore: implementation_imports
-import 'package:dinja/src/lexer.dart';
 
 import '../../llama_logger.dart';
 import '../template_caps.dart';
@@ -41,10 +36,7 @@ class JinjaAnalyzer {
   /// `failed` is unaffected.
   static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(String source) {
     try {
-      final lexer = Lexer(source);
-      final result = lexer.tokenize();
-      final parser = Parser(result.tokens, source);
-      final program = parser.parse();
+      final program = parseTemplate(source);
 
       final astCaps = _analyzeAST(program);
       return _probeWithExecution(source, astCaps);

@@ -11,12 +11,15 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' show Response, document, window;
+import 'package:web/web.dart' show Response, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
+
+@JS('Error')
+external JSObject _jsError(String message);
 
 void main() {
   group('WebGpuLlamaBackend Unit', () {
@@ -1484,6 +1487,72 @@ void main() {
       ]);
     });
 
+    for (final message in const [
+      'thread constructor failed',
+      'bridge model load failed: error 138',
+    ]) {
+      for (final forcedFetchAbort in const [false, true]) {
+        test('maps "$message" to the cross-origin isolation error '
+            '(forced fetch abort: $forcedFetchAbort)', () async {
+          if (forcedFetchAbort) {
+            globalContext.setProperty(
+              '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+              true.toJS,
+            );
+            bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+            bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+                'model_fetch_backend_attempt;model_fetch_backend_abort';
+          }
+          failLoads(message: message, firstAttempts: 99);
+
+          await expectLater(
+            backend.modelLoadFromUrl(
+              'https://example.com/thread-constructor-model.gguf',
+              const ModelParams(contextSize: 4096, gpuLayers: 99),
+            ),
+            throwsA(
+              isA<UnsupportedError>().having(
+                (error) => error.message,
+                'message',
+                startsWith(
+                  'Browser runtime blocked worker thread creation required '
+                  'by the fetch-backed web model loader.',
+                ),
+              ),
+            ),
+          );
+          expect(requestedContextSizes, <int>[4096]);
+        });
+      }
+    }
+
+    test('treats "error 1380" as an ordinary fetch abort', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+      globalContext.setProperty(
+        '__llamadartBridgeRemoteFetchChunkBytes'.toJS,
+        (16 * 1024 * 1024).toJS,
+      );
+      bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+      bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+          'model_fetch_backend_attempt;model_fetch_backend_abort';
+      failLoads(
+        message: 'bridge model load failed: error 1380',
+        firstAttempts: 99,
+      );
+
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/error-1380-model.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        ),
+        throwsA(isNot(isA<UnsupportedError>())),
+      );
+      expect(requestedRemoteFetchChunkBytes, hasLength(11));
+    });
+
     test(
       'surfaces the memory limit error after an opted-in wasm64 staging failure',
       () async {
@@ -2253,6 +2322,42 @@ void main() {
       },
     );
 
+    test('an engine subscription cancel before the first token aborts the '
+        'bridge completion before the cancel returns', () async {
+      final completion = Completer<void>();
+      var completionStarted = false;
+      bridge.setProperty(
+        'cancel'.toJS,
+        (() {
+          cancelCallCount += 1;
+          if (!completion.isCompleted) {
+            completion.complete();
+          }
+        }).toJS,
+      );
+      bridge.setProperty(
+        'createCompletion'.toJS,
+        ((String prompt, JSObject opts) {
+          completionStarted = true;
+          return completion.future.toJS;
+        }).toJS,
+      );
+      final engine = LlamaEngine(backend);
+      await engine.loadModelFromUrl(
+        'https://example.com/model.gguf',
+        modelParams: const ModelParams(),
+      );
+
+      final subscription = engine.generate('Hello').listen((_) {});
+      while (!completionStarted) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final cancelled = subscription.cancel();
+
+      expect(cancelCallCount, 1);
+      await cancelled;
+    });
+
     test('generates embedding vector from bridge', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
@@ -2320,6 +2425,165 @@ void main() {
           ),
         ),
       );
+    });
+
+    group('next-token scoring', () {
+      JSObject? lastScoreOptions;
+      String? lastScorePrompt;
+
+      JSObject jsError(String message) => globalContext
+          .getProperty<JSFunction>('Error'.toJS)
+          .callAsConstructor<JSObject>(message.toJS);
+
+      JSObject scoredToken(int token, List<int> bytes, double? logprob) {
+        final entry = JSObject();
+        entry.setProperty('token'.toJS, token.toJS);
+        entry.setProperty('bytes'.toJS, Uint8List.fromList(bytes).toJS);
+        entry.setProperty('logprob'.toJS, logprob?.toJS);
+        return entry;
+      }
+
+      void installScoring(JSPromise<JSAny?> Function() respond) {
+        bridge.setProperty(
+          'scoreNextToken'.toJS,
+          ((String prompt, JSObject options) {
+            lastScorePrompt = prompt;
+            lastScoreOptions = options;
+            return respond();
+          }).toJS,
+        );
+      }
+
+      setUp(() {
+        lastScoreOptions = null;
+        lastScorePrompt = null;
+      });
+
+      test('reports support only when the bridge has the method', () async {
+        installScoring(() => Future<JSAny?>.value(null).toJS);
+        expect(backend.supportsNextTokenScoring, isFalse);
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        expect(backend.supportsNextTokenScoring, isTrue);
+
+        bridge.delete('scoreNextToken'.toJS);
+        expect(backend.supportsNextTokenScoring, isFalse);
+        await expectLater(
+          () => backend.scoreNextToken(
+            1,
+            'hi',
+            candidates: const <int>[1],
+            topK: 0,
+            reusePromptPrefix: true,
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.52+'),
+            ),
+          ),
+        );
+      });
+
+      test('forwards the request and parses the scores', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        installScoring(() {
+          final result = JSObject();
+          result.setProperty(
+            'candidates'.toJS,
+            <JSObject>[
+              scoredToken(7, const <int>[0xe2, 0x82], -0.25),
+              scoredToken(9, const <int>[], null),
+            ].toJS,
+          );
+          result.setProperty(
+            'top'.toJS,
+            <JSObject>[
+              scoredToken(7, const <int>[0x41], -0.25),
+            ].toJS,
+          );
+          result.setProperty('promptTokens'.toJS, 3.toJS);
+          return Future<JSAny?>.value(result).toJS;
+        });
+
+        final scores = await backend.scoreNextToken(
+          1,
+          'The answer is',
+          candidates: const <int>[7, 9],
+          topK: 1,
+          reusePromptPrefix: false,
+        );
+
+        expect(lastScorePrompt, 'The answer is');
+        final options = lastScoreOptions!;
+        expect(
+          options
+              .getProperty<JSArray<JSNumber>>('candidates'.toJS)
+              .toDart
+              .map((token) => token.toDartInt),
+          <int>[7, 9],
+        );
+        expect(options.getProperty<JSNumber>('topK'.toJS).toDartInt, 1);
+        expect(
+          options.getProperty<JSBoolean>('reusePromptPrefix'.toJS).toDart,
+          isFalse,
+        );
+
+        expect(scores.candidates.map((entry) => entry.token), <int>[7, 9]);
+        expect(scores.candidates.first.bytes, <int>[0xe2, 0x82]);
+        expect(scores.candidates.first.logprob, -0.25);
+        expect(scores.candidates.last.logprob, double.negativeInfinity);
+        expect(scores.top.single.text, 'A');
+        expect(scores.promptTokens, 3);
+      });
+
+      test('maps bridge errors to the native error types', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        Future<void> expectRejection(String message, Matcher matcher) async {
+          installScoring(() => _rejectPromise(jsError(message)));
+          await expectLater(
+            () => backend.scoreNextToken(
+              1,
+              'hi',
+              candidates: const <int>[99],
+              topK: 0,
+              reusePromptPrefix: true,
+            ),
+            throwsA(matcher),
+          );
+        }
+
+        const outOfVocabulary =
+            'Next-token scoring failed: Token id 99 is outside the vocabulary '
+            'of 32 tokens';
+        await expectRejection(
+          outOfVocabulary,
+          isA<RangeError>().having(
+            (RangeError error) => error.message,
+            'message',
+            outOfVocabulary,
+          ),
+        );
+        await expectRejection(
+          'Next-token scoring failed: Next-token scoring needs a decoder-only '
+          'model',
+          isA<LlamaUnsupportedException>(),
+        );
+        await expectRejection(
+          'Next-token scoring failed: llama_decode failed while processing '
+          'prompt',
+          isNot(anyOf(isA<RangeError>(), isA<LlamaUnsupportedException>())),
+        );
+      });
     });
 
     test('throws clear error for unsupported runtime LoRA updates', () async {
@@ -3407,6 +3671,255 @@ void main() {
       await expectLater(
         window.fetch(lastMmprojPath!.toJS).toDart,
         throwsA(anything),
+      );
+    });
+
+    group('a rejected projector load', () {
+      setUp(() {
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) {
+            return _rejectPromise(
+              _jsError(
+                'Failed to fetch multimodal projector '
+                'https://user:pw@example.com/mmproj.gguf?X-Amz-Signature=secret '
+                '(404 Not Found)',
+              ),
+            );
+          }).toJS,
+        );
+      });
+
+      final throwsRedactedModelException = throwsA(
+        isA<LlamaModelException>().having(
+          (error) => error.details,
+          'details',
+          'Failed to fetch multimodal projector '
+              'https://example.com/mmproj.gguf (404 Not Found)',
+        ),
+      );
+
+      test('throws LlamaModelException from the backend', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        await expectLater(
+          backend.multimodalContextCreate(1, 'https://example.com/mmproj.gguf'),
+          throwsRedactedModelException,
+        );
+      });
+
+      test('throws LlamaModelException from LlamaEngine', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+          modelParams: const ModelParams(),
+        );
+        await expectLater(
+          engine.loadMultimodalProjector('https://example.com/mmproj.gguf'),
+          throwsRedactedModelException,
+        );
+      });
+
+      const credentials = 'includes credentials';
+      const password = <String>[
+        'S1ab',
+        'S2cd',
+        's2cd',
+        'S3ef',
+        'S4gh',
+        'S5ij',
+        'S6kl',
+        '\u00fc',
+        '%C3%BC',
+        '%40',
+      ];
+      const passwordUrl =
+          'https://u:S1ab@S2cd#S3ef%40S4gh?S5ij\u00fcS6kl@example.com/m.gguf';
+
+      Future<void> expectRedactedFetchError(
+        String url,
+        String phrase,
+        String redacted,
+        List<String> secrets,
+      ) async {
+        await expectLater(
+          backend.multimodalContextCreate(1, url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '${error.details}',
+              'details',
+              allOf(<Matcher>[
+                contains(phrase),
+                contains(redacted),
+                isNot(contains('u:')),
+                for (final secret in secrets) isNot(contains(secret)),
+              ]),
+            ),
+          ),
+          reason: url,
+        );
+      }
+
+      test('keeps the message of credential-free projector URLs', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        for (final message in const [
+          'Failed to fetch multimodal projector: 404 Not Found',
+          'Projector expects 512 tokens, got 256 at v2.',
+        ]) {
+          bridge.setProperty(
+            'loadMultimodalProjector'.toJS,
+            ((String path) => _rejectPromise(_jsError(message))).toJS,
+          );
+          for (final url in const [
+            'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/'
+                'mmproj.gguf?v=1',
+            'https://huggingface.co/leehack/Qwen3-1.7B-head/resolve/main/'
+                'mmproj.gguf?revision=main',
+            'https://acct.blob.core.windows.net/heads/mmproj.gguf'
+                '?sv=2022-11-02&ss=b&sig=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789',
+            'https://example.com/mmproj.gguf?download',
+            'https://example.com:8080/mmproj.gguf?port=8080',
+            'http://127.0.0.1:9/mmproj.gguf?t=1',
+            'https://[::1]:8443/mmproj.gguf?x=2',
+            '/heads/mmproj.gguf?token=t',
+          ]) {
+            await expectLater(
+              backend.multimodalContextCreate(1, url),
+              throwsA(
+                isA<LlamaModelException>().having(
+                  (error) => error.details,
+                  'details',
+                  message,
+                ),
+              ),
+              reason: '$url: $message',
+            );
+          }
+        }
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) => window.fetch(path.toJS)).toJS,
+        );
+        await expectLater(
+          backend.multimodalContextCreate(1, 'http://127.0.0.1:9/m.gguf?t=1'),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.details,
+              'details',
+              'Failed to fetch',
+            ),
+          ),
+        );
+      });
+
+      test('keeps credentials of a real Chrome fetch error out', () async {
+        bridge.setProperty(
+          'loadMultimodalProjector'.toJS,
+          ((String path) => window.fetch(path.toJS)).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        const unparsable = 'Failed to parse URL from';
+        for (final (url, phrase, redacted, secrets) in const [
+          (
+            '//u:S13@example.com/m.gguf?t=Q1',
+            credentials,
+            '//example.com/m.gguf',
+            <String>['S13', 't=Q1'],
+          ),
+          (
+            'https://u:S14@example.com/m.gguf#t=Q2',
+            credentials,
+            'https://example.com/m.gguf',
+            <String>['S14', 't=Q2'],
+          ),
+          (
+            'https://u:SEK"RIT@example.com/m.gguf',
+            credentials,
+            'https://example.com/m.gguf',
+            <String>['SEK', 'RIT'],
+          ),
+          (
+            'https://u:SEKRIT/w@example.com/m.gguf',
+            unparsable,
+            'https://example.com/m.gguf',
+            <String>['SEKRIT', '/w@'],
+          ),
+          (
+            '//u:SEKRIT/w@example.com/m.gguf',
+            unparsable,
+            '//example.com/m.gguf',
+            <String>['SEKRIT', '/w@'],
+          ),
+          (
+            'https://u:SEK RIT@example.com/m.gguf',
+            credentials,
+            'https://example.com/m.gguf',
+            <String>['SEK', 'RIT'],
+          ),
+          (passwordUrl, credentials, 'credentials: https://', password),
+          (
+            'https://u:P7@example.com/h.bin?token=abc@SEKsecret',
+            credentials,
+            'credentials: https://example.com/h.bin',
+            <String>['P7', 'abc', 'SEKsecret', 'seksecret'],
+          ),
+          (
+            'https://u:P7@example.com/h.bin#frag@SEKsecret',
+            credentials,
+            'credentials: https://example.com/h.bin',
+            <String>['P7', 'frag', 'SEKsecret', 'seksecret'],
+          ),
+          (
+            'https://u:P7@example.com/path@SEKpath/h.bin',
+            credentials,
+            'credentials: https://example.com/path@SEKpath/h.bin',
+            <String>['P7', 'sekpath'],
+          ),
+        ]) {
+          await expectRedactedFetchError(url, phrase, redacted, secrets);
+        }
+      });
+
+      test(
+        'keeps credentials of a Chrome fetch error that normalises the URL out',
+        () async {
+          bridge.setProperty(
+            'loadMultimodalProjector'.toJS,
+            ((String path) => window.fetch(URL(path, document.baseURI))).toJS,
+          );
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          for (final (url, redacted, secrets) in const [
+            (
+              'https://u:SEKRIT@ex\u00e4mple.com/m.gguf',
+              'https://ex%C3%A4mple.com/m.gguf',
+              <String>['SEKRIT'],
+            ),
+            (
+              'https://u:P\u00e4ss@EXAMPLE.com/m.gguf?t=Q1',
+              'https://example.com/m.gguf',
+              <String>['P\u00e4ss', 'P%C3%A4ss', 'Q1'],
+            ),
+            (
+              'HTTPS://u:SEKRIT@example.com:443/./a/../m.gguf#frag',
+              'https://example.com/m.gguf',
+              <String>['SEKRIT', 'frag'],
+            ),
+            (passwordUrl, 'credentials: https://', password),
+          ]) {
+            await expectRedactedFetchError(url, credentials, redacted, secrets);
+          }
+        },
       );
     });
 

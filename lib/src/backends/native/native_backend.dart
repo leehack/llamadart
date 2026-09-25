@@ -6,6 +6,7 @@ import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
@@ -42,7 +43,8 @@ class NativeAutoBackend
         BackendTextToSpeech,
         BackendDecision,
         BackendVideoRuntimeSupport,
-        BackendGenerationLimitReporting {
+        BackendGenerationLimitReporting,
+        BackendGenerationUsageReporting {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -154,6 +156,17 @@ class NativeAutoBackend
     final delegate = _delegate;
     if (delegate is BackendGenerationLimitReporting) {
       return (delegate as BackendGenerationLimitReporting).generationLimitOf(
+        generation,
+      );
+    }
+    return null;
+  }
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) {
+    final delegate = _delegate;
+    if (delegate is BackendGenerationUsageReporting) {
+      return (delegate as BackendGenerationUsageReporting).generationUsageOf(
         generation,
       );
     }

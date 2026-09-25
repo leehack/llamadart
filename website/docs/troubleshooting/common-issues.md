@@ -1,5 +1,7 @@
 ---
-title: Common Issues
+title: Troubleshooting common issues
+sidebar_label: Common issues
+description: Fixes for native asset load failures, model path and URL errors, slow generation, unstable tool calls, web differences and log noise.
 ---
 
 ## Runtime bundle or native asset load failure
@@ -24,7 +26,7 @@ Symptoms:
 Checks:
 
 1. Confirm path exists and is readable.
-2. Confirm file is valid GGUF.
+2. Confirm the file is a valid GGUF or `.litertlm` bundle.
 3. For URL loading, confirm backend/platform supports URL model load.
 
 ## Slow generation

@@ -1,5 +1,6 @@
 ---
-title: Quickstart
+title: "Quickstart: run a model on the device"
+sidebar_label: Quickstart
 description: Load a GGUF or LiteRT-LM model, generate tokens, and try embeddings with the core llamadart APIs in minutes.
 ---
 
@@ -81,7 +82,8 @@ await engine.loadModel(
 ```
 
 `LiteRtLmBackendPreference.auto` is the default. It chooses GPU on Android,
-macOS, and web, and CPU on other current LiteRT-LM targets. Android native
+iOS, macOS, and web, and CPU on other current LiteRT-LM targets or when
+`gpuLayers` is `0`. Android native
 callers can request `LiteRtLmBackendPreference.npu` for devices and model
 bundles that support the LiteRT-LM NPU delegate. Web rejects NPU selection
 explicitly.
@@ -119,9 +121,10 @@ print('single dims=${single.length}');
 print('batch size=${batch.length}');
 ```
 
-Embeddings are a llama.cpp/GGUF capability in the current package. Check
-`engine.supportsEmbeddings` before calling these APIs when your app can switch
-between GGUF and LiteRT-LM models.
+Embeddings are a llama.cpp/GGUF capability in the current package. When a
+LiteRT-LM model is loaded, `embed(...)` and `embedBatch(...)` throw
+`LlamaUnsupportedException`, so catch it if your app can switch between GGUF
+and LiteRT-LM models.
 
 ## Next steps
 

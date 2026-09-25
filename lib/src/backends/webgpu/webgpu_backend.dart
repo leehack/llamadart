@@ -15,6 +15,7 @@ import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
@@ -32,6 +33,8 @@ class WebGpuLlamaBackend
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
         BackendDecision,
+        BackendNextTokenScoring,
+        BackendNextTokenScoringSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
         BackendLazyGrammarSupport {
@@ -46,6 +49,8 @@ class WebGpuLlamaBackend
   static const Duration _webGpuMultimodalWarmupTimeout = Duration(seconds: 12);
   static const String _defaultModelCacheName =
       'llamadart-webgpu-model-cache-v1';
+  static const String _nextTokenScoringUnsupportedMessage =
+      'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
   static const String _runtimeLoraUnsupportedMessage =
       'WebGPU LoRA runtime updates are not supported by the current bridge. '
       'Use a native llama.cpp backend when runtime LoRA adapter changes are '
@@ -105,6 +110,14 @@ class WebGpuLlamaBackend
         bridge != null &&
         _hasBridgeFunction(bridge, 'stateSaveFile') &&
         _hasBridgeFunction(bridge, 'stateLoadFile');
+  }
+
+  @override
+  bool get supportsNextTokenScoring {
+    final bridge = _bridge;
+    return _usingBridge &&
+        bridge != null &&
+        _hasBridgeFunction(bridge, 'scoreNextToken');
   }
 
   @override
@@ -852,7 +865,7 @@ class WebGpuLlamaBackend
     final threadConstructorFailure =
         runtimeNotes.contains('threads_capped_no_coi') ||
         runtimeNotes.contains('thread_constructor_failed') ||
-        loweredText.contains('thread constructor failed');
+        isThreadConstructorFailureText(loweredText);
 
     if (threadConstructorFailure) {
       final workerFallbackReason = _getGlobalString(
@@ -2166,6 +2179,93 @@ class WebGpuLlamaBackend
     }
   }
 
+  @override
+  Future<LlamaNextTokenScores> scoreNextToken(
+    int contextHandle,
+    String prompt, {
+    required List<int> candidates,
+    required int topK,
+    required bool reusePromptPrefix,
+  }) async {
+    final bridge = _requireBridge();
+    if (!supportsNextTokenScoring) {
+      throw UnsupportedError(_nextTokenScoringUnsupportedMessage);
+    }
+    final JSAny? result;
+    try {
+      result = await _toFuture(
+        bridge.scoreNextToken(
+          prompt,
+          WebGpuNextTokenScoreOptions(
+            candidates: candidates.map((token) => token.toJS).toList().toJS,
+            topK: topK,
+            reusePromptPrefix: reusePromptPrefix,
+          ),
+        ),
+      );
+    } catch (error) {
+      final message = _errorMessage(error);
+      if (message.contains('is outside the vocabulary')) {
+        throw RangeError(message);
+      }
+      if (message.contains('needs a decoder-only model')) {
+        throw LlamaUnsupportedException(message);
+      }
+      rethrow;
+    }
+    if (result == null || !result.isA<JSObject>()) {
+      throw LlamaInferenceException(
+        'The Web bridge returned no next-token scores.',
+      );
+    }
+    final scores = result as JSObject;
+    final promptTokens = scores.getProperty<JSAny?>('promptTokens'.toJS);
+    return LlamaNextTokenScores(
+      candidates: _parseTokenLogprobs(scores.getProperty('candidates'.toJS)),
+      top: _parseTokenLogprobs(scores.getProperty('top'.toJS)),
+      promptTokens: promptTokens.isA<JSNumber>()
+          ? (promptTokens as JSNumber).toDartInt
+          : 0,
+    );
+  }
+
+  List<LlamaTokenLogprob> _parseTokenLogprobs(JSAny? value) {
+    if (value == null || !value.isA<JSArray>()) {
+      return const <LlamaTokenLogprob>[];
+    }
+    final entries = value as JSArray;
+    final out = <LlamaTokenLogprob>[];
+    for (var i = 0; i < entries.length; i++) {
+      final entry = entries.getProperty<JSObject>(i.toJS);
+      final bytes = entry.getProperty<JSAny?>('bytes'.toJS);
+      final logprob = entry.getProperty<JSAny?>('logprob'.toJS);
+      out.add(
+        LlamaTokenLogprob(
+          token: entry.getProperty<JSNumber>('token'.toJS).toDartInt,
+          bytes: bytes.isA<JSUint8Array>()
+              ? (bytes as JSUint8Array).toDart
+              : const <int>[],
+          logprob: logprob.isA<JSNumber>()
+              ? (logprob as JSNumber).toDartDouble
+              : double.negativeInfinity,
+        ),
+      );
+    }
+    return out;
+  }
+
+  String _errorMessage(Object error) {
+    JSAny? message;
+    try {
+      message = (error as JSObject).getProperty<JSAny?>('message'.toJS);
+    } catch (_) {
+      message = null;
+    }
+    return message.isA<JSString>()
+        ? (message as JSString).toDart
+        : error.toString();
+  }
+
   Future<JSAny?> _toFuture(JSAny? value) async {
     if (value == null) {
       return null;
@@ -2514,9 +2614,15 @@ class WebGpuLlamaBackend
     var retainedCachedBlobUrl = false;
 
     try {
-      final result = await _toFuture(
-        bridge.loadMultimodalProjector(projectorPath),
-      );
+      final JSAny? result;
+      try {
+        result = await _toFuture(bridge.loadMultimodalProjector(projectorPath));
+      } catch (error) {
+        throw LlamaModelException(
+          'The Web runtime could not load the multimodal projector.',
+          webGpuBridgeErrorText(error, sourceUrls: <String>[mmProjPath]),
+        );
+      }
       _releaseCachedMmProjectorBlobUrl();
       if (cachedBlobUrl != null) {
         _cachedMmProjectorBlobUrl = cachedBlobUrl;
