@@ -53,7 +53,7 @@ class DecisionHost extends PreparationHost {
   @override
   Future<({String path, Map<String, dynamic> evidence})> prepare(
     ValidationProfile profile,
-  ) async => (path: 'laya-Q8_0.gguf', evidence: <String, dynamic>{});
+  ) async => (path: 'laya-F16.gguf', evidence: <String, dynamic>{});
   @override
   Future<void> emit(Map<String, dynamic> event) async => events.add(event);
   @override

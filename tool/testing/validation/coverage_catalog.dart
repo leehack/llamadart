@@ -58,7 +58,7 @@ List<Map<String, Object?>> validationCoverage() {
         entry.key,
         'gguf',
         backend,
-        'laya-q8_0',
+        'laya-f16',
         'decision',
         profile: ['cpu', 'metal', 'vulkan', 'cuda', 'webgpu'].contains(backend)
             ? 'decision-gguf-$backend'

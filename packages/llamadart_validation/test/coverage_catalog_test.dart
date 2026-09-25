@@ -19,7 +19,7 @@ void main() {
         (profile['model']['filename'] as String).toLowerCase(),
         startsWith(switch (row['model']) {
           'gemma4-e2b' => 'gemma-4',
-          'laya-q8_0' => 'laya-q8_0',
+          'laya-f16' => 'laya-f16',
           _ => 'qwen3.5',
         }),
       );

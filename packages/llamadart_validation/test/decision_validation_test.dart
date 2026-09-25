@@ -225,7 +225,7 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> _run(
     emit: (event) async => events.add(_copy(event) as Map<String, dynamic>),
     decisionReference: reference ?? _referenceText,
   ).run(
-    'laya-Q8_0.gguf',
+    'laya-F16.gguf',
     runId: 'decision-test',
     preparation: preparation ?? _preparation(selected),
     environment: {

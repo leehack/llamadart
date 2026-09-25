@@ -4,14 +4,14 @@
   "runtime": "gguf",
   "backend": "metal",
   "model": {
-    "id": "laya-q8_0",
+    "id": "laya-f16",
     "kind": "decision",
-    "filename": "laya-Q8_0.gguf",
+    "filename": "laya-F16.gguf",
     "revision": "ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c",
-    "url": "https://huggingface.co/fr0stbit3/laya-gguf/resolve/ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c/laya-Q8_0.gguf",
-    "sha256": "76a5787a9c853d04db4ff214ae31fe2bd51aa15c8bef2fc886a3493f3c136dae",
-    "bytes": 421407968,
-    "quantization": "Q8_0"
+    "url": "https://huggingface.co/fr0stbit3/laya-gguf/resolve/ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c/laya-F16.gguf",
+    "sha256": "f10551bbe259518d7b00f2b9e5d101a1d6ac557e3f977322bfa875149dd5ddc9",
+    "bytes": 791461088,
+    "quantization": "F16"
   },
   "decision": {
     "head": {
