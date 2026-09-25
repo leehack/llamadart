@@ -204,6 +204,7 @@ void main() {
       for (final invalid in [
         'Hello!',
         '<tool_call>{"name": "not_ping", "arguments": {}}</tool_call>',
+        '<tool_call>{{"name": "ping", "arguments": {}}}</tool_call>',
       ]) {
         expect(
           _compiledGrammarAccepts(nativeModel!, required, invalid),

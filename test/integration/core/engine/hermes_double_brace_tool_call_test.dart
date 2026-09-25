@@ -146,37 +146,44 @@ void main() {
       }
     }
 
-    test('$name after Qwen3 thinking keeps the reasoning', () async {
-      final backend = _TemplateBackend(templates['Qwen3']!);
-      final engine = LlamaEngine(backend);
-      addTearDown(engine.dispose);
-      await engine.loadModel('mock-qwen3.gguf');
-      backend.queueResponse([
-        '<think>\nParis weather.\n</think>\n\n',
-        ...emission.split(''),
-      ]);
+    for (final choice in ToolChoice.values) {
+      test('$name after Qwen3 thinking with $choice', () async {
+        final backend = _TemplateBackend(templates['Qwen3']!);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('mock-qwen3.gguf');
+        backend.queueResponse([
+          '<think>\nParis weather.\n</think>\n\n',
+          ...emission.split(''),
+        ]);
 
-      final chunks = await engine
-          .create(
-            [
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.user,
-                text: _fixture['user_prompt'] as String,
-              ),
-            ],
-            tools: [_weatherTool],
-            toolChoice: ToolChoice.auto,
-          )
-          .toList();
+        final chunks = await engine
+            .create(
+              [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: _fixture['user_prompt'] as String,
+                ),
+              ],
+              tools: [_weatherTool],
+              toolChoice: choice,
+            )
+            .toList();
 
-      String join(String? Function(LlamaCompletionChunkDelta) field) =>
-          chunks.map((c) => field(c.choices.single.delta) ?? '').join();
-      expect(join((d) => d.thinking), 'Paris weather.');
-      expect(join((d) => d.content), isEmpty);
-      final call = chunks
-          .expand((c) => c.choices.single.delta.toolCalls ?? const [])
-          .single;
-      expect(call.function?.name, expectedCalls.single['name']);
-    });
+        String join(String? Function(LlamaCompletionChunkDelta) field) =>
+            chunks.map((c) => field(c.choices.single.delta) ?? '').join();
+        final calls = chunks
+            .expand((c) => c.choices.single.delta.toolCalls ?? const [])
+            .toList();
+        expect(join((d) => d.thinking).trim(), 'Paris weather.');
+        if (choice == ToolChoice.none) {
+          expect(join((d) => d.content).trim(), emission);
+          expect(calls, isEmpty);
+        } else {
+          expect(join((d) => d.content), isEmpty);
+          expect(calls.single.function?.name, expectedCalls.single['name']);
+        }
+      });
+    }
   }
 }
