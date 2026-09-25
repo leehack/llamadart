@@ -196,7 +196,9 @@ List<Map<String, Object?>> validationCoverage() {
 String? _chatProfile(String runtime, String backend, String model) {
   if (runtime == 'gguf' &&
       ['cpu', 'metal', 'vulkan', 'cuda', 'webgpu'].contains(backend)) {
-    if (model == 'gemma4-e2b') return 'gemma4-gguf-$backend';
+    if (model == 'gemma4-e2b' && backend != 'webgpu') {
+      return 'gemma4-gguf-$backend';
+    }
     if (model == 'qwen35-08b') return 'chat-gguf-$backend';
   }
   if (runtime == 'litert' && ['cpu', 'gpu'].contains(backend)) {

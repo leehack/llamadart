@@ -137,7 +137,7 @@ void main() {
         contains(message),
       ),
     );
-    for (final family in ['decision', 'chat', 'gemma4']) {
+    for (final family in ['decision', 'chat']) {
       expect(
         () => requireExecutableValidationProfile(
           profile('webgpu', family: family),
@@ -220,9 +220,7 @@ void main() {
         ('desktop', 'chat-gguf-webgpu', 'only in Web bundles'),
         ('android', 'chat-gguf-webgpu', 'only in Web bundles'),
         ('ios', 'chat-gguf-webgpu', 'only in Web bundles'),
-        ('desktop', 'gemma4-gguf-webgpu', 'only in Web bundles'),
-        ('android', 'gemma4-gguf-webgpu', 'only in Web bundles'),
-        ('ios-inputs', 'gemma4-gguf-webgpu', 'only in Web bundles'),
+        ('ios-inputs', 'chat-gguf-webgpu', 'only in Web bundles'),
       ]) {
         File(
           p.join(

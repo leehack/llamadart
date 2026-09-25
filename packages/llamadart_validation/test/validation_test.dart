@@ -1113,10 +1113,7 @@ void main() {
   }
   test('WebGPU chat profiles load every layer on WebGPU and run only on the '
       'Web host', () async {
-    for (final (id, cpu) in [
-      ('chat-gguf-webgpu', 'chat-gguf-cpu'),
-      ('gemma4-gguf-webgpu', 'gemma4-gguf-cpu'),
-    ]) {
+    for (final (id, cpu) in [('chat-gguf-webgpu', 'chat-gguf-cpu')]) {
       Map<String, dynamic> read(String id) =>
           jsonDecode(File('assets/profiles/$id.json').readAsStringSync())
               as Map<String, dynamic>;

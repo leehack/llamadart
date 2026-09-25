@@ -131,7 +131,7 @@ void main() {
     },
   );
 
-  test('Web chat rows bind WebGPU GGUF profiles and nothing else', () {
+  test('Web chat rows bind only the Qwen3.5 WebGPU GGUF profile', () {
     expect(
       {
         for (final row in validationCoverage().where(
@@ -142,7 +142,7 @@ void main() {
       {
         'gguf/wasm/gemma4-e2b': null,
         'gguf/wasm/qwen35-08b': null,
-        'gguf/webgpu/gemma4-e2b': 'gemma4-gguf-webgpu',
+        'gguf/webgpu/gemma4-e2b': null,
         'gguf/webgpu/qwen35-08b': 'chat-gguf-webgpu',
         'litert/cpu/gemma4-e2b': null,
         'litert/cpu/qwen35-08b': null,

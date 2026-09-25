@@ -1397,7 +1397,7 @@ void main() {
   test('Firebase rejects WebGPU chat bundles before preflight', () async {
     for (final (target, id, rejected) in [
       ('firebase-android', 'chat-gguf-webgpu', true),
-      ('firebase-ios', 'gemma4-gguf-webgpu', true),
+      ('firebase-ios', 'chat-gguf-webgpu', true),
       ('firebase-android', 'chat-gguf-vulkan', false),
     ]) {
       File(

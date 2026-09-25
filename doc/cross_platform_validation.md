@@ -481,6 +481,28 @@ headers, for example:
 python3 tool/testing/serve_static_with_headers.py --directory .dart_tool/validation/bundles/web --port 7367
 ```
 
+The Web host hashes each model and decision file as it streams, so a file
+larger than one browser buffer (about 2 GiB) verifies. A status other than
+200, more or fewer bytes than locked, a SHA256 mismatch or an interrupted
+stream fails preparation. The bridge then downloads the URL again itself.
+`chat-gguf-webgpu` loads every layer on WebGPU and, like
+`decision-gguf-webgpu`, runs only on the Web host and in Web bundles; other
+bundles, Firebase and GCE reject it before any build, download or
+submission. The Web host does not capture the bridge's native log, which
+goes to the browser console, so its reports cannot verify placement and do
+not qualify.
+
+Observed on an Apple Silicon Mac in headless Chromium with WebGPU on Metal and
+bridge `v0.1.51`, at load averages of 7 to 57: a clean `chat-gguf-webgpu`
+bundle passed 12 cases; `C06.history` failed (`17` for `cedar17`) and
+`C10.limit` was NOT_RUN. The bridge capped Qwen3.5 0.8B at 2 WebGPU layers.
+A `gemma4-gguf-webgpu` draft (those settings with the Gemma 4 GGUF) verified
+its 3,043,932,288-byte model in 70 to 71 s, but `C01.load` hit the 60 s case
+timeout. A dirty build with a 10-minute case timeout passed 13 cases with
+36/36 layers on WebGPU; its three loads took 218 to 264 s each, and the
+bridge reported `model_cache_store_failed`. There is no Gemma 4 WebGPU
+profile until its loads fit a case bound.
+
 ## Firebase setup, submission and collection
 
 The [device rotation and NPU cases](cross_platform_validation_plan.md#8-firebase-device-selection-and-free-rotation)
