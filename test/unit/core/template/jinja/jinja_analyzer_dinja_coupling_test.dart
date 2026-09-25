@@ -5,9 +5,10 @@ import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 
 /// Guards what `jinja_analyzer.dart` assumes of `package:dinja/ast.dart`:
-/// `dinja public AST coupling` fails if `parseTemplate`, the AST node types the
-/// analyzer matches on, or the operator text in `BinaryExpression.op.value`
-/// change.
+/// `dinja public AST coupling` fails if `parseTemplate` stops parsing a
+/// representative chat template into a non-empty `Program`, if walking it
+/// stops producing the six node types that group lists, or if
+/// `BinaryExpression.op.value` stops giving the operator text `==`.
 ///
 /// The capability goldens are descriptive of the analyzer's current output,
 /// not a dinja guarantee - a deliberate analyzer change is expected to update

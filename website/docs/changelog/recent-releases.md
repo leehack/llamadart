@@ -41,10 +41,13 @@ For canonical full release notes, use:
 - Render Qwen3 prompts as llama.cpp does: an earlier assistant tool-call
   turn without reasoning no longer gets an empty `<think>` block
   ([#691](https://github.com/leehack/llamadart/issues/691)).
-- Require `dinja` 1.1.0 or later. Its string-equality fix also makes
-  NVIDIA Nemotron Nano v2 prompts drop an extra newline before a tool call,
-  and Functionary v3.2 tool declarations drop a stray
-  `// Format=<|NONE|>` line, as in llama.cpp
+- Require `dinja` 1.1.0 or later. Its Jinja string comparison makes three
+  more chat templates render as llama.cpp does: MiniMax-M1 and NVIDIA
+  Nemotron Nano v2 add no empty system block or blank lines for an empty or
+  whitespace-only system message, Nemotron Nano v2 drops the blank line before a tool call
+  and an empty final assistant turn without a generation prompt, and
+  Functionary v3.2 tool declarations drop stray `// Format=<|NONE|>` lines
+  and spell out nested object parameters
   ([#351](https://github.com/leehack/llamadart/issues/351)).
 - Render every result of a tool message holding several
   `LlamaToolResultContent` parts, as one `tool` message per result like
