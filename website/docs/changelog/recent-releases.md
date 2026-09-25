@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Count generated tokens with an empty text piece in llama.cpp
+  `getPerformanceContext()` `evalTokens` and `sampleCount` without speculative
+  decoding, as the speculative path already did
+  ([#706](https://github.com/leehack/llamadart/issues/706)).
 - Throw `LlamaModelException` when native llama.cpp cannot find or load a
   multimodal projector, and `LlamaUnsupportedException` when the runtime lacks
   the mtmd functions; `LlamaEngine.supportsAudio` also throws the latter.
