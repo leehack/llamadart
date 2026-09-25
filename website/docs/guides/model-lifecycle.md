@@ -1,5 +1,7 @@
 ---
-title: Model Lifecycle
+title: Load, switch and unload models
+sidebar_label: Model lifecycle
+description: Load, switch and unload models safely, load from URLs and model sources, persist state, and manage projectors and LoRA adapters.
 ---
 
 This guide covers model load/unload flows and safe lifecycle patterns.

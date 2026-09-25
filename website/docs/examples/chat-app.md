@@ -1,5 +1,6 @@
 ---
-title: Chat App Example
+title: Flutter chat app example
+sidebar_label: Chat app
 description: Explore the production-style Flutter chat app example with model downloads, runtime controls, and streaming UX.
 ---
 

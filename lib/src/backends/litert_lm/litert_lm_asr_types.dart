@@ -21,7 +21,7 @@ enum LiteRtLmAsrModelPreset {
 
 /// LiteRT accelerator used for a dedicated ASR model.
 ///
-/// Dedicated ASR is CPU-only in the currently validated v0.16 runtime. GPU
+/// Dedicated ASR is CPU-only in the currently validated runtime. GPU
 /// and NPU values can be added after their model/runtime combinations pass the
 /// same real-model correctness gates.
 enum LiteRtLmAsrBackend {

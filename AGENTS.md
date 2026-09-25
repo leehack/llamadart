@@ -20,9 +20,10 @@ dart test -p chrome --exclude-tags local-only
 - Use the Flutter SDK in `.flutter-version`; other SDKs format differently from
   CI. A pin bump is its own PR that updates `.flutter-version`, every workflow
   `flutter-version:`, and the reformat it causes.
-- Root preparation, analysis and tests skip `packages/` (root format does
-  not): companion packages keep their own dependency, analyze, test, SwiftPM
-  and publish-validation lanes (`ci.yml`).
+- Root preparation, analysis and tests skip `packages/` and `website/` (root
+  format does not): companion packages keep their own dependency, analyze,
+  test, SwiftPM and publish-validation lanes, and the Jaspr docs site its own
+  analyze and test lane (`ci.yml`).
 - Chat app changes: `(cd example/chat_app && flutter test)`, plus
   `flutter test --platform chrome test/chat_generation_service_test.dart` there
   for Web-only paths such as LiteRT-LM generation settings.
@@ -41,7 +42,8 @@ dart test -p chrome --exclude-tags local-only
   large or availability-sensitive remote models.
 - Before calling a llama.cpp n-gram speculative output-hash mismatch Dart-only,
   compare the same prompt and sampling settings against upstream `llama-server`.
-- Docs: `./tool/docs/build_site.sh` fails on broken links.
+- Docs: `./tool/docs/build_site.sh` fails on broken links; site code and
+  procedure are in `website/docs/maintainers/docs-site.md`.
 
 ## Code
 

@@ -1,5 +1,7 @@
 ---
-title: Chat Templates and Parsing
+title: Chat templates and output parsing
+sidebar_label: Chat templates
+description: How llamadart detects, renders and parses chat templates in line with llama.cpp, and how to inspect or override a template.
 ---
 
 `llamadart` routes chat rendering/parsing through template handlers aligned to
@@ -153,8 +155,8 @@ Future<void> main() async {
 
 ## About custom handlers
 
-`ChatTemplateHandler` is an internal extension point used by built-in format
-implementations.
+`ChatTemplateHandler` is exported so handler types are visible, but handlers
+are selected internally by `ChatFormat`; apps cannot register their own.
 
 There is currently no public API to register custom handlers globally from
 application code. If you need first-class support for a new template format,

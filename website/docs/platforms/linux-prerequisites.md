@@ -1,5 +1,6 @@
 ---
 title: Linux Prerequisites
+description: The system libraries each Linux backend module needs, such as OpenMP, Vulkan and OpenBLAS, with package names and a link check.
 ---
 
 Linux runtime requirements depend on selected backend modules.

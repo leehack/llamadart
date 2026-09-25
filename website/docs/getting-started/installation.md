@@ -1,5 +1,6 @@
 ---
-title: Installation
+title: Install llamadart
+sidebar_label: Installation
 description: Install llamadart, add the package to your app, and understand the native runtime setup on first run.
 ---
 
@@ -183,10 +184,5 @@ safe defaults and logs warnings.
 
 ## Verify installation quickly
 
-Run a minimal script that loads a GGUF model and generates 1 token:
-
-```bash
-dart run your_app.dart
-```
-
-If the runtime initializes and model loads successfully, your setup is complete.
+Run the [Quickstart](./quickstart) example with `maxTokens: 1`. If the runtime
+initializes and the model loads, your setup is complete.

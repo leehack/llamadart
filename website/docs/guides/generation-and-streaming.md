@@ -1,5 +1,7 @@
 ---
-title: Generation and Streaming
+title: Text generation and streaming
+sidebar_label: Generation and streaming
+description: Stream tokens with generate, create and ChatSession; use structured JSON output, thinking budgets, cancellation and tokenization helpers.
 ---
 
 `llamadart` exposes three generation entry points:
