@@ -41,7 +41,7 @@ final ToolDefinition _weatherTool = ToolDefinition(
 void main() {
   final qwen25Template = File(
     _fixture['template'] as String,
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final templates = <String, String>{
     'Qwen2.5': qwen25Template,
     'Qwen3': File('test/fixtures/templates/Qwen3-4B.jinja').readAsStringSync(),
