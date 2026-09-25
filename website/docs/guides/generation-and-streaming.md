@@ -94,8 +94,9 @@ await for (final chunk in engine.create(
 
 ## Token usage and timings
 
-On native llama.cpp, the final `create` chunk carries the request's usage.
-It is null on other backends and on every earlier chunk.
+On native llama.cpp, the final `create` chunk carries the request's usage,
+except for a request cancelled before it reached the backend. It is null on
+other backends and on every earlier chunk.
 
 ```dart
 final chunks = await engine.create(messages).toList();

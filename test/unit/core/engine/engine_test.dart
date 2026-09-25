@@ -3514,6 +3514,27 @@ void main() {
       expect(chunks.last.usage, same(usage));
     });
 
+    test(
+      'create leaves usage null when cancelled before the backend',
+      () async {
+        limitBackend.nextUsage = usage;
+        final chunks = <LlamaCompletionChunk>[];
+        final done = Completer<void>();
+        limitEngine
+            .create(messages)
+            .listen(
+              chunks.add,
+              onDone: done.complete,
+              onError: done.completeError,
+            );
+        limitEngine.cancelGeneration();
+        await done.future;
+
+        expect(chunks.last.choices.first.finishReason, 'stop');
+        expect(chunks.map((chunk) => chunk.usage), everyElement(isNull));
+      },
+    );
+
     test('create leaves usage null when the backend reports none', () async {
       final chunks = await limitEngine.create(messages).toList();
 
