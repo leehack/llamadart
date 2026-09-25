@@ -975,11 +975,22 @@ class LlamaEngine {
     final subscription = tokens
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(text.add, onError: text.addError, onDone: text.close);
+    // Hand out the cancel future of [tokens] once. The stop below returns it;
+    // the cancel that closing [text] triggers would drop it, leaving a
+    // backend error in it unhandled.
+    Future<void>? tokensCancelled;
+    Future<void>? cancelTokens() => tokensCancelled == null
+        ? tokensCancelled = subscription.cancel()
+        : null;
     text
       ..onPause = subscription.pause
       ..onResume = subscription.resume
-      ..onCancel = subscription.cancel;
-    request.onSubscriptionCancel(text.close);
+      ..onCancel = cancelTokens;
+    request.onSubscriptionCancel(() {
+      final cancelled = cancelTokens();
+      unawaited(text.close());
+      return cancelled ?? Future<void>.value();
+    });
     return text.stream;
   }
 

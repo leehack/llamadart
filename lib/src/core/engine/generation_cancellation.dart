@@ -122,7 +122,10 @@ class _RequestSubscription<T> implements StreamSubscription<T> {
   @override
   Future<void> cancel() {
     final stops = _request._cancelSubscription();
-    return Future.wait<void>(<Future<void>>[...stops, _source.cancel()]);
+    return Future.wait<void>(<Future<void>>[
+      ...stops,
+      _source.cancel(),
+    ]).then<void>((_) {});
   }
 
   @override
