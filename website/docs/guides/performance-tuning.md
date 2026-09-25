@@ -1,5 +1,7 @@
 ---
-title: Performance Tuning
+title: Tune on-device inference performance
+sidebar_label: Performance tuning
+description: Measure and tune load and generation settings, GPU offload, context size and LiteRT-LM runtime controls for faster on-device inference.
 ---
 
 Performance tuning depends on model size, quantization, backend availability,
@@ -70,9 +72,12 @@ Guidelines:
   `microBatchSize` first (for example to `256` or `128`) when memory or GPU
   stability is tight. Bigger is not always faster if it increases allocation,
   driver, or scheduler pressure.
-- WebGPU keeps full-context automatic batching because the bridge cannot expose
-  model architecture before context creation. Decoder-focused web apps can set
-  `2048` / `512` explicitly after validating their target model and browser.
+- WebGPU keeps full-context automatic batching for most models because the
+  bridge cannot expose model architecture before context creation. Without an
+  explicit `batchSize`, Gemma 4 and models of 2 GiB or more cap the batch at
+  `min(contextSize, 512)`; Qwen3.5-0.8B on GPU with no explicit sizes uses
+  `32` / `8`. Decoder-focused web apps can set `2048` / `512` explicitly after
+  validating their target model and browser.
 - Encoder-only embedding models retain full-context native defaults for
   correctness. Set both batch values explicitly when tuning a known embedding
   workload.

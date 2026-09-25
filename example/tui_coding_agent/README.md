@@ -84,9 +84,10 @@ Qwen3.6 exposes thinking as an on/off capability, not a trained
 low/medium/high reasoning-effort scale. The example therefore keeps the control
 honest: omit `--thinking` for off, or pass it for on. When enabled, prior
 reasoning is preserved across the agent's tool rounds through Qwen's
-`preserve_thinking` template option. Upstream llama.cpp also has a mechanical
-reasoning-token budget, but llamadart's embedded inference API does not expose
-that control yet; total output tokens are not used as a fake reasoning level.
+`preserve_thinking` template option. llamadart exposes llama.cpp's
+mechanical reasoning-token budget as `GenerationParams.thinkingBudget`; this
+example does not set it, and total output tokens are not used as a fake
+reasoning level.
 
 The session passes this source directly to `LlamaEngine.loadModelSource`, so
 downloads use `llamadart`'s shared per-user model cache and resume behavior.

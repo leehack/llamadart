@@ -1,5 +1,7 @@
 ---
-title: LoRA Adapters
+title: Apply LoRA adapters at runtime
+sidebar_label: LoRA adapters
+description: Load, stack, scale and remove LoRA adapters at inference time with LlamaEngine, with platform notes and troubleshooting.
 ---
 
 This guide covers practical LoRA usage in `llamadart` with runtime adapter
@@ -95,7 +97,7 @@ every adapter from the start of generation, so an aLoRA adapter used this way
 would change output without any error — the failure is silent and looks like a
 badly behaved LoRA.
 
-Rather than guess, `setLoraAdapter` inspects the adapter after loading it and
+Rather than guess, `engine.setLora` (backend `setLoraAdapter`) inspects the adapter after loading it and
 rejects an aLoRA adapter with `LlamaUnsupportedException`:
 
 ```
@@ -131,8 +133,8 @@ adapter whose type cannot be checked safely.
 - Native LiteRT-LM can accept one default-scale text LoRA adapter at model load
   through `ModelParams.loras`; runtime LoRA updates, stacking, and custom scales
   remain unsupported there.
-- WebGPU and LiteRT-LM web throw an unsupported-operation error for runtime
-  LoRA APIs instead of reporting no-op success.
+- WebGPU and LiteRT-LM web runtime LoRA calls throw
+  `LlamaUnsupportedException` instead of reporting no-op success.
 
 ## Troubleshooting
 
