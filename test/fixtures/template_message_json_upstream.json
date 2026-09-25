@@ -142,6 +142,33 @@
         "role": "user",
         "text": "More?"
       }
+    ],
+    "media_tool_call_only": [
+      {
+        "role": "user",
+        "image": true,
+        "text": "Where is this?"
+      },
+      {
+        "role": "assistant",
+        "calls": [
+          {
+            "id": "call_0",
+            "name": "get_weather",
+            "raw": "{\"city\":\"Paris\"}"
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "results": [
+          {
+            "id": "call_0",
+            "name": "get_weather",
+            "result": "sunny"
+          }
+        ]
+      }
     ]
   },
   "cases": [
@@ -813,6 +840,267 @@
         ]
       },
       "prompt": "<|start_header_id|>system<|end_header_id|>\n\nYou are capable of executing available function(s) if required.\nOnly execute function(s) when absolutely necessary.\nAsk for the required input to:recipient==all\nUse JSON for function arguments.\nRespond in this format:\n>>>${recipient}\n${content}\nAvailable functions:\n// Supported function definitions that should be called when necessary.\nnamespace functions {\n\n} // namespace functions<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nSearch cafes<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>all\nSearching.>>>search\n{\"query\":\"cafes\",\"filters\":{\"limit\":3,\"tags\":[\"x\",\"y\"]},\"flag\":true}<|eot_id|><|start_header_id|>tool<|end_header_id|>\n\ntwo results<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>all\nFound two.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nMore?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n>>>"
+    },
+    {
+      "issue": 715,
+      "template": "tool/litert_lm_templates/gemma4.jinja",
+      "template_sha256": "85a08664d16d8f3be4416c92427b3ac10df1024ac566cc0b4bc3bab409393f98",
+      "supports_object_arguments": true,
+      "conversation": "media_tool_call_only",
+      "tools": true,
+      "checks": [
+        {
+          "same_after": "Where is this?"
+        }
+      ],
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Where is this?"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Paris\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "name": "get_weather",
+            "content": "sunny"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Get the weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "City name"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "prompt": "<|turn>system\n<|think|>\n<|tool>declaration:get_weather{description:<|\"|>Get the weather for a city.<|\"|>,parameters:{properties:{city:{description:<|\"|>City name<|\"|>,type:<|\"|>STRING<|\"|>}},required:[<|\"|>city<|\"|>],type:<|\"|>OBJECT<|\"|>}}<tool|><turn|>\n<|turn>user\n<__media_r1Dm7BHezbJ2qAbG2PJzpsG1oFD5U2z1__>Where is this?<turn|>\n<|turn>model\n<|tool_call>call:get_weather{city:<|\"|>Paris<|\"|>}<tool_call|><|tool_response>response:get_weather{value:<|\"|>sunny<|\"|>}<tool_response|>"
+    },
+    {
+      "issue": 715,
+      "template": "test/fixtures/llama_cpp_templates/moonshotai-Kimi-K2.jinja",
+      "template_sha256": "9fcc72b7c248a72020c81f70bb652f3094d18a750c93ca35dfcb3cf5fe23ff53",
+      "supports_object_arguments": true,
+      "conversation": "media_tool_call_only",
+      "tools": true,
+      "checks": [
+        {
+          "same_between": [
+            "Where is this?",
+            "<|im_system|>"
+          ]
+        }
+      ],
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Where is this?"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Paris\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "name": "get_weather",
+            "content": "sunny"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Get the weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "City name"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "prompt": "<|im_system|>tool_declare<|im_middle|>[{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\", \"description\": \"City name\"}}, \"required\": [\"city\"]}}}]<|im_end|><|im_system|>system<|im_middle|>You are a helpful assistant<|im_end|><|im_user|>user<|im_middle|><__media_AthlrYU1GlaKc7T1NdD9aweX33jNDAtf__>Where is this?<|im_end|><|im_assistant|>assistant<|im_middle|><|tool_calls_section_begin|><|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>{\"city\": \"Paris\"}<|tool_call_end|><|tool_calls_section_end|><|im_end|><|im_system|>tool<|im_middle|>## Return of call_0\\nsunny<|im_end|><|im_assistant|>assistant<|im_middle|>"
+    },
+    {
+      "issue": 715,
+      "template": "test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja",
+      "template_sha256": "2f5ce4b3c1e0ab30fc5f204a151aba5ee584615b0aa641afc2d58bcccfe33bdb",
+      "supports_object_arguments": true,
+      "conversation": "media_tool_call_only",
+      "tools": true,
+      "checks": [
+        {
+          "same_after": "<|begin_tool_result|>"
+        },
+        {
+          "contains_between": [
+            "Where is this?",
+            "<|end|>"
+          ],
+          "values": [
+            "get_weather",
+            "\"city\": \"Paris\""
+          ]
+        }
+      ],
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Where is this?"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\":\"Paris\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "name": "get_weather",
+            "content": "sunny"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Get the weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "City name"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "prompt": "<|begin_system|>\nYou are a thoughtful, systematic AI assistant from ServiceNow Language Models (SLAM) lab.\n    Analyze each question carefully, present your reasoning step-by-step, then provide the final\n    response after the marker [BEGIN FINAL RESPONSE].\nYou are provided with function signatures within <available_tools></available_tools> XML tags.\n        You may call one or more functions to assist with the user query.\n        Don't make assumptions about the arguments. You should infer the argument values from previous\n        user responses and the system message.\n        Here are the available tools: \n        <available_tools>\n{'type': 'function', 'function': {'name': 'get_weather', 'description': 'Get the weather for a city.', 'parameters': {'type': 'object', 'properties': {'city': {'type': 'string', 'description': 'City name'}}, 'required': ['city']}}}        \n        </available_tools>.\n\n        Return all function calls as a list of JSON objects within <tool_calls></tool_calls> XML tags.\n        Each JSON object should contain a function name and arguments as follows:\n        <tool_calls>[\n            {\"name\": <function-name-1>, \"arguments\": <args-dict-1>},\n            {\"name\": <function-name-2>, \"arguments\": <args-dict-2>},\n            ...\n        ]</tool_calls>\n<|begin_user|>\n<__media_ihJZ7GoG895HAZPATv8jqCJjwlLH1Q0F__>Where is this?\n<|begin_assistant|>\n\n<tool_calls>[{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}, \"id\": \"call_0\"}]</tool_calls>\n<|end|>\n<|begin_tool_result|>\nsunny\n\n\n\n<|begin_assistant|>\nHere are my reasoning steps:\n"
     }
-  ]
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get the weather for a city.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string",
+              "description": "City name"
+            }
+          },
+          "required": [
+            "city"
+          ]
+        }
+      }
+    }
+  ],
+  "image_png_base64": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC",
+  "media_model": "LFM2-VL-450M-Q4_0.gguf",
+  "media_model_sha256": "1fbf4797e8669cdeabd97fa1d31ab046907cb1fc78b1c3d4bda1ba879574e5d7",
+  "media_mmproj": "mmproj-LFM2-VL-450M-Q8_0.gguf",
+  "media_mmproj_sha256": "a6a813fae4ba3f90852a990fdd4786a017dba0e80e599a366853ba539ee2b5ef"
 }

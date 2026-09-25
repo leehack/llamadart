@@ -26,6 +26,8 @@ List<File> _fixtureTemplates() {
 }
 
 const Map<String, String> _pinnedCaps = <String, String>{
+  'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
+      '11111101',
   'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
   'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
   'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':
@@ -38,6 +40,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
       '11111001',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja':
       '11111000',
+  'test/fixtures/llama_cpp_templates/moonshotai-Kimi-K2.jinja': '11111101',
   'test/fixtures/llama_cpp_templates/openai-gpt-oss-120b.jinja': '11101001',
   'test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja':
       '11111101',

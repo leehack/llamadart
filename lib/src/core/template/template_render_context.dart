@@ -76,10 +76,11 @@ class TemplateRenderContext {
   /// Serializes [messages] into the JSON shape expected by a template handler,
   /// as llama.cpp's `common_chat_msg::to_json_oaicompat` builds template input.
   ///
-  /// An absent `content` becomes an empty string (an empty text part for
-  /// [multimodal] templates), and typed tool results become JSON text (or text
-  /// parts for multimodal templates); string results and the original typed
-  /// messages are unchanged. A message with several tool results becomes one
+  /// An absent `content` becomes an empty string, or a list holding one empty
+  /// text part when [typedContentOnly] marks a template that reads content
+  /// only as a list of parts, as llama.cpp does. Typed tool results become
+  /// JSON text (or text parts for [multimodal] templates); string results and
+  /// the original typed messages are unchanged. A message with several tool results becomes one
   /// message per result, as [splitToolResults] describes.
   ///
   /// With [objectArguments], tool-call `arguments` that decode to a JSON
@@ -91,6 +92,7 @@ class TemplateRenderContext {
         TemplateToolCallSerialization.none,
     bool multimodal = false,
     bool objectArguments = false,
+    bool typedContentOnly = false,
   }) {
     final renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
@@ -99,7 +101,7 @@ class TemplateRenderContext {
           ? message.toJsonMultimodal()
           : message.toJson();
       if (rendered['content'] == null) {
-        rendered['content'] = multimodal
+        rendered['content'] = typedContentOnly
             ? [
                 {'type': 'text', 'text': ''},
               ]

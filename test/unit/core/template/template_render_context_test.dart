@@ -105,9 +105,15 @@ void main() {
       });
     }
 
-    for (final multimodal in [false, true]) {
+    for (final (multimodal, typedContentOnly) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
       test('gives tool-call-only and reasoning-only assistant turns empty '
-          'content, multimodal=$multimodal', () {
+          'content, multimodal=$multimodal, '
+          'typedContentOnly=$typedContentOnly', () {
         const messages = [
           LlamaChatMessage.withContent(
             role: LlamaChatRole.assistant,
@@ -128,9 +134,10 @@ void main() {
         final rendered = TemplateRenderContext.messagesForTemplate(
           messages,
           multimodal: multimodal,
+          typedContentOnly: typedContentOnly,
         );
 
-        final empty = multimodal
+        final empty = typedContentOnly
             ? [
                 {'type': 'text', 'text': ''},
               ]

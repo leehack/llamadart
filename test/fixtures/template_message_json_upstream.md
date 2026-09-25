@@ -27,9 +27,22 @@ the GGUF. That model's `bos_token` is `<s>` and its `eos_token` is `</s>`;
 llama-server returned the prompts without the template's leading `<s>`. `template_sha256` is the
 template's hash, and `supports_object_arguments` is what `/props` reported.
 
+The `media_tool_call_only` cases (an image, then a tool-call-only assistant
+turn) ran with `--mmproj` on `media_model` from
+[LiquidAI/LFM2-VL-450M-GGUF](https://huggingface.co/LiquidAI/LFM2-VL-450M-GGUF)
+and its `media_mmproj`, with `-c 1024 --no-mmproj-offload --no-warmup -np 1`
+and the request's `tools`. llama-server prints each image as a random
+`<__media_…__>` marker, and llamadart renders images in a different form, so
+these cases compare only the prompt segments their `checks` name:
+`same_after` (everything after a marker), `same_between` (between two
+markers), and `contains_between` (values that both prompts hold between two
+markers). llama.cpp renders Apriel 1.6 tool calls in its own format, which
+llamadart's generic tool format does not match, so that case checks that the
+call is rendered and that the rest of the prompt is the same.
+
 `test/unit/core/template/template_message_json_parity_test.dart` renders each
 conversation through `ChatTemplateEngine.render` with `bos_token` empty and
-`eos_token` `</s>`, expects the exact prompt, and expects `TemplateCaps.detect`
+`eos_token` `</s>`, expects the exact prompt (or the `checks`), and expects `TemplateCaps.detect`
 to report the same `supports_object_arguments`. The gpt-oss and Solar Open
 templates print the current date with `strftime_now`, which reads the wall
 clock, so the test masks that date on both sides.

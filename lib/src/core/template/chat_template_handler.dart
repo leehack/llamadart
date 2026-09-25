@@ -48,20 +48,26 @@ abstract class ChatTemplateHandler {
   /// directly so template-specific tool-call shapes are applied only at the
   /// render-context boundary. Pass the [templateSource] being rendered:
   /// tool-call arguments become objects when [TemplateCaps] detects that it
-  /// reads them as objects, as llama.cpp does.
+  /// reads them as objects, and absent content becomes an empty text part
+  /// when it reads content only as parts, as llama.cpp does.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
     String? templateSource,
   }) {
+    final caps = templateSource == null
+        ? null
+        : TemplateCaps.detect(templateSource);
     try {
       return TemplateRenderContext.messagesForTemplate(
         messages,
         toolCallSerialization: toolCallSerialization,
         multimodal: multimodal,
-        objectArguments:
-            templateSource != null &&
-            TemplateCaps.detect(templateSource).supportsObjectArguments,
+        objectArguments: caps?.supportsObjectArguments ?? false,
+        typedContentOnly:
+            caps != null &&
+            caps.supportsTypedContent &&
+            !caps.supportsStringContent,
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;

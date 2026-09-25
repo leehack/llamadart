@@ -8,6 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:path/path.dart' as p;
@@ -30,6 +32,10 @@ List<LlamaChatMessage> _conversation(String name) {
         content: <LlamaContentPart>[
           if (message['thinking'] != null)
             LlamaThinkingContent(message['thinking'] as String),
+          if (message['image'] == true)
+            LlamaImageContent(
+              bytes: base64Decode(_fixture['image_png_base64'] as String),
+            ),
           if (message['text'] != null)
             LlamaTextContent(message['text'] as String),
           for (final call
@@ -53,6 +59,29 @@ List<LlamaChatMessage> _conversation(String name) {
         ],
       ),
   ];
+}
+
+final List<ToolDefinition> _tools = <ToolDefinition>[
+  for (final tool in (_fixture['tools'] as List).cast<Map<String, dynamic>>())
+    ToolDefinition(
+      name: tool['function']['name'] as String,
+      description: tool['function']['description'] as String,
+      parameters: <ToolParam>[
+        ToolParam.string('city', description: 'City name', required: true),
+      ],
+      handler: (_) async => null,
+    ),
+];
+
+/// The part of [prompt] from the end of [from] up to [to] (or the end).
+String _segment(String prompt, String from, [String? to]) {
+  final start = prompt.indexOf(from);
+  expect(start, isNonNegative, reason: 'missing "$from"');
+  final rest = prompt.substring(start + from.length);
+  if (to == null) return rest;
+  final end = rest.indexOf(to);
+  expect(end, isNonNegative, reason: 'missing "$to"');
+  return rest.substring(0, end);
 }
 
 /// Masks the date that gpt-oss and Solar Open templates print with
@@ -84,9 +113,35 @@ void main() {
           'tokenizer.ggml.bos_token': '',
           'tokenizer.ggml.eos_token': '</s>',
         },
+        tools: entry['tools'] == true ? _tools : null,
       );
 
-      expect(_withoutDate(result.prompt), _withoutDate(entry['prompt']));
+      final checks = entry['checks'] as List?;
+      if (checks == null) {
+        expect(_withoutDate(result.prompt), _withoutDate(entry['prompt']));
+        return;
+      }
+      final server = entry['prompt'] as String;
+      for (final check in checks.cast<Map<String, dynamic>>()) {
+        if (check['same_after'] case final String from) {
+          expect(_segment(result.prompt, from), _segment(server, from));
+        } else if (check['same_between'] case [
+          final String from,
+          final String to,
+        ]) {
+          expect(_segment(result.prompt, from, to), _segment(server, from, to));
+        } else if (check['contains_between'] case [
+          final String from,
+          final String to,
+        ]) {
+          for (final value in (check['values'] as List).cast<String>()) {
+            expect(_segment(server, from, to), contains(value));
+            expect(_segment(result.prompt, from, to), contains(value));
+          }
+        } else {
+          fail('Unknown check: $check');
+        }
+      }
     });
   }
 
