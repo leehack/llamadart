@@ -241,6 +241,48 @@ void main() {
     ]);
   });
 
+  test('launches SDK commands through a shell only on Windows', () async {
+    final root = _workspaceFixture();
+    for (final isWindows in <bool>[true, false]) {
+      final launches = <String>[];
+      final result = await runWorkspaceCommand(
+        'flutter',
+        const <String>['pub', 'get'],
+        root.path,
+        isWindows: isWindows,
+        startProcess:
+            (
+              executable,
+              arguments, {
+              workingDirectory,
+              mode = ProcessStartMode.normal,
+              runInShell = false,
+            }) async {
+              launches.add(
+                '$executable ${arguments.join(' ')} @ $workingDirectory '
+                '${mode == ProcessStartMode.inheritStdio} $runInShell',
+              );
+              return _ExitedProcess(isWindows ? 3 : 0);
+            },
+      );
+
+      expect(result, isWindows ? 3 : 0);
+      expect(launches, <String>[
+        'flutter pub get @ ${root.path} true $isWindows',
+      ], reason: 'isWindows: $isWindows');
+    }
+  });
+
+  test('starts the dart SDK command on this host', () async {
+    final root = _workspaceFixture();
+
+    final result = await runWorkspaceCommand('dart', const <String>[
+      '--version',
+    ], root.path);
+
+    expect(result, 0);
+  });
+
   test('reports a stable exit code when an SDK command cannot start', () async {
     final root = _workspaceFixture();
 
@@ -248,8 +290,33 @@ void main() {
       'missing-workspace-sdk-command-for-test',
       const <String>['pub', 'get'],
       root.path,
+      isWindows: false,
     );
 
     expect(result, 127);
   });
+}
+
+class _ExitedProcess implements Process {
+  _ExitedProcess(this._exitCode);
+
+  final int _exitCode;
+
+  @override
+  Future<int> get exitCode async => _exitCode;
+
+  @override
+  int get pid => 0;
+
+  @override
+  bool kill([ProcessSignal signal = ProcessSignal.sigterm]) => false;
+
+  @override
+  IOSink get stdin => throw UnsupportedError('stdio is inherited');
+
+  @override
+  Stream<List<int>> get stdout => const Stream<List<int>>.empty();
+
+  @override
+  Stream<List<int>> get stderr => const Stream<List<int>>.empty();
 }
