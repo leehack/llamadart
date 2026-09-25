@@ -2521,6 +2521,7 @@ void main() {
         );
 
         expect(lastScorePrompt, 'The answer is');
+
         final options = lastScoreOptions!;
         expect(
           options
@@ -2541,6 +2542,19 @@ void main() {
         expect(scores.candidates.last.logprob, double.negativeInfinity);
         expect(scores.top.single.text, 'A');
         expect(scores.promptTokens, 3);
+
+        await backend.scoreNextToken(
+          1,
+          '<s>The answer is',
+          candidates: const <int>[7],
+          topK: 0,
+          reusePromptPrefix: true,
+        );
+        expect(
+          lastScorePrompt,
+          'The answer is',
+          reason: 'the bridge adds BOS itself, as for generation',
+        );
       });
 
       test('maps bridge errors to the native error types', () async {
@@ -2583,6 +2597,24 @@ void main() {
           'prompt',
           isNot(anyOf(isA<RangeError>(), isA<LlamaUnsupportedException>())),
         );
+
+        lastScorePrompt = null;
+        for (final (candidates, topK) in <(List<int>, int)>[
+          (const <int>[0x80000000], 0),
+          (const <int>[1], 0x80000000),
+        ]) {
+          await expectLater(
+            () => backend.scoreNextToken(
+              1,
+              'hi',
+              candidates: candidates,
+              topK: topK,
+              reusePromptPrefix: true,
+            ),
+            throwsA(isA<RangeError>()),
+          );
+        }
+        expect(lastScorePrompt, isNull, reason: 'rejected before the bridge');
       });
     });
 

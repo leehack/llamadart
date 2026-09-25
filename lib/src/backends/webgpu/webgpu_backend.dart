@@ -51,6 +51,7 @@ class WebGpuLlamaBackend
       'llamadart-webgpu-model-cache-v1';
   static const String _nextTokenScoringUnsupportedMessage =
       'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
+  static const int _maxInt32 = 0x7fffffff;
   static const String _runtimeLoraUnsupportedMessage =
       'WebGPU LoRA runtime updates are not supported by the current bridge. '
       'Use a native llama.cpp backend when runtime LoRA adapter changes are '
@@ -2191,11 +2192,15 @@ class WebGpuLlamaBackend
     if (!supportsNextTokenScoring) {
       throw UnsupportedError(_nextTokenScoringUnsupportedMessage);
     }
+    for (final token in candidates) {
+      RangeError.checkValueInInterval(token, 0, _maxInt32, 'candidates');
+    }
+    RangeError.checkValueInInterval(topK, 0, _maxInt32, 'topK');
     final JSAny? result;
     try {
       result = await _toFuture(
         bridge.scoreNextToken(
-          prompt,
+          _normalizePromptForBridge(prompt, bridge),
           WebGpuNextTokenScoreOptions(
             candidates: candidates.map((token) => token.toJS).toList().toJS,
             topK: topK,
