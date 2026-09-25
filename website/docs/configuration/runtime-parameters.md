@@ -89,9 +89,10 @@ runtime default.
 | `loras` | At most one adapter, at the default scale of `1.0`, loaded with the model. Runtime LoRA APIs, stacking and custom scales are llama.cpp-only. |
 
 `gpuLayers` must be `0` (CPU) or `ModelParams.maxGpuLayers`. Native
-LiteRT-LM throws `ArgumentError` for llama.cpp-specific fields such as
-`batchSize`, `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types,
-so a GGUF tuning profile never appears to apply silently. LiteRT-LM web
+LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
+`numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
+throws `LlamaModelException` whose cause is an `ArgumentError`, so a GGUF
+tuning profile never appears to apply silently. LiteRT-LM web
 accepts `liteRtLmBackend` for CPU or GPU selection and rejects every other
 field in the table.
 
