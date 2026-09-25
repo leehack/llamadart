@@ -319,7 +319,7 @@ against the reference by word error rate, after lowercasing both and replacing
 | `jfk.wav` resampled to 44.1 kHz stereo | The reference transcript |
 | `jfk.wav` three times (33 s) | The reference three times |
 
-Each run then repeats six cancel/dispose/load/generate cycles. It fails if
+Each run then repeats eight cancel/dispose/load/generate cycles. It fails if
 any budget is exceeded:
 
 - **Cancellation, 500 ms**: from `cancel()` to the task's terminal state, for
@@ -332,8 +332,8 @@ any budget is exceeded:
   stay in device memory
   ([#686](https://github.com/leehack/llamadart/issues/686)).
 - **Memory growth, 7 MiB per cycle**: the run fails if the resident set grows
-  by more than 7 MiB in every one of the five cycles after the first. A
-  plateau passes; a steady leak fails.
+  by more than 7 MiB in every one of the seven cycles after the first. A
+  plateau passes; a steady leak fails. Slower growth passes this check.
 
 With native `v0.4.1-1`, the pack has passed on macOS arm64 with CPU and with
 Metal, and on Linux x64 with CPU (AMD EPYC 7B12). The Metal runs report the

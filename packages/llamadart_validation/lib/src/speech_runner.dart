@@ -411,20 +411,21 @@ class PublicSpeechValidationAdapter
 }
 
 /// Lifecycle checks every [runSpeechValidation] run executes.
-const speechLifecycleCheckCount = 19;
+const speechLifecycleCheckCount = 21;
 
 /// Cleanup cycles that run before the `leak_slope_bound` window starts.
 ///
 /// With `reload`, they cover the first two reloads, which took the largest
-/// host resident step in six of seven Linux CUDA `tts` runs (#686).
+/// host resident step in six of nine Linux CUDA `tts` runs (#686).
 const speechLeakWarmupCycles = 1;
 
 /// Consecutive cycle-to-cycle resident deltas `leak_slope_bound` examines.
 ///
-/// One more than the longest run of deltas above
-/// [speechLeakCycleGrowthBytes] measured without a leak: 4, in a `tts` run
-/// recovering from memory pressure on macOS (#686).
-const speechLeakWindowCycles = 5;
+/// Three more than the longest run of deltas above
+/// [speechLeakCycleGrowthBytes] measured without a leak: 4, in a macOS `tts`
+/// run recovering from memory pressure and in a Linux x64 CPU `tts` run
+/// (#686).
+const speechLeakWindowCycles = 7;
 
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = speechLeakWarmupCycles + speechLeakWindowCycles;

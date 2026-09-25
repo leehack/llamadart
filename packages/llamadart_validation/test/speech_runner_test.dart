@@ -315,8 +315,10 @@ Map<String, Object?> checkRow(Map<String, Object?> result, String id) =>
 /// Resident MiB after `load` … `after_invalid`, then after each of the next
 /// seven checks, which dispose and reload or cancel, in measured order, from
 /// `tts` runs on GCE g2-standard-8 + NVIDIA L4, Linux CUDA, native v0.5.0
-/// (#686). T1/T2 ran `reload` and three cycles first, the others after the
-/// #668 interrupt checks. Replayed onto `reload` and cycles 1-6.
+/// (#686). T1/T2 ran `reload` and three cycles first, B3-L11 ran them after
+/// the #668 interrupt checks, and G1/G2 ran `reload` and six cycles at #687's
+/// first head. Replayed onto `reload` and cycles 1-6; a replay holds the last
+/// value for cycles 7-8.
 const linuxCudaTtsMib = {
   'T1':
       '837.7 1134.1 1134.1 1141.2 1148.1 1148.1 1150.3 1159.3 1159.5 1175.7 '
@@ -339,7 +341,51 @@ const linuxCudaTtsMib = {
   'L11':
       '852.5 1144.9 1145.0 1151.0 1157.8 1157.8 1159.9 1181.1 1217.3 1219.2 '
       '1221.7 1227.1 1259.5 1240.8',
+  'G1':
+      '819.1 1117.2 1117.3 1119.9 1127.2 1127.2 1134.6 1143.7 1200.1 1230.6 '
+      '1298.0 1298.5 1299.0 1310.0',
+  'G2':
+      '846.5 1138.6 1138.7 1141.6 1148.5 1148.5 1160.8 1244.2 1250.2 1264.1 '
+      '1360.1 1371.1 1371.2 1353.6',
 };
+
+/// Resident MiB in the [linuxCudaTtsMib] layout from `tts` runs on GCE
+/// e2-standard-8, Linux x64 CPU, at #687's first head (#686).
+const linuxX64CpuTtsMib = {
+  'C1':
+      '2859.2 3791.7 3791.8 3801.0 3805.6 3805.9 3803.1 3835.0 3808.7 3845.2 '
+      '3900.7 3916.0 3923.9 3923.9',
+  'C2':
+      '2903.5 3833.5 3833.5 3834.8 3837.9 3834.9 3835.0 3807.3 3820.8 3852.3 '
+      '3821.1 3834.9 3830.1 3830.2',
+};
+
+/// macOS arm64 CPU `tts` under memory pressure (#633 pattern), in the
+/// [linuxCudaTtsMib] layout: the #668 interrupt checks, `reload`, 3 cycles.
+const macosPressureTtsMib =
+    '3166.9 5230.6 5230.7 4622.1 4924.8 4924.8 4932.4 5105.7 3844.5 2493.4 '
+    '2688.2 4789.8 4802.4 4811.2';
+
+/// The #634 LiteRT ASR run on the [linuxX64CpuTtsMib] machine: a one-time
+/// jump at `cancel`, then +0.7 MiB per cycle.
+const linuxLiteRtAsrMib =
+    '384.4 485.2 485.5 570.9 574.5 574.5 574.5 577.9 578.7 579.4 580.0 580.7 '
+    '581.4 582.1';
+
+/// Longest run of consecutive steps above [speechLeakCycleGrowthBytes] after
+/// `after_invalid`, the seventh sample.
+int longestGrowthStreak(List<double> series) {
+  var longest = 0;
+  var current = 0;
+  for (var i = 7; i < series.length; i++) {
+    final grew =
+        ((series[i] - series[i - 1]) * mib).round() >
+        speechLeakCycleGrowthBytes;
+    current = grew ? current + 1 : 0;
+    longest = math.max(longest, current);
+  }
+  return longest;
+}
 
 /// Resident MiB after `load` … `after_invalid`, `reload` and 14 cleanup
 /// cycles, macOS arm64 (Apple M4 Max), load average 3.5-6.1, 2026-09-25 (#686).
@@ -962,7 +1008,7 @@ void main() {
       FakeSpeech(),
       residentBytes: stableResidentBytes,
     );
-    expect(speechLifecycleCheckCount, 19);
+    expect(speechLifecycleCheckCount, 21);
     expect(
       [for (final row in result['checks'] as List) row['id']],
       [
@@ -974,7 +1020,7 @@ void main() {
         'invalid_input',
         'after_invalid',
         'reload',
-        for (var cycle = 1; cycle <= 6; cycle++) 'cleanup_cycle_$cycle',
+        for (var cycle = 1; cycle <= 8; cycle++) 'cleanup_cycle_$cycle',
         'cancel_latency_bound',
         'immediate_cancel_latency_bound',
         'peak_memory_bound',
@@ -982,10 +1028,10 @@ void main() {
         'dispose',
       ],
     );
-    expect(result['expected_checks'], 19);
+    expect(result['expected_checks'], 21);
     final leak = (result['bounds'] as Map)['leak_slope'] as Map;
     expect(leak['warmup_cycles'], 1);
-    expect(leak['window_cycles'], 5);
+    expect(leak['window_cycles'], 7);
     expect(leak['growth_threshold_bytes'], 7 * mib);
   });
   test('leak slope passes at 7 MiB per cycle and fails just past it', () async {
@@ -999,7 +1045,7 @@ void main() {
       expect(bound['status'], within ? 'PASS' : 'FAIL', reason: reason);
       expect(
         bound['cycle_growth_bytes'],
-        List.filled(5, perCycle),
+        List.filled(7, perCycle),
         reason: reason,
       );
       expect(bound['growth_threshold_bytes'], 7 * mib, reason: reason);
@@ -1070,7 +1116,7 @@ void main() {
         for (final series in linuxCudaTtsMib.values.map(parseMib))
           if (series.skip(2).reduce(math.max) / series[1] > 1.10) series,
       ];
-      expect(overRatio, hasLength(6));
+      expect(overRatio, hasLength(8));
     },
   );
   test('measured macOS runs pass both memory bounds everywhere', () async {
@@ -1110,17 +1156,19 @@ void main() {
         ...List.filled(7, 1150.0),
         1150.0,
         1150.0,
+        1150.0,
         1197.3,
         1197.3,
         1234.6,
         1234.6,
+        1270.1,
         1270.1,
       ];
       final total = stepped.last - stepped[8];
       final steady = [
         ...List.filled(7, 1150.0),
         1150.0,
-        for (var i = 0; i <= 5; i++) 1150.0 + total * i / 5,
+        for (var i = 0; i <= 7; i++) 1150.0 + total * i / 7,
       ];
       for (final (series, pass) in [(stepped, true), (steady, false)]) {
         final result = await runSpeechValidation(
@@ -1139,14 +1187,9 @@ void main() {
   );
   test('a single spike passes the leak slope but not the ratio', () async {
     final series = [
-      ...List.filled(7, 1000.0),
-      1000.0,
-      1000.0,
-      1000.0,
+      ...List.filled(10, 1000.0),
       1500.0,
-      1000.0,
-      1000.0,
-      1000.0,
+      ...List.filled(5, 1000.0),
     ];
     final result = await runSpeechValidation(
       FakeSpeech(),
@@ -1154,15 +1197,15 @@ void main() {
     );
     final leak = checkRow(result, 'leak_slope_bound');
     expect(leak['status'], 'PASS');
-    expect(leak['cycle_growth_bytes'], [0, 500 * mib, -500 * mib, 0, 0]);
+    expect(leak['cycle_growth_bytes'], [0, 500 * mib, -500 * mib, 0, 0, 0, 0]);
     expect(checkRow(result, 'peak_memory_bound')['status'], 'FAIL');
     expect(result['functional_pass'], false);
   });
   test('growth during warm-up does not count toward the leak slope', () async {
-    // Measured x64 CPU and Linux CUDA reload steps, arranged as a climb that
-    // stops in the last window cycle.
+    // Measured Linux x64 CPU and Linux CUDA reload steps, arranged as a climb
+    // that stops in the last window cycle.
     final series = mibs([...List.filled(7, 3800.0), 3804.6]);
-    for (final step in [35.0, 17.2, 39.8, 36.7, 35.5, 0.2]) {
+    for (final step in [35.0, 17.2, 39.8, 36.7, 35.5, 36.5, 55.5, 0.2]) {
       series.add(series.last + (step * mib).round());
     }
     final result = await runSpeechValidation(
@@ -1174,40 +1217,93 @@ void main() {
     expect(leak['status'], 'PASS');
     expect(result['functional_pass'], true);
   });
-  test('the leak window spans five cycles', () async {
-    // Measured macOS `tts` CPU run recovering from memory pressure, the #633
-    // pattern: four consecutive steps above the threshold, placed inside the
-    // window.
-    final recovery = mibs([
-      ...List.filled(7, 4932.4),
-      2493.4,
-      2493.4,
-      2688.2,
-      4789.8,
-      4802.4,
-      4811.2,
-      4811.2,
-      4811.2,
-    ]);
-    // Cycles 2-6 each grow by 8 MiB, then the resident set stays flat.
-    final fiveCycleLeak = mibs([
+  test('the leak window spans seven cycles', () async {
+    List<int> streak(int cycles) => mibs([
       ...List.filled(9, 1000.0),
-      for (var cycle = 2; cycle <= 6; cycle++) 1000.0 + 8 * (cycle - 1),
-      1040.0,
+      for (var cycle = 1; cycle <= cycles; cycle++) 1000.0 + 8 * cycle,
+      for (var cycle = cycles; cycle < 7; cycle++) 1000.0 + 8 * cycles,
     ]);
-    for (final (series, pass) in [(recovery, true), (fiveCycleLeak, false)]) {
+    for (final (cycles, pass) in [(6, true), (7, false)]) {
       final result = await runSpeechValidation(
+        FakeSpeech(),
+        residentBytes: replay(streak(cycles)),
+        operatingSystem: 'linux',
+        backend: 'cuda',
+      );
+      final leak = checkRow(result, 'leak_slope_bound');
+      expect(leak['status'], pass ? 'PASS' : 'FAIL', reason: '$cycles');
+      expect(leak['cycle_growth_bytes'], hasLength(7));
+    }
+  });
+  test('no measured run without a leak grows for a whole window', () {
+    final runs = {
+      ...linuxCudaTtsMib,
+      ...linuxX64CpuTtsMib,
+      ...macosMib,
+      'macos pressure': macosPressureTtsMib,
+    }.map((run, text) => MapEntry(run, longestGrowthStreak(parseMib(text))));
+    expect(runs.values.reduce(math.max), 4, reason: '$runs');
+    expect(
+      [
+        for (final MapEntry(key: run, value: streak) in runs.entries)
+          if (streak == 4) run,
+      ],
+      ['G1', 'C1', 'macos pressure'],
+    );
+    expect(
+      runs.values.every((streak) => streak < speechLeakWindowCycles),
+      true,
+    );
+    expect(
+      longestGrowthStreak(parseMib(macosLiteRtAsrMib)),
+      greaterThanOrEqualTo(speechLeakWindowCycles),
+    );
+  });
+  test('measured Linux x64 CPU climbs pass both memory bounds', () async {
+    for (final MapEntry(key: run, value: text) in linuxX64CpuTtsMib.entries) {
+      final result = await runSpeechValidation(
+        FakeSpeech(),
+        residentBytes: replay(mibs(parseMib(text))),
+        operatingSystem: 'linux',
+        backend: 'cpu',
+      );
+      expect(checkRow(result, 'peak_memory_bound')['status'], 'PASS');
+      expect(
+        checkRow(result, 'leak_slope_bound')['status'],
+        'PASS',
+        reason: run,
+      );
+      expect(result['functional_pass'], true, reason: run);
+    }
+  });
+  test(
+    'LiteRT ASR growth under 7 MiB per cycle is caught only by the ratio',
+    () async {
+      final series = mibs(parseMib(linuxLiteRtAsrMib));
+      final cpu = await runSpeechValidation(
+        FakeSpeech(),
+        residentBytes: replay(series),
+        operatingSystem: 'linux',
+        backend: 'cpu',
+      );
+      expect(checkRow(cpu, 'leak_slope_bound')['status'], 'PASS');
+      final ratio = checkRow(cpu, 'peak_memory_bound');
+      expect(ratio['status'], 'FAIL');
+      expect(ratio['peak_rss_growth'], closeTo(582.1 / 485.2, 1e-3));
+      expect(cpu['functional_pass'], false);
+
+      // With the ratio exempt, nothing catches it.
+      final cuda = await runSpeechValidation(
         FakeSpeech(),
         residentBytes: replay(series),
         operatingSystem: 'linux',
         backend: 'cuda',
       );
-      expect(
-        checkRow(result, 'leak_slope_bound')['status'],
-        pass ? 'PASS' : 'FAIL',
-      );
-    }
-  });
+      expect(checkRow(cuda, 'leak_slope_bound')['status'], 'PASS');
+      expect(checkRow(cuda, 'peak_memory_bound')['status'], 'SKIP');
+      expect(cuda['functional_pass'], true);
+    },
+  );
   test('the peak ratio is exempt only on Linux CUDA', () {
     expect(
       speechPeakRatioExemption(operatingSystem: 'linux', backend: 'cuda'),
@@ -1234,7 +1330,7 @@ void main() {
   });
   test('the measured low-baseline failure still fails the ratio', () async {
     // #633: macOS CPU `tts` whose `generate` sample was low (GB). The issue
-    // gives 5.51-5.52 GB for its three cleanup cycles; cycles 4-6 repeat 5.52.
+    // gives 5.51-5.52 GB for its three cleanup cycles; cycles 4-8 repeat 5.52.
     final series = mibs([
       for (final gb in [
         3.26, 3.71, 3.71, 5.09, 5.15, 5.15, 5.15, 5.50, //

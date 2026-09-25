@@ -114,9 +114,9 @@ For canonical full release notes, use:
   cancellation takes over 500 ms to end its task or the peak resident set
   exceeds 1.10x the one sampled after the first generation
   ([#594](https://github.com/leehack/llamadart/pull/594)).
-- Run six cleanup cycles instead of three in every speech validation pack, and
-  fail a run whose resident set grows by more than 7 MiB in each of five warm
-  cycles. The 1.10x peak ratio no longer applies on Linux CUDA, where reload
+- Run eight cleanup cycles instead of three in every speech validation pack,
+  and fail a run whose resident set grows by more than 7 MiB in each of seven
+  warm cycles. The 1.10x peak ratio no longer applies on Linux CUDA, where reload
   overhead that levels off failed it without a leak
   ([#686](https://github.com/leehack/llamadart/issues/686)).
 - Force greedy `topK: 1` for zero-temperature LiteRT-LM Web generation, matching

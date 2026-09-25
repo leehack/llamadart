@@ -27,7 +27,7 @@ validating the header.
 ## Cancellation and cleanup bounds
 
 After the single-shot lifecycle checks, a run whose `load` check passes repeats
-`speechCleanupCycles` (6) cancel/dispose/load/generate cycles.
+`speechCleanupCycles` (8) cancel/dispose/load/generate cycles.
 `speech-results.json` reports the bounds under `bounds`, and
 `immediate_cancel_latency_bound`, `cancel_latency_bound`, `peak_memory_bound`
 and `leak_slope_bound` are ordinary checks that fail the run when a budget is
@@ -79,23 +79,29 @@ the ratio.
 `leak_slope_bound` runs on every backend. It skips the first
 `speechLeakWarmupCycles` (1) cycles, then fails if the resident set grew by more
 than `speechLeakCycleGrowthBytes` (7 MiB) in every one of the next
-`speechLeakWindowCycles` (5) cycles. A plateau, a one-off spike or growth in
+`speechLeakWindowCycles` (7) cycles. A plateau, a one-off spike or growth in
 steps with a flat cycle between them passes; a steady leak of more than 7 MiB
 per cycle fails. The constants come from measured runs:
 
 - 7 MiB is half the smallest per-cycle growth of the LiteRT ASR leak in
   [#634](https://github.com/leehack/llamadart/issues/634): 14.0 MiB across 12
   warm cycles on macOS arm64.
-- 5 cycles is one more than the longest run of consecutive steps above 7 MiB in
-  37 recorded runs without a known leak (macOS, Linux and Windows; CPU, Metal
-  and CUDA): 4, in a macOS `tts` run recovering from memory pressure. The
-  seven Linux CUDA `tts` runs behind #686 reach 3.
+- The longest run of consecutive steps above 7 MiB in 46 recorded `stt` and
+  `tts` runs without a known leak is 4 (macOS, Linux and Windows; CPU, Metal
+  and CUDA). It occurred three times: in a macOS `tts` run recovering from memory
+  pressure, in a Linux CUDA `tts` run, and in a Linux x64 CPU `tts` run whose
+  resident set climbed for four cycles and then stopped. A 5-cycle window
+  would leave one cycle of margin. 7 leaves three, at a cost of two cycles
+  per run: about 30 s for `tts` on Linux x64 CPU and about 75 s on Linux
+  arm64 CPU, the slowest recorded, which stays inside the 15-minute deadline.
 - With `reload`, the warm-up cycle covers the first two reloads, which took
-  the largest step in six of those seven Linux CUDA runs.
+  the largest step in six of nine recorded Linux CUDA `tts` runs.
 
-A leak that grows by 7 MiB or less per cycle, or that releases memory in any
-window cycle, passes this bound; on backends that keep the peak ratio, that
-ratio still applies.
+The slope bound alone does not catch a leak of 7 MiB or less per cycle, a
+leak that releases memory in any window cycle, or growth that arrives in one
+jump. On Linux, the #634 LiteRT ASR growth is one jump of about 85 MiB at
+`cancel`, then 0.7 MiB per cycle; only the peak ratio fails it. On Linux CUDA,
+where the ratio is not applied, a leak like that would pass.
 
 Resident memory comes from `dart:io` `ProcessInfo.currentRss`. It counts native
 and Dart allocations together, what it counts is platform dependent, and it does

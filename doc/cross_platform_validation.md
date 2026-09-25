@@ -1001,13 +1001,14 @@ Speech reports contain per-case PASS/FAIL, exact locks and fixture identity,
 raw/reference transcript, WER, processing time, first partial/first playable
 audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
-input/recovery, independent reload and cleanup. Six further
+input/recovery, independent reload and cleanup. Eight further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
 measured cancellation latency, peak resident set and per-cycle resident growth
 against the budgets described in
 `packages/llamadart_validation/assets/speech/README.md`. The peak ratio is not
 applied on Linux CUDA, whose resident set excludes the weights; the per-cycle
-growth bound applies on every backend
+growth bound applies on every backend but misses growth of 7 MiB or less per
+cycle, so a leak that small passes on Linux CUDA
 ([#686](https://github.com/leehack/llamadart/issues/686)). The
 single-shot checks and every cycle each cancel twice: once as soon as the task
 is handed back, the window in which `tts` cancellations were dropped until
