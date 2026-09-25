@@ -28,6 +28,8 @@ List<File> _fixtureTemplates() {
 const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja':
       '1111100',
+  'test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja':
+      '1111111',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja':
       '1111100',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja':
@@ -44,6 +46,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/templates/functiongemma-270m-it.jinja': '1111110',
   'test/fixtures/templates/gemma-3-4b-it.jinja': '1000110',
   'test/fixtures/templates/gemma-3n-E4B-it.jinja': '1000110',
+  'test/fixtures/templates/gemma-4-E2B-it.jinja': '1111111',
   'tool/litert_lm_templates/gemma.jinja': '1000110',
   'tool/litert_lm_templates/gemma3n.jinja': '1000110',
   'tool/litert_lm_templates/gemma4.jinja': '1111111',

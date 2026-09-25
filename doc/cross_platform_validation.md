@@ -33,7 +33,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 
 | Area | Current evidence | Remaining qualification |
 | --- | --- | --- |
-| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; retain model/backend failures |
+| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Catalog 4 adds separate Unicode generation; catalog 5 adds early cancel, GGUF restart/overlap and invalid grammar; retain model/backend failures |
 | Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Refresh exact-head CI and real portable execution evidence; primary-model/device qualification and iOS signing remain separate |
 | Cloud lifecycle | Firebase lifecycle exercised; Linux/Windows bootstrap runs collected and resources deleted; provider failure controls tested locally | Bootstrap execution is not end-to-end qualification of the maintained GCE adapter and custom image |
@@ -92,9 +92,10 @@ untrusted producer's report.
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
 | `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
 | `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
-| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
+| `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history, instruction and C07 tool checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
+| `decision-gguf-{cpu,metal,vulkan,cuda,webgpu}` | Laya ModernBERT F16, 791,461,088 bytes (`webgpu`: Q8_0, 421,407,968 bytes), plus head, 106,052,840 bytes | `DecisionEngine` parity with Laya 0.3.5; see [Decision profiles](#decision-profiles) |
 
 Full revisions and SHA256 values live in profile JSON. The instruction GGUF is
 [ggml-org's Q4_0 artifact](https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/blob/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf),
@@ -128,10 +129,13 @@ private mobile model transfer must be implemented before enabling that lane.
 
 The quick inventory is C01 load/diagnostics, C02 Unicode tokenize/detokenize,
 C03 raw generation, C04 hello/arithmetic and C06 multi-turn history for chat
-fixtures, C08 cancellation/control/recovery, C09 dispose/new engine/reload,
-C10 one-token limit, C12 missing-model rejection/recovery, and B01 one warmup
-plus three measured generations. Independent assertion failures do not suppress
-later metrics; load failure or timeout prevents unsafe later inference.
+fixtures, C08 cancellation/control/recovery and early cancel, C09 dispose/new
+engine/reload, C10 one-token limit, C12 missing-model rejection/recovery, and
+B01 one warmup plus three measured generations. GGUF profiles also run C08
+restart/overlap and C12 invalid grammar
+([catalog 5](#catalog-5-cancellation-grammar-and-tool-cases)). Independent
+assertion failures do not suppress later metrics; load failure or timeout
+prevents unsafe later inference.
 
 Sampling is temperature 0, seed 1, top-k 40, top-p .9, repeat penalty 1.1,
 context 1024, four threads, 32 generated tokens, thinking disabled, prompt reuse
@@ -157,6 +161,80 @@ expected bytes, remove partial weights and never become inference/TPS samples.
 Prompts, regex expectations, exact output/thinking, ordered terminal case IDs,
 configuration hashes, model hashes, source/runtime pins and environment all appear
 in the journal. The raw tiny fixture does not claim chat capability.
+
+### Decision profiles
+
+`decision-gguf-{cpu,metal,vulkan,cuda}` lock the `fr0stbit3/laya-gguf`
+`laya-F16.gguf` encoder and `decision-gguf-webgpu` its `laya-Q8_0.gguf`, both
+model kind `decision`, and, under `decision.head`, the `laya-head.safetensors`
+head. An optional `decision.config` lock takes the
+same fields for heads without embedded config. They load with context 512 and
+four threads, run `C01.load`, then:
+
+| Case | Public API | Passes when |
+| --- | --- | --- |
+| `D01.head` | `DecisionEngine.capabilitiesFor`, `DecisionEngine.load` | Supported; head device `CPU` for the CPU profile, otherwise not `CPU` and the backend name contains the profile backend |
+| `D02.tokenizer` | `LlamaEngine.tokenize(addSpecial: false)` | Exact ids for all 97 reference texts |
+| `D03.logits` | `loadDecisionHeadBackend`, `runDecisionBackend` | The 24 reference sequences, run in one call, give every marker logit within 0.25 |
+| `D04.answers` | `systemOne`, one call per reference case (15 calls, 24 questions) | Answers match, as below |
+| `D05.batch` | `systemOneBatch` with the 15 requests | Answers match, as below |
+| `D06.reload` | `dispose`, `load`, `unloadModel`, `loadModel`, `load` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
+| `D07.guards` | `load` with a missing head, `systemOne` with U+0000 in the state | `LlamaModelException`, `LlamaDecisionException`, then the first case's answers match |
+
+Answers match when the type, probability key order, model `laya-rl-agent`
+and `usage.input_tokens` are exact; confidence, act probability, each
+probability and noul are within 0.05; the score is within 0.1; and the choice
+is the reference's unless the reference top-2 gap is within 0.05. These are the
+`decision-model-smoke` defaults. Q8_0 rounding alone can use most of them, so
+native profiles use F16, whose drift stayed within a quarter of each tolerance
+in the runs below. The reference is
+`packages/llamadart_validation/assets/decision/laya_0_3_5_reference.json`, the
+decision E2E fixture, pinned by SHA256: a missing or altered copy makes every
+decision case ERROR. Chat cases are unselected with
+`decision_model_has_no_text_generation`. Decision catalogs require the current
+catalog version and journal schema 2; chat catalogs are unchanged.
+
+GGUF accelerator proof for these profiles expects two model loads (`C01.load`,
+`D06.reload`) and six compute buffers: one per model load plus one encoder
+context per successful head load (`D01`, `D03`, two in `D06`). Every head
+device must name the backend, such as `MTL0`. Reports also require the verified
+head hash and size. The Web host keeps no native log, so `decision-gguf-webgpu`
+reports cannot verify placement and do not qualify.
+
+Desktop, Android and iOS hosts download and verify the head beside the model,
+each file within the host's download deadline. The Web host verifies both in
+the page and passes the head URL to the bridge. Backend `webgpu` loads with
+every layer on WebGPU and runs only on the Web host and in Web bundles. It
+keeps Q8_0 because each F16 model load in the browser takes 45 to 51 s, which
+leaves `D06.reload` no margin under the 60 s case deadline. The Web host and
+Web bundles reject every other decision profile: decision cases on the WASM
+CPU exceed the case deadline. GCE accepts `decision-gguf-cuda`.
+`validation.dart coverage --use-case decision` lists the rows; Web WASM is
+`UNSUPPORTED`.
+
+Observed on an Apple Silicon Mac shared with other work. With `laya-F16.gguf`
+at load averages of 10 to 14, `local` CPU and Metal runs passed all eight
+cases, and Metal verified placement. Worst logit/probability/score differences
+were 0.052/0.011/0.010 on the CPU and 0.012/0.003/0.003 on Metal, against
+0.142/0.036/0.061 and 0.164/0.044/0.025 with `laya-Q8_0.gguf` (load averages
+15 to 210). No `local` run qualifies, since it is not a portable bundle.
+
+In headless Chromium with WebGPU on Metal and the bridge assets from
+[#665](https://github.com/leehack/llamadart/pull/665), every
+`decision-gguf-webgpu` run kept the head on `WebGPU: WebGPU`. With Q8_0, two
+runs at load averages of 6 to 28 passed with worst differences of
+0.164/0.044/0.025 and `D06.reload` at 25 and 32 s; a third, at 33 to 40,
+passed with model loads of 33 and 36 s and `D06.reload` at 49 s. With F16, at
+14 to 17, worst differences were 0.017/0.005/0.001, but model loads took 45 to
+51 s: `D06.reload` passed at 57 s in one run and hit the 60 s case deadline in
+the other. On the WASM CPU, in builds without the Web host's rejection, F16 (at
+33 to 75) and Q8_0 both stopped at `D03.logits` on the 60 s deadline. With a
+20-minute timeout, Q8_0 took 77 to 86 s for each of `D03` to `D06`, and `D04`
+and `D05` failed on `plain_text/urgency5` (probability 0.0628, score 0.1224).
+
+```bash
+dart run tool/testing/validation.dart local --profile decision-gguf-metal
+```
 
 ### Focused selections and replay metadata
 
@@ -975,8 +1053,10 @@ Gemma 4 E2B now has immutable `gemma4-gguf-{cpu,metal,vulkan,cuda}` and
 `gemma4-litert-{cpu,gpu}` text profiles. Qwen3.5 0.8B retains the existing
 `chat-gguf-*` Q4_0 profiles and adds `qwen35-litert-{cpu,gpu}` INT8 profiles.
 The new profiles disable thinking, retain strict core predicates, and record
-resolved sampling and TPS with the existing reporter. Native LiteRT profiles
-are not Web or NPU artifacts. Multimodal/projector profiles remain separate work.
+resolved sampling and TPS with the existing reporter. The GGUF chat profiles
+select `focused` with `tools`, adding C07.tools and C07.tools.auto_text. Native
+LiteRT profiles are not Web or NPU artifacts. Multimodal/projector profiles
+remain separate work.
 
 ```bash
 dart run tool/testing/validation.dart local --profile gemma4-gguf-cpu --model /models/gemma-4-E2B-it-Q4_K_S.gguf
@@ -1108,6 +1188,50 @@ these cases as unimplemented and cannot claim their execution. Catalog 4 adds
 Unicode generation, thinking on/off and tool choice/result controls. Thinking
 budgets, tool-bearing batching and model-specific qualification remain separate.
 
+
+### Catalog 5 cancellation, grammar and tool cases
+
+Catalog 5 adds these cases. Each records the precondition it needs and its
+timings; a missed precondition is NOT_RUN, never PASS.
+
+| Case | Request | Passes when | Runs on |
+| --- | --- | --- | --- |
+| `C08.cancel.early` | `cancelGeneration()` right after listening to the short request, before any delta ([#602](https://github.com/leehack/llamadart/issues/602)) | The stream ends without content, thinking or tool calls within the 5 s cancel deadline; the same request then completes with output | Every public-API profile |
+| `C08.cancel.restart` | At the first delta of the 256-token cancel request, `cancelGeneration()`, then the short request without waiting ([#655](https://github.com/leehack/llamadart/issues/655)) | The short request, issued before the cancelled stream ended, completes with output and its first delta follows that end | GGUF quick core |
+| `C08.overlap` | The short request at the first delta of the uncancelled 256-token request | It fails with `LlamaStateException` before the first ends, the first streams at least one more delta and ends cleanly after the harness cancels it, and a later request completes | GGUF quick core |
+| `C12.grammar` | Raw request with GBNF `root ::= "unterminated` | Native: `LlamaInferenceException` `llama.cpp failed to initialize the requested grammar sampler.`; Web: `LlamaInferenceException` whose details contain `(invalid grammar)`; then a request completes | GGUF quick core |
+| `C07.tools.auto_text` | `ToolChoice.auto` with `get_weather` on the hello prompt ([#654](https://github.com/leehack/llamadart/issues/654)) | Text finish matching the hello regex, no tool call | `tools` selection |
+
+Only native llama.cpp defines restart and overlap, so GGUF Web records both as
+NOT_RUN. LiteRT profiles omit them (`litert_restart_contract_undefined`,
+[#656](https://github.com/leehack/llamadart/issues/656)) and `C12.grammar`
+(`litert_grammar_unsupported`: LiteRT-LM rejects every grammar). C07.tools
+version 3 also binds the hello fixture its recovery uses. On Web, a required
+trial rejected with the documented `LlamaUnsupportedException` for a lazy
+required-tool grammar counts as that trial's result; elsewhere the rejection
+stays ERROR. Catalog 1 to 4 reports keep their inventories, C07.tools version 2
+and fixtures; a catalog 5 case in them fails the report.
+
+The `chat-gguf-*` and `gemma4-gguf-*` profiles select `focused` with `tools`.
+Their C07 fixtures are reference-qualified against unmodified upstream
+`llama-server` at native v0.5.0's llama.cpp commit
+`7fe450e19305b828c199d602c23a8337aaa1f03b` (CPU build, same sampler, thinking
+off). For both locked models it calls `get_weather` with `{"city":"Montréal"}`
+under `auto` and `required`, answers `17` after the tool result, emits no tool
+call under `none`, and answers the hello prompt in text under `auto`. The LiteRT
+chat profiles do not select tools: LiteRT-LM rejects `ToolChoice.required` for
+Qwen tool calling, and no LiteRT reference emission exists.
+
+Local macOS arm64 JIT runs (2026-09-24, dirty source, not qualification):
+`tiny-gguf-cpu` 15/15 PASS; `chat-gguf-cpu` 19 PASS with the known C06 failure;
+`gemma4-gguf-cpu` 19 PASS with C07.tools FAIL, because llamadart renders the
+Gemma 4 tool result as `response:None{value:}` and the model answers `null`
+where upstream renders the result and answers `17`; `chat-litert-cpu` 15/15
+PASS. Every catalog 5 case passed on every profile that selects it. With the
+native backend reverted to its pre-#657 source, C08.cancel.restart and
+C08.overlap fail with the wrapped `generation is already in progress` error;
+with the engine-level cancel record disabled, C08.cancel.early fails with full
+output.
 
 ### Current Qwen tool and history reference (2026-09-19)
 

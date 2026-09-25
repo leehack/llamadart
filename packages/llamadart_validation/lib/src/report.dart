@@ -45,6 +45,12 @@ class ValidationReport {
     final catalogVersion = declaredCatalog is Map
         ? declaredCatalog['version']
         : null;
+    final knownCatalog =
+        catalogVersion is int &&
+            catalogVersion >= 1 &&
+            catalogVersion <= validationCatalogVersion
+        ? catalogVersion
+        : null;
     if (!const [1, 2].contains(manifest['schema_version'])) {
       problems.add('Unsupported result schema');
     }
@@ -83,6 +89,9 @@ class ValidationReport {
       if (legacy && profile.selection == 'focused') {
         problems.add('Focused selection requires result schema 2');
       }
+      if (legacy && profile.isDecision) {
+        problems.add('Decision cases require result schema 2');
+      }
       if (!legacy) {
         if (manifest['catalog_hash'] != jsonHash(manifest['catalog'])) {
           problems.add('Catalog hash does not match the manifest');
@@ -98,7 +107,7 @@ class ValidationReport {
         }
       }
       if (canonicalJson(inventory) !=
-          canonicalJson(legacy ? profile.legacyCaseIds : profile.caseIds)) {
+          canonicalJson(_inventory(profile, legacy, knownCatalog))) {
         problems.add('Case inventory does not match the profile');
       }
       if (canonicalJson(manifest['effective_config']) !=
@@ -114,9 +123,7 @@ class ValidationReport {
     }
     final expected = profile == null
         ? declared
-        : legacy
-        ? profile.legacyCaseIds
-        : profile.caseIds;
+        : _inventory(profile, legacy, knownCatalog);
     var sequence = 0;
     for (var index = 0; index < events.length; index++) {
       final event = events[index];
@@ -152,27 +159,19 @@ class ValidationReport {
       if (records.containsKey(id)) {
         problems.add('Duplicate terminal record: $id');
       }
-      if (!legacy &&
-          profile != null &&
-          const [1, 2, 3, 4].contains(catalogVersion)) {
+      if (!legacy && profile != null && knownCatalog != null) {
         if (event['case_version'] !=
-                validationCase(
-                  id,
-                  catalogVersion: catalogVersion as int,
-                ).version ||
+                validationCase(id, catalogVersion: knownCatalog).version ||
             event['fixture_hash'] !=
                 jsonHash(
-                  profile.caseFixtures(id, catalogVersion: catalogVersion),
+                  profile.caseFixtures(id, catalogVersion: knownCatalog),
                 )) {
           problems.add('Case version or fixture identity mismatch: $id');
         }
       }
       if (!legacy &&
-          const [1, 2, 3, 4].contains(catalogVersion) &&
-          !validationCase(
-            id,
-            catalogVersion: catalogVersion as int,
-          ).implemented &&
+          knownCatalog != null &&
+          !validationCase(id, catalogVersion: knownCatalog).implemented &&
           event['status'] != 'NOT_RUN') {
         problems.add(
           'Unimplemented catalog case cannot claim an executed result: $id',
@@ -219,6 +218,15 @@ class ValidationReport {
     );
   }
 
+  /// Obligations the profile derives for the journal's schema and catalog.
+  static List<String> _inventory(
+    ValidationProfile profile,
+    bool legacy,
+    int? catalogVersion,
+  ) => legacy
+      ? profile.legacyCaseIds
+      : profile.caseIdsForCatalog(catalogVersion ?? validationCatalogVersion);
+
   /// True only for complete mandatory functional obligations.
   bool get assertionsPassed =>
       problems.isEmpty &&
@@ -253,6 +261,7 @@ class ValidationReport {
         : null;
     final tag = environment[runtime == 'litert' ? 'litert_tag' : 'native_tag'];
     final model = (manifest['profile'] as Map?)?['model'] as Map? ?? {};
+    final decision = (manifest['profile'] as Map?)?['decision'] as Map? ?? {};
     final preparation = manifest['preparation'] is Map
         ? manifest['preparation'] as Map
         : const {};
@@ -266,6 +275,13 @@ class ValidationReport {
           preparation['sha256'] != model['sha256'] ||
           preparation['bytes'] != model['bytes'])
         'Verified model hash and byte size do not match the profile lock',
+      for (final MapEntry(:key, :value) in decision.entries)
+        if (preparation['decision_$key'] is! Map ||
+            (preparation['decision_$key'] as Map)['verified'] != true ||
+            (preparation['decision_$key'] as Map)['sha256'] !=
+                (value as Map?)?['sha256'] ||
+            (preparation['decision_$key'] as Map)['bytes'] != value?['bytes'])
+          'Verified decision $key hash and byte size do not match the profile lock',
       if (desktop &&
           (environment['runtime_payload_verified'] != true ||
               !RegExp(

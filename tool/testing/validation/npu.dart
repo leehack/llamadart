@@ -12,14 +12,26 @@ const npuLiteRtRevision = '9fe5be45564c868408e6514c8aabb83e211a0911';
 const npuDispatchHeaderHash =
     '11dd4d98bd084157ac987b1ee1951f3f96e2b3ca6b51a27c10e645686bf0e3ee';
 
-/// Requires locally supplied gated models and verified Android NPU kits.
+/// Requires locally supplied gated models and verified Android NPU kits, and
+/// keeps `webgpu` profiles to Web bundles and Web decision bundles to WebGPU.
 /// Keep this at both build and upload boundaries: old/custom bundles can bypass
 /// the builder, and spending a Firebase execution cannot repair missing inputs.
 void requireExecutableValidationProfile(
   Map<dynamic, dynamic> profile, {
   bool verifiedAndroidKit = false,
   bool supportsLocalModelPath = false,
+  bool web = false,
 }) {
+  if (profile['backend'] == 'webgpu' && !web) {
+    throw StateError('The webgpu backend runs only in Web bundles.');
+  }
+  if (web &&
+      (profile['model'] as Map?)?['kind'] == 'decision' &&
+      profile['backend'] != 'webgpu') {
+    throw StateError(
+      'Web decision bundles run only on WebGPU; use decision-gguf-webgpu.',
+    );
+  }
   if (profile['backend'] != 'npu' &&
       (profile['model'] as Map?)?['access'] == 'gated-local-staging' &&
       !supportsLocalModelPath) {

@@ -83,13 +83,18 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     int? streamBatchTokens,
     int? streamBatchBytes,
     bool cancelAfterFirst = false,
+    bool cancelOnListen = false,
     List<LlamaChatMessage>? history,
     List<String>? stopSequences,
     bool? enableThinking,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    String? grammar,
   }) {
-    if (enableThinking != null || tools != null || toolChoice != null) {
+    if (enableThinking != null ||
+        tools != null ||
+        toolChoice != null ||
+        grammar != null) {
       throw UnsupportedError(
         "Native control does not implement feature overrides",
       );
@@ -104,7 +109,7 @@ class NativeNpuReferenceEngine implements ValidationEngine {
         'Direct native control has no public worker batching',
       );
     }
-    if (raw || cancelAfterFirst) {
+    if (raw || cancelAfterFirst || cancelOnListen) {
       throw UnsupportedError(
         'Native reference only covers blocking text conversations',
       );
@@ -116,6 +121,18 @@ class NativeNpuReferenceEngine implements ValidationEngine {
       if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
     });
   }
+
+  @override
+  Future<Map<String, dynamic>> generateOverlapping(
+    String first,
+    String second,
+    ValidationProfile profile, {
+    required bool raw,
+    required int firstMaxTokens,
+    required bool cancelFirst,
+  }) => throw UnsupportedError(
+    'Native reference only covers blocking text conversations',
+  );
 
   @override
   Future<Map<String, dynamic>> diagnostics() async => {

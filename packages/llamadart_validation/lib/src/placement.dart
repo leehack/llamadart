@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'case_catalog.dart';
+import 'decision_catalog.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 
@@ -30,26 +32,36 @@ Map<String, dynamic> inspectPlacement(
   // Derive obligations from the executable profile, never from a producer's
   // case inventory or the evidence records that happen to be present.
   final List<String> selected;
+  var headContexts = const <String, int>{};
   try {
     final parsed = ValidationProfile.fromJson(
       Map<String, dynamic>.from(profile),
     );
     final schema = manifest['schema_version'];
     if (schema != 1 && schema != 2 ||
-        schema == 1 && parsed.selection == 'focused') {
+        schema == 1 && (parsed.selection == 'focused' || parsed.isDecision)) {
       return result;
     }
+    if (parsed.isDecision) headContexts = decisionHeadContexts;
     final catalog = manifest['catalog'] as Map?;
     final version = catalog?['version'] ?? 1;
-    selected = (schema == 1 ? parsed.legacyCaseIds : parsed.caseIds)
-        .where(
-          (id) =>
-              !['C10.stop', 'C12.guards'].contains(id) ||
-              (schema == 2 &&
-                  [3, 4].contains(version) &&
-                  !parsed.nativeReference),
-        )
-        .toList();
+    selected =
+        (schema == 1
+                ? parsed.legacyCaseIds
+                : version is int &&
+                      version >= 1 &&
+                      version <= validationCatalogVersion
+                ? parsed.caseIdsForCatalog(version)
+                : parsed.caseIds)
+            .where(
+              (id) =>
+                  !['C10.stop', 'C12.guards'].contains(id) ||
+                  (schema == 2 &&
+                      version is int &&
+                      version >= 3 &&
+                      !parsed.nativeReference),
+            )
+            .toList();
   } catch (_) {
     return result;
   }
@@ -80,6 +92,7 @@ Map<String, dynamic> inspectPlacement(
           'C12.recovery',
           'C09.reload.second',
           'C12.guards',
+          'D06.reload',
         ].contains(id),
       )
       .toList();
@@ -87,6 +100,34 @@ Map<String, dynamic> inspectPlacement(
       .where((c) => expectedIds.contains(c['case_id']) && c['status'] == 'PASS')
       .toList();
   final expectedLoads = expectedIds.length;
+  final prefix = {
+    'cuda': r'CUDA\d+',
+    'metal': r'MTL\d+|Metal',
+    'vulkan': r'Vulkan\d+',
+  }[backend]!;
+  final heads = cases
+      .where((c) => headContexts.containsKey(c['case_id']))
+      .toList();
+  final headDevices = [
+    for (final head in heads)
+      for (final evidence in [head, head['head_reload'], head['model_reload']])
+        if (evidence is Map && evidence.containsKey('device_name'))
+          evidence['device_name'],
+  ];
+  if (headContexts.keys.any(
+        (id) =>
+            heads
+                .where((c) => c['case_id'] == id && c['status'] == 'PASS')
+                .length !=
+            1,
+      ) ||
+      headDevices.length != headContexts.values.fold(0, (a, b) => a + b) ||
+      headDevices.any(
+        (device) =>
+            device is! String || !RegExp('^(?:$prefix)\$').hasMatch(device),
+      )) {
+    return {...result, 'reason': 'decision head placement evidence incomplete'};
+  }
   if (expectedLoads == 0 ||
       expectedIds.any(
         (id) => loads.where((c) => c['case_id'] == id).length != 1,
@@ -101,11 +142,6 @@ Map<String, dynamic> inspectPlacement(
   final offloads = RegExp(
     r'load_tensors: offloaded (\d+)/(\d+) layers to GPU',
   ).allMatches(log).toList();
-  final prefix = {
-    'cuda': r'CUDA\d+',
-    'metal': r'MTL\d+|Metal',
-    'vulkan': r'Vulkan\d+',
-  }[backend]!;
   final buffers = RegExp(
     '(?:$prefix) compute buffer size =\\s*([0-9.]+) (?:MiB|MB)',
   ).allMatches(log).toList();
@@ -172,7 +208,8 @@ Map<String, dynamic> inspectPlacement(
       offloads.every(
         (m) => int.parse(m[1]!) > 0 && int.parse(m[1]!) <= int.parse(m[2]!),
       ) &&
-      buffers.length == expectedLoads &&
+      buffers.length ==
+          expectedLoads + headContexts.values.fold(0, (a, b) => a + b) &&
       buffers.every((m) => (double.tryParse(m[1]!) ?? 0) > 0);
   return {
     ...result,
@@ -229,6 +266,7 @@ Map<String, dynamic> _inspectNpu(
             RegExp(r'^[a-f0-9]{64}$').hasMatch('${value['sha256']}') &&
             (lock['sha256'] == null || value['sha256'] == lock['sha256']);
       });
+  final version = (manifest['catalog'] as Map?)?['version'];
   final expected = selected.where(
     (id) => [
       'C03.raw',
@@ -249,10 +287,14 @@ Map<String, dynamic> _inspectNpu(
       'C09.reload.second',
       'C10.stop',
       'C12.guards',
-      if ((manifest['catalog'] as Map?)?['version'] == 4) ...[
+      if (version is int && version >= 4) ...[
         'C02.generate',
         'C05.thinking',
         'C07.tools',
+      ],
+      if (version is int && version >= 5) ...[
+        'C08.cancel.early',
+        'C07.tools.auto_text',
       ],
     ].contains(id),
   );
@@ -273,7 +315,7 @@ Map<String, dynamic> _inspectNpu(
         record['recovery'],
       ],
       'C10.stop' => [record['control'], record['stopped'], record['recovery']],
-      'C12.guards' => [record['recovery']],
+      'C12.guards' || 'C08.cancel.early' => [record['recovery']],
       'C05.thinking' => [
         for (var i = 0; i < 2; i++)
           record['trials'] is List && (record['trials'] as List).length > i

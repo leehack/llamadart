@@ -2258,6 +2258,172 @@ void main() {
     });
   }
 
+  Future<(List<Map<String, dynamic>>?, Object?)> nativeChatPayload(
+    List<LlamaChatMessage> messages,
+  ) async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => client);
+    const params = ModelParams(preferredBackend: GpuBackend.cpu);
+    try {
+      final model = await service.loadModel(modelFile.path, params);
+      final context = service.createContext(model, params);
+      final pending = service
+          .generateChat(context, messages, const GenerationParams(maxTokens: 8))
+          .toList();
+      await client.generateStarted.future;
+      await client.generated.close();
+      await pending;
+      return (client.lastMessages, jsonDecode(client.lastMessageJson!));
+    } finally {
+      service.dispose();
+    }
+  }
+
+  const weatherCall = LlamaToolCallContent(
+    id: 'call_0',
+    name: 'get_weather',
+    arguments: {'city': 'Montréal'},
+    rawJson: '{"city":"Montréal"}',
+  );
+  const weather = {'city': 'Montréal', 'temperature_celsius': 17};
+
+  for (final entry in <(String, Object?)>[
+    ('Map', weather),
+    ('String', jsonEncode(weather)),
+  ]) {
+    test('native chat sends a ${entry.$1} tool result as a LiteRT-LM '
+        'tool_response', () async {
+      final (history, active) = await nativeChatPayload([
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Montréal?',
+        ),
+        const LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [weatherCall],
+        ),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.tool,
+          content: [
+            LlamaToolResultContent(
+              id: 'call_0',
+              name: 'get_weather',
+              result: entry.$2,
+            ),
+          ],
+        ),
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Reply with only the number.',
+        ),
+      ]);
+      expect(history, [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'Weather in Montréal?'},
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': '',
+          'tool_calls': [
+            {
+              'type': 'function',
+              'function': {
+                'name': 'get_weather',
+                'arguments': {'city': 'Montréal'},
+              },
+            },
+          ],
+        },
+        {
+          'role': 'tool',
+          'content': [
+            {
+              'type': 'tool_response',
+              'name': 'get_weather',
+              'response': entry.$2,
+            },
+          ],
+        },
+      ]);
+      expect(active, {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'Reply with only the number.'},
+        ],
+      });
+    });
+  }
+
+  test('native chat keeps every tool result and assistant text, thinking '
+      'and calls', () async {
+    final (history, active) = await nativeChatPayload([
+      const LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'Weather in Montréal and Paris?',
+      ),
+      const LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: [
+          LlamaThinkingContent('Two cities.'),
+          LlamaTextContent('Checking '),
+          LlamaTextContent('both.'),
+          weatherCall,
+          LlamaToolCallContent(
+            name: 'get_weather',
+            arguments: {'city': 'Paris'},
+            rawJson: '{"city": "Paris"}',
+          ),
+        ],
+      ),
+      const LlamaChatMessage.withContent(
+        role: LlamaChatRole.tool,
+        content: [
+          LlamaToolResultContent(
+            id: 'call_0',
+            name: 'get_weather',
+            result: weather,
+          ),
+          LlamaToolResultContent(name: 'get_weather', result: 'Paris: 21'),
+        ],
+      ),
+    ]);
+    expect(history?.last, {
+      'role': 'assistant',
+      'content': 'Checking both.',
+      'reasoning_content': 'Two cities.',
+      'tool_calls': [
+        {
+          'type': 'function',
+          'function': {
+            'name': 'get_weather',
+            'arguments': {'city': 'Montréal'},
+          },
+        },
+        {
+          'type': 'function',
+          'function': {
+            'name': 'get_weather',
+            'arguments': {'city': 'Paris'},
+          },
+        },
+      ],
+    });
+    expect(active, {
+      'role': 'tool',
+      'content': [
+        {'type': 'tool_response', 'name': 'get_weather', 'response': weather},
+        {
+          'type': 'tool_response',
+          'name': 'get_weather',
+          'response': 'Paris: 21',
+        },
+      ],
+    });
+  });
+
   test(
     'rejects native required tool choice before runtime initialization',
     () async {

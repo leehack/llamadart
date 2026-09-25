@@ -20,7 +20,7 @@ Future<void> main(List<String> arguments) async {
     if (arguments.isEmpty || arguments.first == '--help') {
       stdout.writeln(
         'llamadart validation\n'
-        '  coverage [--platform <id>] [--backend <id>] [--use-case chat|stt|tts]\n'
+        '  coverage [--platform <id>] [--backend <id>] [--use-case chat|stt|tts|decision]\n'
         '  voice --out <new-directory> [--chat-profile <primary-cpu-profile>] [--chat-model <file>]\n'
         '  speech --pack stt|tts|litert-asr --backend cpu|metal|vulkan|cuda --out <new-directory> [--model <file>] [--projector <file>]\n'
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>]\n'
