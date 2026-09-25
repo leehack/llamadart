@@ -588,6 +588,37 @@ void main() {
       },
     );
 
+    test('keeps the host when path text matches a query part', () async {
+      fake.loadError = 'Failed to fetch decision head: 404 Not Found';
+      for (final (url, display) in const [
+        (
+          'https://example.com/heads/abcdefghijkl/h.bin?rev=abcdefghijkl',
+          'https://example.com/heads/abcdefghijkl/h.bin',
+        ),
+        ('https://example.com/v=1/h.bin?v=1', 'https://example.com/v=1/h.bin'),
+      ]) {
+        await expectLater(
+          heads.load(fake.bridge, url),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.details,
+              'details',
+              display,
+            ),
+          ),
+          reason: url,
+        );
+        expect(
+          webGpuBridgeErrorText(
+            _jsError('Failed to fetch $url'),
+            sourceUrls: [url],
+          ),
+          'Failed to fetch $display',
+          reason: url,
+        );
+      }
+    });
+
     test('keeps messages and hosts of credential-free source URLs', () async {
       for (final (url, display) in <(String, String)>[
         ..._credentialFreeUrls,
