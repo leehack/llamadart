@@ -113,11 +113,11 @@ can reach neither a later head nor its backend handle. No engine lease: the
 head uses its own llama context, and the worker serializes native work.
 
 `DecisionEngine` also checks, before tokenizing and after `load`'s capability
-probe, that the engine is ready and its unload count (`modelUnloadEpoch`, which
-`_unloadModel` bumps) is the one `load` started with; a model loaded later
-fails the check even under a reused backend handle. If the model is unloaded
-while a call or `load` is in flight, the failure it causes, such as
-`LlamaContextException` from tokenization, is rethrown as
+probe, that the engine is ready and its unload epoch (`modelUnloadEpoch`, which
+`_unloadModel` bumps as it starts, once per attempt) is the one `load` started
+with; a model loaded later fails the check even under a reused backend handle.
+If the model is unloaded while a call or `load` is in flight, the failure it
+causes, such as `LlamaContextException` from tokenization, is rethrown as
 `LlamaStateException`.
 
 ### Native (`lib/src/backends/llama_cpp/`)
