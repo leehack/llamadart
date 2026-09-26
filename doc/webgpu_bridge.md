@@ -115,8 +115,8 @@ physical playback, intelligibility or speaker-reference fidelity.
   the pool.
 - `v0.1.15+`: `stateSaveFile` / `stateLoadFile` on WASMFS virtual paths, not
   durable across reloads.
-- `v0.1.30+`: typed Qwen3-ASR whole-file transcription; WAV bytes only, with a
-  loaded projector whose audio probe is positive.
+- `v0.1.30+`: typed Qwen3-ASR whole-file transcription of encoded audio
+  bytes, with a loaded projector whose audio probe is positive.
 - `v0.1.32+`: recover short Qwen3-ASR speech when the model first emits only
   its end token; silence still returns an empty transcript.
 - `v0.1.33+`: Qwen3-TTS capability discovery, float32 PCM generation,

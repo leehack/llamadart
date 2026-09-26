@@ -10,5 +10,9 @@ bool get speechToTextSupportsFileInput => false;
 /// Browser byte inputs must declare their encoded container.
 bool get speechToTextRequiresEncodedAudioFormat => true;
 
-/// WAV is the encoded format validated by the published WebGPU smoke.
-Set<String> get speechToTextEncodedAudioFormats => const <String>{'wav'};
+/// Encoded formats the WebGPU bridge decodes, matching native.
+Set<String> get speechToTextEncodedAudioFormats => const <String>{
+  'wav',
+  'mp3',
+  'flac',
+};

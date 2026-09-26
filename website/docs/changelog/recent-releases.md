@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
+  Web ([#723](https://github.com/leehack/llamadart/issues/723)).
 - Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA
   adapters (`setLora`, `removeLora`, `clearLoras`), on WebGPU with bridge
   assets whose capability probes report them; other assets still reject them

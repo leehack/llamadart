@@ -278,7 +278,7 @@ user's model without silently replacing a failing standard fixture.
 | `gemma-litert-native` | Native Gemma 4 E2B LiteRT bundle, about 2.6 GB | Native multimodal pack |
 | `gemma-litert-web` | Web-compatible Gemma 4 bundle, about 2 GB | LiteRT Web single-turn lane; never substitute the native bundle |
 | `embedding` | EmbeddingGemma 300M Q8 GGUF, about 334 MB | Embeddings and batch consistency |
-| `asr-gguf` | Qwen3-ASR GGUF + matching projector, about 1 GB | File transcription; Web WAV-only where supported |
+| `asr-gguf` | Qwen3-ASR GGUF + matching projector, about 1 GB | File transcription; Web WAV, MP3 or FLAC bytes where supported |
 | `asr-litert` | Moonshine tiny INT8 + tokenizer, about 54 MB | Native CPU streaming ASR |
 | `tts-gguf` | Qwen3-TTS GGUF + matching projector, about 1.5 GB | Experimental typed synthesis and playback/export |
 

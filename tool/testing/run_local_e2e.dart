@@ -1023,7 +1023,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'chat-app-web-speech-to-text-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
-          'Build chat_app web and transcribe a selected WAV with Qwen3-ASR.',
+          'Build chat_app web and transcribe a selected WAV, MP3 or FLAC with '
+          'Qwen3-ASR; a WAV also drives the fake microphone.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
@@ -1054,8 +1055,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               context.mmprojUrl ?? context.defaultQwen3AsrWebMmprojUrl,
               '--speech-audio-path',
               context.audioPath!,
-              '--speech-microphone',
-              '--microphone-allow-any-response',
+              if (context.audioPath!.toLowerCase().endsWith('.wav')) ...[
+                '--speech-microphone',
+                '--microphone-allow-any-response',
+              ],
               '--expect',
               context.expect,
               '--gpu-layers',

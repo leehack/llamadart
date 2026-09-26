@@ -174,6 +174,32 @@ void main() {
       expect(result.stdout, contains("--expect 'Known transcript.'"));
     });
 
+    for (final fixture in ['speech.mp3', 'speech.FLAC']) {
+      test('dry-runs Web Qwen3-ASR $fixture file transcription only', () async {
+        final result = await runLocalE2e([
+          '--scenario',
+          'chat-app-web-speech-to-text-smoke',
+          '--audio-path',
+          'test/fixtures/$fixture',
+          '--expect',
+          'Known transcript.',
+          '--skip-build',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('--speech-audio-path test/fixtures/$fixture'),
+        );
+        expect(result.stdout, isNot(contains('--speech-microphone')));
+        expect(
+          result.stdout,
+          isNot(contains('--microphone-allow-any-response')),
+        );
+      });
+    }
+
     test('requires a fixture and expected text for Web speech smoke', () async {
       final result = await runLocalE2e(const [
         '--scenario',

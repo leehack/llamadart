@@ -19,13 +19,13 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64 adds CUDA, HIP | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64 adds CUDA | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Experimental |
 
 Speech to text, text to speech and decision models are experimental. GGUF
-Qwen3-ASR accepts WAV, MP3 and FLAC natively, but real-model validation covers
-WAV only. LiteRT-LM ASR is CPU-only streaming recognition. Decision models run
-on llama.cpp and WebGPU only; on LiteRT-LM `DecisionEngine.load` throws
-`LlamaUnsupportedException`. See
+Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
+native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
+recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
+`DecisionEngine.load` throws `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
