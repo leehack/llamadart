@@ -1001,9 +1001,9 @@ class _HermesContentGate {
 ///
 /// [HermesHandler.parse] replaces escaped `\n` and `\r`, trims each thought,
 /// and joins non-empty thoughts with a newline. Whitespace that may end a
-/// thought waits for more reasoning. Trailing whitespace of a forced-open
-/// thought that never ends, which the final parse keeps, arrives with the
-/// final reconciliation.
+/// thought waits for more reasoning. The final parse keeps a forced-open
+/// thought that never ends untrimmed; the final reconciliation adds its
+/// trailing whitespace only when the thought has no leading whitespace.
 class _HermesReasoningGate {
   _HermesReasoningGate({required bool forcedOpen})
     : _inForcedThought = forcedOpen;

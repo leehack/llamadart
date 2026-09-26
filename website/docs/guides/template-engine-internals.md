@@ -113,8 +113,11 @@ ends. Streamed reasoning equals the parse too, which trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
 with the Qwen3 template it returns `"Plan it.\n"` for
 `<think>\nPlan it.\n</think>`. The one exception is a forced-open thought
-that never closes: the parse keeps its leading whitespace, which the stream
-drops before it can know the thought will not close.
+that never closes and starts with whitespace. The parse keeps it untrimmed,
+but the stream drops the leading whitespace before it can know the thought
+will not close. The streamed text is then no prefix of the parse, so the final
+reconciliation adds nothing and the trailing whitespace is lost too:
+`"  \n Hello there.  \n\n"` streams as `"Hello there."`.
 
 ## `dinja` integration
 

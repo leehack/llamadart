@@ -7,9 +7,12 @@
   is now trimmed as the parse trims it, and text the parse keeps after a tool
   call, including a malformed envelope, arrives at the end of the stream.
   Streamed reasoning, and so `ChatSession` thinking, is trimmed per thought as
-  the parse trims it; only a forced-open thought that never closes streams
-  without its leading whitespace. After a forced-open thought, text after a
-  tool call arrives at the end
+  the parse trims it. The exception is a forced-open thought that never
+  closes and starts with whitespace: the parse keeps it untrimmed, but it
+  streams without its leading and trailing whitespace, so
+  `"  \n Hello there.  \n\n"` streams as `"Hello there."`. Before, it streamed
+  as the parse gives it unless it contained a backslash. After a forced-open
+  thought, text after a tool call arrives at the end
   ([#701](https://github.com/leehack/llamadart/issues/701)).
 - Throw `LlamaModelException` when a WebGPU model load fails with a bridge
   error that has no specific mapping, and `LlamaInferenceException` or
