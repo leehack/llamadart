@@ -86,7 +86,7 @@ class DecisionModelInfo {
 /// await decisions.dispose();
 /// ```
 class DecisionEngine {
-  DecisionEngine._(this._engine, this._head, this._config, this._modelHandle)
+  DecisionEngine._(this._engine, this._head, this._config, this._modelEpoch)
     : info = DecisionModelInfo(
         hiddenSize: _head.hiddenSize,
         maxTokens: _config.maxTokens,
@@ -105,7 +105,7 @@ class DecisionEngine {
   final LlamaEngine _engine;
   final BackendDecisionHeadInfo _head;
   final DecisionHeadConfig _config;
-  final int? _modelHandle;
+  final int? _modelEpoch;
   final DecisionSequenceSpec _spec;
   int _activeCalls = 0;
   Completer<void>? _idle;
@@ -156,11 +156,11 @@ class DecisionEngine {
     required String headPath,
     String? configPath,
   }) async {
-    final modelHandle = engine.isReady ? engine.modelHandle : null;
+    final modelEpoch = engine.isReady ? modelUnloadEpoch(engine) : null;
     final BackendDecisionHeadInfo head;
     try {
       final capabilities = await engine.backendDecisionCapabilities;
-      if (modelHandle != null && !_hasModel(engine, modelHandle)) {
+      if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
         throw LlamaStateException(_loadInterruptedMessage);
       }
       if (!capabilities.isSupported) {
@@ -173,7 +173,7 @@ class DecisionEngine {
     } on LlamaStateException {
       rethrow;
     } catch (error, stackTrace) {
-      if (modelHandle != null && !_hasModel(engine, modelHandle)) {
+      if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
         Error.throwWithStackTrace(
           LlamaStateException(_loadInterruptedMessage, error),
           stackTrace,
@@ -192,7 +192,7 @@ class DecisionEngine {
         engine,
         head,
         decodeDecisionHeadConfig(head.configJson),
-        modelHandle,
+        modelEpoch,
       );
     } catch (error, stackTrace) {
       await engine
@@ -212,13 +212,14 @@ class DecisionEngine {
   ///
   /// [state] is text, or a JSON-like value encoded as JSON text. Throws
   /// [LlamaDecisionException] for invalid questions and for text that
-  /// contains U+0000, which the llama.cpp tokenizer would cut off there; JSON
-  /// encoding escapes it in non-string states. Throws [LlamaStateException]
-  /// after [dispose] or once the engine's model is unloaded. A call running
-  /// during an unload throws it too, unless its sequences already reached the
-  /// backend; that call returns answers from the unloaded model. On Web it is
-  /// also thrown once the bridge restarts its runtime, which frees the head;
-  /// load the DecisionEngine again.
+  /// contains U+0000, which the Web bridge tokenizer cuts off there; it is
+  /// rejected on every backend. JSON encoding escapes it in non-string
+  /// states. Throws [LlamaStateException] after [dispose] or once the
+  /// engine's model is unloaded. A call running during an unload throws it
+  /// too, unless its sequences already reached the backend; that call returns
+  /// answers from the unloaded model. On Web it is also thrown once the bridge
+  /// restarts its runtime, which frees the head; load the DecisionEngine
+  /// again.
   ///
   /// To read answers as typed values, build [questions] with
   /// [DecisionKey.questionsOf] and read them with
@@ -277,7 +278,7 @@ class DecisionEngine {
 
   Future<List<DecisionResult>> _answer(List<DecisionRequest> requests) async {
     if (requests.isEmpty) return const <DecisionResult>[];
-    if (!_hasModel(_engine, _modelHandle)) {
+    if (!_hasModel(_engine, _modelEpoch)) {
       throw LlamaStateException(_modelUnloadedMessage);
     }
     try {
@@ -287,7 +288,7 @@ class DecisionEngine {
     } on LlamaStateException {
       rethrow;
     } catch (error, stackTrace) {
-      if (!_hasModel(_engine, _modelHandle)) {
+      if (!_hasModel(_engine, _modelEpoch)) {
         Error.throwWithStackTrace(
           LlamaStateException(_modelUnloadedMessage, error),
           stackTrace,
@@ -302,9 +303,9 @@ class DecisionEngine {
     Future<List<int>> tokenize(String text) {
       if (text.contains('\u0000')) {
         throw LlamaDecisionException(
-          'Decision text contains U+0000, where native tokenization would cut '
-          'it off. Remove it from the state, instructions and options, or pass '
-          'the state as a JSON value.',
+          'Decision text contains U+0000, where Web bridge tokenization cuts '
+          'it off, so every backend rejects it. Remove it from the state, '
+          'instructions and options, or pass the state as a JSON value.',
         );
       }
       return tokenCache.putIfAbsent(
@@ -375,8 +376,8 @@ class DecisionEngine {
       'The model this DecisionEngine was loaded for was unloaded. Load the '
       'DecisionEngine again.';
 
-  static bool _hasModel(LlamaEngine engine, int? modelHandle) =>
-      engine.isReady && engine.modelHandle == modelHandle;
+  static bool _hasModel(LlamaEngine engine, int? modelEpoch) =>
+      engine.isReady && modelUnloadEpoch(engine) == modelEpoch;
 
   static Future<String?> _backendNameOf(LlamaEngine engine) async {
     try {

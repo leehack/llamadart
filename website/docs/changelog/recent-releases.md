@@ -9,6 +9,12 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
+  and generation prompts instead of dropping it
+  ([#608](https://github.com/leehack/llamadart/issues/608)).
+- Make `DecisionEngine.load` throw `LlamaStateException` when another model is
+  loaded while it runs, even under the same backend handle
+  ([#626](https://github.com/leehack/llamadart/issues/626)).
 - Bound speech validation pack memory by a footprint counter that page
   eviction cannot shrink, instead of the resident set: `phys_footprint` on
   macOS and iOS, `RssAnon` plus `VmSwap` on Linux and Android, and

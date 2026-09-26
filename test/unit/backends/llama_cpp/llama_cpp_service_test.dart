@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -2715,6 +2716,115 @@ void main() {
 
       cancelFlag.value = 0;
       expect(await generate(prompt), resumed);
+    });
+  });
+
+  group('text with an embedded U+0000', () {
+    const params = ModelParams(
+      contextSize: 64,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    const text = 'ab\u0000cd';
+    // The synthetic vocabulary holds only byte tokens, at id 3 + byte, and
+    // SentencePiece prefixes U+2581.
+    final textIds = [for (final byte in utf8.encode('\u2581$text')) 3 + byte];
+    late Directory tempDir;
+    late LlamaCppService service;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('nul_text_');
+      service = LlamaCppService();
+    });
+
+    tearDown(() {
+      service.dispose();
+      tempDir.deleteSync(recursive: true);
+    });
+
+    int loadLlama() {
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+      return service.loadModel(modelPath, params);
+    }
+
+    test('tokenize keeps the text after it', () {
+      final modelHandle = loadLlama();
+
+      expect(service.tokenize(modelHandle, text, false), textIds);
+      expect(service.tokenize(modelHandle, text, true), [1, ...textIds]);
+    });
+
+    test('a generation prompt keeps the text after it', () async {
+      final contextHandle = service.createContext(loadLlama(), params);
+      final cancelFlag = calloc<Int8>();
+      try {
+        await service
+            .generate(
+              contextHandle,
+              text,
+              const GenerationParams(maxTokens: 1, temp: 0, seed: 1),
+              cancelFlag.address,
+            )
+            .drain<void>();
+      } finally {
+        calloc.free(cancelFlag);
+      }
+
+      final context = _readPrivateForTesting<Map<int, Object>>(
+        service,
+        '_contexts',
+      )[contextHandle]!;
+      expect(reflect(context).getField(#cachedPromptTokens).reflectee, [
+        1,
+        ...textIds,
+      ]);
+      expect(
+        service.lastGenerationTokenCounts(contextHandle)?.promptTokens,
+        textIds.length + 1,
+      );
+    });
+
+    test('preserved tokens keep the text after it', () {
+      final modelHandle = loadLlama();
+      final model = _readPrivateForTesting<Map<int, Object>>(
+        service,
+        '_models',
+      )[modelHandle]!;
+      final vocab = llama_model_get_vocab(
+        reflect(model).getField(#pointer).reflectee as Pointer<llama_model>,
+      );
+
+      expect(
+        _invokePrivateForTesting<Set<int>>(
+          service,
+          '_resolvePreservedTokenIds',
+          [
+            vocab,
+            [text],
+          ],
+        ),
+        textIds.toSet(),
+      );
+    });
+
+    test('embed keeps the text after it', () {
+      final modelPath = path.join(tempDir.path, 'modern_bert.gguf');
+      writeSyntheticModernBertGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
+      );
+      final contextHandle = service.createContext(
+        service.loadModel(modelPath, params),
+        params,
+      );
+
+      expect(
+        service.embed(contextHandle, text),
+        isNot(service.embed(contextHandle, 'ab')),
+      );
     });
   });
 
