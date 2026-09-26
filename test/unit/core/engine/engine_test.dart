@@ -4128,4 +4128,196 @@ void main() {
       expect(chunks.map((chunk) => chunk.usage), everyElement(isNull));
     });
   });
+
+  group('LlamaEngine source URL redaction', () {
+    late List<String> logs;
+
+    setUp(() {
+      logs = <String>[];
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.debug)
+        ..setHandler(
+          (record) => logs.add('${record.message} ${record.error ?? ''}'),
+        );
+    });
+
+    tearDown(() {
+      LlamaLogger.instance
+        ..setHandler(null)
+        ..setLevel(LlamaLogLevel.none);
+    });
+
+    for (final (url, display, secrets) in const [
+      (
+        'https://alice:Pw1secret@example.com/m.gguf',
+        'https://example.com/m.gguf',
+        <String>['Pw1secret', 'alice'],
+      ),
+      (
+        '//alice:Pw2secret@example.com/m.gguf?token=Tk2secret',
+        '//example.com/m.gguf',
+        <String>['Pw2secret', 'Tk2secret', 'alice'],
+      ),
+      ('models/m.gguf?token=Tk3secret', 'models/m.gguf', <String>['Tk3secret']),
+      (
+        'https://example.com/m.gguf#Fr4secretfrag',
+        'https://example.com/m.gguf',
+        <String>['Fr4secretfrag'],
+      ),
+      (
+        'https://bucket.example.com/m.gguf?X-Amz-Signature=Sig5secret',
+        'https://bucket.example.com/m.gguf',
+        <String>['Sig5secret'],
+      ),
+    ]) {
+      Matcher withoutSecrets() => allOf(<Matcher>[
+        for (final secret in secrets) isNot(contains(secret)),
+      ]);
+
+      test('keeps $url secrets out of load failures', () async {
+        for (final urlLoading in const [false, true]) {
+          final failing = LlamaEngine(
+            _SourceEchoBackend(urlLoadingSupported: urlLoading, fail: true),
+          );
+          logs.clear();
+          Object? thrown;
+          try {
+            await failing.loadModel(url);
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(
+            thrown,
+            isA<LlamaModelException>()
+                .having((e) => e.message, 'message', contains(display))
+                .having((e) => '$e', 'error', withoutSecrets())
+                .having(
+                  (e) => '${e.details}',
+                  'details',
+                  allOf(contains('not found'), withoutSecrets()),
+                ),
+            reason: 'URL loading: $urlLoading',
+          );
+          expect(logs, isNotEmpty);
+          expect(
+            logs.join('\n'),
+            withoutSecrets(),
+            reason: 'URL loading: $urlLoading',
+          );
+        }
+      });
+
+      test('keeps $url secrets out of projector failures', () async {
+        for (final urlLoading in const [false, true]) {
+          final engine = LlamaEngine(
+            _SourceEchoBackend(urlLoadingSupported: urlLoading),
+          );
+          await engine.loadModel('model.gguf');
+          logs.clear();
+          Object? thrown;
+          try {
+            await engine.loadMultimodalProjector(url);
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(
+            thrown,
+            isA<LlamaModelException>()
+                .having((e) => e.message, 'message', endsWith(' m.gguf'))
+                .having((e) => '$e', 'error', withoutSecrets())
+                .having(
+                  (e) => '${e.details}',
+                  'details',
+                  allOf(contains('not found'), withoutSecrets()),
+                ),
+            reason: 'URL loading: $urlLoading',
+          );
+          expect(logs.join('\n'), withoutSecrets());
+        }
+      });
+
+      test('keeps $url secrets out of a loaded model', () async {
+        for (final urlLoading in const [false, true]) {
+          final loaded = LlamaEngine(
+            _SourceEchoBackend(urlLoadingSupported: urlLoading),
+          );
+          logs.clear();
+          await loaded.loadModel(url);
+          final chunks = await loaded.create(const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ]).toList();
+          await expectLater(
+            loaded.loadMultimodalProjector(url),
+            throwsA(isA<Exception>()),
+          );
+
+          expect(
+            chunks.first.model,
+            display,
+            reason: 'URL loading: $urlLoading',
+          );
+          expect(
+            logs.join('\n'),
+            allOf(contains('m.gguf'), withoutSecrets()),
+            reason: 'URL loading: $urlLoading',
+          );
+        }
+      });
+    }
+
+    test('keeps a backend LlamaException from projector loading', () async {
+      final error = LlamaModelException('Multimodal projector file not found.');
+      final engine = LlamaEngine(_SourceEchoBackend(projectorError: error));
+      await engine.loadModel('model.gguf');
+
+      await expectLater(
+        engine.loadMultimodalProjector('proj.gguf'),
+        throwsA(same(error)),
+      );
+    });
+  });
+}
+
+/// A backend whose failures echo the source path or URL, as native file
+/// checks and browser fetch errors do, and its secret parts on their own.
+class _SourceEchoBackend extends MockLlamaBackend {
+  _SourceEchoBackend({
+    super.urlLoadingSupported,
+    this.fail = false,
+    this.projectorError,
+  });
+
+  final bool fail;
+  final Object? projectorError;
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async {
+    if (fail) throw _notFound(path);
+    return super.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrl(
+    String url,
+    ModelParams params, {
+    Function(double progress)? onProgress,
+  }) async {
+    if (fail) throw _notFound(url);
+    return super.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }
+
+  @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async => throw projectorError ?? _notFound(mmProjPath);
+
+  static Exception _notFound(String source) {
+    final uri = Uri.parse(source);
+    return Exception(
+      'File not found: $source (${uri.userInfo} ${uri.query} ${uri.fragment})',
+    );
+  }
 }

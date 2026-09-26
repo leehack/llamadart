@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
@@ -7,6 +9,7 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -473,6 +476,205 @@ void main() {
         },
       );
     }
+
+    group('Hermes content matches the final parse', () {
+      const call =
+          '<tool_call>\n'
+          '{"name": "weather", "arguments": {"city": "Paris"}}\n'
+          '</tool_call>';
+      const doubleBraceCall =
+          '<tool_call>\n'
+          '{{"name": "weather", "arguments": {"city": "Paris"}}}\n'
+          '</tool_call>';
+      const londonCall =
+          '<tool_call>\n'
+          '{"name": "weather", "arguments": {"city": "London"}}\n'
+          '</tool_call>';
+      const outputs = <String, String>{
+        'text then a call': 'Let me check.\n$call',
+        'text then a double-brace call': 'Let me check.\n$doubleBraceCall',
+        'text then two calls': 'Checking both.\n$call\n$londonCall',
+        'text after the call': 'Let me check.\n$call\nOne moment.',
+        'padded text then a call': ' \n Let me check.  $call\n',
+        'thinking, text, then a call':
+            '<think>\nPlan.\n</think>\n\nLet me check.\n$call',
+        'a bare < then a call': 'If a < b, b > a.\n$call',
+        'a fenced call':
+            'Sure:\n```json\n'
+            '{"name": "weather", "arguments": {"city": "Paris"}}\n```',
+        'a call first': '$call\nDone.',
+      };
+      const forcedOpenOutputs = <String>[
+        'Plan.\n</think>\n\nLet me check.\n$call',
+        'Plan. $call',
+      ];
+
+      List<List<String>> chunkings(String output) {
+        final random = Random(output.length);
+        List<String> pieces(int Function() size) {
+          final result = <String>[];
+          for (var i = 0; i < output.length;) {
+            final end = min(output.length, i + size());
+            result.add(output.substring(i, end));
+            i = end;
+          }
+          return result;
+        }
+
+        final tag = output.indexOf('<tool_call>');
+        return [
+          [output],
+          pieces(() => 1),
+          pieces(() => 2),
+          for (var run = 0; run < 5; run++) pieces(() => 1 + random.nextInt(7)),
+          if (tag >= 0)
+            [output.substring(0, tag + 5), output.substring(tag + 5)],
+        ];
+      }
+
+      Future<void> expectParsedContent(String output, bool forcedOpen) async {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.hermes.index,
+          output,
+          thinkingForcedOpen: forcedOpen,
+          tools: [_weatherTool],
+        );
+        for (final tokens in chunkings(output)) {
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(tokens),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: ChatFormat.hermes.index,
+              thinkingForcedOpen: forcedOpen,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: 'hermes-content',
+            tools: [_weatherTool],
+          ).toList();
+
+          final calls = chunks
+              .expand(
+                (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+              )
+              .toList();
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.content ?? '')
+                .join(),
+            parsed.content,
+            reason: '$tokens',
+          );
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                .join(),
+            parsed.reasoningContent ?? '',
+            reason: '$tokens',
+          );
+          expect(
+            [for (final call in calls) call.function?.arguments],
+            [for (final call in parsed.toolCalls) call.function?.arguments],
+            reason: '$tokens',
+          );
+          expect(
+            chunks.last.choices.single.finishReason,
+            parsed.hasToolCalls ? 'tool_calls' : 'stop',
+          );
+        }
+      }
+
+      for (final MapEntry(key: name, value: output) in outputs.entries) {
+        test(name, () => expectParsedContent(output, false));
+      }
+
+      test('plain text', () async {
+        for (final output in const [
+          'If a < b, use {x} or {"a": 1}.\n',
+          'Let me check.\n<th',
+        ]) {
+          await expectParsedContent(output, false);
+        }
+      });
+
+      test('after a forced-open thought', () async {
+        for (final output in forcedOpenOutputs) {
+          await expectParsedContent(output, true);
+        }
+      });
+
+      test('trims each thought', () async {
+        for (final output in const [
+          '<think>\nPlan it.\n</think>\n\n$call',
+          '<think>\n  Plan it.  \n</think>\n\nIt is sunny.',
+          '<think>\n Plan \n\n it. \n',
+          '<think>\nA.\n</think>\nOk.<think> </think>\n<think>\tB. </think>$call',
+          r'<think> Use "a\nb" \</think>Done.',
+          r'<think>a\\nb\r</think>',
+          '<think>Plan </thi',
+        ]) {
+          await expectParsedContent(output, false);
+        }
+      });
+
+      test('trims a forced-open thought that ends', () async {
+        for (final output in const [
+          '\nPlan it.\n</think>\n\n$call',
+          '  </think>\nOk.\n<think>\nMore.\n</think>\n$call',
+        ]) {
+          await expectParsedContent(output, true);
+        }
+      });
+
+      test('keeps trailing space of a forced-open thought that never ends', () {
+        return expectParsedContent('Plan it.  \n\n', true);
+      });
+
+      test('holds back only a possible envelope opening', () async {
+        final tokens = StreamController<String>();
+        final content = StringBuffer();
+        final subscription =
+            ChatCompletionStreamParser.parse(
+              tokenStream: tokens.stream,
+              templateResult: LlamaChatTemplateResult(
+                prompt: 'prompt',
+                format: ChatFormat.hermes.index,
+              ),
+              parseToolCallsEnabled: true,
+              enableThinking: true,
+              modelName: 'test-model',
+              completionId: 'hermes-latency',
+              tools: [_weatherTool],
+            ).listen(
+              (chunk) =>
+                  content.write(chunk.choices.single.delta.content ?? ''),
+            );
+        addTearDown(subscription.cancel);
+        addTearDown(tokens.close);
+
+        Future<void> expectAfter(String token, String streamed) async {
+          tokens.add(token);
+          await pumpEventQueue();
+          expect(content.toString(), streamed, reason: token);
+        }
+
+        await expectAfter('If a', 'If a');
+        await expectAfter(' <', 'If a');
+        await expectAfter(' b,', 'If a < b,');
+        await expectAfter(' use {', 'If a < b, use');
+        await expectAfter('x}.', 'If a < b, use {x}.');
+        await expectAfter('\n', 'If a < b, use {x}.');
+        await expectAfter(
+          'Let me check.\n<tool',
+          'If a < b, use {x}.\nLet me check.',
+        );
+        await expectAfter(
+          '_call>\n{"name',
+          'If a < b, use {x}.\nLet me check.',
+        );
+      });
+    });
 
     test('preserves MiniMax M3 schema types across split tokens', () async {
       const namespace = ']<]minimax[>[';
