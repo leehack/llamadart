@@ -5,6 +5,15 @@ import 'package:llamadart/src/core/template/handlers/granite_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('GraniteHandler.toolCallOpening finds a whole or partial opening', () {
+    expect(
+      GraniteHandler.toolCallOpening('Let me check. <|tool_call|>...'),
+      14,
+    );
+    expect(GraniteHandler.toolCallOpening('Let me check. <|tool'), 14);
+    expect(GraniteHandler.toolCallOpening('Use <x> or [y] here.'), 20);
+  });
+
   test('GraniteHandler exposes chat format', () {
     final handler = GraniteHandler();
     expect(handler.format, isA<ChatFormat>());

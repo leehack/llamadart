@@ -8,6 +8,43 @@ import 'package:llamadart/src/core/template/handlers/deepseek_v3_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('DeepseekV3Handler tool-call openings', () {
+    const openings = [
+      '<｜tool▁calls▁begin｜>',
+      '<｜tool_calls_begin｜>',
+      '<｜tool calls begin｜>',
+      r'<｜tool\_calls\_begin｜>',
+      '<｜tool▁calls｜>',
+    ];
+
+    test('toolCallOpening finds each whole or partial opening', () {
+      for (final opening in openings) {
+        expect(
+          DeepseekV3Handler.toolCallOpening('Hi $opening'),
+          3,
+          reason: opening,
+        );
+        expect(
+          DeepseekV3Handler.toolCallOpening('Hi ${opening.substring(0, 5)}'),
+          3,
+          reason: opening,
+        );
+      }
+      expect(DeepseekV3Handler.toolCallOpening('Use <x> or <｜y｜>.'), 17);
+    });
+
+    test('parse extracts a call after each opening', () {
+      for (final opening in openings) {
+        final parsed = DeepseekV3Handler().parse(
+          'Hi $opening<｜tool▁call▁begin｜>'
+          '${'weather<｜tool▁sep｜>{"city": "Paris"}'}<｜tool▁call▁end｜><｜tool▁calls▁end｜>',
+        );
+        expect(parsed.content, 'Hi', reason: opening);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+      }
+    });
+  });
+
   test('DeepseekV3Handler supports system prepend and tool_call parsing', () {
     final handler = DeepseekV3Handler();
     final tools = [

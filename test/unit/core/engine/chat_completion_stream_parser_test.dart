@@ -4,12 +4,18 @@ import 'dart:math';
 
 import 'package:llamadart/src/core/engine/chat_completion_stream_parser.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/chat_template_handler.dart';
+import 'package:llamadart/src/core/template/handlers/ministral_handler.dart';
+import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
+import 'package:llamadart/src/core/template/handlers/solar_open_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -509,80 +515,13 @@ void main() {
         'Plan. $call',
       ];
 
-      List<List<String>> chunkings(String output) {
-        final random = Random(output.length);
-        List<String> pieces(int Function() size) {
-          final result = <String>[];
-          for (var i = 0; i < output.length;) {
-            final end = min(output.length, i + size());
-            result.add(output.substring(i, end));
-            i = end;
-          }
-          return result;
-        }
-
-        final tag = output.indexOf('<tool_call>');
-        return [
-          [output],
-          pieces(() => 1),
-          pieces(() => 2),
-          for (var run = 0; run < 5; run++) pieces(() => 1 + random.nextInt(7)),
-          if (tag >= 0)
-            [output.substring(0, tag + 5), output.substring(tag + 5)],
-        ];
-      }
-
-      Future<void> expectParsedContent(String output, bool forcedOpen) async {
-        final parsed = ChatTemplateEngine.parse(
-          ChatFormat.hermes.index,
+      Future<void> expectParsedContent(String output, bool forcedOpen) {
+        return _expectStreamMatchesParse(
+          ChatFormat.hermes,
           output,
-          thinkingForcedOpen: forcedOpen,
-          tools: [_weatherTool],
+          forcedOpen: forcedOpen,
+          openings: const ['<tool_call>'],
         );
-        for (final tokens in chunkings(output)) {
-          final chunks = await ChatCompletionStreamParser.parse(
-            tokenStream: Stream.fromIterable(tokens),
-            templateResult: LlamaChatTemplateResult(
-              prompt: 'prompt',
-              format: ChatFormat.hermes.index,
-              thinkingForcedOpen: forcedOpen,
-            ),
-            parseToolCallsEnabled: true,
-            enableThinking: true,
-            modelName: 'test-model',
-            completionId: 'hermes-content',
-            tools: [_weatherTool],
-          ).toList();
-
-          final calls = chunks
-              .expand(
-                (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
-              )
-              .toList();
-          expect(
-            chunks
-                .map((chunk) => chunk.choices.single.delta.content ?? '')
-                .join(),
-            parsed.content,
-            reason: '$tokens',
-          );
-          expect(
-            chunks
-                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
-                .join(),
-            parsed.reasoningContent ?? '',
-            reason: '$tokens',
-          );
-          expect(
-            [for (final call in calls) call.function?.arguments],
-            [for (final call in parsed.toolCalls) call.function?.arguments],
-            reason: '$tokens',
-          );
-          expect(
-            chunks.last.choices.single.finishReason,
-            parsed.hasToolCalls ? 'tool_calls' : 'stop',
-          );
-        }
       }
 
       for (final MapEntry(key: name, value: output) in outputs.entries) {
@@ -631,48 +570,339 @@ void main() {
         return expectParsedContent('Plan it.  \n\n', true);
       });
 
-      test('holds back only a possible envelope opening', () async {
-        final tokens = StreamController<String>();
-        final content = StringBuffer();
-        final subscription =
-            ChatCompletionStreamParser.parse(
-              tokenStream: tokens.stream,
-              templateResult: LlamaChatTemplateResult(
-                prompt: 'prompt',
-                format: ChatFormat.hermes.index,
-              ),
-              parseToolCallsEnabled: true,
-              enableThinking: true,
-              modelName: 'test-model',
-              completionId: 'hermes-latency',
-              tools: [_weatherTool],
-            ).listen(
-              (chunk) =>
-                  content.write(chunk.choices.single.delta.content ?? ''),
-            );
-        addTearDown(subscription.cancel);
-        addTearDown(tokens.close);
+      test('holds back only a possible envelope opening', () {
+        return _expectContentAfterEachToken(ChatFormat.hermes, const [
+          ('If a', 'If a'),
+          (' <', 'If a'),
+          (' b,', 'If a < b,'),
+          (' use {', 'If a < b, use'),
+          ('x}.', 'If a < b, use {x}.'),
+          ('\n', 'If a < b, use {x}.'),
+          ('Let me check.\n<tool', 'If a < b, use {x}.\nLet me check.'),
+          ('_call>\n{"name', 'If a < b, use {x}.\nLet me check.'),
+        ]);
+      });
+    });
 
-        Future<void> expectAfter(String token, String streamed) async {
-          tokens.add(token);
-          await pumpEventQueue();
-          expect(content.toString(), streamed, reason: token);
+    group('text-first tool calls match the final parse', () {
+      const qwenXmlCall =
+          '<tool_call>\n'
+          '<function=weather>\n'
+          '<parameter=city>\nParis\n</parameter>\n'
+          '</function>\n'
+          '</tool_call>';
+      const commandRCall =
+          '<|START_ACTION|>'
+          '[{"tool_call_id":"0","tool_name":"weather",'
+          '"parameters":{"city":"Paris"}}]'
+          '<|END_ACTION|>';
+      const deepseekCalls = '<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>';
+      // Formats whose streams are gated, with a call their parse extracts.
+      const gatedCalls = <ChatFormat, String>{
+        ChatFormat.mistralNemo:
+            '[TOOL_CALLS][{"name": "weather", "arguments": {"city": "Paris"}, '
+            '"id": "abcdefghi"}]',
+        ChatFormat.magistral:
+            '[TOOL_CALLS][{"name":"weather","arguments":{"city":"Paris"}}]',
+        ChatFormat.qwen3CoderXml: qwenXmlCall,
+        ChatFormat.deepseekR1:
+            '${deepseekCalls}function<｜tool▁sep｜>weather\n'
+            '```json\n{"city":"Paris"}\n```<｜tool▁call▁end｜>'
+            '<｜tool▁calls▁end｜>',
+        ChatFormat.deepseekV3:
+            '${deepseekCalls}weather<｜tool▁sep｜>{"city":"Paris"}'
+            '<｜tool▁call▁end｜><｜tool▁calls▁end｜>',
+        ChatFormat.commandR7B: commandRCall,
+        ChatFormat.cohere2Moe: commandRCall,
+        ChatFormat.granite:
+            '<|tool_call|>[{"name":"weather","arguments":{"city":"Paris"}}]',
+        ChatFormat.nemotronV2:
+            '<TOOLCALL>[{"name":"weather","arguments":{"city":"Paris"}}]'
+            '</TOOLCALL>',
+        ChatFormat.apertus:
+            '<|tools_prefix|>[{"weather":{"city":"Paris"}}]<|tools_suffix|>',
+        ChatFormat.seedOss:
+            '<seed:tool_call><function=weather><parameter=city>Paris'
+            '</parameter></function></seed:tool_call>',
+        ChatFormat.minimaxM2:
+            '<minimax:tool_call>\n<invoke name="weather">\n'
+            '<parameter name="city">Paris</parameter>\n</invoke>\n'
+            '</minimax:tool_call>',
+        ChatFormat.apriel15:
+            '<tool_calls>[{"name": "weather", "arguments": {"city": "Paris"}}]'
+            '</tool_calls>',
+        ChatFormat.xiaomiMimo:
+            '<tool_call>\n{"name": "weather", "arguments": {"city": "Paris"}\n'
+            '</tool_call>',
+        ChatFormat.exaoneMoe:
+            '<tool_call>{"name":"weather","arguments":{"city":"Paris"}}'
+            '</tool_call>',
+        ChatFormat.minicpm5:
+            '<function name="weather"><param name="city">Paris</param>'
+            '</function>',
+        ChatFormat.hunyuanV3:
+            '<tool_calls:opensource>\n'
+            '<tool_call:opensource>weather<tool_sep:opensource>\n'
+            '<arg_key:opensource>city</arg_key:opensource>\n'
+            '<arg_value:opensource>Paris</arg_value:opensource>\n'
+            '</tool_call:opensource>\n'
+            '</tool_calls:opensource>',
+      };
+      // These parses ignore a forced-open thought.
+      const ungatedWhenForcedOpen = <ChatFormat>{
+        ChatFormat.seedOss,
+        ChatFormat.minimaxM2,
+        ChatFormat.apriel15,
+        ChatFormat.xiaomiMimo,
+      };
+      // These parses keep a forced-open thought that never ends as content.
+      const unendedForcedThoughtIsContent = <ChatFormat>{
+        ChatFormat.deepseekV3,
+        ChatFormat.exaoneMoe,
+      };
+
+      /// Text-first and other outputs around [call], with the format's tags.
+      List<String> outputs(ChatFormat format, String call) {
+        final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+        return [
+          'Let me check.\n$call',
+          ' \n Let me check.  $call\n',
+          'Let me check.\n$call\nDone.',
+          '$call\nDone.',
+          'If a < b, use {x} or [y].\n',
+          'Let me check.\n${call.substring(0, 6)}',
+          '${tags.startTag}\nPlan.\n${tags.endTag}\n\nLet me check.\n$call',
+        ];
+      }
+
+      List<String> openings(String call) => [call.substring(0, 16)];
+
+      for (final MapEntry(key: format, value: call) in gatedCalls.entries) {
+        test(format.name, () async {
+          for (final output in outputs(format, call)) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              openings: openings(call),
+            );
+          }
+        });
+
+        if (ungatedWhenForcedOpen.contains(format)) {
+          continue;
+        }
+        final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+        test('${format.name} after a forced-open thought', () async {
+          for (final output in [
+            'Plan.\n${tags.endTag}\n\nLet me check.\n$call',
+            if (!unendedForcedThoughtIsContent.contains(format)) ...[
+              'Plan. $call',
+              'Plan it.\n',
+            ],
+          ]) {
+            await _expectStreamMatchesParse(
+              format,
+              output,
+              forcedOpen: true,
+              openings: openings(call),
+            );
+          }
+        });
+      }
+
+      test('keeps parses that ignore a forced-open thought ungated', () async {
+        for (final format in ungatedWhenForcedOpen) {
+          await _expectStreamMatchesParse(
+            format,
+            'Plan it.\n',
+            forcedOpen: true,
+          );
+        }
+      });
+
+      test('Qwen3-Coder XML ends a forced-open thought at a call', () async {
+        for (final output in const [
+          'Plan.\n$qwenXmlCall',
+          'Plan.  $qwenXmlCall\nDone.',
+          'Plan. <tool_c',
+          'Plan. $qwenXmlCall\n</think>\nDone.',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.qwen3CoderXml,
+            output,
+            forcedOpen: true,
+            openings: const ['<tool_call>', '</think>'],
+          );
+        }
+      });
+
+      test('Command R holds back a bare JSON call array', () async {
+        for (final output in const [
+          'Let me check. [{"tool_call_id":"0","tool_name":"weather",'
+              '"parameters":{"city":"Paris"}}]',
+          'Use [x] or [ {"a": 1}] here.',
+          'Let me check. <|START_TEXT|>Sure.<|END_TEXT|>',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.commandR7B,
+            output,
+            openings: const ['[{"tool', '<|START_TEXT|>'],
+          );
+        }
+      });
+
+      test('DeepSeek holds back every tool-call opening', () async {
+        for (final opening in const [
+          '<｜tool▁calls▁begin｜>',
+          '<｜tool_calls_begin｜>',
+          '<｜tool calls begin｜>',
+          r'<｜tool\_calls\_begin｜>',
+          '<｜tool▁calls｜>',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.deepseekR1,
+            'Let me check.\n$opening<｜tool▁call▁begin｜>function'
+            '<｜tool▁sep｜>weather\n```json\n{"city":"Paris"}\n```'
+            '<｜tool▁call▁end｜><｜tool▁calls▁end｜>',
+            openings: [opening],
+          );
+        }
+      });
+
+      test('Hunyuan V3 holds back a call and the end token', () async {
+        for (final output in const [
+          'Let me check.\n<tool_call:opensource>weather<tool_sep:opensource>'
+              '\n<arg_key:opensource>city</arg_key:opensource>\n'
+              '<arg_value:opensource>Paris</arg_value:opensource>\n'
+              '</tool_call:opensource>',
+          'Done.<｜hy_eos:opensource｜>',
+        ]) {
+          await _expectStreamMatchesParse(
+            ChatFormat.hunyuanV3,
+            output,
+            openings: const ['<tool_call:opensource>', '<｜hy_eos'],
+          );
+        }
+      });
+
+      group('with a PEG parser', () {
+        String parser(
+          ChatTemplateHandler handler, {
+          String templateSource = '{{ messages[0]["content"] }}',
+          bool enableThinking = true,
+        }) {
+          return handler
+              .render(
+                templateSource: templateSource,
+                messages: const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hello',
+                  ),
+                ],
+                metadata: const {},
+                tools: [_weatherTool],
+                enableThinking: enableThinking,
+              )
+              .parser!;
         }
 
-        await expectAfter('If a', 'If a');
-        await expectAfter(' <', 'If a');
-        await expectAfter(' b,', 'If a < b,');
-        await expectAfter(' use {', 'If a < b, use');
-        await expectAfter('x}.', 'If a < b, use {x}.');
-        await expectAfter('\n', 'If a < b, use {x}.');
-        await expectAfter(
-          'Let me check.\n<tool',
-          'If a < b, use {x}.\nLet me check.',
-        );
-        await expectAfter(
-          '_call>\n{"name',
-          'If a < b, use {x}.\nLet me check.',
-        );
+        const nemotronV3Template =
+            '{% set truncate_history_thinking = true %}'
+            '<tool_call><function><function=weather><parameters>'
+            '<parameter=city><think>';
+
+        test('Qwen3-Coder XML with a Nemotron V3 parser', () async {
+          for (final format in const [
+            ChatFormat.qwen3CoderXml,
+            ChatFormat.pegConstructed,
+          ]) {
+            final withoutThinking = parser(
+              Qwen3CoderXmlHandler(),
+              templateSource: nemotronV3Template,
+              enableThinking: false,
+            );
+            for (final output in outputs(format, qwenXmlCall).take(6)) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                parser: withoutThinking,
+                openings: const ['<tool_call>'],
+              );
+            }
+            await _expectStreamMatchesParse(
+              format,
+              'Plan.\n</think>\nLet me check.\n$qwenXmlCall',
+              forcedOpen: true,
+              parser: parser(
+                Qwen3CoderXmlHandler(),
+                templateSource: '$nemotronV3Template\n',
+              ),
+              openings: const ['<tool_call>', '</think>'],
+            );
+          }
+        });
+
+        test('Ministral', () async {
+          final ministral = parser(MinistralHandler());
+          const call = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
+          for (final format in const [
+            ChatFormat.ministral,
+            ChatFormat.pegNative,
+          ]) {
+            for (final output in [
+              ...outputs(format, call).take(6),
+              '[THINK]Plan.[/THINK]Let me check.\n$call',
+            ]) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                parser: ministral,
+                openings: const ['[TOOL_CALLS]', '[/THINK]'],
+              );
+            }
+          }
+        });
+
+        test('Solar Open', () async {
+          final solarOpen = parser(SolarOpenHandler());
+          for (final output in const [
+            '<|content|>Let me check.\n<|end|><|begin|>assistant'
+                '<|tool_calls|><|tool_call:begin|>0<|tool_call:name|>weather'
+                '<|tool_call:args|>{"city":"Paris"}<|tool_call:end|>',
+            '<|content|>If a < b, use {x} or [y].\n',
+          ]) {
+            await _expectStreamMatchesParse(
+              ChatFormat.solarOpen,
+              output,
+              parser: solarOpen,
+              openings: const ['<|end|>', '<|tool_calls|>'],
+            );
+          }
+        });
+      });
+
+      test('Qwen3-Coder XML holds back only a possible opening', () {
+        return _expectContentAfterEachToken(ChatFormat.qwen3CoderXml, const [
+          ('If a', 'If a'),
+          (' <', 'If a'),
+          (' b,', 'If a < b,'),
+          (' use <tool', 'If a < b, use'),
+          ('s>.', 'If a < b, use <tools>.'),
+          ('\n', 'If a < b, use <tools>.'),
+          ('Let me check.\n<tool', 'If a < b, use <tools>.\nLet me check.'),
+          ('_call>\n<function=', 'If a < b, use <tools>.\nLet me check.'),
+        ]);
+      });
+
+      test('Mistral Nemo holds back only a possible opening', () {
+        return _expectContentAfterEachToken(ChatFormat.mistralNemo, const [
+          ('Use [x]', 'Use [x]'),
+          (' or [TOOL', 'Use [x] or'),
+          ('S].', 'Use [x] or [TOOLS].'),
+          (' Let me check.[TOOL_', 'Use [x] or [TOOLS]. Let me check.'),
+          ('CALLS][{"name', 'Use [x] or [TOOLS]. Let me check.'),
+        ]);
       });
     });
 
@@ -1250,3 +1480,125 @@ final _typedStreamTool = ToolDefinition(
 
 const _hermesDoubleBrace =
     '<tool_call>\n{{"name": "weather", "arguments": {"city": "Paris"}}\n</tool_call>';
+
+/// Splits [output] whole, into 1- and 2-character pieces, into random pieces,
+/// and in two at every index inside each of [openings].
+List<List<String>> _chunkings(String output, List<String> openings) {
+  final random = Random(output.length);
+  List<String> pieces(int Function() size) {
+    final result = <String>[];
+    for (var i = 0; i < output.length;) {
+      final end = min(output.length, i + size());
+      result.add(output.substring(i, end));
+      i = end;
+    }
+    return result;
+  }
+
+  return [
+    [output],
+    pieces(() => 1),
+    pieces(() => 2),
+    for (var run = 0; run < 5; run++) pieces(() => 1 + random.nextInt(7)),
+    for (final opening in openings)
+      for (
+        var at = output.indexOf(opening);
+        at >= 0;
+        at = output.indexOf(opening, at + 1)
+      )
+        for (var split = at + 1; split < at + opening.length; split++)
+          [output.substring(0, split), output.substring(split)],
+  ];
+}
+
+/// Expects streamed content, reasoning and calls of [output] to equal
+/// [ChatTemplateEngine.parse] for every chunking.
+Future<void> _expectStreamMatchesParse(
+  ChatFormat format,
+  String output, {
+  bool forcedOpen = false,
+  String? parser,
+  List<String> openings = const [],
+}) async {
+  final parsed = ChatTemplateEngine.parse(
+    format.index,
+    output,
+    thinkingForcedOpen: forcedOpen,
+    parser: parser,
+    tools: [_weatherTool],
+  );
+  for (final tokens in _chunkings(output, openings)) {
+    final chunks = await ChatCompletionStreamParser.parse(
+      tokenStream: Stream.fromIterable(tokens),
+      templateResult: LlamaChatTemplateResult(
+        prompt: 'prompt',
+        format: format.index,
+        thinkingForcedOpen: forcedOpen,
+        parser: parser,
+      ),
+      parseToolCallsEnabled: true,
+      enableThinking: true,
+      modelName: 'test-model',
+      completionId: 'stream-matches-parse',
+      tools: [_weatherTool],
+    ).toList();
+
+    final calls = chunks
+        .expand((chunk) => chunk.choices.single.delta.toolCalls ?? const [])
+        .toList();
+    expect(
+      chunks.map((chunk) => chunk.choices.single.delta.content ?? '').join(),
+      parsed.content,
+      reason: '$tokens',
+    );
+    expect(
+      chunks.map((chunk) => chunk.choices.single.delta.thinking ?? '').join(),
+      parsed.reasoningContent ?? '',
+      reason: '$tokens',
+    );
+    expect(
+      [
+        for (final call in calls)
+          '${call.function?.name} ${call.function?.arguments}',
+      ],
+      [
+        for (final call in parsed.toolCalls)
+          '${call.function?.name} ${call.function?.arguments}',
+      ],
+      reason: '$tokens',
+    );
+    expect(
+      chunks.last.choices.single.finishReason,
+      parsed.hasToolCalls ? 'tool_calls' : 'stop',
+    );
+  }
+}
+
+/// Feeds each token of [steps] and expects the content streamed so far.
+Future<void> _expectContentAfterEachToken(
+  ChatFormat format,
+  List<(String token, String streamed)> steps,
+) async {
+  final tokens = StreamController<String>();
+  final content = StringBuffer();
+  final subscription = ChatCompletionStreamParser.parse(
+    tokenStream: tokens.stream,
+    templateResult: LlamaChatTemplateResult(
+      prompt: 'prompt',
+      format: format.index,
+    ),
+    parseToolCallsEnabled: true,
+    enableThinking: true,
+    modelName: 'test-model',
+    completionId: 'latency',
+    tools: [_weatherTool],
+  ).listen((chunk) => content.write(chunk.choices.single.delta.content ?? ''));
+  addTearDown(subscription.cancel);
+  addTearDown(tokens.close);
+
+  for (final (token, streamed) in steps) {
+    tokens.add(token);
+    await pumpEventQueue();
+    expect(content.toString(), streamed, reason: token);
+  }
+}

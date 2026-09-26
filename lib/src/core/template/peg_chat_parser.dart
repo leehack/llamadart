@@ -5,6 +5,21 @@ import 'chat_format.dart';
 import 'chat_parse_result.dart';
 import 'peg_parser_builder.dart';
 
+/// The PEG format `ChatTemplateEngine.parse` parses output of [format] with,
+/// given its serialized [parser], or `null` when it uses the format's handler.
+ChatFormat? pegParseFormat(ChatFormat format, String? parser) {
+  final hasPegParser = parser != null && parser.trim().isNotEmpty;
+  return switch (format) {
+    ChatFormat.pegSimple => ChatFormat.pegSimple,
+    ChatFormat.pegNative => ChatFormat.pegNative,
+    ChatFormat.pegConstructed => ChatFormat.pegConstructed,
+    ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
+    ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
+    ChatFormat.qwen3CoderXml => hasPegParser ? ChatFormat.pegConstructed : null,
+    _ => null,
+  };
+}
+
 /// Runtime PEG parser for llama.cpp `parser.save()` payloads.
 ///
 /// This executes serialized PEG parsers and maps AST tags to chat payloads,

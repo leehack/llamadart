@@ -74,6 +74,16 @@ class XmlToolCallFormat {
     this.allowToolcallInThink = false,
   });
 
+  /// Finds where [parseXmlToolCalls] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where [scopeStart], or
+  /// [toolStart] without a scope, starts, or where the rest of [text] is the
+  /// start of it, and `text.length` when there is none.
+  int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, [
+        scopeStart.isEmpty ? toolStart : scopeStart,
+      ], from);
+
   /// Standard XML format (e.g. Qwen 2.5/3 Coder).
   static const qwen3Coder = XmlToolCallFormat(
     scopeStart: '<tool_call>',

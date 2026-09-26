@@ -27,6 +27,13 @@ For canonical full release notes, use:
   loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
   example chat app uses it to send Min-P and enable its slider only where
   supported ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Stream content that equals the non-streamed parse for Qwen3-Coder XML,
+  Mistral Nemo and 15 more tool-call formats, and for output parsed with a PEG
+  parser, so text before a tool call no longer carries the tool-call envelope
+  into streamed content or `ChatSession` history. Content and reasoning are
+  trimmed as for Hermes, and text after a call arrives at the end of the
+  stream. See the template engine guide for the formats and exceptions
+  ([#732](https://github.com/leehack/llamadart/issues/732)).
 - Stream Hermes-format content that equals the non-streamed parse, so text
   before a tool call no longer carries the `<tool_call>` envelope into
   streamed content or `ChatSession` history; only a possible envelope opening

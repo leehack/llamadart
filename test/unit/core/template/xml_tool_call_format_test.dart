@@ -6,6 +6,20 @@ import 'package:llamadart/src/core/template/xml_tool_call_format.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'toolCallOpening finds the scope start, or the tool start without one',
+    () {
+      expect(XmlToolCallFormat.qwen3Coder.toolCallOpening('Hi <tool_call>'), 3);
+      expect(XmlToolCallFormat.qwen3Coder.toolCallOpening('Hi <tool_c'), 3);
+      expect(XmlToolCallFormat.qwen3Coder.toolCallOpening('Hi <function='), 13);
+      expect(
+        XmlToolCallFormat.minicpm5.toolCallOpening('Hi <function name="f">'),
+        3,
+      );
+      expect(XmlToolCallFormat.minicpm5.toolCallOpening('Hi <tool_call>'), 14);
+    },
+  );
+
   test('parseXmlToolCalls parses a simple XML-like tool call', () {
     const output =
         '<tool_call>\n'

@@ -10,6 +10,43 @@ import 'package:llamadart/src/core/template/handlers/deepseek_r1_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('DeepseekR1Handler tool-call openings', () {
+    const openings = [
+      '<｜tool▁calls▁begin｜>',
+      '<｜tool_calls_begin｜>',
+      '<｜tool calls begin｜>',
+      r'<｜tool\_calls\_begin｜>',
+      '<｜tool▁calls｜>',
+    ];
+
+    test('toolCallOpening finds each whole or partial opening', () {
+      for (final opening in openings) {
+        expect(
+          DeepseekR1Handler.toolCallOpening('Hi $opening'),
+          3,
+          reason: opening,
+        );
+        expect(
+          DeepseekR1Handler.toolCallOpening('Hi ${opening.substring(0, 5)}'),
+          3,
+          reason: opening,
+        );
+      }
+      expect(DeepseekR1Handler.toolCallOpening('Use <x> or <｜y｜>.'), 17);
+    });
+
+    test('parse extracts a call after each opening', () {
+      for (final opening in openings) {
+        final parsed = DeepseekR1Handler().parse(
+          'Hi $opening<｜tool▁call▁begin｜>'
+          '${'function<｜tool▁sep｜>weather\n```json\n{"city": "Paris"}\n```'}<｜tool▁call▁end｜><｜tool▁calls▁end｜>',
+        );
+        expect(parsed.content, 'Hi', reason: opening);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+      }
+    });
+  });
+
   test('DeepseekR1Handler renders assistant content after think blocks', () {
     final handler = DeepseekR1Handler();
     final rendered = handler.render(
