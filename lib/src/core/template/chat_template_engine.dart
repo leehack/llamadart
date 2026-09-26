@@ -486,23 +486,8 @@ class ChatTemplateEngine {
     final handler = resolved.handler;
     final format = resolved.format;
 
-    final hasPegParser = parser != null && parser.trim().isNotEmpty;
-    final isPegFormat =
-        format == ChatFormat.pegSimple ||
-        format == ChatFormat.pegNative ||
-        format == ChatFormat.pegConstructed;
-    final pegFormat = switch (format) {
-      ChatFormat.pegSimple => ChatFormat.pegSimple,
-      ChatFormat.pegNative => ChatFormat.pegNative,
-      ChatFormat.pegConstructed => ChatFormat.pegConstructed,
-      ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
-      ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
-      ChatFormat.qwen3CoderXml =>
-        hasPegParser ? ChatFormat.pegConstructed : null,
-      _ => null,
-    };
-
-    if (pegFormat != null && (isPegFormat || hasPegParser)) {
+    final pegFormat = pegParseFormat(format, parser);
+    if (pegFormat != null) {
       return PegChatParser.parse(
         parser: parser ?? '',
         format: pegFormat,

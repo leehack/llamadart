@@ -72,6 +72,21 @@ void main() {
     expect(LiteRtLmBackend().runtime, LlamaRuntime.liteRtLm);
   });
 
+  test('reports speculative decoding as its only generation control', () async {
+    final capabilities = await LiteRtLmBackend().generationCapabilities();
+
+    expect(capabilities.presencePenalty, isFalse);
+    expect(capabilities.minP, isFalse);
+    expect(capabilities.thinkingBudget, isFalse);
+    expect(
+      capabilities.speculativeDecodingStrategies,
+      <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.backendDefault,
+        SpeculativeDecodingStrategy.mtp,
+      },
+    );
+  });
+
   test('reports platform default diagnostics before model load', () async {
     final backend = LiteRtLmBackend();
 

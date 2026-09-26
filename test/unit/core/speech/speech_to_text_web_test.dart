@@ -23,7 +23,7 @@ void main() {
     await engine.dispose();
   });
 
-  test('validated Web bridge advertises WAV byte input only', () async {
+  test('validated Web bridge advertises WAV, MP3 and FLAC bytes', () async {
     final engine = await _loadedEngine(promptSpeechToTextSupported: true);
     final recognizer = SpeechToTextEngine(
       engine,
@@ -41,33 +41,49 @@ void main() {
       capabilities.inputKinds,
       equals(<SpeechAudioInputKind>{SpeechAudioInputKind.encodedBytes}),
     );
-    expect(capabilities.encodedAudioFormats, equals(<String>{'wav'}));
+    expect(
+      capabilities.encodedAudioFormats,
+      equals(<String>{'wav', 'mp3', 'flac'}),
+    );
     await engine.dispose();
   });
 
-  test('validated Web bridge transcribes encoded WAV bytes', () async {
-    final engine = await _loadedEngine(promptSpeechToTextSupported: true);
-    final recognizer = SpeechToTextEngine(
-      engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
-    );
+  for (final (encoding, magic) in <(String, List<int>)>[
+    ('wav', <int>[0x52, 0x49, 0x46, 0x46]),
+    ('MP3', <int>[0x49, 0x44, 0x33, 0x04]),
+    ('mp3', <int>[0xff, 0xf3, 0x88, 0xc4]),
+    ('flac', <int>[0x66, 0x4c, 0x61, 0x43]),
+  ]) {
+    test('validated Web bridge transcribes encoded $encoding bytes', () async {
+      final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+      final engine = LlamaEngine(backend);
+      await engine.loadModel('https://example.com/qwen3-asr.gguf');
+      await engine.loadMultimodalProjector(
+        'https://example.com/qwen3-asr-mmproj.gguf',
+      );
+      final recognizer = SpeechToTextEngine(
+        engine,
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
 
-    final task = await recognizer.transcribe(
-      SpeechToTextRequest(
-        audio: SpeechAudioBytesInput(
-          Uint8List.fromList(<int>[0x52, 0x49, 0x46, 0x46]),
-          format: const SpeechAudioFormat(encoding: 'wav'),
+      final task = await recognizer.transcribe(
+        SpeechToTextRequest(
+          audio: SpeechAudioBytesInput(
+            Uint8List.fromList(magic),
+            format: SpeechAudioFormat(encoding: encoding),
+          ),
         ),
-      ),
-    );
-    final events = await task.events.toList();
-    final completion = await task.done;
+      );
+      final events = await task.events.toList();
+      final completion = await task.done;
 
-    expect(events, hasLength(1));
-    expect((events.single as SpeechToTextFinalEvent).result.text, 'Hello.');
-    expect(completion.state, SpeechToTextCompletionState.completed);
-    await engine.dispose();
-  });
+      expect(events, hasLength(1));
+      expect((events.single as SpeechToTextFinalEvent).result.text, 'Hello.');
+      expect(completion.state, SpeechToTextCompletionState.completed);
+      expect((backend.lastParts!.single as LlamaAudioContent).bytes, magic);
+      await engine.dispose();
+    });
+  }
 
   test('validated Web bridge keeps the raw bytes-only prompt path', () async {
     final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
@@ -254,7 +270,7 @@ void main() {
         isA<LlamaAudioFormatException>().having(
           (error) => error.toString(),
           'message',
-          contains('SpeechAudioFormat.encoding'),
+          contains('SpeechAudioFormat.encoding: WAV, MP3, or FLAC'),
         ),
       ),
     );
@@ -276,12 +292,18 @@ void main() {
       recognizer.transcribe(
         SpeechToTextRequest(
           audio: SpeechAudioBytesInput(
-            Uint8List.fromList(<int>[1]),
-            format: const SpeechAudioFormat(encoding: 'mp3'),
+            Uint8List.fromList(<int>[0x4f, 0x67, 0x67, 0x53]),
+            format: const SpeechAudioFormat(encoding: 'ogg'),
           ),
         ),
       ),
-      throwsA(isA<LlamaAudioFormatException>()),
+      throwsA(
+        isA<LlamaAudioFormatException>().having(
+          (error) => error.toString(),
+          'message',
+          contains('WAV, MP3, or FLAC'),
+        ),
+      ),
     );
     await engine.dispose();
   });

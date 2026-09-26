@@ -56,9 +56,12 @@ Important fields:
   `batchSize` to embed it.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
-- `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
-  GGUF. Defaults to `false` because the tensors cost memory; set it to `true`
-  when `SpeculativeDecodingConfig.mtp(...)` runs without a `draftModelPath`.
+- `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the
+  target GGUF. Defaults to `false` because the tensors cost memory; set it to
+  `true` when `SpeculativeDecodingConfig.mtp(...)` runs without a
+  `draftModelPath`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
+  the bridge only when set; bridge assets without speculative decoding ignore
+  both.
 - `chatTemplate`: template override for `.litertlm` models. `engine.create`
   on GGUF models uses the template embedded in the file.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
@@ -170,32 +173,51 @@ Important fields:
 
 - `maxTokens`: generation length cap.
 - `temp`: randomness.
-- `topK`, `topP`, `minP`: token filtering controls.
+- `topK`, `topP`, `minP`: token filtering controls. WebGPU applies a
+  non-zero `minP` only with bridge assets whose `getCompletionCapabilities()`
+  reports `minP` and otherwise rejects it; LiteRT-LM rejects it.
 - `penalty`: repeat penalty.
-- `presencePenalty`: llama.cpp-native presence penalty; `0.0` preserves the
-  existing behavior. WebGPU and LiteRT-LM reject non-zero values rather than
-  silently ignoring them.
-- `thinkingBudget`: native llama.cpp-only reasoning-token cap. Use
-  `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use template
-  delimiters automatically, or specify `startTag` and `endTag` for raw
-  generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
+- `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
+  existing behavior. WebGPU applies it only with bridge assets whose
+  `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
+  and LiteRT-LM reject non-zero values rather than silently ignoring them.
+- `thinkingBudget`: llama.cpp reasoning-token cap, native or WebGPU with
+  bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
+  Use `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use
+  template delimiters automatically, or specify `startTag` and `endTag` for
+  raw generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
   is incompatible with speculative decoding, and unsupported backends reject
   it explicitly.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
   draft tuning; native llama.cpp takes any `SpeculativeDecodingConfig`
-  strategy. WebGPU and LiteRT-LM web reject both.
+  strategy. WebGPU takes the strategies its bridge assets report, with URLs
+  for `draftModelPath` and the n-gram cache paths. LiteRT-LM web rejects both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
+
+After a model loads, `engine.backendGenerationCapabilities` reports whether
+the runtime applies `presencePenalty`, `minP` and `thinkingBudget`, and which
+`SpeculativeDecodingStrategy` values it runs in
+`speculativeDecodingStrategies`: native llama.cpp reports everything, LiteRT-LM
+none of the three and, natively, `backendDefault` and `mtp`, and WebGPU what
+its bridge assets report. Every field is `false`, and the strategy set empty,
+before a load. Use it to send a control only where it applies:
+
+```dart
+final capabilities = await engine.backendGenerationCapabilities;
+final params = GenerationParams(minP: capabilities.minP ? 0.05 : 0.0);
+```
 
 Native GGUF `stopSequences` suppress the first completed marker and any text
 following it, including markers split across tokens or embedded inside a token.
 Empty stops are ignored. Unfinished marker prefixes are emitted when generation
 ends without a match. Template tokens listed in `preservedTokens` remain
 available to the chat parser; identical stop entries are excluded from native
-text matching. This applies to ordinary and speculative generation.
+text matching. This applies to ordinary and speculative generation, and
+WebGPU excludes the same stop entries.
 
 ## Practical tuning defaults
 

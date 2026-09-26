@@ -792,9 +792,9 @@ const speechLifecycleCheckCount = 21;
 /// host resident step in six of nine Linux CUDA `tts` runs (#686).
 const speechLeakWarmupCycles = 1;
 
-/// Consecutive cycle-to-cycle resident deltas `leak_slope_bound` examines.
+/// Consecutive cycle-to-cycle footprint deltas `leak_slope_bound` examines.
 ///
-/// Three more than the longest run of deltas above
+/// Three more than the longest run of resident set deltas above
 /// [speechLeakCycleGrowthBytes] measured without a leak: 4, in a macOS `tts`
 /// run recovering from memory pressure and in a Linux x64 CPU `tts` run
 /// (#686).
@@ -803,10 +803,11 @@ const speechLeakWindowCycles = 7;
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = speechLeakWarmupCycles + speechLeakWindowCycles;
 
-/// Resident growth per cycle above which a cycle counts toward a leak.
+/// Footprint growth per cycle above which a cycle counts toward a leak.
 ///
-/// Half the smallest per-cycle growth of the LiteRT ASR leak in #634, 14.0 MiB
-/// over 12 warm cycles on macOS arm64. Growth equal to it does not count.
+/// Half the smallest per-cycle resident set growth of the LiteRT ASR leak in
+/// #634, 14.0 MiB over 12 warm cycles on macOS arm64. Growth equal to it does
+/// not count.
 const speechLeakCycleGrowthBytes = 7 * 1024 * 1024;
 
 /// How long [PublicSpeechValidationAdapter] waits before cancelling with
@@ -834,9 +835,9 @@ const speechCancelLatencyBudgetMs = 500.0;
 /// the generation finishes can still pass it.
 const speechImmediateCancelLatencyBudgetMs = 500.0;
 
-/// Ceiling on the largest resident set sampled after the checks between
-/// `generate` and `peak_memory_bound`, as a multiple of the resident set
-/// sampled right after `generate`. Growth equal to it passes.
+/// Ceiling on the largest memory footprint sampled after the checks between
+/// `generate` and `peak_memory_bound`, as a multiple of the footprint sampled
+/// right after `generate`. Growth equal to it passes.
 ///
 /// Every check in that span contributes a sample, whatever phase it exercised,
 /// so the peak is the maximum over heterogeneous phases rather than over
@@ -846,7 +847,7 @@ const speechImmediateCancelLatencyBudgetMs = 500.0;
 /// the interrupt checks, as a multiple of the one sampled after
 /// `leak_slope_bound`. Neither is applied where [speechPeakRatioExemption]
 /// names a reason.
-const speechPeakRssGrowthBudget = 1.10;
+const speechPeakFootprintGrowthBudget = 1.10;
 
 /// Checks a run with `checkSynthesisInterrupts` adds.
 const speechSynthesisInterruptCheckCount = 4;
@@ -1073,19 +1074,19 @@ Map<String, Object?> _truncationOutcome(
   };
 }
 
-/// Why [speechPeakRssGrowthBudget] is not applied on [operatingSystem] with
-/// [backend], or null when it is, including for any unknown or null pair.
+/// Why [speechPeakFootprintGrowthBudget] is not applied on [operatingSystem]
+/// with [backend], or null when it is, including for any unknown or null pair.
 ///
 /// Linux CUDA keeps the weights in device memory, so its resident set after
-/// `generate` is only about 1.13 GB, and reload overhead that plateaus at
-/// 1.13-1.16x fails the ratio without a leak (#686). `leak_slope_bound`
+/// `generate` was only about 1.13 GB, and reload overhead that plateaued at
+/// 1.13-1.16x failed the ratio without a leak (#686). `leak_slope_bound`
 /// still applies there.
 String? speechPeakRatioExemption({
   required String? operatingSystem,
   required String? backend,
 }) => operatingSystem == 'linux' && backend == 'cuda'
     ? 'Peak ratio not applied: Linux CUDA keeps the weights in device memory, '
-          'so the resident baseline excludes them'
+          'so the host baseline excludes them'
     : null;
 
 /// Executes bounded speech lifecycle checks; cleanup failures remain failures.
@@ -1116,8 +1117,8 @@ String? speechPeakRatioExemption({
 /// the cancellation, less the largest hand-back cancellation latency, is
 /// within the margin, since then even an immediate cancellation could not
 /// pass. It fails if the cancelled synthesis emits a final result.
-/// `interrupt_memory_bound` bounds the resident set after those three checks
-/// by [speechPeakRssGrowthBudget] times the one sampled after
+/// `interrupt_memory_bound` bounds the footprint after those three checks
+/// by [speechPeakFootprintGrowthBudget] times the one sampled after
 /// `leak_slope_bound`, so reload overhead the lifecycle checks already
 /// incurred is in its baseline, and growth the interrupts add is not.
 ///
@@ -1128,7 +1129,7 @@ String? speechPeakRatioExemption({
 /// finite, non-negative `cancel_latency_ms` and `cancel_after_ms`, and the
 /// second a nonzero `cancel_after_ms`; otherwise that check fails.
 ///
-/// [residentBytes] is called after each check. If any call made before a
+/// [footprintBytes] is called after each check. If any call made before a
 /// memory bound, `peak_memory_bound`, `leak_slope_bound` or
 /// `interrupt_memory_bound`, runs returns null, that bound records `SKIP` with
 /// a reason. `peak_memory_bound` and `interrupt_memory_bound` also record
@@ -1137,7 +1138,7 @@ String? speechPeakRatioExemption({
 /// may `SKIP` in a run whose `functional_pass` is true, and no check may
 /// record `NOT_RUN` in one.
 ///
-/// `leak_slope_bound` fails when the resident set grew by more than
+/// `leak_slope_bound` fails when the footprint grew by more than
 /// [speechLeakCycleGrowthBytes] in each of the [speechLeakWindowCycles]
 /// cleanup cycles after the first [speechLeakWarmupCycles].
 ///
@@ -1148,7 +1149,7 @@ Future<Map<String, Object?>> runSpeechValidation(
   List<SpeechEdgeFixture> edgeFixtures = const [],
   bool checkTranscriptLimits = false,
   bool checkSynthesisInterrupts = false,
-  int? Function() residentBytes = residentSetBytes,
+  int? Function() footprintBytes = memoryFootprintBytes,
   String? operatingSystem,
   String? backend,
 }) async {
@@ -1176,12 +1177,12 @@ Future<Map<String, Object?>> runSpeechValidation(
   final cancelLeads = <double>[];
   final immediateLatencies = <double>[];
   final immediateLeads = <double>[];
-  final residentSamples = <Map<String, Object?>>[];
-  var residentMeasurable = true;
-  const unmeasured = <String, Object?>{
+  final footprintSamples = <Map<String, Object?>>[];
+  var footprintMeasurable = true;
+  final unmeasured = <String, Object?>{
     'skipped': true,
-    'measurement': residentSetSource,
-    'skip_reason': 'Resident set size was not measurable',
+    'measurement': memoryFootprintSource,
+    'skip_reason': 'Memory footprint was not measurable',
   };
   Future<void> check(
     String id,
@@ -1209,11 +1210,11 @@ Future<Map<String, Object?>> runSpeechValidation(
         'message': redactDiagnostic('$error'),
       });
     }
-    final sampled = residentBytes();
+    final sampled = footprintBytes();
     if (sampled == null) {
-      residentMeasurable = false;
+      footprintMeasurable = false;
     } else {
-      residentSamples.add({'id': id, 'rss_bytes': sampled});
+      footprintSamples.add({'id': id, 'footprint_bytes': sampled});
     }
   }
 
@@ -1262,31 +1263,31 @@ Future<Map<String, Object?>> runSpeechValidation(
   }
 
   Map<String, Object?> memoryBound(String baselineId, String baselineName) {
-    final baselineIndex = residentSamples.indexWhere(
+    final baselineIndex = footprintSamples.indexWhere(
       (sample) => sample['id'] == baselineId,
     );
-    if (!residentMeasurable || baselineIndex < 0) return unmeasured;
-    final baseline = residentSamples[baselineIndex]['rss_bytes']! as int;
-    final later = residentSamples.skip(baselineIndex + 1);
+    if (!footprintMeasurable || baselineIndex < 0) return unmeasured;
+    final baseline = footprintSamples[baselineIndex]['footprint_bytes']! as int;
+    final later = footprintSamples.skip(baselineIndex + 1);
     if (later.isEmpty) {
-      throw StateError('No resident samples follow $baselineName');
+      throw StateError('No footprint samples follow $baselineName');
     }
     final peak = later
-        .map((sample) => sample['rss_bytes']! as int)
+        .map((sample) => sample['footprint_bytes']! as int)
         .reduce(math.max);
     return {
-      'measurement': residentSetSource,
+      'measurement': memoryFootprintSource,
       'baseline_check': baselineId,
-      'baseline_rss_bytes': baseline,
-      'peak_rss_bytes': peak,
-      'peak_rss_growth': peak / baseline,
-      'growth_budget': speechPeakRssGrowthBudget,
-      'samples': [...residentSamples],
+      'baseline_footprint_bytes': baseline,
+      'peak_footprint_bytes': peak,
+      'peak_footprint_growth': peak / baseline,
+      'growth_budget': speechPeakFootprintGrowthBudget,
+      'samples': [...footprintSamples],
       if (ratioExemption != null) ...{
         'skipped': true,
         'skip_reason': ratioExemption,
       } else
-        'predicate_passed': peak / baseline <= speechPeakRssGrowthBudget,
+        'predicate_passed': peak / baseline <= speechPeakFootprintGrowthBudget,
     };
   }
 
@@ -1402,25 +1403,25 @@ Future<Map<String, Object?>> runSpeechValidation(
         () async => memoryBound('generate', 'the first generation'),
       );
       await check('leak_slope_bound', () async {
-        if (!residentMeasurable) return unmeasured;
+        if (!footprintMeasurable) return unmeasured;
         final window = [
           for (
             var cycle = speechLeakWarmupCycles;
             cycle <= speechCleanupCycles;
             cycle++
           )
-            residentSamples.singleWhere(
+            footprintSamples.singleWhere(
                   (sample) => sample['id'] == 'cleanup_cycle_$cycle',
-                )['rss_bytes']!
+                )['footprint_bytes']!
                 as int,
         ];
         final growth = [
           for (var i = 1; i < window.length; i++) window[i] - window[i - 1],
         ];
         return {
-          'measurement': residentSetSource,
+          'measurement': memoryFootprintSource,
           'warmup_cycles': speechLeakWarmupCycles,
-          'window_rss_bytes': window,
+          'window_footprint_bytes': window,
           'cycle_growth_bytes': growth,
           'growth_threshold_bytes': speechLeakCycleGrowthBytes,
           'predicate_passed': growth.any(
@@ -1501,21 +1502,21 @@ Future<Map<String, Object?>> runSpeechValidation(
             ? null
             : immediateRow['status'] == 'PASS',
       },
-      'peak_resident_bytes': {
-        'measurement': residentSetSource,
+      'peak_footprint_bytes': {
+        'measurement': memoryFootprintSource,
         'measured': memoryMeasured,
         'skip_reason': memoryRow['skip_reason'],
-        'baseline': memoryRow['baseline_rss_bytes'],
-        'peak': memoryRow['peak_rss_bytes'],
-        'growth': memoryRow['peak_rss_growth'],
-        'growth_budget': speechPeakRssGrowthBudget,
+        'baseline': memoryRow['baseline_footprint_bytes'],
+        'peak': memoryRow['peak_footprint_bytes'],
+        'growth': memoryRow['peak_footprint_growth'],
+        'growth_budget': speechPeakFootprintGrowthBudget,
         'applies': ratioExemption == null,
         'within_budget': memoryMeasured && ratioExemption == null
             ? memoryRow['status'] == 'PASS'
             : null,
       },
       'leak_slope': {
-        'measurement': residentSetSource,
+        'measurement': memoryFootprintSource,
         'measured': leakMeasured,
         'skip_reason': leakRow['skip_reason'],
         'warmup_cycles': speechLeakWarmupCycles,

@@ -1131,6 +1131,22 @@ void main() {
     expect(NativeLlamaBackend().runtime, LlamaRuntime.llamaCpp);
   });
 
+  test('reports every optional sampling control as applied', () async {
+    final backend = NativeLlamaBackend();
+
+    final capabilities = await backend.generationCapabilities();
+
+    expect(capabilities.presencePenalty, isTrue);
+    expect(capabilities.minP, isTrue);
+    expect(capabilities.thinkingBudget, isTrue);
+    expect(
+      capabilities.speculativeDecodingStrategies,
+      SpeculativeDecodingStrategy.values.toSet(),
+    );
+    expect(backend.isReady, isFalse);
+    await backend.dispose();
+  });
+
   test('modelFree and contextFree are no-op without worker port', () async {
     final backend = NativeLlamaBackend();
 

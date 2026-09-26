@@ -135,7 +135,18 @@ class MockLlamaEngine extends LlamaEngine {
   bool textToSpeechCancelled = false;
   Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
 
+  BackendGenerationCapabilities generationCapabilities =
+      const BackendGenerationCapabilities(
+        presencePenalty: true,
+        minP: true,
+        thinkingBudget: true,
+      );
+
   MockLlamaEngine() : super(MockLlamaBackend());
+
+  @override
+  Future<BackendGenerationCapabilities>
+  get backendGenerationCapabilities async => generationCapabilities;
 
   @override
   bool get isReady => initialized;

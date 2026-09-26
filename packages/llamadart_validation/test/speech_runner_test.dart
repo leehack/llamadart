@@ -664,7 +664,7 @@ class LimitedRecognitionEngine extends FakeSpeechEngine {
   }
 }
 
-int stableResidentBytes() => 1000;
+int stableFootprintBytes() => 1000;
 
 const mib = 1024 * 1024;
 
@@ -814,7 +814,7 @@ void main() {
         final adapter = FakeSpeech()..invalidError = error;
         final result = await runSpeechValidation(
           adapter,
-          residentBytes: stableResidentBytes,
+          footprintBytes: stableFootprintBytes,
         );
         final checks = result['checks'] as List;
         final rejection = checks.singleWhere(
@@ -910,7 +910,7 @@ void main() {
       final adapter = FakeSpeech();
       final result = await runSpeechValidation(
         adapter,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(result['functional_pass'], true);
       expect(result['qualified'], false);
@@ -944,7 +944,7 @@ void main() {
       expect(
         (await runSpeechValidation(
           adapter,
-          residentBytes: stableResidentBytes,
+          footprintBytes: stableFootprintBytes,
         ))['functional_pass'],
         false,
       );
@@ -959,7 +959,7 @@ void main() {
       expect(
         (await runSpeechValidation(
           adapter,
-          residentBytes: stableResidentBytes,
+          footprintBytes: stableFootprintBytes,
         ))['functional_pass'],
         false,
       );
@@ -972,7 +972,7 @@ void main() {
       final silent = FakeSpeech()..reportCancelLatency = false;
       final unmeasured = await runSpeechValidation(
         silent,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(unmeasured['functional_pass'], false);
       final unmeasuredChecks = unmeasured['checks'] as List;
@@ -991,7 +991,7 @@ void main() {
         ..cancelLatencyMs = speechCancelLatencyBudgetMs + 1;
       final overBudget = await runSpeechValidation(
         slow,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(overBudget['functional_pass'], false);
       final bound = (overBudget['checks'] as List).singleWhere(
@@ -1010,7 +1010,7 @@ void main() {
       final fast = FakeSpeech()..cancelLatencyMs = speechCancelLatencyBudgetMs;
       final withinBudget = await runSpeechValidation(
         fast,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(withinBudget['functional_pass'], true);
       expect(
@@ -1023,7 +1023,7 @@ void main() {
     final stalled = FakeSpeech()..cancelLatencyMs = 4000;
     final result = await runSpeechValidation(
       stalled,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final bound = (result['checks'] as List).singleWhere(
@@ -1036,7 +1036,7 @@ void main() {
     final stalled = FakeSpeech()..immediateCancelLatencyMs = 4000;
     final result = await runSpeechValidation(
       stalled,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final checks = result['checks'] as List;
@@ -1059,7 +1059,7 @@ void main() {
     final atBudget = await runSpeechValidation(
       FakeSpeech()
         ..immediateCancelLatencyMs = speechImmediateCancelLatencyBudgetMs,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(atBudget['functional_pass'], true);
     expect(
@@ -1072,7 +1072,7 @@ void main() {
     final waited = FakeSpeech()..reportImmediate = false;
     final result = await runSpeechValidation(
       waited,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final checks = result['checks'] as List;
@@ -1091,7 +1091,7 @@ void main() {
     final early = FakeSpeech()..reportInFlight = false;
     final result = await runSpeechValidation(
       early,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final checks = result['checks'] as List;
@@ -1109,7 +1109,7 @@ void main() {
   test('an in-flight cancellation issued without a wait fails', () async {
     final result = await runSpeechValidation(
       FakeSpeech()..inFlightLeadMs = 0,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final cancel = (result['checks'] as List).singleWhere(
@@ -1121,7 +1121,7 @@ void main() {
   test('a latency bound missing a sample fails', () async {
     final result = await runSpeechValidation(
       FakeSpeech()..unmeasuredInFlightCancel = 2,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     final checks = result['checks'] as List;
     Map<String, Object?> row(String id) =>
@@ -1149,7 +1149,7 @@ void main() {
           speechImmediateCancelLatencyBudgetMs,
           2,
         ),
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(result['functional_pass'], false);
     final checks = result['checks'] as List;
@@ -1177,7 +1177,7 @@ void main() {
         final reason = '$name at $latency ms';
         final result = await runSpeechValidation(
           adapter(latency),
-          residentBytes: stableResidentBytes,
+          footprintBytes: stableFootprintBytes,
         );
         final bound = (result['checks'] as List).singleWhere(
           (row) => row['id'] == '${name}_bound',
@@ -1194,7 +1194,7 @@ void main() {
   test('the in-flight cancel bound reports a lead fraction of 0.5', () async {
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     final bound = (result['checks'] as List).singleWhere(
       (row) => row['id'] == 'cancel_latency_bound',
@@ -1213,7 +1213,7 @@ void main() {
     ]) {
       final result = await runSpeechValidation(
         FakeSpeech()..inFlightReport = report,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(result['functional_pass'], false, reason: '$report');
       final cancel = (result['checks'] as List).singleWhere(
@@ -1226,7 +1226,7 @@ void main() {
   test('only the memory bound may skip and still pass the run', () async {
     final skipping = await runSpeechValidation(
       FakeSpeech()..skipGenerate = true,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     final generate = (skipping['checks'] as List).singleWhere(
       (row) => row['id'] == 'generate',
@@ -1239,7 +1239,7 @@ void main() {
       FakeSpeech()
         ..skipGenerate = true
         ..wrongWords = true,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     final generate = (hiding['checks'] as List).singleWhere(
       (row) => row['id'] == 'generate',
@@ -1249,72 +1249,78 @@ void main() {
     expect(generate['status'], 'FAIL');
     expect(hiding['functional_pass'], false);
   });
-  test('resident growth past the budget fails the run', () async {
+  test('footprint growth past the budget fails the run', () async {
     var sample = 1000;
     final growing = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: () => sample += 200,
+      footprintBytes: () => sample += 200,
     );
     expect(growing['functional_pass'], false);
     final bound = (growing['checks'] as List).singleWhere(
       (row) => row['id'] == 'peak_memory_bound',
     );
     expect(bound['status'], 'FAIL');
-    expect(bound['peak_rss_growth'], greaterThan(speechPeakRssGrowthBudget));
-    expect(bound['growth_budget'], speechPeakRssGrowthBudget);
-    expect((growing['bounds'] as Map)['peak_resident_bytes']['measured'], true);
+    expect(
+      bound['peak_footprint_growth'],
+      greaterThan(speechPeakFootprintGrowthBudget),
+    );
+    expect(bound['growth_budget'], speechPeakFootprintGrowthBudget);
+    expect(
+      (growing['bounds'] as Map)['peak_footprint_bytes']['measured'],
+      true,
+    );
 
     final flat = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(flat['functional_pass'], true);
-    final measured = (flat['bounds'] as Map)['peak_resident_bytes'] as Map;
+    final measured = (flat['bounds'] as Map)['peak_footprint_bytes'] as Map;
     expect(measured['baseline'], 1000);
     expect(measured['peak'], 1000);
     expect(measured['growth'], 1);
     expect(measured['within_budget'], true);
-    expect(measured['measurement'], residentSetSource);
+    expect(measured['measurement'], memoryFootprintSource);
   });
   test('memory growth is measured from the first generation', () async {
     final adapter = FakeSpeech();
     final result = await runSpeechValidation(
       adapter,
-      residentBytes: () => adapter.calls.contains('execute') ? 2000 : 1000,
+      footprintBytes: () => adapter.calls.contains('execute') ? 2000 : 1000,
     );
     expect(result['functional_pass'], true);
-    final measured = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    final measured = (result['bounds'] as Map)['peak_footprint_bytes'] as Map;
     expect(measured['baseline'], 2000);
     expect(measured['growth'], 1);
     expect(measured['within_budget'], true);
   });
   test('memory growth before reload counts toward the peak', () async {
     final adapter = FakeSpeech();
-    final spike = ((speechPeakRssGrowthBudget + 1) * 2000).round();
+    final spike = ((speechPeakFootprintGrowthBudget + 1) * 2000).round();
     final result = await runSpeechValidation(
       adapter,
-      residentBytes: () => adapter.calls.last == 'invalid' ? spike : 2000,
+      footprintBytes: () => adapter.calls.last == 'invalid' ? spike : 2000,
     );
     expect(result['functional_pass'], false);
     final bound = (result['checks'] as List).singleWhere(
       (row) => row['id'] == 'peak_memory_bound',
     );
     expect(bound['status'], 'FAIL');
-    expect(bound['baseline_rss_bytes'], 2000);
-    expect(bound['peak_rss_bytes'], spike);
+    expect(bound['baseline_footprint_bytes'], 2000);
+    expect(bound['peak_footprint_bytes'], spike);
   });
   test('memory growth equal to the budget passes', () async {
     const baseline = 1 << 52;
-    final peak = (baseline * speechPeakRssGrowthBudget).toInt();
+    final peak = (baseline * speechPeakFootprintGrowthBudget).toInt();
     final adapter = FakeSpeech();
     final result = await runSpeechValidation(
       adapter,
-      residentBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
+      footprintBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
     );
     final bound = (result['checks'] as List).singleWhere(
       (row) => row['id'] == 'peak_memory_bound',
     );
-    expect(bound['peak_rss_growth'], speechPeakRssGrowthBudget);
+    expect(bound['peak_footprint_growth'], speechPeakFootprintGrowthBudget);
     expect(bound['status'], 'PASS');
     expect(result['functional_pass'], true);
   });
@@ -1330,60 +1336,60 @@ void main() {
       final adapter = FakeSpeech();
       final result = await runSpeechValidation(
         adapter,
-        residentBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
+        footprintBytes: () => adapter.calls.last == 'invalid' ? peak : baseline,
       );
       final bound = (result['checks'] as List).singleWhere(
         (row) => row['id'] == 'peak_memory_bound',
       );
       expect(bound['growth_budget'], 1.10, reason: reason);
       expect(bound['status'], within ? 'PASS' : 'FAIL', reason: reason);
-      final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+      final reported = (result['bounds'] as Map)['peak_footprint_bytes'] as Map;
       expect(reported['growth_budget'], 1.10, reason: reason);
       expect(reported['within_budget'], within, reason: reason);
       expect(result['functional_pass'], within, reason: reason);
     }
   });
-  test('one unmeasurable resident sample skips the bound', () async {
+  test('one unmeasurable footprint sample skips the bound', () async {
     final adapter = FakeSpeech();
     final result = await runSpeechValidation(
       adapter,
-      residentBytes: () => adapter.calls.last == 'invalid' ? null : 1000,
+      footprintBytes: () => adapter.calls.last == 'invalid' ? null : 1000,
     );
     final bound = (result['checks'] as List).singleWhere(
       (row) => row['id'] == 'peak_memory_bound',
     );
     expect(bound['status'], 'SKIP');
-    expect(bound['skip_reason'], 'Resident set size was not measurable');
+    expect(bound['skip_reason'], 'Memory footprint was not measurable');
     expect(result['functional_pass'], true);
-    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    final reported = (result['bounds'] as Map)['peak_footprint_bytes'] as Map;
     expect(reported['measured'], false);
     expect(reported['peak'], isNull);
   });
-  test('an unmeasurable resident set skips the bound with a reason', () async {
+  test('an unmeasurable footprint skips the bound with a reason', () async {
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: () => null,
+      footprintBytes: () => null,
     );
     final bound = (result['checks'] as List).singleWhere(
       (row) => row['id'] == 'peak_memory_bound',
     );
     expect(bound['status'], 'SKIP');
-    expect(bound['skip_reason'], 'Resident set size was not measurable');
-    expect(bound['measurement'], residentSetSource);
-    expect(bound.containsKey('peak_rss_bytes'), isFalse);
+    expect(bound['skip_reason'], 'Memory footprint was not measurable');
+    expect(bound['measurement'], memoryFootprintSource);
+    expect(bound.containsKey('peak_footprint_bytes'), isFalse);
     expect(result['functional_pass'], true);
-    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
+    final reported = (result['bounds'] as Map)['peak_footprint_bytes'] as Map;
     expect(reported['measured'], false);
     expect(reported['within_budget'], isNull);
     expect(reported['peak'], isNull);
-    expect(reported['skip_reason'], 'Resident set size was not measurable');
+    expect(reported['skip_reason'], 'Memory footprint was not measurable');
   });
-  test('the default resident probe measures this platform', () async {
+  test('the default footprint counter measures this platform', () async {
     final result = await runSpeechValidation(FakeSpeech());
-    final reported = (result['bounds'] as Map)['peak_resident_bytes'] as Map;
-    expect(residentSetBytes(), isNotNull);
+    final reported = (result['bounds'] as Map)['peak_footprint_bytes'] as Map;
+    expect(memoryFootprintBytes(), isNotNull);
     expect(reported['measured'], true);
-    expect(reported['measurement'], 'dart:io ProcessInfo.currentRss');
+    expect(reported['measurement'], memoryFootprintSource);
     expect(reported['baseline'], isPositive);
     expect(reported['peak'], isPositive);
     expect(reported['within_budget'], true);
@@ -1391,7 +1397,7 @@ void main() {
   test('a run executes exactly these checks, in order', () async {
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(speechLifecycleCheckCount, 21);
     expect(
@@ -1424,7 +1430,7 @@ void main() {
       final reason = 'growth $perCycle bytes per cycle';
       final result = await runSpeechValidation(
         FakeSpeech(),
-        residentBytes: replay(linearCycles(perCycle)),
+        footprintBytes: replay(linearCycles(perCycle)),
       );
       final bound = checkRow(result, 'leak_slope_bound');
       expect(bound['status'], within ? 'PASS' : 'FAIL', reason: reason);
@@ -1452,7 +1458,7 @@ void main() {
       ) {
         final result = await runSpeechValidation(
           FakeSpeech(),
-          residentBytes: replay(mibs(shifted(leak, offset))),
+          footprintBytes: replay(mibs(shifted(leak, offset))),
           operatingSystem: 'linux',
           backend: 'cuda',
         );
@@ -1469,7 +1475,7 @@ void main() {
         final series = parseMib(text);
         final exempt = await runSpeechValidation(
           FakeSpeech(),
-          residentBytes: replay(mibs(series)),
+          footprintBytes: replay(mibs(series)),
           operatingSystem: 'linux',
           backend: 'cuda',
         );
@@ -1480,9 +1486,9 @@ void main() {
           ratio['skip_reason'],
           speechPeakRatioExemption(operatingSystem: 'linux', backend: 'cuda'),
         );
-        expect(ratio['peak_rss_growth'], isA<double>(), reason: run);
+        expect(ratio['peak_footprint_growth'], isA<double>(), reason: run);
         final reported =
-            (exempt['bounds'] as Map)['peak_resident_bytes'] as Map;
+            (exempt['bounds'] as Map)['peak_footprint_bytes'] as Map;
         expect(reported['measured'], true, reason: run);
         expect(reported['applies'], false, reason: run);
         expect(reported['within_budget'], isNull, reason: run);
@@ -1490,10 +1496,10 @@ void main() {
 
         final unknown = await runSpeechValidation(
           FakeSpeech(),
-          residentBytes: replay(mibs(series)),
+          footprintBytes: replay(mibs(series)),
         );
         final strict = checkRow(unknown, 'peak_memory_bound');
-        final over = (strict['peak_rss_growth']! as double) > 1.10;
+        final over = (strict['peak_footprint_growth']! as double) > 1.10;
         expect(strict['status'], over ? 'FAIL' : 'PASS', reason: run);
         expect(unknown['functional_pass'], !over, reason: run);
       }
@@ -1515,7 +1521,7 @@ void main() {
         final reason = '$run offset $offset';
         final result = await runSpeechValidation(
           FakeSpeech(),
-          residentBytes: replay(mibs(shifted(series, offset))),
+          footprintBytes: replay(mibs(shifted(series, offset))),
           operatingSystem: 'macos',
           backend: run.split('/').last,
         );
@@ -1558,7 +1564,7 @@ void main() {
       for (final (series, pass) in [(stepped, true), (steady, false)]) {
         final result = await runSpeechValidation(
           FakeSpeech(),
-          residentBytes: replay(mibs(series)),
+          footprintBytes: replay(mibs(series)),
           operatingSystem: 'linux',
           backend: 'cuda',
         );
@@ -1578,7 +1584,7 @@ void main() {
     ];
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: replay(mibs(series)),
+      footprintBytes: replay(mibs(series)),
     );
     final leak = checkRow(result, 'leak_slope_bound');
     expect(leak['status'], 'PASS');
@@ -1595,10 +1601,10 @@ void main() {
     }
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: replay(series),
+      footprintBytes: replay(series),
     );
     final leak = checkRow(result, 'leak_slope_bound');
-    expect(leak['window_rss_bytes'], series.sublist(8));
+    expect(leak['window_footprint_bytes'], series.sublist(8));
     expect(leak['status'], 'PASS');
     expect(result['functional_pass'], true);
   });
@@ -1611,7 +1617,7 @@ void main() {
     for (final (cycles, pass) in [(6, true), (7, false)]) {
       final result = await runSpeechValidation(
         FakeSpeech(),
-        residentBytes: replay(streak(cycles)),
+        footprintBytes: replay(streak(cycles)),
         operatingSystem: 'linux',
         backend: 'cuda',
       );
@@ -1648,7 +1654,7 @@ void main() {
     for (final MapEntry(key: run, value: text) in linuxX64CpuTtsMib.entries) {
       final result = await runSpeechValidation(
         FakeSpeech(),
-        residentBytes: replay(mibs(parseMib(text))),
+        footprintBytes: replay(mibs(parseMib(text))),
         operatingSystem: 'linux',
         backend: 'cpu',
       );
@@ -1667,20 +1673,20 @@ void main() {
       final series = mibs(parseMib(linuxLiteRtAsrMib));
       final cpu = await runSpeechValidation(
         FakeSpeech(),
-        residentBytes: replay(series),
+        footprintBytes: replay(series),
         operatingSystem: 'linux',
         backend: 'cpu',
       );
       expect(checkRow(cpu, 'leak_slope_bound')['status'], 'PASS');
       final ratio = checkRow(cpu, 'peak_memory_bound');
       expect(ratio['status'], 'FAIL');
-      expect(ratio['peak_rss_growth'], closeTo(582.1 / 485.2, 1e-3));
+      expect(ratio['peak_footprint_growth'], closeTo(582.1 / 485.2, 1e-3));
       expect(cpu['functional_pass'], false);
 
       // With the ratio exempt, nothing catches it.
       final cuda = await runSpeechValidation(
         FakeSpeech(),
-        residentBytes: replay(series),
+        footprintBytes: replay(series),
         operatingSystem: 'linux',
         backend: 'cuda',
       );
@@ -1725,14 +1731,14 @@ void main() {
     ]);
     final result = await runSpeechValidation(
       FakeSpeech(),
-      residentBytes: replay(series),
+      footprintBytes: replay(series),
       operatingSystem: 'macos',
       backend: 'cpu',
     );
     expect(checkRow(result, 'leak_slope_bound')['status'], 'PASS');
     final ratio = checkRow(result, 'peak_memory_bound');
     expect(ratio['status'], 'FAIL');
-    expect(ratio['peak_rss_growth'], closeTo(5.52 / 3.71, 1e-3));
+    expect(ratio['peak_footprint_growth'], closeTo(5.52 / 3.71, 1e-3));
     expect(result['functional_pass'], false);
   });
   test('an unmeasurable sample skips both memory bounds', () async {
@@ -1740,26 +1746,26 @@ void main() {
       final adapter = FakeSpeech();
       final result = await runSpeechValidation(
         adapter,
-        residentBytes: () => adapter.calls.last == 'invalid' ? null : 1000,
+        footprintBytes: () => adapter.calls.last == 'invalid' ? null : 1000,
         operatingSystem: os,
         backend: backend,
       );
       for (final id in ['peak_memory_bound', 'leak_slope_bound']) {
         final row = checkRow(result, id);
         expect(row['status'], 'SKIP', reason: '$id $os');
-        expect(row['skip_reason'], 'Resident set size was not measurable');
+        expect(row['skip_reason'], 'Memory footprint was not measurable');
       }
       final bounds = result['bounds'] as Map;
       expect(bounds['leak_slope']['measured'], false);
       expect(bounds['leak_slope']['within_budget'], isNull);
-      expect(bounds['peak_resident_bytes']['measured'], false);
+      expect(bounds['peak_footprint_bytes']['measured'], false);
       expect(result['functional_pass'], true);
     }
   });
   test('a skipped memory bound does not hide another failure', () async {
     final result = await runSpeechValidation(
       FakeSpeech()..cancelLatencyMs = speechCancelLatencyBudgetMs + 1,
-      residentBytes: () => null,
+      footprintBytes: () => null,
       operatingSystem: 'linux',
       backend: 'cuda',
     );
@@ -1921,7 +1927,7 @@ void main() {
     );
     final lifecycleOnly = await runSpeechValidation(
       FakeEdgeSpeech(),
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(lifecycleOnly['expected_checks'], speechLifecycleCheckCount);
     expect(lifecycleOnly['edge_fixture_ids'], isEmpty);
@@ -1931,7 +1937,7 @@ void main() {
       adapter,
       checkBytes: true,
       edgeFixtures: fixtures,
-      residentBytes: stableResidentBytes,
+      footprintBytes: stableFootprintBytes,
     );
     expect(
       withEdges['expected_checks'],
@@ -1980,7 +1986,7 @@ void main() {
           runSpeechValidation(
             FakeEdgeSpeech(failEdge: fixture.id),
             edgeFixtures: fixtures,
-            residentBytes: stableResidentBytes,
+            footprintBytes: stableFootprintBytes,
           ).then((result) {
             final checks = result['checks'] as List;
             return [
@@ -2355,7 +2361,7 @@ void main() {
       final interrupted = await runSpeechValidation(
         tts,
         checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(interrupted['expected_checks'], 25);
       expect(interrupted['checks'], hasLength(25));
@@ -2390,7 +2396,7 @@ void main() {
       final limited = await runSpeechValidation(
         stt,
         checkTranscriptLimits: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(limited['expected_checks'], 23);
       expect(limited['functional_pass'], true);
@@ -2407,7 +2413,7 @@ void main() {
 
       final lifecycleOnly = await runSpeechValidation(
         FakeInterruptSpeech(),
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(lifecycleOnly['expected_checks'], speechLifecycleCheckCount);
       expect(
@@ -2430,14 +2436,14 @@ void main() {
     return runSpeechValidation(
       adapter,
       checkSynthesisInterrupts: true,
-      residentBytes: () => sample(adapter),
+      footprintBytes: () => sample(adapter),
       operatingSystem: operatingSystem,
       backend: backend,
     );
   }
 
   test(
-    'resident growth in the interrupt checks fails only their bound',
+    'footprint growth in the interrupt checks fails only their bound',
     () async {
       for (final persists in [true, false]) {
         var jumped = false;
@@ -2451,8 +2457,8 @@ void main() {
         final bound = rowOf(result, 'interrupt_memory_bound');
         expect(bound['status'], 'FAIL', reason: '$persists');
         expect(bound['baseline_check'], 'leak_slope_bound');
-        expect(bound['baseline_rss_bytes'], 1000);
-        expect(bound['peak_rss_bytes'], 1151);
+        expect(bound['baseline_footprint_bytes'], 1000);
+        expect(bound['peak_footprint_bytes'], 1151);
         expect(bound['growth_budget'], 1.10);
         expect(result['functional_pass'], false, reason: '$persists');
       }
@@ -2469,8 +2475,8 @@ void main() {
       });
       expect(rowOf(result, 'peak_memory_bound')['status'], 'FAIL');
       final bound = rowOf(result, 'interrupt_memory_bound');
-      expect(bound['baseline_rss_bytes'], 1151);
-      expect(bound['peak_rss_growth'], 1.0);
+      expect(bound['baseline_footprint_bytes'], 1151);
+      expect(bound['peak_footprint_growth'], 1.0);
       expect(bound['status'], 'PASS');
     },
   );
@@ -2495,7 +2501,7 @@ void main() {
         final bound = rowOf(result, 'interrupt_memory_bound');
         expect(bound['status'], status, reason: lowAfter);
         expect(
-          bound['baseline_rss_bytes'],
+          bound['baseline_footprint_bytes'],
           lowAfter == 'leak_slope_bound' ? 900 : 1000,
           reason: lowAfter,
         );
@@ -2529,16 +2535,16 @@ void main() {
           reason: reason,
         );
         expect(bound['skip_reason'], exemption, reason: reason);
-        expect(bound['baseline_rss_bytes'], 1000, reason: reason);
-        expect(bound['peak_rss_bytes'], 1151, reason: reason);
-        expect(bound['peak_rss_growth'], 1.151, reason: reason);
+        expect(bound['baseline_footprint_bytes'], 1000, reason: reason);
+        expect(bound['peak_footprint_bytes'], 1151, reason: reason);
+        expect(bound['peak_footprint_growth'], 1.151, reason: reason);
         expect(result['functional_pass'], exemption != null, reason: reason);
       }
 
       final hidden = await runSpeechValidation(
         FakeInterruptSpeech()..decodeReport = {'uncapped_frames': 1},
         checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
         operatingSystem: 'linux',
         backend: 'cuda',
       );
@@ -2572,7 +2578,7 @@ void main() {
     expect(rowOf(result, 'peak_memory_bound')['status'], 'PASS');
     final bound = rowOf(result, 'interrupt_memory_bound');
     expect(bound['status'], 'SKIP');
-    expect(bound['skip_reason'], 'Resident set size was not measurable');
+    expect(bound['skip_reason'], 'Memory footprint was not measurable');
     expect(result['functional_pass'], true);
   });
 
@@ -2595,7 +2601,7 @@ void main() {
       final result = await runSpeechValidation(
         FakeInterruptSpeech()..teardownReport = report,
         checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       expect(result['functional_pass'], false, reason: '$report');
       for (final id in interruptIds.take(2)) {
@@ -2618,7 +2624,7 @@ void main() {
         FakeInterruptSpeech()
           ..teardownReport = {'teardown_latency_ms': latency},
         checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       for (final id in interruptIds.take(2)) {
         final row = rowOf(result, id);
@@ -2633,7 +2639,7 @@ void main() {
       runSpeechValidation(
         FakeInterruptSpeech()..decodeReport = report,
         checkSynthesisInterrupts: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
   List<Map<String, Object?>> probes(List<double> latencies) => [
     for (final latency in latencies)
@@ -2903,7 +2909,7 @@ void main() {
       final result = await runSpeechValidation(
         FakeLimitSpeech()..reports[limit] = report,
         checkTranscriptLimits: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       final row = rowOf(
         result,
@@ -3066,7 +3072,7 @@ void main() {
             ),
           ),
           checkSynthesisInterrupts: true,
-          residentBytes: stableResidentBytes,
+          footprintBytes: stableFootprintBytes,
         ),
       );
       final decode = rowOf(result, 'decode_cancel');
@@ -3167,7 +3173,7 @@ void main() {
           ),
         ),
         checkTranscriptLimits: true,
-        residentBytes: stableResidentBytes,
+        footprintBytes: stableFootprintBytes,
       );
       for (final id in limitIds) {
         expect(

@@ -247,6 +247,36 @@ class ToolCallParsingUtils {
     return coerceMap(jsonSlice.value);
   }
 
+  /// Finds where one of [openings] may start in [text].
+  ///
+  /// Returns the first index at or after [from] where an opening starts, or
+  /// where the rest of [text] is the start of one, and `text.length` when
+  /// there is none.
+  static int literalOpening(
+    String text,
+    List<String> openings, [
+    int from = 0,
+  ]) {
+    var first = text.length;
+    for (final opening in openings) {
+      final index = text.indexOf(opening, from);
+      if (index >= 0) {
+        if (index < first) {
+          first = index;
+        }
+        continue;
+      }
+      final partialFrom = text.length - opening.length + 1;
+      for (var i = partialFrom > from ? partialFrom : from; i < first; i++) {
+        if (opening.startsWith(text.substring(i))) {
+          first = i;
+          break;
+        }
+      }
+    }
+    return first;
+  }
+
   /// Extracts a single leading JSON value starting at [offset].
   static ParsedJsonValueSlice? extractLeadingJsonValue(
     String input,

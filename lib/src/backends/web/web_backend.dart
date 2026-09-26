@@ -27,6 +27,7 @@ class WebAutoBackend
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
+        BackendGenerationCapabilitiesSupport,
         BackendGenerationUsageReporting,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
@@ -269,6 +270,20 @@ class WebAutoBackend
     if (delegate is BackendTextToSpeech) {
       (delegate as BackendTextToSpeech).cancelTextToSpeech();
     }
+  }
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    final delegate = _delegate;
+    if (delegate is! BackendGenerationCapabilitiesSupport) {
+      return const BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+      );
+    }
+    return (delegate as BackendGenerationCapabilitiesSupport)
+        .generationCapabilities();
   }
 
   @override

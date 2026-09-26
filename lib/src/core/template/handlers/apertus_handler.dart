@@ -13,6 +13,16 @@ import '../tool_call_parsing_utils.dart';
 
 /// Handler for Apertus format.
 class ApertusHandler extends ChatTemplateHandler {
+  static const String _toolCallPrefix = '<|tools_prefix|>';
+
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where `<|tools_prefix|>`
+  /// starts, or where the rest of [text] is the start of it, and
+  /// `text.length` when there is none.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [_toolCallPrefix], from);
+
   @override
   ChatFormat get format => ChatFormat.apertus;
 
@@ -115,10 +125,9 @@ class ApertusHandler extends ChatTemplateHandler {
       );
     }
 
-    const prefix = '<|tools_prefix|>';
     const suffix = '<|tools_suffix|>';
 
-    final start = text.indexOf(prefix);
+    final start = text.indexOf(_toolCallPrefix);
     if (start == -1) {
       return ChatParseResult(
         content: text.trim(),
@@ -127,7 +136,7 @@ class ApertusHandler extends ChatTemplateHandler {
     }
 
     final prelude = text.substring(0, start);
-    final payload = text.substring(start + prefix.length);
+    final payload = text.substring(start + _toolCallPrefix.length);
     final jsonSlice = ToolCallParsingUtils.extractLeadingJsonValue(payload, 0);
     if (jsonSlice == null || jsonSlice.value is! List) {
       return ChatParseResult(

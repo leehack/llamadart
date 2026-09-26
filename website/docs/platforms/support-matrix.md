@@ -19,13 +19,13 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64 adds CUDA, HIP | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64 adds CUDA | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Experimental |
 
 Speech to text, text to speech and decision models are experimental. GGUF
-Qwen3-ASR accepts WAV, MP3 and FLAC natively, but real-model validation covers
-WAV only. LiteRT-LM ASR is CPU-only streaming recognition. Decision models run
-on llama.cpp and WebGPU only; on LiteRT-LM `DecisionEngine.load` throws
-`LlamaUnsupportedException`. See
+Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
+native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
+recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
+`DecisionEngine.load` throws `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
@@ -45,12 +45,12 @@ Android-only; web rejects it.
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
-| LoRA | `setLora` at runtime, stacked and scaled; aLoRA rejected | No | One default-scale text adapter through `ModelParams.loras` at load | No |
-| Thinking budget | Text-only generation, without speculative decoding | No | No | No |
+| LoRA | `setLora` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
+| Thinking budget | Text-only generation, without speculative decoding | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | No | No |
 | Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
-| Presence penalty | Yes | No: rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
-| Min-P | Yes | No: a non-zero value is ignored ([#661](https://github.com/leehack/llamadart/issues/661)) | No: rejects a non-zero value | No: rejects a non-zero value |
-| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | No | Runtime default or MTP | No |
+| Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
+| Min-P | Yes | With bridge assets whose `getCompletionCapabilities()` reports `minP` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
+| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, and MTP uses the model's own layers; otherwise rejected | Runtime default or MTP | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
@@ -63,7 +63,11 @@ Android-only; web rejects it.
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,
-export and import it in app code. Guides:
+export and import it in app code. The pinned bridge assets report none of the
+WebGPU LoRA, thinking-budget, presence-penalty, Min-P or speculative decoding
+capabilities; the bridge pull requests that add them are unreleased.
+`LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P,
+thinking-budget and speculative decoding rows for the loaded model. Guides:
 [LoRA adapters](../guides/lora-adapters),
 [Tool calling](../guides/tool-calling#tool-choice-semantics),
 [Performance tuning](../guides/performance-tuning),

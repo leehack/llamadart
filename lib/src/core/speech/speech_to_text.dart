@@ -877,8 +877,8 @@ class SpeechToTextEngine {
         if (speechToTextRequiresEncodedAudioFormat &&
             (encoding == null || encoding.isEmpty)) {
           throw LlamaAudioFormatException(
-            'Web encoded audio bytes require SpeechAudioFormat.encoding; '
-            'the validated format is WAV.',
+            'Web encoded audio bytes require SpeechAudioFormat.encoding: '
+            '${_encodedFormatList()}.',
           );
         }
         if (encoding != null &&

@@ -18,6 +18,27 @@ import '../tool_call_grammar_utils.dart';
 /// Similar to Hermes with `<tool_call>` tags but uses prefix-based thinking
 /// and `<|end_of_sentence|>` stop token.
 class DeepseekV3Handler extends ChatTemplateHandler {
+  static const List<String> _toolCallsOpenings = <String>[
+    '<｜tool▁calls▁begin｜>',
+    '<｜tool_calls_begin｜>',
+    '<｜tool calls begin｜>',
+    r'<｜tool\_calls\_begin｜>',
+    '<｜tool▁calls｜>',
+  ];
+  static final RegExp _toolsBlockRegex = RegExp(
+    '(${_toolCallsOpenings.map(RegExp.escape).join('|')})'
+    '([\\s\\S]*?)<｜tool▁calls▁end｜>',
+    dotAll: true,
+  );
+
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where a DeepSeek tool-call
+  /// opening starts, or where the rest of [text] is the start of one, and
+  /// `text.length` when there is none.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, _toolCallsOpenings, from);
+
   @override
   ChatFormat get format => ChatFormat.deepseekV3;
 
@@ -146,11 +167,7 @@ class DeepseekV3Handler extends ChatTemplateHandler {
 
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     var contentText = text;
-    final toolsBlockRegex = RegExp(
-      r'(<｜tool▁calls▁begin｜>|<｜tool_calls_begin｜>|<｜tool calls begin｜>|<｜tool\\_calls\\_begin｜>|<｜tool▁calls｜>)([\s\S]*?)<｜tool▁calls▁end｜>',
-      dotAll: true,
-    );
-    final blockMatch = toolsBlockRegex.firstMatch(text);
+    final blockMatch = _toolsBlockRegex.firstMatch(text);
     if (blockMatch != null) {
       final leading = text.substring(0, blockMatch.start).trim();
       final trailing = text.substring(blockMatch.end).trim();

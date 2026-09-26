@@ -8,6 +8,12 @@ import 'package:llamadart/src/core/template/handlers/mistral_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('MistralHandler.toolCallOpening finds a whole or partial opening', () {
+    expect(MistralHandler.toolCallOpening('Let me check. [TOOL_CALLS]...'), 14);
+    expect(MistralHandler.toolCallOpening('Let me check. [TOOL_'), 14);
+    expect(MistralHandler.toolCallOpening('Use [TOOLS] or [x].'), 19);
+  });
+
   test('MistralHandler parses strict [TOOL_CALLS] payload', () {
     final handler = MistralHandler();
     final tools = [

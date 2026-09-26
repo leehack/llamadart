@@ -15,6 +15,16 @@ import '../tool_call_grammar_utils.dart';
 /// A variant of Mistral Nemo that supports thinking/reasoning with
 /// `[THINK]`/`[/THINK]` tags, alongside `[TOOL_CALLS]` for function calling.
 class MagistralHandler extends ChatTemplateHandler {
+  static const String _toolCallsPrefix = '[TOOL_CALLS]';
+
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where `[TOOL_CALLS]`
+  /// starts, or where the rest of [text] is the start of it, and
+  /// `text.length` when there is none.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [_toolCallsPrefix], from);
+
   @override
   ChatFormat get format => ChatFormat.magistral;
 
@@ -110,8 +120,7 @@ class MagistralHandler extends ChatTemplateHandler {
       );
     }
 
-    const prefix = '[TOOL_CALLS]';
-    final markerIdx = text.indexOf(prefix);
+    final markerIdx = text.indexOf(_toolCallsPrefix);
     if (markerIdx == -1) {
       return ChatParseResult(
         content: trimmed,
@@ -120,7 +129,7 @@ class MagistralHandler extends ChatTemplateHandler {
     }
 
     final contentBefore = text.substring(0, markerIdx);
-    final payload = text.substring(markerIdx + prefix.length);
+    final payload = text.substring(markerIdx + _toolCallsPrefix.length);
     var cursor = 0;
     while (cursor < payload.length && payload.codeUnitAt(cursor) <= 0x20) {
       cursor++;

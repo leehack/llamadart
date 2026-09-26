@@ -14,6 +14,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
@@ -326,6 +327,43 @@ void main() {
     await backend.decisionHeadFree(1);
   });
 
+  test(
+    'WebAutoBackend reports generation capabilities of its delegate',
+    () async {
+      final backend = WebAutoBackend(
+        webGpuFactory: _GenerationCapabilitiesBackend.new,
+        liteRtLmFactory: () => _RecordingBackend('litert'),
+      );
+
+      final beforeLoad = await backend.generationCapabilities();
+      expect(beforeLoad.minP, isFalse);
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      final webGpu = await backend.generationCapabilities();
+      expect(webGpu.presencePenalty, isFalse);
+      expect(webGpu.minP, isTrue);
+      expect(webGpu.thinkingBudget, isTrue);
+      expect(
+        webGpu.speculativeDecodingStrategies,
+        <SpeculativeDecodingStrategy>{SpeculativeDecodingStrategy.ngramSimple},
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/gemma-4-E2B-it-web.litertlm',
+        const ModelParams(),
+      );
+      final liteRtLm = await backend.generationCapabilities();
+      expect(liteRtLm.presencePenalty, isFalse);
+      expect(liteRtLm.minP, isFalse);
+      expect(liteRtLm.thinkingBudget, isFalse);
+      expect(liteRtLm.speculativeDecodingStrategies, isEmpty);
+      await backend.dispose();
+    },
+  );
+
   test('WebAutoBackend rejects decision calls before a model load', () async {
     final backend = WebAutoBackend(webGpuFactory: _DecisionBackend.new);
 
@@ -593,6 +631,21 @@ class _ScoringBackend extends _NoStateBackend
       candidates: const <LlamaTokenLogprob>[],
       top: const <LlamaTokenLogprob>[],
       promptTokens: 5,
+    );
+  }
+}
+
+class _GenerationCapabilitiesBackend extends _NoStateBackend
+    implements BackendGenerationCapabilitiesSupport {
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    return const BackendGenerationCapabilities(
+      presencePenalty: false,
+      minP: true,
+      thinkingBudget: true,
+      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.ngramSimple,
+      },
     );
   }
 }

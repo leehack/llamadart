@@ -895,6 +895,36 @@ void main() {
       expect(failingProvider.error, isNotNull);
     });
 
+    test('sends Min-P only when the loaded runtime supports it', () async {
+      for (final supported in <bool>[false, true]) {
+        final engine = MockLlamaEngine()
+          ..generationCapabilities = BackendGenerationCapabilities(
+            presencePenalty: false,
+            minP: supported,
+            thinkingBudget: false,
+          );
+        final minPProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: MockSettingsService(),
+          initialSettings: const ChatSettings(
+            modelPath: 'test_model.gguf',
+            minP: 0.2,
+          ),
+        );
+        addTearDown(minPProvider.dispose);
+        expect(minPProvider.minPSupported, isFalse);
+
+        await minPProvider.loadModel();
+        await minPProvider.sendMessage('Hello');
+
+        expect(minPProvider.minPSupported, supported);
+        expect(engine.lastCreateParams?.minP, supported ? 0.2 : 0.0);
+
+        await minPProvider.unloadModel();
+        expect(minPProvider.minPSupported, isFalse);
+      }
+    });
+
     test('sendMessage updates token count', () async {
       await provider.loadModel();
       expect(provider.currentTokens, 0);

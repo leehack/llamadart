@@ -33,6 +33,19 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
     WebGpuCompletionOptions? options,
   ]);
 
+  /// Reports which optional completion options the loaded core applies.
+  external JSPromise<JSAny?>? getCompletionCapabilities();
+
+  /// Loads the draft GGUF at [url] for draft-model speculative decoding,
+  /// replacing any draft.
+  external JSPromise<JSAny?>? loadDraftModel(
+    String url, [
+    WebGpuDraftModelLoadOptions? options,
+  ]);
+
+  /// Frees the draft model.
+  external JSPromise<JSAny?>? unloadDraftModel();
+
   /// Loads multimodal projector from URL/path.
   external JSPromise<JSAny?>? loadMultimodalProjector(String url);
 
@@ -70,6 +83,24 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
 
   /// Frees the decision head [handle]; unknown handles are ignored.
   external JSPromise<JSAny?>? freeDecisionHead(int handle);
+
+  /// Reports whether the loaded core can load LoRA adapters.
+  external JSPromise<JSAny?>? getLoraAdapterCapabilities();
+
+  /// Loads the LoRA adapter at [source] without applying it.
+  external JSPromise<JSAny?>? loadLoraAdapter(
+    String source, [
+    WebGpuLoraAdapterLoadOptions? options,
+  ]);
+
+  /// Applies the LoRA adapter [handle] at [scale].
+  external JSPromise<JSAny?>? setLoraAdapter(int handle, double scale);
+
+  /// Stops applying the LoRA adapter [handle]; it stays loaded.
+  external JSPromise<JSAny?>? removeLoraAdapter(int handle);
+
+  /// Stops applying every LoRA adapter; they stay loaded.
+  external JSPromise<JSAny?>? clearLoraAdapters();
 
   /// Tokenizes text.
   external JSPromise<JSAny>? tokenize(String text, [bool? addSpecial]);
@@ -177,6 +208,8 @@ extension type WebGpuLoadModelOptions._(JSObject _) implements JSObject {
     @JS('remoteFetchThresholdBytes') int? remoteFetchThresholdBytes,
     @JS('remoteFetchChunkBytes') int? remoteFetchChunkBytes,
     @JS('modelBytesHint') int? modelBytesHint,
+    @JS('loadMtp') bool? loadMtp,
+    @JS('speculativeRollbackTokenMax') int? speculativeRollbackTokenMax,
     @JS('progressCallback') JSFunction? progressCallback,
   });
 }
@@ -205,9 +238,14 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     double? temp,
     @JS('topK') int? topK,
     @JS('topP') double? topP,
+    @JS('minP') double? minP,
     double? penalty,
+    @JS('presencePenalty') double? presencePenalty,
     int? seed,
     String? grammar,
+    @JS('thinkingBudget') WebGpuThinkingBudgetOptions? thinkingBudget,
+    @JS('speculativeDecoding')
+    WebGpuSpeculativeDecodingOptions? speculativeDecoding,
     @JS('mediaMaxImagePixels') int? mediaMaxImagePixels,
     @JS('mediaMaxImageEdge') int? mediaMaxImageEdge,
     @JS('onToken') JSFunction? onToken,
@@ -220,6 +258,84 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     JSArray? parts,
     JSAny? signal,
   });
+}
+
+/// Reasoning-block budget in [WebGpuCompletionOptions].
+@JS()
+@anonymous
+extension type WebGpuThinkingBudgetOptions._(JSObject _) implements JSObject {
+  /// Creates a thinking budget.
+  external factory WebGpuThinkingBudgetOptions({
+    @JS('maxTokens') required int maxTokens,
+    @JS('startTag') required String startTag,
+    @JS('endTag') required String endTag,
+    @JS('forcedMessage') required String forcedMessage,
+  });
+}
+
+/// Completion options reported by `getCompletionCapabilities`.
+@JS()
+@anonymous
+extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
+  /// Whether the loaded core applies `presencePenalty`.
+  @JS('presencePenalty')
+  external JSAny? get presencePenalty;
+
+  /// Whether the loaded core applies `minP`.
+  @JS('minP')
+  external JSAny? get minP;
+
+  /// Whether the loaded core applies `thinkingBudget`.
+  @JS('thinkingBudget')
+  external JSAny? get thinkingBudget;
+
+  /// Whether the loaded models can run each speculative strategy, by its
+  /// llama.cpp name.
+  @JS('speculativeDecoding')
+  external JSAny? get speculativeDecoding;
+}
+
+/// Speculative decoding in [WebGpuCompletionOptions]; a null field keeps the
+/// llama.cpp default.
+@JS()
+@anonymous
+extension type WebGpuSpeculativeDecodingOptions._(JSObject _)
+    implements JSObject {
+  /// Creates speculative decoding options.
+  external factory WebGpuSpeculativeDecodingOptions({
+    required JSArray<JSString> strategies,
+    @JS('draftTokenMax') int? draftTokenMax,
+    @JS('draftTokenMin') int? draftTokenMin,
+    @JS('minProbability') double? minProbability,
+    @JS('draftSplitProbability') double? draftSplitProbability,
+    @JS('ngramSizeN') int? ngramSizeN,
+    @JS('ngramSizeM') int? ngramSizeM,
+    @JS('ngramMinHits') int? ngramMinHits,
+    @JS('ngramMatch') int? ngramMatch,
+    @JS('ngramTokenMin') int? ngramTokenMin,
+    @JS('ngramTokenMax') int? ngramTokenMax,
+    @JS('ngramCacheStatic') String? ngramCacheStatic,
+    @JS('ngramCacheDynamic') String? ngramCacheDynamic,
+  });
+}
+
+/// Draft model load options.
+@JS()
+@anonymous
+extension type WebGpuDraftModelLoadOptions._(JSObject _) implements JSObject {
+  /// Creates draft model load options.
+  external factory WebGpuDraftModelLoadOptions({
+    @JS('useCache') bool? useCache,
+    JSAny? signal,
+  });
+}
+
+/// A draft model loaded by `loadDraftModel`.
+@JS()
+@anonymous
+extension type WebGpuDraftModelInfo._(JSObject _) implements JSObject {
+  /// The draft GGUF's `general.architecture`.
+  external JSAny? get architecture;
 }
 
 /// Embedding options.
@@ -344,4 +460,36 @@ extension type WebGpuDecisionOutput._(JSObject _) implements JSObject {
 
   /// Action-head logits.
   external JSAny? get actLogits;
+}
+
+/// LoRA support reported by `getLoraAdapterCapabilities`.
+@JS()
+@anonymous
+extension type WebGpuLoraAdapterCapabilities._(JSObject _) implements JSObject {
+  /// LoRA API version of the bridge.
+  external JSAny? get apiVersion;
+
+  /// Whether the loaded core can load LoRA adapters.
+  external JSAny? get supported;
+
+  /// Why the loaded core cannot load LoRA adapters.
+  external JSAny? get reason;
+}
+
+/// LoRA adapter load options.
+@JS()
+@anonymous
+extension type WebGpuLoraAdapterLoadOptions._(JSObject _) implements JSObject {
+  /// Creates adapter load options.
+  external factory WebGpuLoraAdapterLoadOptions({
+    @JS('useCache') bool? useCache,
+  });
+}
+
+/// A LoRA adapter loaded by `loadLoraAdapter`.
+@JS()
+@anonymous
+extension type WebGpuLoraAdapterInfo._(JSObject _) implements JSObject {
+  /// Bridge handle of the adapter.
+  external JSAny? get handle;
 }

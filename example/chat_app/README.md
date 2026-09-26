@@ -126,17 +126,18 @@ flutter test --run-skipped -t local-only \
      behind a custom `ModelDownloadManager`.
 4. Once downloaded, tap **Select** to load the model.
    - The Qwen3-ASR preset exposes **Attach Audio** and **Transcribe Audio** on
-     native and Web builds. Native selected-file transcription accepts WAV,
-     MP3, or FLAC; Web accepts WAV bytes with bridge assets `v0.1.30+`. On
-     Android, iOS, macOS, Windows, and supported secure browser origins it also
-     shows a microphone button. The microphone records a temporary mono WAV
+     native and Web builds. Selected-file transcription accepts WAV, MP3, or
+     FLAC; Web needs bridge assets `v0.1.30+`. On Android, iOS, macOS,
+     Windows, and supported secure browser origins it also shows a microphone
+     button. The microphone records a temporary mono WAV
      for up to 30 seconds; **Stop & transcribe** finalizes it, runs whole-file
      STT, and deletes the native file or revokes the browser blob.
      Capture is foreground-only and cancelling discards the temporary
      recording. The recorder requests 16 kHz mono WAV, but the hardware or
      browser may pick another valid rate; the decoder reads the WAV metadata.
      Browser startup checks microphone permission and WAV encoder support
-     before recording. Real-model checks cover only WAV input of at most 33 seconds.
+     before recording. Real-model checks cover WAV input of at most 33 seconds
+     and 11-second MP3 and FLAC files.
      On native, a selected file long enough to fill the preset's 4,096-token
      context fails with an error instead of returning a truncated transcript
      ([#636](https://github.com/leehack/llamadart/issues/636)).

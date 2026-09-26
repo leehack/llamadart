@@ -2345,7 +2345,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                       max: 1,
                       divisions: 100,
                       value: provider.minP,
-                      onChanged: provider.updateMinP,
+                      onChanged: provider.minPSupported
+                          ? provider.updateMinP
+                          : null,
+                      note: provider.minPSupported
+                          ? null
+                          : provider.isLoaded
+                          ? 'The loaded runtime does not apply Min-P to chat, so chat uses 0.'
+                          : 'Load a model to set Min-P.',
                     ),
                     const SizedBox(height: 10),
                     _LabeledSlider(
@@ -3328,6 +3335,7 @@ class _LabeledSlider extends StatelessWidget {
   final int? divisions;
   final double value;
   final ValueChanged<double>? onChanged;
+  final String? note;
 
   const _LabeledSlider({
     required this.label,
@@ -3337,6 +3345,7 @@ class _LabeledSlider extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.divisions,
+    this.note,
   });
 
   @override
@@ -3369,6 +3378,13 @@ class _LabeledSlider extends StatelessWidget {
           value: value.clamp(min, max),
           onChanged: onChanged,
         ),
+        if (note case final note?)
+          Text(
+            note,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
       ],
     );
   }

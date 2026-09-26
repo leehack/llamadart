@@ -14,6 +14,7 @@ import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
+import '../../../support/fake_webgpu_feature_bridge.dart';
 
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
@@ -3853,6 +3854,205 @@ void main() {
       );
     });
 
+    group('a rejected model load', () {
+      void loadModelsWith(JSAny? Function(String url) load) {
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject options) => load(url)).toJS,
+        );
+      }
+
+      Matcher modelException(Matcher details) => isA<LlamaModelException>()
+          .having(
+            (error) => error.message,
+            'message',
+            'The Web runtime could not load the model.',
+          )
+          .having((error) => '${error.details}', 'details', details);
+
+      Matcher withoutSecrets(List<String> secrets) => allOf(<Matcher>[
+        for (final secret in secrets) isNot(contains(secret)),
+      ]);
+
+      test('keeps credentials of a real Chrome fetch error out', () async {
+        final errors = captureConsole('error');
+        loadModelsWith((url) => window.fetch(url.toJS));
+        for (final (url, redacted, secrets) in const [
+          (
+            'https://u:SEKRIT@example.com/m.gguf?token=Q1secret',
+            'credentials: https://example.com/m.gguf',
+            <String>['SEKRIT', 'Q1secret', 'u:'],
+          ),
+          (
+            '//u:S13@example.com/m.gguf?t=Q1',
+            'credentials: //example.com/m.gguf',
+            <String>['S13', 't=Q1', 'u:'],
+          ),
+        ]) {
+          errors.clear();
+          await backend.setLogLevel(LlamaLogLevel.error);
+          await expectLater(
+            backend.modelLoadFromUrl(url, const ModelParams()),
+            throwsA(
+              modelException(
+                allOf(contains(redacted), withoutSecrets(secrets)),
+              ),
+            ),
+            reason: url,
+          );
+          expect(errors, isNotEmpty, reason: url);
+          expect(errors.join('\n'), withoutSecrets(secrets), reason: url);
+
+          final engine = LlamaEngine(backend);
+          await expectLater(
+            engine.loadModelFromUrl(url),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => '$error',
+                'error',
+                withoutSecrets(secrets),
+              ),
+            ),
+            reason: url,
+          );
+        }
+      });
+
+      test('redacts a signed URL in a bridge load error', () async {
+        loadModelsWith(
+          (url) => _rejectPromise(
+            _jsError(
+              'Failed to fetch model $url '
+              '(403 Forbidden: signature SIGsecret123 expired)',
+            ),
+          ),
+        );
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://bucket.example.com/m.gguf'
+            '?X-Amz-Credential=AKIASECRET&X-Amz-Signature=SIGsecret123',
+            const ModelParams(),
+          ),
+          throwsA(
+            modelException(
+              equals(
+                'Failed to fetch model https://bucket.example.com/m.gguf '
+                '(403 Forbidden: signature  expired)',
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('keeps the host of a credential-free URL', () async {
+        loadModelsWith(
+          (url) => _rejectPromise(
+            _jsError('Failed to fetch model $url (404 Not Found)'),
+          ),
+        );
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://huggingface.co/leehack/m/resolve/main/m.gguf',
+            const ModelParams(),
+          ),
+          throwsA(
+            modelException(
+              equals(
+                'Failed to fetch model '
+                'https://huggingface.co/leehack/m/resolve/main/m.gguf '
+                '(404 Not Found)',
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
+    group('an unmapped bridge error', () {
+      const signedPath = 'https://example.com/s.bin?sig=SIGsecret123';
+      final rejection = _jsError(
+        'Bridge failed for $signedPath (signature SIGsecret123 expired)',
+      );
+      const redacted =
+          'Bridge failed for https://example.com/s.bin '
+          '(signature SIGsecret123 expired)';
+
+      setUp(() async {
+        for (final method in const [
+          'embed',
+          'embedBatch',
+          'scoreNextToken',
+          'stateSaveFile',
+          'stateLoadFile',
+        ]) {
+          bridge.setProperty(
+            method.toJS,
+            ((JSAny? _, JSAny? _) => _rejectPromise(rejection)).toJS,
+          );
+        }
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+      });
+
+      Matcher throwsTyped<T extends LlamaException>(
+        String message,
+        String details,
+      ) => throwsA(
+        isA<T>()
+            .having((error) => error.message, 'message', message)
+            .having((error) => error.details, 'details', details),
+      );
+
+      test('fails embeddings with LlamaInferenceException', () async {
+        final throwsEmbeddingError = throwsTyped<LlamaInferenceException>(
+          'The Web runtime could not compute embeddings.',
+          redacted,
+        );
+        await expectLater(backend.embed(1, 'a'), throwsEmbeddingError);
+        await expectLater(
+          backend.embedBatch(1, const ['a', 'b']),
+          throwsEmbeddingError,
+        );
+      });
+
+      test('fails next-token scoring with LlamaInferenceException', () async {
+        await expectLater(
+          backend.scoreNextToken(
+            1,
+            'hi',
+            candidates: const <int>[1],
+            topK: 0,
+            reusePromptPrefix: false,
+          ),
+          throwsTyped<LlamaInferenceException>(
+            'The Web runtime could not score the next token.',
+            redacted,
+          ),
+        );
+      });
+
+      test('fails state persistence with the path secrets redacted', () async {
+        const pathRedacted =
+            'Bridge failed for https://example.com/s.bin (signature  expired)';
+        await expectLater(
+          backend.stateSaveFile(1, signedPath, const <int>[1]),
+          throwsTyped<LlamaStateException>(
+            'The Web runtime could not save the state.',
+            pathRedacted,
+          ),
+        );
+        await expectLater(
+          backend.stateLoadFile(1, signedPath, 128),
+          throwsTyped<LlamaStateException>(
+            'The Web runtime could not load the state.',
+            pathRedacted,
+          ),
+        );
+      });
+    });
+
     group('a rejected projector load', () {
       setUp(() {
         bridge.setProperty(
@@ -4679,6 +4879,1171 @@ void main() {
         bridges.single.calls.where((call) => call.startsWith('free')),
         isEmpty,
       );
+    });
+  });
+
+  group('WebGpuLlamaBackend optional generation features', () {
+    late List<FakeFeatureBridge> bridges;
+    late FakeFeatureBridge Function() newBridge;
+    late WebGpuLlamaBackend backend;
+
+    FakeFeatureBridge fake() => bridges.last;
+
+    setUp(() {
+      bridges = <FakeFeatureBridge>[];
+      newBridge = FakeFeatureBridge.new;
+      backend = WebGpuLlamaBackend(
+        bridgeFactory: ([config]) {
+          final created = newBridge();
+          bridges.add(created);
+          return created.bridge;
+        },
+      );
+    });
+
+    tearDown(() => backend.dispose());
+
+    Future<void> loadModel() =>
+        backend.modelLoadFromUrl('model.gguf', const ModelParams());
+
+    Future<String> generate(GenerationParams params) async {
+      final chunks = await backend.generate(1, 'Hello', params).toList();
+      return utf8.decode(chunks.expand((chunk) => chunk).toList());
+    }
+
+    const thinkingBudget = ThinkingBudget(
+      maxTokens: 8,
+      startTag: '<think>',
+      endTag: '</think>',
+    );
+
+    final rejectsPresencePenalty = throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(contains('presence penalty'), contains('presencePenalty')),
+      ),
+    );
+    final rejectsMinP = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(contains('Min-P'), contains('GenerationParams.minP')),
+      ),
+    );
+    final rejectsThinkingBudget = throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(contains('thinking-budget control'), contains('thinkingBudget')),
+      ),
+    );
+
+    void expectEachOptionRejected() {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(presencePenalty: 1.5),
+        ),
+        rejectsPresencePenalty,
+      );
+      expect(
+        () => backend.generate(1, 'Hello', const GenerationParams(minP: 0.05)),
+        rejectsMinP,
+      );
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(thinkingBudget: thinkingBudget),
+        ),
+        rejectsThinkingBudget,
+      );
+    }
+
+    group('completion options', () {
+      test('forwards the options the loaded assets report', () async {
+        await loadModel();
+        await generate(
+          const GenerationParams(
+            minP: 0.05,
+            presencePenalty: 1.5,
+            thinkingBudget: ThinkingBudget(
+              maxTokens: 8,
+              startTag: '<think>',
+              endTag: '</think>',
+              forcedMessage: 'Done.',
+            ),
+          ),
+        );
+
+        expect(fake().calls, <String>['load', 'probe']);
+        expect(fake().completionOption('minP'), 0.05);
+        expect(fake().completionOption('presencePenalty'), 1.5);
+        expect(fake().completionOption('thinkingBudget'), <String, Object?>{
+          'maxTokens': 8,
+          'startTag': '<think>',
+          'endTag': '</think>',
+          'forcedMessage': 'Done.',
+        });
+
+        await generate(const GenerationParams(thinkingBudget: thinkingBudget));
+        expect(
+          fake().completionOption('thinkingBudget'),
+          containsPair('forcedMessage', ''),
+        );
+      });
+
+      test('sends default options as before', () async {
+        for (final withProbe in <bool>[true, false]) {
+          newBridge = () => FakeFeatureBridge(withCompletionProbe: withProbe);
+          await loadModel();
+          expect(await generate(const GenerationParams()), 'Hello');
+          for (final name in <String>[
+            'minP',
+            'presencePenalty',
+            'thinkingBudget',
+          ]) {
+            expect(
+              fake().completionOption(name),
+              isNull,
+              reason: '$name, probe: $withProbe',
+            );
+          }
+          await backend.modelFree(1);
+        }
+      });
+
+      test('rejects every option on assets without the probe', () async {
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        await loadModel();
+
+        expectEachOptionRejected();
+        expect(fake().completionCalls, 0);
+      });
+
+      test('rejects each option the probe does not report', () async {
+        newBridge = () => FakeFeatureBridge()
+          ..completionCapabilities = <String, bool>{
+            'presencePenalty': false,
+            'minP': true,
+            'thinkingBudget': false,
+          };
+        await loadModel();
+
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(presencePenalty: 1.5),
+          ),
+          rejectsPresencePenalty,
+        );
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(thinkingBudget: thinkingBudget),
+          ),
+          rejectsThinkingBudget,
+        );
+        expect(fake().completionCalls, 0);
+
+        await generate(const GenerationParams(minP: 0.05));
+        expect(fake().completionOption('minP'), 0.05);
+      });
+
+      test('rejects every option after a failed or malformed probe', () async {
+        final probes = <void Function(FakeFeatureBridge)>[
+          (bridge) => bridge.completionProbeError = 'Bridge has been disposed.',
+          (bridge) => bridge.completionCapabilitiesResult = 'all'.toJS,
+          (bridge) => bridge.completionCapabilitiesResult = JSObject()
+            ..setProperty('minP'.toJS, 'true'.toJS)
+            ..setProperty('presencePenalty'.toJS, 1.toJS),
+        ];
+        for (final breakProbe in probes) {
+          newBridge = () {
+            final created = FakeFeatureBridge();
+            breakProbe(created);
+            return created;
+          };
+          await loadModel();
+          expect(backend.isReady, isTrue);
+          expectEachOptionRejected();
+          expect(fake().completionCalls, 0);
+          await backend.modelFree(1);
+        }
+      });
+
+      test('rejects every option before a model load', () {
+        expectEachOptionRejected();
+        expect(bridges, isEmpty);
+      });
+
+      test('probes again on each load and forgets on free', () async {
+        await loadModel();
+        await generate(const GenerationParams(minP: 0.05));
+
+        fake().completionCapabilities = <String, bool>{};
+        await loadModel();
+        expectEachOptionRejected();
+
+        fake().completionCapabilities = <String, bool>{'minP': true};
+        await loadModel();
+        await generate(const GenerationParams(minP: 0.05));
+
+        await backend.modelFree(1);
+        expect(
+          () =>
+              backend.generate(1, 'Hello', const GenerationParams(minP: 0.05)),
+          rejectsMinP,
+        );
+      });
+
+      test('reports the options the probe reports as capabilities', () async {
+        Future<List<bool>> reported() async {
+          final capabilities = await backend.generationCapabilities();
+          return <bool>[
+            capabilities.presencePenalty,
+            capabilities.minP,
+            capabilities.thinkingBudget,
+          ];
+        }
+
+        expect(await reported(), <bool>[false, false, false]);
+
+        await loadModel();
+        expect(await reported(), <bool>[true, true, true]);
+
+        fake().completionCapabilities = <String, bool>{'minP': true};
+        await loadModel();
+        expect(await reported(), <bool>[false, true, false]);
+
+        await backend.modelFree(1);
+        expect(await reported(), <bool>[false, false, false]);
+
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        await loadModel();
+        expect(await reported(), <bool>[false, false, false]);
+      });
+
+      test('validates a thinking budget as native generation does', () async {
+        await loadModel();
+
+        for (final budget in const <ThinkingBudget>[
+          ThinkingBudget(maxTokens: 8),
+          ThinkingBudget(maxTokens: 8, startTag: '<think>', endTag: ' '),
+        ]) {
+          expect(
+            () => backend.generate(
+              1,
+              'Hello',
+              GenerationParams(thinkingBudget: budget),
+            ),
+            throwsA(
+              isA<ArgumentError>().having(
+                (error) => '${error.message}',
+                'message',
+                contains('non-empty startTag and endTag'),
+              ),
+            ),
+          );
+        }
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(
+              thinkingBudget: ThinkingBudget(
+                maxTokens: 0x80000000,
+                startTag: '<think>',
+                endTag: '</think>',
+              ),
+            ),
+          ),
+          throwsA(isA<RangeError>()),
+        );
+
+        await backend.multimodalContextCreate(1, 'mmproj.gguf');
+        expect(
+          () => backend.generate(
+            1,
+            'Describe',
+            const GenerationParams(thinkingBudget: thinkingBudget),
+            parts: <LlamaContentPart>[
+              LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+            ],
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('text-only'),
+            ),
+          ),
+        );
+        expect(fake().completionCalls, 0);
+      });
+
+      test('LlamaEngine reports rejections as unsupported', () async {
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+
+        for (final params in const <GenerationParams>[
+          GenerationParams(presencePenalty: 1.5),
+          GenerationParams(minP: 0.05),
+          GenerationParams(thinkingBudget: thinkingBudget),
+        ]) {
+          await expectLater(
+            engine.generate('Hello', params: params).toList(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        }
+        expect(fake().completionCalls, 0);
+      });
+    });
+
+    group('preserved tokens', () {
+      setUp(() async {
+        await loadModel();
+        fake().completionPieces = <String>['a', '<tool_call>', 'b'];
+      });
+
+      test('keep a stop sequence equal to one from ending output', () async {
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>'],
+              preservedTokens: <String>['<tool_call>'],
+            ),
+          ),
+          'a<tool_call>b',
+        );
+      });
+
+      test('leave other stop sequences in effect', () async {
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>', 'b'],
+              preservedTokens: <String>['<tool_call>'],
+            ),
+          ),
+          'a<tool_call>',
+        );
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>'],
+              preservedTokens: <String>['<tool'],
+            ),
+          ),
+          'a',
+        );
+      });
+    });
+
+    group('LoRA adapters', () {
+      test('applies adapters through the active bridge', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await backend.setLoraAdapter(1, 'other.gguf', 0.25);
+        await backend.removeLoraAdapter(1, 'adapter.gguf');
+        expect(fake().appliedAdapters, <int, double>{8: 0.25});
+
+        await backend.clearLoraAdapters(1);
+        expect(fake().appliedAdapters, isEmpty);
+        expect(fake().loraLoads, hasLength(2));
+      });
+
+      test('loads adapters again after a model load', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+
+        expect(fake().loraLoads, hasLength(2));
+        expect(fake().appliedAdapters, <int, double>{8: 0.5});
+      });
+
+      test('rejects every call without a model', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await backend.modelFree(1);
+
+        for (final call in <Future<void> Function()>[
+          () => backend.setLoraAdapter(1, 'adapter.gguf', 0.5),
+          () => backend.removeLoraAdapter(1, 'adapter.gguf'),
+          () => backend.clearLoraAdapters(1),
+        ]) {
+          await expectLater(
+            call(),
+            throwsA(
+              isA<UnsupportedError>().having(
+                (error) => '${error.message}',
+                'message',
+                contains('no model is loaded'),
+              ),
+            ),
+          );
+        }
+      });
+
+      test('LlamaEngine maps the bridge errors', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+        fake().loraLoadError =
+            'Failed to load LoRA adapter: the adapter is an aLoRA adapter (3 '
+            'invocation token(s)).';
+        await expectLater(
+          engine.setLora('alora.gguf'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        fake().loraLoadError =
+            "Failed to load LoRA adapter: tensor 'blk.0.attn_k.weight' has "
+            'incorrect shape (hint: maybe wrong base model?)';
+        await expectLater(
+          engine.setLora('adapter.gguf'),
+          throwsA(isA<LlamaModelException>()),
+        );
+        fake().loraLoadError = null;
+        await engine.setLora('adapter.gguf', scale: 0.5);
+        expect(fake().appliedAdapters.values, <double>[0.5]);
+
+        newBridge = () => FakeFeatureBridge(withLoraApi: false);
+        await engine.unloadModel();
+        await engine.loadModelFromUrl('model.gguf');
+        for (final call in <Future<void> Function()>[
+          () => engine.setLora('adapter.gguf'),
+          () => engine.removeLora('adapter.gguf'),
+          engine.clearLoras,
+        ]) {
+          await expectLater(
+            call(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('lack the LoRA methods'),
+              ),
+            ),
+          );
+        }
+      });
+    });
+
+    group('speculative decoding', () {
+      const ngram = SpeculativeDecodingConfig.ngramSimple(ngramSizeN: 3);
+      const draft = SpeculativeDecodingConfig.draftSimple(
+        draftModelPath: 'draft.gguf',
+      );
+
+      GenerationParams speculative(SpeculativeDecodingConfig config) =>
+          GenerationParams(temp: 0, speculativeDecodingConfig: config);
+
+      Map<String, Object?>? sentSpeculative() =>
+          (fake().completionOption('speculativeDecoding') as Map?)
+              ?.cast<String, Object?>();
+
+      Future<Object?> generationError(GenerationParams params) => generate(
+        params,
+      ).then<Object?>((_) => null, onError: (Object error) => error);
+
+      Matcher unsupported(Object message) => throwsA(
+        isA<UnsupportedError>().having(
+          (error) => '${error.message}',
+          'message',
+          message,
+        ),
+      );
+
+      Matcher llamaUnsupported(Object message) => throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          message,
+        ),
+      );
+
+      Future<Set<SpeculativeDecodingStrategy>> reported() async =>
+          (await backend.generationCapabilities())
+              .speculativeDecodingStrategies;
+
+      const ngramStrategies = <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.ngramSimple,
+        SpeculativeDecodingStrategy.ngramMapK,
+        SpeculativeDecodingStrategy.ngramMapK4v,
+        SpeculativeDecodingStrategy.ngramMod,
+        SpeculativeDecodingStrategy.ngramCache,
+      };
+      const draftStrategies = <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.draftSimple,
+        SpeculativeDecodingStrategy.draftEagle3,
+        SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.draftDspark,
+      };
+
+      test('reports the strategies the probe reports', () async {
+        expect(await reported(), isEmpty);
+
+        await loadModel();
+        expect(await reported(), <SpeculativeDecodingStrategy>{
+          SpeculativeDecodingStrategy.backendDefault,
+          ...ngramStrategies,
+          ...draftStrategies,
+        });
+
+        fake().speculativeCapabilities = <String, bool>{
+          'ngram-simple': true,
+          'draft-mtp': true,
+        };
+        await loadModel();
+        expect(await reported(), <SpeculativeDecodingStrategy>{
+          SpeculativeDecodingStrategy.ngramSimple,
+          SpeculativeDecodingStrategy.mtp,
+          ...draftStrategies,
+        });
+
+        fake().speculativeCapabilities = <String, bool>{'draft-mtp': true};
+        await loadModel();
+        expect(await reported(), isEmpty);
+
+        await backend.modelFree(1);
+        expect(await reported(), isEmpty);
+
+        newBridge = () => FakeFeatureBridge(withDraftModelApi: false);
+        await loadModel();
+        expect(await reported(), <SpeculativeDecodingStrategy>{
+          SpeculativeDecodingStrategy.backendDefault,
+          ...ngramStrategies,
+        });
+
+        for (final older in <FakeFeatureBridge Function()>[
+          () => FakeFeatureBridge(withCompletionProbe: false),
+          () => FakeFeatureBridge()..speculativeCapabilities = null,
+          () => FakeFeatureBridge()..completionProbeError = 'failed',
+        ]) {
+          await backend.modelFree(1);
+          newBridge = older;
+          await loadModel();
+          expect(await reported(), isEmpty);
+        }
+      });
+
+      test('rejects every strategy on assets without the probe', () async {
+        for (final older in <FakeFeatureBridge Function()>[
+          () => FakeFeatureBridge(withCompletionProbe: false),
+          () => FakeFeatureBridge()..speculativeCapabilities = null,
+          () =>
+              FakeFeatureBridge()
+                ..completionCapabilitiesResult = (JSObject()
+                  ..setProperty('speculativeDecoding'.toJS, true.toJS)),
+          () => FakeFeatureBridge()..completionProbeError = 'failed',
+        ]) {
+          await backend.modelFree(1);
+          newBridge = older;
+          await loadModel();
+          for (final strategy in SpeculativeDecodingStrategy.values) {
+            expect(
+              () => backend.generate(
+                1,
+                'Hello',
+                speculative(
+                  SpeculativeDecodingConfig.mixed(
+                    strategies: <SpeculativeDecodingStrategy>[strategy],
+                    draftModelPath: 'draft.gguf',
+                  ),
+                ),
+              ),
+              unsupported(contains('the loaded assets report none')),
+              reason: '$strategy',
+            );
+          }
+          expect(
+            () => backend.generate(
+              1,
+              'Hello',
+              const GenerationParams(speculativeDecoding: true),
+            ),
+            unsupported(contains('getCompletionCapabilities()')),
+          );
+          expect(fake().completionCalls, 0);
+          expect(fake().draftLoads, isEmpty);
+        }
+      });
+
+      test('rejects each strategy the probe does not report', () async {
+        newBridge = () =>
+            FakeFeatureBridge(withDraftModelApi: false)
+              ..speculativeCapabilities = <String, bool>{'ngram-simple': true};
+        await loadModel();
+
+        final messages = <SpeculativeDecodingStrategy, String>{
+          SpeculativeDecodingStrategy.backendDefault: 'runs ngram-mod',
+          SpeculativeDecodingStrategy.mtp: 'ModelParams(loadMtp: true)',
+          SpeculativeDecodingStrategy.ngramMapK: 'ngram-map-k',
+          SpeculativeDecodingStrategy.ngramMapK4v: 'ngram-map-k4v',
+          SpeculativeDecodingStrategy.ngramMod: 'ngram-mod',
+          SpeculativeDecodingStrategy.ngramCache: 'ngram-cache',
+          SpeculativeDecodingStrategy.draftSimple: 'draft-simple',
+          SpeculativeDecodingStrategy.draftEagle3: 'draft-eagle3',
+          SpeculativeDecodingStrategy.draftDflash: 'draft-dflash',
+          SpeculativeDecodingStrategy.draftDspark: 'draft-dspark',
+        };
+        for (final MapEntry(key: strategy, value: message)
+            in messages.entries) {
+          expect(
+            () => backend.generate(
+              1,
+              'Hello',
+              speculative(
+                SpeculativeDecodingConfig.mixed(
+                  strategies: <SpeculativeDecodingStrategy>[
+                    SpeculativeDecodingStrategy.ngramSimple,
+                    strategy,
+                  ],
+                ),
+              ),
+            ),
+            unsupported(
+              allOf(
+                contains('WebGPU'),
+                contains(message),
+                contains('the loaded assets do not'),
+              ),
+            ),
+            reason: '$strategy',
+          );
+        }
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(speculativeDecoding: true),
+          ),
+          unsupported(contains('runs ngram-mod')),
+        );
+        expect(fake().completionCalls, 0);
+
+        await generate(speculative(ngram));
+        expect(
+          sentSpeculative(),
+          containsPair('strategies', <String>['ngram-simple']),
+        );
+      });
+
+      test('sends each n-gram strategy with native options', () async {
+        await loadModel();
+
+        final cases = <SpeculativeDecodingConfig, Map<String, Object?>>{
+          const SpeculativeDecodingConfig.ngramSimple(
+            ngramSize: 3,
+            ngramSizeM: 8,
+            ngramMinHits: 2,
+          ): <String, Object?>{
+            'strategies': <String>['ngram-simple'],
+            'ngramSizeN': 3,
+            'ngramSizeM': 8,
+            'ngramMinHits': 2,
+          },
+          const SpeculativeDecodingConfig.ngramMapK(
+            draftTokenMax: 6,
+            ngramSizeN: 4,
+          ): <String, Object?>{
+            'strategies': <String>['ngram-map-k'],
+            'draftTokenMax': 6,
+            'ngramSizeN': 4,
+          },
+          const SpeculativeDecodingConfig.ngramMapK4v(
+            ngramSizeM: 5,
+          ): <String, Object?>{
+            'strategies': <String>['ngram-map-k4v'],
+            'ngramSizeM': 5,
+          },
+          const SpeculativeDecodingConfig.ngramMod(
+            ngramMatch: 3,
+            ngramTokenMin: 1,
+            ngramTokenMax: 16,
+          ): <String, Object?>{
+            'strategies': <String>['ngram-mod'],
+            'ngramMatch': 3,
+            'ngramTokenMin': 1,
+            'ngramTokenMax': 16,
+          },
+          const SpeculativeDecodingConfig.ngramCache(
+            draftTokenMax: 8,
+            ngramCacheStaticPath: 'static.lcs',
+            ngramCacheDynamicPath: 'dynamic.lcs',
+          ): <String, Object?>{
+            'strategies': <String>['ngram-cache'],
+            'draftTokenMax': 8,
+            'ngramCacheStatic': 'static.lcs',
+            'ngramCacheDynamic': 'dynamic.lcs',
+          },
+          const SpeculativeDecodingConfig.backendDefault(): <String, Object?>{
+            'strategies': <String>['ngram-mod'],
+          },
+          const SpeculativeDecodingConfig.mixed(
+            strategies: <SpeculativeDecodingStrategy>[
+              SpeculativeDecodingStrategy.backendDefault,
+              SpeculativeDecodingStrategy.ngramMod,
+              SpeculativeDecodingStrategy.ngramSimple,
+            ],
+            ngramCacheStaticPath: 'static.lcs',
+          ): <String, Object?>{
+            'strategies': <String>['ngram-mod', 'ngram-simple'],
+          },
+        };
+        for (final MapEntry(key: config, value: expected) in cases.entries) {
+          expect(await generate(speculative(config)), 'Hello');
+          final sent = sentSpeculative()!
+            ..removeWhere((key, value) => value == null);
+          expect(sent, expected, reason: '${config.effectiveStrategies}');
+        }
+
+        await generate(const GenerationParams(speculativeDecoding: true));
+        expect(
+          sentSpeculative(),
+          containsPair('strategies', <String>['ngram-mod']),
+        );
+
+        await generate(const GenerationParams());
+        expect(fake().completionOption('speculativeDecoding'), isNull);
+        expect(fake().draftLoads, isEmpty);
+      });
+
+      test('validates a configuration as native generation does', () async {
+        await loadModel();
+
+        final invalid = <SpeculativeDecodingConfig, Matcher>{
+          const SpeculativeDecodingConfig.mixed(
+            strategies: <SpeculativeDecodingStrategy>[
+              SpeculativeDecodingStrategy.draftSimple,
+              SpeculativeDecodingStrategy.draftEagle3,
+            ],
+            draftModelPath: 'draft.gguf',
+          ): llamaUnsupported(
+            contains('at most one draft-model strategy'),
+          ),
+          const SpeculativeDecodingConfig.mixed(
+            strategies: <SpeculativeDecodingStrategy>[
+              SpeculativeDecodingStrategy.draftEagle3,
+            ],
+          ): throwsA(
+            isA<ArgumentError>().having(
+              (error) => '${error.message}',
+              'message',
+              contains('draft-eagle3 requires draftModelPath'),
+            ),
+          ),
+          const SpeculativeDecodingConfig.draftSimple(draftModelPath: ' '):
+              throwsA(isA<ArgumentError>()),
+          const SpeculativeDecodingConfig.mixed(
+            strategies: <SpeculativeDecodingStrategy>[
+              SpeculativeDecodingStrategy.ngramSimple,
+            ],
+            draftModelPath: 'draft.gguf',
+          ): llamaUnsupported(
+            contains('unless a draft-model strategy is also enabled'),
+          ),
+          const SpeculativeDecodingConfig.mixed(
+            strategies: <SpeculativeDecodingStrategy>[
+              SpeculativeDecodingStrategy.ngramMod,
+            ],
+            minProbability: 0.5,
+          ): llamaUnsupported(
+            contains('unless a draft-model strategy is also enabled'),
+          ),
+          const SpeculativeDecodingConfig.draftSimple(
+            draftTokenMax: 2,
+            draftTokenMin: 3,
+            draftModelPath: 'draft.gguf',
+          ): throwsA(
+            isA<RangeError>().having(
+              (error) => error.name,
+              'name',
+              'draftTokenMin',
+            ),
+          ),
+          const SpeculativeDecodingConfig.ngramMod(
+            ngramTokenMin: 9,
+            ngramTokenMax: 8,
+          ): throwsA(
+            isA<RangeError>().having(
+              (error) => error.name,
+              'name',
+              'ngramTokenMin',
+            ),
+          ),
+          const SpeculativeDecodingConfig.ngramSimple(
+            ngramSizeN: 0x10000,
+          ): throwsA(
+            isA<RangeError>().having(
+              (error) => error.name,
+              'name',
+              'ngramSizeN',
+            ),
+          ),
+          const SpeculativeDecodingConfig.ngramCache(ngramCacheStaticPath: ''):
+              throwsA(isA<ArgumentError>()),
+        };
+        for (final MapEntry(key: config, value: matcher) in invalid.entries) {
+          expect(
+            () => backend.generate(1, 'Hello', speculative(config)),
+            matcher,
+            reason: '${config.effectiveStrategies}',
+          );
+        }
+
+        for (final params in <GenerationParams>[
+          speculative(ngram).copyWith(grammar: 'root ::= "a"'),
+          speculative(ngram).copyWith(
+            thinkingBudget: const ThinkingBudget(
+              maxTokens: 8,
+              startTag: '<think>',
+              endTag: '</think>',
+            ),
+          ),
+        ]) {
+          expect(
+            () => backend.generate(1, 'Hello', params),
+            llamaUnsupported(contains('as on native llama.cpp')),
+          );
+        }
+        await backend.multimodalContextCreate(1, 'mmproj.gguf');
+        expect(
+          () => backend.generate(
+            1,
+            'Describe',
+            speculative(ngram),
+            parts: <LlamaContentPart>[
+              LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+            ],
+          ),
+          llamaUnsupported(contains('text-only')),
+        );
+        expect(fake().completionCalls, 0);
+        expect(fake().draftLoads, isEmpty);
+      });
+
+      test("runs draft-mtp on the loaded model's MTP layers", () async {
+        newBridge = () => FakeFeatureBridge()
+          ..speculativeCapabilities = <String, bool>{
+            'ngram-mod': true,
+            'draft-mtp': true,
+          };
+        await backend.modelLoadFromUrl(
+          'model.gguf',
+          const ModelParams(loadMtp: true, speculativeRollbackTokenMax: 16),
+        );
+        expect(
+          fake().lastLoadOptions.dartify(),
+          allOf(
+            containsPair('loadMtp', true),
+            containsPair('speculativeRollbackTokenMax', 16),
+          ),
+        );
+
+        await generate(
+          speculative(const SpeculativeDecodingConfig.mtp(draftTokenMax: 4)),
+        );
+        expect(
+          sentSpeculative(),
+          allOf(
+            containsPair('strategies', <String>['draft-mtp']),
+            containsPair('draftTokenMax', 4),
+          ),
+        );
+
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            speculative(
+              const SpeculativeDecodingConfig.mtp(draftModelPath: 'mtp.gguf'),
+            ),
+          ),
+          llamaUnsupported(contains('draftModelPath must be null')),
+        );
+        expect(fake().draftLoads, isEmpty);
+      });
+
+      test('omits default MTP load options', () async {
+        await loadModel();
+        final options = fake().lastLoadOptions.dartify()! as Map;
+        expect(options['loadMtp'], isNull);
+        expect(options['speculativeRollbackTokenMax'], isNull);
+      });
+
+      test('loads the draft model once and keeps it loaded', () async {
+        await loadModel();
+        await generate(speculative(draft));
+        await generate(speculative(ngram));
+        await generate(speculative(draft));
+
+        expect(fake().draftLoads.map((load) => load.url), <String>[
+          'draft.gguf',
+        ]);
+        expect(fake().draftLoads.single.useCache, isTrue);
+        expect(fake().draftLoads.single.signal, isNotNull);
+        expect(
+          sentSpeculative(),
+          containsPair('strategies', <String>['draft-simple']),
+        );
+        expect(fake().calls, isNot(contains('draft:unload')));
+
+        await generate(
+          speculative(
+            const SpeculativeDecodingConfig.mixed(
+              strategies: <SpeculativeDecodingStrategy>[
+                SpeculativeDecodingStrategy.ngramMod,
+                SpeculativeDecodingStrategy.draftSimple,
+              ],
+              draftModelPath: 'other.gguf',
+            ),
+          ),
+        );
+        expect(fake().draftLoads.map((load) => load.url), <String>[
+          'draft.gguf',
+          'other.gguf',
+        ]);
+        expect(
+          sentSpeculative(),
+          containsPair('strategies', <String>['ngram-mod', 'draft-simple']),
+        );
+      });
+
+      test('loads the draft model again after a model load', () async {
+        await loadModel();
+        await generate(speculative(draft));
+        await loadModel();
+        await generate(speculative(draft));
+        await backend.modelFree(1);
+        await loadModel();
+        await generate(speculative(draft));
+
+        expect(bridges.expand((bridge) => bridge.draftLoads), hasLength(3));
+        expect(fake().draftLoads, hasLength(1));
+      });
+
+      test('loads the draft model again when the bridge dropped it', () async {
+        await loadModel();
+        await generate(speculative(draft));
+        fake().loadedDraft = null;
+        await generate(speculative(draft));
+
+        expect(fake().draftLoads, hasLength(2));
+      });
+
+      test('skips Cache Storage for a draft URL with credentials', () async {
+        await loadModel();
+        await generate(
+          speculative(
+            const SpeculativeDecodingConfig.draftSimple(
+              draftModelPath: 'https://example.com/draft.gguf?token=secret',
+            ),
+          ),
+        );
+        expect(fake().draftLoads.single.useCache, isFalse);
+      });
+
+      test('rejects and unloads a draft that does not fit', () async {
+        await loadModel();
+        fake()
+          ..draftRuns = <String>{'draft-dspark'}
+          ..draftArchitecture = 'dflash';
+
+        final error = await generationError(
+          speculative(
+            const SpeculativeDecodingConfig.draftDflash(
+              draftModelPath: 'dspark.gguf',
+            ),
+          ),
+        );
+        expect(
+          error,
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('draft-dflash'), contains('architecture is dflash')),
+          ),
+        );
+        expect(fake().calls, contains('draft:unload'));
+        expect(fake().loadedDraft, isNull);
+        expect(fake().completionCalls, 0);
+
+        await generate(
+          speculative(
+            const SpeculativeDecodingConfig.draftDspark(
+              draftModelPath: 'dspark.gguf',
+            ),
+          ),
+        );
+        expect(
+          sentSpeculative(),
+          containsPair('strategies', <String>['draft-dspark']),
+        );
+      });
+
+      test('maps draft load errors and redacts the draft URL', () async {
+        await loadModel();
+        const url = 'https://user:pass@example.com/draft.gguf?token=secret';
+        fake().draftLoadError = 'Failed to fetch draft model $url: 404';
+        final error = await generationError(
+          speculative(
+            const SpeculativeDecodingConfig.draftSimple(draftModelPath: url),
+          ),
+        );
+        expect(error, isA<LlamaModelException>());
+        final exception = error! as LlamaModelException;
+        expect(
+          '${exception.message} ${exception.details}',
+          allOf(
+            contains('draft model'),
+            contains('404'),
+            isNot(contains('secret')),
+            isNot(contains('pass')),
+          ),
+        );
+
+        fake().draftLoadError =
+            'The draft model cannot be replaced during active generation or '
+            'text-to-speech synthesis';
+        expect(
+          await generationError(speculative(draft)),
+          isA<LlamaStateException>(),
+        );
+
+        fake().draftLoadError =
+            'The eagle3 draft model reads target hidden states of size 1024, '
+            "but the loaded model's hidden size is 960";
+        expect(
+          await generationError(speculative(draft)),
+          isA<LlamaUnsupportedException>(),
+        );
+
+        fake().draftLoadError = null;
+        await generate(speculative(draft));
+        expect(fake().completionCalls, 1);
+      });
+
+      test('cancelling during the draft load aborts it', () async {
+        await loadModel();
+        final gate = Completer<void>();
+        fake().draftLoadGate = gate;
+        final subscription = backend
+            .generate(1, 'Hello', speculative(draft))
+            .listen((_) {});
+        while (fake().draftLoads.isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        await subscription.cancel();
+        final signal = fake().draftLoads.single.signal! as JSObject;
+        expect(signal.getProperty<JSBoolean>('aborted'.toJS).toDart, isTrue);
+        gate.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(fake().loadedDraft, isNull);
+        expect(fake().completionCalls, 0);
+
+        fake().draftLoadGate = null;
+        await generate(speculative(draft));
+        expect(fake().draftLoads, hasLength(2));
+      });
+
+      test('cancelGeneration during the draft load ends the stream', () async {
+        await loadModel();
+        final gate = Completer<void>();
+        fake().draftLoadGate = gate;
+        final errors = <Object>[];
+        final done = Completer<void>();
+        backend
+            .generate(1, 'Hello', speculative(draft))
+            .listen((_) {}, onError: errors.add, onDone: done.complete);
+        while (fake().draftLoads.isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        backend.cancelGeneration();
+        gate.complete();
+        await done.future;
+        expect(errors, isEmpty);
+        expect(fake().completionCalls, 0);
+      });
+
+      test('maps speculative completion errors', () async {
+        await loadModel();
+        const cache = 'https://example.com/static.lcs?token=secret';
+        final cases = <String, Matcher>{
+          "draft-mtp needs the model's MTP head: load a model with MTP "
+                  'layers with loadMtp: true':
+              isA<LlamaUnsupportedException>(),
+          'this model has recurrent state, so draft-model and MTP '
+                  'speculative decoding need rollback snapshots':
+              isA<LlamaUnsupportedException>(),
+          'speculative draft token limits exceed the context size of 512 '
+                  'tokens':
+              isA<LlamaUnsupportedException>(),
+          'Failed to fetch $cache': isA<LlamaInferenceException>(),
+          'The static n-gram cache is malformed':
+              isA<LlamaInferenceException>(),
+        };
+        for (final MapEntry(key: message, value: matcher) in cases.entries) {
+          fake().completionError = message;
+          final error = await generationError(
+            speculative(
+              const SpeculativeDecodingConfig.ngramCache(
+                ngramCacheStaticPath: cache,
+              ),
+            ),
+          );
+          expect(error, matcher, reason: message);
+          final exception = error! as LlamaException;
+          expect(
+            '${exception.message} ${exception.details}',
+            isNot(contains('secret')),
+            reason: message,
+          );
+        }
+      });
+
+      test('LlamaEngine reports rejections as unsupported', () async {
+        newBridge = () => FakeFeatureBridge()..speculativeCapabilities = null;
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+
+        await expectLater(
+          engine.generate('Hello', params: speculative(ngram)).toList(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(
+          (await engine.backendGenerationCapabilities)
+              .speculativeDecodingStrategies,
+          isEmpty,
+        );
+
+        newBridge = FakeFeatureBridge.new;
+        await engine.unloadModel();
+        await engine.loadModelFromUrl('model.gguf');
+        expect(
+          (await engine.backendGenerationCapabilities)
+              .speculativeDecodingStrategies,
+          contains(SpeculativeDecodingStrategy.ngramSimple),
+        );
+        expect(
+          await engine.generate('Hello', params: speculative(ngram)).join(),
+          'Hello',
+        );
+        await expectLater(
+          engine
+              .generate(
+                'Hello',
+                params: speculative(const SpeculativeDecodingConfig.mtp()),
+              )
+              .toList(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      });
     });
   });
 }

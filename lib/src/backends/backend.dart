@@ -456,6 +456,53 @@ abstract class BackendTextToSpeech {
   void cancelTextToSpeech();
 }
 
+/// Optional [GenerationParams] controls that the loaded model's runtime
+/// applies.
+///
+/// Through `LlamaEngine`, the built-in runtimes reject a non-default value of
+/// a control they report `false` with `LlamaUnsupportedException`.
+class BackendGenerationCapabilities {
+  /// Whether a non-zero [GenerationParams.presencePenalty] is applied.
+  final bool presencePenalty;
+
+  /// Whether a non-zero [GenerationParams.minP] is applied.
+  final bool minP;
+
+  /// Whether [GenerationParams.thinkingBudget] is applied.
+  ///
+  /// A runtime that applies it can still reject it for generation with media
+  /// parts or speculative decoding.
+  final bool thinkingBudget;
+
+  /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
+  ///
+  /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
+  /// [GenerationParams.speculativeDecoding] flag. Speculative decoding with a
+  /// strategy outside this set is rejected. A runtime can still reject a
+  /// request that uses only these strategies, such as one that combines
+  /// strategies, sets a tuning field or draft model the runtime does not take,
+  /// names a draft model that does not fit the strategy, or has media parts, a
+  /// grammar or a thinking budget.
+  final Set<SpeculativeDecodingStrategy> speculativeDecodingStrategies;
+
+  /// Creates a capability snapshot.
+  const BackendGenerationCapabilities({
+    required this.presencePenalty,
+    required this.minP,
+    required this.thinkingBudget,
+    this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
+  });
+}
+
+/// Optional backend capability reporting [BackendGenerationCapabilities].
+///
+/// `LlamaEngine.backendGenerationCapabilities` reports no control as applied
+/// for a backend that does not implement this.
+abstract class BackendGenerationCapabilitiesSupport {
+  /// Reports the controls that the loaded model's runtime applies.
+  Future<BackendGenerationCapabilities> generationCapabilities();
+}
+
 /// Runtime support for an optional backend decision-model path.
 class BackendDecisionCapabilities {
   /// Whether decision heads can run on the loaded model.

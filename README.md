@@ -55,7 +55,10 @@ for each target.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
-a specific model format or platform.
+a specific model format or platform. After a model loads,
+`LlamaEngine.backendGenerationCapabilities` reports whether the runtime applies
+`presencePenalty`, `minP` and `thinkingBudget`, and which speculative decoding
+strategies it runs.
 
 ## Requirements
 
