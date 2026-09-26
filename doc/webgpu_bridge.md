@@ -293,7 +293,7 @@ tag:
   `LlamaUnsupportedException`, as it does when `loadDraftModel` rejects a
   draft for the target's hidden size. `ModelParams.loadMtp` and a positive
   `speculativeRollbackTokenMax` are sent as load options. Source:
-  [llama-web-bridge#148](https://github.com/leehack/llama-web-bridge/pull/148).
+  [llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153).
 
 `test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks these
 gates against real assets and models; its header lists the setup.

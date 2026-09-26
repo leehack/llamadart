@@ -169,7 +169,7 @@ The feature-by-runtime table is in the
 - Speculative decoding needs bridge assets whose
   `getCompletionCapabilities()` reports `speculativeDecoding` strategies, from
   the unreleased
-  [llama-web-bridge#148](https://github.com/leehack/llama-web-bridge/pull/148).
+  [llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153).
   The pinned assets report none, so every strategy throws
   `LlamaUnsupportedException` there, as does a strategy the loaded assets do
   not report. With such assets:
