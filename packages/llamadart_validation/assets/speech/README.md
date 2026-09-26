@@ -60,10 +60,10 @@ generation finishes can still pass either bound.
 
 Peak memory is the largest whole-process memory footprint sampled after the
 checks between `generate` and `peak_memory_bound`, as a multiple of the
-footprint sampled right after `generate`. Each of those checks contributes one sample,
-covering heterogeneous phases such as `bytes_input`, both cancellations, the
-edge fixtures, `reload`, the cleanup cycles and the latency bounds, so the peak
-is the maximum over all of them, not over generations alone. The baseline
+footprint sampled right after `generate`. Each of those checks contributes one
+sample, covering heterogeneous phases such as `bytes_input`, both cancellations,
+the edge fixtures, `reload`, the cleanup cycles and the latency bounds, so the
+peak is the maximum over all of them, not over generations alone. The baseline
 follows the first generation rather than load, so memory that generation first
 brings in is not counted as growth.
 
@@ -98,9 +98,9 @@ before the bounds used the footprint:
 - With `reload`, the warm-up cycle covers the first two reloads, which took
   the largest step in six of nine recorded Linux CUDA `tts` runs.
 
-The slope bound alone does not catch a leak of 7 MiB or less per cycle, a
-leak that releases memory in any window cycle, or growth that arrives in one
-jump. On Linux, the #634 LiteRT ASR resident set growth is one jump of about 85 MiB at
+The slope bound alone does not catch a leak of 7 MiB or less per cycle, a leak
+that releases memory in any window cycle, or growth that arrives in one jump. On
+Linux, the #634 LiteRT ASR resident set growth is one jump of about 85 MiB at
 `cancel`, then 0.7 MiB per cycle; only the peak ratio fails it. On Linux CUDA,
 where the ratio is not applied, a leak like that would pass.
 
@@ -124,9 +124,10 @@ the process's resident set from 4277 MiB to 139 MiB, and did not move while
 `msync(MS_INVALIDATE)` dropped 512 MiB of mapped file pages. Counts differ
 between operating systems, so ratios and deltas compare only within one.
 There is no counter without `dart:io` or on other operating systems, and a
-call that fails yields no sample. If any sample taken before `peak_memory_bound` is
-unavailable, both memory bounds record `SKIP` with a reason and their
-`bounds` entries report `measured` as `false`; they never pass silently.
+call that fails yields no sample. If any sample taken before
+`peak_memory_bound` is unavailable, both memory bounds record `SKIP` with a
+reason and their `bounds` entries report `measured` as `false`; they never
+pass silently.
 `interrupt_memory_bound` follows the same rule for the samples before it.
 
 ## Interrupt and truncation checks
