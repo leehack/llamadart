@@ -116,10 +116,29 @@ const ModelParams _rollbackCpu = ModelParams(
   speculativeRollbackTokenMax: 16,
 );
 
+/// Keeps the usage of the last `generate` call the engine reports.
+final class _UsageRecorder extends LlamaEngineObserver {
+  LlamaGenerationUsage? last;
+
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation operation) =>
+      operation is LlamaTextCompletionOperation ? _UsageEnd(this) : null;
+}
+
+final class _UsageEnd extends LlamaOperationObserver {
+  _UsageEnd(this.recorder);
+
+  final _UsageRecorder recorder;
+
+  @override
+  void onEnd(LlamaOperationResult result) => recorder.last = result.usage;
+}
+
 void main() {
   final configUrl = Uri.base.resolve(_configPath);
   late Map<String, Object?> config;
   late LlamaEngine engine;
+  final engineUsage = _UsageRecorder();
 
   bool expectFeatures() => config['expectFeatures'] == true;
   String url(String key) =>
@@ -135,9 +154,10 @@ void main() {
   Map<String, Object?>? lastSpeculativeUsage;
 
   /// Records the bridge's speculative counters, which llamadart does not
-  /// expose, by adding `onUsage` to each `createCompletion` call. Bridge
-  /// assets before `supportsCompletionUsage` reject a function option in
-  /// worker mode, so they are left alone.
+  /// expose, by wrapping the `onUsage` of each `createCompletion` call, which
+  /// still reports the usage to llamadart. Bridge assets before
+  /// `supportsCompletionUsage` reject a function option in worker mode, so
+  /// they are left alone.
   void recordSpeculativeUsage(JSObject bridgeClass) {
     if (bridgeClass['supportsCompletionUsage'] != true.toJS) return;
     final prototype = bridgeClass['prototype']! as JSObject;
@@ -145,9 +165,13 @@ void main() {
     prototype['createCompletion'] =
         ((JSObject self, JSAny? prompt, JSObject? options) {
           lastSpeculativeUsage = null;
+          final engineOnUsage = options?['onUsage'];
           options?['onUsage'] = ((JSObject usage) {
             lastSpeculativeUsage = (usage['speculative']?.dartify() as Map?)
                 ?.cast<String, Object?>();
+            if (engineOnUsage.isA<JSFunction>()) {
+              (engineOnUsage as JSFunction).callAsFunction(null, usage);
+            }
           }).toJS;
           return createCompletion.callMethod<JSAny?>(
             'call'.toJS,
@@ -167,7 +191,7 @@ void main() {
     final bridgeModule = await importModule(url('bridge').toJS).toDart;
     globalContext['LlamaWebGpuBridge'] = bridgeModule['LlamaWebGpuBridge'];
     recordSpeculativeUsage(bridgeModule['LlamaWebGpuBridge']! as JSObject);
-    engine = LlamaEngine(WebGpuLlamaBackend());
+    engine = LlamaEngine(WebGpuLlamaBackend(), observers: [engineUsage]);
   });
 
   tearDownAll(() => engine.dispose());
@@ -395,6 +419,7 @@ void main() {
       });
       expect(output, baseline, reason: name);
       expect(usage?['draftAttempts'], greaterThan(0), reason: name);
+      expect(engineUsage.last?.completionTokens, greaterThan(0), reason: name);
       if (drafts.contains(name)) {
         expect(usage?['acceptedDraftTokens'], greaterThan(0), reason: name);
       }
