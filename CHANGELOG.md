@@ -18,6 +18,15 @@
 - Make `DecisionEngine.load` throw `LlamaStateException` when another model is
   loaded while it runs, even under the same backend handle
   ([#626](https://github.com/leehack/llamadart/issues/626)).
+- Bound speech validation pack memory by a footprint counter instead of the
+  resident set: `phys_footprint` on macOS and iOS, `RssAnon` plus `RssShmem`
+  plus `VmSwap` on Linux and Android, and `PrivateUsage` plus
+  `SharedCommitUsage` on Windows (`PrivateUsage` alone on builds without it).
+  Evicting file-backed pages, such as the
+  mmapped weights, or compressing memory under pressure no longer lowers the
+  baseline and fails `peak_memory_bound` without memory growth, and each
+  report names its counter
+  ([#633](https://github.com/leehack/llamadart/issues/633)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image
