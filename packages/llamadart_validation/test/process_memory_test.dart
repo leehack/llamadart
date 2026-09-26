@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -177,6 +179,17 @@ int main(void) {
   });
 
   group('this process', () {
+    Future<List<Map<String, dynamic>>> probe(List<String> args) async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        '--packages=${(await Isolate.packageConfig)!.toFilePath()}',
+        'test/fixtures/process_memory_probe.dart',
+        ...args,
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      return (jsonDecode(result.stdout as String) as List)
+          .cast<Map<String, dynamic>>();
+    }
+
     test('reports the counter for this platform', () {
       expect(
         memoryFootprintSource,
@@ -184,13 +197,10 @@ int main(void) {
       );
       expect(memoryFootprintBytes(), isPositive);
     });
-    test('counts memory the process dirties', () {
+    test('counts memory it dirties', () async {
       const size = 256 * mib;
-      final before = memoryFootprintBytes()!;
-      final memory = malloc<Uint8>(size);
-      addTearDown(() => malloc.free(memory));
-      memory.asTypedList(size).fillRange(0, size, 1);
-      expect(memoryFootprintBytes()! - before, greaterThan(240 * mib));
+      final [before, after] = await probe(['dirty', '$size']);
+      expect(after['footprint'] - before['footprint'], greaterThan(240 * mib));
     });
     test('ignores mapped file pages entering and leaving residency', () async {
       const size = 256 * mib;
@@ -198,75 +208,21 @@ int main(void) {
       addTearDown(() => dir.delete(recursive: true));
       final file = File('${dir.path}/pages.bin')
         ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
-      final libc = DynamicLibrary.process();
-      final open = libc
-          .lookupFunction<
-            Int32 Function(Pointer<Utf8>, Int32),
-            int Function(Pointer<Utf8>, int)
-          >('open');
-      final close = libc
-          .lookupFunction<Int32 Function(Int32), int Function(int)>('close');
-      final mmap = libc
-          .lookupFunction<
-            Pointer<Uint8> Function(
-              Pointer<Void>,
-              Size,
-              Int32,
-              Int32,
-              Int32,
-              Int64,
-            ),
-            Pointer<Uint8> Function(Pointer<Void>, int, int, int, int, int)
-          >('mmap');
-      final munmap = libc
-          .lookupFunction<
-            Int32 Function(Pointer<Uint8>, Size),
-            int Function(Pointer<Uint8>, int)
-          >('munmap');
-      final path = file.path.toNativeUtf8();
-      final fd = open(path, 0);
-      malloc.free(path);
-      expect(fd, isNonNegative);
-      const protRead = 1, mapShared = 1;
-      final pages = mmap(nullptr, size, protRead, mapShared, fd, 0);
-      close(fd);
-      expect(pages.address, isNot(-1));
-      addTearDown(() => munmap(pages, size));
-      final bytes = pages.asTypedList(size);
-      const pageSize = 4096;
-      var sum = 0;
-      void touch() {
-        for (var i = 0; i < size; i += pageSize) {
-          sum += bytes[i];
-        }
-      }
-
-      void evict() {
-        final result = Platform.isMacOS
-            ? libc.lookupFunction<
-                Int32 Function(Pointer<Uint8>, Size, Int32),
-                int Function(Pointer<Uint8>, int, int)
-              >('msync')(pages, size, 2)
-            : libc.lookupFunction<
-                Int32 Function(Pointer<Uint8>, Size, Int32),
-                int Function(Pointer<Uint8>, int, int)
-              >('madvise')(pages, size, 4);
-        expect(result, 0);
-      }
-
-      final rss = ProcessInfo.currentRss;
-      final footprint = memoryFootprintBytes()!;
-      touch();
-      final touchedRss = ProcessInfo.currentRss;
-      final touchedFootprint = memoryFootprintBytes()!;
-      evict();
-      final evictedRss = ProcessInfo.currentRss;
-      final evictedFootprint = memoryFootprintBytes()!;
-      expect(sum, size ~/ pageSize * 7);
-      expect(touchedRss - rss, greaterThan(200 * mib));
-      expect(touchedRss - evictedRss, greaterThan(200 * mib));
-      expect((touchedFootprint - footprint).abs(), lessThan(64 * mib));
-      expect((evictedFootprint - touchedFootprint).abs(), lessThan(64 * mib));
+      final [before, touched, evicted, read] = await probe([
+        'mapped',
+        file.path,
+      ]);
+      expect(read['sum'], size ~/ 4096 * 7);
+      expect(touched['rss'] - before['rss'], greaterThan(200 * mib));
+      expect(touched['rss'] - evicted['rss'], greaterThan(200 * mib));
+      expect(
+        (touched['footprint'] - before['footprint']).abs(),
+        lessThan(64 * mib),
+      );
+      expect(
+        (evicted['footprint'] - touched['footprint']).abs(),
+        lessThan(64 * mib),
+      );
     }, testOn: 'mac-os || linux');
   });
 }
