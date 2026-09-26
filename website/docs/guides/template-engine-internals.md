@@ -109,7 +109,12 @@ call.
 When tool calls are parsed, streamed Hermes content equals the content of the
 final parse. Text that could start a tool-call envelope, and trailing
 whitespace, is held until later output rules the envelope out or generation
-ends.
+ends. Streamed reasoning equals the parse too, which trims each thought;
+upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
+with the Qwen3 template it returns `"Plan it.\n"` for
+`<think>\nPlan it.\n</think>`. The one exception is a forced-open thought
+that never closes: the parse keeps its leading whitespace, which the stream
+drops before it can know the thought will not close.
 
 ## `dinja` integration
 

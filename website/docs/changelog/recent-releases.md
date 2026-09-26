@@ -15,9 +15,10 @@ For canonical full release notes, use:
   and trailing whitespace wait for more output. With tools, streamed content
   is now trimmed as the parse trims it, and text the parse keeps after a tool
   call, including a malformed envelope, arrives at the end of the stream.
-  After a forced-open thought, reasoning streams as generated, untrimmed and
-  without partial `</think>` markup, and text after a tool call arrives at the
-  end
+  Streamed reasoning, and so `ChatSession` thinking, is trimmed per thought as
+  the parse trims it; only a forced-open thought that never closes streams
+  without its leading whitespace. After a forced-open thought, text after a
+  tool call arrives at the end
   ([#701](https://github.com/leehack/llamadart/issues/701)).
 - Throw `LlamaModelException` when a WebGPU model load fails with a bridge
   error that has no specific mapping, and `LlamaInferenceException` or
@@ -26,10 +27,14 @@ For canonical full release notes, use:
   details and the load-failure console log
   ([#704](https://github.com/leehack/llamadart/issues/704)).
 - Keep URL credentials, signed query values and fragments out of
-  `LlamaEngine` model-load errors and logs, projector-load logs and the
-  `model` field of completion chunks for every URL form, including
-  scheme-relative `//user:pass@host/...` URLs and relative paths with a query,
-  and out of native model download errors
+  `LlamaEngine` model and projector load errors and logs and the `model` field
+  of completion chunks for every URL form, including scheme-relative
+  `//user:pass@host/...` URLs and relative paths with a query, and out of
+  native model download errors. A projector load error that is not a
+  `LlamaException` now throws `LlamaModelException`. The `details` of a
+  model or projector load failure is now a `{type, message}` map instead of
+  the original error, and a native download that fails with a network error
+  carries the error text as a `String` in `details`
   ([#704](https://github.com/leehack/llamadart/issues/704)).
 - Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
   and generation prompts instead of dropping it

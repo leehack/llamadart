@@ -12,10 +12,15 @@ import '../template/handlers/hermes_handler.dart';
 enum _ToolStreamingMode { undecided, raw, parsed }
 
 class _ThinkingSplitEmission {
-  const _ThinkingSplitEmission({required this.text, required this.isThinking});
+  const _ThinkingSplitEmission({
+    required this.text,
+    required this.isThinking,
+    this.endsThinking = false,
+  });
 
   final String text;
   final bool isThinking;
+  final bool endsThinking;
 }
 
 class _ThinkingSplitResult {
@@ -71,6 +76,9 @@ class ChatCompletionStreamParser {
         parseToolCallsEnabled &&
             templateResult.format == ChatFormat.hermes.index
         ? _HermesContentGate()
+        : null;
+    final hermesReasoning = hermesContent != null
+        ? _HermesReasoningGate(forcedOpen: templateResult.thinkingForcedOpen)
         : null;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
@@ -140,6 +148,15 @@ class ChatCompletionStreamParser {
           for (final emission in split.emissions) {
             var text = emission.text;
             if (emission.isThinking) {
+              if (hermesReasoning != null) {
+                text = hermesReasoning.add(text);
+                if (emission.endsThinking) {
+                  text += hermesReasoning.end();
+                }
+              }
+              if (text.isEmpty) {
+                continue;
+              }
               streamedReasoning += text;
             } else {
               text = hermesContent?.add(text) ?? text;
@@ -257,8 +274,10 @@ class ChatCompletionStreamParser {
         undecidedPrefix = '';
       }
 
-      if (!isThinking && hermesContent != null) {
-        pendingBuffer = hermesContent.add(pendingBuffer);
+      if (hermesContent != null && hermesReasoning != null) {
+        pendingBuffer = isThinking
+            ? hermesReasoning.add(pendingBuffer) + hermesReasoning.end()
+            : hermesContent.add(pendingBuffer);
       }
       if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
         if (isThinking) {
@@ -289,7 +308,8 @@ class ChatCompletionStreamParser {
         pendingBuffer = split.pendingBuffer;
         isThinking = split.isThinking;
         for (final emission in split.emissions) {
-          if (emission.isThinking && !enableThinking) {
+          if (emission.text.isEmpty ||
+              (emission.isThinking && !enableThinking)) {
             continue;
           }
           yield _chunk(
@@ -821,12 +841,13 @@ class ChatCompletionStreamParser {
           );
           continue;
         } else if (endIdx != -1) {
-          final reasoning = localPendingBuffer.substring(0, endIdx);
-          if (reasoning.isNotEmpty) {
-            emissions.add(
-              _ThinkingSplitEmission(text: reasoning, isThinking: true),
-            );
-          }
+          emissions.add(
+            _ThinkingSplitEmission(
+              text: localPendingBuffer.substring(0, endIdx),
+              isThinking: true,
+              endsThinking: true,
+            ),
+          );
           localIsThinking = false;
           localPendingBuffer = localPendingBuffer.substring(
             endIdx + endTag.length,
@@ -862,12 +883,13 @@ class ChatCompletionStreamParser {
 
       final endIdx = localPendingBuffer.indexOf(endTag);
       if (endIdx != -1) {
-        final reasoning = localPendingBuffer.substring(0, endIdx);
-        if (reasoning.isNotEmpty) {
-          emissions.add(
-            _ThinkingSplitEmission(text: reasoning, isThinking: true),
-          );
-        }
+        emissions.add(
+          _ThinkingSplitEmission(
+            text: localPendingBuffer.substring(0, endIdx),
+            isThinking: true,
+            endsThinking: true,
+          ),
+        );
         localIsThinking = false;
         localPendingBuffer = localPendingBuffer.substring(
           endIdx + endTag.length,
@@ -970,6 +992,67 @@ class _HermesContentGate {
     _releasedAny = true;
     return released;
   }
+
+  static bool _isTrimmed(int codeUnit) =>
+      String.fromCharCode(codeUnit).trim().isEmpty;
+}
+
+/// Releases raw Hermes reasoning that the final parse keeps.
+///
+/// [HermesHandler.parse] replaces escaped `\n` and `\r`, trims each thought,
+/// and joins non-empty thoughts with a newline. Whitespace that may end a
+/// thought waits for more reasoning. Trailing whitespace of a forced-open
+/// thought that never ends, which the final parse keeps, arrives with the
+/// final reconciliation.
+class _HermesReasoningGate {
+  _HermesReasoningGate({required bool forcedOpen})
+    : _inForcedThought = forcedOpen;
+
+  var _pending = '';
+  var _started = false;
+  var _separate = false;
+  bool _inForcedThought;
+
+  /// Adds [reasoning] of the current thought and returns the released text.
+  String add(String reasoning) {
+    _pending += reasoning;
+    final hold = _pending.endsWith(r'\') ? 1 : 0;
+    final text = _unescape(_pending.substring(0, _pending.length - hold));
+    var end = text.length;
+    while (end > 0 && _isTrimmed(text.codeUnitAt(end - 1))) {
+      end--;
+    }
+    _pending = text.substring(end) + _pending.substring(_pending.length - hold);
+    return _release(text.substring(0, end));
+  }
+
+  /// Ends the current thought and returns the released text.
+  String end() {
+    final released = _release(_unescape(_pending).trimRight());
+    _pending = '';
+    _separate = _separate || _started || _inForcedThought;
+    _started = false;
+    _inForcedThought = false;
+    return released;
+  }
+
+  String _release(String text) {
+    if (!_started) {
+      text = text.trimLeft();
+      if (text.isEmpty) {
+        return '';
+      }
+      _started = true;
+      if (_separate) {
+        _separate = false;
+        return '\n$text';
+      }
+    }
+    return text;
+  }
+
+  static String _unescape(String text) =>
+      text.replaceAll(r'\n', '\n').replaceAll(r'\r', '\r');
 
   static bool _isTrimmed(int codeUnit) =>
       String.fromCharCode(codeUnit).trim().isEmpty;

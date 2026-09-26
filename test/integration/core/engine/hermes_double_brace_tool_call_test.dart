@@ -97,6 +97,7 @@ void main() {
       'one call': 'Let me check.\n$call',
       'two calls': 'Checking both.\n$call\n$londonCall',
       'text after the call': 'Let me check.\n$call\nOne moment.',
+      'a thought then a call': '<think>\nPlan it.\n</think>\n\n$call',
     }.entries) {
       final tag = output.indexOf('<tool_call>');
       for (final MapEntry(key: splitName, value: tokens) in {
@@ -134,8 +135,14 @@ void main() {
             expected.content,
           );
           final reply = session.history.last;
+          expect(
+            reply.parts.whereType<LlamaThinkingContent>().map(
+              (p) => p.thinking,
+            ),
+            [?expected.reasoningContent],
+          );
           expect(reply.parts.whereType<LlamaTextContent>().map((p) => p.text), [
-            expected.content,
+            if (expected.content.isNotEmpty) expected.content,
           ]);
           expect([
             for (final call in reply.parts.whereType<LlamaToolCallContent>())

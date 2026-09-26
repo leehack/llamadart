@@ -462,7 +462,9 @@ class LlamaEngine {
   /// On the native llama.cpp backend, throws [LlamaModelException] when
   /// [mmProjPath] is not an existing file or the runtime rejects the projector
   /// for the loaded model, and [LlamaUnsupportedException] only when the
-  /// runtime cannot run an mtmd function this package calls.
+  /// runtime cannot run an mtmd function this package calls. A backend error
+  /// that is not a [LlamaException] becomes a [LlamaModelException] without
+  /// the URL secrets of [mmProjPath].
   Future<void> loadMultimodalProjector(String mmProjPath) {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
@@ -568,10 +570,16 @@ class LlamaEngine {
         _redactedErrorDetails(e, mmProjPath),
         stackTrace,
       );
+      if (e is LlamaException) {
+        rethrow;
+      }
       if (e is UnsupportedError) {
         throw _unsupportedBackendOperation('Multimodal projectors', e);
       }
-      rethrow;
+      throw LlamaModelException(
+        'Failed to load multimodal projector $mmProjName',
+        _redactedErrorDetails(e, mmProjPath),
+      );
     }
   }
 

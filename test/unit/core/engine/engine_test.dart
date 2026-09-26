@@ -4208,6 +4208,36 @@ void main() {
         }
       });
 
+      test('keeps $url secrets out of projector failures', () async {
+        for (final urlLoading in const [false, true]) {
+          final engine = LlamaEngine(
+            _SourceEchoBackend(urlLoadingSupported: urlLoading),
+          );
+          await engine.loadModel('model.gguf');
+          logs.clear();
+          Object? thrown;
+          try {
+            await engine.loadMultimodalProjector(url);
+          } catch (error) {
+            thrown = error;
+          }
+
+          expect(
+            thrown,
+            isA<LlamaModelException>()
+                .having((e) => e.message, 'message', endsWith(' m.gguf'))
+                .having((e) => '$e', 'error', withoutSecrets())
+                .having(
+                  (e) => '${e.details}',
+                  'details',
+                  allOf(contains('not found'), withoutSecrets()),
+                ),
+            reason: 'URL loading: $urlLoading',
+          );
+          expect(logs.join('\n'), withoutSecrets());
+        }
+      });
+
       test('keeps $url secrets out of a loaded model', () async {
         for (final urlLoading in const [false, true]) {
           final loaded = LlamaEngine(
@@ -4236,15 +4266,31 @@ void main() {
         }
       });
     }
+
+    test('keeps a backend LlamaException from projector loading', () async {
+      final error = LlamaModelException('Multimodal projector file not found.');
+      final engine = LlamaEngine(_SourceEchoBackend(projectorError: error));
+      await engine.loadModel('model.gguf');
+
+      await expectLater(
+        engine.loadMultimodalProjector('proj.gguf'),
+        throwsA(same(error)),
+      );
+    });
   });
 }
 
 /// A backend whose failures echo the source path or URL, as native file
 /// checks and browser fetch errors do, and its secret parts on their own.
 class _SourceEchoBackend extends MockLlamaBackend {
-  _SourceEchoBackend({super.urlLoadingSupported, this.fail = false});
+  _SourceEchoBackend({
+    super.urlLoadingSupported,
+    this.fail = false,
+    this.projectorError,
+  });
 
   final bool fail;
+  final Object? projectorError;
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
@@ -4266,7 +4312,7 @@ class _SourceEchoBackend extends MockLlamaBackend {
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => throw _notFound(mmProjPath);
+  ) async => throw projectorError ?? _notFound(mmProjPath);
 
   static Exception _notFound(String source) {
     final uri = Uri.parse(source);

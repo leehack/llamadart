@@ -567,6 +567,13 @@ void main() {
             reason: '$tokens',
           );
           expect(
+            chunks
+                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                .join(),
+            parsed.reasoningContent ?? '',
+            reason: '$tokens',
+          );
+          expect(
             [for (final call in calls) call.function?.arguments],
             [for (final call in parsed.toolCalls) call.function?.arguments],
             reason: '$tokens',
@@ -595,6 +602,33 @@ void main() {
         for (final output in forcedOpenOutputs) {
           await expectParsedContent(output, true);
         }
+      });
+
+      test('trims each thought', () async {
+        for (final output in const [
+          '<think>\nPlan it.\n</think>\n\n$call',
+          '<think>\n  Plan it.  \n</think>\n\nIt is sunny.',
+          '<think>\n Plan \n\n it. \n',
+          '<think>\nA.\n</think>\nOk.<think> </think>\n<think>\tB. </think>$call',
+          r'<think> Use "a\nb" \</think>Done.',
+          r'<think>a\\nb\r</think>',
+          '<think>Plan </thi',
+        ]) {
+          await expectParsedContent(output, false);
+        }
+      });
+
+      test('trims a forced-open thought that ends', () async {
+        for (final output in const [
+          '\nPlan it.\n</think>\n\n$call',
+          '  </think>\nOk.\n<think>\nMore.\n</think>\n$call',
+        ]) {
+          await expectParsedContent(output, true);
+        }
+      });
+
+      test('keeps trailing space of a forced-open thought that never ends', () {
+        return expectParsedContent('Plan it.  \n\n', true);
       });
 
       test('holds back only a possible envelope opening', () async {
