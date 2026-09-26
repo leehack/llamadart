@@ -231,7 +231,13 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `unloadMultimodalProjector()`
 - `supportsVision()`
 - `supportsAudio()`
-- `createCompletion(prompt, { nPredict, temp, topK, topP, penalty, seed, grammar, onToken, parts, signal })`
+- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, seed, grammar, thinkingBudget, onToken, parts, signal })`
+- `getCompletionCapabilities()`
+- `getLoraAdapterCapabilities()`
+- `loadLoraAdapter(url, { useCache })`
+- `setLoraAdapter(handle, scale)`
+- `removeLoraAdapter(handle)`
+- `clearLoraAdapters()`
 - `tokenize(text, addSpecial)`
 - `detokenize(tokens, special)`
 - `stateSaveFile(path, tokens)`
@@ -249,6 +255,31 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `freeDecisionHead(handle)`
 - `isGpuActive()`
 - `getBackendName()`
+
+## Capability gates
+
+`WebGpuLlamaBackend` gates these options on runtime probes, not on an asset
+tag:
+
+- After each model load it calls `getCompletionCapabilities()` once. It sends
+  a non-zero `minP` or `presencePenalty`, or a `thinkingBudget`, only when the
+  probe reports that flag `true`; otherwise `generate` throws before calling
+  the bridge. A missing method, a failed probe or a non-boolean flag counts as
+  unsupported. Default values are sent as `null`, which older assets ignore.
+  `generationCapabilities()`, read through
+  `LlamaEngine.backendGenerationCapabilities`, reports the same flags.
+  Source: [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)
+  and [#144](https://github.com/leehack/llama-web-bridge/pull/144).
+- Every `setLoraAdapter`, `removeLoraAdapter` and `clearLoraAdapters` call
+  first checks that all five LoRA methods exist and that
+  `getLoraAdapterCapabilities()` reports `apiVersion: 1` and
+  `supported: true`; otherwise it throws `UnsupportedError`, which
+  `LlamaEngine` reports as `LlamaUnsupportedException`. Each path is loaded
+  once per model load and mapped to its bridge handle. Source:
+  [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142).
+
+`test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks both
+gates against real assets and models; its header lists the setup.
 
 ## Notes
 

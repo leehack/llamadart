@@ -39,6 +39,7 @@ class NativeLlamaBackend
         BackendStatePersistence,
         BackendTextToSpeech,
         BackendDecision,
+        BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
@@ -1098,6 +1099,15 @@ class NativeLlamaBackend
     if (_textToSpeechRequestSent) {
       _sendPort?.send(TextToSpeechCancelRequest());
     }
+  }
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    return const BackendGenerationCapabilities(
+      presencePenalty: true,
+      minP: true,
+      thinkingBudget: true,
+    );
   }
 
   @override

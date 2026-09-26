@@ -37,6 +37,14 @@ class GenerationStreamResult {
   });
 }
 
+/// Capabilities reported before a model loads.
+const BackendGenerationCapabilities noGenerationCapabilities =
+    BackendGenerationCapabilities(
+      presencePenalty: false,
+      minP: false,
+      thinkingBudget: false,
+    );
+
 class ChatGenerationService {
   const ChatGenerationService();
 
@@ -46,12 +54,16 @@ class ChatGenerationService {
   static const int _streamFlushBudgetMs = 220;
   static const int _tokenDeltaFlushBatchSize = 8;
 
-  GenerationParams buildParams(ChatSettings settings) {
+  GenerationParams buildParams(
+    ChatSettings settings, {
+    required BackendGenerationCapabilities generationCapabilities,
+  }) {
     // The LiteRT-LM backend only supports a subset of generation options
     // (maxTokens, temp, topK, topP, seed, stopSequences) and throws an
-    // UnsupportedError for llama.cpp-specific fields like minP/penalty when
-    // they differ from their defaults. For .litertlm models, leave those
-    // fields at their defaults so generation does not fail.
+    // UnsupportedError for llama.cpp-specific fields like penalty when they
+    // differ from their defaults. For .litertlm models, leave those fields at
+    // their defaults so generation does not fail. Min-P follows the loaded
+    // runtime's reported capabilities instead.
     const defaults = GenerationParams();
     final isLiteRtLm = _isLiteRtLmModel(settings.modelPath);
     return GenerationParams(
@@ -59,7 +71,7 @@ class ChatGenerationService {
       temp: settings.temperature,
       topK: settings.topK,
       topP: settings.topP,
-      minP: isLiteRtLm ? defaults.minP : settings.minP,
+      minP: generationCapabilities.minP ? settings.minP : defaults.minP,
       penalty: isLiteRtLm ? defaults.penalty : settings.penalty,
       stopSequences: const <String>[],
       streamBatchTokenThreshold: isLiteRtLm && !kIsWeb

@@ -18,7 +18,14 @@ void main() {
         penalty: 1.3,
       );
 
-      final params = service.buildParams(settings);
+      final params = service.buildParams(
+        settings,
+        generationCapabilities: const BackendGenerationCapabilities(
+          presencePenalty: false,
+          minP: true,
+          thinkingBudget: false,
+        ),
+      );
 
       expect(params.maxTokens, 1234);
       expect(params.temp, 0.4);
@@ -27,6 +34,23 @@ void main() {
       expect(params.minP, 0.2);
       expect(params.penalty, 1.3);
       expect(params.stopSequences, isEmpty);
+    });
+
+    test('sends the default Min-P when the runtime lacks it', () {
+      const defaults = GenerationParams();
+      const settings = ChatSettings(
+        modelPath: 'https://example.com/model.gguf',
+        minP: 0.2,
+        penalty: 1.3,
+      );
+
+      final params = service.buildParams(
+        settings,
+        generationCapabilities: noGenerationCapabilities,
+      );
+
+      expect(params.minP, defaults.minP);
+      expect(params.penalty, 1.3);
     });
 
     test('uses platform-supported generation params for litert models', () {
@@ -41,7 +65,10 @@ void main() {
         penalty: 1.3,
       );
 
-      final params = service.buildParams(settings);
+      final params = service.buildParams(
+        settings,
+        generationCapabilities: noGenerationCapabilities,
+      );
 
       // Supported options are still forwarded.
       expect(params.maxTokens, 1234);

@@ -1761,6 +1761,30 @@ class LlamaEngine {
     }
   }
 
+  /// Returns the optional [GenerationParams] controls that the loaded model's
+  /// runtime applies.
+  ///
+  /// Native llama.cpp applies all of them, LiteRT-LM none, and WebGPU those
+  /// its bridge assets report. Each of these runtimes rejects a non-default
+  /// value of a control it does not apply with [LlamaUnsupportedException].
+  /// Every control is `false` before a model loads and on a backend that does
+  /// not implement [BackendGenerationCapabilitiesSupport].
+  Future<BackendGenerationCapabilities>
+  get backendGenerationCapabilities async {
+    final candidate = backend;
+    if (!_isReady ||
+        _modelHandle == null ||
+        candidate is! BackendGenerationCapabilitiesSupport) {
+      return const BackendGenerationCapabilities(
+        presencePenalty: false,
+        minP: false,
+        thinkingBudget: false,
+      );
+    }
+    return (candidate as BackendGenerationCapabilitiesSupport)
+        .generationCapabilities();
+  }
+
   /// Returns decision-model support for the loaded model.
   ///
   /// This is the low-level integration hook used by `DecisionEngine`.

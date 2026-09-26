@@ -736,6 +736,38 @@ void main() {
     }
   });
 
+  test('reports generation capabilities of the loaded runtime', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _GenerationCapabilitiesFakeBackend(handle: 11),
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+    final liteRtLm = LiteRtLmBackend();
+
+    try {
+      final beforeLoad = await backend.generationCapabilities();
+      expect(beforeLoad.minP, isFalse);
+
+      await backend.modelLoad('/models/qwen.gguf', const ModelParams());
+      final llamaCpp = await backend.generationCapabilities();
+      expect(llamaCpp.presencePenalty, isTrue);
+      expect(llamaCpp.minP, isTrue);
+      expect(llamaCpp.thinkingBudget, isTrue);
+
+      expect(liteRtLm, isNot(isA<BackendGenerationCapabilitiesSupport>()));
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      final liteRt = await backend.generationCapabilities();
+      expect(liteRt.presencePenalty, isFalse);
+      expect(liteRt.minP, isFalse);
+      expect(liteRt.thinkingBudget, isFalse);
+    } finally {
+      await backend.dispose();
+      await liteRtLm.dispose();
+    }
+  });
+
   test('rejects decision calls before a model load', () async {
     final llama = _DecisionFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -1566,6 +1598,20 @@ class _CapabilityFakeBackend extends _FakeBackend
     int tokenCapacity,
   ) async {
     return const StateLoadResult(tokens: [3]);
+  }
+}
+
+class _GenerationCapabilitiesFakeBackend extends _FakeBackend
+    implements BackendGenerationCapabilitiesSupport {
+  _GenerationCapabilitiesFakeBackend({required super.handle});
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    return const BackendGenerationCapabilities(
+      presencePenalty: true,
+      minP: true,
+      thinkingBudget: true,
+    );
   }
 }
 

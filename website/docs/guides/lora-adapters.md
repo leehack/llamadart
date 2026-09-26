@@ -128,12 +128,21 @@ Custom native runtimes must export the aLoRA metadata functions; see
 - Native LiteRT-LM can accept one default-scale text LoRA adapter at model load
   through `ModelParams.loras`; runtime LoRA updates, stacking, and custom scales
   remain unsupported there.
-- WebGPU and LiteRT-LM web runtime LoRA calls throw
-  `LlamaUnsupportedException` instead of reporting no-op success.
+- WebGPU applies runtime LoRA adapters with bridge assets whose
+  `getLoraAdapterCapabilities()` reports support
+  ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142),
+  unreleased). The path is a URL; the bridge downloads each adapter once per
+  model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
+  adapter it cannot load, such as one for another base model, throws
+  `LlamaModelException`. The pinned bridge assets lack the capability, so
+  every WebGPU LoRA call throws `LlamaUnsupportedException` there.
+- LiteRT-LM web runtime LoRA calls throw `LlamaUnsupportedException` instead of
+  reporting no-op success.
 
 ## Troubleshooting
 
 - If `setLora(...)` fails, verify the adapter path is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
-- When behavior seems unchanged, confirm you are testing on a native
-  llama.cpp/GGUF target and not a web or LiteRT-LM path.
+- When behavior seems unchanged, confirm you are testing on a llama.cpp/GGUF
+  target, native or WebGPU with capable bridge assets, and not a LiteRT-LM
+  path.

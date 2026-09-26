@@ -9,6 +9,18 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA
+  adapters (`setLora`, `removeLora`, `clearLoras`), on WebGPU with bridge
+  assets whose capability probes report them; other assets still reject them
+  ([#722](https://github.com/leehack/llamadart/issues/722)).
+- Reject a non-zero `GenerationParams.minP` on WebGPU when the bridge lacks
+  Min-P, with `LlamaUnsupportedException` instead of ignoring it, and ignore a
+  stop sequence equal to a `preservedTokens` entry there, as native llama.cpp
+  does ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Add `LlamaEngine.backendGenerationCapabilities`, which reports whether the
+  loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
+  example chat app uses it to send Min-P and enable its slider only where
+  supported ([#661](https://github.com/leehack/llamadart/issues/661)).
 - Stream Hermes-format content that equals the non-streamed parse, so text
   before a tool call no longer carries the `<tool_call>` envelope into
   streamed content or `ChatSession` history; only a possible envelope opening
