@@ -5809,6 +5809,25 @@ void main() {
         expect(fake().draftLoads, hasLength(2));
       });
 
+      test('cancelGeneration during the draft load ends the stream', () async {
+        await loadModel();
+        final gate = Completer<void>();
+        fake().draftLoadGate = gate;
+        final errors = <Object>[];
+        final done = Completer<void>();
+        backend
+            .generate(1, 'Hello', speculative(draft))
+            .listen((_) {}, onError: errors.add, onDone: done.complete);
+        while (fake().draftLoads.isEmpty) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        backend.cancelGeneration();
+        gate.complete();
+        await done.future;
+        expect(errors, isEmpty);
+        expect(fake().completionCalls, 0);
+      });
+
       test('maps speculative completion errors', () async {
         await loadModel();
         const cache = 'https://example.com/static.lcs?token=secret';

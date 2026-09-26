@@ -1934,12 +1934,17 @@ class WebGpuLlamaBackend
           }
           final draftModelUrl = speculative?.draftModelUrl;
           if (draftModelUrl != null) {
-            await _draftModel.prepare(
-              bridge,
-              draftModelUrl,
-              speculative!.draftStrategy!,
-              signal: abortController.signal,
-            );
+            try {
+              await _draftModel.prepare(
+                bridge,
+                draftModelUrl,
+                speculative!.draftStrategy!,
+                signal: abortController.signal,
+              );
+            } on Object {
+              if (abortController.signal.aborted) return;
+              rethrow;
+            }
           }
           // The bridge rejects an already-aborted signal with an AbortError
           // (v0.1.36 ignored it on its worker path), so end the stream here
