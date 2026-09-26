@@ -23,7 +23,8 @@
   closes and starts with whitespace: the parse keeps it untrimmed, but it
   streams without its leading and trailing whitespace, so
   `"  \n Hello there.  \n\n"` streams as `"Hello there."`. Before, it streamed
-  as the parse gives it unless it contained a backslash. After a forced-open
+  as the parse gives it, except for some thoughts containing a backslash,
+  depending on chunking. After a forced-open
   thought, text after a tool call arrives at the end
   ([#701](https://github.com/leehack/llamadart/issues/701)).
 - Throw `LlamaModelException` when a WebGPU model load fails with a bridge
