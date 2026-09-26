@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -33,7 +32,8 @@ HugetlbPages:\t       0 kB
 Threads:\t12
 ''';
 
-/// `/proc/self/status` from Linux 4.4, which has no `RssAnon`, trimmed.
+/// `/proc/self/status` from Linux 4.4, which has no `RssAnon` or `RssShmem`,
+/// trimmed.
 const linux44Status = '''
 Name:\tdart
 VmHWM:\t  402940 kB
@@ -57,8 +57,16 @@ TaskVmInfoRev1 taskVmInfoWith(
 
 void main() {
   group('Linux /proc/self/status', () {
-    test('sums RssAnon and VmSwap, ignoring file and shared pages', () {
-      expect(linuxFootprintFrom(linuxStatus), (150020 + 2048) * 1024);
+    test('sums RssAnon, RssShmem and VmSwap, ignoring file pages', () {
+      expect(linuxFootprintFrom(linuxStatus), (150020 + 1024 + 2048) * 1024);
+    });
+    test('without a RssShmem line is unmeasurable', () {
+      expect(
+        linuxFootprintFrom(
+          linuxStatus.replaceFirst(RegExp('RssShmem.*\n'), ''),
+        ),
+        isNull,
+      );
     });
     test('without a VmSwap line is unmeasurable', () {
       expect(
@@ -124,31 +132,37 @@ int main(void) {
     });
   });
 
-  group('Windows PROCESS_MEMORY_COUNTERS_EX', () {
+  group('Windows PROCESS_MEMORY_COUNTERS_EX2', () {
     test('matches the <psapi.h> layout', () {
       final word = sizeOf<IntPtr>();
-      expect(sizeOf<ProcessMemoryCountersEx>(), 8 + 9 * word);
-      final memory = calloc<ProcessMemoryCountersEx>();
+      expect(sizeOf<ProcessMemoryCountersEx2>(), 8 + 10 * word + 8);
+      final memory = calloc<ProcessMemoryCountersEx2>();
       addTearDown(() => calloc.free(memory));
       final bytes = memory.cast<Uint8>();
-      final counters = memory.ref;
-      counters.cb = 1;
-      counters.privateUsage = 0x1234;
+      memory.ref
+        ..cb = 1
+        ..privateUsage = 0x1234
+        ..privateWorkingSetSize = 0x5678
+        ..sharedCommitUsage = 0x9abc;
+      int sizeAt(int offset) => word == 8
+          ? (bytes + offset).cast<Uint64>().value
+          : (bytes + offset).cast<Uint32>().value;
       expect(bytes.cast<Uint32>().value, 1);
-      final privateUsage = bytes + (8 + 8 * word);
-      expect(
-        word == 8
-            ? privateUsage.cast<Uint64>().value
-            : privateUsage.cast<Uint32>().value,
-        0x1234,
-      );
+      expect(sizeAt(8 + 8 * word), 0x1234);
+      expect(sizeAt(8 + 9 * word), 0x5678);
+      expect((bytes + 8 + 10 * word).cast<Uint64>().value, 0x9abc);
     });
-    test('reads PrivateUsage only from a call that succeeded', () {
-      final memory = calloc<ProcessMemoryCountersEx>();
+    test('sums PrivateUsage and SharedCommitUsage from a filled call', () {
+      final memory = calloc<ProcessMemoryCountersEx2>();
       addTearDown(() => calloc.free(memory));
-      memory.ref.privateUsage = 8192;
-      expect(windowsFootprintFrom(1, memory.ref), 8192);
+      memory.ref
+        ..privateUsage = 8192
+        ..privateWorkingSetSize = 1
+        ..sharedCommitUsage = 4096;
+      expect(windowsFootprintFrom(1, memory.ref), 12288);
       expect(windowsFootprintFrom(0, memory.ref), isNull);
+      memory.ref.sharedCommitUsage = windowsUnfilledSentinel;
+      expect(windowsFootprintFrom(1, memory.ref), isNull);
     });
   });
 
@@ -179,21 +193,43 @@ int main(void) {
   });
 
   group('this process', () {
-    /// The last round the probe printed, and its whole output.
-    Future<(List<Map<String, dynamic>>, Map<String, dynamic>)> probe(
-      List<String> args,
-    ) async {
-      final result = await Process.run(Platform.resolvedExecutable, [
-        '--packages=${(await Isolate.packageConfig)!.toFilePath()}',
+    // Precompiled, so no front end compiles source inside the probe and moves
+    // its footprint by hundreds of MiB.
+    late String probeKernel;
+    setUpAll(() async {
+      final dir = await Directory.systemTemp.createTemp('footprint_probe');
+      addTearDown(() => dir.delete(recursive: true));
+      probeKernel = '${dir.path}/probe.dill';
+      final compiled = await Process.run(Platform.resolvedExecutable, [
+        'compile',
+        'kernel',
         'test/fixtures/process_memory_probe.dart',
+        '-o',
+        probeKernel,
+      ]);
+      expect(compiled.exitCode, 0, reason: '${compiled.stderr}');
+    });
+
+    /// The probe's JSON output.
+    Future<Map<String, dynamic>> probe(List<String> args) async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        probeKernel,
         ...args,
       ]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
-      final output =
-          jsonDecode(result.stdout as String) as Map<String, dynamic>;
-      final rounds = output['rounds'] as List;
-      return ((rounds.last as List).cast<Map<String, dynamic>>(), output);
+      return jsonDecode(result.stdout as String) as Map<String, dynamic>;
     }
+
+    List<Map<String, dynamic>> lastRound(Map<String, dynamic> output) =>
+        ((output['rounds'] as List).last as List).cast<Map<String, dynamic>>();
+
+    /// Memory kinds a process can dirty on this platform.
+    final kinds = [
+      'private',
+      if (Platform.isMacOS || Platform.isLinux) 'shared_anon',
+      if (Platform.isLinux) 'memfd',
+      if (Platform.isWindows) 'section',
+    ];
 
     test('reports the counter for this platform', () {
       expect(
@@ -202,25 +238,65 @@ int main(void) {
       );
       expect(memoryFootprintBytes(), isPositive);
     });
-    test('counts memory it dirties', () async {
+    for (final kind in kinds) {
+      test('counts $kind memory it dirties, whatever is resident', () async {
+        const size = 256 * mib;
+        final output = await probe(['dirty', kind, '$size']);
+        final [before, after, trimmed] = lastRound(output);
+        final reason = '$output';
+        expect(
+          after['footprint'] - before['footprint'],
+          greaterThan(240 * mib),
+          reason: reason,
+        );
+        expect(
+          (trimmed['footprint'] - after['footprint']).abs(),
+          lessThan(16 * mib),
+          reason: reason,
+        );
+        if (Platform.isWindows) {
+          expect(
+            after['rss'] - trimmed['rss'],
+            greaterThan(200 * mib),
+            reason: reason,
+          );
+        }
+      });
+      test('a $kind leak on every load fails both memory bounds', () async {
+        final output = await probe(['leak', kind, '${16 * mib}']);
+        final reason = '$output';
+        expect(output['measurement'], memoryFootprintSource);
+        expect(output['peak_memory_bound'], 'FAIL', reason: reason);
+        expect(output['leak_slope_bound'], 'FAIL', reason: reason);
+      });
+    }
+    Future<File> pagesFile(int size) async {
+      final dir = await Directory.systemTemp.createTemp('footprint');
+      addTearDown(() => dir.delete(recursive: true));
+      return File('${dir.path}/pages.bin')
+        ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
+    }
+
+    test('counts committed memory never written', () async {
       const size = 256 * mib;
-      final ([before, after], output) = await probe(['dirty', '$size']);
+      final output = await probe(['dirty', 'committed', '$size']);
+      final [before, after, _] = lastRound(output);
+      final reason = '$output';
       expect(
         after['footprint'] - before['footprint'],
         greaterThan(240 * mib),
-        reason: '$output',
+        reason: reason,
       );
-    });
+      expect(after['rss'] - before['rss'], lessThan(64 * mib), reason: reason);
+    }, testOn: 'windows');
     test('ignores mapped file pages entering and leaving residency', () async {
       const size = 256 * mib;
-      final dir = await Directory.systemTemp.createTemp('footprint');
-      addTearDown(() => dir.delete(recursive: true));
-      final file = File('${dir.path}/pages.bin')
-        ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
-      final ([before, touched, evicted], output) = await probe([
+      final output = await probe([
         'mapped',
-        file.path,
+        (await pagesFile(size)).path,
+        'read',
       ]);
+      final [before, touched, evicted] = lastRound(output);
       final reason = '$output';
       expect(output['sum'], size ~/ 4096 * 7);
       expect(
@@ -243,6 +319,40 @@ int main(void) {
         lessThan(64 * mib),
         reason: reason,
       );
-    }, testOn: 'mac-os || linux');
+    });
+    test('ignores file pages written through a shared mapping', () async {
+      const size = 256 * mib;
+      final output = await probe([
+        'mapped',
+        (await pagesFile(size)).path,
+        'write',
+      ]);
+      final [before, written, _] = lastRound(output);
+      final reason = '$output';
+      expect(
+        written['rss'] - before['rss'],
+        greaterThan(200 * mib),
+        reason: reason,
+      );
+      expect(
+        (written['footprint'] - before['footprint']).abs(),
+        lessThan(64 * mib),
+        reason: reason,
+      );
+    });
+    test('counts file pages written through a private mapping', () async {
+      const size = 256 * mib;
+      final output = await probe([
+        'mapped',
+        (await pagesFile(size)).path,
+        'copy',
+      ]);
+      final [before, written, _] = lastRound(output);
+      expect(
+        written['footprint'] - before['footprint'],
+        greaterThan(240 * mib),
+        reason: '$output',
+      );
+    });
   });
 }

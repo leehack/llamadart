@@ -107,17 +107,23 @@ where the ratio is not applied, a leak like that would pass.
 The footprint counts native and Dart allocations together. Each report names
 its counter in `measurement`:
 
-| Platform | Counter |
-| --- | --- |
-| macOS, iOS | `task_info(TASK_VM_INFO).phys_footprint` |
-| Linux, Android | `RssAnon` + `VmSwap` from `/proc/self/status` |
-| Windows | `PrivateUsage` from `GetProcessMemoryInfo` |
+| Platform | Counter | Counts | Does not count |
+| --- | --- | --- | --- |
+| macOS, iOS | `task_info(TASK_VM_INFO).phys_footprint` | dirty anonymous memory, private or shared, including pages the kernel compressed or swapped out | file-backed pages, clean or dirty |
+| Linux, Android | `RssAnon` + `RssShmem` + `VmSwap` from `/proc/self/status` | resident anonymous pages, resident shared memory such as `memfd` and `MAP_SHARED \| MAP_ANONYMOUS` pages, and swapped-out anonymous pages | file-backed pages, clean or dirty, and shared memory the kernel swapped out |
+| Windows | `PrivateUsage` + `SharedCommitUsage` from `GetProcessMemoryInfo` `PROCESS_MEMORY_COUNTERS_EX2` | committed private memory and committed pagefile-backed shared sections, whether resident or not, including committed pages never written | file-backed sections, clean or dirty |
 
-Each counts the process's private memory and not clean file-backed pages such
-as the mmapped weights. The resident set the bounds used before counts pages
-only while they stay in memory. Under memory pressure on macOS its sample
-after `generate` came out up to 2 GB low, more than the whole `tts` model
-file, and the peak ratio failed at 1.11-1.49x without a leak
+Pages written through a private file mapping become anonymous memory and are
+counted. `/proc/self/status` reports shared memory only while it is resident,
+so on Linux a leak of shared memory that the kernel swaps out stops adding to
+the footprint. `PROCESS_MEMORY_COUNTERS_EX2` needs Windows 10 22H2 or Windows
+11 22H2 with the September 2023 cumulative update; on older builds the call
+fails or leaves `SharedCommitUsage` unset, and the bounds record `SKIP`.
+
+The resident set the bounds used before counts pages only while they stay in
+memory. Under memory pressure on macOS its sample after `generate` came out up
+to 2 GB low, more than the whole `tts` model file, and the peak ratio failed at
+1.11-1.49x without a leak
 ([#633](https://github.com/leehack/llamadart/issues/633)). On macOS arm64,
 `phys_footprint` held within 0.5% while compressing 4 GiB of dirty memory cut
 the process's resident set from 4277 MiB to 139 MiB, and did not move while

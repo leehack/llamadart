@@ -1187,10 +1187,13 @@ input/recovery, independent reload and cleanup. Eight further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
 measured cancellation latency, peak memory footprint and per-cycle footprint
 growth against the budgets described in
-`packages/llamadart_validation/assets/speech/README.md`. The footprint counts
-memory the process dirtied, not clean mmapped weights, so evicting those pages
-under memory pressure does not shrink it
-([#633](https://github.com/leehack/llamadart/issues/633)). The peak ratio is
+`packages/llamadart_validation/assets/speech/README.md`. The footprint is
+`phys_footprint` on macOS and iOS, `RssAnon + RssShmem + VmSwap` on Linux and
+Android, and `PrivateUsage + SharedCommitUsage` on Windows. None counts
+file-backed pages, such as the mmapped weights, so evicting them under memory
+pressure does not shrink it
+([#633](https://github.com/leehack/llamadart/issues/633)); the speech README
+lists what each counter includes and misses. The peak ratio is
 not applied on Linux CUDA, whose host memory excludes the weights; the per-cycle
 growth bound applies on every backend but misses growth of 7 MiB or less per
 cycle, so a leak that small passes on Linux CUDA
