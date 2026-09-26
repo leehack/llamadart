@@ -179,15 +179,20 @@ int main(void) {
   });
 
   group('this process', () {
-    Future<List<Map<String, dynamic>>> probe(List<String> args) async {
+    /// The last round the probe printed, and its whole output.
+    Future<(List<Map<String, dynamic>>, Map<String, dynamic>)> probe(
+      List<String> args,
+    ) async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--packages=${(await Isolate.packageConfig)!.toFilePath()}',
         'test/fixtures/process_memory_probe.dart',
         ...args,
       ]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
-      return (jsonDecode(result.stdout as String) as List)
-          .cast<Map<String, dynamic>>();
+      final output =
+          jsonDecode(result.stdout as String) as Map<String, dynamic>;
+      final rounds = output['rounds'] as List;
+      return ((rounds.last as List).cast<Map<String, dynamic>>(), output);
     }
 
     test('reports the counter for this platform', () {
@@ -199,8 +204,12 @@ int main(void) {
     });
     test('counts memory it dirties', () async {
       const size = 256 * mib;
-      final [before, after] = await probe(['dirty', '$size']);
-      expect(after['footprint'] - before['footprint'], greaterThan(240 * mib));
+      final ([before, after], output) = await probe(['dirty', '$size']);
+      expect(
+        after['footprint'] - before['footprint'],
+        greaterThan(240 * mib),
+        reason: '$output',
+      );
     });
     test('ignores mapped file pages entering and leaving residency', () async {
       const size = 256 * mib;
@@ -208,20 +217,31 @@ int main(void) {
       addTearDown(() => dir.delete(recursive: true));
       final file = File('${dir.path}/pages.bin')
         ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
-      final [before, touched, evicted, read] = await probe([
+      final ([before, touched, evicted], output) = await probe([
         'mapped',
         file.path,
       ]);
-      expect(read['sum'], size ~/ 4096 * 7);
-      expect(touched['rss'] - before['rss'], greaterThan(200 * mib));
-      expect(touched['rss'] - evicted['rss'], greaterThan(200 * mib));
+      final reason = '$output';
+      expect(output['sum'], size ~/ 4096 * 7);
+      expect(
+        touched['rss'] - before['rss'],
+        greaterThan(200 * mib),
+        reason: reason,
+      );
+      expect(
+        touched['rss'] - evicted['rss'],
+        greaterThan(200 * mib),
+        reason: reason,
+      );
       expect(
         (touched['footprint'] - before['footprint']).abs(),
         lessThan(64 * mib),
+        reason: reason,
       );
       expect(
         (evicted['footprint'] - touched['footprint']).abs(),
         lessThan(64 * mib),
+        reason: reason,
       );
     }, testOn: 'mac-os || linux');
   });

@@ -10,7 +10,8 @@ import 'package:llamadart_validation/src/process_memory.dart';
 ///
 /// `dirty <bytes>` samples before and after dirtying that many bytes of
 /// `malloc` memory. `mapped <file>` maps the file read-only and samples before
-/// reading every page, after, and after evicting the pages again.
+/// reading every page, after, and after evicting the pages again. Each repeats
+/// [_rounds] times, so the last round runs away from VM start-up.
 void main(List<String> args) {
   Map<String, int> sample() => {
     'rss': ProcessInfo.currentRss,
@@ -24,19 +25,23 @@ void main(List<String> args) {
   stdout.writeln(jsonEncode(samples));
 }
 
-List<Map<String, int>> _dirty(int size, Map<String, int> Function() sample) {
-  final before = sample();
-  final memory = malloc<Uint8>(size);
-  memory.asTypedList(size).fillRange(0, size, 1);
-  final after = sample();
-  malloc.free(memory);
-  return [before, after];
+const _rounds = 3;
+
+Map<String, Object> _dirty(int size, Map<String, int> Function() sample) {
+  final buffers = <Pointer<Uint8>>[];
+  final rounds = <List<Map<String, int>>>[];
+  for (var i = 0; i < _rounds; i++) {
+    final before = sample();
+    final memory = malloc<Uint8>(size);
+    buffers.add(memory);
+    memory.asTypedList(size).fillRange(0, size, 1);
+    rounds.add([before, sample()]);
+  }
+  buffers.forEach(malloc.free);
+  return {'rounds': rounds};
 }
 
-List<Map<String, int>> _mapped(
-  String path,
-  Map<String, int> Function() sample,
-) {
+Map<String, Object> _mapped(String path, Map<String, int> Function() sample) {
   final libc = DynamicLibrary.process();
   final open = libc
       .lookupFunction<
@@ -74,20 +79,20 @@ List<Map<String, int>> _mapped(
   close(fd);
   if (pages.address == -1) throw StateError('mmap failed');
   final bytes = pages.asTypedList(size);
-  final before = sample();
   var sum = 0;
-  for (var i = 0; i < size; i += 4096) {
-    sum += bytes[i];
+  final rounds = <List<Map<String, int>>>[];
+  for (var i = 0; i < _rounds; i++) {
+    final before = sample();
+    sum = 0;
+    for (var offset = 0; offset < size; offset += 4096) {
+      sum += bytes[offset];
+    }
+    final touched = sample();
+    if (evict(pages, size, Platform.isMacOS ? msInvalidate : madvDontNeed) !=
+        0) {
+      throw StateError('eviction failed');
+    }
+    rounds.add([before, touched, sample()]);
   }
-  final touched = sample();
-  if (evict(pages, size, Platform.isMacOS ? msInvalidate : madvDontNeed) != 0) {
-    throw StateError('eviction failed');
-  }
-  final evicted = sample();
-  return [
-    before,
-    touched,
-    evicted,
-    {'sum': sum},
-  ];
+  return {'rounds': rounds, 'sum': sum};
 }
