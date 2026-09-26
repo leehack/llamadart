@@ -572,6 +572,20 @@ class _LlamaCppSpeculativeConfig {
   );
 }
 
+/// Copies [text] to native memory as NUL-terminated UTF-8.
+///
+/// Returns the pointer, which the caller frees with `malloc.free`, and the
+/// byte length without the terminator. The length counts the bytes after an
+/// embedded U+0000, where `Utf8.length` stops.
+(Pointer<Utf8>, int) _toNativeUtf8WithLength(String text) {
+  final bytes = utf8.encode(text);
+  final pointer = malloc<Uint8>(bytes.length + 1);
+  pointer.asTypedList(bytes.length + 1)
+    ..setAll(0, bytes)
+    ..[bytes.length] = 0;
+  return (pointer.cast(), bytes.length);
+}
+
 /// Service responsible for managing Llama.cpp models and contexts.
 ///
 /// This service handles the direct interaction with the native Llama.cpp library,
@@ -4911,12 +4925,12 @@ class LlamaCppService {
     int maxTokens,
   ) {
     final shouldAddSpecial = !_promptStartsWithBosToken(vocab, text);
-    final textPtr = text.toNativeUtf8();
+    final (textPtr, textLength) = _toNativeUtf8WithLength(text);
 
     final requiredTokenCount = -llama_tokenize(
       vocab,
       textPtr.cast(),
-      textPtr.length,
+      textLength,
       nullptr,
       0,
       shouldAddSpecial,
@@ -4933,7 +4947,7 @@ class LlamaCppService {
       final actualTokenCount = llama_tokenize(
         vocab,
         textPtr.cast(),
-        textPtr.length,
+        textLength,
         tokensPtr,
         requiredTokenCount,
         shouldAddSpecial,
@@ -5333,12 +5347,12 @@ class LlamaCppService {
     required _LlamaCppSpeculativeConfig? speculativeConfig,
     required bool Function() isCancelled,
   }) {
-    final promptPtr = prompt.toNativeUtf8();
+    final (promptPtr, promptLength) = _toNativeUtf8WithLength(prompt);
     final shouldAddSpecial = !_promptStartsWithBosToken(vocab, prompt);
     final nTokens = llama_tokenize(
       vocab,
       promptPtr.cast(),
-      promptPtr.length,
+      promptLength,
       tokensPtr,
       nCtx,
       shouldAddSpecial,
@@ -6394,12 +6408,12 @@ class LlamaCppService {
         continue;
       }
 
-      final textPtr = tokenText.toNativeUtf8();
+      final (textPtr, textLength) = _toNativeUtf8WithLength(tokenText);
       try {
         final required = -llama_tokenize(
           vocab,
           textPtr.cast(),
-          textPtr.length,
+          textLength,
           nullptr,
           0,
           false,
@@ -6415,7 +6429,7 @@ class LlamaCppService {
           final actual = llama_tokenize(
             vocab,
             textPtr.cast(),
-            textPtr.length,
+            textLength,
             tokenIds,
             required,
             false,
@@ -6470,13 +6484,13 @@ class LlamaCppService {
     final model = _models[modelHandle];
     if (model == null) return [];
     final vocab = llama_model_get_vocab(model.pointer);
-    final textPtr = text.toNativeUtf8();
+    final (textPtr, textLength) = _toNativeUtf8WithLength(text);
     final shouldAddSpecial =
         addSpecial && !_promptStartsWithBosToken(vocab, text);
     final n = -llama_tokenize(
       vocab,
       textPtr.cast(),
-      textPtr.length,
+      textLength,
       nullptr,
       0,
       shouldAddSpecial,
@@ -6486,7 +6500,7 @@ class LlamaCppService {
     final actual = llama_tokenize(
       vocab,
       textPtr.cast(),
-      textPtr.length,
+      textLength,
       tokensPtr,
       n,
       shouldAddSpecial,

@@ -332,6 +332,34 @@ void main() {
     }
   });
 
+  test('tokenizes the text after U+0000 as llama-tokenize does', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    if (modelPath == null) {
+      return;
+    }
+    final engine = LlamaEngine(LlamaBackend());
+    try {
+      await engine.loadModel(
+        modelPath,
+        modelParams: ModelParams(
+          contextSize: 512,
+          preferredBackend: _backend(),
+          gpuLayers: 0,
+        ),
+      );
+
+      // `printf 'ab\0cd' | llama-tokenize --stdin --ids --no-bos` at
+      // llama.cpp 7fe450e19 on laya-Q8_0.gguf.
+      expect(await engine.tokenize('ab\u0000cd', addSpecial: false), [
+        357,
+        177,
+        2428,
+      ]);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
   test('engine dispose frees a head that was not disposed', () async {
     final modelPath = _requiredFile(_modelPathKey);
     final headPath = _requiredFile(_headPathKey);

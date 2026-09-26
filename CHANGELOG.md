@@ -22,6 +22,12 @@
   scheme-relative `//user:pass@host/...` URLs and relative paths with a query,
   and out of native model download errors
   ([#704](https://github.com/leehack/llamadart/issues/704)).
+- Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
+  and generation prompts instead of dropping it
+  ([#608](https://github.com/leehack/llamadart/issues/608)).
+- Make `DecisionEngine.load` throw `LlamaStateException` when another model is
+  loaded while it runs, even under the same backend handle
+  ([#626](https://github.com/leehack/llamadart/issues/626)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image
