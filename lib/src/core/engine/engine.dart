@@ -745,9 +745,9 @@ class LlamaEngine {
   /// not report a token limit.
   ///
   /// The final chunk's `usage` holds the request's token counts and timings
-  /// on the native llama.cpp backend. It is null on other backends and
-  /// whenever the backend reports none, as for a request cancelled before it
-  /// reached the backend.
+  /// on the native llama.cpp backend and on WebGPU with bridge assets
+  /// `v0.1.54+`. It is null on other backends and whenever the backend reports
+  /// none, as for a request cancelled before it reached the backend.
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,

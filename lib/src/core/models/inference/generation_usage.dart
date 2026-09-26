@@ -18,6 +18,9 @@ class LlamaGenerationUsage {
 
   /// Generated tokens, including tokens that formed a stop sequence and
   /// excluding the end-of-generation token.
+  ///
+  /// On WebGPU it can also count tokens the bridge generated after a stop
+  /// sequence, before the stop reached it.
   final int completionTokens;
 
   /// Time from the backend starting the request to its first streamed text,
