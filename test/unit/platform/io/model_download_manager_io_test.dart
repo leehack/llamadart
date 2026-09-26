@@ -1287,6 +1287,43 @@ void main() {
       expect(File(entry.filePath).readAsStringSync(), 'eventual-model');
     });
 
+    test('keeps URL secrets out of a failed download', () async {
+      final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(socket.close);
+      final connections = socket.listen((client) {
+        client.listen((_) {}, onError: (_) {});
+        client.write('HTTP/1.1 200 OK\r\nContent-Le');
+        client.destroy();
+      });
+      addTearDown(connections.cancel);
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(
+        Uri.parse(
+          'http://alice:Pw9secret@127.0.0.1:${socket.port}/m.gguf'
+          '?token=Tk9secretvalue',
+        ),
+        fileName: 'm.gguf',
+      );
+
+      await expectLater(
+        manager.ensureModel(source, options: ModelLoadOptions(maxRetries: 0)),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => '$error',
+            'error',
+            allOf(
+              contains('http://127.0.0.1:${socket.port}/m.gguf'),
+              isNot(contains('Pw9secret')),
+              isNot(contains('Tk9secretvalue')),
+              isNot(contains('alice')),
+            ),
+          ),
+        ),
+      );
+    });
+
     test('does not retry non-retryable HTTP failures', () async {
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: tempDir.path,

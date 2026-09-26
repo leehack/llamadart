@@ -1219,7 +1219,8 @@ class WebGpuLlamaBackend
 
         _emitConsoleText(
           LlamaLogLevel.error,
-          'WebGpuLlamaBackend: Bridge model load failed: $e',
+          'WebGpuLlamaBackend: Bridge model load failed: '
+          '${webGpuBridgeErrorText(e, sourceUrls: <String>[url])}',
         );
         if (runtimeHints.isNotEmpty) {
           _emitConsoleText(
@@ -1286,7 +1287,7 @@ class WebGpuLlamaBackend
         if (normalized != null) {
           throw normalized;
         }
-        rethrow;
+        throw _unmappedModelLoadError(e, url);
       }
     }
 
@@ -1299,10 +1300,23 @@ class WebGpuLlamaBackend
       if (normalized != null) {
         throw normalized;
       }
-      throw lastError;
+      throw _unmappedModelLoadError(lastError, url);
     }
 
     throw StateError('WebGpuLlamaBackend: model load failed unexpectedly');
+  }
+
+  /// Returns [error] unchanged when it is a [LlamaException] or an
+  /// [UnsupportedError], and otherwise a [LlamaModelException] whose details
+  /// are the error message with URL secrets redacted.
+  Object _unmappedModelLoadError(Object error, String url) {
+    if (error is LlamaException || error is UnsupportedError) {
+      return error;
+    }
+    return LlamaModelException(
+      'The Web runtime could not load the model.',
+      webGpuBridgeErrorText(error, sourceUrls: <String>[url]),
+    );
   }
 
   @override
@@ -2280,7 +2294,7 @@ class WebGpuLlamaBackend
           '(v0.1.7 or newer).',
         );
       }
-      rethrow;
+      throw _embeddingError(error);
     }
   }
 
@@ -2312,9 +2326,15 @@ class WebGpuLlamaBackend
         }
         return vectors;
       }
-      rethrow;
+      throw _embeddingError(error);
     }
   }
+
+  static LlamaInferenceException _embeddingError(Object error) =>
+      LlamaInferenceException(
+        'The Web runtime could not compute embeddings.',
+        webGpuBridgeErrorText(error),
+      );
 
   @override
   Future<LlamaNextTokenScores> scoreNextToken(
@@ -2352,7 +2372,10 @@ class WebGpuLlamaBackend
       if (message.contains('needs a decoder-only model')) {
         throw LlamaUnsupportedException(message);
       }
-      rethrow;
+      throw LlamaInferenceException(
+        'The Web runtime could not score the next token.',
+        webGpuBridgeErrorText(error),
+      );
     }
     if (result == null || !result.isA<JSObject>()) {
       throw LlamaInferenceException(
@@ -2615,7 +2638,7 @@ class WebGpuLlamaBackend
           '(v0.1.15 or newer).',
         );
       }
-      rethrow;
+      throw _stateError('save', error, path);
     }
   }
 
@@ -2652,9 +2675,18 @@ class WebGpuLlamaBackend
           '(v0.1.15 or newer).',
         );
       }
-      rethrow;
+      throw _stateError('load', error, path);
     }
   }
+
+  static LlamaStateException _stateError(
+    String action,
+    Object error,
+    String path,
+  ) => LlamaStateException(
+    'The Web runtime could not $action the state.',
+    webGpuBridgeErrorText(error, sourceUrls: <String>[path]),
+  );
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
