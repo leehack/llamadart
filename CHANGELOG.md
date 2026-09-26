@@ -89,6 +89,9 @@
   `<|tool_list_start|>`, as llama.cpp does, so LFM2.5-1.2B-Instruct and
   LFM2.5-1.2B-Thinking tool prompts drop the stray "Respond in JSON format"
   instruction ([#716](https://github.com/leehack/llamadart/issues/716)).
+- Report per-request usage on WebGPU with the newly pinned bridge assets
+  `v0.1.54`, on the final `create` chunk and to observers
+  ([#696](https://github.com/leehack/llamadart/issues/696)).
 - Give assistant turns that hold only tool calls or only reasoning empty
   content instead of `null` in chat templates, as llama.cpp does: QwQ-32B
   renders them instead of throwing, and LFM2 and Devstral prompts drop a stray

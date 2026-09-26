@@ -15,6 +15,7 @@ import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
@@ -47,6 +48,7 @@ class WebGpuLlamaBackend
         BackendTextToSpeech,
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
+        BackendGenerationUsageReporting,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -104,6 +106,8 @@ class WebGpuLlamaBackend
   final WebGpuDraftModel _draftModel = WebGpuDraftModel();
   _WebGpuCompletionCapabilities _completionCapabilities =
       _noCompletionCapabilities;
+  final Expando<LlamaGenerationUsage> _generationUsages =
+      Expando<LlamaGenerationUsage>();
 
   /// Creates a bridge-backed web backend.
   WebGpuLlamaBackend({
@@ -159,6 +163,13 @@ class WebGpuLlamaBackend
     return value.isA<JSFunction>();
   }
 
+  bool _bridgeSupportsCompletionUsage(LlamaWebGpuBridge bridge) {
+    final constructor = bridge.getProperty('constructor'.toJS);
+    return constructor.isA<JSFunction>() &&
+        _jsBoolProperty(constructor as JSFunction, 'supportsCompletionUsage') ==
+            true;
+  }
+
   int? _jsIntProperty(JSObject object, String name) {
     final value = object.getProperty(name.toJS);
     return value.isA<JSNumber>() ? (value as JSNumber).toDartInt : null;
@@ -172,6 +183,36 @@ class WebGpuLlamaBackend
   String? _jsStringProperty(JSObject object, String name) {
     final value = object.getProperty(name.toJS);
     return value.isA<JSString>() ? (value as JSString).toDart : null;
+  }
+
+  Duration? _jsMillisecondsProperty(JSObject object, String name) {
+    final value = object.getProperty(name.toJS);
+    if (!value.isA<JSNumber>()) {
+      return null;
+    }
+    final milliseconds = (value as JSNumber).toDartDouble;
+    return milliseconds.isFinite && milliseconds >= 0
+        ? Duration(microseconds: (milliseconds * 1000).round())
+        : null;
+  }
+
+  LlamaGenerationUsage? _generationUsageFromJs(JSAny? value) {
+    if (value == null || !value.isA<JSObject>()) {
+      return null;
+    }
+    final usage = value as JSObject;
+    final promptTokens = _jsIntProperty(usage, 'promptTokens');
+    final completionTokens = _jsIntProperty(usage, 'completionTokens');
+    if (promptTokens == null || completionTokens == null) {
+      return null;
+    }
+    return LlamaGenerationUsage(
+      promptTokens: promptTokens,
+      cachedPromptTokens: _jsIntProperty(usage, 'cachedPromptTokens'),
+      completionTokens: completionTokens,
+      timeToFirstToken: _jsMillisecondsProperty(usage, 'timeToFirstTokenMs'),
+      duration: _jsMillisecondsProperty(usage, 'durationMs'),
+    );
   }
 
   Future<void> _loadBridgeScript() async {
@@ -1787,6 +1828,9 @@ class WebGpuLlamaBackend
 
     final abortController = AbortController();
     late final StreamController<List<int>> controller;
+    late final Stream<List<int>> generation;
+    LlamaGenerationUsage? reportedUsage;
+    var failed = false;
     var canceledByCaller = false;
     controller = StreamController<List<int>>(
       onCancel: () {
@@ -1805,6 +1849,7 @@ class WebGpuLlamaBackend
         return null;
       },
     );
+    generation = controller.stream;
     _abortController = abortController;
     var emittedLength = 0;
     var latestText = '';
@@ -1914,6 +1959,11 @@ class WebGpuLlamaBackend
       mediaMaxImagePixels: mediaMaxImagePixels,
       mediaMaxImageEdge: mediaMaxImageEdge,
       onToken: onToken as JSFunction,
+      onUsage: _bridgeSupportsCompletionUsage(bridge)
+          ? ((JSAny? usage) {
+              reportedUsage = _generationUsageFromJs(usage);
+            }).toJS
+          : null,
       emitCurrentTextOnToken: hasStopSequences,
       tokenEventEncoding: 'bytes',
       tokenEventFlushMs: tokenEventFlushMs,
@@ -1972,6 +2022,7 @@ class WebGpuLlamaBackend
           }
         } catch (e, st) {
           if (!stoppedBySequence && !canceledByCaller && !controller.isClosed) {
+            failed = true;
             controller.addError(
               speculative == null
                   ? e
@@ -1983,6 +2034,9 @@ class WebGpuLlamaBackend
           if (identical(_abortController, abortController)) {
             _abortController = null;
           }
+          if (!failed && reportedUsage != null) {
+            _generationUsages[generation] = reportedUsage;
+          }
           if (!controller.isClosed) {
             await controller.close();
           }
@@ -1990,7 +2044,7 @@ class WebGpuLlamaBackend
       }),
     );
 
-    return controller.stream;
+    return generation;
   }
 
   /// Validates [budget] as native llama.cpp generation does and converts it
@@ -2039,6 +2093,10 @@ class WebGpuLlamaBackend
     _abortController?.abort();
     _bridge?.cancel();
   }
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
+      _generationUsages[generation];
 
   @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
