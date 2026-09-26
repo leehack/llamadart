@@ -27,6 +27,13 @@ For canonical full release notes, use:
   loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
   example chat app uses it to send Min-P and enable its slider only where
   supported ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Return a DeepSeek V3 forced-open thought that never closes as reasoning, as
+  llama.cpp does with the DeepSeek V3.1 template, instead of as content with
+  its tool calls ([#743](https://github.com/leehack/llamadart/issues/743)).
+- Keep escaped `\n` and `\r` in Qwen3-Coder XML reasoning, as llama.cpp does
+  with the Qwen3.5 template; before, they became line breaks unless a tool
+  call ended the thought
+  ([#743](https://github.com/leehack/llamadart/issues/743)).
 - Stream content that equals the non-streamed parse for Qwen3-Coder XML,
   Mistral Nemo and 15 more tool-call formats, and for output parsed with a PEG
   parser, so text before a tool call no longer carries the tool-call envelope

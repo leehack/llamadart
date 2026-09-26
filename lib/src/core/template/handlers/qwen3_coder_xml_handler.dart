@@ -309,6 +309,8 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler
       isPartial: isPartial,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
+      // llama.cpp (`7fe450e1`) keeps escapes in Qwen3.5 reasoning.
+      unescapeReasoning: false,
     );
     return ChatParseResult(
       content: result.content.trim(),
