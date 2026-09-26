@@ -3710,6 +3710,208 @@ void main() {
       );
     });
 
+    group('a rejected model load', () {
+      void loadModelsWith(JSAny? Function(String url) load) {
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject options) => load(url)).toJS,
+        );
+      }
+
+      Matcher modelException(Matcher details) => isA<LlamaModelException>()
+          .having(
+            (error) => error.message,
+            'message',
+            'The Web runtime could not load the model.',
+          )
+          .having((error) => '${error.details}', 'details', details);
+
+      Matcher withoutSecrets(List<String> secrets) => allOf(<Matcher>[
+        for (final secret in secrets) isNot(contains(secret)),
+      ]);
+
+      test('keeps credentials of a real Chrome fetch error out', () async {
+        final errors = captureConsole('error');
+        loadModelsWith((url) => window.fetch(url.toJS));
+        for (final (url, redacted, secrets, viaEngine) in const [
+          (
+            'https://u:SEKRIT@example.com/m.gguf?token=Q1secret',
+            'credentials: https://example.com/m.gguf',
+            <String>['SEKRIT', 'Q1secret', 'u:'],
+            true,
+          ),
+          (
+            '//u:S13@example.com/m.gguf?t=Q1',
+            'credentials: //example.com/m.gguf',
+            <String>['S13', 't=Q1', 'u:'],
+            false,
+          ),
+        ]) {
+          errors.clear();
+          await backend.setLogLevel(LlamaLogLevel.error);
+          await expectLater(
+            backend.modelLoadFromUrl(url, const ModelParams()),
+            throwsA(
+              modelException(
+                allOf(contains(redacted), withoutSecrets(secrets)),
+              ),
+            ),
+            reason: url,
+          );
+          expect(errors, isNotEmpty, reason: url);
+          expect(errors.join('\n'), withoutSecrets(secrets), reason: url);
+
+          if (!viaEngine) continue;
+          final engine = LlamaEngine(backend);
+          await expectLater(
+            engine.loadModelFromUrl(url),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => '$error',
+                'error',
+                withoutSecrets(secrets),
+              ),
+            ),
+            reason: url,
+          );
+        }
+      });
+
+      test('redacts a signed URL in a bridge load error', () async {
+        loadModelsWith(
+          (url) => _rejectPromise(
+            _jsError(
+              'Failed to fetch model $url '
+              '(403 Forbidden: signature SIGsecret123 expired)',
+            ),
+          ),
+        );
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://bucket.example.com/m.gguf'
+            '?X-Amz-Credential=AKIASECRET&X-Amz-Signature=SIGsecret123',
+            const ModelParams(),
+          ),
+          throwsA(
+            modelException(
+              equals(
+                'Failed to fetch model https://bucket.example.com/m.gguf '
+                '(403 Forbidden: signature  expired)',
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('keeps the host of a credential-free URL', () async {
+        loadModelsWith(
+          (url) => _rejectPromise(
+            _jsError('Failed to fetch model $url (404 Not Found)'),
+          ),
+        );
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://huggingface.co/leehack/m/resolve/main/m.gguf',
+            const ModelParams(),
+          ),
+          throwsA(
+            modelException(
+              equals(
+                'Failed to fetch model '
+                'https://huggingface.co/leehack/m/resolve/main/m.gguf '
+                '(404 Not Found)',
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
+    group('an unmapped bridge error', () {
+      const signedPath = 'https://example.com/s.bin?sig=SIGsecret123';
+      final rejection = _jsError(
+        'Bridge failed for $signedPath (signature SIGsecret123 expired)',
+      );
+      const redacted =
+          'Bridge failed for https://example.com/s.bin '
+          '(signature SIGsecret123 expired)';
+
+      setUp(() async {
+        for (final method in const [
+          'embed',
+          'embedBatch',
+          'scoreNextToken',
+          'stateSaveFile',
+          'stateLoadFile',
+        ]) {
+          bridge.setProperty(
+            method.toJS,
+            ((JSAny? _, JSAny? _) => _rejectPromise(rejection)).toJS,
+          );
+        }
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+      });
+
+      Matcher throwsTyped<T extends LlamaException>(
+        String message,
+        String details,
+      ) => throwsA(
+        isA<T>()
+            .having((error) => error.message, 'message', message)
+            .having((error) => error.details, 'details', details),
+      );
+
+      test('fails embeddings with LlamaInferenceException', () async {
+        final throwsEmbeddingError = throwsTyped<LlamaInferenceException>(
+          'The Web runtime could not compute embeddings.',
+          redacted,
+        );
+        await expectLater(backend.embed(1, 'a'), throwsEmbeddingError);
+        await expectLater(
+          backend.embedBatch(1, const ['a', 'b']),
+          throwsEmbeddingError,
+        );
+      });
+
+      test('fails next-token scoring with LlamaInferenceException', () async {
+        await expectLater(
+          backend.scoreNextToken(
+            1,
+            'hi',
+            candidates: const <int>[1],
+            topK: 0,
+            reusePromptPrefix: false,
+          ),
+          throwsTyped<LlamaInferenceException>(
+            'The Web runtime could not score the next token.',
+            redacted,
+          ),
+        );
+      });
+
+      test('fails state persistence with the path secrets redacted', () async {
+        const pathRedacted =
+            'Bridge failed for https://example.com/s.bin (signature  expired)';
+        await expectLater(
+          backend.stateSaveFile(1, signedPath, const <int>[1]),
+          throwsTyped<LlamaStateException>(
+            'The Web runtime could not save the state.',
+            pathRedacted,
+          ),
+        );
+        await expectLater(
+          backend.stateLoadFile(1, signedPath, 128),
+          throwsTyped<LlamaStateException>(
+            'The Web runtime could not load the state.',
+            pathRedacted,
+          ),
+        );
+      });
+    });
+
     group('a rejected projector load', () {
       setUp(() {
         bridge.setProperty(

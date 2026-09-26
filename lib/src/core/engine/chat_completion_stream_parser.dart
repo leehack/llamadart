@@ -7,6 +7,7 @@ import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
+import '../template/handlers/hermes_handler.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -66,12 +67,19 @@ class ChatCompletionStreamParser {
     var didInitialPartialParse = false;
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
+    final hermesContent =
+        parseToolCallsEnabled &&
+            templateResult.format == ChatFormat.hermes.index
+        ? _HermesContentGate()
+        : null;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
-    // never streamed as reasoning before the final structured parse.
-    var streamingMode =
-        templateResult.thinkingForcedOpen ||
-            _mayEmbedToolEnvelopeAfterContent(templateResult.format)
+    // never streamed as reasoning before the final structured parse. Hermes
+    // parses such an envelope as reasoning.
+    var streamingMode = hermesContent != null
+        ? _ToolStreamingMode.raw
+        : templateResult.thinkingForcedOpen ||
+              _mayEmbedToolEnvelopeAfterContent(templateResult.format)
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
@@ -130,10 +138,15 @@ class ChatCompletionStreamParser {
           pendingBuffer = split.pendingBuffer;
           isThinking = split.isThinking;
           for (final emission in split.emissions) {
+            var text = emission.text;
             if (emission.isThinking) {
-              streamedReasoning += emission.text;
+              streamedReasoning += text;
             } else {
-              streamedContent += emission.text;
+              text = hermesContent?.add(text) ?? text;
+              if (text.isEmpty) {
+                continue;
+              }
+              streamedContent += text;
             }
             if (emission.isThinking && !enableThinking) {
               continue;
@@ -142,8 +155,8 @@ class ChatCompletionStreamParser {
               completionId: completionId,
               modelName: modelName,
               delta: emission.isThinking
-                  ? LlamaCompletionChunkDelta(thinking: emission.text)
-                  : LlamaCompletionChunkDelta(content: emission.text),
+                  ? LlamaCompletionChunkDelta(thinking: text)
+                  : LlamaCompletionChunkDelta(content: text),
             );
           }
           continue;
@@ -244,6 +257,9 @@ class ChatCompletionStreamParser {
         undecidedPrefix = '';
       }
 
+      if (!isThinking && hermesContent != null) {
+        pendingBuffer = hermesContent.add(pendingBuffer);
+      }
       if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
         if (isThinking) {
           streamedReasoning += pendingBuffer;
@@ -325,6 +341,7 @@ class ChatCompletionStreamParser {
       }
 
       final suppressFinalToolEnvelopeContent =
+          hermesContent == null &&
           parsed.hasToolCalls &&
           _isToolCallEnvelopeBuffer(
             fullOutput,
@@ -917,4 +934,43 @@ class ChatCompletionStreamParser {
         codeUnit == 0x0A || // \n
         codeUnit == 0x0D; // \r
   }
+}
+
+/// Releases raw Hermes content that the final parse keeps.
+///
+/// [HermesHandler.parse] drops tool-call envelopes from content and trims it.
+/// Text from a possible envelope opening on, and trailing whitespace, wait
+/// for more output. After a whole opening, nothing more is released, and the
+/// final parse supplies the rest of the content.
+class _HermesContentGate {
+  var _pending = '';
+  var _scanFrom = 0;
+  var _releasedAny = false;
+
+  /// Adds [content] and returns the newly released text.
+  String add(String content) {
+    _pending += content;
+    _scanFrom = HermesHandler.toolCallOpening(_pending, _scanFrom);
+    var end = _scanFrom;
+    while (end > 0 && _isTrimmed(_pending.codeUnitAt(end - 1))) {
+      end--;
+    }
+    var start = 0;
+    if (!_releasedAny) {
+      while (start < end && _isTrimmed(_pending.codeUnitAt(start))) {
+        start++;
+      }
+    }
+    if (start == end) {
+      return '';
+    }
+    final released = _pending.substring(start, end);
+    _pending = _pending.substring(end);
+    _scanFrom -= end;
+    _releasedAny = true;
+    return released;
+  }
+
+  static bool _isTrimmed(int codeUnit) =>
+      String.fromCharCode(codeUnit).trim().isEmpty;
 }

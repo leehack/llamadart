@@ -106,6 +106,11 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
+When tool calls are parsed, streamed Hermes content equals the content of the
+final parse. Text that could start a tool-call envelope, and trailing
+whitespace, is held until later output rules the envelope out or generation
+ends.
+
 ## `dinja` integration
 
 `llamadart` uses [`dinja`](https://pub.dev/packages/dinja), the Dart Jinja
