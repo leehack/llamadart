@@ -12,13 +12,24 @@ For canonical full release notes, use:
 - Stream Hermes-format content that equals the non-streamed parse, so text
   before a tool call no longer carries the `<tool_call>` envelope into
   streamed content or `ChatSession` history; only a possible envelope opening
-  and trailing whitespace wait for more output
+  and trailing whitespace wait for more output. With tools, streamed content
+  is now trimmed as the parse trims it, and text the parse keeps after a tool
+  call, including a malformed envelope, arrives at the end of the stream.
+  After a forced-open thought, reasoning streams as generated, untrimmed and
+  without partial `</think>` markup, and text after a tool call arrives at the
+  end
   ([#701](https://github.com/leehack/llamadart/issues/701)).
 - Throw `LlamaModelException` when a WebGPU model load fails with a bridge
   error that has no specific mapping, and `LlamaInferenceException` or
   `LlamaStateException` for such Web embedding, next-token scoring and state
   errors, with URL credentials and signed query values redacted from the
   details and the load-failure console log
+  ([#704](https://github.com/leehack/llamadart/issues/704)).
+- Keep URL credentials, signed query values and fragments out of
+  `LlamaEngine` model-load errors and logs, projector-load logs and the
+  `model` field of completion chunks for every URL form, including
+  scheme-relative `//user:pass@host/...` URLs and relative paths with a query,
+  and out of native model download errors
   ([#704](https://github.com/leehack/llamadart/issues/704)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:

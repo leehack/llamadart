@@ -3733,18 +3733,16 @@ void main() {
       test('keeps credentials of a real Chrome fetch error out', () async {
         final errors = captureConsole('error');
         loadModelsWith((url) => window.fetch(url.toJS));
-        for (final (url, redacted, secrets, viaEngine) in const [
+        for (final (url, redacted, secrets) in const [
           (
             'https://u:SEKRIT@example.com/m.gguf?token=Q1secret',
             'credentials: https://example.com/m.gguf',
             <String>['SEKRIT', 'Q1secret', 'u:'],
-            true,
           ),
           (
             '//u:S13@example.com/m.gguf?t=Q1',
             'credentials: //example.com/m.gguf',
             <String>['S13', 't=Q1', 'u:'],
-            false,
           ),
         ]) {
           errors.clear();
@@ -3761,7 +3759,6 @@ void main() {
           expect(errors, isNotEmpty, reason: url);
           expect(errors.join('\n'), withoutSecrets(secrets), reason: url);
 
-          if (!viaEngine) continue;
           final engine = LlamaEngine(backend);
           await expectLater(
             engine.loadModelFromUrl(url),

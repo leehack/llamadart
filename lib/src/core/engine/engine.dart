@@ -30,6 +30,7 @@ import '../models/model_source.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
+import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
 ///
@@ -224,19 +225,20 @@ class LlamaEngine {
       return _loadModelFromUrl(path, modelParams: modelParams);
     }
 
+    final redactedPath = _redactedSource(path);
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _modelPath = path;
+      _modelPath = redactedPath;
       _cachedModelMetadata = null;
       _modelHandle = await backend.modelLoad(path, modelParams);
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _isReady = true;
-      LlamaLogger.instance.info(_modelLoadedMessage(modelName, path));
+      LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedPath));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
       LlamaLogger.instance.error(
-        'Failed to load model $modelName from $path',
-        e,
+        'Failed to load model $modelName from $redactedPath',
+        _redactedErrorDetails(e, path),
         stackTrace,
       );
       if (e is LlamaUnsupportedException) {
@@ -245,7 +247,10 @@ class LlamaEngine {
       if (e is UnsupportedError) {
         throw _unsupportedBackendOperation('Model loading', e);
       }
-      throw LlamaModelException('Failed to load model from $path', e);
+      throw LlamaModelException(
+        'Failed to load model from $redactedPath',
+        _redactedErrorDetails(e, path),
+      );
     }
   }
 
@@ -398,7 +403,7 @@ class LlamaEngine {
   }) async {
     _ensureNotReady();
     final modelName = _displayNameForSource(url);
-    final redactedUrl = _redactedUriForLogs(url);
+    final redactedUrl = _redactedSource(url);
     LlamaLogger.instance.info('Loading model from URL: $modelName');
 
     if (!backend.supportsUrlLoading) {
@@ -426,7 +431,7 @@ class LlamaEngine {
 
       LlamaLogger.instance.error(
         'Failed to load model $modelName from URL $redactedUrl',
-        _redactedErrorDetails(e),
+        _redactedErrorDetails(e, url),
         stackTrace,
       );
       if (e is LlamaUnsupportedException) {
@@ -437,7 +442,7 @@ class LlamaEngine {
       }
       throw LlamaModelException(
         'Failed to load model from $redactedUrl',
-        _redactedErrorDetails(e),
+        _redactedErrorDetails(e, url),
       );
     }
   }
@@ -560,7 +565,7 @@ class LlamaEngine {
     } catch (e, stackTrace) {
       LlamaLogger.instance.error(
         'Failed to load multimodal projector $mmProjName',
-        e,
+        _redactedErrorDetails(e, mmProjPath),
         stackTrace,
       );
       if (e is UnsupportedError) {
@@ -2101,8 +2106,10 @@ class LlamaEngine {
     }
   }
 
+  /// The last path segment of [source] with its URL secrets redacted.
   String _displayNameForSource(String source) {
-    final parsedUri = Uri.tryParse(source);
+    final redacted = _redactedSource(source);
+    final parsedUri = Uri.tryParse(redacted);
     if (parsedUri != null &&
         parsedUri.hasScheme &&
         parsedUri.pathSegments.isNotEmpty) {
@@ -2112,33 +2119,21 @@ class LlamaEngine {
       }
     }
 
-    final normalizedSource = source.replaceAll('\\', '/');
-    final segments = normalizedSource.split('/');
-    final lastSegment = segments.isNotEmpty ? segments.last : source;
-    return lastSegment.isNotEmpty ? lastSegment : source;
+    final segments = redacted.replaceAll('\\', '/').split('/');
+    final lastSegment = segments.last;
+    return lastSegment.isNotEmpty ? lastSegment : redacted;
   }
 
-  String _redactedUriForLogs(String source) {
-    final uri = Uri.tryParse(source);
-    if (uri == null || !uri.hasScheme) {
-      return _displayNameForSource(source);
-    }
-    return Uri(
-      scheme: uri.scheme,
-      host: uri.hasAuthority ? uri.host : null,
-      port: uri.hasPort ? uri.port : null,
-      path: uri.path,
-    ).toString();
-  }
+  static String _redactedSource(String source) =>
+      redactUrlSecrets(source, sourceUrls: <String>[source]);
 
-  Object _redactedErrorDetails(Object error) {
-    final message = error.toString().replaceAllMapped(
-      RegExp(r'https?://[^\s)]+'),
-      (match) => _redactedUriForLogs(match.group(0)!),
-    );
+  static Object _redactedErrorDetails(Object error, String source) {
     return <String, Object?>{
       'type': error.runtimeType.toString(),
-      'message': message,
+      'message': redactUrlSecrets(
+        error.toString(),
+        sourceUrls: <String>[source],
+      ),
     };
   }
 
