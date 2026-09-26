@@ -65,11 +65,12 @@ void main() {
           );
 
           final bytes = await File(audioPath).readAsBytes();
+          final extension = p.extension(audioPath).replaceFirst('.', '');
           final audio = useBytes
               ? SpeechAudioBytesInput(
                   bytes,
                   format: SpeechAudioFormat(
-                    encoding: p.extension(audioPath).substring(1).toLowerCase(),
+                    encoding: extension.isEmpty ? null : extension,
                   ),
                 )
               : SpeechAudioFileInput(audioPath);
