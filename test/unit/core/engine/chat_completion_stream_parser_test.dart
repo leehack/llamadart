@@ -936,16 +936,21 @@ void main() {
           final s = tags.startTag;
           final e = tags.endTag;
 
+          // The EXAONE MoE parse returns an unended forced-open thought as
+          // content, which its stream cannot know before the end.
+          final unended = format != ChatFormat.exaoneMoe;
           test('${format.name} drops a repeated start tag', () async {
             for (final output in [
               '$s\nPlan.\n$e\n\nSure.',
               ' \n$s Plan.$e\nLet me check.\n$call',
               '$s\nPlan.\n$e\n\n$call',
-              '$s\nPlan.',
-              '$s\nPlan. $call',
               '$s $e\nSure.${s}More.$e',
               s,
-              s.substring(0, 3),
+              if (unended) ...[
+                '$s\nPlan.',
+                '$s\nPlan. $call',
+                s.substring(0, 3),
+              ],
             ]) {
               await expectForced(format, output, openings: [call]);
             }
@@ -970,6 +975,8 @@ void main() {
           for (final (output, forcedOpen) in const [
             ('<think>\nPlan.</think>\nMore.</think> Sure.', true),
             ('Plan.</think>A<think>B</think>C</think>D', true),
+            ('Plan.</think>A</think>B<think>X</think>C', true),
+            ('Plan.</think>A</think>B<think>X</think>C', false),
             ('</think>Text </think> more.', false),
           ]) {
             final parsed = ChatTemplateEngine.parse(
@@ -1057,8 +1064,13 @@ void main() {
             r'Plan\r x.'
                 ' $qwenXmlCall',
             r'Plan \n x.</think>Done.',
+            r'Plan.</think>Sure.<think>More \n x.</think>Done.',
+            r'<think>A</think>B<think>C \n x</think>D',
             r'Plan \n x.',
             r'Plan \',
+            'Plan <tool_call>\n<function=weather>\n<parameter=city>\n'
+                r'A\nB'
+                '\n</parameter>\n</function>\n</tool_call>',
           ]) {
             await expectForced(
               ChatFormat.qwen3CoderXml,
@@ -1068,25 +1080,55 @@ void main() {
           }
         });
 
-        test(
-          'DeepSeek V3 and EXAONE MoE keep an unended thought as content',
-          () async {
-            for (final format in unendedForcedThoughtIsContent) {
-              final call = gatedCalls[format]!;
-              final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
-              for (final output in [
-                'Plan it out',
-                'Plan it.\n',
-                'Plan. $call',
-                'Plan.\n$call\nDone.',
-                '${tags.startTag}\nPlan.',
-                '${tags.startTag}\nPlan.\n${tags.endTag}\n\nSure.',
-              ]) {
-                await expectForced(format, output, openings: [call]);
-              }
-            }
-          },
-        );
+        test('DeepSeek V3 keeps an unended thought as reasoning', () async {
+          final call = gatedCalls[ChatFormat.deepseekV3]!;
+          for (final output in [
+            'Plan it out',
+            'Plan it.\n',
+            'Plan. $call',
+            'Plan.\n$call\nDone.',
+            '<think>\nPlan.',
+            '<think>\nPlan.\n</think>\n\nSure.',
+          ]) {
+            await expectForced(ChatFormat.deepseekV3, output, openings: [call]);
+          }
+        });
+
+        test('reasoning streams before the end tag', () async {
+          final thought = List.generate(
+            12,
+            (i) => 'Step $i checks the weather',
+          ).join(', ');
+          for (final (format, output) in [
+            (ChatFormat.hermes, '$thought.\n</think>\n\nSunny.'),
+            (ChatFormat.deepseekV3, '$thought.\n</think>\n\nSunny.'),
+            (ChatFormat.exaoneMoe, '$thought.\n</think>\n\nSunny.'),
+            (ChatFormat.qwen3CoderXml, '$thought.\n</think>\n\nSunny.'),
+            (
+              ChatFormat.qwen3CoderXml,
+              "Use '\\n'.join(lines). $thought.\n</think>\n\n$qwenXmlCall",
+            ),
+            (
+              ChatFormat.qwen3CoderXml,
+              r'Save C:\Users\me\notes.txt. '
+                  '$thought.\n</think>\n\nSunny.',
+            ),
+          ]) {
+            final end = output.indexOf('</think>');
+            final reasoning = await _reasoningBeforeEndTag(
+              format,
+              RegExp(r'\s+|[^\s]+').allMatches(output).map((m) => m[0]!),
+              output.substring(0, end),
+            );
+            final parsed = ChatTemplateEngine.parse(
+              format.index,
+              output,
+              thinkingForcedOpen: true,
+              tools: [_weatherTool],
+            );
+            expect(reasoning, parsed.reasoningContent, reason: format.name);
+          }
+        });
 
         test('reasoning streams as each token arrives', () async {
           await _expectStreamedAfterEachToken(
@@ -1111,29 +1153,24 @@ void main() {
               ('Plan', 'Plan', ''),
               (' <tool', 'Plan', ''),
               ('s> x', 'Plan <tools> x', ''),
-              (r' \', 'Plan <tools> x', ''),
-              ('n y', 'Plan <tools> x', ''),
-              ('</think>', 'Plan <tools> x \n y', ''),
-              ('<think>Next', 'Plan <tools> x \n y\nNext', ''),
-              (' <tool', 'Plan <tools> x \n y\nNext <tool', ''),
-              (r' \n z', 'Plan <tools> x \n y\nNext <tool \n z', ''),
+              (r' \', r'Plan <tools> x \', ''),
+              ('n y', r'Plan <tools> x \n y', ''),
+              ('</think>', r'Plan <tools> x \n y', ''),
+              ('<think>Next', 'Plan <tools> x \\n y\nNext', ''),
+              (' <tool', 'Plan <tools> x \\n y\nNext <tool', ''),
             ],
           );
           await _expectStreamedAfterEachToken(
             ChatFormat.qwen3CoderXml,
             forcedOpen: true,
-            const [
-              ('<think>Plan', 'Plan', ''),
-              (' <tool', 'Plan <tool', ''),
-              (r' \n x', 'Plan <tool \n x', ''),
-            ],
+            const [('<think>Plan', 'Plan', ''), (' <tool', 'Plan <tool', '')],
           );
           await _expectStreamedAfterEachToken(
             ChatFormat.deepseekV3,
             forcedOpen: true,
             const [
-              ('Plan', '', ''),
-              (' it.\n', '', ''),
+              ('Plan', 'Plan', ''),
+              (' it.\n', 'Plan it.', ''),
               ('</think>', 'Plan it.', ''),
               ('Sure', 'Plan it.', 'Sure'),
               ('<think>More', 'Plan it.\nMore', 'Sure'),
@@ -1842,6 +1879,46 @@ Future<void> _expectContentAfterEachToken(
     await pumpEventQueue();
     expect(content.toString(), streamed, reason: token);
   }
+}
+
+/// Streams [tokens] of a forced-open thought and returns the reasoning streamed
+/// before the tokens after [thought] arrive.
+Future<String> _reasoningBeforeEndTag(
+  ChatFormat format,
+  Iterable<String> tokens,
+  String thought,
+) async {
+  final controller = StreamController<String>();
+  final reasoning = StringBuffer();
+  final subscription =
+      ChatCompletionStreamParser.parse(
+        tokenStream: controller.stream,
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: format.index,
+          thinkingForcedOpen: true,
+        ),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: 'liveness',
+        tools: [_weatherTool],
+      ).listen(
+        (chunk) => reasoning.write(chunk.choices.single.delta.thinking ?? ''),
+      );
+  var fed = 0;
+  String? before;
+  for (final token in tokens) {
+    if (fed >= thought.length) {
+      before ??= reasoning.toString();
+    }
+    controller.add(token);
+    fed += token.length;
+    await Future<void>.delayed(Duration.zero);
+  }
+  await controller.close();
+  await subscription.asFuture<void>();
+  return before ?? reasoning.toString();
 }
 
 /// Feeds each token of [steps] and expects the reasoning and content streamed

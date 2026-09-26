@@ -317,6 +317,8 @@ String _literal(String value) {
 /// Matches llama.cpp's `consume_reasoning_with_xml_tool_calls`.
 /// When [schemas] is supplied, only declared tools and schema-valid arguments
 /// are accepted. Omitting it preserves the legacy schema-free parser.
+/// Escaped `\n` and `\r` in reasoning are unescaped unless
+/// [unescapeReasoning] is false.
 ChatParseResult parseXmlToolCalls(
   String input,
   XmlToolCallFormat format, {
@@ -325,6 +327,7 @@ ChatParseResult parseXmlToolCalls(
   bool isPartial = false,
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
+  bool unescapeReasoning = true,
   Map<String, Map<String, dynamic>>? schemas,
 }) {
   String? reasoning;
@@ -368,6 +371,7 @@ ChatParseResult parseXmlToolCalls(
       startTag: startThink,
       endTag: endThink,
       thinkingForcedOpen: thinkingForcedOpen,
+      unescape: unescapeReasoning,
     );
     reasoning = thinkResult.reasoning;
     content = thinkResult.content;
