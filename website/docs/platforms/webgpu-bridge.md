@@ -167,12 +167,11 @@ The feature-by-runtime table is in the
   `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call
   grammar ([Tool calling](../guides/tool-calling#tool-choice-semantics)).
 - Speculative decoding needs bridge assets whose
-  `getCompletionCapabilities()` reports `speculativeDecoding` strategies, from
-  the unreleased
-  [llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153).
-  The pinned assets report none, so every strategy throws
-  `LlamaUnsupportedException` there, as does a strategy the loaded assets do
-  not report. With such assets:
+  `getCompletionCapabilities()` reports `speculativeDecoding` strategies:
+  bridge assets `v0.1.54+`, the default pin among them
+  ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)).
+  A strategy the loaded assets do not report, and every strategy on older
+  assets, throws `LlamaUnsupportedException`. With such assets:
   - Each strategy runs llama.cpp's `--spec-type` of the same name, validated
     as on native. `backendDefault` and `speculativeDecoding: true` run
     `ngram-mod`, as on native.
@@ -199,12 +198,12 @@ The feature-by-runtime table is in the
 - `presencePenalty`, `minP` and `thinkingBudget` need bridge assets whose
   `getCompletionCapabilities()` reports them; runtime LoRA (`setLora`,
   `removeLora`, `clearLoras`) needs assets whose
-  `getLoraAdapterCapabilities()` reports support. The pinned assets report
-  neither, so a non-zero `presencePenalty` or `minP`, any `thinkingBudget` and
-  every LoRA call throw `LlamaUnsupportedException` there.
+  `getLoraAdapterCapabilities()` reports support: bridge assets `v0.1.54+`,
+  the default pin among them. On older assets a non-zero `presencePenalty` or
+  `minP`, any `thinkingBudget` and every LoRA call throw
+  `LlamaUnsupportedException`.
   `LlamaEngine.backendGenerationCapabilities` reports the completion
-  capabilities of the loaded assets. The capabilities come from the
-  unreleased
+  capabilities of the loaded assets. The capabilities come from
   [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140),
   [#144](https://github.com/leehack/llama-web-bridge/pull/144) and
   [#142](https://github.com/leehack/llama-web-bridge/pull/142).
@@ -248,7 +247,7 @@ Before failing a load, the web backend retries with safer settings:
   cancellation wins over recovery, and other errors propagate unchanged. The
   retry is slower, does not loop, and does not make up for too little browser
   memory; see the
-  [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff/docs/api.md#synthesizespeechoptions).
+  [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/65622b297b83513db597a760fa067867755010b4/docs/api.md#synthesizespeechoptions).
 
 When retries run out, the load throws an error with runtime hints such as
 `core`, `source`, `nThreads`, `nGpuLayers`, `cache` and bridge `notes`.
@@ -286,21 +285,21 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.52`, with local vendored assets
-identified as `v0.1.52-local-v0.5.0`.
+The example currently pins bridge assets to `v0.1.54`, with local vendored assets
+identified as `v0.1.54-local-v0.5.0`.
 
-- The pinned `v0.1.52` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
+- The pinned `v0.1.54` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
   (`v0.5.0`, both built from upstream `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
-  even though the bridge asset tag `v0.1.52` differs from the native runtime tag
-  `v0.5.0`. Pinned artifact provenance: release `396846786`, tag commit
-  `8526e92057df6d74d5e435d6ca67baf68cb7dca3`, bridge source
-  `cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff`, manifest SHA-256
-  `b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`.
+  even though the bridge asset tag `v0.1.54` differs from the native runtime tag
+  `v0.5.0`. Pinned artifact provenance: release `397350529`, tag commit
+  `e161182a09ac560d45ad5e65bb499574f913a466`, bridge source
+  `65622b297b83513db597a760fa067867755010b4`, manifest SHA-256
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.52 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.54 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -308,7 +307,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.52';
+  window.__llamadartBridgeAssetsTag = 'v0.1.54';
 </script>
 ```
 

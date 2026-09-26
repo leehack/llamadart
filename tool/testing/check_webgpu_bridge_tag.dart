@@ -372,7 +372,7 @@ const String bridgeLlamaCppTag = 'v0.5.0';
 const String bridgeLlamaCppCommit = '7fe450e19305b828c199d602c23a8337aaa1f03b';
 
 /// The exact bridge source commit used to build the pinned bridge assets.
-const String bridgeSourceCommit = 'cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff';
+const String bridgeSourceCommit = '65622b297b83513db597a760fa067867755010b4';
 
 /// Canonical repository identities recorded in the approved manifest.
 const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
@@ -389,14 +389,14 @@ const String bridgeNativeReleaseTag = 'v0.5.0';
 const String bridgeApprovedNativePin = 'v0.5.0';
 
 /// The asset repository release that published the pinned bridge assets.
-const String bridgeAssetsReleaseId = '396846786';
+const String bridgeAssetsReleaseId = '397350529';
 
 /// The asset repository commit the pinned bridge asset tag points at.
-const String bridgeAssetsTagCommit = '8526e92057df6d74d5e435d6ca67baf68cb7dca3';
+const String bridgeAssetsTagCommit = 'e161182a09ac560d45ad5e65bb499574f913a466';
 
 /// SHA-256 hash of the exact approved published manifest.json.
 const String bridgeManifestSha256 =
-    'b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d';
+    '8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176';
 
 /// Where the native runtime's llama.cpp build is pinned.
 const String nativeLlamaCppTagPath = 'lib/src/hook/native_release_pins.dart';
