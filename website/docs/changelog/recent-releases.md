@@ -11,6 +11,12 @@ For canonical full release notes, use:
 
 - Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
   Web ([#723](https://github.com/leehack/llamadart/issues/723)).
+- Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
+  and generation prompts instead of dropping it
+  ([#608](https://github.com/leehack/llamadart/issues/608)).
+- Make `DecisionEngine.load` throw `LlamaStateException` when another model is
+  loaded while it runs, even under the same backend handle
+  ([#626](https://github.com/leehack/llamadart/issues/626)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image
