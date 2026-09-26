@@ -40,9 +40,7 @@
 /// drafts and the n-gram cache are generated locally as its `CONTRIBUTING.md`
 /// describes. Set `expectFeatures` to false for bridge assets without the
 /// capabilities: every option must then be rejected, and default generation
-/// still works. The speculative groups need only `smollm2Model` then. Set
-/// `expectLora` to override `expectFeatures` for the LoRA tests, for assets
-/// with the completion options but not LoRA.
+/// still works. The speculative groups need only `smollm2Model` then.
 /// The test page is not cross-origin isolated, so point `CHROME_EXECUTABLE`
 /// at a wrapper that starts Chrome with
 /// `--enable-features=SharedArrayBuffer,SharedArrayBufferUnrestrictedAccessAllowed`,
@@ -124,8 +122,6 @@ void main() {
   late LlamaEngine engine;
 
   bool expectFeatures() => config['expectFeatures'] == true;
-  bool expectLora() =>
-      (config['expectLora'] ?? config['expectFeatures']) == true;
   String url(String key) =>
       configUrl.resolve(config[key]! as String).toString();
 
@@ -261,7 +257,7 @@ void main() {
     });
 
     test('LoRA adapters', () async {
-      if (!expectLora()) {
+      if (!expectFeatures()) {
         for (final call in <Future<void> Function()>[
           () => engine.setLora(url('loraAdapter')),
           () => engine.removeLora(url('loraAdapter')),
@@ -304,7 +300,7 @@ void main() {
     });
 
     test('LoRA adapter for another base model', () async {
-      if (!expectLora()) return;
+      if (!expectFeatures()) return;
       await engine.unloadModel();
       await engine.loadModelFromUrl(url('mismatchModel'), modelParams: _cpu);
       await expectLater(
