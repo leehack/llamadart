@@ -244,14 +244,19 @@ class ChatTemplateEngine {
       );
     }
 
-    // Proactively detect templates that access content as a list
-    // (e.g. SmolVLM's `message['content'][0]['type']`)
+    // Templates that also read string content get media as typed parts.
+    // Templates that read only typed parts (e.g. SmolVLM's
+    // `message['content'][0]['type']`) get the media marker in a text part, as
+    // llama.cpp gives them.
     final hasMediaParts = effectiveMessages.any(
       (message) => message.parts.any(
         (part) => part is LlamaImageContent || part is LlamaAudioContent,
       ),
     );
-    final needsTypedContent = caps.supportsTypedContent && hasMediaParts;
+    final needsTypedContent =
+        caps.supportsTypedContent &&
+        caps.supportsStringContent &&
+        hasMediaParts;
 
     if (needsTypedContent) {
       LlamaLogger.instance.debug(
@@ -279,9 +284,9 @@ class ChatTemplateEngine {
       return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
     }
 
-    // String-content templates cannot consume transport objects. Keep media
-    // in the original request for the backend and render only its placeholder
-    // here, in content order, as llama.cpp does for media_marker parts.
+    // Other templates cannot consume transport objects. Keep media in the
+    // original request for the backend and render only its placeholder here,
+    // in content order, as llama.cpp does for media_marker parts.
     if (hasMediaParts) {
       effectiveMessages = effectiveMessages
           .map((message) {

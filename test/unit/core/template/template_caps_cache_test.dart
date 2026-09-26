@@ -123,7 +123,8 @@ void main() {
       LlamaLogger.instance.setLevel(LlamaLogLevel.none);
     });
 
-    test('does not cache a probe render failure and logs it on every call', () {
+    test('caches a detection whose system-role probe threw after reading '
+        'the system content', () {
       const template = '''
 {% for message in messages %}
 {% if message.role == 'system' %}{{ message.content | no_such_filter }}{% endif %}
@@ -133,18 +134,15 @@ void main() {
       final first = TemplateCaps.detect(template);
       final second = TemplateCaps.detect(template);
 
-      expect(first.supportsSystemRole, isFalse);
+      expect(first.supportsSystemRole, isTrue);
       expect(second.toMap(), first.toMap());
-      expect(TemplateCapsCache.shared.length, 0);
+      expect(TemplateCapsCache.shared.length, 1);
       expect(
-        messages
-            .where(
-              (message) => message.contains(
-                'system-role capability probe failed to render',
-              ),
-            )
-            .length,
-        2,
+        messages.where(
+          (message) =>
+              message.contains('system-role capability probe failed to render'),
+        ),
+        hasLength(1),
       );
     });
 

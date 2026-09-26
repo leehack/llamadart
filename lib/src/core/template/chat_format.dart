@@ -323,14 +323,11 @@ ChatFormat detectChatFormat(String? templateSource) {
     return ChatFormat.apertus;
   }
 
-  // LFM2 / LFM2.5. Upstream llama.cpp routes both the strict marker variant
-  // and the plain "List of tools: [...]" variant when the template also emits
-  // LFM tool-call delimiters.
-  if ((templateSource.contains('List of tools: <|tool_list_start|>[') &&
-          templateSource.contains(']<|tool_list_end|>')) ||
+  // LFM2 wraps its tool list in <|tool_list_start|>/<|tool_list_end|>;
+  // LFM2.5 writes a plain "List of tools: [...]". llama.cpp routes both.
+  if ((templateSource.contains('<|tool_list_start|>') &&
+          templateSource.contains('<|tool_list_end|>')) ||
       (templateSource.contains('List of tools: [') &&
-          templateSource.contains('<|tool_call_start|>') &&
-          templateSource.contains('<|tool_call_end|>') &&
           !templateSource.contains('<|tool_list_start|>'))) {
     return ChatFormat.lfm2;
   }

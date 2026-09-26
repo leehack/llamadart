@@ -91,6 +91,37 @@ String _withoutDate(Object? prompt) => (prompt as String).replaceAllMapped(
   (match) => '${match[1]}<date>',
 );
 
+/// Replaces each random `<__media_…__>` marker llama-server prints with the
+/// `<__media__>` marker llamadart renders.
+String _withMediaMarker(String prompt) =>
+    prompt.replaceAll(RegExp(r'<__media_[A-Za-z0-9]+__>'), '<__media__>');
+
+const String _toolListStart = 'List of tools: ';
+
+/// Splits [prompt] around its LFM2 tool list and decodes that list, taking
+/// each tool's `function` when it is in the OpenAI shape llama-server passes.
+///
+/// The LFM2 handler passes the flat shape LiquidAI's model cards show, so the
+/// tool shape is the one difference these cases ignore.
+(String, String, String) _splitLfm2ToolList(String prompt) {
+  final start = prompt.indexOf(_toolListStart);
+  expect(start, isNonNegative, reason: 'missing "$_toolListStart"');
+  final listStart = start + _toolListStart.length;
+  final end = prompt.indexOf('<|im_end|>', listStart);
+  expect(end, isNonNegative, reason: 'missing tool list end');
+  final tools = [
+    for (final tool
+        in (jsonDecode(prompt.substring(listStart, end)) as List)
+            .cast<Map<String, dynamic>>())
+      tool['type'] == 'function' ? tool['function'] : tool,
+  ];
+  return (
+    prompt.substring(0, listStart),
+    jsonEncode(tools),
+    prompt.substring(end),
+  );
+}
+
 void main() {
   final cases = (_fixture['cases'] as List).cast<Map<String, dynamic>>();
 
@@ -109,19 +140,23 @@ void main() {
       final result = ChatTemplateEngine.render(
         templateSource: source,
         messages: _conversation(conversation),
-        metadata: const <String, String>{
+        metadata: <String, String>{
           'tokenizer.ggml.bos_token': '',
-          'tokenizer.ggml.eos_token': '</s>',
+          'tokenizer.ggml.eos_token': entry['eos_token'] as String? ?? '</s>',
         },
         tools: entry['tools'] == true ? _tools : null,
       );
 
-      final checks = entry['checks'] as List?;
-      if (checks == null) {
-        expect(_withoutDate(result.prompt), _withoutDate(entry['prompt']));
+      final server = _withMediaMarker(entry['prompt'] as String);
+      if (entry['lfm2_flat_tool_list'] == true) {
+        expect(_splitLfm2ToolList(result.prompt), _splitLfm2ToolList(server));
         return;
       }
-      final server = entry['prompt'] as String;
+      final checks = entry['checks'] as List?;
+      if (checks == null) {
+        expect(_withoutDate(result.prompt), _withoutDate(server));
+        return;
+      }
       for (final check in checks.cast<Map<String, dynamic>>()) {
         if (check['same_after'] case final String from) {
           expect(_segment(result.prompt, from), _segment(server, from));
@@ -159,4 +194,35 @@ void main() {
     expect(reported.values, containsAll(<bool>[true, false]));
     expect(detected, reported);
   });
+
+  test('detects the chat template caps llama-server reports', () {
+    final detected = <String, Map<String, bool>>{};
+    final reported = <String, Map<String, bool>>{};
+    for (final entry in cases) {
+      final caps = entry['chat_template_caps'] as Map<String, dynamic>?;
+      if (caps == null) continue;
+      final template = entry['template'] as String;
+      final json = TemplateCaps.detect(
+        File(template).readAsStringSync(),
+      ).toMap();
+      detected[template] = {for (final key in _sharedCaps) key: json[key]!};
+      reported[template] = {
+        for (final key in _sharedCaps) key: caps[key] as bool,
+      };
+    }
+
+    expect(reported, hasLength(5));
+    expect(detected, reported);
+  });
 }
+
+/// The `/props` `chat_template_caps` keys that `TemplateCaps` also reports.
+const List<String> _sharedCaps = <String>[
+  'supports_system_role',
+  'supports_tool_calls',
+  'supports_tools',
+  'supports_parallel_tool_calls',
+  'supports_string_content',
+  'supports_typed_content',
+  'supports_object_arguments',
+];

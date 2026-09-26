@@ -46,15 +46,14 @@ class TemplateCaps {
     this.supportsObjectArguments = false,
   });
 
-  /// Detects capabilities by scanning the template source string.
-  ///
-  /// Uses the same approach as llama.cpp (`src.find()` on raw template text).
+  /// Detects capabilities with llama.cpp's capability probes, as
+  /// [JinjaAnalyzer.analyzeWithOutcome] describes.
   ///
   /// Results are cached in [TemplateCapsCache.shared], a per-isolate LRU keyed
   /// by exact [templateSource] and bounded at
-  /// [TemplateCapsCache.sharedCapacity] entries. A detection in which any
-  /// analysis step failed is not cached, so it runs and logs again on every
-  /// call.
+  /// [TemplateCapsCache.sharedCapacity] entries. A detection for a template
+  /// that does not parse or cannot be prepared for probing is not cached, so
+  /// it runs and logs again on every call.
   factory TemplateCaps.detect(String templateSource) {
     final cache = TemplateCapsCache.shared;
     final cached = cache.lookup(templateSource);

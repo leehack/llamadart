@@ -51,7 +51,9 @@ void main() {
                {{ tool_call.function.name }}
             {% endfor %}
           {% endif %}
-          {% if message.role == 'user' %}
+          {% if message.role == 'user' and message.content is string %}
+             {{ message.content }}
+          {% elif message.role == 'user' %}
              {% for item in message.content %}
                {% if item.type == 'text' %}
                  {{ item.text }}
@@ -76,8 +78,9 @@ void main() {
       expect(
         caps.supportsTypedContent,
         isTrue,
-        reason: 'Should detect item.type == text check',
+        reason: 'Should detect iteration over list content',
       );
+      expect(caps.supportsStringContent, isTrue);
       expect(caps.supportsThinking, isFalse);
     });
 
@@ -141,14 +144,17 @@ void main() {
 
     test('detects content["type"] syntax', () {
       final template = '''
-        {% for part in message['content'] %}
-          {% if part['type'] == 'image' %}
-             Image...
-          {% endif %}
+        {% for message in messages %}
+          {% for part in message['content'] %}
+            {% if part['type'] == 'image' %}
+               Image...
+            {% endif %}
+          {% endfor %}
         {% endfor %}
       ''';
       final caps = JinjaAnalyzer.analyze(template);
       expect(caps.supportsTypedContent, isTrue);
+      expect(caps.supportsStringContent, isFalse);
     });
 
     test('requires tool name usage for supportsTools', () {
@@ -157,8 +163,15 @@ void main() {
       expect(caps.supportsTools, isFalse);
     });
 
-    test('requires tool call name usage for supportsToolCalls', () {
+    test('reports tool calls the template reads without printing', () {
       final template = '{% if messages[1].tool_calls %}calls{% endif %}';
+      final caps = JinjaAnalyzer.analyze(template);
+      expect(caps.supportsToolCalls, isTrue);
+      expect(caps.supportsParallelToolCalls, isFalse);
+    });
+
+    test('ignores tool calls the template never reads', () {
+      final template = '{% if messages[0].content %}text{% endif %}';
       final caps = JinjaAnalyzer.analyze(template);
       expect(caps.supportsToolCalls, isFalse);
       expect(caps.supportsParallelToolCalls, isFalse);
@@ -203,7 +216,7 @@ void main() {
       });
     }
 
-    test('reports false when the tool message needs a name', () {
+    test('reports no tool calls when the tool message needs a name', () {
       final caps = JinjaAnalyzer.analyze(
         "{%- for message in messages %}{%- if message.role == 'tool' and "
         "not message.name %}{{ raise_exception('name required') }}"
@@ -211,7 +224,7 @@ void main() {
         '${withArguments('{{ call.function.arguments | tojson }}')}',
       );
 
-      expect(caps.supportsToolCalls, isTrue);
+      expect(caps.supportsToolCalls, isFalse);
       expect(caps.supportsObjectArguments, isFalse);
     });
   });
@@ -239,7 +252,7 @@ void main() {
 
       final caps = JinjaAnalyzer.analyze(template);
 
-      expect(caps.supportsSystemRole, isFalse);
+      expect(caps.supportsSystemRole, isTrue);
       expect(
         messages,
         contains(
@@ -300,17 +313,20 @@ void main() {
       expect(messages, isEmpty);
     });
 
-    test('detects tools when the template rejects the tool role', () {
+    test('reports no tools when the template rejects the tool role', () {
       final outcome = JinjaAnalyzer.analyzeWithOutcome(_noToolRoleTemplate);
 
-      expect(outcome.caps.supportsTools, isTrue);
-      expect(outcome.caps.supportsToolCalls, isTrue);
-      expect(outcome.caps.supportsParallelToolCalls, isTrue);
+      expect(outcome.caps.supportsTools, isFalse);
+      expect(outcome.caps.supportsToolCalls, isFalse);
+      expect(outcome.caps.supportsParallelToolCalls, isFalse);
       expect(outcome.failed, isFalse);
-      expect(messages, isEmpty);
+      expect(
+        messages,
+        contains(contains('tools capability probe failed to render')),
+      );
     });
 
-    test('reports a failure when no tool conversation renders', () {
+    test('does not report a failure when no tool conversation renders', () {
       const template = '''
 {% for message in messages %}{{ message.content }}{% endfor %}
 {% for tool in tools %}{{ tool.function.name | no_such_filter }}{% endfor %}
@@ -318,7 +334,8 @@ void main() {
 
       final outcome = JinjaAnalyzer.analyzeWithOutcome(template);
 
-      expect(outcome.failed, isTrue);
+      expect(outcome.failed, isFalse);
+      expect(outcome.caps.supportsTools, isFalse);
       expect(
         messages.where(
           (message) =>

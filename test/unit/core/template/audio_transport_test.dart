@@ -80,14 +80,11 @@ void main() {
     },
   );
 
-  test('typed audio templates retain their model-specific wrappers', () {
-    const template =
-        '{% for part in messages[0].content %}{% if part.type == "text" %}{{ part.text }}{% elif part.type == "audio" %}<audio_start><|audio|><audio_end>{% endif %}{% endfor %}';
-    for (final audio in <LlamaAudioContent>[
-      const LlamaAudioContent(path: '/private/audio.wav'),
-      LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
-    ]) {
-      final result = ChatTemplateEngine.render(
+  const typedAudioParts =
+      '{% for part in messages[0].content %}{% if part.type == "text" %}{{ part.text }}{% elif part.type == "audio" %}<audio_start><|audio|><audio_end>{% endif %}{% endfor %}';
+
+  String renderListen(String template, LlamaAudioContent audio) =>
+      ChatTemplateEngine.render(
         templateSource: template,
         messages: [
           LlamaChatMessage.withContent(
@@ -96,8 +93,28 @@ void main() {
           ),
         ],
         metadata: const {},
+      ).prompt;
+
+  final audios = <LlamaAudioContent>[
+    const LlamaAudioContent(path: '/private/audio.wav'),
+    LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
+  ];
+
+  test('typed audio templates retain their model-specific wrappers', () {
+    const template =
+        '{% if messages[0].content is string %}{{ messages[0].content }}'
+        '{% else %}$typedAudioParts{% endif %}';
+    for (final audio in audios) {
+      expect(
+        renderListen(template, audio),
+        'listen<audio_start><__media__><audio_end>',
       );
-      expect(result.prompt, 'listen<audio_start><__media__><audio_end>');
+    }
+  });
+
+  test('typed-only templates get the audio marker in a text part', () {
+    for (final audio in audios) {
+      expect(renderListen(typedAudioParts, audio), 'listen<__media__>');
     }
   });
 
