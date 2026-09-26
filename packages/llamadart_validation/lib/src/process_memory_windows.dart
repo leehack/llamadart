@@ -104,16 +104,17 @@ int _getProcessMemoryInfo(Pointer<Void> counters, int size) {
 }
 
 /// Calls `K32GetProcessMemoryInfo` with `PROCESS_MEMORY_COUNTERS_EX2` for this
-/// process and passes the result to [read].
+/// process, or [call] in its place, and passes the result to [read].
 R? readProcessMemoryCounters<R>(
-  R? Function(int succeeded, ProcessMemoryCountersEx2 counters) read,
-) {
+  R? Function(int succeeded, ProcessMemoryCountersEx2 counters) read, {
+  int Function(Pointer<Void> counters, int size) call = _getProcessMemoryInfo,
+}) {
   final size = sizeOf<ProcessMemoryCountersEx2>();
   final counters = calloc<ProcessMemoryCountersEx2>()
     ..ref.cb = size
     ..ref.sharedCommitUsage = windowsUnfilledSentinel;
   try {
-    return read(_getProcessMemoryInfo(counters.cast(), size), counters.ref);
+    return read(call(counters.cast(), size), counters.ref);
   } finally {
     calloc.free(counters);
   }

@@ -193,6 +193,27 @@ int main(void) {
       expect(counter.read(), isPositive);
       expect(counter.read()!, lessThanOrEqualTo(readWindowsSharedFootprint()!));
     }, testOn: 'windows');
+    test('a call that leaves SharedCommitUsage unwritten measures nothing', () {
+      int fill(Pointer<Void> memory, int size, {int? shared}) {
+        final counters = memory.cast<ProcessMemoryCountersEx2>().ref;
+        expect(counters.cb, size);
+        counters.privateUsage = 8192;
+        if (shared != null) counters.sharedCommitUsage = shared;
+        return 1;
+      }
+
+      expect(
+        readProcessMemoryCounters(windowsFootprintFrom, call: fill),
+        isNull,
+      );
+      expect(
+        readProcessMemoryCounters(
+          windowsFootprintFrom,
+          call: (memory, size) => fill(memory, size, shared: 4096),
+        ),
+        12288,
+      );
+    });
     test('sums PrivateUsage and SharedCommitUsage from a filled call', () {
       final memory = calloc<ProcessMemoryCountersEx2>();
       addTearDown(() => calloc.free(memory));
