@@ -14,6 +14,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
@@ -49,6 +50,24 @@ void main() {
     );
     expect(WebAutoBackend(webBackend: _NoStateBackend()).runtime, isNull);
     expect(WebAutoBackend().runtime, isNull);
+  });
+
+  test('WebAutoBackend forwards generation usage from its delegate', () {
+    final generation = Stream<List<int>>.empty();
+    const usage = LlamaGenerationUsage(promptTokens: 4, completionTokens: 2);
+
+    expect(
+      WebAutoBackend(
+        webBackend: _UsageBackend({generation: usage}),
+      ).generationUsageOf(generation),
+      same(usage),
+    );
+    expect(
+      WebAutoBackend(
+        webBackend: _NoStateBackend(),
+      ).generationUsageOf(generation),
+      isNull,
+    );
   });
 
   test('WebAutoBackend forwards grammar support from its delegate', () {
@@ -486,6 +505,17 @@ class _RuntimeBackend extends _NoStateBackend
 
   @override
   final LlamaRuntime runtime;
+}
+
+class _UsageBackend extends _NoStateBackend
+    implements BackendGenerationUsageReporting {
+  _UsageBackend(this.usages);
+
+  final Map<Stream<List<int>>, LlamaGenerationUsage> usages;
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
+      usages[generation];
 }
 
 class _GrammarSupportBackend extends _NoStateBackend

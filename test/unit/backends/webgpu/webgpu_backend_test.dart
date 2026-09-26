@@ -2213,6 +2213,113 @@ void main() {
       },
     );
 
+    group('generation usage', () {
+      JSAny? bridgeUsage({int? promptTokens = 5}) => <String, Object?>{
+        'promptTokens': ?promptTokens,
+        'cachedPromptTokens': 2,
+        'completionTokens': 3,
+        'timeToFirstTokenMs': 1.5,
+        'durationMs': 4.25,
+        'finishReason': 'stop',
+      }.jsify();
+
+      void completeWith({
+        JSAny? usage,
+        String? currentText,
+        bool rejectWithAbort = false,
+      }) {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
+            onToken?.callAsFunction(null, 'Hi'.toJS, currentText?.toJS);
+            if (usage != null) {
+              final onUsage = opts.getProperty('onUsage'.toJS) as JSFunction?;
+              onUsage?.callAsFunction(null, usage);
+            }
+            if (rejectWithAbort) {
+              return Future<JSString>.error(
+                StateError('Generation was cancelled.'),
+              ).toJS;
+            }
+            return Future<JSString>.value('Hi'.toJS).toJS;
+          }).toJS,
+        );
+      }
+
+      test('reports the usage the bridge passes to onUsage', () async {
+        completeWith(usage: bridgeUsage());
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final generation = backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(),
+        );
+        expect(backend.generationUsageOf(generation), isNull);
+        await generation.toList();
+
+        final usage = backend.generationUsageOf(generation)!;
+        expect(usage.promptTokens, 5);
+        expect(usage.cachedPromptTokens, 2);
+        expect(usage.completionTokens, 3);
+        expect(usage.timeToFirstToken, const Duration(microseconds: 1500));
+        expect(usage.duration, const Duration(microseconds: 4250));
+      });
+
+      test('reports no usage from a bridge that sends none or an '
+          'incomplete one', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        completeWith();
+        final withoutUsage = backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(),
+        );
+        await withoutUsage.toList();
+        expect(backend.generationUsageOf(withoutUsage), isNull);
+
+        completeWith(usage: bridgeUsage(promptTokens: null));
+        final incomplete = backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(),
+        );
+        await incomplete.toList();
+        expect(backend.generationUsageOf(incomplete), isNull);
+      });
+
+      test('keeps the usage of a generation a stop sequence aborted', () async {
+        completeWith(
+          usage: bridgeUsage(),
+          currentText: 'Hi STOP more',
+          rejectWithAbort: true,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final generation = backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(stopSequences: ['STOP']),
+        );
+        expect(
+          utf8.decode((await generation.toList()).expand((c) => c).toList()),
+          'Hi ',
+        );
+        expect(backend.generationUsageOf(generation)?.completionTokens, 3);
+      });
+    });
+
     test('rejects speculative decoding', () {
       expect(
         () => backend.generate(

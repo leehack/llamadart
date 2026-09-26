@@ -211,6 +211,7 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     @JS('mediaMaxImagePixels') int? mediaMaxImagePixels,
     @JS('mediaMaxImageEdge') int? mediaMaxImageEdge,
     @JS('onToken') JSFunction? onToken,
+    @JS('onUsage') JSFunction? onUsage,
     @JS('emitCurrentTextOnToken') bool? emitCurrentTextOnToken,
     @JS('tokenEventEncoding') String? tokenEventEncoding,
     @JS('tokenEventFlushMs') int? tokenEventFlushMs,

@@ -99,10 +99,12 @@ await for (final chunk in engine.create(
 
 ## Token usage and timings
 
-On native llama.cpp, the final `create` chunk carries the request's usage
-whenever the backend reports it. The backend can report none, for example for
-a request cancelled while it is queued. Usage is null on other backends and on
-every earlier chunk.
+On native llama.cpp, and on WebGPU with bridge assets `v0.1.53+`, the final
+`create` chunk carries the request's usage whenever the backend reports it.
+The backend can report none, for example for a request cancelled while it is
+queued. Usage is null on LiteRT-LM, on older bridge assets and on every
+earlier chunk. On WebGPU, `completionTokens` can include tokens generated after
+a stop sequence, before the stop reached the bridge.
 
 ```dart
 final chunks = await engine.create(messages).toList();

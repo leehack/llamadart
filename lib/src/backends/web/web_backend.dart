@@ -3,6 +3,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
@@ -26,6 +27,7 @@ class WebAutoBackend
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
+        BackendGenerationUsageReporting,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -459,6 +461,16 @@ class WebAutoBackend
     final delegate = _delegate;
     return delegate is BackendRuntimeIdentity
         ? (delegate as BackendRuntimeIdentity).runtime
+        : null;
+  }
+
+  @override
+  LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) {
+    final delegate = _delegate;
+    return delegate is BackendGenerationUsageReporting
+        ? (delegate as BackendGenerationUsageReporting).generationUsageOf(
+            generation,
+          )
         : null;
   }
 

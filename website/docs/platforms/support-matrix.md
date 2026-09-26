@@ -54,7 +54,7 @@ Android-only; web rejects it.
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
-| Per-request usage | `usage` on the final `create` chunk | No | No | No |
+| Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.53+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
