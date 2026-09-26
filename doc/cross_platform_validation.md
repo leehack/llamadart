@@ -1189,7 +1189,8 @@ measured cancellation latency, peak memory footprint and per-cycle footprint
 growth against the budgets described in
 `packages/llamadart_validation/assets/speech/README.md`. The footprint is
 `phys_footprint` on macOS and iOS, `RssAnon + RssShmem + VmSwap` on Linux and
-Android, and `PrivateUsage + SharedCommitUsage` on Windows. None counts
+Android, and `PrivateUsage + SharedCommitUsage` on Windows, or `PrivateUsage`
+alone on Windows builds without `PROCESS_MEMORY_COUNTERS_EX2`. None counts
 file-backed pages, such as the mmapped weights, so evicting them under memory
 pressure does not shrink it
 ([#633](https://github.com/leehack/llamadart/issues/633)); the speech README

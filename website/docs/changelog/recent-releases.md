@@ -18,7 +18,8 @@ For canonical full release notes, use:
 - Bound speech validation pack memory by a footprint counter instead of the
   resident set: `phys_footprint` on macOS and iOS, `RssAnon` plus `RssShmem`
   plus `VmSwap` on Linux and Android, and `PrivateUsage` plus
-  `SharedCommitUsage` on Windows. Evicting file-backed pages, such as the
+  `SharedCommitUsage` on Windows (`PrivateUsage` alone on builds without it).
+  Evicting file-backed pages, such as the
   mmapped weights, or compressing memory under pressure no longer lowers the
   baseline and fails `peak_memory_bound` without memory growth, and each
   report names its counter

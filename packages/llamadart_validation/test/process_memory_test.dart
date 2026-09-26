@@ -152,6 +152,47 @@ int main(void) {
       expect(sizeAt(8 + 9 * word), 0x5678);
       expect((bytes + 8 + 10 * word).cast<Uint64>().value, 0x9abc);
     });
+    test('the fallback PROCESS_MEMORY_COUNTERS_EX matches <psapi.h>', () {
+      final word = sizeOf<IntPtr>();
+      expect(sizeOf<ProcessMemoryCountersEx>(), 8 + 9 * word);
+      final memory = calloc<ProcessMemoryCountersEx>();
+      addTearDown(() => calloc.free(memory));
+      memory.ref.privateUsage = 0x1234;
+      final privateUsage = memory.cast<Uint8>() + (8 + 8 * word);
+      expect(
+        word == 8
+            ? privateUsage.cast<Uint64>().value
+            : privateUsage.cast<Uint32>().value,
+        0x1234,
+      );
+      expect(windowsPrivateFootprintFrom(1, memory.ref), 0x1234);
+      expect(windowsPrivateFootprintFrom(0, memory.ref), isNull);
+    });
+    test('falls back to PrivateUsage, named, when EX2 does not measure', () {
+      int? shared() => 3;
+      int? private() => 2;
+      for (final unavailable in [() => null, () => throw StateError('EX2')]) {
+        final counter = windowsCounterFrom(unavailable, private);
+        expect(counter.source, windowsPrivateFootprintSource);
+        expect(identical(counter.read, private), isTrue);
+      }
+      final counter = windowsCounterFrom(shared, private);
+      expect(counter.source, windowsFootprintSource);
+      expect(identical(counter.read, shared), isTrue);
+      expect(
+        windowsPrivateFootprintSource,
+        contains('pagefile-backed shared sections are not counted'),
+      );
+    });
+    test('the fallback counter measures this process', () {
+      final counter = windowsCounterFrom(
+        () => null,
+        readWindowsPrivateFootprint,
+      );
+      expect(counter.source, windowsPrivateFootprintSource);
+      expect(counter.read(), isPositive);
+      expect(counter.read()!, lessThanOrEqualTo(readWindowsSharedFootprint()!));
+    }, testOn: 'windows');
     test('sums PrivateUsage and SharedCommitUsage from a filled call', () {
       final memory = calloc<ProcessMemoryCountersEx2>();
       addTearDown(() => calloc.free(memory));
@@ -173,12 +214,14 @@ int main(void) {
         ('ios', darwinFootprintSource, readDarwinFootprint),
         ('linux', linuxFootprintSource, readLinuxFootprint),
         ('android', linuxFootprintSource, readLinuxFootprint),
-        ('windows', windowsFootprintSource, readWindowsFootprint),
       ]) {
         final counter = footprintCounterFor(os)!;
         expect(counter.source, source, reason: os);
         expect(identical(counter.read, read), isTrue, reason: os);
       }
+      final windows = footprintCounterFor('windows')!;
+      expect(identical(windows.describe, windowsSource), isTrue);
+      expect(identical(windows.read, readWindowsFootprint), isTrue);
       expect(footprintCounterFor('fuchsia'), isNull);
       expect(footprintCounterFor(''), isNull);
     });
@@ -234,7 +277,9 @@ int main(void) {
     test('reports the counter for this platform', () {
       expect(
         memoryFootprintSource,
-        footprintCounterFor(Platform.operatingSystem)!.source,
+        Platform.isWindows
+            ? windowsFootprintSource
+            : footprintCounterFor(Platform.operatingSystem)!.source,
       );
       expect(memoryFootprintBytes(), isPositive);
     });

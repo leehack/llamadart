@@ -4,31 +4,29 @@ import 'process_memory_darwin.dart';
 import 'process_memory_linux.dart';
 import 'process_memory_windows.dart';
 
-/// A per-platform count of the memory a process owns: what [read] reads, named
-/// by [source] so a report states what produced its numbers.
+/// A per-platform count of the memory a process owns: what [read] reads,
+/// named by [describe] so a report states what produced its numbers.
 final class FootprintCounter {
-  const FootprintCounter(this.source, this.read);
+  const FootprintCounter(this.describe, this.read);
 
-  final String source;
+  final String Function() describe;
   final int? Function() read;
+
+  String get source => describe();
 }
+
+String _darwinSource() => darwinFootprintSource;
+String _linuxSource() => linuxFootprintSource;
 
 /// The footprint counter for [operatingSystem], a `Platform.operatingSystem`
 /// value, or null when it has none.
 FootprintCounter? footprintCounterFor(String operatingSystem) =>
     switch (operatingSystem) {
-      'macos' || 'ios' => const FootprintCounter(
-        darwinFootprintSource,
-        readDarwinFootprint,
-      ),
-      'linux' || 'android' => const FootprintCounter(
-        linuxFootprintSource,
-        readLinuxFootprint,
-      ),
-      'windows' => const FootprintCounter(
-        windowsFootprintSource,
-        readWindowsFootprint,
-      ),
+      'macos' ||
+      'ios' => const FootprintCounter(_darwinSource, readDarwinFootprint),
+      'linux' ||
+      'android' => const FootprintCounter(_linuxSource, readLinuxFootprint),
+      'windows' => const FootprintCounter(windowsSource, readWindowsFootprint),
       _ => null,
     };
 
