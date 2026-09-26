@@ -231,8 +231,9 @@
   ([#607](https://github.com/leehack/llamadart/issues/607)).
 * Aligned the default WebGPU bridge assets to `v0.1.54` for the decision API,
   next-token scoring, presence penalty, Min-P, thinking budgets, runtime LoRA
-  adapters, speculative decoding, per-request usage support and the Web runtime
-  fixes below. The assets embed llama.cpp `v0.5.0`, are
+  adapters, speculative decoding and the Web runtime fixes below; the bridge
+  also adds its `supportsCompletionUsage` flag, which llamadart does not use yet
+  ([#729](https://github.com/leehack/llamadart/pull/729)). The assets embed llama.cpp `v0.5.0`, are
   qualified against native `v0.5.0`, and keep Web/native llama.cpp
   `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity and Web
   `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
