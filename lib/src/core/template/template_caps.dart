@@ -51,9 +51,9 @@ class TemplateCaps {
   ///
   /// Results are cached in [TemplateCapsCache.shared], a per-isolate LRU keyed
   /// by exact [templateSource] and bounded at
-  /// [TemplateCapsCache.sharedCapacity] entries. A detection for a template
-  /// that does not parse or cannot be prepared for probing is not cached, so
-  /// it runs and logs again on every call.
+  /// [TemplateCapsCache.sharedCapacity] entries. A detection that reports
+  /// `failed` (see [JinjaAnalyzer.analyzeWithOutcome]) is not cached, so it
+  /// runs and logs again on every call.
   factory TemplateCaps.detect(String templateSource) {
     final cache = TemplateCapsCache.shared;
     final cached = cache.lookup(templateSource);

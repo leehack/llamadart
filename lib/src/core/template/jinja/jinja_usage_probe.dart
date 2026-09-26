@@ -24,13 +24,21 @@ class JinjaUsageProbe {
 
   /// Builds a probe for [program], as returned by `parseTemplate`.
   ///
-  /// Throws [UnsupportedError] if [program] holds a construct this probe
-  /// cannot rewrite, or dinja's exception if the rewritten source does not
+  /// Throws [UnsupportedError] if [program] holds a node type this probe
+  /// does not know, or dinja's exception if the rewritten source does not
   /// parse.
   factory JinjaUsageProbe(Program program) {
-    final source = (_Rewriter()..statements(program.body)).toString();
+    final source = (_Rewriter(
+      instrument: true,
+    )..statements(program.body)).toString();
     return JinjaUsageProbe._(Template(source));
   }
+
+  /// Writes [program] back as Jinja source that parses to an equivalent
+  /// program: the same nodes and values, except that comments and
+  /// `generation` tags are dropped and template text becomes string literals.
+  static String writeSource(Program program) =>
+      (_Rewriter(instrument: false)..statements(program.body)).toString();
 
   /// Renders the template with [context] and returns what it read.
   ///
@@ -166,11 +174,16 @@ class JinjaUsageRun {
   Set<String> ops(JinjaValue value) => _stats[value] ?? const <String>{};
 }
 
-/// Writes a [Program] back as Jinja source with recording calls around the
-/// values llama.cpp tracks. Every compound expression is parenthesized, and
-/// template text is written as string literals, so the rewritten template
-/// renders the same text as the original.
+/// Writes a [Program] back as Jinja source that parses to an equivalent
+/// program. With [instrument], identifier lookups, member accesses, filters,
+/// tests and `for` iterables also pass through the probe's recording
+/// functions. Every compound expression is parenthesized, negative numbers
+/// too, and template text is written as string literals, so the written
+/// template renders the same text as the original.
 class _Rewriter {
+  _Rewriter({required this.instrument});
+
+  final bool instrument;
   final StringBuffer _out = StringBuffer();
 
   @override
@@ -199,10 +212,9 @@ class _Rewriter {
         :final defaultBlock,
       ):
         final iterated = iterable is SelectExpression
-            ? '${_call(JinjaUsageProbe._iterate, [expression(iterable.lhs)])} '
-                  'if ${expression(iterable.test)}'
-            : _call(JinjaUsageProbe._iterate, [expression(iterable)]);
-        _out.write('{% for ${_target(loopVar)} in $iterated %}');
+            ? '${_iterable(iterable.lhs)} if ${expression(iterable.test)}'
+            : _iterable(iterable);
+        _out.write('{% for ${_plain(loopVar)} in $iterated %}');
         statements(body);
         if (defaultBlock.isNotEmpty) {
           _out.write('{% else %}');
@@ -211,14 +223,14 @@ class _Rewriter {
         _out.write('{% endfor %}');
       case SetStatement(:final assignee, :final value, :final body):
         if (value != null) {
-          _out.write('{% set ${_target(assignee)} = ${expression(value)} %}');
+          _out.write('{% set ${_plain(assignee)} = ${expression(value)} %}');
         } else {
-          _out.write('{% set ${_target(assignee)} %}');
+          _out.write('{% set ${_plain(assignee)} %}');
           statements(body);
           _out.write('{% endset %}');
         }
       case MacroStatement(:final name, :final args, :final body):
-        _out.write('{% macro ${_name(name)}(${_parameters(args)}) %}');
+        _out.write('{% macro ${_primary(name)}(${_parameters(args)}) %}');
         statements(body);
         _out.write('{% endmacro %}');
       case CallStatement(:final call, :final callerArgs, :final body):
@@ -226,13 +238,13 @@ class _Rewriter {
             ? ''
             : '(${_parameters(callerArgs)})';
         _out.write(
-          '{% call$callerParameters ${_name(call.callee)}'
+          '{% call$callerParameters ${_primary(call.callee)}'
           '(${_arguments(call.args)}) %}',
         );
         statements(body);
         _out.write('{% endcall %}');
       case FilterStatement(:final filter, :final body):
-        _out.write('{% filter ${_filterName(filter)} %}');
+        _out.write('{% filter ${_callable(filter)} %}');
         statements(body);
         _out.write('{% endfilter %}');
       case DoStatement(:final expr):
@@ -251,15 +263,11 @@ class _Rewriter {
   String expression(Expression node) {
     switch (node) {
       case Identifier(:final name):
-        return _call(JinjaUsageProbe._use, [name]);
+        return instrument ? _call(JinjaUsageProbe._use, [name]) : name;
       case IntegerLiteral(:final value):
-        return '$value';
+        return _number('$value', negative: value.isNegative);
       case FloatLiteral(:final value):
-        final text = value.toString();
-        if (!RegExp(r'^\d+\.\d+$').hasMatch(text)) {
-          throw UnsupportedError('Unsupported float literal $text');
-        }
-        return text;
+        return _number(_decimal(value), negative: value.isNegative);
       case StringLiteral(:final value):
         return _literal(value);
       case ArrayLiteral(:final items):
@@ -270,11 +278,14 @@ class _Rewriter {
         final entries = items.map(
           (entry) => '${expression(entry.key)}: ${expression(entry.value)}',
         );
-        return '{${entries.join(', ')}}';
+        return '({${entries.join(', ')}})';
       case MemberExpression(:final object, :final property, :final computed):
-        return _call(JinjaUsageProbe._use, [
-          _member(expression(object), property, computed: computed),
-        ]);
+        final member = _member(
+          expression(object),
+          property,
+          computed: computed,
+        );
+        return instrument ? _call(JinjaUsageProbe._use, [member]) : member;
       case CallExpression(:final callee, :final args):
         return '(${expression(callee)}(${_arguments(args)}))';
       case BinaryExpression(:final op, :final left, :final right):
@@ -282,18 +293,21 @@ class _Rewriter {
       case UnaryExpression(:final op, :final argument):
         return '(${op.value} ${expression(argument)})';
       case FilterExpression(:final operand, :final filter):
-        final name = _filterName(filter);
-        final recorded = _call(JinjaUsageProbe._filter, [
-          expression(operand),
-          _literal(_calleeName(filter)),
-        ]);
-        return '($recorded | $name)';
+        final value = instrument
+            ? _call(JinjaUsageProbe._filter, [
+                expression(operand),
+                _literal(_calleeName(filter)),
+              ])
+            : expression(operand);
+        return '($value | ${_callable(filter)})';
       case TestExpression(:final operand, :final negate, :final test):
-        final recorded = _call(JinjaUsageProbe._test, [
-          expression(operand),
-          _literal(_calleeName(test)),
-        ]);
-        return '($recorded is ${negate ? 'not ' : ''}${_filterName(test)})';
+        final value = instrument
+            ? _call(JinjaUsageProbe._test, [
+                expression(operand),
+                _literal(_calleeName(test)),
+              ])
+            : expression(operand);
+        return '($value is ${negate ? 'not ' : ''}${_callable(test)})';
       case SelectExpression(:final lhs, :final test):
         return '(${expression(lhs)} if ${expression(test)})';
       case TernaryExpression(
@@ -308,51 +322,49 @@ class _Rewriter {
     }
   }
 
+  String _iterable(Expression node) => instrument
+      ? _call(JinjaUsageProbe._iterate, [expression(node)])
+      : expression(node);
+
   String _member(String object, Expression property, {required bool computed}) {
     if (computed && property is SliceExpression) {
       String bound(Expression? value) => value == null ? '' : expression(value);
       final step = property.step == null ? '' : ':${bound(property.step)}';
-      return '${_call(JinjaUsageProbe._slice, [object])}'
+      return '${_recorded(JinjaUsageProbe._slice, [object])}'
           '[${bound(property.start)}:${bound(property.stop)}$step]';
     }
     if (computed && property is BlankExpression) {
-      return '${_call(JinjaUsageProbe._slice, [object])}[]';
+      return '${_recorded(JinjaUsageProbe._slice, [object])}[]';
     }
     if (computed) {
       final key = expression(property);
-      return '${_call(JinjaUsageProbe._member, [object, key])}[$key]';
+      return '${_recorded(JinjaUsageProbe._member, [object, key])}[$key]';
     }
-    if (property is IntegerLiteral) {
-      return '${_call(JinjaUsageProbe._member, [object, '${property.value}'])}'
-          '.${property.value}';
+    if (property is Identifier) {
+      final name = property.name;
+      return '${_recorded(JinjaUsageProbe._attribute, [object, _literal(name)])}'
+          '.$name';
     }
-    final name = _name(property);
-    return '${_call(JinjaUsageProbe._attribute, [object, _literal(name)])}'
-        '.$name';
+    final key = _plain(property);
+    return '${_recorded(JinjaUsageProbe._member, [object, key])}.($key)';
   }
 
-  String _target(Expression node) {
-    switch (node) {
-      case Identifier(:final name):
-        return name;
-      case TupleLiteral(:final items):
-        return items.map(_target).join(', ');
-      case MemberExpression(:final object, :final property, computed: false):
-        return '${_target(object)}.${_name(property)}';
-      default:
-        throw UnsupportedError('Unsupported assignment target ${node.type}');
-    }
-  }
+  /// [args] recorded by [function] when instrumenting, else the object alone.
+  String _recorded(String function, List<String> args) =>
+      instrument ? _call(function, args) : args.first;
 
+  /// Macro and caller parameters: names, which are not read, and default
+  /// values, which are.
   String _parameters(List<Statement> parameters) {
     return parameters
         .map(
           (parameter) => switch (parameter) {
             KeywordArgumentExpression(:final key, :final val) =>
-              '${_name(key)}=${expression(val)}',
-            Identifier(:final name) => name,
+              '${_plain(key)}=${expression(val)}',
+            SpreadExpression(argument: final spread) => '*${_plain(spread)}',
+            Expression() => _plain(parameter),
             _ => throw UnsupportedError(
-              'Unsupported macro parameter ${parameter.type}',
+              'Unsupported parameter ${parameter.type}',
             ),
           },
         )
@@ -364,7 +376,7 @@ class _Rewriter {
         .map(
           (argument) => switch (argument) {
             KeywordArgumentExpression(:final key, :final val) =>
-              '${_name(key)}=${expression(val)}',
+              '${_plain(key)}=${expression(val)}',
             SpreadExpression(argument: final spread) =>
               '*${expression(spread)}',
             Expression() => expression(argument),
@@ -376,25 +388,56 @@ class _Rewriter {
         .join(', ');
   }
 
-  String _filterName(Expression node) {
-    return switch (node) {
-      Identifier(:final name) => name,
-      CallExpression(:final callee, :final args) =>
-        '${_name(callee)}(${_arguments(args)})',
-      _ => throw UnsupportedError('Unsupported filter or test ${node.type}'),
-    };
-  }
+  /// A filter or test: its name, or a call on it, as the parser reads it
+  /// after `|`, `is` or `filter`.
+  String _callable(Expression node) => switch (node) {
+    CallExpression(:final callee, :final args) =>
+      '${_callable(callee)}(${_arguments(args)})',
+    _ => _primary(node),
+  };
 
-  String _calleeName(Expression node) {
-    return switch (node) {
-      CallExpression(:final callee) => _name(callee),
-      _ => _name(node),
-    };
-  }
+  /// [node] as a primary expression: a bare name, or parenthesized.
+  String _primary(Expression node) =>
+      node is Identifier ? node.name : '(${_plain(node)})';
 
-  String _name(Statement node) {
-    if (node is Identifier) return node.name;
-    throw UnsupportedError('Expected an identifier, got ${node.type}');
+  String _calleeName(Expression node) => switch (node) {
+    CallExpression(:final callee) => _calleeName(callee),
+    Identifier(:final name) => name,
+    _ => _plain(node),
+  };
+
+  /// [node] written without recording calls, for positions the template
+  /// assigns to or names rather than reads.
+  String _plain(Expression node) =>
+      _Rewriter(instrument: false).expression(node);
+
+  static String _number(String text, {required bool negative}) =>
+      negative ? '($text)' : text;
+
+  /// [value] as digits with a decimal point and no exponent, which dinja's
+  /// lexer reads back as the same double. On the web, `toString` drops the
+  /// point from whole numbers.
+  static String _decimal(double value) {
+    final sign = value.isNegative ? '-' : '';
+    if (value.isInfinite) return '${sign}1${'0' * 400}.0';
+    final text = value.abs().toString();
+    final e = text.indexOf('e');
+    final String digits;
+    if (e < 0) {
+      digits = text;
+    } else {
+      final mantissa = text.substring(0, e);
+      final dot = mantissa.indexOf('.');
+      final all = mantissa.replaceFirst('.', '');
+      final point =
+          (dot < 0 ? mantissa.length : dot) + int.parse(text.substring(e + 1));
+      digits = point <= 0
+          ? '0.${'0' * -point}$all'
+          : point >= all.length
+          ? '$all${'0' * (point - all.length)}'
+          : '${all.substring(0, point)}.${all.substring(point)}';
+    }
+    return '$sign$digits${digits.contains('.') ? '' : '.0'}';
   }
 
   static String _call(String function, List<String> args) =>

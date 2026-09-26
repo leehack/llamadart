@@ -4,6 +4,7 @@ import 'package:dinja/dinja.dart';
 import '../../llama_logger.dart';
 import '../template_caps.dart';
 import 'jinja_usage_probe.dart';
+import 'legacy_jinja_analyzer.dart';
 
 /// Detects a Jinja chat template's capabilities as llama.cpp does.
 class JinjaAnalyzer {
@@ -24,8 +25,14 @@ class JinjaAnalyzer {
   /// A probe render that throws is one of llama.cpp's outcomes, not a
   /// failure: it is logged at debug level and read as llama.cpp reads it.
   /// `failed` is `true` only when the template does not parse, and the regex
-  /// fallback produced `caps`, or cannot be prepared for probing.
-  static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(String source) {
+  /// fallback produced `caps`. A template that parses but cannot be prepared
+  /// for the probes gets [LegacyJinjaAnalyzer]'s outcome.
+  ///
+  /// [prepare] builds the probe; tests pass one that throws.
+  static ({TemplateCaps caps, bool failed}) analyzeWithOutcome(
+    String source, {
+    JinjaUsageProbe Function(Program program) prepare = JinjaUsageProbe.new,
+  }) {
     final Program program;
     try {
       program = parseTemplate(source);
@@ -33,20 +40,17 @@ class JinjaAnalyzer {
       // Fallback to regex if parsing fails (e.g. invalid syntax)
       return (caps: TemplateCaps.detectRegex(source), failed: true);
     }
-    final supportsThinking = _supportsThinking(program);
     final JinjaUsageProbe probe;
     try {
-      probe = JinjaUsageProbe(program);
+      probe = prepare(program);
     } catch (error) {
       LlamaLogger.instance.debug(
         'JinjaAnalyzer: Template could not be prepared for capability '
-        'probes; keeping default capabilities: $error',
+        'probes; using the legacy analysis: $error',
       );
-      return (
-        caps: TemplateCaps(supportsThinking: supportsThinking),
-        failed: true,
-      );
+      return LegacyJinjaAnalyzer.analyzeWithOutcome(source);
     }
+    final supportsThinking = _supportsThinking(program);
     return (
       caps: _probe(probe, supportsThinking: supportsThinking),
       failed: false,
