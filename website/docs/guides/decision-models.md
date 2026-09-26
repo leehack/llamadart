@@ -483,7 +483,8 @@ section; other native platforms and GPU backends have not been measured.
   published `laya-F16.gguf` matches a local F16 conversion on Laya's fixture
   but was not measured on the broader random set.
 - **No U+0000.** A state, question or option text that contains U+0000 throws
-  `LlamaDecisionException`, because native tokenization would cut the text
-  there. A state that is not a `String` is sent as JSON, which escapes it.
+  `LlamaDecisionException` on every backend, because Web bridge tokenization
+  cuts the text there. A state that is not a `String` is sent as JSON, which
+  escapes it.
 - **Web numbers.** Web writes some numbers differently from native and Laya;
   see [Web](#web).
