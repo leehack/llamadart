@@ -1185,10 +1185,17 @@ audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
 input/recovery, independent reload and cleanup. Eight further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
-measured cancellation latency, peak resident set and per-cycle resident growth
-against the budgets described in
-`packages/llamadart_validation/assets/speech/README.md`. The peak ratio is not
-applied on Linux CUDA, whose resident set excludes the weights; the per-cycle
+measured cancellation latency, peak memory footprint and per-cycle footprint
+growth against the budgets described in
+`packages/llamadart_validation/assets/speech/README.md`. The footprint is
+`phys_footprint` on macOS and iOS, `RssAnon + RssShmem + VmSwap` on Linux and
+Android, and `PrivateUsage + SharedCommitUsage` on Windows, or `PrivateUsage`
+alone on Windows builds without `PROCESS_MEMORY_COUNTERS_EX2`. None counts
+file-backed pages, such as the mmapped weights, so evicting them under memory
+pressure does not shrink it
+([#633](https://github.com/leehack/llamadart/issues/633)); the speech README
+lists what each counter includes and misses. The peak ratio is
+not applied on Linux CUDA, whose host memory excludes the weights; the per-cycle
 growth bound applies on every backend but misses growth of 7 MiB or less per
 cycle, so a leak that small passes on Linux CUDA
 ([#686](https://github.com/leehack/llamadart/issues/686)). The
@@ -1197,7 +1204,7 @@ is handed back, the window in which `tts` cancellations were dropped until
 [#596](https://github.com/leehack/llamadart/pull/596), and once after a wait.
 The second must report `cancel_in_flight`, which is true only if the adapter
 had not seen the task finish when it cancelled; it cannot show that the
-generation had begun. Exceeding any budget fails the run; if resident memory
+generation had begun. Exceeding any budget fails the run; if the footprint
 cannot be sampled, the memory bounds record `SKIP` with a reason, and they
 are the only checks a passing run may leave unmeasured or unapplied.
 GGUF STT additionally compares file and bytes inputs and runs four generated
@@ -1227,7 +1234,7 @@ could not pass, so the check records `NOT_RUN`, as it does for any unmet
 precondition, with the reason and measured numbers; `NOT_RUN` fails the run.
 It targets the chunk-boundary decode cancellation of native `v0.4.1-1`
 ([#322](https://github.com/leehack/llamadart/issues/322)).
-`interrupt_memory_bound` holds the resident set after the three checks to
+`interrupt_memory_bound` holds the footprint after the three checks to
 1.10x the sample taken after `leak_slope_bound`. Running them after the
 lifecycle bounds keeps their reloads out of the lifecycle baselines and peak,
 and puts the lifecycle's own reload overhead in their baseline. Like the peak
@@ -1276,12 +1283,12 @@ any budget is exceeded:
   every cancel issued as soon as `transcribe` returns and every cancel issued
   after half the duration of the most recent completed generation. This bounds
   when the task ends for its caller, not when native work stops.
-- **Memory, 1.10x**: the largest whole-process resident set sampled after the
-  checks that follow the first generation, as a multiple of the one sampled
+- **Memory, 1.10x**: the largest whole-process memory footprint sampled after
+  the checks that follow the first generation, as a multiple of the one sampled
   right after that generation. Not applied on Linux CUDA, where the weights
   stay in device memory
   ([#686](https://github.com/leehack/llamadart/issues/686)).
-- **Memory growth, 7 MiB per cycle**: the run fails if the resident set grows
+- **Memory growth, 7 MiB per cycle**: the run fails if the footprint grows
   by more than 7 MiB in every one of the seven cycles after the first. A
   plateau passes; a steady leak fails. Slower growth passes this check.
 

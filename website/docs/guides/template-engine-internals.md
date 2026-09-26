@@ -106,6 +106,19 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
+When tool calls are parsed, streamed Hermes content equals the content of the
+final parse. Text that could start a tool-call envelope, and trailing
+whitespace, is held until later output rules the envelope out or generation
+ends. Streamed reasoning equals the parse too, which trims each thought;
+upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
+with the Qwen3 template it returns `"Plan it.\n"` for
+`<think>\nPlan it.\n</think>`. The one exception is a forced-open thought
+that never closes and starts with whitespace. The parse keeps it untrimmed,
+but the stream drops the leading whitespace before it can know the thought
+will not close. The streamed text is then no prefix of the parse, so the final
+reconciliation adds nothing and the trailing whitespace is lost too:
+`"  \n Hello there.  \n\n"` streams as `"Hello there."`.
+
 ## `dinja` integration
 
 `llamadart` uses [`dinja`](https://pub.dev/packages/dinja), the Dart Jinja

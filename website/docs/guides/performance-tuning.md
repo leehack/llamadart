@@ -111,8 +111,10 @@ const generationParams = GenerationParams(
   rarely fix a slow backend. Change them gradually, one at a time.
 - `penalty` is a repetition penalty. `presencePenalty` is a separate
   llama.cpp-native control that penalizes any token already present in the
-  recent window; one does not substitute for the other. WebGPU and LiteRT-LM
-  reject a non-zero `presencePenalty`.
+  recent window; one does not substitute for the other. WebGPU applies
+  `presencePenalty` and `minP` only with bridge assets whose
+  `getCompletionCapabilities()` reports them, and otherwise rejects a non-zero
+  value, as LiteRT-LM does.
 - `streamBatchTokenThreshold` / `streamBatchByteThreshold` (native): lower
   values give finer token-by-token UI updates; higher values raise throughput
   by reducing isolate message overhead.

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -418,6 +419,86 @@ void main() {
         'get_date',
       ]);
       expect(parsed.content, '<tool_call>\n{} x\n</tool_call>');
+    });
+  });
+
+  group('HermesHandler.toolCallOpening', () {
+    // The opening pattern of HermesHandler.parse.
+    final opening = RegExp(
+      r'(?:(```(?:xml|json)?\n\s*)?(?:(<tool_call>|<function_call>|<tool>|<tools>|<response>|<json>|<xml>|<JSON>)(\s*\{)?)?(\s*\{\s*"name"))|<function=([^>]+)>|<function name="([^"]+)">',
+    );
+
+    test('finds where an opening starts or may start', () {
+      for (final (text, index) in const [
+        ('If a < b, then b > a.', 21),
+        ('Use {x} or {"a": 1}.', 20),
+        ('Let me check.\n<', 14),
+        ('Let me check.\n<tool', 14),
+        ('Let me check.\n<tool_call>', 14),
+        ('Let me check.\n<tool_call>\n{"na', 14),
+        ('Let me check.\n<tool_call>\n{"name"', 14),
+        ('Let me check.\n<tool_call>\n{{"name"', 14),
+        ('Sure: {"name"', 5),
+        ('Sure:\n```', 6),
+        ('Sure:\n```python\nx = 1', 21),
+        ('Sure:\n```json\n', 6),
+        ('<function=get_weather', 0),
+        ('<function=get_weather>', 0),
+        ('<function name="a"b', 19),
+        ('Text ends with spaces  ', 21),
+      ]) {
+        expect(HermesHandler.toolCallOpening(text), index, reason: text);
+      }
+    });
+
+    test('is never after where the parse pattern matches', () {
+      const fragments = [
+        'a',
+        ' ',
+        '\n',
+        '<',
+        '>',
+        '{',
+        '}',
+        '"',
+        '"name"',
+        'name',
+        '`',
+        '```',
+        'json',
+        'xml',
+        '\n',
+        '=',
+        '<tool_call>',
+        '<tool',
+        '<function=',
+        '<function name="',
+        '<JSON>',
+        '<response>',
+        '_call>',
+      ];
+      final random = Random(701);
+      for (var run = 0; run < 5000; run++) {
+        final text = [
+          for (var i = random.nextInt(8); i >= 0; i--)
+            fragments[random.nextInt(fragments.length)],
+        ].join();
+        final extension = [
+          for (var i = random.nextInt(6); i >= 0; i--)
+            fragments[random.nextInt(fragments.length)],
+        ].join();
+        final found = HermesHandler.toolCallOpening(text);
+        for (final candidate in [text, text + extension]) {
+          final match = opening.firstMatch(candidate);
+          if (match != null) {
+            expect(
+              match.start,
+              greaterThanOrEqualTo(found),
+              reason: jsonEncode([text, extension]),
+            );
+          }
+        }
+      }
     });
   });
 }

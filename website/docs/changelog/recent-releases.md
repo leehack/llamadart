@@ -11,12 +11,64 @@ For canonical full release notes, use:
 
 - Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
   Web ([#723](https://github.com/leehack/llamadart/issues/723)).
+- Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA
+  adapters (`setLora`, `removeLora`, `clearLoras`), on WebGPU with bridge
+  assets whose capability probes report them; other assets still reject them
+  ([#722](https://github.com/leehack/llamadart/issues/722)).
+- Reject a non-zero `GenerationParams.minP` on WebGPU when the bridge lacks
+  Min-P, with `LlamaUnsupportedException` instead of ignoring it, and ignore a
+  stop sequence equal to a `preservedTokens` entry there, as native llama.cpp
+  does ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Add `LlamaEngine.backendGenerationCapabilities`, which reports whether the
+  loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
+  example chat app uses it to send Min-P and enable its slider only where
+  supported ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Stream Hermes-format content that equals the non-streamed parse, so text
+  before a tool call no longer carries the `<tool_call>` envelope into
+  streamed content or `ChatSession` history; only a possible envelope opening
+  and trailing whitespace wait for more output. With tools, streamed content
+  is now trimmed as the parse trims it, and text the parse keeps after a tool
+  call, including a malformed envelope, arrives at the end of the stream.
+  Streamed reasoning, and so `ChatSession` thinking, is trimmed per thought as
+  the parse trims it. The exception is a forced-open thought that never
+  closes and starts with whitespace: the parse keeps it untrimmed, but it
+  streams without its leading and trailing whitespace, so
+  `"  \n Hello there.  \n\n"` streams as `"Hello there."`. Before, it streamed
+  as the parse gives it, except for some thoughts containing a backslash,
+  depending on chunking. After a forced-open
+  thought, text after a tool call arrives at the end
+  ([#701](https://github.com/leehack/llamadart/issues/701)).
+- Throw `LlamaModelException` when a WebGPU model load fails with a bridge
+  error that has no specific mapping, and `LlamaInferenceException` or
+  `LlamaStateException` for such Web embedding, next-token scoring and state
+  errors, with URL credentials and signed query values redacted from the
+  details and the load-failure console log
+  ([#704](https://github.com/leehack/llamadart/issues/704)).
+- Keep URL credentials, signed query values and fragments out of
+  `LlamaEngine` model and projector load errors and logs and the `model` field
+  of completion chunks for every URL form, including scheme-relative
+  `//user:pass@host/...` URLs and relative paths with a query, and out of
+  native model download errors. A projector load error that is not a
+  `LlamaException` now throws `LlamaModelException`. The `details` of a
+  model or projector load failure is now a `{type, message}` map instead of
+  the original error, and a native download that fails with a network error
+  carries the error text as a `String` in `details`
+  ([#704](https://github.com/leehack/llamadart/issues/704)).
 - Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
   and generation prompts instead of dropping it
   ([#608](https://github.com/leehack/llamadart/issues/608)).
 - Make `DecisionEngine.load` throw `LlamaStateException` when another model is
   loaded while it runs, even under the same backend handle
   ([#626](https://github.com/leehack/llamadart/issues/626)).
+- Bound speech validation pack memory by a footprint counter instead of the
+  resident set: `phys_footprint` on macOS and iOS, `RssAnon` plus `RssShmem`
+  plus `VmSwap` on Linux and Android, and `PrivateUsage` plus
+  `SharedCommitUsage` on Windows (`PrivateUsage` alone on builds without it).
+  Evicting file-backed pages, such as the
+  mmapped weights, or compressing memory under pressure no longer lowers the
+  baseline and fails `peak_memory_bound` without memory growth, and each
+  report names its counter
+  ([#633](https://github.com/leehack/llamadart/issues/633)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image

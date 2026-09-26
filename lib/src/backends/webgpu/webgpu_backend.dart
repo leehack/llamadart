@@ -21,9 +21,18 @@ import '../backend.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
+import 'webgpu_lora.dart';
 
 @JS('Object.keys')
 external JSArray _objectKeys(JSObject obj);
+
+/// Optional `createCompletion` options the loaded bridge core applies, as its
+/// `getCompletionCapabilities()` reports them.
+typedef _WebGpuCompletionCapabilities = ({
+  bool presencePenalty,
+  bool minP,
+  bool thinkingBudget,
+});
 
 /// Web backend backed by the llama.cpp bridge runtime.
 class WebGpuLlamaBackend
@@ -35,6 +44,7 @@ class WebGpuLlamaBackend
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
         BackendDecision,
+        BackendGenerationCapabilitiesSupport,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -54,10 +64,12 @@ class WebGpuLlamaBackend
   static const String _nextTokenScoringUnsupportedMessage =
       'Web next-token scoring requires llama-web-bridge-assets v0.1.52+.';
   static const int _maxInt32 = 0x7fffffff;
-  static const String _runtimeLoraUnsupportedMessage =
-      'WebGPU LoRA runtime updates are not supported by the current bridge. '
-      'Use a native llama.cpp backend when runtime LoRA adapter changes are '
-      'required.';
+  static const _WebGpuCompletionCapabilities _noCompletionCapabilities = (
+    presencePenalty: false,
+    minP: false,
+    thinkingBudget: false,
+  );
+  static const int _maxThinkingBudgetTokens = 0x7fffffff;
   static final Uint8List _webGpuWarmupRgbBytes = Uint8List.fromList(const <int>[
     0,
     0,
@@ -85,6 +97,9 @@ class WebGpuLlamaBackend
   bool? _preferMemory64Override;
   bool? _forceRemoteFetchBackendOverride;
   final WebGpuDecisionHeads _decisionHeads = WebGpuDecisionHeads();
+  final WebGpuLoraAdapters _loraAdapters = WebGpuLoraAdapters();
+  _WebGpuCompletionCapabilities _completionCapabilities =
+      _noCompletionCapabilities;
 
   /// Creates a bridge-backed web backend.
   WebGpuLlamaBackend({
@@ -338,6 +353,8 @@ class WebGpuLlamaBackend
     _bridge = null;
     _abortController = null;
     _decisionHeads.clear();
+    _loraAdapters.forget();
+    _completionCapabilities = _noCompletionCapabilities;
     abortController?.abort();
     bridge?.cancel();
     if (bridge == null) {
@@ -965,6 +982,39 @@ class WebGpuLlamaBackend
     return null;
   }
 
+  /// Returns the optional completion options [bridge] reports applying, or
+  /// none when it lacks `getCompletionCapabilities` or the probe fails.
+  Future<_WebGpuCompletionCapabilities> _probeCompletionCapabilities(
+    LlamaWebGpuBridge bridge,
+  ) async {
+    if (!_hasBridgeFunction(bridge, 'getCompletionCapabilities')) {
+      return _noCompletionCapabilities;
+    }
+    try {
+      final raw = await _toFuture(bridge.getCompletionCapabilities());
+      if (raw == null || !raw.isA<JSObject>()) {
+        return _noCompletionCapabilities;
+      }
+      final capabilities = raw as WebGpuCompletionCapabilities;
+      bool reported(JSAny? value) =>
+          value != null &&
+          value.isA<JSBoolean>() &&
+          (value as JSBoolean).toDart;
+      return (
+        presencePenalty: reported(capabilities.presencePenalty),
+        minP: reported(capabilities.minP),
+        thinkingBudget: reported(capabilities.thinkingBudget),
+      );
+    } catch (error) {
+      _emitConsoleText(
+        LlamaLogLevel.warn,
+        'WebGpuLlamaBackend: completion capability probe failed: '
+        '${webGpuBridgeErrorText(error)}',
+      );
+      return _noCompletionCapabilities;
+    }
+  }
+
   LlamaWebGpuBridge _requireBridge() {
     final bridge = _bridge;
     if (!_usingBridge || bridge == null) {
@@ -1067,6 +1117,8 @@ class WebGpuLlamaBackend
     Function(double progress)? onProgress,
   }) async {
     final setup = _prepareUrlLoad(url, params, onProgress);
+    _loraAdapters.forget();
+    _completionCapabilities = _noCompletionCapabilities;
     final loadAttempts = _buildLoadAttempts(
       requestedContextSize: params.contextSize,
       requestedGpuLayers: setup.requestedGpuLayers,
@@ -1151,6 +1203,7 @@ class WebGpuLlamaBackend
         _mmContextActive = false;
         _decisionHeads.clear();
         _resetWebGpuMultimodalWarmupState();
+        _completionCapabilities = await _probeCompletionCapabilities(bridge);
         return 1;
       } catch (e) {
         lastError = e;
@@ -1166,7 +1219,8 @@ class WebGpuLlamaBackend
 
         _emitConsoleText(
           LlamaLogLevel.error,
-          'WebGpuLlamaBackend: Bridge model load failed: $e',
+          'WebGpuLlamaBackend: Bridge model load failed: '
+          '${webGpuBridgeErrorText(e, sourceUrls: <String>[url])}',
         );
         if (runtimeHints.isNotEmpty) {
           _emitConsoleText(
@@ -1233,7 +1287,7 @@ class WebGpuLlamaBackend
         if (normalized != null) {
           throw normalized;
         }
-        rethrow;
+        throw _unmappedModelLoadError(e, url);
       }
     }
 
@@ -1246,10 +1300,23 @@ class WebGpuLlamaBackend
       if (normalized != null) {
         throw normalized;
       }
-      throw lastError;
+      throw _unmappedModelLoadError(lastError, url);
     }
 
     throw StateError('WebGpuLlamaBackend: model load failed unexpectedly');
+  }
+
+  /// Returns [error] unchanged when it is a [LlamaException] or an
+  /// [UnsupportedError], and otherwise a [LlamaModelException] whose details
+  /// are the error message with URL secrets redacted.
+  Object _unmappedModelLoadError(Object error, String url) {
+    if (error is LlamaException || error is UnsupportedError) {
+      return error;
+    }
+    return LlamaModelException(
+      'The Web runtime could not load the model.',
+      webGpuBridgeErrorText(error, sourceUrls: <String>[url]),
+    );
   }
 
   @override
@@ -1628,12 +1695,27 @@ class WebGpuLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    if (params.presencePenalty != 0.0) {
-      throw UnsupportedError('WebGPU presence penalty is not supported yet.');
-    }
-    if (params.thinkingBudget != null) {
+    final capabilities = _completionCapabilities;
+    if (params.presencePenalty != 0.0 && !capabilities.presencePenalty) {
       throw UnsupportedError(
-        'WebGPU thinking-budget control is not supported yet.',
+        'WebGPU presence penalty needs bridge assets whose '
+        'getCompletionCapabilities() reports presencePenalty; the loaded '
+        'assets do not.',
+      );
+    }
+    if (params.minP != 0.0 && !capabilities.minP) {
+      throw LlamaUnsupportedException(
+        'WebGPU Min-P needs bridge assets whose getCompletionCapabilities() '
+        'reports minP; the loaded assets do not, so GenerationParams.minP '
+        'must be 0.0.',
+      );
+    }
+    final thinkingBudget = params.thinkingBudget;
+    if (thinkingBudget != null && !capabilities.thinkingBudget) {
+      throw UnsupportedError(
+        'WebGPU thinking-budget control needs bridge assets whose '
+        'getCompletionCapabilities() reports thinkingBudget; the loaded '
+        'assets do not.',
       );
     }
     if (params.isSpeculativeDecodingEnabled) {
@@ -1660,6 +1742,12 @@ class WebGpuLlamaBackend
         'Multimodal input requires loadMultimodalProjector() before generate().',
       );
     }
+    final bridgeThinkingBudget = thinkingBudget == null
+        ? null
+        : _bridgeThinkingBudget(
+            thinkingBudget,
+            hasMediaParts: mediaParts != null,
+          );
 
     final bridge = _requireBridge();
     final isCpuMultimodalRuntime =
@@ -1701,8 +1789,9 @@ class WebGpuLlamaBackend
     var emittedLength = 0;
     var latestText = '';
     var stoppedBySequence = false;
+    final preservedTokens = params.preservedTokens.toSet();
     final stopSequences = params.stopSequences
-        .where((stop) => stop.isNotEmpty)
+        .where((stop) => stop.isNotEmpty && !preservedTokens.contains(stop))
         .toList(growable: false);
     final hasStopSequences = stopSequences.isNotEmpty;
     final maxStopSequenceLength = hasStopSequences
@@ -1793,9 +1882,14 @@ class WebGpuLlamaBackend
       temp: params.temp,
       topK: params.topK,
       topP: params.topP,
+      minP: params.minP == 0.0 ? null : params.minP,
       penalty: params.penalty,
+      presencePenalty: params.presencePenalty == 0.0
+          ? null
+          : params.presencePenalty,
       seed: params.seed ?? DateTime.now().millisecondsSinceEpoch,
       grammar: params.grammar,
+      thinkingBudget: bridgeThinkingBudget,
       mediaMaxImagePixels: mediaMaxImagePixels,
       mediaMaxImageEdge: mediaMaxImageEdge,
       onToken: onToken as JSFunction,
@@ -1857,6 +1951,47 @@ class WebGpuLlamaBackend
     );
 
     return controller.stream;
+  }
+
+  /// Validates [budget] as native llama.cpp generation does and converts it
+  /// for the bridge.
+  WebGpuThinkingBudgetOptions _bridgeThinkingBudget(
+    ThinkingBudget budget, {
+    required bool hasMediaParts,
+  }) {
+    if (budget.maxTokens < 0 || budget.maxTokens > _maxThinkingBudgetTokens) {
+      throw RangeError.range(
+        budget.maxTokens,
+        0,
+        _maxThinkingBudgetTokens,
+        'thinkingBudget.maxTokens',
+        'must fit the signed 32-bit llama.cpp reasoning-budget limit',
+      );
+    }
+    if (hasMediaParts) {
+      throw LlamaUnsupportedException(
+        'WebGPU thinking-budget control supports text-only generation: the '
+        'bridge inspects the prompt tokens to find an open reasoning block.',
+      );
+    }
+    final startTag = budget.startTag;
+    final endTag = budget.endTag;
+    if (startTag == null ||
+        startTag.trim().isEmpty ||
+        endTag == null ||
+        endTag.trim().isEmpty) {
+      throw ArgumentError(
+        'GenerationParams.thinkingBudget requires non-empty startTag and '
+        'endTag for raw generation. LlamaEngine.create fills them from the '
+        'selected chat template automatically.',
+      );
+    }
+    return WebGpuThinkingBudgetOptions(
+      maxTokens: budget.maxTokens,
+      startTag: startTag,
+      endTag: endTag,
+      forcedMessage: budget.forcedMessage ?? '',
+    );
   }
 
   @override
@@ -2089,6 +2224,19 @@ class WebGpuLlamaBackend
     _bridge?.cancel();
   }
 
+  /// Reports the options that the loaded bridge assets'
+  /// `getCompletionCapabilities()` reported after the model load; none before
+  /// a load or when the probe is missing or failed.
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    final capabilities = _completionCapabilities;
+    return BackendGenerationCapabilities(
+      presencePenalty: capabilities.presencePenalty,
+      minP: capabilities.minP,
+      thinkingBudget: capabilities.thinkingBudget,
+    );
+  }
+
   /// Probes the active bridge for decision heads.
   ///
   /// Reports unsupported without an active bridge, and for bridge assets
@@ -2146,7 +2294,7 @@ class WebGpuLlamaBackend
           '(v0.1.7 or newer).',
         );
       }
-      rethrow;
+      throw _embeddingError(error);
     }
   }
 
@@ -2178,9 +2326,15 @@ class WebGpuLlamaBackend
         }
         return vectors;
       }
-      rethrow;
+      throw _embeddingError(error);
     }
   }
+
+  static LlamaInferenceException _embeddingError(Object error) =>
+      LlamaInferenceException(
+        'The Web runtime could not compute embeddings.',
+        webGpuBridgeErrorText(error),
+      );
 
   @override
   Future<LlamaNextTokenScores> scoreNextToken(
@@ -2218,7 +2372,10 @@ class WebGpuLlamaBackend
       if (message.contains('needs a decoder-only model')) {
         throw LlamaUnsupportedException(message);
       }
-      rethrow;
+      throw LlamaInferenceException(
+        'The Web runtime could not score the next token.',
+        webGpuBridgeErrorText(error),
+      );
     }
     if (result == null || !result.isA<JSObject>()) {
       throw LlamaInferenceException(
@@ -2481,7 +2638,7 @@ class WebGpuLlamaBackend
           '(v0.1.15 or newer).',
         );
       }
-      rethrow;
+      throw _stateError('save', error, path);
     }
   }
 
@@ -2518,9 +2675,18 @@ class WebGpuLlamaBackend
           '(v0.1.15 or newer).',
         );
       }
-      rethrow;
+      throw _stateError('load', error, path);
     }
   }
+
+  static LlamaStateException _stateError(
+    String action,
+    Object error,
+    String path,
+  ) => LlamaStateException(
+    'The Web runtime could not $action the state.',
+    webGpuBridgeErrorText(error, sourceUrls: <String>[path]),
+  );
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
@@ -2546,24 +2712,21 @@ class WebGpuLlamaBackend
     return out;
   }
 
+  /// Applies the LoRA adapter at the URL [path] at [scale].
+  ///
+  /// Needs bridge assets whose `getLoraAdapterCapabilities()` reports support;
+  /// see [WebGpuLoraAdapters.set] for the errors.
   @override
-  Future<void> setLoraAdapter(
-    int contextHandle,
-    String path,
-    double scale,
-  ) async {
-    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
-  }
+  Future<void> setLoraAdapter(int contextHandle, String path, double scale) =>
+      _loraAdapters.set(_usingBridge ? _bridge : null, path, scale);
 
   @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) async {
-    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
-  }
+  Future<void> removeLoraAdapter(int contextHandle, String path) =>
+      _loraAdapters.remove(_usingBridge ? _bridge : null, path);
 
   @override
-  Future<void> clearLoraAdapters(int contextHandle) async {
-    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
-  }
+  Future<void> clearLoraAdapters(int contextHandle) =>
+      _loraAdapters.clear(_usingBridge ? _bridge : null);
 
   @override
   LlamaRuntime get runtime => LlamaRuntime.llamaCpp;

@@ -9,6 +9,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/download/model_download_manager_base.dart';
 import '../../core/models/model_load_options.dart';
 import '../../core/models/model_source.dart';
+import '../../core/url_redaction.dart';
 
 const String _metadataFileName = 'metadata.json';
 const int _metadataSchemaVersion = 1;
@@ -765,7 +766,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         if (attempt == options.maxRetries) {
           throw LlamaModelException(
             'Failed to download ${source.displayName}.',
-            error,
+            redactUrlSecrets('$error', sourceUrls: <String>['$uri']),
           );
         }
       }

@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
@@ -77,6 +78,81 @@ void main() {
     );
   });
 
+  group('text-first Hermes output keeps session history clean', () {
+    const call =
+        '<tool_call>\n'
+        '{"name": "get_weather", "arguments": {"city": "Paris"}}\n'
+        '</tool_call>';
+    const londonCall =
+        '<tool_call>\n'
+        '{"name": "get_weather", "arguments": {"city": "London"}}\n'
+        '</tool_call>';
+    final random = Random(701);
+    List<String> pieces(String output, int Function() size) => [
+      for (var i = 0, end = 0; i < output.length; i = end)
+        output.substring(i, end = min(output.length, i + size())),
+    ];
+
+    for (final MapEntry(key: name, value: output) in const {
+      'one call': 'Let me check.\n$call',
+      'two calls': 'Checking both.\n$call\n$londonCall',
+      'text after the call': 'Let me check.\n$call\nOne moment.',
+      'a thought then a call': '<think>\nPlan it.\n</think>\n\n$call',
+    }.entries) {
+      final tag = output.indexOf('<tool_call>');
+      for (final MapEntry(key: splitName, value: tokens) in {
+        'characters': pieces(output, () => 1),
+        'pairs': pieces(output, () => 2),
+        'random pieces': pieces(output, () => 1 + random.nextInt(7)),
+        'a split tag': [
+          output.substring(0, tag + 5),
+          output.substring(tag + 5),
+        ],
+      }.entries) {
+        test('$name as $splitName', () async {
+          final expected = ChatTemplateEngine.parse(
+            ChatFormat.hermes.index,
+            output,
+            tools: [_weatherTool],
+          );
+          final backend = _TemplateBackend(templates['Qwen3']!);
+          final engine = LlamaEngine(backend);
+          addTearDown(engine.dispose);
+          await engine.loadModel('mock-qwen3.gguf');
+          backend.queueResponse(tokens);
+          final session = ChatSession(engine);
+
+          final chunks = await session
+              .create(
+                [const LlamaTextContent('Weather in Paris?')],
+                tools: [_weatherTool],
+                toolChoice: ToolChoice.auto,
+              )
+              .toList();
+
+          expect(
+            chunks.map((c) => c.choices.single.delta.content ?? '').join(),
+            expected.content,
+          );
+          final reply = session.history.last;
+          expect(
+            reply.parts.whereType<LlamaThinkingContent>().map(
+              (p) => p.thinking,
+            ),
+            [?expected.reasoningContent],
+          );
+          expect(reply.parts.whereType<LlamaTextContent>().map((p) => p.text), [
+            if (expected.content.isNotEmpty) expected.content,
+          ]);
+          expect([
+            for (final call in reply.parts.whereType<LlamaToolCallContent>())
+              {'name': call.name, 'arguments': call.arguments},
+          ], _parsedCalls(expected.toolCalls));
+        });
+      }
+    }
+  });
+
   for (final entry in _cases) {
     final name = entry['name'] as String;
     final prompt = entry['prompt'] as String;
@@ -115,8 +191,6 @@ void main() {
         remaining.removeAt(index);
       }
     });
-
-    if (!emission.startsWith('<tool_call>')) continue;
 
     final splits = <String, List<String>>{
       'one piece': [emission],

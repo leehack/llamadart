@@ -29,10 +29,96 @@ import '../tool_schema_utils.dart';
 /// content and parsing continues after the call. This differs from upstream:
 /// llama.cpp `7fe450e1` fails to parse this output and extracts no call.
 class HermesHandler extends ChatTemplateHandler {
+  static const List<String> _openTags = <String>[
+    '<tool_call>',
+    '<function_call>',
+    '<tool>',
+    '<tools>',
+    '<response>',
+    '<json>',
+    '<xml>',
+    '<JSON>',
+  ];
+
   static final RegExp _openRegex = RegExp(
-    r'(?:(```(?:xml|json)?\n\s*)?(?:(<tool_call>|<function_call>|<tool>|<tools>|<response>|<json>|<xml>|<JSON>)(\s*\{)?)?(\s*\{\s*"name"))|<function=([^>]+)>|<function name="([^"]+)">',
+    '(?:(```(?:xml|json)?\\n\\s*)?(?:(${_openTags.join('|')})(\\s*\\{)?)?'
+    r'(\s*\{\s*"name"))|<function=([^>]+)>|<function name="([^"]+)">',
     dotAll: true,
   );
+
+  /// The forms [_openRegex] matches, as parts matched left to right.
+  static final List<List<_OpeningPart>> _openingForms = [
+    for (final fence in <String>['', '```\n', '```xml\n', '```json\n'])
+      for (final tag in <String>['', ..._openTags])
+        for (final outerBrace in tag.isEmpty ? [false] : [false, true])
+          [
+            if (fence.isNotEmpty) ...[_OpeningLiteral(fence), _openingSpaces],
+            if (tag.isNotEmpty) _OpeningLiteral(tag),
+            if (outerBrace) ...[_openingSpaces, const _OpeningLiteral('{')],
+            _openingSpaces,
+            const _OpeningLiteral('{'),
+            _openingSpaces,
+            const _OpeningLiteral('"name"'),
+          ],
+    const [
+      _OpeningLiteral('<function='),
+      _OpeningRun('>'),
+      _OpeningLiteral('>'),
+    ],
+    const [
+      _OpeningLiteral('<function name="'),
+      _OpeningRun('"'),
+      _OpeningLiteral('">'),
+    ],
+  ];
+
+  static final RegExp _regexSpace = RegExp(r'\s');
+
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where an opening starts, or
+  /// where the rest of [text] is the start of one, and `text.length` when
+  /// there is none.
+  static int toolCallOpening(String text, [int from = 0]) {
+    for (var index = from; index < text.length; index++) {
+      if (_openingForms.any((form) => _mayMatchOpening(text, index, form))) {
+        return index;
+      }
+    }
+    return text.length;
+  }
+
+  /// Whether [form] matches [text] at [start], or matches all of the rest.
+  static bool _mayMatchOpening(
+    String text,
+    int start,
+    List<_OpeningPart> form,
+  ) {
+    var index = start;
+    for (final part in form) {
+      switch (part) {
+        case _OpeningLiteral(:final literal):
+          for (var offset = 0; offset < literal.length; offset++) {
+            if (index + offset == text.length) return true;
+            if (text.codeUnitAt(index + offset) != literal.codeUnitAt(offset)) {
+              return false;
+            }
+          }
+          index += literal.length;
+        case _OpeningSpaces():
+          while (index < text.length && _regexSpace.hasMatch(text[index])) {
+            index++;
+          }
+        case _OpeningRun(:final stop):
+          if (index == text.length) return true;
+          if (text[index] == stop) return false;
+          while (index < text.length && text[index] != stop) {
+            index++;
+          }
+      }
+    }
+    return true;
+  }
 
   @override
   ChatFormat get format => ChatFormat.hermes;
@@ -460,4 +546,29 @@ value ::= string | number | boolean | null | arr | obj
 arr ::= "[" space (value ("," space value)*)? space "]"
 obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? space "}"''';
   }
+}
+
+sealed class _OpeningPart {
+  const _OpeningPart();
+}
+
+/// Matches [literal].
+final class _OpeningLiteral extends _OpeningPart {
+  const _OpeningLiteral(this.literal);
+
+  final String literal;
+}
+
+/// Matches `\s*`.
+final class _OpeningSpaces extends _OpeningPart {
+  const _OpeningSpaces();
+}
+
+const _openingSpaces = _OpeningSpaces();
+
+/// Matches one or more characters other than [stop].
+final class _OpeningRun extends _OpeningPart {
+  const _OpeningRun(this.stop);
+
+  final String stop;
 }
