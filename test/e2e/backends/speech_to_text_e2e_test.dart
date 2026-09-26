@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../test_helper.dart';
@@ -67,7 +68,9 @@ void main() {
           final audio = useBytes
               ? SpeechAudioBytesInput(
                   bytes,
-                  format: const SpeechAudioFormat(encoding: 'wav'),
+                  format: SpeechAudioFormat(
+                    encoding: p.extension(audioPath).substring(1).toLowerCase(),
+                  ),
                 )
               : SpeechAudioFileInput(audioPath);
           final request = SpeechToTextRequest(

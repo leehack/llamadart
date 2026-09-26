@@ -394,7 +394,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'speech-to-text-smoke --model-path <model.gguf> '
-        '--mmproj-path <mmproj.gguf> --audio-path <fixture.wav> '
+        '--mmproj-path <mmproj.gguf> '
+        '--audio-path <fixture.wav|.mp3|.flac> '
         '--expect "<expected transcript>"',
     useWhen:
         'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
@@ -711,11 +712,13 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'published WebGPU bridge, public typed STT API, Qwen3-ASR catalog, '
-        'exact browser-selected WAV transcription, non-empty fake-device '
-        'microphone transcription, and rendered transcripts',
+        'exact browser-selected WAV, MP3 or FLAC transcription, non-empty '
+        'fake-device microphone transcription for a WAV, and rendered '
+        'transcripts',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
-        'chat-app-web-speech-to-text-smoke --audio-path <speech.wav> '
+        'chat-app-web-speech-to-text-smoke '
+        '--audio-path <speech.wav|.mp3|.flac> '
         '--expect <exact-transcript>',
     useWhen:
         'Web bridge pins, prompt speech capability gating, Qwen3-ASR Web, '

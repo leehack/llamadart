@@ -3568,9 +3568,7 @@ class ChatProvider extends ChangeNotifier {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: kIsWeb
-            ? const <String>['wav']
-            : const <String>['wav', 'mp3', 'flac'],
+        allowedExtensions: const <String>['wav', 'mp3', 'flac'],
         allowMultiple: false,
         withData: kIsWeb,
       );

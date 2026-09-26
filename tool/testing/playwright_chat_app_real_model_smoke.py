@@ -178,12 +178,18 @@ def main() -> int:
     parser.add_argument("--mmproj-url")
     parser.add_argument(
         "--speech-audio-path",
-        help="Select a local WAV through the chat app's typed transcription action.",
+        help=(
+            "Select a local WAV, MP3 or FLAC through the chat app's typed "
+            "transcription action."
+        ),
     )
     parser.add_argument(
         "--speech-microphone",
         action="store_true",
-        help="Also feed the WAV through Chromium's fake microphone and record UI.",
+        help=(
+            "Also feed the PCM16 WAV through Chromium's fake microphone and "
+            "record UI."
+        ),
     )
     parser.add_argument(
         "--microphone-allow-any-response",
@@ -242,13 +248,18 @@ def main() -> int:
         audio_path = Path(args.speech_audio_path).resolve()
         if not audio_path.is_file():
             parser.error(f"--speech-audio-path does not exist: {audio_path}")
-        if audio_path.suffix.lower() != ".wav":
-            parser.error("--speech-audio-path must be a WAV file")
+        if audio_path.suffix.lower() not in {".wav", ".mp3", ".flac"}:
+            parser.error("--speech-audio-path must be a WAV, MP3 or FLAC file")
         if not args.mmproj_url:
             parser.error("--speech-audio-path requires --mmproj-url")
         args.speech_audio_path = str(audio_path)
     if args.speech_microphone and not args.speech_audio_path:
         parser.error("--speech-microphone requires --speech-audio-path")
+    if (
+        args.speech_microphone
+        and Path(args.speech_audio_path).suffix.lower() != ".wav"
+    ):
+        parser.error("--speech-microphone requires a WAV --speech-audio-path")
     if args.microphone_allow_any_response and not args.speech_microphone:
         parser.error(
             "--microphone-allow-any-response requires --speech-microphone"

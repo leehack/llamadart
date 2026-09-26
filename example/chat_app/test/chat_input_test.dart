@@ -2170,9 +2170,45 @@ void main() {
 
     await provider.pickAudioForTranscription();
 
-    expect(filePicker.allowedExtensions, <String>['wav']);
+    expect(filePicker.allowedExtensions, <String>['wav', 'mp3', 'flac']);
     expect(filePicker.withData, isTrue);
     expect(provider.messages.last.text, 'Extensionless WAV.');
+  });
+
+  test('Web transcribes a selected MP3 file', () async {
+    if (!kIsWeb) {
+      return;
+    }
+    final mp3Bytes = Uint8List.fromList(const <int>[0x49, 0x44, 0x33, 0x04]);
+    final filePicker = _FakeFilePicker(
+      FilePickerResult(<PlatformFile>[
+        PlatformFile(name: 'speech.MP3', size: 4, bytes: mp3Bytes),
+      ]),
+    );
+    FilePicker.platform = filePicker;
+    addTearDown(() => FilePicker.platform = _FakeFilePicker(null));
+
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>['Recognized MP3.'];
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    await provider.pickAudioForTranscription();
+
+    expect(provider.messages.last.text, 'Recognized MP3.');
+    expect(
+      engine.lastGenerateParts!.whereType<LlamaAudioContent>().single.bytes,
+      mp3Bytes,
+    );
   });
 
   test(

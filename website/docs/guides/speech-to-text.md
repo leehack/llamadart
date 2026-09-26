@@ -14,7 +14,7 @@ synthesis, see [Text to Speech](./text-to-speech).
 
 | Approach | API | Runtimes | Input | Output |
 | --- | --- | --- | --- | --- |
-| Qwen3-ASR, whole file | `SpeechToTextEngine(engine, modelProfile: SpeechToTextModelProfile.qwen3Asr)` | Native llama.cpp; WebGPU with bridge assets `v0.1.30+` | A complete encoded file or bytes: WAV, MP3, or FLAC on native; WAV bytes on Web | One final transcript |
+| Qwen3-ASR, whole file | `SpeechToTextEngine(engine, modelProfile: SpeechToTextModelProfile.qwen3Asr)` | Native llama.cpp; WebGPU with bridge assets `v0.1.30+` | A complete WAV, MP3, or FLAC file or bytes; bytes only on Web | One final transcript |
 | LiteRT-LM, live streaming | `SpeechToTextEngine.liteRtLm(...)` | Native LiteRT-LM, CPU only | Mono 16 kHz float PCM, pushed incrementally or as one buffer | Replaceable partial text, then a final transcript |
 | Generic audio chat | `LlamaAudioContent` in `engine.create` | Audio-capable GGUF projectors; `.litertlm` bundles with audio | Audio as a chat content part | Ordinary chat output, no transcript contract |
 
@@ -172,12 +172,10 @@ stopped recognition and `partialTranscript` holds the text produced before it.
 A Qwen3-ASR task whose transcript is empty, for example from silent input,
 fails with `LlamaSpeechException`.
 
-Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Only WAV is
-validated with a real model; native tests check only that the adapter accepts
-MP3 and FLAC, and no test decodes them. Raw PCM is unsupported for the
-prompt adapter because projector sample rates are model-specific. LiteRT-LM
-accepts `SpeechAudioPcmInput` for a complete mono 16 kHz normalized
-`Float32List` buffer, or the incremental session above.
+Native llama.cpp accepts WAV, MP3, and FLAC file or byte inputs. Raw PCM is
+unsupported for the prompt adapter because projector sample rates are
+model-specific. LiteRT-LM accepts `SpeechAudioPcmInput` for a complete mono
+16 kHz normalized `Float32List` buffer, or the incremental session above.
 
 `SpeechAudioFormat` carries optional encoding and MIME metadata. Final results
 reserve segment and word timing, confidence, and speaker fields for future
@@ -193,18 +191,19 @@ An older bridge, no loaded projector, a projector without audio support, or a
 failed runtime audio probe leaves `capabilities.isSupported` false with an
 actionable reason.
 
-WebGPU accepts encoded WAV bytes only. Read the selected file into memory and
-pass `SpeechAudioBytesInput` with `SpeechAudioFormat(encoding: 'wav')`; local
-filesystem paths, MP3, FLAC, raw PCM, and bytes without that metadata are
-rejected. This contract reflects the published browser smoke rather than every
-decoder a bridge build may contain. The bridge does not report why generation
-stopped, so a truncated Web transcript still completes. The browser needs
-enough memory for the roughly 1.02 GB Qwen3-ASR 0.6B Q8_0 model/projector pair.
+WebGPU accepts encoded WAV, MP3, and FLAC bytes. Read the selected file into
+memory and pass `SpeechAudioBytesInput` with a `SpeechAudioFormat` whose
+`encoding` is `'wav'`, `'mp3'` or `'flac'`; local filesystem paths, other
+encodings, raw PCM, and bytes without that metadata are rejected. The bridge
+does not report why generation stopped, so a truncated Web transcript still
+completes. The browser needs enough memory for the roughly 1.02 GB Qwen3-ASR
+0.6B Q8_0 model/projector pair.
 
 ## Known limits
 
-- Validated with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s. The audio prompt grows
-  with duration (3,890 tokens for 297 s in
+- Validated with Qwen3-ASR 0.6B Q8_0 on WAV up to 33 s, and on MP3 and FLAC
+  copies of the 11 s `jfk.wav` on native macOS and in headless Chromium. The
+  audio prompt grows with duration (3,890 tokens for 297 s in
   [#636](https://github.com/leehack/llamadart/issues/636)).
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker. llamadart
   strips that marker, but does not expose it as reliable detected-language

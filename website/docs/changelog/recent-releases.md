@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
+  Web ([#723](https://github.com/leehack/llamadart/issues/723)).
 - Give assistant turns that hold only tool calls or only reasoning empty
   content instead of `null` in chat templates, as llama.cpp does: QwQ-32B
   renders them instead of throwing, and LFM2 and Devstral prompts drop a stray

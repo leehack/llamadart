@@ -73,6 +73,19 @@ void main() {
       expect(referenced, contains('decision-model-smoke'));
     });
 
+    test('speech-to-text rows take WAV, MP3 or FLAC fixtures', () {
+      for (final id in ['speech-to-text-smoke', 'web-speech-to-text-smoke']) {
+        final row = testMatrixRows.singleWhere((row) => row.id == id);
+        expect(row.command, contains('--audio-path <'));
+        expect(row.command, contains('.wav|.mp3|.flac>'));
+      }
+      final web = testMatrixRows.singleWhere(
+        (row) => row.id == 'web-speech-to-text-smoke',
+      );
+      expect(web.covers, contains('WAV, MP3 or FLAC transcription'));
+      expect(web.covers, contains('microphone transcription for a WAV'));
+    });
+
     test('includes targeted physical iOS speech E2E row', () {
       final row = testMatrixRows.singleWhere(
         (row) => row.id == 'physical-ios-speech-e2e',
