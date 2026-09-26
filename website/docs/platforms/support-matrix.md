@@ -48,6 +48,8 @@ Android-only; web rejects it.
 | LoRA | `setLora` at runtime, stacked and scaled; aLoRA rejected | No | One default-scale text adapter through `ModelParams.loras` at load | No |
 | Thinking budget | Text-only generation, without speculative decoding | No | No | No |
 | Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
+| Presence penalty | Yes | No: rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
+| Min-P | Yes | No: a non-zero value is ignored ([#661](https://github.com/leehack/llamadart/issues/661)) | No: rejects a non-zero value | No: rejects a non-zero value |
 | Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | No | Runtime default or MTP | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
