@@ -347,9 +347,10 @@ int main(void) {
         (await pagesFile(size)).path,
         'copy',
       ]);
-      final [before, written, _] = lastRound(output);
+      final [_, written, _] = lastRound(output);
+      final unmapped = output['unmapped'] as Map<String, dynamic>;
       expect(
-        written['footprint'] - before['footprint'],
+        written['footprint'] - unmapped['footprint'],
         greaterThan(240 * mib),
         reason: '$output',
       );

@@ -328,15 +328,16 @@ void _evict(Pointer<Uint8> pages, int size) {
   }
 }
 
-/// Samples before touching every page of the mapping, after, and after
-/// evicting it. `read` reads each page; `write` and `copy` write each page, and
-/// are not evicted.
+/// Samples before mapping [path] as `unmapped`, then, in each round, before
+/// touching every page of the mapping, after, and after evicting it. `read`
+/// reads each page; `write` and `copy` write each page and are not evicted.
 Map<String, Object> _mapped(
   String path,
   String access,
   Map<String, int> Function() sample,
 ) {
   final size = File(path).lengthSync();
+  final unmapped = sample();
   final pages = _mapFile(path, access, size);
   final bytes = pages.asTypedList(size);
   var sum = 0;
@@ -355,7 +356,7 @@ Map<String, Object> _mapped(
     if (access == 'read') _evict(pages, size);
     rounds.add([before, touched, sample()]);
   }
-  return {'rounds': rounds, 'sum': sum};
+  return {'unmapped': unmapped, 'rounds': rounds, 'sum': sum};
 }
 
 Future<Map<String, Object?>> _leak(String kind, int size) async {
