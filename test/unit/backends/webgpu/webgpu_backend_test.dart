@@ -2333,6 +2333,26 @@ void main() {
         expect(backend.generationUsageOf(generation)?.completionTokens, 3);
       });
 
+      test(
+        'reports no usage for a generation that fails after onUsage',
+        () async {
+          advertiseUsage();
+          completeWith(usage: bridgeUsage(), rejectWithAbort: true);
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+
+          final generation = backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(),
+          );
+          await expectLater(generation.toList(), throwsA(anything));
+          expect(backend.generationUsageOf(generation), isNull);
+        },
+      );
+
       test('passes no onUsage to a bridge without supportsCompletionUsage, '
           'whose worker cannot clone a function', () async {
         completeWith(usage: bridgeUsage());

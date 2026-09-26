@@ -1829,6 +1829,8 @@ class WebGpuLlamaBackend
     final abortController = AbortController();
     late final StreamController<List<int>> controller;
     late final Stream<List<int>> generation;
+    LlamaGenerationUsage? reportedUsage;
+    var failed = false;
     var canceledByCaller = false;
     controller = StreamController<List<int>>(
       onCancel: () {
@@ -1959,10 +1961,7 @@ class WebGpuLlamaBackend
       onToken: onToken as JSFunction,
       onUsage: _bridgeSupportsCompletionUsage(bridge)
           ? ((JSAny? usage) {
-              final parsed = _generationUsageFromJs(usage);
-              if (parsed != null) {
-                _generationUsages[generation] = parsed;
-              }
+              reportedUsage = _generationUsageFromJs(usage);
             }).toJS
           : null,
       emitCurrentTextOnToken: hasStopSequences,
@@ -2023,6 +2022,7 @@ class WebGpuLlamaBackend
           }
         } catch (e, st) {
           if (!stoppedBySequence && !canceledByCaller && !controller.isClosed) {
+            failed = true;
             controller.addError(
               speculative == null
                   ? e
@@ -2033,6 +2033,9 @@ class WebGpuLlamaBackend
         } finally {
           if (identical(_abortController, abortController)) {
             _abortController = null;
+          }
+          if (!failed && reportedUsage != null) {
+            _generationUsages[generation] = reportedUsage;
           }
           if (!controller.isClosed) {
             await controller.close();
