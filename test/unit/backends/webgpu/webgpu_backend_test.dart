@@ -2223,14 +2223,24 @@ void main() {
         'finishReason': 'stop',
       }.jsify();
 
+      late bool sawOnUsage;
+
+      void advertiseUsage() {
+        final constructor = (() {}).toJS;
+        constructor.setProperty('supportsCompletionUsage'.toJS, true.toJS);
+        bridge.setProperty('constructor'.toJS, constructor);
+      }
+
       void completeWith({
         JSAny? usage,
         String? currentText,
         bool rejectWithAbort = false,
       }) {
+        sawOnUsage = false;
         bridge.setProperty(
           'createCompletion'.toJS,
           ((String prompt, JSObject opts) {
+            sawOnUsage = opts.getProperty('onUsage'.toJS).isA<JSFunction>();
             final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
             onToken?.callAsFunction(null, 'Hi'.toJS, currentText?.toJS);
             if (usage != null) {
@@ -2248,6 +2258,7 @@ void main() {
       }
 
       test('reports the usage the bridge passes to onUsage', () async {
+        advertiseUsage();
         completeWith(usage: bridgeUsage());
         await backend.modelLoadFromUrl(
           'https://example.com/model.gguf',
@@ -2272,6 +2283,7 @@ void main() {
 
       test('reports no usage from a bridge that sends none or an '
           'incomplete one', () async {
+        advertiseUsage();
         await backend.modelLoadFromUrl(
           'https://example.com/model.gguf',
           const ModelParams(),
@@ -2297,6 +2309,7 @@ void main() {
       });
 
       test('keeps the usage of a generation a stop sequence aborted', () async {
+        advertiseUsage();
         completeWith(
           usage: bridgeUsage(),
           currentText: 'Hi STOP more',
@@ -2317,6 +2330,29 @@ void main() {
           'Hi ',
         );
         expect(backend.generationUsageOf(generation)?.completionTokens, 3);
+      });
+
+      test('passes no onUsage to a bridge without supportsCompletionUsage, '
+          'whose worker cannot clone a function', () async {
+        completeWith(usage: bridgeUsage());
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final generation = backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(),
+        );
+        await generation.toList();
+        expect(sawOnUsage, isFalse);
+        expect(backend.generationUsageOf(generation), isNull);
+
+        advertiseUsage();
+        completeWith(usage: bridgeUsage());
+        await backend.generate(1, 'Hello', const GenerationParams()).toList();
+        expect(sawOnUsage, isTrue);
       });
     });
 

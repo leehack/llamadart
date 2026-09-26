@@ -144,6 +144,13 @@ class WebGpuLlamaBackend
     return value.isA<JSFunction>();
   }
 
+  bool _bridgeSupportsCompletionUsage(LlamaWebGpuBridge bridge) {
+    final constructor = bridge.getProperty('constructor'.toJS);
+    return constructor.isA<JSFunction>() &&
+        _jsBoolProperty(constructor as JSFunction, 'supportsCompletionUsage') ==
+            true;
+  }
+
   int? _jsIntProperty(JSObject object, String name) {
     final value = object.getProperty(name.toJS);
     return value.isA<JSNumber>() ? (value as JSNumber).toDartInt : null;
@@ -1835,12 +1842,14 @@ class WebGpuLlamaBackend
       mediaMaxImagePixels: mediaMaxImagePixels,
       mediaMaxImageEdge: mediaMaxImageEdge,
       onToken: onToken as JSFunction,
-      onUsage: ((JSAny? usage) {
-        final parsed = _generationUsageFromJs(usage);
-        if (parsed != null) {
-          _generationUsages[generation] = parsed;
-        }
-      }).toJS,
+      onUsage: _bridgeSupportsCompletionUsage(bridge)
+          ? ((JSAny? usage) {
+              final parsed = _generationUsageFromJs(usage);
+              if (parsed != null) {
+                _generationUsages[generation] = parsed;
+              }
+            }).toJS
+          : null,
       emitCurrentTextOnToken: hasStopSequences,
       tokenEventEncoding: 'bytes',
       tokenEventFlushMs: tokenEventFlushMs,

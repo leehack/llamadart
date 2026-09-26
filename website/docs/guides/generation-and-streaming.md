@@ -99,7 +99,7 @@ await for (final chunk in engine.create(
 
 ## Token usage and timings
 
-On native llama.cpp, and on WebGPU with bridge assets `v0.1.53+`, the final
+On native llama.cpp, and on WebGPU with bridge assets `v0.1.54+`, the final
 `create` chunk carries the request's usage whenever the backend reports it.
 The backend can report none, for example for a request cancelled while it is
 queued. Usage is null on LiteRT-LM, on older bridge assets and on every
