@@ -25,43 +25,51 @@ void main() {
       null,
       'unchanged "text" 👋',
     ]) {
-      for (final multimodal in [false, true]) {
-        test(
-          'serializes typed tool result ${payload.runtimeType}, multimodal=$multimodal',
-          () {
-            final part = LlamaToolResultContent(
-              id: 'call_0',
-              name: 'get_weather',
-              result: payload,
-            );
-            final message = LlamaChatMessage.withContent(
-              role: LlamaChatRole.tool,
-              content: [part],
-            );
-            final before = message.toJson();
-            final rendered = TemplateRenderContext.messagesForTemplate([
-              message,
-            ], multimodal: multimodal).single;
-            final expected = payload is String ? payload : jsonEncode(payload);
-            expect(
-              rendered['content'],
-              multimodal
-                  ? [
-                      {'type': 'text', 'text': expected},
-                    ]
-                  : expected,
-            );
-            expect(rendered['tool_call_id'], 'call_0');
-            expect(rendered['name'], 'get_weather');
-            expect(message.toJson(), before);
-            expect(identical(part.result, payload), true);
-          },
-        );
+      for (final (multimodal, typedContentOnly) in [
+        (false, false),
+        (true, false),
+        (true, true),
+      ]) {
+        test('serializes typed tool result ${payload.runtimeType}, '
+            'multimodal=$multimodal, typedContentOnly=$typedContentOnly', () {
+          final part = LlamaToolResultContent(
+            id: 'call_0',
+            name: 'get_weather',
+            result: payload,
+          );
+          final message = LlamaChatMessage.withContent(
+            role: LlamaChatRole.tool,
+            content: [part],
+          );
+          final before = message.toJson();
+          final rendered = TemplateRenderContext.messagesForTemplate(
+            [message],
+            multimodal: multimodal,
+            typedContentOnly: typedContentOnly,
+          ).single;
+          final expected = payload is String ? payload : jsonEncode(payload);
+          expect(
+            rendered['content'],
+            typedContentOnly
+                ? [
+                    {'type': 'text', 'text': expected},
+                  ]
+                : expected,
+          );
+          expect(rendered['tool_call_id'], 'call_0');
+          expect(rendered['name'], 'get_weather');
+          expect(message.toJson(), before);
+          expect(identical(part.result, payload), true);
+        });
       }
     }
-    for (final multimodal in [false, true]) {
+    for (final (multimodal, typedContentOnly) in [
+      (false, false),
+      (true, false),
+      (true, true),
+    ]) {
       test('renders one tool message per tool result, '
-          'multimodal=$multimodal', () {
+          'multimodal=$multimodal, typedContentOnly=$typedContentOnly', () {
         const message = LlamaChatMessage.withContent(
           role: LlamaChatRole.tool,
           content: [
@@ -77,16 +85,18 @@ void main() {
             ),
           ],
         );
-        Object content(String text) => multimodal
+        Object content(String text) => typedContentOnly
             ? [
                 {'type': 'text', 'text': text},
               ]
             : text;
 
         expect(
-          TemplateRenderContext.messagesForTemplate([
-            message,
-          ], multimodal: multimodal),
+          TemplateRenderContext.messagesForTemplate(
+            [message],
+            multimodal: multimodal,
+            typedContentOnly: typedContentOnly,
+          ),
           [
             {
               'role': 'tool',

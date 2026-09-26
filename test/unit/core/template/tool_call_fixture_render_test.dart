@@ -311,7 +311,7 @@ void main() {
         '<|tool|>',
       ),
       'templates/LFM2_5-1_2B-Thinking.jinja': (
-        ChatFormat.generic,
+        ChatFormat.lfm2,
         '<|im_start|>tool',
       ),
     };

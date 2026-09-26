@@ -169,6 +169,42 @@
           }
         ]
       }
+    ],
+    "media_reasoning_only": [
+      {
+        "role": "user",
+        "image": true,
+        "text": "Describe"
+      },
+      {
+        "role": "assistant",
+        "thinking": "Let me look."
+      },
+      {
+        "role": "user",
+        "text": "More?"
+      }
+    ],
+    "tools_question": [
+      {
+        "role": "user",
+        "text": "Weather in Paris?"
+      }
+    ],
+    "media_empty_assistant": [
+      {
+        "role": "user",
+        "image": true,
+        "text": "Describe"
+      },
+      {
+        "role": "assistant",
+        "text": ""
+      },
+      {
+        "role": "user",
+        "text": "More?"
+      }
     ]
   },
   "cases": [
@@ -924,10 +960,7 @@
       "tools": true,
       "checks": [
         {
-          "same_between": [
-            "Where is this?",
-            "<|im_system|>"
-          ]
+          "same_after": "Where is this?"
         }
       ],
       "request": {
@@ -1075,6 +1108,256 @@
         ]
       },
       "prompt": "<|begin_system|>\nYou are a thoughtful, systematic AI assistant from ServiceNow Language Models (SLAM) lab.\n    Analyze each question carefully, present your reasoning step-by-step, then provide the final\n    response after the marker [BEGIN FINAL RESPONSE].\nYou are provided with function signatures within <available_tools></available_tools> XML tags.\n        You may call one or more functions to assist with the user query.\n        Don't make assumptions about the arguments. You should infer the argument values from previous\n        user responses and the system message.\n        Here are the available tools: \n        <available_tools>\n{'type': 'function', 'function': {'name': 'get_weather', 'description': 'Get the weather for a city.', 'parameters': {'type': 'object', 'properties': {'city': {'type': 'string', 'description': 'City name'}}, 'required': ['city']}}}        \n        </available_tools>.\n\n        Return all function calls as a list of JSON objects within <tool_calls></tool_calls> XML tags.\n        Each JSON object should contain a function name and arguments as follows:\n        <tool_calls>[\n            {\"name\": <function-name-1>, \"arguments\": <args-dict-1>},\n            {\"name\": <function-name-2>, \"arguments\": <args-dict-2>},\n            ...\n        ]</tool_calls>\n<|begin_user|>\n<__media_ihJZ7GoG895HAZPATv8jqCJjwlLH1Q0F__>Where is this?\n<|begin_assistant|>\n\n<tool_calls>[{\"name\": \"get_weather\", \"arguments\": {\"city\": \"Paris\"}, \"id\": \"call_0\"}]</tool_calls>\n<|end|>\n<|begin_tool_result|>\nsunny\n\n\n\n<|begin_assistant|>\nHere are my reasoning steps:\n"
+    },
+    {
+      "issue": 720,
+      "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+      "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+      "supports_object_arguments": false,
+      "chat_template_caps": {
+        "supports_object_arguments": false,
+        "supports_parallel_tool_calls": false,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": false,
+        "supports_system_role": true,
+        "supports_tool_calls": false,
+        "supports_tools": false,
+        "supports_typed_content": true
+      },
+      "conversation": "map_result",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Weather in Paris?"
+          },
+          {
+            "role": "assistant",
+            "content": "Checking.",
+            "tool_calls": [
+              {
+                "id": "call_0",
+                "type": "function",
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{\"city\": \"Paris\"}"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool",
+            "tool_call_id": "call_0",
+            "name": "get_weather",
+            "content": "{\"temp\":21.5,\"sky\":\"clear\",\"note\":\"it's\"}"
+          }
+        ]
+      },
+      "prompt": "<|im_start|>User: Weather in Paris?<end_of_utterance>\nAssistant: Checking.<end_of_utterance>\nTool: {\"temp\":21.5,\"sky\":\"clear\",\"note\":\"it's\"}<end_of_utterance>\nAssistant:"
+    },
+    {
+      "issue": 720,
+      "template": "test/fixtures/templates/Ministral-3-3B-Reasoning.jinja",
+      "template_sha256": "87989798313de539b55bdeb19c98214e1a7bdd8c3a62b7d7cf4138d58ffdbeb5",
+      "supports_object_arguments": true,
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": false
+      },
+      "conversation": "media_reasoning_only",
+      "media": true,
+      "eos_token": "<|im_end|>",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Describe"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "Let me look."
+          },
+          {
+            "role": "user",
+            "content": "More?"
+          }
+        ]
+      },
+      "prompt": "[SYSTEM_PROMPT]# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:[THINK]Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.[/THINK]Here, provide a self-contained response.[/SYSTEM_PROMPT][INST]<__media_qdNZdiJBFgQqfw0VXPJIQfcO03t35eJC__>Describe[/INST][THINK]Let me look.[/THINK]<|im_end|>[INST]More?[/INST]"
+    },
+    {
+      "issue": 720,
+      "template": "test/fixtures/templates/TranslateGemma-2B-it.jinja",
+      "template_sha256": "7877c1d1e7bf0d763f5d2f43ad0b631ea93daf42b9d4b630d94ed4edb317a34a",
+      "supports_object_arguments": false,
+      "chat_template_caps": {
+        "supports_object_arguments": false,
+        "supports_parallel_tool_calls": false,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": false,
+        "supports_system_role": false,
+        "supports_tool_calls": false,
+        "supports_tools": false,
+        "supports_typed_content": true
+      },
+      "conversation": "media_reasoning_only",
+      "media": true,
+      "checks": [
+        {
+          "same_between": [
+            "<__media__>Describe",
+            "[source_lang_code]"
+          ]
+        }
+      ],
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Describe"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "Let me look."
+          },
+          {
+            "role": "user",
+            "content": "More?"
+          }
+        ]
+      },
+      "prompt": "[source_lang_code][/source_lang_code]\n    [target_lang_code][/target_lang_code]\n    <__media_CKXMJlRZwMtrR2l0Q2DZ4uJ0gRyJATtd__>Describe[source_lang_code][/source_lang_code]\n    [target_lang_code][/target_lang_code]\n    More?<start_of_turn>model"
+    },
+    {
+      "issue": 716,
+      "template": "test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja",
+      "template_sha256": "f05bf4b967dc993bdc7a2fe6e43759ee218eb0eb340d68b063e1c4f8ad148176",
+      "supports_object_arguments": false,
+      "chat_template_caps": {
+        "supports_object_arguments": false,
+        "supports_parallel_tool_calls": false,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": false,
+        "supports_tools": true,
+        "supports_typed_content": false
+      },
+      "conversation": "tools_question",
+      "tools": true,
+      "lfm2_flat_tool_list": true,
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Weather in Paris?"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Get the weather for a city.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "City name"
+                  }
+                },
+                "required": [
+                  "city"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "prompt": "<|im_start|>system\nList of tools: [{\"type\": \"function\", \"function\": {\"name\": \"get_weather\", \"description\": \"Get the weather for a city.\", \"parameters\": {\"type\": \"object\", \"properties\": {\"city\": {\"type\": \"string\", \"description\": \"City name\"}}, \"required\": [\"city\"]}}}]<|im_end|>\n<|im_start|>user\nWeather in Paris?<|im_end|>\n<|im_start|>assistant\n"
+    },
+    {
+      "issue": 720,
+      "template": "test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja",
+      "template_sha256": "39f03c383413f531fd302c06c7e982ad98c83f0657a8339ae25478ccb81fdcda",
+      "supports_object_arguments": true,
+      "chat_template_caps": {
+        "supports_object_arguments": true,
+        "supports_parallel_tool_calls": true,
+        "supports_preserve_reasoning": false,
+        "supports_reasoning_effort": false,
+        "supports_string_content": true,
+        "supports_system_role": true,
+        "supports_tool_calls": true,
+        "supports_tools": true,
+        "supports_typed_content": false
+      },
+      "conversation": "media_empty_assistant",
+      "media": true,
+      "eos_token": "<|im_end|>",
+      "request": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC"
+                }
+              },
+              {
+                "type": "text",
+                "text": "Describe"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": ""
+          },
+          {
+            "role": "user",
+            "content": "More?"
+          }
+        ]
+      },
+      "prompt": "[SYSTEM_PROMPT]# HOW YOU SHOULD THINK AND ANSWER\n\nFirst draft your thinking process (inner monologue) until you arrive at a response. Format your response using Markdown, and use LaTeX for any mathematical equations. Write both your thoughts and the response in the same language as the input.\n\nYour thinking process must follow the template below:[THINK]Your thoughts or/and draft, like working through an exercise on scratch paper. Be as casual and as long as you want until you are confident to generate the response to the user.[/THINK]Here, provide a self-contained response.[/SYSTEM_PROMPT][INST]<__media_RQmw7BpXLyl1Mc2uTw3Kkx2HwbgAowQq__>Describe[/INST]<|im_end|>[INST]More?[/INST]"
     }
   ],
   "tools": [

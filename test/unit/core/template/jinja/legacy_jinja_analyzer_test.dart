@@ -1,7 +1,6 @@
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
-import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
 import 'package:llamadart/src/core/template/jinja/legacy_jinja_analyzer.dart';
 
 const String _toolBody = '''
@@ -40,7 +39,7 @@ const String _noToolRoleTemplate = '''
 $_toolBody''';
 
 void main() {
-  group('JinjaAnalyzer', () {
+  group('LegacyJinjaAnalyzer', () {
     test('detects capabilities in valid Jinja template', () {
       final template = '''
         {% for message in messages %}
@@ -52,9 +51,7 @@ void main() {
                {{ tool_call.function.name }}
             {% endfor %}
           {% endif %}
-          {% if message.role == 'user' and message.content is string %}
-             {{ message.content }}
-          {% elif message.role == 'user' %}
+          {% if message.role == 'user' %}
              {% for item in message.content %}
                {% if item.type == 'text' %}
                  {{ item.text }}
@@ -64,7 +61,7 @@ void main() {
         {% endfor %}
       ''';
 
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
 
       expect(
         caps.supportsSystemRole,
@@ -79,27 +76,26 @@ void main() {
       expect(
         caps.supportsTypedContent,
         isTrue,
-        reason: 'Should detect iteration over list content',
+        reason: 'Should detect item.type == text check',
       );
-      expect(caps.supportsStringContent, isTrue);
       expect(caps.supportsThinking, isFalse);
     });
 
     test('detects thinking tags', () {
       final template = '{{ "<think>" + message.content + "</think>" }}';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsThinking, isTrue);
     });
 
     test('detects thinking tags in raw data', () {
       final template = 'Raw text with <think> tag inside.';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsThinking, isTrue);
     });
 
     test('detects Gemma 4 thinking tags', () {
       final template = '{{ "<|think|>" + message.content }}';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsThinking, isTrue);
     });
 
@@ -114,7 +110,7 @@ void main() {
       // This should throw error in parser, caught by analyzer, falling back to regex.
       // Regex should still find 'system'.
 
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(
         caps.supportsSystemRole,
         isTrue,
@@ -125,7 +121,7 @@ void main() {
     test('detects tools variable iteration', () {
       final template =
           '{% for tool in tools %}{{ tool.function.name }}{% endfor %}';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       // llama.cpp caps: tools access does not imply message.tool_calls support.
       expect(caps.supportsToolCalls, isFalse);
       expect(caps.supportsTools, isTrue);
@@ -139,41 +135,31 @@ void main() {
           {% endif %}
         {% endfor %}
       ''';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsSystemRole, isTrue);
     });
 
     test('detects content["type"] syntax', () {
       final template = '''
-        {% for message in messages %}
-          {% for part in message['content'] %}
-            {% if part['type'] == 'image' %}
-               Image...
-            {% endif %}
-          {% endfor %}
+        {% for part in message['content'] %}
+          {% if part['type'] == 'image' %}
+             Image...
+          {% endif %}
         {% endfor %}
       ''';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsTypedContent, isTrue);
-      expect(caps.supportsStringContent, isFalse);
     });
 
     test('requires tool name usage for supportsTools', () {
       final template = '{% if tools %}tools available{% endif %}';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsTools, isFalse);
     });
 
-    test('reports tool calls the template reads without printing', () {
+    test('requires tool call name usage for supportsToolCalls', () {
       final template = '{% if messages[1].tool_calls %}calls{% endif %}';
-      final caps = JinjaAnalyzer.analyze(template);
-      expect(caps.supportsToolCalls, isTrue);
-      expect(caps.supportsParallelToolCalls, isFalse);
-    });
-
-    test('ignores tool calls the template never reads', () {
-      final template = '{% if messages[0].content %}text{% endif %}';
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
       expect(caps.supportsToolCalls, isFalse);
       expect(caps.supportsParallelToolCalls, isFalse);
     });
@@ -182,14 +168,14 @@ void main() {
       'does not treat raw content stringification as typed content support',
       () {
         final template = '{{ messages[0].content }}';
-        final caps = JinjaAnalyzer.analyze(template);
+        final caps = LegacyJinjaAnalyzer.analyze(template);
         expect(caps.supportsStringContent, isTrue);
         expect(caps.supportsTypedContent, isFalse);
       },
     );
   });
 
-  group('JinjaAnalyzer object arguments', () {
+  group('LegacyJinjaAnalyzer object arguments', () {
     String withArguments(String arguments) =>
         '''
 {%- for tool in tools %}{{ tool.function.name }}{% endfor %}
@@ -210,78 +196,27 @@ void main() {
       '': false,
     }.entries) {
       test('reports ${entry.value} for "${entry.key}"', () {
-        final caps = JinjaAnalyzer.analyze(withArguments(entry.key));
+        final caps = LegacyJinjaAnalyzer.analyze(withArguments(entry.key));
 
         expect(caps.supportsToolCalls, isTrue);
         expect(caps.supportsObjectArguments, entry.value);
       });
     }
 
-    test('reports no tool calls when the tool message needs a name', () {
-      final caps = JinjaAnalyzer.analyze(
+    test('reports false when the tool message needs a name', () {
+      final caps = LegacyJinjaAnalyzer.analyze(
         "{%- for message in messages %}{%- if message.role == 'tool' and "
         "not message.name %}{{ raise_exception('name required') }}"
         '{%- endif %}{%- endfor %}'
         '${withArguments('{{ call.function.arguments | tojson }}')}',
       );
 
-      expect(caps.supportsToolCalls, isFalse);
+      expect(caps.supportsToolCalls, isTrue);
       expect(caps.supportsObjectArguments, isFalse);
     });
   });
 
-  group('JinjaAnalyzer probes templates with', () {
-    const toolTemplate =
-        '{% for m in messages %}{{ m.content }}'
-        '{% for tc in m.tool_calls or [] %}{{ tc.function.name }}{% endfor %}'
-        '{% endfor %}'
-        '{% for t in tools %}{{ t.function.name }}{% endfor %}';
-
-    for (final MapEntry(key: name, value: prefix) in const {
-      'a float literal Dart prints with an exponent':
-          '{% if 0.0000001 < 1 %}{% endif %}',
-      'a float literal too large for plain Dart printing':
-          '{% if 100000000000000000000000.0 > 1 %}{% endif %}',
-      'a macro with *args': '{% macro f(a, *args) %}{% endmacro %}',
-    }.entries) {
-      test(name, () {
-        final messages = <String>[];
-        LlamaLogger.instance.setLevel(LlamaLogLevel.debug);
-        LlamaLogger.instance.setHandler(
-          (record) => messages.add(record.message),
-        );
-        addTearDown(() {
-          LlamaLogger.instance.setHandler(null);
-          LlamaLogger.instance.setLevel(LlamaLogLevel.none);
-        });
-
-        final outcome = JinjaAnalyzer.analyzeWithOutcome(prefix + toolTemplate);
-
-        expect(messages, isNot(contains(contains('could not be prepared'))));
-        expect(outcome.failed, isFalse);
-        expect(outcome.caps.supportsTools, isTrue);
-        expect(outcome.caps.supportsToolCalls, isTrue);
-        expect(outcome.caps.supportsParallelToolCalls, isTrue);
-      });
-    }
-
-    test('falls back to the legacy analysis when the probe cannot be '
-        'prepared', () {
-      final outcome = JinjaAnalyzer.analyzeWithOutcome(
-        toolTemplate,
-        prepare: (_) => throw UnsupportedError('unprobeable'),
-      );
-      final legacy = LegacyJinjaAnalyzer.analyzeWithOutcome(toolTemplate);
-
-      expect(outcome.caps.toMap(), legacy.caps.toMap());
-      expect(outcome.failed, legacy.failed);
-      expect(outcome.caps.supportsTools, isTrue);
-      expect(outcome.caps.supportsToolCalls, isTrue);
-      expect(outcome.caps.supportsParallelToolCalls, isTrue);
-    });
-  });
-
-  group('JinjaAnalyzer probe render failures', () {
+  group('LegacyJinjaAnalyzer probe render failures', () {
     late List<String> messages;
 
     setUp(() {
@@ -302,9 +237,9 @@ void main() {
 {% endfor %}
 ''';
 
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
 
-      expect(caps.supportsSystemRole, isTrue);
+      expect(caps.supportsSystemRole, isFalse);
       expect(
         messages,
         contains(
@@ -322,7 +257,7 @@ void main() {
 {% for tool in tools %}{{ tool.function.name | no_such_filter }}{% endfor %}
 ''';
 
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
 
       expect(caps.supportsTools, isFalse);
       expect(caps.supportsToolCalls, isFalse);
@@ -334,7 +269,9 @@ void main() {
     });
 
     test('keeps tool support when only parallel tool calls are rejected', () {
-      final outcome = JinjaAnalyzer.analyzeWithOutcome(_singleCallTemplate);
+      final outcome = LegacyJinjaAnalyzer.analyzeWithOutcome(
+        _singleCallTemplate,
+      );
 
       expect(outcome.caps.supportsTools, isTrue);
       expect(outcome.caps.supportsToolCalls, isTrue);
@@ -356,7 +293,9 @@ void main() {
     });
 
     test('detects tools when a user turn may not follow a tool call', () {
-      final outcome = JinjaAnalyzer.analyzeWithOutcome(_strictTurnsTemplate);
+      final outcome = LegacyJinjaAnalyzer.analyzeWithOutcome(
+        _strictTurnsTemplate,
+      );
 
       expect(outcome.caps.supportsTools, isTrue);
       expect(outcome.caps.supportsToolCalls, isTrue);
@@ -365,29 +304,27 @@ void main() {
       expect(messages, isEmpty);
     });
 
-    test('reports no tools when the template rejects the tool role', () {
-      final outcome = JinjaAnalyzer.analyzeWithOutcome(_noToolRoleTemplate);
-
-      expect(outcome.caps.supportsTools, isFalse);
-      expect(outcome.caps.supportsToolCalls, isFalse);
-      expect(outcome.caps.supportsParallelToolCalls, isFalse);
-      expect(outcome.failed, isFalse);
-      expect(
-        messages,
-        contains(contains('tools capability probe failed to render')),
+    test('detects tools when the template rejects the tool role', () {
+      final outcome = LegacyJinjaAnalyzer.analyzeWithOutcome(
+        _noToolRoleTemplate,
       );
+
+      expect(outcome.caps.supportsTools, isTrue);
+      expect(outcome.caps.supportsToolCalls, isTrue);
+      expect(outcome.caps.supportsParallelToolCalls, isTrue);
+      expect(outcome.failed, isFalse);
+      expect(messages, isEmpty);
     });
 
-    test('does not report a failure when no tool conversation renders', () {
+    test('reports a failure when no tool conversation renders', () {
       const template = '''
 {% for message in messages %}{{ message.content }}{% endfor %}
 {% for tool in tools %}{{ tool.function.name | no_such_filter }}{% endfor %}
 ''';
 
-      final outcome = JinjaAnalyzer.analyzeWithOutcome(template);
+      final outcome = LegacyJinjaAnalyzer.analyzeWithOutcome(template);
 
-      expect(outcome.failed, isFalse);
-      expect(outcome.caps.supportsTools, isFalse);
+      expect(outcome.failed, isTrue);
       expect(
         messages.where(
           (message) =>
@@ -402,7 +339,7 @@ void main() {
           '{% for message in messages %}'
           '{{ message.content }}{% endfor %}';
 
-      final caps = JinjaAnalyzer.analyze(template);
+      final caps = LegacyJinjaAnalyzer.analyze(template);
 
       expect(caps.supportsTools, isFalse);
       expect(caps.supportsToolCalls, isFalse);

@@ -76,12 +76,14 @@ class TemplateRenderContext {
   /// Serializes [messages] into the JSON shape expected by a template handler,
   /// as llama.cpp's `common_chat_msg::to_json_oaicompat` builds template input.
   ///
-  /// An absent `content` becomes an empty string, or a list holding one empty
-  /// text part when [typedContentOnly] marks a template that reads content
-  /// only as a list of parts, as llama.cpp does. Typed tool results become
-  /// JSON text (or text parts for [multimodal] templates); string results and
-  /// the original typed messages are unchanged. A message with several tool results becomes one
-  /// message per result, as [splitToolResults] describes.
+  /// An absent `content` becomes an empty string. Typed tool results become
+  /// JSON text; string results and the original typed messages are
+  /// unchanged. A message with several tool results becomes one message per
+  /// result, as [splitToolResults] describes.
+  ///
+  /// When [typedContentOnly] marks a template that reads content only as a
+  /// list of parts, every string `content` becomes a list holding one text
+  /// part, as llama.cpp's `messages_inp_normalizer` does.
   ///
   /// With [objectArguments], tool-call `arguments` that decode to a JSON
   /// object are passed as that object, as llama.cpp does for templates with
@@ -100,22 +102,11 @@ class TemplateRenderContext {
       final rendered = multimodal
           ? message.toJsonMultimodal()
           : message.toJson();
-      if (rendered['content'] == null) {
-        rendered['content'] = typedContentOnly
-            ? [
-                {'type': 'text', 'text': ''},
-              ]
-            : '';
-      }
+      rendered['content'] ??= '';
       final toolResults = message.parts.whereType<LlamaToolResultContent>();
       if (toolResults.isNotEmpty) {
         final result = toolResults.first.result;
-        final text = result is String ? result : jsonEncode(result);
-        rendered['content'] = multimodal
-            ? [
-                {'type': 'text', 'text': text},
-              ]
-            : text;
+        rendered['content'] = result is String ? result : jsonEncode(result);
       }
       if (rendered['tool_calls'] is List) {
         hasToolCalls = true;
@@ -123,20 +114,32 @@ class TemplateRenderContext {
       renderedMessages.add(rendered);
     }
 
-    if (!hasToolCalls) {
-      return renderedMessages;
+    if (hasToolCalls) {
+      if (toolCallSerialization.normalizeArguments) {
+        normalizeToolCallArgs(renderedMessages);
+      } else if (objectArguments) {
+        _decodeObjectArguments(renderedMessages);
+      }
+      if (toolCallSerialization.useGenericSchema) {
+        useGenericSchema(renderedMessages);
+      }
+      if (toolCallSerialization.moveToolCallsToContent) {
+        moveToolCallsToContent(
+          renderedMessages,
+          preserveContentList: multimodal,
+        );
+      }
     }
 
-    if (toolCallSerialization.normalizeArguments) {
-      normalizeToolCallArgs(renderedMessages);
-    } else if (objectArguments) {
-      _decodeObjectArguments(renderedMessages);
-    }
-    if (toolCallSerialization.useGenericSchema) {
-      useGenericSchema(renderedMessages);
-    }
-    if (toolCallSerialization.moveToolCallsToContent) {
-      moveToolCallsToContent(renderedMessages, preserveContentList: multimodal);
+    if (typedContentOnly) {
+      for (final message in renderedMessages) {
+        final content = message['content'];
+        if (content is String) {
+          message['content'] = [
+            {'type': 'text', 'text': content},
+          ];
+        }
+      }
     }
 
     return renderedMessages;
