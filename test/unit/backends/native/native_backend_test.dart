@@ -737,11 +737,15 @@ void main() {
   });
 
   test('reports generation capabilities of the loaded runtime', () async {
+    final liteRtLm = LiteRtLmBackend();
+    final liteRtLmCapabilities = await liteRtLm.generationCapabilities();
     final backend = NativeAutoBackend(
       llamaCppFactory: () => _GenerationCapabilitiesFakeBackend(handle: 11),
-      liteRtLmFactory: () => _FakeBackend(handle: 22),
+      liteRtLmFactory: () => _GenerationCapabilitiesFakeBackend(
+        handle: 22,
+        capabilities: liteRtLmCapabilities,
+      ),
     );
-    final liteRtLm = LiteRtLmBackend();
 
     try {
       final beforeLoad = await backend.generationCapabilities();
@@ -753,7 +757,6 @@ void main() {
       expect(llamaCpp.minP, isTrue);
       expect(llamaCpp.thinkingBudget, isTrue);
 
-      expect(liteRtLm, isNot(isA<BackendGenerationCapabilitiesSupport>()));
       await backend.modelLoad(
         '/models/gemma-4-E2B-it.litertlm',
         const ModelParams(),
@@ -762,6 +765,13 @@ void main() {
       expect(liteRt.presencePenalty, isFalse);
       expect(liteRt.minP, isFalse);
       expect(liteRt.thinkingBudget, isFalse);
+      expect(
+        liteRt.speculativeDecodingStrategies,
+        <SpeculativeDecodingStrategy>{
+          SpeculativeDecodingStrategy.backendDefault,
+          SpeculativeDecodingStrategy.mtp,
+        },
+      );
     } finally {
       await backend.dispose();
       await liteRtLm.dispose();
@@ -1603,15 +1613,20 @@ class _CapabilityFakeBackend extends _FakeBackend
 
 class _GenerationCapabilitiesFakeBackend extends _FakeBackend
     implements BackendGenerationCapabilitiesSupport {
-  _GenerationCapabilitiesFakeBackend({required super.handle});
-
-  @override
-  Future<BackendGenerationCapabilities> generationCapabilities() async {
-    return const BackendGenerationCapabilities(
+  _GenerationCapabilitiesFakeBackend({
+    required super.handle,
+    this.capabilities = const BackendGenerationCapabilities(
       presencePenalty: true,
       minP: true,
       thinkingBudget: true,
-    );
+    ),
+  });
+
+  final BackendGenerationCapabilities capabilities;
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    return capabilities;
   }
 }
 

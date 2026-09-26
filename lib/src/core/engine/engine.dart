@@ -1764,11 +1764,15 @@ class LlamaEngine {
   /// Returns the optional [GenerationParams] controls that the loaded model's
   /// runtime applies.
   ///
-  /// Native llama.cpp applies all of them, LiteRT-LM none, and WebGPU those
-  /// its bridge assets report. Each of these runtimes rejects a non-default
-  /// value of a control it does not apply with [LlamaUnsupportedException].
-  /// Every control is `false` before a model loads and on a backend that does
-  /// not implement [BackendGenerationCapabilitiesSupport].
+  /// Native llama.cpp applies all of them. LiteRT-LM applies none but
+  /// speculative decoding, which native LiteRT-LM runs for
+  /// [SpeculativeDecodingStrategy.backendDefault] and
+  /// [SpeculativeDecodingStrategy.mtp]. WebGPU applies those its bridge assets
+  /// report. Each of these runtimes rejects a non-default value of a control
+  /// it does not apply with [LlamaUnsupportedException]. Every control is
+  /// `false`, and no speculative strategy is reported, before a model loads
+  /// and on a backend that does not implement
+  /// [BackendGenerationCapabilitiesSupport].
   Future<BackendGenerationCapabilities>
   get backendGenerationCapabilities async {
     final candidate = backend;

@@ -2108,6 +2108,7 @@ void main() {
       expect(capabilities.presencePenalty, isFalse);
       expect(capabilities.minP, isFalse);
       expect(capabilities.thinkingBudget, isFalse);
+      expect(capabilities.speculativeDecodingStrategies, isEmpty);
     });
 
     test('generation capabilities forward after a load only', () async {
@@ -2117,6 +2118,9 @@ void main() {
             presencePenalty: true,
             minP: false,
             thinkingBudget: true,
+            speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
+              SpeculativeDecodingStrategy.ngramMod,
+            },
           ),
         ),
       );
@@ -2124,17 +2128,23 @@ void main() {
       final beforeLoad = await capabilityEngine.backendGenerationCapabilities;
       expect(beforeLoad.presencePenalty, isFalse);
       expect(beforeLoad.thinkingBudget, isFalse);
+      expect(beforeLoad.speculativeDecodingStrategies, isEmpty);
 
       await capabilityEngine.loadModel('qwen-test.gguf');
       final loaded = await capabilityEngine.backendGenerationCapabilities;
       expect(loaded.presencePenalty, isTrue);
       expect(loaded.minP, isFalse);
       expect(loaded.thinkingBudget, isTrue);
+      expect(
+        loaded.speculativeDecodingStrategies,
+        <SpeculativeDecodingStrategy>{SpeculativeDecodingStrategy.ngramMod},
+      );
 
       await capabilityEngine.unloadModel();
       final unloaded = await capabilityEngine.backendGenerationCapabilities;
       expect(unloaded.presencePenalty, isFalse);
       expect(unloaded.thinkingBudget, isFalse);
+      expect(unloaded.speculativeDecodingStrategies, isEmpty);
       await capabilityEngine.dispose();
     });
 

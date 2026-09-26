@@ -56,9 +56,12 @@ Important fields:
   `batchSize` to embed it.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
-- `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
-  GGUF. Defaults to `false` because the tensors cost memory; set it to `true`
-  when `SpeculativeDecodingConfig.mtp(...)` runs without a `draftModelPath`.
+- `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the
+  target GGUF. Defaults to `false` because the tensors cost memory; set it to
+  `true` when `SpeculativeDecodingConfig.mtp(...)` runs without a
+  `draftModelPath`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
+  the bridge only when set; bridge assets without speculative decoding ignore
+  both.
 - `chatTemplate`: template override for `.litertlm` models. `engine.create`
   on GGUF models uses the template embedded in the file.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
@@ -189,16 +192,19 @@ Important fields:
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
   draft tuning; native llama.cpp takes any `SpeculativeDecodingConfig`
-  strategy. WebGPU and LiteRT-LM web reject both.
+  strategy. WebGPU takes the strategies its bridge assets report, with URLs
+  for `draftModelPath` and the n-gram cache paths. LiteRT-LM web rejects both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 
 After a model loads, `engine.backendGenerationCapabilities` reports whether
-the runtime applies `presencePenalty`, `minP` and `thinkingBudget`: native
-llama.cpp reports all three, LiteRT-LM none, and WebGPU those its bridge
-assets report. Every field is `false` before a load. Use it to send a control
-only where it applies:
+the runtime applies `presencePenalty`, `minP` and `thinkingBudget`, and which
+`SpeculativeDecodingStrategy` values it runs in
+`speculativeDecodingStrategies`: native llama.cpp reports everything, LiteRT-LM
+none of the three and, natively, `backendDefault` and `mtp`, and WebGPU what
+its bridge assets report. Every field is `false`, and the strategy set empty,
+before a load. Use it to send a control only where it applies:
 
 ```dart
 final capabilities = await engine.backendGenerationCapabilities;

@@ -1107,6 +1107,19 @@ class NativeLlamaBackend
       presencePenalty: true,
       minP: true,
       thinkingBudget: true,
+      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.backendDefault,
+        SpeculativeDecodingStrategy.mtp,
+        SpeculativeDecodingStrategy.ngramSimple,
+        SpeculativeDecodingStrategy.draftSimple,
+        SpeculativeDecodingStrategy.draftEagle3,
+        SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.ngramMapK,
+        SpeculativeDecodingStrategy.ngramMapK4v,
+        SpeculativeDecodingStrategy.ngramMod,
+        SpeculativeDecodingStrategy.ngramCache,
+        SpeculativeDecodingStrategy.draftDspark,
+      },
     );
   }
 

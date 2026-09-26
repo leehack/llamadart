@@ -340,8 +340,9 @@ class SpeculativeDecodingConfig {
   /// llama.cpp requires [draftModelPath] to identify a compatible external
   /// DSpark draft GGUF. Validate deterministic output, acceptance, and warmed
   /// throughput for the exact target, draft, and backend before production
-  /// use. WebGPU and LiteRT-LM reject this strategy, and native runtimes without
-  /// DSpark draft-context support fail explicitly.
+  /// use. LiteRT-LM rejects this strategy, WebGPU rejects it unless its bridge
+  /// assets report `draft-dspark`, and native runtimes without DSpark
+  /// draft-context support fail explicitly.
   const SpeculativeDecodingConfig.draftDspark({
     this.draftTokenMax,
     this.draftTokenMin,
@@ -655,9 +656,10 @@ class GenerationParams {
   /// Enables backend-native speculative decoding when supported.
   ///
   /// Native LiteRT-LM forwards this flag to the runtime's speculative decoding
-  /// setting. llama.cpp maps it to the backend-default speculative strategy
-  /// when the active model/context supports that path. WebGPU and LiteRT-LM web
-  /// reject this option until their runtimes expose equivalent controls.
+  /// setting. llama.cpp, native and WebGPU, maps it to the backend-default
+  /// speculative strategy, `ngram-mod`, when the active model/context supports
+  /// that path; WebGPU needs bridge assets that report `ngram-mod`. LiteRT-LM
+  /// web rejects this option.
   ///
   /// Prefer [speculativeDecodingConfig] for new code that needs a specific
   /// strategy or runtime-neutral options.

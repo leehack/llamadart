@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
@@ -5,25 +6,44 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 
 import 'fake_webgpu_decision_bridge.dart';
 
+/// Every speculative strategy the bridge names in
+/// `getCompletionCapabilities().speculativeDecoding`.
+const List<String> fakeSpeculativeStrategies = <String>[
+  'draft-simple',
+  'draft-eagle3',
+  'draft-mtp',
+  'draft-dflash',
+  'draft-dspark',
+  'ngram-simple',
+  'ngram-map-k',
+  'ngram-map-k4v',
+  'ngram-mod',
+  'ngram-cache',
+];
+
 /// A fake llama-web-bridge instance with the optional completion options
-/// probe and the runtime LoRA API.
+/// probe, the runtime LoRA API and the draft model API.
 ///
 /// Follows the bridge's documented behavior: `getCompletionCapabilities` and
 /// `getLoraAdapterCapabilities` report nothing supported until a model load,
 /// adapter handles are never reused, and a model load or `dispose` frees every
-/// adapter, after which its handle is stale. While an `*Error` field is set,
-/// matching calls reject with it.
+/// adapter, after which its handle is stale, and the draft model. The probe
+/// reports a `draft-*` strategy other than `draft-mtp` only while a draft is
+/// loaded. While an `*Error` field is set, matching calls reject with it.
 class FakeFeatureBridge {
-  /// Creates the fake. Without [withCompletionProbe] or [withLoraApi] it
-  /// models bridge assets that predate `getCompletionCapabilities` or the
-  /// LoRA methods.
+  /// Creates the fake. Without [withCompletionProbe], [withLoraApi] or
+  /// [withDraftModelApi] it models bridge assets that predate
+  /// `getCompletionCapabilities`, the LoRA methods or the draft model
+  /// methods.
   FakeFeatureBridge({
     this.withCompletionProbe = true,
     this.withLoraApi = true,
+    this.withDraftModelApi = true,
   }) {
     _installModelApi();
     if (withCompletionProbe) _installCompletionProbe();
     if (withLoraApi) _installLoraApi();
+    if (withDraftModelApi) _installDraftModelApi();
   }
 
   /// Whether `getCompletionCapabilities` exists.
@@ -31,6 +51,40 @@ class FakeFeatureBridge {
 
   /// Whether the LoRA methods exist.
   final bool withLoraApi;
+
+  /// Whether `loadDraftModel` and `unloadDraftModel` exist.
+  final bool withDraftModelApi;
+
+  /// `speculativeDecoding` flags `getCompletionCapabilities` reports after a
+  /// model load for the n-gram strategies and `draft-mtp`; null omits
+  /// `speculativeDecoding`, as bridge assets before speculative decoding do.
+  Map<String, bool>? speculativeCapabilities = <String, bool>{
+    'ngram-simple': true,
+    'ngram-map-k': true,
+    'ngram-map-k4v': true,
+    'ngram-mod': true,
+    'ngram-cache': true,
+    'draft-mtp': false,
+  };
+
+  /// The `draft-*` strategies the probe reports while a draft is loaded.
+  Set<String> draftRuns = <String>{'draft-simple'};
+
+  /// `architecture` that `loadDraftModel` resolves to.
+  String draftArchitecture = 'llama';
+
+  /// URL of the loaded draft model, or null.
+  String? loadedDraft;
+
+  /// URL, `useCache` option and `signal` of each `loadDraftModel` call.
+  final List<({String url, bool? useCache, JSAny? signal})> draftLoads =
+      <({String url, bool? useCache, JSAny? signal})>[];
+
+  /// When set, `loadDraftModel` waits for it before loading.
+  Completer<void>? draftLoadGate;
+
+  /// Options of the last `loadModelFromUrl` call.
+  JSObject? lastLoadOptions;
 
   /// The JS object handed to the backend.
   final JSObject object = JSObject();
@@ -67,14 +121,16 @@ class FakeFeatureBridge {
       loraLoadError,
       loraSetError,
       loraRemoveError,
-      loraClearError;
+      loraClearError,
+      draftLoadError,
+      draftUnloadError;
 
   /// Pieces `createCompletion` streams through `onToken`, with the running
   /// text as `currentText`.
   List<String> completionPieces = const <String>['Hello'];
 
-  /// Every feature call, in order, such as `load`, `probe`, `lora:load` or
-  /// `lora:set 7 0.5`.
+  /// Every feature call, in order, such as `load`, `probe`, `lora:load`,
+  /// `lora:set 7 0.5`, `draft:load` or `draft:unload`.
   final List<String> calls = <String>[];
 
   /// Options of the last `createCompletion` call.
@@ -104,9 +160,11 @@ class FakeFeatureBridge {
     object
       ..setProperty(
         'loadModelFromUrl'.toJS,
-        ((String url, [JSAny? options]) {
+        ((String url, [JSObject? options]) {
           calls.add('load');
+          lastLoadOptions = options;
           _freeAdapters();
+          loadedDraft = null;
           _modelLoaded = true;
           return Future<void>.value().toJS;
         }).toJS,
@@ -150,6 +208,7 @@ class FakeFeatureBridge {
         (() {
           calls.add('dispose');
           _freeAdapters();
+          loadedDraft = null;
           _modelLoaded = false;
           return Future<void>.value().toJS;
         }).toJS,
@@ -175,6 +234,17 @@ class FakeFeatureBridge {
             name.toJS,
             (_modelLoaded && (completionCapabilities[name] ?? false)).toJS,
           );
+        }
+        final speculative = speculativeCapabilities;
+        if (speculative != null) {
+          final strategies = JSObject();
+          for (final name in fakeSpeculativeStrategies) {
+            final reported = name.startsWith('draft-') && name != 'draft-mtp'
+                ? loadedDraft != null && draftRuns.contains(name)
+                : speculative[name] ?? false;
+            strategies.setProperty(name.toJS, (_modelLoaded && reported).toJS);
+          }
+          flags.setProperty('speculativeDecoding'.toJS, strategies);
         }
         return Future<JSObject>.value(flags).toJS;
       }).toJS,
@@ -255,6 +325,59 @@ class FakeFeatureBridge {
           final error = loraClearError;
           if (error != null) return rejectWithMessage(error);
           appliedAdapters.clear();
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+  }
+
+  void _installDraftModelApi() {
+    object
+      ..setProperty(
+        'loadDraftModel'.toJS,
+        ((String url, [JSObject? options]) {
+          calls.add('draft:load');
+          final useCache = options?.getProperty<JSAny?>('useCache'.toJS);
+          final signal = options?.getProperty<JSAny?>('signal'.toJS);
+          draftLoads.add((
+            url: url,
+            useCache: useCache.isA<JSBoolean>()
+                ? (useCache as JSBoolean).toDart
+                : null,
+            signal: signal,
+          ));
+          loadedDraft = null;
+          JSPromise<JSAny?> finish() {
+            final aborted = signal?.isA<JSObject>() == true
+                ? (signal as JSObject).getProperty<JSAny?>('aborted'.toJS)
+                : null;
+            if (aborted.isA<JSBoolean>() && (aborted as JSBoolean).toDart) {
+              return rejectWithMessage('Draft model load was cancelled.');
+            }
+            final error = draftLoadError;
+            if (error != null) return rejectWithMessage(error);
+            loadedDraft = url;
+            return Future<JSAny?>.value(
+              JSObject()
+                ..setProperty('architecture'.toJS, draftArchitecture.toJS),
+            ).toJS;
+          }
+
+          final gate = draftLoadGate;
+          if (gate == null) return finish();
+          return (gate.future.then((_) => null).toJS as JSObject)
+              .callMethod<JSPromise<JSAny?>>(
+                'then'.toJS,
+                ((JSAny? _) => finish()).toJS,
+              );
+        }).toJS,
+      )
+      ..setProperty(
+        'unloadDraftModel'.toJS,
+        (() {
+          calls.add('draft:unload');
+          final error = draftUnloadError;
+          if (error != null) return rejectWithMessage(error);
+          loadedDraft = null;
           return Future<void>.value().toJS;
         }).toJS,
       );

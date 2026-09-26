@@ -29,6 +29,7 @@ class LiteRtLmBackend
         BackendRuntimeDiagnostics,
         BackendDeferredEngineCreation,
         BackendPerformanceDiagnostics,
+        BackendGenerationCapabilitiesSupport,
         BackendEmbeddingsSupport,
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration,
@@ -499,6 +500,23 @@ class LiteRtLmBackend
       response,
       'resolved GPU layer lookup',
     ).layers;
+  }
+
+  /// Reports speculative decoding through the LiteRT-LM runtime switch,
+  /// which [SpeculativeDecodingStrategy.backendDefault] and
+  /// [SpeculativeDecodingStrategy.mtp] turn on, and none of the other
+  /// controls.
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    return const BackendGenerationCapabilities(
+      presencePenalty: false,
+      minP: false,
+      thinkingBudget: false,
+      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.backendDefault,
+        SpeculativeDecodingStrategy.mtp,
+      },
+    );
   }
 
   @override

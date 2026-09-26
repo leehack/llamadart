@@ -224,15 +224,17 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 
 `WebGpuLlamaBackend` can use these methods if present:
 
-- `loadModelFromUrl(url, { nCtx, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers, nSeqMax, flashAttention, cacheTypeK, cacheTypeV, kvUnified, ropeFrequencyBase, ropeFrequencyScale, splitMode, mainGpu, useCache, forceRemoteFetchBackend, remoteFetchChunkBytes, progressCallback })`
+- `loadModelFromUrl(url, { nCtx, nThreads, nThreadsBatch, nBatch, nUbatch, nGpuLayers, nSeqMax, flashAttention, cacheTypeK, cacheTypeV, kvUnified, ropeFrequencyBase, ropeFrequencyScale, splitMode, mainGpu, useCache, forceRemoteFetchBackend, remoteFetchChunkBytes, loadMtp, speculativeRollbackTokenMax, progressCallback })`
 - `prefetchModelToCache(url, { useCache, force, cacheName, progressCallback })`
 - `evictModelFromCache(url, { cacheName })`
 - `loadMultimodalProjector(url)`
 - `unloadMultimodalProjector()`
 - `supportsVision()`
 - `supportsAudio()`
-- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, seed, grammar, thinkingBudget, onToken, parts, signal })`
+- `createCompletion(prompt, { nPredict, temp, topK, topP, minP, penalty, presencePenalty, seed, grammar, thinkingBudget, speculativeDecoding, onToken, parts, signal })`
 - `getCompletionCapabilities()`
+- `loadDraftModel(url, { useCache, signal })`
+- `unloadDraftModel()`
 - `getLoraAdapterCapabilities()`
 - `loadLoraAdapter(url, { useCache })`
 - `setLoraAdapter(handle, scale)`
@@ -277,8 +279,23 @@ tag:
   `LlamaEngine` reports as `LlamaUnsupportedException`. Each path is loaded
   once per model load and mapped to its bridge handle. Source:
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142).
+- Speculative decoding reads `speculativeDecoding` from the same probe, a map
+  from llama.cpp strategy name to boolean. With no n-gram strategy `true`, no
+  strategy is supported. Otherwise the n-gram strategies and `draft-mtp` count
+  when `true`, `backendDefault` when `ngram-mod` does, and `draft-simple`,
+  `draft-eagle3`, `draft-dflash` and `draft-dspark` when present as booleans
+  and `loadDraftModel` and `unloadDraftModel` exist: the bridge reports them
+  `true` only while a matching draft is loaded, and generation loads it. A
+  request with another strategy throws `UnsupportedError` before calling the
+  bridge. Before a draft-model generation the backend loads the draft URL
+  unless it is loaded and the probe still reports the strategy, then probes
+  again; if the strategy is still unreported it unloads the draft and throws
+  `LlamaUnsupportedException`, as it does when `loadDraftModel` rejects a
+  draft for the target's hidden size. `ModelParams.loadMtp` and a positive
+  `speculativeRollbackTokenMax` are sent as load options. Source:
+  [llama-web-bridge#148](https://github.com/leehack/llama-web-bridge/pull/148).
 
-`test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks both
+`test/e2e/webgpu/generation_features_e2e_test.dart` (local-only) checks these
 gates against real assets and models; its header lists the setup.
 
 ## Notes

@@ -166,7 +166,36 @@ The feature-by-runtime table is in the
   `GenerationParams.grammarLazy` and any other `grammarRoot` throw
   `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call
   grammar ([Tool calling](../guides/tool-calling#tool-choice-semantics)).
-- Speculative decoding throws `LlamaUnsupportedException`.
+- Speculative decoding needs bridge assets whose
+  `getCompletionCapabilities()` reports `speculativeDecoding` strategies, from
+  the unreleased
+  [llama-web-bridge#148](https://github.com/leehack/llama-web-bridge/pull/148).
+  The pinned assets report none, so every strategy throws
+  `LlamaUnsupportedException` there, as does a strategy the loaded assets do
+  not report. With such assets:
+  - Each strategy runs llama.cpp's `--spec-type` of the same name, validated
+    as on native. `backendDefault` and `speculativeDecoding: true` run
+    `ngram-mod`, as on native.
+  - `draftModelPath` is a URL. The bridge holds one draft model: the first
+    generation that needs it loads it, through Cache Storage unless the URL
+    carries credentials, and it stays loaded until another draft replaces it
+    or a model loads. Cancelling the generation cancels the load. A draft
+    that cannot run the requested strategy, or an EAGLE3 or DFlash draft
+    built for another hidden size, is not kept and throws
+    `LlamaUnsupportedException`; one the bridge cannot fetch or load throws
+    `LlamaModelException`.
+  - `mtp` runs the model's own MTP layers, so load the model with
+    `ModelParams(loadMtp: true)`; an MTP `draftModelPath` throws
+    `LlamaUnsupportedException`.
+  - The n-gram cache paths are URLs, sent only with `ngram-cache`, as native
+    uses them only there. The bridge never writes the dynamic cache back.
+  - A model with recurrent state, such as Qwen3.5, needs
+    `ModelParams.speculativeRollbackTokenMax` of at least the draft length for
+    `mtp` and the draft-model strategies. N-gram strategies need none: the
+    bridge replays accepted tokens after a rejection.
+  - N-gram sizes above 65535 throw `RangeError`.
+  - The draft and acceptance counts are not reported:
+    `LlamaEngine.getPerformanceContext()` returns null on WebGPU.
 - `presencePenalty`, `minP` and `thinkingBudget` need bridge assets whose
   `getCompletionCapabilities()` reports them; runtime LoRA (`setLora`,
   `removeLora`, `clearLoras`) needs assets whose
