@@ -118,19 +118,20 @@ void main() {
           '{{ "thinking about it" }}'
           '{% for m in messages %}{{ m.content }}{% endfor %}',
       'typed content parts':
+          '{% for message in messages %}'
           "{% for part in message['content'] %}"
           "{% if part['type'] == 'image' %}Image{% endif %}"
-          '{% endfor %}',
+          '{% endfor %}{% endfor %}',
       'bare tools guard': '{% if tools %}tools available{% endif %}',
     };
 
     const goldens = <String, Map<String, bool>>{
       'full chat template': <String, bool>{
         'supports_system_role': true,
-        'supports_tool_calls': true,
-        'supports_tools': true,
-        'supports_parallel_tool_calls': true,
-        'supports_string_content': true,
+        'supports_tool_calls': false,
+        'supports_tools': false,
+        'supports_parallel_tool_calls': false,
+        'supports_string_content': false,
         'supports_typed_content': true,
         'supports_thinking': false,
         'supports_object_arguments': false,
@@ -146,7 +147,7 @@ void main() {
         'supports_object_arguments': false,
       },
       'typed content parts': <String, bool>{
-        'supports_system_role': false,
+        'supports_system_role': true,
         'supports_tool_calls': false,
         'supports_tools': false,
         'supports_parallel_tool_calls': false,

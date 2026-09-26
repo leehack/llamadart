@@ -319,9 +319,11 @@ void main() {
 {# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
 {% for m in messages %}
 {% if m.role == 'user' %}<|user|>
+{% if m.content is string %}{{ m.content }}{% else %}
 {% for item in m.content %}
 {% if item.type == 'image' %}<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}{{ item.text }}{% endif %}
 {% endfor %}
+{% endif %}
 {% endif %}
 {% endfor %}
 {% if add_generation_prompt %}<|assistant|>{% endif %}''';

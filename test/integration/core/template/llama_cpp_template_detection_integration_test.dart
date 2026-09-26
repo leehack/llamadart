@@ -65,7 +65,7 @@ void main() {
       'Kimi-K3.jinja': ChatFormat.kimiK3,
       'LFM2-8B-A1B.jinja': ChatFormat.lfm2,
       'LFM2.5-8B-A1B.jinja': ChatFormat.lfm2,
-      'LFM2.5-Instruct.jinja': ChatFormat.contentOnly,
+      'LFM2.5-Instruct.jinja': ChatFormat.lfm2,
       'MiMo-VL.jinja': ChatFormat.hermes,
       'MiniMax-M2.jinja': ChatFormat.minimaxM2,
       'MiniMax-M1.jinja': ChatFormat.minimaxM1,

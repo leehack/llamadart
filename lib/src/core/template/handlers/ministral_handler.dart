@@ -182,9 +182,9 @@ class MinistralHandler extends ChatTemplateHandler {
 
           final content = json['content'];
           if (content is String) {
-            if (content.isNotEmpty) {
-              blocks.add({'type': 'text', 'text': content});
-            }
+            // Empty text still becomes a block, as in llama.cpp, so the
+            // template does not reject an assistant turn without text.
+            blocks.add({'type': 'text', 'text': content});
           } else if (content is List) {
             for (final item in content) {
               final block = ToolCallParsingUtils.coerceMap(item);

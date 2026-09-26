@@ -24,9 +24,10 @@ void main() {
 <|begin_of_text|>
 {% for message in messages %}
 <|turn>{{ message['role'] }}
+{% if message['content'] is string %}{{ message['content'] }}{% else %}
 {% for item in message['content'] %}
 {% if item['type'] == 'audio' %}<|audio|>{% elif item['type'] == 'text' %}{{ item['text'] }}{% endif %}
-{% endfor %}<turn|>
+{% endfor %}{% endif %}<turn|>
 {% endfor %}
 {% if add_generation_prompt %}<|turn>model
 {% endif %}

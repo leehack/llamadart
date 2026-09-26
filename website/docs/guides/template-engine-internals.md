@@ -58,9 +58,13 @@ sequenceDiagram
 
 ### 2. Template capabilities and routing
 
-- `TemplateCaps` estimates whether a template supports system role, tools,
-  parallel tool calls, typed content, and thinking channels.
-- `JinjaAnalyzer` augments regex checks with AST analysis and probe rendering.
+- `TemplateCaps` reports whether a template supports system role, tools,
+  tool calls, parallel tool calls, string and typed content, object
+  arguments, and thinking channels.
+- `JinjaAnalyzer` detects all but thinking with llama.cpp's capability
+  probes: it renders llama.cpp's probe conversations and records which values
+  the template reads. Thinking support comes from the template's thinking
+  markers.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 

@@ -10,6 +10,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
@@ -914,6 +915,42 @@ void main() {
       LagunaHandler().buildRequiredGrammar([_weatherWithCityTool])!,
       valid: ['reasoning</think>$lagunaCall'],
       invalid: ['reasoning</think>No tool'],
+    );
+  });
+
+  test('LFM2.5 required tool choice compiles the LFM2 tool-call grammar', () {
+    final rendered = ChatTemplateEngine.render(
+      templateSource: File(
+        'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
+      ).readAsStringSync(),
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Weather in Seoul?',
+        ),
+      ],
+      metadata: const {},
+      tools: [_weatherWithCityTool],
+      toolChoice: ToolChoice.required,
+    );
+
+    expect(rendered.format, ChatFormat.lfm2.index);
+    expect(rendered.grammarLazy, isFalse);
+    const call =
+        '<|tool_call_start|>[{"name": "weather", '
+        '"arguments": {"city": "Seoul"}, "id": "call_0"}]<|tool_call_end|>';
+    _expectGrammar(
+      validator,
+      rendered.grammar!,
+      valid: [call],
+      invalid: [
+        call.replaceFirst('"weather"', '"unknown"'),
+        call.replaceFirst('"city"', '"town"'),
+        call.replaceFirst('"Seoul"', '1'),
+        call.replaceFirst('<|tool_call_end|>', ''),
+        '{"tool_call": {"name": "weather", "arguments": {"city": "Seoul"}}}',
+        'No tool',
+      ],
     );
   });
 }

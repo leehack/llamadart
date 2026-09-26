@@ -15,10 +15,11 @@ import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_call_grammar_utils.dart';
 
-/// Handler for LFM2 (Liquid Foundation Model 2) format.
+/// Handler for LFM2 and LFM2.5 (Liquid Foundation Model) formats.
 ///
-/// Uses `<|tool_call_start|>` / `<|tool_call_end|>` special tokens for tool calls,
-/// and `<|tool_list_start|>` / `<|tool_list_end|>` for tool definitions.
+/// Uses `<|tool_call_start|>` / `<|tool_call_end|>` special tokens for tool
+/// calls. LFM2 templates wrap tool definitions in `<|tool_list_start|>` /
+/// `<|tool_list_end|>`; LFM2.5 templates write a plain list.
 class Lfm2Handler extends ChatTemplateHandler {
   static final RegExp _forceJsonSchemaLineMarker = RegExp(
     r'force json schema\.\n',
@@ -148,6 +149,9 @@ class Lfm2Handler extends ChatTemplateHandler {
     ];
   }
 
+  /// Passes each tool as `name`, `description` and `parameters`, the shape
+  /// LiquidAI's LFM2 and LFM2.5 model cards show. This deliberately differs
+  /// from llama-server, which passes the OpenAI shape (`type`, `function`).
   List<Map<String, dynamic>>? _serializeToolsForTemplate(
     List<ToolDefinition>? tools,
   ) {

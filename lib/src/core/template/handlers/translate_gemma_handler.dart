@@ -36,8 +36,15 @@ class TranslateGemmaHandler extends ChatTemplateHandler {
     final sourceLangCode = metadata['source_lang_code'] ?? 'en-GB';
     final targetLangCode = metadata['target_lang_code'] ?? 'en-GB';
 
+    // Only user turns become typed parts, which carry the language codes.
+    // Other turns keep string content: the template prints it whole, and a
+    // list would print as its repr.
     final normalizedMessages =
-        templateMessages(messages, templateSource: templateSource)
+        templateMessages(
+              messages,
+              templateSource: templateSource,
+              typedContent: false,
+            )
             .map(
               (message) => _normalizeUserContent(
                 message,

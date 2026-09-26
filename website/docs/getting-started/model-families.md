@@ -51,8 +51,8 @@ To see what a model will receive, render the prompt with
 | DeepSeek R1 distills, V3.1, V3.2, V4 | GGUF | DeepSeek R1, V3, V3.2, V4 | Template-tested | — |
 | GLM 4.6, 4.7 Flash | GGUF | GLM 4.5 | Template-tested | `unsloth/GLM-4.7-Flash-GGUF` |
 | Granite 3.3; Granite 4.0, 4.1 | GGUF | Granite; Hermes | Template-tested | — |
-| LFM2 8B-A1B, LFM2.5 8B-A1B | GGUF | LFM2 | Template-tested | — |
-| LFM2.5 Instruct, Phi-3.5, SmolLM3 | GGUF | None (generic JSON tool calls) | Template-tested | — |
+| LFM2 8B-A1B, LFM2.5 8B-A1B, LFM2.5 Instruct | GGUF | LFM2 | Template-tested | — |
+| Phi-3.5, SmolLM3 | GGUF | None (generic JSON tool calls) | Template-tested | — |
 
 Other families whose published templates are template-tested with their own
 format: GPT-OSS, Seed-OSS, Nemotron Nano v2, Apertus,
