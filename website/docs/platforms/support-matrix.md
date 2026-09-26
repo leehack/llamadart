@@ -63,9 +63,9 @@ Android-only; web rejects it.
 `LlamaEngine.supportsVideo` returns `false` on every runtime, and passing
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,
-export and import it in app code. The pinned bridge assets report none of the
-WebGPU LoRA, thinking-budget, presence-penalty, Min-P or speculative decoding
-capabilities; the bridge pull requests that add them are unreleased.
+export and import it in app code. Bridge assets `v0.1.54+`, the default pin
+among them, report the WebGPU LoRA, thinking-budget, presence-penalty, Min-P
+and speculative decoding capabilities; older assets report none of them.
 `LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P,
 thinking-budget and speculative decoding rows for the loaded model. Guides:
 [LoRA adapters](../guides/lora-adapters),

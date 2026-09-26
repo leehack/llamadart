@@ -27,6 +27,13 @@ For canonical full release notes, use:
   loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
   example chat app uses it to send Min-P and enable its slider only where
   supported ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Return a DeepSeek V3 forced-open thought that never closes as reasoning, as
+  llama.cpp does with the DeepSeek V3.1 template, instead of as content with
+  its tool calls ([#743](https://github.com/leehack/llamadart/issues/743)).
+- Keep escaped `\n` and `\r` in Qwen3-Coder XML reasoning, as llama.cpp does
+  with the Qwen3.5 template; before, they became line breaks unless a tool
+  call ended the thought
+  ([#743](https://github.com/leehack/llamadart/issues/743)).
 - Stream content that equals the non-streamed parse for Qwen3-Coder XML,
   Mistral Nemo and 15 more tool-call formats, and for output parsed with a PEG
   parser, so text before a tool call no longer carries the tool-call envelope
@@ -230,12 +237,15 @@ For canonical full release notes, use:
   BERT-family and ModernBERT GGUFs) does not fit one `microBatchSize` pass,
   instead of aborting the process or embedding only the last chunk
   ([#607](https://github.com/leehack/llamadart/issues/607)).
-- Aligned default WebGPU bridge assets to `v0.1.52` for the decision API,
-  next-token scoring and the Web runtime fixes below. The assets embed llama.cpp `v0.5.0`, are
+- Aligned default WebGPU bridge assets to `v0.1.54` for the decision API,
+  next-token scoring, presence penalty, Min-P, thinking budgets, runtime LoRA
+  adapters, speculative decoding and the Web runtime fixes below; the bridge
+  also adds its `supportsCompletionUsage` flag, which llamadart does not use yet
+  ([#729](https://github.com/leehack/llamadart/pull/729)). The assets embed llama.cpp `v0.5.0`, are
   qualified against native `v0.5.0`, and keep Web/native llama.cpp
   `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity and Web
   `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
-  `b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`.
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 - On Web, an invalid GBNF grammar now fails generation with a
   `LlamaInferenceException` whose details contain `(invalid grammar)`, and the
   loaded model stays usable, instead of aborting the WebGPU bridge runtime

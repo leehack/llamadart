@@ -116,19 +116,27 @@ and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
 whole delimiter or a partial one at the end of the input. With Qwen3-Coder
 XML, a `<tool_call>` also ends a forced-open thought when the output has no
-thinking tag, as its parse does.
+thinking tag, as its parse does. As in the parse, a start tag the model
+repeats at the start of a forced-open thought is dropped, and when the output
+has no start tag, an end tag after the first one is content. A later start
+tag makes the parse end a thought at each earlier end tag; the stream does so
+only when the start tag arrives in the same token as the end tag.
 
-Streamed reasoning equals the parse too, which trims each thought;
+Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
 with the Qwen3 template it returns `"Plan it.\n"` for
-`<think>\nPlan it.\n</think>`. The one exception is a forced-open thought
-that never closes and starts with whitespace. The parse keeps it untrimmed,
+`<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML, the parse also
+replaces an escaped `\n` or `\r` in reasoning with a newline or a carriage
+return; the Qwen3-Coder XML parse keeps them, as llama.cpp (`7fe450e1`) does
+with the Qwen3.5 template. One exception is a forced-open thought that never
+closes and starts with whitespace. The parse keeps it untrimmed,
 but the stream drops the leading whitespace before it can know the thought
 will not close. The streamed text is then no prefix of the parse, so the final
 reconciliation adds nothing and the trailing whitespace is lost too:
-`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The DeepSeek V3 and
-EXAONE MoE parses return a forced-open thought that never closes as content,
-so it streams as reasoning and then as content.
+`"  \n Hello there.  \n\n"` streams as `"Hello there."`. The EXAONE MoE parse
+returns a forced-open thought that never closes as content, so it streams as
+reasoning and then as content. The DeepSeek V3 parse returns one as
+reasoning, as llama.cpp (`7fe450e1`) does with the DeepSeek V3.1 template.
 
 Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
 Qwen3-Coder XML given a parser) streams the content and reasoning of partial

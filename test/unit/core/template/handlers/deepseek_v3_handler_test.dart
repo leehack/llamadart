@@ -159,14 +159,17 @@ void main() {
       thinkingForcedOpen: true,
       isPartial: false,
     );
-    expect(forcedOpenFinal.content, equals('REASONING'));
-    expect(forcedOpenFinal.reasoningContent, isNull);
-    expect(forcedOpenFinal.toolCalls, hasLength(1));
-    expect(forcedOpenFinal.toolCalls.first.function?.name, equals('get_time'));
+    // llama.cpp `7fe450e1` with the DeepSeek V3.1 template returns this
+    // unended forced-open thought as reasoning, with no tool call.
+    expect(forcedOpenFinal.content, isEmpty);
     expect(
-      jsonDecode(forcedOpenFinal.toolCalls.first.function!.arguments!),
-      equals({'city': 'Tokyo'}),
+      forcedOpenFinal.reasoningContent,
+      'REASONING'
+      '<｜tool▁calls▁begin｜>'
+      '<｜tool▁call▁begin｜>get_time<｜tool▁sep｜>{"city":"Tokyo"}<｜tool▁call▁end｜>'
+      '<｜tool▁calls▁end｜>',
     );
+    expect(forcedOpenFinal.toolCalls, isEmpty);
 
     final forcedOpenPartial = handler.parse(
       'REASONING'

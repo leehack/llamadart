@@ -45,6 +45,32 @@ void main() {
     expect(result.reasoning, 'Still thinking');
   });
 
+  test('extractThinking unescapes reasoning unless told not to', () {
+    for (final (text, forced) in const [
+      (r'a\nb', true),
+      (r'a\rb</think>c', false),
+      (r'<think>a\nb', false),
+      (r'x</think>y<think>a\nb</think>', false),
+      (r'<think>x</think>y<think>a\nb</think>', false),
+    ]) {
+      final reasoning = extractThinking(
+        text,
+        thinkingForcedOpen: forced,
+      ).reasoning!;
+      final literal = extractThinking(
+        text,
+        thinkingForcedOpen: forced,
+        unescape: false,
+      ).reasoning!;
+      expect(reasoning, isNot(contains('\\')), reason: text);
+      expect(literal, contains(r'a\'), reason: text);
+      expect(
+        literal.replaceAll(r'\n', '\n').replaceAll(r'\r', '\r'),
+        reasoning,
+      );
+    }
+  });
+
   test('isThinkingForcedOpen detects trailing think tag', () {
     expect(isThinkingForcedOpen('<think>\n'), isTrue);
     expect(isThinkingForcedOpen('hello'), isFalse);

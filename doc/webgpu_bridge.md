@@ -67,11 +67,11 @@ an earlier `<script>`:
 
 ## Pinned assets
 
-Default pinned tag in the example is `v0.1.52`.
+Default pinned tag in the example is `v0.1.54`.
 Vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.52 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.54 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 `WEBGPU_BRIDGE_OUT_DIR` changes the destination. The script verifies
@@ -81,19 +81,21 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.52';
+  window.__llamadartBridgeAssetsTag = 'v0.1.54';
 </script>
 ```
 
 That release embeds llama.cpp `v0.5.0`, matching the `hook/build.dart` native pin
 (`v0.5.0`, both built from upstream llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
-even though the bridge asset tag `v0.1.52` differs from the native runtime tag
-`v0.5.0`. Provenance for this immutable consumer artifact: release `396846786`,
-tag commit `8526e92057df6d74d5e435d6ca67baf68cb7dca3`, bridge source
-`cd8c08e317beff8bfaeef8e40571dd4cdf1f6cff`, and manifest SHA-256
-`b17319718d011d361018a877c7da3c137453f117d8851a8c15ad405fb5fe881d`. The bridge
+even though the bridge asset tag `v0.1.54` differs from the native runtime tag
+`v0.5.0`. Provenance for this immutable consumer artifact: release `397350529`,
+tag commit `e161182a09ac560d45ad5e65bb499574f913a466`, bridge source
+`65622b297b83513db597a760fa067867755010b4`, and manifest SHA-256
+`8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`. The bridge
 assets were qualified against native `v0.5.0`. They add the decision API
-(apiVersion 1) and next-token scoring (`scoreNextToken`), keep the Qwen3-ASR typed speech contract from `v0.1.30`, and
+(apiVersion 1), next-token scoring (`scoreNextToken`), presence penalty, Min-P,
+thinking budgets, runtime LoRA adapters and speculative decoding, keep the
+Qwen3-ASR typed speech contract from `v0.1.30`, and
 provision an explicit 1 MiB Wasm stack for wasm32 and memory64, which keeps
 graph-parameter growth from overflowing Emscripten's 64 KiB default during
 memory64 Qwen3-ASR context construction in direct and worker modes.
@@ -129,6 +131,11 @@ physical playback, intelligibility or speaker-reference fidelity.
 - `v0.1.39+`: compatibility floor for bridge asset capabilities.
 - `v0.1.47+`: decision API (apiVersion 1) for `DecisionEngine`; older assets
   report decision models as unsupported.
+- `v0.1.52+`: next-token scoring (`scoreNextToken`).
+- `v0.1.54+`: `presencePenalty`, `minP` and `thinkingBudget`, runtime LoRA
+  adapters and speculative decoding, which llamadart gates on the bridge's
+  capability probes rather than on this tag, and the bridge's
+  `supportsCompletionUsage` flag for per-request usage.
 
 ## Safari compatibility
 
