@@ -18,6 +18,14 @@ import '../tool_call_parsing_utils.dart';
 ///
 /// EXAONE MoE uses `<think>` tags and `<tool_call>{...}</tool_call>` blocks.
 class ExaoneMoeHandler extends ChatTemplateHandler {
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where `<tool_call` starts,
+  /// or where the rest of [text] is the start of it, and `text.length` when
+  /// there is none.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const ['<tool_call'], from);
+
   @override
   ChatFormat get format => ChatFormat.exaoneMoe;
 

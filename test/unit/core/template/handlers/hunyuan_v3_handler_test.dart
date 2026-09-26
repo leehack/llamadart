@@ -9,6 +9,21 @@ import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('HunyuanV3Handler.toolCallOpening finds calls and the end token', () {
+    for (final opening in const [
+      '<tool_call:opensource>',
+      '<tool_calls:opensource>',
+      '<｜hy_eos:opensource｜>',
+    ]) {
+      expect(HunyuanV3Handler.toolCallOpening('Hi $opening'), 3);
+      expect(
+        HunyuanV3Handler.toolCallOpening('Hi ${opening.substring(0, 5)}'),
+        3,
+      );
+    }
+    expect(HunyuanV3Handler.toolCallOpening('Use <tool> or <x>.'), 18);
+  });
+
   const template = '''
 {%- set HYTK = ':opensource' -%}
 {%- set assistant = '<｜hy_Assistant{}｜>'.format(HYTK) -%}

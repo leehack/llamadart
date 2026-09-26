@@ -3,8 +3,32 @@ import 'dart:convert';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
+import 'package:llamadart/src/core/template/peg_chat_parser.dart';
 
 void main() {
+  test(
+    'pegParseFormat selects the PEG format ChatTemplateEngine parses with',
+    () {
+      for (final format in ChatFormat.values) {
+        final expected = switch (format) {
+          ChatFormat.pegSimple ||
+          ChatFormat.pegNative ||
+          ChatFormat.pegConstructed => format,
+          _ => null,
+        };
+        expect(pegParseFormat(format, null), expected, reason: format.name);
+        expect(pegParseFormat(format, ' '), expected, reason: format.name);
+      }
+      expect(pegParseFormat(ChatFormat.ministral, '{}'), ChatFormat.pegNative);
+      expect(pegParseFormat(ChatFormat.solarOpen, '{}'), ChatFormat.pegNative);
+      expect(
+        pegParseFormat(ChatFormat.qwen3CoderXml, '{}'),
+        ChatFormat.pegConstructed,
+      );
+      expect(pegParseFormat(ChatFormat.hermes, '{}'), isNull);
+    },
+  );
+
   group('PegChatParser runtime', () {
     test('parses peg-native output using serialized parser', () {
       final parser = _buildNativeParser();

@@ -9,6 +9,22 @@ import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('CommandR7BHandler.toolCallOpening finds markers and bare arrays', () {
+    for (final opening in const [
+      '<|START_ACTION|>',
+      '<|START_TEXT|>',
+      '<|START_RESPONSE|>',
+      '[{',
+      '[ \n{',
+      '[',
+      '[ ',
+    ]) {
+      expect(CommandR7BHandler.toolCallOpening('Hi $opening'), 3);
+    }
+    expect(CommandR7BHandler.toolCallOpening('Hi <|START_'), 3);
+    expect(CommandR7BHandler.toolCallOpening('Use [x] or [1, {}].'), 19);
+  });
+
   test('CommandR7BHandler renders and parses command-r tool calls', () {
     final handler = CommandR7BHandler();
     final tools = [

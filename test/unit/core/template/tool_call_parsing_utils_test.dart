@@ -4,6 +4,38 @@ import 'package:llamadart/src/core/template/tool_call_parsing_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('ToolCallParsingUtils.literalOpening', () {
+    test('finds the first whole or partial opening', () {
+      const openings = ['<tool_call>', '[TOOL_CALLS]'];
+      expect(
+        ToolCallParsingUtils.literalOpening(
+          'a [TOOL_CALLS] <tool_call>',
+          openings,
+        ),
+        2,
+      );
+      expect(ToolCallParsingUtils.literalOpening('a <tool', openings), 2);
+      expect(ToolCallParsingUtils.literalOpening('a [TOOL_CALLS', openings), 2);
+      expect(
+        ToolCallParsingUtils.literalOpening('a <tools> [x]', openings),
+        13,
+      );
+    });
+
+    test('returns the earliest whole or partial opening', () {
+      expect(ToolCallParsingUtils.literalOpening('ab <XYZ', ['c', '<XYZW']), 3);
+      expect(
+        ToolCallParsingUtils.literalOpening('ab <XY c', ['c', '<XYZW']),
+        7,
+      );
+    });
+
+    test('starts at from', () {
+      expect(ToolCallParsingUtils.literalOpening('<a> <a>', ['<a>'], 1), 4);
+      expect(ToolCallParsingUtils.literalOpening('<a> <', ['<a>'], 5), 5);
+    });
+  });
+
   group('ToolCallParsingUtils', () {
     test(
       'rejects duplicate object keys before JSON decoding collapses them',
