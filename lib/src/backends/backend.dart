@@ -459,8 +459,8 @@ abstract class BackendTextToSpeech {
 /// Optional [GenerationParams] controls that the loaded model's runtime
 /// applies.
 ///
-/// The built-in runtimes reject a non-default value of a control they report
-/// `false` with `LlamaUnsupportedException`.
+/// Through `LlamaEngine`, the built-in runtimes reject a non-default value of
+/// a control they report `false` with `LlamaUnsupportedException`.
 class BackendGenerationCapabilities {
   /// Whether a non-zero [GenerationParams.presencePenalty] is applied.
   final bool presencePenalty;
