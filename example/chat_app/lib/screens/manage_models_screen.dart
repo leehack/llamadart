@@ -2351,7 +2351,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                       note: provider.minPSupported
                           ? null
                           : provider.isLoaded
-                          ? 'The loaded runtime does not support Min-P; generation uses 0.'
+                          ? 'The loaded runtime does not apply Min-P to chat, so chat uses 0.'
                           : 'Load a model to set Min-P.',
                     ),
                     const SizedBox(height: 10),

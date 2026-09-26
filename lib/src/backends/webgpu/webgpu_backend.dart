@@ -2210,10 +2210,6 @@ class WebGpuLlamaBackend
     _bridge?.cancel();
   }
 
-  /// Probes the active bridge for decision heads.
-  ///
-  /// Reports unsupported without an active bridge, and for bridge assets
-  /// without the decision API or with a decision API version other than 1.
   /// Reports the options that the loaded bridge assets'
   /// `getCompletionCapabilities()` reported after the model load; none before
   /// a load or when the probe is missing or failed.
@@ -2227,6 +2223,10 @@ class WebGpuLlamaBackend
     );
   }
 
+  /// Probes the active bridge for decision heads.
+  ///
+  /// Reports unsupported without an active bridge, and for bridge assets
+  /// without the decision API or with a decision API version other than 1.
   @override
   Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle) {
     return _decisionHeads.capabilities(_activeBridge);

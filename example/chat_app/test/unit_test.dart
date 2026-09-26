@@ -919,6 +919,9 @@ void main() {
 
         expect(minPProvider.minPSupported, supported);
         expect(engine.lastCreateParams?.minP, supported ? 0.2 : 0.0);
+
+        await minPProvider.unloadModel();
+        expect(minPProvider.minPSupported, isFalse);
       }
     });
 
