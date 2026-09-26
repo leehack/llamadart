@@ -112,9 +112,12 @@ DecisionEngine again") and a free does nothing, so a stale `DecisionEngine`
 can reach neither a later head nor its backend handle. No engine lease: the
 head uses its own llama context, and the worker serializes native work.
 
-`DecisionEngine` also checks the engine's model handle before tokenizing. If
-the model is unloaded while a call or `load` is in flight, the failure it
-causes, such as `LlamaContextException` from tokenization, is rethrown as
+`DecisionEngine` also checks, before tokenizing and after `load`'s capability
+probe, that the engine is ready and its unload count (`modelUnloadEpoch`, which
+`_unloadModel` bumps) is the one `load` started with; a model loaded later
+fails the check even under a reused backend handle. If the model is unloaded
+while a call or `load` is in flight, the failure it causes, such as
+`LlamaContextException` from tokenization, is rethrown as
 `LlamaStateException`.
 
 ### Native (`lib/src/backends/llama_cpp/`)
@@ -292,9 +295,10 @@ Sequence (`build_sequence`, `max_len` 512, `head_max_len` 192):
   special tokens, matching Hugging Face added-token splitting). Each distinct
   text is tokenized once per call.
 - Text containing U+0000 is rejected with `LlamaDecisionException` instead of
-  being tokenized: native tokenization passes the text's C-string length to
-  `llama_tokenize`, so it would cut the text at the NUL while Laya tokenizes
-  all of it. A non-string state is JSON-encoded, which escapes U+0000.
+  being tokenized: llama-web-bridge reads the text as a C string, so Web
+  tokenization cuts it at the NUL while Laya tokenizes all of it. Native
+  tokenization keeps it, but the rejection applies on every backend. A
+  non-string state is JSON-encoded, which escapes U+0000.
 - Options: choice `label` or `label: <criterion>`; score `level i: <criterion>`;
   noul `false: <criterion or "no, the statement does not hold">`, `true:
   <criterion or "yes, the statement holds">`. Non-string criteria render as

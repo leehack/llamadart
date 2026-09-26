@@ -327,28 +327,37 @@ void main() {
       },
     );
 
-    test('rejects a model swapped in during the capability probe', () async {
-      await engine.loadModel('laya-Q8_0.gguf');
-      final gate = backend.capabilityGate = Completer<void>();
+    for (final (handle, reuseModelHandle) in [
+      ('a new', false),
+      ('the', true),
+    ]) {
+      test('rejects a model swapped in under $handle handle during the '
+          'capability probe', () async {
+        backend.reuseModelHandle = reuseModelHandle;
+        await engine.loadModel('laya-Q8_0.gguf');
+        final loadedHandle = engine.modelHandle;
+        final gate = backend.capabilityGate = Completer<void>();
 
-      final loading = DecisionEngine.load(engine, headPath: _headPath);
-      await backend.capabilityStarted.future;
-      await engine.unloadModel();
-      await engine.loadModel('laya-F16.gguf');
-      gate.complete();
+        final loading = DecisionEngine.load(engine, headPath: _headPath);
+        await backend.capabilityStarted.future;
+        await engine.unloadModel();
+        await engine.loadModel('laya-F16.gguf');
+        expect(engine.modelHandle == loadedHandle, reuseModelHandle);
+        gate.complete();
 
-      await expectLater(
-        loading,
-        throwsA(
-          isA<LlamaStateException>().having(
-            (error) => error.message,
-            'message',
-            contains('unloaded while the DecisionEngine was loading'),
+        await expectLater(
+          loading,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('unloaded while the DecisionEngine was loading'),
+            ),
           ),
-        ),
-      );
-      expect(backend.headLoads, isEmpty);
-    });
+        );
+        expect(backend.headLoads, isEmpty);
+      });
+    }
   });
 
   group('capabilitiesFor', () {
@@ -784,23 +793,29 @@ void main() {
       expect(backend.runs, hasLength(1));
     });
 
-    test('a model reloaded under a new handle is not tokenized', () async {
-      final decisions = await loadDecisions();
-      final loadedHandle = engine.modelHandle;
-      await engine.unloadModel();
-      await engine.loadModel('laya-Q8_0.gguf');
-      expect(engine.modelHandle, isNot(loadedHandle));
+    for (final (handle, reuseModelHandle) in [
+      ('a new', false),
+      ('the', true),
+    ]) {
+      test('a model reloaded under $handle handle is not tokenized', () async {
+        backend.reuseModelHandle = reuseModelHandle;
+        final decisions = await loadDecisions();
+        final loadedHandle = engine.modelHandle;
+        await engine.unloadModel();
+        await engine.loadModel('laya-Q8_0.gguf');
+        expect(engine.modelHandle == loadedHandle, reuseModelHandle);
 
-      await expectLater(
-        decisions.systemOne(
-          state: 'hi',
-          questions: {'q': DecisionQuestion.noul('Is it?')},
-        ),
-        throwsA(isA<LlamaStateException>()),
-      );
-      expect(backend.tokenized, isEmpty);
-      expect(backend.runs, isEmpty);
-    });
+        await expectLater(
+          decisions.systemOne(
+            state: 'hi',
+            questions: {'q': DecisionQuestion.noul('Is it?')},
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+        expect(backend.tokenized, isEmpty);
+        expect(backend.runs, isEmpty);
+      });
+    }
 
     test(
       'a stale engine cannot reach a head that reuses its handles',

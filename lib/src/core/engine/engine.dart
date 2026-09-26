@@ -2169,3 +2169,9 @@ final Expando<BackendGenerationLimit> _completionGenerationLimits =
 /// reported one to [LlamaEngine.create].
 BackendGenerationLimit? completionGenerationLimit(LlamaCompletionChunk chunk) =>
     _completionGenerationLimits[chunk];
+
+/// The number of models [engine] has unloaded.
+///
+/// A model loaded after a read sees a greater value, even when the backend
+/// reuses its handle.
+int modelUnloadEpoch(LlamaEngine engine) => engine._decisionHeadEpoch;
