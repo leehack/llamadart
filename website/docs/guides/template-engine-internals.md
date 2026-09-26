@@ -116,7 +116,11 @@ and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
 whole delimiter or a partial one at the end of the input. With Qwen3-Coder
 XML, a `<tool_call>` also ends a forced-open thought when the output has no
-thinking tag, as its parse does.
+thinking tag, as its parse does. Such a thought keeps an escaped `\n` or
+`\r`, so from the first one on, a forced-open Qwen3-Coder XML thought waits
+for the call, `</think>` or the end of generation. As in the parse, a start
+tag the model repeats at the start of a forced-open thought is dropped, and
+when the output has no start tag, an end tag after the first one is content.
 
 Streamed reasoning equals the parse too, which trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
@@ -128,7 +132,8 @@ will not close. The streamed text is then no prefix of the parse, so the final
 reconciliation adds nothing and the trailing whitespace is lost too:
 `"  \n Hello there.  \n\n"` streams as `"Hello there."`. The DeepSeek V3 and
 EXAONE MoE parses return a forced-open thought that never closes as content,
-so it streams as reasoning and then as content.
+so its reasoning waits for `</think>`; if the thought never closes, it arrives
+as content at the end of the stream.
 
 Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
 Qwen3-Coder XML given a parser) streams the content and reasoning of partial

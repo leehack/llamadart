@@ -32,8 +32,12 @@ For canonical full release notes, use:
   parser, so text before a tool call no longer carries the tool-call envelope
   into streamed content or `ChatSession` history. Content and reasoning are
   trimmed as for Hermes, and text after a call arrives at the end of the
-  stream. See the template engine guide for the formats and exceptions
-  ([#732](https://github.com/leehack/llamadart/issues/732)).
+  stream. DeepSeek V3 and EXAONE MoE reasoning after a forced-open thinking
+  tag now arrives when the thought closes, and as content at the end if it
+  never closes, as the parse returns it. See the template engine guide for the
+  formats and exceptions
+  ([#732](https://github.com/leehack/llamadart/issues/732),
+  [#743](https://github.com/leehack/llamadart/issues/743)).
 - Stream Hermes-format content that equals the non-streamed parse, so text
   before a tool call no longer carries the `<tool_call>` envelope into
   streamed content or `ChatSession` history; only a possible envelope opening

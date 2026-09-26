@@ -35,6 +35,18 @@ class _ThinkingSplitEmission {
   final bool endsThinking;
 }
 
+/// The thinking tags a gated stream has seen so far.
+class _ThoughtTagState {
+  var sawStartTag = false;
+  var sawEndTag = false;
+
+  /// Whether an end tag outside a thought is content.
+  ///
+  /// Without a start tag, the parse ends the thought at the first end tag and
+  /// keeps the rest as content.
+  bool get endTagIsContent => sawEndTag && !sawStartTag;
+}
+
 class _ThinkingSplitResult {
   const _ThinkingSplitResult({
     required this.pendingBuffer,
@@ -97,8 +109,14 @@ class ChatCompletionStreamParser {
                 templateResult.format == ChatFormat.qwen3CoderXml.index
                 ? toolCallOpening
                 : null,
+            holdsUnendedForcedThought:
+                templateResult.format == ChatFormat.deepseekV3.index ||
+                templateResult.format == ChatFormat.exaoneMoe.index,
           )
         : null;
+    final thoughtTags = toolCallOpening != null ? _ThoughtTagState() : null;
+    var atForcedThoughtStart =
+        thoughtTags != null && templateResult.thinkingForcedOpen;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse. Gated
@@ -158,11 +176,27 @@ class ChatCompletionStreamParser {
             pendingBuffer += token;
           }
 
+          // The parse drops a start tag the model repeats at the start of a
+          // forced-open thought and treats the thought as opened by that tag.
+          if (atForcedThoughtStart) {
+            final rest = pendingBuffer.trimLeft();
+            if (rest.length < startTag.length && startTag.startsWith(rest)) {
+              continue;
+            }
+            atForcedThoughtStart = false;
+            if (rest.startsWith(startTag)) {
+              pendingBuffer = rest.substring(startTag.length);
+              thoughtTags!.sawStartTag = true;
+              reasoningGate!.leaveForcedThought();
+            }
+          }
+
           final split = _splitThinkingBuffer(
             pendingBuffer: pendingBuffer,
             isThinking: isThinking,
             startTag: startTag,
             endTag: endTag,
+            tagState: thoughtTags,
           );
           pendingBuffer = split.pendingBuffer;
           isThinking = split.isThinking;
@@ -888,6 +922,7 @@ class ChatCompletionStreamParser {
     required bool isThinking,
     required String startTag,
     required String endTag,
+    _ThoughtTagState? tagState,
   }) {
     final emissions = <_ThinkingSplitEmission>[];
     var localPendingBuffer = pendingBuffer;
@@ -896,7 +931,9 @@ class ChatCompletionStreamParser {
     while (localPendingBuffer.isNotEmpty) {
       if (!localIsThinking) {
         final startIdx = localPendingBuffer.indexOf(startTag);
-        final endIdx = localPendingBuffer.indexOf(endTag);
+        final endIdx = tagState?.endTagIsContent ?? false
+            ? -1
+            : localPendingBuffer.indexOf(endTag);
 
         if (startIdx != -1 && (endIdx == -1 || startIdx < endIdx)) {
           final before = localPendingBuffer.substring(0, startIdx);
@@ -906,6 +943,7 @@ class ChatCompletionStreamParser {
             );
           }
           localIsThinking = true;
+          tagState?.sawStartTag = true;
           localPendingBuffer = localPendingBuffer.substring(
             startIdx + startTag.length,
           );
@@ -919,6 +957,7 @@ class ChatCompletionStreamParser {
             ),
           );
           localIsThinking = false;
+          tagState?.sawEndTag = true;
           localPendingBuffer = localPendingBuffer.substring(
             endIdx + endTag.length,
           );
@@ -961,6 +1000,7 @@ class ChatCompletionStreamParser {
           ),
         );
         localIsThinking = false;
+        tagState?.sawEndTag = true;
         localPendingBuffer = localPendingBuffer.substring(
           endIdx + endTag.length,
         );
@@ -1081,14 +1121,22 @@ class _ToolEnvelopeContentGate {
 ///
 /// With a forced-thought opening scanner, a tool-call opening also ends a
 /// forced-open thought, as the Qwen3-Coder XML parse does when the output has
-/// no thinking tag. Text from a possible opening on waits: `</think>` releases
-/// it, and at the end of the stream the final parse supplies the rest.
+/// no thinking tag. That parse keeps escaped `\n` and `\r` before the opening,
+/// so text from a possible opening or escape on waits: `</think>`, or the end
+/// of the stream without an opening, releases it unescaped, and after an
+/// opening the final parse supplies the rest.
+///
+/// When [holdsUnendedForcedThought] is set, the parse keeps a forced-open
+/// thought as content unless the output has an end tag, so the thought waits
+/// for its end tag.
 class _ReasoningGate {
   _ReasoningGate({
     required bool forcedOpen,
     int Function(String text, int from)? forcedThoughtOpening,
+    bool holdsUnendedForcedThought = false,
   }) : _inForcedThought = forcedOpen,
-       _forcedThoughtOpening = forcedThoughtOpening;
+       _forcedThoughtOpening = forcedThoughtOpening,
+       _holdingThought = forcedOpen && holdsUnendedForcedThought;
 
   final int Function(String text, int from)? _forcedThoughtOpening;
   var _pending = '';
@@ -1096,14 +1144,26 @@ class _ReasoningGate {
   var _separate = false;
   var _heldAtOpening = false;
   bool _inForcedThought;
+  bool _holdingThought;
+
+  /// Treats the current thought as opened by a start tag.
+  void leaveForcedThought() {
+    _inForcedThought = false;
+  }
 
   /// Adds [reasoning] of the current thought and returns the released text.
   String add(String reasoning) {
     _pending += reasoning;
+    if (_holdingThought) {
+      return '';
+    }
     final opening = _inForcedThought ? _forcedThoughtOpening : null;
     final openingAt = opening == null ? _pending.length : opening(_pending, 0);
     _heldAtOpening = openingAt < _pending.length;
-    final head = _pending.substring(0, openingAt);
+    final releasable = opening == null
+        ? openingAt
+        : _escapeAt(_pending, openingAt);
+    final head = _pending.substring(0, releasable);
     final hold = head.endsWith(r'\') ? 1 : 0;
     final text = _unescape(head.substring(0, head.length - hold));
     var end = text.length;
@@ -1113,7 +1173,7 @@ class _ReasoningGate {
     _pending =
         text.substring(end) +
         head.substring(head.length - hold) +
-        _pending.substring(openingAt);
+        _pending.substring(releasable);
     return _release(text.substring(0, end));
   }
 
@@ -1125,15 +1185,17 @@ class _ReasoningGate {
     _started = false;
     _inForcedThought = false;
     _heldAtOpening = false;
+    _holdingThought = false;
     return released;
   }
 
   /// Adds the last [reasoning] of the stream and returns the released text.
   ///
-  /// A forced-open thought held at a tool-call opening stays held.
+  /// A forced-open thought held at a tool-call opening or for its end tag
+  /// stays held.
   String finish(String reasoning) {
     final released = add(reasoning);
-    return _heldAtOpening ? released : released + end();
+    return _heldAtOpening || _holdingThought ? released : released + end();
   }
 
   String _release(String text) {
@@ -1153,6 +1215,19 @@ class _ReasoningGate {
 
   static String _unescape(String text) =>
       text.replaceAll(r'\n', '\n').replaceAll(r'\r', '\r');
+
+  /// The index of the first escaped `\n` or `\r` in [text] before [end], or
+  /// [end].
+  static int _escapeAt(String text, int end) {
+    var at = end;
+    for (final escape in const [r'\n', r'\r']) {
+      final index = text.indexOf(escape);
+      if (index >= 0 && index < at) {
+        at = index;
+      }
+    }
+    return at;
+  }
 
   static bool _isTrimmed(int codeUnit) =>
       String.fromCharCode(codeUnit).trim().isEmpty;
