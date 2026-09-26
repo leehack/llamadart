@@ -170,15 +170,19 @@ Important fields:
 
 - `maxTokens`: generation length cap.
 - `temp`: randomness.
-- `topK`, `topP`, `minP`: token filtering controls.
+- `topK`, `topP`, `minP`: token filtering controls. WebGPU applies a
+  non-zero `minP` only with bridge assets whose `getCompletionCapabilities()`
+  reports `minP` and otherwise rejects it; LiteRT-LM rejects it.
 - `penalty`: repeat penalty.
-- `presencePenalty`: llama.cpp-native presence penalty; `0.0` preserves the
-  existing behavior. WebGPU and LiteRT-LM reject non-zero values rather than
-  silently ignoring them.
-- `thinkingBudget`: native llama.cpp-only reasoning-token cap. Use
-  `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use template
-  delimiters automatically, or specify `startTag` and `endTag` for raw
-  generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
+- `presencePenalty`: llama.cpp presence penalty; `0.0` preserves the
+  existing behavior. WebGPU applies it only with bridge assets whose
+  `getCompletionCapabilities()` reports `presencePenalty`. Other WebGPU assets
+  and LiteRT-LM reject non-zero values rather than silently ignoring them.
+- `thinkingBudget`: llama.cpp reasoning-token cap, native or WebGPU with
+  bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget`.
+  Use `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use
+  template delimiters automatically, or specify `startTag` and `endTag` for
+  raw generation. `0` forces the end delimiter immediately. Any `thinkingBudget`
   is incompatible with speculative decoding, and unsupported backends reject
   it explicitly.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
@@ -195,7 +199,8 @@ following it, including markers split across tokens or embedded inside a token.
 Empty stops are ignored. Unfinished marker prefixes are emitted when generation
 ends without a match. Template tokens listed in `preservedTokens` remain
 available to the chat parser; identical stop entries are excluded from native
-text matching. This applies to ordinary and speculative generation.
+text matching. This applies to ordinary and speculative generation, and
+WebGPU excludes the same stop entries.
 
 ## Practical tuning defaults
 

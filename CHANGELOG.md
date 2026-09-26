@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA
+  adapters (`setLora`, `removeLora`, `clearLoras`), on WebGPU with bridge
+  assets whose capability probes report them; other assets still reject them
+  ([#722](https://github.com/leehack/llamadart/issues/722)).
+- Reject a non-zero `GenerationParams.minP` on WebGPU when the bridge lacks
+  Min-P, with `LlamaUnsupportedException` instead of ignoring it, and ignore a
+  stop sequence equal to a `preservedTokens` entry there, as native llama.cpp
+  does ([#661](https://github.com/leehack/llamadart/issues/661)).
 - Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
   and generation prompts instead of dropping it
   ([#608](https://github.com/leehack/llamadart/issues/608)).

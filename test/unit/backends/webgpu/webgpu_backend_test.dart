@@ -14,6 +14,7 @@ import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, URL, document, window;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
+import '../../../support/fake_webgpu_feature_bridge.dart';
 
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
@@ -4536,6 +4537,432 @@ void main() {
         bridges.single.calls.where((call) => call.startsWith('free')),
         isEmpty,
       );
+    });
+  });
+
+  group('WebGpuLlamaBackend optional generation features', () {
+    late List<FakeFeatureBridge> bridges;
+    late FakeFeatureBridge Function() newBridge;
+    late WebGpuLlamaBackend backend;
+
+    FakeFeatureBridge fake() => bridges.last;
+
+    setUp(() {
+      bridges = <FakeFeatureBridge>[];
+      newBridge = FakeFeatureBridge.new;
+      backend = WebGpuLlamaBackend(
+        bridgeFactory: ([config]) {
+          final created = newBridge();
+          bridges.add(created);
+          return created.bridge;
+        },
+      );
+    });
+
+    tearDown(() => backend.dispose());
+
+    Future<void> loadModel() =>
+        backend.modelLoadFromUrl('model.gguf', const ModelParams());
+
+    Future<String> generate(GenerationParams params) async {
+      final chunks = await backend.generate(1, 'Hello', params).toList();
+      return utf8.decode(chunks.expand((chunk) => chunk).toList());
+    }
+
+    const thinkingBudget = ThinkingBudget(
+      maxTokens: 8,
+      startTag: '<think>',
+      endTag: '</think>',
+    );
+
+    final rejectsPresencePenalty = throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(contains('presence penalty'), contains('presencePenalty')),
+      ),
+    );
+    final rejectsMinP = throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        allOf(contains('Min-P'), contains('GenerationParams.minP')),
+      ),
+    );
+    final rejectsThinkingBudget = throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(contains('thinking-budget control'), contains('thinkingBudget')),
+      ),
+    );
+
+    void expectEachOptionRejected() {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(presencePenalty: 1.5),
+        ),
+        rejectsPresencePenalty,
+      );
+      expect(
+        () => backend.generate(1, 'Hello', const GenerationParams(minP: 0.05)),
+        rejectsMinP,
+      );
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(thinkingBudget: thinkingBudget),
+        ),
+        rejectsThinkingBudget,
+      );
+    }
+
+    group('completion options', () {
+      test('forwards the options the loaded assets report', () async {
+        await loadModel();
+        await generate(
+          const GenerationParams(
+            minP: 0.05,
+            presencePenalty: 1.5,
+            thinkingBudget: ThinkingBudget(
+              maxTokens: 8,
+              startTag: '<think>',
+              endTag: '</think>',
+              forcedMessage: 'Done.',
+            ),
+          ),
+        );
+
+        expect(fake().calls, <String>['load', 'probe']);
+        expect(fake().completionOption('minP'), 0.05);
+        expect(fake().completionOption('presencePenalty'), 1.5);
+        expect(fake().completionOption('thinkingBudget'), <String, Object?>{
+          'maxTokens': 8,
+          'startTag': '<think>',
+          'endTag': '</think>',
+          'forcedMessage': 'Done.',
+        });
+
+        await generate(const GenerationParams(thinkingBudget: thinkingBudget));
+        expect(
+          fake().completionOption('thinkingBudget'),
+          containsPair('forcedMessage', ''),
+        );
+      });
+
+      test('sends default options as before', () async {
+        for (final withProbe in <bool>[true, false]) {
+          newBridge = () => FakeFeatureBridge(withCompletionProbe: withProbe);
+          await loadModel();
+          expect(await generate(const GenerationParams()), 'Hello');
+          for (final name in <String>[
+            'minP',
+            'presencePenalty',
+            'thinkingBudget',
+          ]) {
+            expect(
+              fake().completionOption(name),
+              isNull,
+              reason: '$name, probe: $withProbe',
+            );
+          }
+          await backend.modelFree(1);
+        }
+      });
+
+      test('rejects every option on assets without the probe', () async {
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        await loadModel();
+
+        expectEachOptionRejected();
+        expect(fake().completionCalls, 0);
+      });
+
+      test('rejects each option the probe does not report', () async {
+        newBridge = () => FakeFeatureBridge()
+          ..completionCapabilities = <String, bool>{
+            'presencePenalty': false,
+            'minP': true,
+            'thinkingBudget': false,
+          };
+        await loadModel();
+
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(presencePenalty: 1.5),
+          ),
+          rejectsPresencePenalty,
+        );
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(thinkingBudget: thinkingBudget),
+          ),
+          rejectsThinkingBudget,
+        );
+        expect(fake().completionCalls, 0);
+
+        await generate(const GenerationParams(minP: 0.05));
+        expect(fake().completionOption('minP'), 0.05);
+      });
+
+      test('rejects every option after a failed or malformed probe', () async {
+        final probes = <void Function(FakeFeatureBridge)>[
+          (bridge) => bridge.completionProbeError = 'Bridge has been disposed.',
+          (bridge) => bridge.completionCapabilitiesResult = 'all'.toJS,
+          (bridge) => bridge.completionCapabilitiesResult = JSObject()
+            ..setProperty('minP'.toJS, 'true'.toJS)
+            ..setProperty('presencePenalty'.toJS, 1.toJS),
+        ];
+        for (final breakProbe in probes) {
+          newBridge = () {
+            final created = FakeFeatureBridge();
+            breakProbe(created);
+            return created;
+          };
+          await loadModel();
+          expect(backend.isReady, isTrue);
+          expectEachOptionRejected();
+          expect(fake().completionCalls, 0);
+          await backend.modelFree(1);
+        }
+      });
+
+      test('rejects every option before a model load', () {
+        expectEachOptionRejected();
+        expect(bridges, isEmpty);
+      });
+
+      test('probes again on each load and forgets on free', () async {
+        await loadModel();
+        await generate(const GenerationParams(minP: 0.05));
+
+        fake().completionCapabilities = <String, bool>{};
+        await loadModel();
+        expectEachOptionRejected();
+
+        fake().completionCapabilities = <String, bool>{'minP': true};
+        await loadModel();
+        await generate(const GenerationParams(minP: 0.05));
+
+        await backend.modelFree(1);
+        expect(
+          () =>
+              backend.generate(1, 'Hello', const GenerationParams(minP: 0.05)),
+          rejectsMinP,
+        );
+      });
+
+      test('validates a thinking budget as native generation does', () async {
+        await loadModel();
+
+        for (final budget in const <ThinkingBudget>[
+          ThinkingBudget(maxTokens: 8),
+          ThinkingBudget(maxTokens: 8, startTag: '<think>', endTag: ' '),
+        ]) {
+          expect(
+            () => backend.generate(
+              1,
+              'Hello',
+              GenerationParams(thinkingBudget: budget),
+            ),
+            throwsA(
+              isA<ArgumentError>().having(
+                (error) => '${error.message}',
+                'message',
+                contains('non-empty startTag and endTag'),
+              ),
+            ),
+          );
+        }
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            const GenerationParams(
+              thinkingBudget: ThinkingBudget(
+                maxTokens: 0x80000000,
+                startTag: '<think>',
+                endTag: '</think>',
+              ),
+            ),
+          ),
+          throwsA(isA<RangeError>()),
+        );
+
+        await backend.multimodalContextCreate(1, 'mmproj.gguf');
+        expect(
+          () => backend.generate(
+            1,
+            'Describe',
+            const GenerationParams(thinkingBudget: thinkingBudget),
+            parts: <LlamaContentPart>[
+              LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+            ],
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('text-only'),
+            ),
+          ),
+        );
+        expect(fake().completionCalls, 0);
+      });
+
+      test('LlamaEngine reports rejections as unsupported', () async {
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+
+        for (final params in const <GenerationParams>[
+          GenerationParams(presencePenalty: 1.5),
+          GenerationParams(minP: 0.05),
+          GenerationParams(thinkingBudget: thinkingBudget),
+        ]) {
+          await expectLater(
+            engine.generate('Hello', params: params).toList(),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        }
+        expect(fake().completionCalls, 0);
+      });
+    });
+
+    group('preserved tokens', () {
+      setUp(() async {
+        await loadModel();
+        fake().completionPieces = <String>['a', '<tool_call>', 'b'];
+      });
+
+      test('keep a stop sequence equal to one from ending output', () async {
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>'],
+              preservedTokens: <String>['<tool_call>'],
+            ),
+          ),
+          'a<tool_call>b',
+        );
+      });
+
+      test('leave other stop sequences in effect', () async {
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>', 'b'],
+              preservedTokens: <String>['<tool_call>'],
+            ),
+          ),
+          'a<tool_call>',
+        );
+        expect(
+          await generate(
+            const GenerationParams(
+              stopSequences: <String>['<tool_call>'],
+              preservedTokens: <String>['<tool'],
+            ),
+          ),
+          'a',
+        );
+      });
+    });
+
+    group('LoRA adapters', () {
+      test('applies adapters through the active bridge', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await backend.setLoraAdapter(1, 'other.gguf', 0.25);
+        await backend.removeLoraAdapter(1, 'adapter.gguf');
+        expect(fake().appliedAdapters, <int, double>{8: 0.25});
+
+        await backend.clearLoraAdapters(1);
+        expect(fake().appliedAdapters, isEmpty);
+        expect(fake().loraLoads, hasLength(2));
+      });
+
+      test('loads adapters again after a model load', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+
+        expect(fake().loraLoads, hasLength(2));
+        expect(fake().appliedAdapters, <int, double>{8: 0.5});
+      });
+
+      test('rejects every call without a model', () async {
+        await loadModel();
+        await backend.setLoraAdapter(1, 'adapter.gguf', 0.5);
+        await backend.modelFree(1);
+
+        for (final call in <Future<void> Function()>[
+          () => backend.setLoraAdapter(1, 'adapter.gguf', 0.5),
+          () => backend.removeLoraAdapter(1, 'adapter.gguf'),
+          () => backend.clearLoraAdapters(1),
+        ]) {
+          await expectLater(
+            call(),
+            throwsA(
+              isA<UnsupportedError>().having(
+                (error) => '${error.message}',
+                'message',
+                contains('no model is loaded'),
+              ),
+            ),
+          );
+        }
+      });
+
+      test('LlamaEngine maps the bridge errors', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl('model.gguf');
+        fake().loraLoadError =
+            'Failed to load LoRA adapter: the adapter is an aLoRA adapter (3 '
+            'invocation token(s)).';
+        await expectLater(
+          engine.setLora('alora.gguf'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        fake().loraLoadError =
+            "Failed to load LoRA adapter: tensor 'blk.0.attn_k.weight' has "
+            'incorrect shape (hint: maybe wrong base model?)';
+        await expectLater(
+          engine.setLora('adapter.gguf'),
+          throwsA(isA<LlamaModelException>()),
+        );
+        fake().loraLoadError = null;
+        await engine.setLora('adapter.gguf', scale: 0.5);
+        expect(fake().appliedAdapters.values, <double>[0.5]);
+
+        newBridge = () => FakeFeatureBridge(withLoraApi: false);
+        await engine.unloadModel();
+        await engine.loadModelFromUrl('model.gguf');
+        for (final call in <Future<void> Function()>[
+          () => engine.setLora('adapter.gguf'),
+          () => engine.removeLora('adapter.gguf'),
+          engine.clearLoras,
+        ]) {
+          await expectLater(
+            call(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('lack the LoRA methods'),
+              ),
+            ),
+          );
+        }
+      });
     });
   });
 }
