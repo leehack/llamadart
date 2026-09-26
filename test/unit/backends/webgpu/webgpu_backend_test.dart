@@ -4759,6 +4759,33 @@ void main() {
         );
       });
 
+      test('reports the options the probe reports as capabilities', () async {
+        Future<List<bool>> reported() async {
+          final capabilities = await backend.generationCapabilities();
+          return <bool>[
+            capabilities.presencePenalty,
+            capabilities.minP,
+            capabilities.thinkingBudget,
+          ];
+        }
+
+        expect(await reported(), <bool>[false, false, false]);
+
+        await loadModel();
+        expect(await reported(), <bool>[true, true, true]);
+
+        fake().completionCapabilities = <String, bool>{'minP': true};
+        await loadModel();
+        expect(await reported(), <bool>[false, true, false]);
+
+        await backend.modelFree(1);
+        expect(await reported(), <bool>[false, false, false]);
+
+        newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
+        await loadModel();
+        expect(await reported(), <bool>[false, false, false]);
+      });
+
       test('validates a thinking budget as native generation does', () async {
         await loadModel();
 

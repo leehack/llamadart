@@ -194,6 +194,17 @@ Important fields:
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 
+After a model loads, `engine.backendGenerationCapabilities` reports whether
+the runtime applies `presencePenalty`, `minP` and `thinkingBudget`: native
+llama.cpp reports all three, LiteRT-LM none, and WebGPU those its bridge
+assets report. Every field is `false` before a load. Use it to send a control
+only where it applies:
+
+```dart
+final capabilities = await engine.backendGenerationCapabilities;
+final params = GenerationParams(minP: capabilities.minP ? 0.05 : 0.0);
+```
+
 Native GGUF `stopSequences` suppress the first completed marker and any text
 following it, including markers split across tokens or embedded inside a token.
 Empty stops are ignored. Unfinished marker prefixes are emitted when generation

@@ -266,6 +266,8 @@ tag:
   probe reports that flag `true`; otherwise `generate` throws before calling
   the bridge. A missing method, a failed probe or a non-boolean flag counts as
   unsupported. Default values are sent as `null`, which older assets ignore.
+  `generationCapabilities()`, read through
+  `LlamaEngine.backendGenerationCapabilities`, reports the same flags.
   Source: [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)
   and [#144](https://github.com/leehack/llama-web-bridge/pull/144).
 - Every `setLoraAdapter`, `removeLoraAdapter` and `clearLoraAdapters` call

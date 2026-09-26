@@ -172,8 +172,10 @@ The feature-by-runtime table is in the
   `removeLora`, `clearLoras`) needs assets whose
   `getLoraAdapterCapabilities()` reports support. The pinned assets report
   neither, so a non-zero `presencePenalty` or `minP`, any `thinkingBudget` and
-  every LoRA call throw `LlamaUnsupportedException` there. The capabilities
-  come from the unreleased
+  every LoRA call throw `LlamaUnsupportedException` there.
+  `LlamaEngine.backendGenerationCapabilities` reports the completion
+  capabilities of the loaded assets. The capabilities come from the
+  unreleased
   [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140),
   [#144](https://github.com/leehack/llama-web-bridge/pull/144) and
   [#142](https://github.com/leehack/llama-web-bridge/pull/142).

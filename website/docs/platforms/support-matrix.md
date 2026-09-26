@@ -65,7 +65,9 @@ Android-only; web rejects it.
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,
 export and import it in app code. The pinned bridge assets report none of the
 WebGPU LoRA, thinking-budget, presence-penalty or Min-P capabilities; the
-bridge pull requests that add them are unreleased. Guides:
+bridge pull requests that add them are unreleased.
+`LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P
+and thinking-budget rows for the loaded model. Guides:
 [LoRA adapters](../guides/lora-adapters),
 [Tool calling](../guides/tool-calling#tool-choice-semantics),
 [Performance tuning](../guides/performance-tuning),

@@ -333,6 +333,17 @@ class ScoringMockBackend extends MockLlamaBackend
   }
 }
 
+class GenerationCapabilitiesMockBackend extends MockLlamaBackend
+    implements BackendGenerationCapabilitiesSupport {
+  GenerationCapabilitiesMockBackend(this.capabilities);
+
+  final BackendGenerationCapabilities capabilities;
+
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async =>
+      capabilities;
+}
+
 class UnsupportedStateBackend extends MockLlamaBackend
     implements BackendStatePersistenceSupport {
   UnsupportedStateBackend({required super.backendName});
@@ -2087,6 +2098,44 @@ void main() {
       );
       expect(scoringBackend.scoreCalls, isEmpty);
       await scoringEngine.dispose();
+    });
+
+    test('generation capabilities report none without the interface', () async {
+      await engine.loadModel('qwen-test.gguf');
+
+      final capabilities = await engine.backendGenerationCapabilities;
+
+      expect(capabilities.presencePenalty, isFalse);
+      expect(capabilities.minP, isFalse);
+      expect(capabilities.thinkingBudget, isFalse);
+    });
+
+    test('generation capabilities forward after a load only', () async {
+      final capabilityEngine = LlamaEngine(
+        GenerationCapabilitiesMockBackend(
+          const BackendGenerationCapabilities(
+            presencePenalty: true,
+            minP: false,
+            thinkingBudget: true,
+          ),
+        ),
+      );
+
+      final beforeLoad = await capabilityEngine.backendGenerationCapabilities;
+      expect(beforeLoad.presencePenalty, isFalse);
+      expect(beforeLoad.thinkingBudget, isFalse);
+
+      await capabilityEngine.loadModel('qwen-test.gguf');
+      final loaded = await capabilityEngine.backendGenerationCapabilities;
+      expect(loaded.presencePenalty, isTrue);
+      expect(loaded.minP, isFalse);
+      expect(loaded.thinkingBudget, isTrue);
+
+      await capabilityEngine.unloadModel();
+      final unloaded = await capabilityEngine.backendGenerationCapabilities;
+      expect(unloaded.presencePenalty, isFalse);
+      expect(unloaded.thinkingBudget, isFalse);
+      await capabilityEngine.dispose();
     });
 
     test('next-token scoring maps backend UnsupportedError', () async {

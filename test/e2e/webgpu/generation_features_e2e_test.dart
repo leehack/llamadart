@@ -102,6 +102,13 @@ void main() {
     );
     tearDownAll(() => engine.unloadModel());
 
+    test('reports the probed generation capabilities', () async {
+      final capabilities = await engine.backendGenerationCapabilities;
+      expect(capabilities.presencePenalty, expectFeatures());
+      expect(capabilities.minP, expectFeatures());
+      expect(capabilities.thinkingBudget, expectFeatures());
+    });
+
     test('default generation is deterministic', () async {
       final greedy = await generate(_storiesPrompt, _greedy);
       final seeded = await generate(_storiesPrompt, _seeded);

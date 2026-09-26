@@ -503,6 +503,47 @@ void main() {
     });
   }
 
+  test('reports and rejects no optional sampling controls', () async {
+    var prompts = 0;
+    _installFakeEngine(
+      onPrompt: (_) {
+        prompts++;
+      },
+      chunks: <JSAny?>[_messageChunk('Hello')],
+    );
+    final engine = LlamaEngine(LiteRtLmBackend());
+    try {
+      await engine.loadModel('https://example.com/model.litertlm');
+
+      final capabilities = await engine.backendGenerationCapabilities;
+      expect(capabilities.presencePenalty, isFalse);
+      expect(capabilities.minP, isFalse);
+      expect(capabilities.thinkingBudget, isFalse);
+      for (final (option, params) in [
+        ('presencePenalty', const GenerationParams(presencePenalty: 0.5)),
+        ('minP', const GenerationParams(minP: 0.1)),
+        (
+          'thinkingBudget',
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 8)),
+        ),
+      ]) {
+        await expectLater(
+          engine.generate('hello', params: params),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.toString(),
+              'named option',
+              contains(option),
+            ),
+          ),
+        );
+      }
+      expect(prompts, 0);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
   test('rejects thinking budget on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
 

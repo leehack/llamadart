@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart' show BackendGenerationCapabilities;
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
@@ -901,6 +902,69 @@ void main() {
       );
       expect(find.text('Added model.gguf'), findsOneWidget);
     });
+  });
+
+  group('ManageModelsScreen Min-P control', () {
+    Slider minPSlider(WidgetTester tester) => tester.widget<Slider>(
+      find.descendant(
+        of: find
+            .ancestor(of: find.text('Min-P'), matching: find.byType(Column))
+            .first,
+        matching: find.byType(Slider),
+      ),
+    );
+
+    for (final (supported, loaded, note) in <(bool, bool, String?)>[
+      (true, true, null),
+      (
+        false,
+        true,
+        'The loaded runtime does not support Min-P; generation uses 0.',
+      ),
+      (true, false, 'Load a model to set Min-P.'),
+    ]) {
+      testWidgets(
+        'Min-P is ${supported && loaded ? 'enabled' : 'disabled'} when '
+        'support is $supported and a model is ${loaded ? '' : 'not '}loaded',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final engine = MockLlamaEngine()
+            ..generationCapabilities = BackendGenerationCapabilities(
+              presencePenalty: false,
+              minP: supported,
+              thinkingBudget: false,
+            );
+          final provider = ChatProvider(
+            chatService: MockChatService(engine: engine),
+            settingsService: MockSettingsService(),
+            initialSettings: const ChatSettings(
+              modelPath: 'test_model.gguf',
+              minP: 0.2,
+            ),
+          );
+          addTearDown(provider.dispose);
+          if (loaded) {
+            await provider.loadModel();
+          }
+
+          await _pumpScreen(
+            tester,
+            modelService: _HoldingModelService(),
+            models: [_remoteModel()],
+            provider: provider,
+            showModelLibraryInitially: false,
+          );
+          await _tapVisible(tester, find.text('Inference parameters'));
+          await tester.pumpAndSettle();
+
+          expect(minPSlider(tester).onChanged == null, note != null);
+          expect(minPSlider(tester).value, 0.2);
+          if (note != null) {
+            expect(find.text(note), findsOneWidget);
+          }
+        },
+      );
+    }
   });
 }
 

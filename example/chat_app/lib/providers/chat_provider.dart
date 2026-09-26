@@ -181,6 +181,8 @@ class ChatProvider extends ChangeNotifier {
   bool _supportsAudio = false;
   bool _templateSupportsTools = true;
   bool _thinkingControlsSupported = true;
+  BackendGenerationCapabilities _generationCapabilities =
+      noGenerationCapabilities;
   ChatFormat? _detectedChatFormat;
   String? _error;
   Timer? _settingsSaveDebounce;
@@ -526,6 +528,7 @@ class ChatProvider extends ChangeNotifier {
       !hasActiveAudioRecording;
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
+  bool get minPSupported => _generationCapabilities.minP;
   String? get error => _error;
   double get temperature => _settings.temperature;
   int get topK => _settings.topK;
@@ -1118,6 +1121,7 @@ class ChatProvider extends ChangeNotifier {
     _mmprojLoaded = false;
     _templateSupportsTools = true;
     _thinkingControlsSupported = true;
+    _generationCapabilities = noGenerationCapabilities;
   }
 
   void _clearRuntimeDiagnostics() {
@@ -1470,6 +1474,8 @@ class ChatProvider extends ChangeNotifier {
       final inferredCapabilities = _inferMultimodalCapabilities(metadata);
       final runtimeSupportsVision = await _chatService.engine.supportsVision;
       final runtimeSupportsAudio = await _chatService.engine.supportsAudio;
+      _generationCapabilities =
+          await _chatService.engine.backendGenerationCapabilities;
       final declaredDirectVision =
           _settings.directMediaInput && _settings.modelSupportsVision;
       final declaredDirectAudio =
@@ -2057,7 +2063,10 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
 
-      final params = _chatGenerationService.buildParams(_settings);
+      final params = _chatGenerationService.buildParams(
+        _settings,
+        generationCapabilities: _generationCapabilities,
+      );
       final chatParts = _chatGenerationService.buildChatParts(
         text: text,
         stagedParts: parts,

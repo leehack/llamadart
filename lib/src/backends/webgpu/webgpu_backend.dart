@@ -44,6 +44,7 @@ class WebGpuLlamaBackend
         BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
         BackendDecision,
+        BackendGenerationCapabilitiesSupport,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -2213,6 +2214,19 @@ class WebGpuLlamaBackend
   ///
   /// Reports unsupported without an active bridge, and for bridge assets
   /// without the decision API or with a decision API version other than 1.
+  /// Reports the options that the loaded bridge assets'
+  /// `getCompletionCapabilities()` reported after the model load; none before
+  /// a load or when the probe is missing or failed.
+  @override
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    final capabilities = _completionCapabilities;
+    return BackendGenerationCapabilities(
+      presencePenalty: capabilities.presencePenalty,
+      minP: capabilities.minP,
+      thinkingBudget: capabilities.thinkingBudget,
+    );
+  }
+
   @override
   Future<BackendDecisionCapabilities> decisionCapabilities(int modelHandle) {
     return _decisionHeads.capabilities(_activeBridge);

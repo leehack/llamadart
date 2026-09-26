@@ -8,6 +8,10 @@
   Min-P, with `LlamaUnsupportedException` instead of ignoring it, and ignore a
   stop sequence equal to a `preservedTokens` entry there, as native llama.cpp
   does ([#661](https://github.com/leehack/llamadart/issues/661)).
+- Add `LlamaEngine.backendGenerationCapabilities`, which reports whether the
+  loaded runtime applies `presencePenalty`, `minP` and `thinkingBudget`; the
+  example chat app uses it to send Min-P and enable its slider only where
+  supported ([#661](https://github.com/leehack/llamadart/issues/661)).
 - Keep the text after a U+0000 in native llama.cpp tokenization, embeddings
   and generation prompts instead of dropping it
   ([#608](https://github.com/leehack/llamadart/issues/608)).
