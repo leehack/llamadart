@@ -9,6 +9,19 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Give assistant turns that hold only tool calls or only reasoning empty
+  content instead of `null` in chat templates, as llama.cpp does: QwQ-32B
+  renders them instead of throwing, and LFM2 and Devstral prompts drop a stray
+  `null` or `<function text>`
+  ([#715](https://github.com/leehack/llamadart/issues/715)).
+- Pass Map and List tool results as compact JSON text to LFM2, gpt-oss, Solar
+  Open, Ministral, DeepSeek V3 and TranslateGemma templates too, instead of
+  Python-style or spaced text
+  ([#717](https://github.com/leehack/llamadart/issues/717)).
+- Pass earlier tool-call arguments as JSON objects to templates that read them
+  as objects, as llama.cpp does, so Qwen3, Ministral, Devstral, gpt-oss and
+  similar prompts format them with the template's own JSON spacing
+  ([#702](https://github.com/leehack/llamadart/issues/702)).
 - Require `dinja` 1.2.0, so more chat prompts match llama.cpp: `tojson`
   output such as tool declarations uses llama.cpp's spacing, number format
   and non-ASCII text; Qwen3-Coder, GLM-4.6, GLM-4.7-Flash, MiniMax-M2,

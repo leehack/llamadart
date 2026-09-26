@@ -175,6 +175,47 @@ void main() {
     );
   });
 
+  group('JinjaAnalyzer object arguments', () {
+    String withArguments(String arguments) =>
+        '''
+{%- for tool in tools %}{{ tool.function.name }}{% endfor %}
+{%- for message in messages %}
+{%- for call in message.tool_calls or [] %}
+{{- call.function.name }}:$arguments
+{%- endfor %}
+{{- message.content }}
+{%- endfor %}''';
+
+    for (final entry in <String, bool>{
+      '{{ call.function.arguments | tojson }}': true,
+      '{% for k, v in call.function.arguments.items() %}{{ k }}={{ v }}'
+              '{% endfor %}':
+          true,
+      '{{ call.function.arguments }}': false,
+      "{{ 'args=' + call.function.arguments }}": false,
+      '': false,
+    }.entries) {
+      test('reports ${entry.value} for "${entry.key}"', () {
+        final caps = JinjaAnalyzer.analyze(withArguments(entry.key));
+
+        expect(caps.supportsToolCalls, isTrue);
+        expect(caps.supportsObjectArguments, entry.value);
+      });
+    }
+
+    test('reports false when the tool message needs a name', () {
+      final caps = JinjaAnalyzer.analyze(
+        "{%- for message in messages %}{%- if message.role == 'tool' and "
+        "not message.name %}{{ raise_exception('name required') }}"
+        '{%- endif %}{%- endfor %}'
+        '${withArguments('{{ call.function.arguments | tojson }}')}',
+      );
+
+      expect(caps.supportsToolCalls, isTrue);
+      expect(caps.supportsObjectArguments, isFalse);
+    });
+  });
+
   group('JinjaAnalyzer probe render failures', () {
     late List<String> messages;
 

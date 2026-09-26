@@ -105,6 +105,93 @@ void main() {
       });
     }
 
+    for (final (multimodal, typedContentOnly) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      test('gives tool-call-only and reasoning-only assistant turns empty '
+          'content, multimodal=$multimodal, '
+          'typedContentOnly=$typedContentOnly', () {
+        const messages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                name: 'weather',
+                arguments: {'city': 'Seoul'},
+                rawJson: '{"city":"Seoul"}',
+              ),
+            ],
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [LlamaThinkingContent('Let me think.')],
+          ),
+        ];
+
+        final rendered = TemplateRenderContext.messagesForTemplate(
+          messages,
+          multimodal: multimodal,
+          typedContentOnly: typedContentOnly,
+        );
+
+        final empty = typedContentOnly
+            ? [
+                {'type': 'text', 'text': ''},
+              ]
+            : '';
+        expect(rendered.map((message) => message['content']), [empty, empty]);
+        expect(messages.first.toJson()['content'], isNull);
+      });
+    }
+
+    test('passes JSON-object arguments as objects with objectArguments', () {
+      const messages = [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaToolCallContent(
+              name: 'search',
+              arguments: {'query': 'cafes'},
+              rawJson: '{"query":"cafes","filters":{"limit":3}}',
+            ),
+            LlamaToolCallContent(
+              name: 'truncated',
+              arguments: {},
+              rawJson: '{"query": "caf',
+            ),
+            LlamaToolCallContent(name: 'list', arguments: {}, rawJson: '[1,2]'),
+          ],
+        ),
+      ];
+
+      List<Object?> arguments({required bool objectArguments}) => [
+        for (final call
+            in TemplateRenderContext.messagesForTemplate(
+                  messages,
+                  objectArguments: objectArguments,
+                ).single['tool_calls']
+                as List)
+          call['function']['arguments'],
+      ];
+
+      expect(arguments(objectArguments: true), [
+        {
+          'query': 'cafes',
+          'filters': {'limit': 3},
+        },
+        '{"query": "caf',
+        '[1,2]',
+      ]);
+      expect(arguments(objectArguments: false), [
+        '{"query":"cafes","filters":{"limit":3}}',
+        '{"query": "caf',
+        '[1,2]',
+      ]);
+    });
+
     group('splitToolResults', () {
       test('returns messages with at most one result unchanged', () {
         const messages = [

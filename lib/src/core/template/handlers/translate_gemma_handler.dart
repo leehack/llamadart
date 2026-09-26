@@ -6,7 +6,6 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
-import '../template_render_context.dart';
 
 /// Handler for TranslateGemma templates.
 ///
@@ -37,16 +36,16 @@ class TranslateGemmaHandler extends ChatTemplateHandler {
     final sourceLangCode = metadata['source_lang_code'] ?? 'en-GB';
     final targetLangCode = metadata['target_lang_code'] ?? 'en-GB';
 
-    final normalizedMessages = TemplateRenderContext.splitToolResults(messages)
-        .map((message) => message.toJson())
-        .map(
-          (message) => _normalizeUserContent(
-            message,
-            sourceLangCode: sourceLangCode,
-            targetLangCode: targetLangCode,
-          ),
-        )
-        .toList();
+    final normalizedMessages =
+        templateMessages(messages, templateSource: templateSource)
+            .map(
+              (message) => _normalizeUserContent(
+                message,
+                sourceLangCode: sourceLangCode,
+                targetLangCode: targetLangCode,
+              ),
+            )
+            .toList();
 
     final prompt = renderTemplate(
       template,

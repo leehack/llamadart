@@ -11,7 +11,6 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../peg_parser_builder.dart';
 import '../template_internal_metadata.dart';
-import '../template_render_context.dart';
 import '../thinking_utils.dart';
 import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
@@ -60,7 +59,7 @@ class MinistralHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': _serializeMessages(messages),
+        'messages': _serializeMessages(messages, templateSource),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((tool) => tool.toJson()).toList(growable: false),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<s>',
@@ -165,10 +164,10 @@ class MinistralHandler extends ChatTemplateHandler {
 
   List<Map<String, dynamic>> _serializeMessages(
     List<LlamaChatMessage> messages,
+    String templateSource,
   ) {
-    return TemplateRenderContext.splitToolResults(messages)
-        .map((message) {
-          final json = message.toJson();
+    return templateMessages(messages, templateSource: templateSource)
+        .map((json) {
           final role = json['role'];
           if (role != 'system' && role != 'assistant') {
             return json;

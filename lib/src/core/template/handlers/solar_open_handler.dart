@@ -9,7 +9,6 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../peg_parser_builder.dart';
 import '../template_internal_metadata.dart';
-import '../template_render_context.dart';
 import '../thinking_utils.dart';
 
 /// Handler for Solar Open format.
@@ -52,17 +51,15 @@ class SolarOpenHandler extends ChatTemplateHandler {
     List<ToolDefinition>? tools,
     bool enableThinking = true,
   }) {
-    final renderedMessages = TemplateRenderContext.splitToolResults(messages)
-        .map((m) {
-          final json = m.toJson();
+    final renderedMessages =
+        templateMessages(messages, templateSource: templateSource).map((json) {
           final reasoning = json['reasoning_content'];
           if (reasoning is String && reasoning.isNotEmpty) {
             json['reasoning'] = reasoning;
             json.remove('reasoning_content');
           }
           return json;
-        })
-        .toList();
+        }).toList();
 
     final template = Template(templateSource);
     var prompt = renderTemplate(

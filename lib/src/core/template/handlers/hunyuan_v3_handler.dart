@@ -87,7 +87,7 @@ class HunyuanV3Handler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': templateMessages(messages),
+        'messages': templateMessages(messages, templateSource: templateSource),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((tool) => tool.toJson()).toList(),
         'reasoning_effort': enableThinking ? 'high' : 'no_think',

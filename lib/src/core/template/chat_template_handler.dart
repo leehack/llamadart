@@ -7,6 +7,7 @@ import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
 import 'media_placeholders.dart';
 import 'chat_parse_result.dart';
+import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
 import 'thinking_utils.dart';
@@ -45,16 +46,28 @@ abstract class ChatTemplateHandler {
   ///
   /// Handlers should use this instead of calling [LlamaChatMessage.toJson]
   /// directly so template-specific tool-call shapes are applied only at the
-  /// render-context boundary.
+  /// render-context boundary. Pass the [templateSource] being rendered:
+  /// tool-call arguments become objects when [TemplateCaps] detects that it
+  /// reads them as objects, and absent content becomes an empty text part
+  /// when it reads content only as parts, as llama.cpp does.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
+    String? templateSource,
   }) {
+    final caps = templateSource == null
+        ? null
+        : TemplateCaps.detect(templateSource);
     try {
       return TemplateRenderContext.messagesForTemplate(
         messages,
         toolCallSerialization: toolCallSerialization,
         multimodal: multimodal,
+        objectArguments: caps?.supportsObjectArguments ?? false,
+        typedContentOnly:
+            caps != null &&
+            caps.supportsTypedContent &&
+            !caps.supportsStringContent,
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;
@@ -165,7 +178,11 @@ abstract class ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': templateMessages(messages, multimodal: true),
+        'messages': templateMessages(
+          messages,
+          multimodal: true,
+          templateSource: templateSource,
+        ),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'enable_thinking': enableThinking,

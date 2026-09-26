@@ -73,16 +73,26 @@ class TemplateRenderContext {
     '  ',
   );
 
-  /// Serializes [messages] into the JSON shape expected by a template handler.
-  /// Typed tool results become JSON text (or text parts for multimodal
-  /// templates); string results and the original typed messages are unchanged.
-  /// A message with several tool results becomes one message per result, as
-  /// [splitToolResults] describes.
+  /// Serializes [messages] into the JSON shape expected by a template handler,
+  /// as llama.cpp's `common_chat_msg::to_json_oaicompat` builds template input.
+  ///
+  /// An absent `content` becomes an empty string, or a list holding one empty
+  /// text part when [typedContentOnly] marks a template that reads content
+  /// only as a list of parts, as llama.cpp does. Typed tool results become
+  /// JSON text (or text parts for [multimodal] templates); string results and
+  /// the original typed messages are unchanged. A message with several tool results becomes one
+  /// message per result, as [splitToolResults] describes.
+  ///
+  /// With [objectArguments], tool-call `arguments` that decode to a JSON
+  /// object are passed as that object, as llama.cpp does for templates with
+  /// `supports_object_arguments`; other arguments stay strings.
   static List<Map<String, dynamic>> messagesForTemplate(
     List<LlamaChatMessage> messages, {
     TemplateToolCallSerialization toolCallSerialization =
         TemplateToolCallSerialization.none,
     bool multimodal = false,
+    bool objectArguments = false,
+    bool typedContentOnly = false,
   }) {
     final renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
@@ -90,6 +100,13 @@ class TemplateRenderContext {
       final rendered = multimodal
           ? message.toJsonMultimodal()
           : message.toJson();
+      if (rendered['content'] == null) {
+        rendered['content'] = typedContentOnly
+            ? [
+                {'type': 'text', 'text': ''},
+              ]
+            : '';
+      }
       final toolResults = message.parts.whereType<LlamaToolResultContent>();
       if (toolResults.isNotEmpty) {
         final result = toolResults.first.result;
@@ -106,12 +123,14 @@ class TemplateRenderContext {
       renderedMessages.add(rendered);
     }
 
-    if (toolCallSerialization.isEmpty || !hasToolCalls) {
+    if (!hasToolCalls) {
       return renderedMessages;
     }
 
     if (toolCallSerialization.normalizeArguments) {
       normalizeToolCallArgs(renderedMessages);
+    } else if (objectArguments) {
+      _decodeObjectArguments(renderedMessages);
     }
     if (toolCallSerialization.useGenericSchema) {
       useGenericSchema(renderedMessages);
@@ -121,6 +140,25 @@ class TemplateRenderContext {
     }
 
     return renderedMessages;
+  }
+
+  static void _decodeObjectArguments(List<Map<String, dynamic>> messages) {
+    for (final message in messages) {
+      final toolCalls = message['tool_calls'];
+      if (toolCalls is! List) continue;
+      for (final call in toolCalls) {
+        final function = call is Map ? call['function'] : null;
+        if (function is! Map) continue;
+        final arguments = ToolCallParsingUtils.decodeJsonMapValue(
+          function['arguments'],
+        );
+        if (arguments == null) continue;
+        call['function'] = <String, dynamic>{
+          ...ToolCallParsingUtils.coerceMap(function)!,
+          'arguments': arguments,
+        };
+      }
+    }
   }
 
   /// Splits each message holding several [LlamaToolResultContent] parts into

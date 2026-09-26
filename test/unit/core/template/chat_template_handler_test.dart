@@ -1,10 +1,14 @@
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_parse_result.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/chat_template_handler.dart';
+import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
@@ -31,6 +35,87 @@ void main() {
     );
 
     expect(output, 'from-context');
+  });
+
+  test('gives empty content as a text part only to templates that read '
+      'content only as parts', () {
+    const typedOnly =
+        '{%- for message in messages -%}'
+        '{%- if message.content is string -%}'
+        "{{ raise_exception('string content') }}"
+        '{%- endif -%}'
+        '{{ message.role }}:'
+        '{%- for part in message.content -%}[{{ part.text }}]{%- endfor -%};'
+        '{%- endfor -%}';
+    const messages = <LlamaChatMessage>[
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: <LlamaContentPart>[
+          LlamaToolCallContent(
+            id: 'call_0',
+            name: 'get_weather',
+            arguments: <String, dynamic>{'city': 'Paris'},
+            rawJson: '{"city":"Paris"}',
+          ),
+        ],
+      ),
+    ];
+    final caps = TemplateCaps.detect(typedOnly);
+    expect(caps.supportsTypedContent, isTrue);
+    expect(caps.supportsStringContent, isFalse);
+
+    final result = ChatTemplateEngine.handlerFor(ChatFormat.contentOnly)
+        .renderWithMultimodalContent(
+          templateSource: typedOnly,
+          messages: messages,
+          metadata: const <String, String>{},
+          addAssistant: false,
+        );
+
+    expect(result.prompt, 'user:[Weather?];assistant:[];');
+  });
+
+  group('templates that read tool-call arguments as objects', () {
+    const template =
+        '{%- for message in messages -%}'
+        '{%- for call in message.tool_calls or [] -%}'
+        '{{ call.function.name }}:{{ call.function.arguments | tojson }};'
+        '{%- endfor -%}'
+        '{%- endfor -%}';
+    const messages = <LlamaChatMessage>[
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Weather?'),
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.assistant,
+        content: <LlamaContentPart>[
+          LlamaToolCallContent(
+            id: 'call_0',
+            name: 'get_weather',
+            arguments: <String, dynamic>{'city': 'Paris'},
+            rawJson: '{"city":"Paris"}',
+          ),
+        ],
+      ),
+    ];
+    // These handlers move tool calls into message content as JSON text.
+    const toolCallsInContent = <ChatFormat>{
+      ChatFormat.generic,
+      ChatFormat.granite,
+    };
+
+    for (final format in ChatFormat.values) {
+      if (toolCallsInContent.contains(format)) continue;
+      test('get parsed arguments from the ${format.name} handler', () {
+        final result = ChatTemplateEngine.handlerFor(format).render(
+          templateSource: template,
+          messages: messages,
+          metadata: const <String, String>{},
+          addAssistant: false,
+        );
+
+        expect(result.prompt, contains('get_weather:{"city": "Paris"};'));
+      });
+    }
   });
 }
 

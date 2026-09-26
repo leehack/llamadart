@@ -26,32 +26,43 @@ List<File> _fixtureTemplates() {
 }
 
 const Map<String, String> _pinnedCaps = <String, String>{
+  'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
+      '11111101',
+  'test/fixtures/llama_cpp_templates/LFM2-8B-A1B.jinja': '10101000',
+  'test/fixtures/llama_cpp_templates/Qwen-QwQ-32B.jinja': '11111011',
+  'test/fixtures/llama_cpp_templates/deepseek-ai-DeepSeek-V3.1.jinja':
+      '11011011',
   'test/fixtures/llama_cpp_templates/fireworks-ai-llama-3-firefunction-v2.jinja':
-      '1111100',
+      '11111001',
   'test/fixtures/llama_cpp_templates/google-gemma-4-31B-it-interleaved.jinja':
-      '1111111',
+      '11111111',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.1.jinja':
-      '1111100',
+      '11111001',
   'test/fixtures/llama_cpp_templates/meetkai-functionary-medium-v3.2.jinja':
-      '1111100',
-  'test/fixtures/templates/DeepSeek-R1-Distill-Llama-8B.jinja': '1000100',
-  'test/fixtures/templates/DeepSeek-R1-Distill-Qwen-1_5B.jinja': '1000100',
-  'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja': '1010100',
-  'test/fixtures/templates/Llama-3_2-3B-Instruct.jinja': '1110100',
-  'test/fixtures/templates/Ministral-3-3B-Reasoning.jinja': '1111111',
-  'test/fixtures/templates/Phi-4-mini-instruct-reasoning.jinja': '1000100',
-  'test/fixtures/templates/Qwen3-4B.jinja': '1111101',
-  'test/fixtures/templates/Qwen3_5-0_8B.jinja': '1111111',
-  'test/fixtures/templates/TranslateGemma-2B-it.jinja': '0000110',
-  'test/fixtures/templates/functiongemma-270m-it.jinja': '1111110',
-  'test/fixtures/templates/gemma-3-4b-it.jinja': '1000110',
-  'test/fixtures/templates/gemma-3n-E4B-it.jinja': '1000110',
-  'test/fixtures/templates/gemma-4-E2B-it.jinja': '1111111',
-  'tool/litert_lm_templates/gemma.jinja': '1000110',
-  'tool/litert_lm_templates/gemma3n.jinja': '1000110',
-  'tool/litert_lm_templates/gemma4.jinja': '1111111',
-  'tool/litert_lm_templates/qwen25.jinja': '1111100',
-  'tool/litert_lm_templates/qwen3.jinja': '1111101',
+      '11111000',
+  'test/fixtures/llama_cpp_templates/moonshotai-Kimi-K2.jinja': '11111101',
+  'test/fixtures/llama_cpp_templates/openai-gpt-oss-120b.jinja': '11101001',
+  'test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja':
+      '11111101',
+  'test/fixtures/llama_cpp_templates/upstage-Solar-Open-100B.jinja': '11111011',
+  'test/fixtures/templates/DeepSeek-R1-Distill-Llama-8B.jinja': '10001000',
+  'test/fixtures/templates/DeepSeek-R1-Distill-Qwen-1_5B.jinja': '10001000',
+  'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja': '10101000',
+  'test/fixtures/templates/Llama-3_2-3B-Instruct.jinja': '11101001',
+  'test/fixtures/templates/Ministral-3-3B-Reasoning.jinja': '11111111',
+  'test/fixtures/templates/Phi-4-mini-instruct-reasoning.jinja': '10001000',
+  'test/fixtures/templates/Qwen3-4B.jinja': '11111011',
+  'test/fixtures/templates/Qwen3_5-0_8B.jinja': '11111111',
+  'test/fixtures/templates/TranslateGemma-2B-it.jinja': '00001100',
+  'test/fixtures/templates/functiongemma-270m-it.jinja': '11111100',
+  'test/fixtures/templates/gemma-3-4b-it.jinja': '10001100',
+  'test/fixtures/templates/gemma-3n-E4B-it.jinja': '10001100',
+  'test/fixtures/templates/gemma-4-E2B-it.jinja': '11111111',
+  'tool/litert_lm_templates/gemma.jinja': '10001100',
+  'tool/litert_lm_templates/gemma3n.jinja': '10001100',
+  'tool/litert_lm_templates/gemma4.jinja': '11111111',
+  'tool/litert_lm_templates/qwen25.jinja': '11111001',
+  'tool/litert_lm_templates/qwen3.jinja': '11111011',
 };
 
 const List<String> _capsOrder = <String>[
@@ -62,6 +73,7 @@ const List<String> _capsOrder = <String>[
   'supports_string_content',
   'supports_typed_content',
   'supports_thinking',
+  'supports_object_arguments',
 ];
 
 String _capsBits(TemplateCaps caps) {

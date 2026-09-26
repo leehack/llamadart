@@ -97,6 +97,34 @@ void main() {
       expect(result.prompt, contains('<end_function_response>'));
     });
 
+    test('gives a tool-call-only assistant turn empty content', () {
+      final result = ChatTemplateEngine.handlerFor(ChatFormat.functionGemma)
+          .render(
+            templateSource:
+                '{%- for message in messages -%}'
+                '{{ message.role }}:{{ message.content is string }}'
+                '={{ message.content }};'
+                '{%- endfor -%}',
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.assistant,
+                content: [
+                  LlamaToolCallContent(
+                    id: 'call_0',
+                    name: 'get_current_time',
+                    arguments: {},
+                    rawJson: '{}',
+                  ),
+                ],
+              ),
+            ],
+            metadata: const {},
+            addAssistant: false,
+          );
+
+      expect(result.prompt, 'assistant:True=;');
+    });
+
     test('normalizes JSON-string tool responses when rendering', () {
       final source = File(
         'test/fixtures/templates/functiongemma-270m-it.jinja',
