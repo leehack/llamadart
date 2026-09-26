@@ -108,9 +108,19 @@ jobs:
   validation-harness:
     needs: changes
     if: needs.changes.outputs.validation-harness == 'true'
-    name: Validation harness (model-free)
-    runs-on: ubuntu-latest
+    name: Validation harness (model-free, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            tests: ''
+          - os: macos-latest
+            tests: test/process_memory_test.dart
+          - os: windows-latest
+            tests: test/process_memory_test.dart
     steps:
       - uses: actions/checkout@v7
       - uses: subosito/flutter-action@v2
@@ -120,9 +130,10 @@ jobs:
           cache: true
       - run: dart pub get
         working-directory: packages/llamadart_validation
-      - run: dart analyze --fatal-infos
+      - if: matrix.os == 'ubuntu-latest'
+        run: dart analyze --fatal-infos
         working-directory: packages/llamadart_validation
-      - run: dart test
+      - run: dart test ${{ matrix.tests }}
         working-directory: packages/llamadart_validation
 
   companion-packages:

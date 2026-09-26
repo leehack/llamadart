@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Bound speech validation pack memory by a footprint counter that page
+  eviction cannot shrink, instead of the resident set: `phys_footprint` on
+  macOS and iOS, `RssAnon` plus `VmSwap` on Linux and Android, and
+  `PrivateUsage` on Windows. Pages evicted or compressed under memory pressure
+  no longer lower the baseline and fail `peak_memory_bound` without memory
+  growth, and each report names its counter
+  ([#633](https://github.com/leehack/llamadart/issues/633)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image

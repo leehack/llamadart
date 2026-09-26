@@ -1,18 +1,59 @@
 import 'dart:io';
 
-/// Names the resident set probe so a report states what produced its numbers.
-const residentSetSource = 'dart:io ProcessInfo.currentRss';
+import 'process_memory_darwin.dart';
+import 'process_memory_linux.dart';
+import 'process_memory_windows.dart';
 
-/// Whole-process resident bytes, or null when the probe reports nothing usable.
-///
-/// The value covers native allocations as well as the Dart heap. It is not
-/// comparable across operating systems: each counts shared and mapped pages
-/// its own way.
-int? residentSetBytes() {
+/// A per-platform count of the memory a process owns: what [read] reads, named
+/// by [source] so a report states what produced its numbers.
+final class FootprintCounter {
+  const FootprintCounter(this.source, this.read);
+
+  final String source;
+  final int? Function() read;
+}
+
+/// The footprint counter for [operatingSystem], a `Platform.operatingSystem`
+/// value, or null when it has none.
+FootprintCounter? footprintCounterFor(String operatingSystem) =>
+    switch (operatingSystem) {
+      'macos' || 'ios' => const FootprintCounter(
+        darwinFootprintSource,
+        readDarwinFootprint,
+      ),
+      'linux' || 'android' => const FootprintCounter(
+        linuxFootprintSource,
+        readLinuxFootprint,
+      ),
+      'windows' => const FootprintCounter(
+        windowsFootprintSource,
+        readWindowsFootprint,
+      ),
+      _ => null,
+    };
+
+/// A positive byte count from [read], or null when [read] is null, throws or
+/// returns no positive count.
+int? sampleFootprint(int? Function()? read) {
+  if (read == null) return null;
   try {
-    final bytes = ProcessInfo.currentRss;
-    return bytes > 0 ? bytes : null;
+    final bytes = read();
+    return bytes != null && bytes > 0 ? bytes : null;
   } catch (_) {
     return null;
   }
 }
+
+final _counter = footprintCounterFor(Platform.operatingSystem);
+
+/// Names the counter behind [memoryFootprintBytes] on this platform.
+final String memoryFootprintSource =
+    _counter?.source ??
+    'unavailable: no footprint counter on ${Platform.operatingSystem}';
+
+/// Whole-process footprint bytes, or null when this platform has no counter or
+/// the counter fails.
+///
+/// The value covers native allocations as well as the Dart heap. It is not
+/// comparable across operating systems: each counter counts its own way.
+int? memoryFootprintBytes() => sampleFootprint(_counter?.read);
