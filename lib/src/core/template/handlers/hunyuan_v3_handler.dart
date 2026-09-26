@@ -39,6 +39,19 @@ class HunyuanV3Handler extends ChatTemplateHandler {
     '${RegExp.escape(_argValueStart)}([\\s\\S]*?)${RegExp.escape(_argValueEnd)}',
   );
 
+  /// Finds where [parse] may find a tool-call opening in [text].
+  ///
+  /// Returns the first index at or after [from] where a tool call, a
+  /// tool-call envelope or the end-of-sequence token it removes starts, or
+  /// where the rest of [text] is the start of one, and `text.length` when
+  /// there is none.
+  static int toolCallOpening(String text, [int from = 0]) =>
+      ToolCallParsingUtils.literalOpening(text, const [
+        _toolCallStart,
+        _toolCallsStart,
+        _eos,
+      ], from);
+
   @override
   ChatFormat get format => ChatFormat.hunyuanV3;
 

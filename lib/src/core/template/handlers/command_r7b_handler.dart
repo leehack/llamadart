@@ -23,6 +23,43 @@ import '../tool_schema_utils.dart';
 ///
 /// Supports thinking with `<|START_THINKING|>` / `<|END_THINKING|>`.
 class CommandR7BHandler extends ChatTemplateHandler {
+  static const String _startAction = '<|START_ACTION|>';
+  static const String _startText = '<|START_TEXT|>';
+  static const String _startResponse = '<|START_RESPONSE|>';
+
+  /// Finds where [parse] may find a tool-call or text opening in [text].
+  ///
+  /// Returns the first index at or after [from] where `<|START_ACTION|>`,
+  /// `<|START_TEXT|>`, `<|START_RESPONSE|>` or a bare JSON array of objects
+  /// starts, or where the rest of [text] is the start of one, and
+  /// `text.length` when there is none.
+  static int toolCallOpening(String text, [int from = 0]) {
+    final literal = ToolCallParsingUtils.literalOpening(text, const [
+      _startAction,
+      _startText,
+      _startResponse,
+    ], from);
+    for (var index = from; index < literal; index++) {
+      if (text.codeUnitAt(index) != 0x5B) {
+        continue;
+      }
+      var next = index + 1;
+      while (next < text.length && _isJsonWhitespace(text.codeUnitAt(next))) {
+        next++;
+      }
+      if (next == text.length || text.codeUnitAt(next) == 0x7B) {
+        return index;
+      }
+    }
+    return literal;
+  }
+
+  static bool _isJsonWhitespace(int codeUnit) =>
+      codeUnit == 0x20 ||
+      codeUnit == 0x09 ||
+      codeUnit == 0x0A ||
+      codeUnit == 0x0D;
+
   @override
   ChatFormat get format => ChatFormat.commandR7B;
 
@@ -115,17 +152,14 @@ class CommandR7BHandler extends ChatTemplateHandler {
     );
     final text = thinking.content;
 
-    const startAction = '<|START_ACTION|>';
     const endAction = '<|END_ACTION|>';
-    const startText = '<|START_TEXT|>';
     const endText = '<|END_TEXT|>';
-    const startResponse = '<|START_RESPONSE|>';
     const endResponse = '<|END_RESPONSE|>';
 
-    final textStart = text.indexOf(startText);
+    final textStart = text.indexOf(_startText);
     if (textStart != -1) {
       final prelude = text.substring(0, textStart);
-      final bodyStart = textStart + startText.length;
+      final bodyStart = textStart + _startText.length;
       final textEnd = text.indexOf(endText, bodyStart);
       final bodyEnd = textEnd == -1 ? text.length : textEnd;
       final trailing = textEnd == -1
@@ -151,10 +185,10 @@ class CommandR7BHandler extends ChatTemplateHandler {
       );
     }
 
-    final actionStart = text.indexOf(startAction);
+    final actionStart = text.indexOf(_startAction);
     if (actionStart != -1) {
       final prelude = text.substring(0, actionStart);
-      final afterStart = text.substring(actionStart + startAction.length);
+      final afterStart = text.substring(actionStart + _startAction.length);
       final jsonSlice = ToolCallParsingUtils.extractLeadingJsonValue(
         afterStart,
         0,
@@ -221,10 +255,10 @@ class CommandR7BHandler extends ChatTemplateHandler {
       );
     }
 
-    final responseStart = text.indexOf(startResponse);
+    final responseStart = text.indexOf(_startResponse);
     if (responseStart != -1) {
       final prelude = text.substring(0, responseStart);
-      final responseBodyStart = responseStart + startResponse.length;
+      final responseBodyStart = responseStart + _startResponse.length;
       final responseEnd = text.indexOf(endResponse, responseBodyStart);
       if (responseEnd == -1) {
         return ChatParseResult(

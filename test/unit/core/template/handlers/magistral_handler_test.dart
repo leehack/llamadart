@@ -9,6 +9,15 @@ import 'package:llamadart/src/core/template/handlers/magistral_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('MagistralHandler.toolCallOpening finds a whole or partial opening', () {
+    expect(
+      MagistralHandler.toolCallOpening('Let me check. [TOOL_CALLS]...'),
+      14,
+    );
+    expect(MagistralHandler.toolCallOpening('Let me check. [TOOL_'), 14);
+    expect(MagistralHandler.toolCallOpening('Use [TOOLS] or [x].'), 19);
+  });
+
   test('MagistralHandler renders and parses TOOL_CALLS payload', () {
     final handler = MagistralHandler();
     final tools = [

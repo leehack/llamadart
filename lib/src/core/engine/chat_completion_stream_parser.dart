@@ -7,7 +7,19 @@ import '../models/inference/generation_usage.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
+import '../template/handlers/apertus_handler.dart';
+import '../template/handlers/command_r7b_handler.dart';
+import '../template/handlers/deepseek_r1_handler.dart';
+import '../template/handlers/deepseek_v3_handler.dart';
+import '../template/handlers/exaone_moe_handler.dart';
+import '../template/handlers/granite_handler.dart';
 import '../template/handlers/hermes_handler.dart';
+import '../template/handlers/hunyuan_v3_handler.dart';
+import '../template/handlers/magistral_handler.dart';
+import '../template/handlers/mistral_handler.dart';
+import '../template/handlers/nemotron_v2_handler.dart';
+import '../template/peg_chat_parser.dart';
+import '../template/xml_tool_call_format.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
 
@@ -72,21 +84,30 @@ class ChatCompletionStreamParser {
     var didInitialPartialParse = false;
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
-    final hermesContent =
-        parseToolCallsEnabled &&
-            templateResult.format == ChatFormat.hermes.index
-        ? _HermesContentGate()
+    final toolCallOpening = parseToolCallsEnabled
+        ? _toolCallOpeningFor(templateResult)
         : null;
-    final hermesReasoning = hermesContent != null
-        ? _HermesReasoningGate(forcedOpen: templateResult.thinkingForcedOpen)
+    final contentGate = toolCallOpening != null
+        ? _ToolEnvelopeContentGate(toolCallOpening)
+        : null;
+    final reasoningGate = toolCallOpening != null
+        ? _ReasoningGate(
+            forcedOpen: templateResult.thinkingForcedOpen,
+            forcedThoughtOpening:
+                templateResult.format == ChatFormat.qwen3CoderXml.index
+                ? toolCallOpening
+                : null,
+          )
         : null;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
-    // never streamed as reasoning before the final structured parse. Hermes
-    // parses such an envelope as reasoning.
-    var streamingMode = hermesContent != null
+    // never streamed as reasoning before the final structured parse. Gated
+    // formats stream raw: Hermes parses such an envelope as reasoning, and
+    // the Qwen3-Coder XML reasoning gate holds it back.
+    var streamingMode = contentGate != null
         ? _ToolStreamingMode.raw
         : templateResult.thinkingForcedOpen ||
+              _usesPegParser(templateResult) ||
               _mayEmbedToolEnvelopeAfterContent(templateResult.format)
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
@@ -148,10 +169,10 @@ class ChatCompletionStreamParser {
           for (final emission in split.emissions) {
             var text = emission.text;
             if (emission.isThinking) {
-              if (hermesReasoning != null) {
-                text = hermesReasoning.add(text);
+              if (reasoningGate != null) {
+                text = reasoningGate.add(text);
                 if (emission.endsThinking) {
-                  text += hermesReasoning.end();
+                  text += reasoningGate.end();
                 }
               }
               if (text.isEmpty) {
@@ -159,7 +180,7 @@ class ChatCompletionStreamParser {
               }
               streamedReasoning += text;
             } else {
-              text = hermesContent?.add(text) ?? text;
+              text = contentGate?.add(text) ?? text;
               if (text.isEmpty) {
                 continue;
               }
@@ -274,10 +295,10 @@ class ChatCompletionStreamParser {
         undecidedPrefix = '';
       }
 
-      if (hermesContent != null && hermesReasoning != null) {
+      if (contentGate != null && reasoningGate != null) {
         pendingBuffer = isThinking
-            ? hermesReasoning.add(pendingBuffer) + hermesReasoning.end()
-            : hermesContent.add(pendingBuffer);
+            ? reasoningGate.finish(pendingBuffer)
+            : contentGate.add(pendingBuffer);
       }
       if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
         if (isThinking) {
@@ -361,7 +382,7 @@ class ChatCompletionStreamParser {
       }
 
       final suppressFinalToolEnvelopeContent =
-          hermesContent == null &&
+          contentGate == null &&
           parsed.hasToolCalls &&
           _isToolCallEnvelopeBuffer(
             fullOutput,
@@ -462,6 +483,55 @@ class ChatCompletionStreamParser {
       }
     }
     return false;
+  }
+
+  /// The tool-call opening scanner of a format whose parse drops tool-call
+  /// envelopes from trimmed content, or `null` for other formats.
+  ///
+  /// The Seed-OSS, MiniMax M2, Apriel 1.5 and Xiaomi MiMo parses ignore a
+  /// forced-open thought, so those streams are gated only without one.
+  static int Function(String text, int from)? _toolCallOpeningFor(
+    LlamaChatTemplateResult templateResult,
+  ) {
+    if (_usesPegParser(templateResult) ||
+        templateResult.format >= ChatFormat.values.length) {
+      return null;
+    }
+    final forcedOpen = templateResult.thinkingForcedOpen;
+    return switch (ChatFormat.values[templateResult.format]) {
+      ChatFormat.hermes => HermesHandler.toolCallOpening,
+      ChatFormat.mistralNemo => MistralHandler.toolCallOpening,
+      ChatFormat.magistral => MagistralHandler.toolCallOpening,
+      ChatFormat.deepseekR1 => DeepseekR1Handler.toolCallOpening,
+      ChatFormat.deepseekV3 => DeepseekV3Handler.toolCallOpening,
+      ChatFormat.commandR7B ||
+      ChatFormat.cohere2Moe => CommandR7BHandler.toolCallOpening,
+      ChatFormat.granite => GraniteHandler.toolCallOpening,
+      ChatFormat.nemotronV2 => NemotronV2Handler.toolCallOpening,
+      ChatFormat.apertus => ApertusHandler.toolCallOpening,
+      ChatFormat.hunyuanV3 => HunyuanV3Handler.toolCallOpening,
+      ChatFormat.exaoneMoe => ExaoneMoeHandler.toolCallOpening,
+      ChatFormat.qwen3CoderXml => XmlToolCallFormat.qwen3Coder.toolCallOpening,
+      ChatFormat.minicpm5 => XmlToolCallFormat.minicpm5.toolCallOpening,
+      ChatFormat.seedOss when !forcedOpen =>
+        XmlToolCallFormat.seedOss.toolCallOpening,
+      ChatFormat.minimaxM2 when !forcedOpen =>
+        XmlToolCallFormat.minimaxM2.toolCallOpening,
+      ChatFormat.apriel15 when !forcedOpen =>
+        XmlToolCallFormat.apriel15.toolCallOpening,
+      ChatFormat.xiaomiMimo when !forcedOpen =>
+        XmlToolCallFormat.xiaomiMimo.toolCallOpening,
+      _ => null,
+    };
+  }
+
+  /// Whether the parse uses [PegChatParser], whose partial parse holds back
+  /// a possible tool-call opening itself.
+  static bool _usesPegParser(LlamaChatTemplateResult templateResult) {
+    final format = templateResult.format;
+    return format < ChatFormat.values.length &&
+        pegParseFormat(ChatFormat.values[format], templateResult.parser) !=
+            null;
   }
 
   static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
@@ -958,13 +1028,17 @@ class ChatCompletionStreamParser {
   }
 }
 
-/// Releases raw Hermes content that the final parse keeps.
+/// Releases raw content that the final parse keeps.
 ///
-/// [HermesHandler.parse] drops tool-call envelopes from content and trims it.
-/// Text from a possible envelope opening on, and trailing whitespace, wait
-/// for more output. After a whole opening, nothing more is released, and the
-/// final parse supplies the rest of the content.
-class _HermesContentGate {
+/// The parse of a gated format drops tool-call envelopes from content and
+/// trims it. Text from a possible envelope opening on, found by the format's
+/// opening scanner, and trailing whitespace wait for more output. After a
+/// whole opening, nothing more is released, and the final parse supplies the
+/// rest of the content.
+class _ToolEnvelopeContentGate {
+  _ToolEnvelopeContentGate(this._opening);
+
+  final int Function(String text, int from) _opening;
   var _pending = '';
   var _scanFrom = 0;
   var _releasedAny = false;
@@ -972,7 +1046,7 @@ class _HermesContentGate {
   /// Adds [content] and returns the newly released text.
   String add(String content) {
     _pending += content;
-    _scanFrom = HermesHandler.toolCallOpening(_pending, _scanFrom);
+    _scanFrom = _opening(_pending, _scanFrom);
     var end = _scanFrom;
     while (end > 0 && _isTrimmed(_pending.codeUnitAt(end - 1))) {
       end--;
@@ -997,32 +1071,49 @@ class _HermesContentGate {
       String.fromCharCode(codeUnit).trim().isEmpty;
 }
 
-/// Releases raw Hermes reasoning that the final parse keeps.
+/// Releases raw reasoning that the final parse keeps.
 ///
-/// [HermesHandler.parse] replaces escaped `\n` and `\r`, trims each thought,
-/// and joins non-empty thoughts with a newline. Whitespace that may end a
-/// thought waits for more reasoning. The final parse keeps a forced-open
+/// The parse of a gated format replaces escaped `\n` and `\r`, trims each
+/// thought, and joins non-empty thoughts with a newline. Whitespace that may
+/// end a thought waits for more reasoning. The final parse keeps a forced-open
 /// thought that never ends untrimmed; the final reconciliation adds its
 /// trailing whitespace only when the thought has no leading whitespace.
-class _HermesReasoningGate {
-  _HermesReasoningGate({required bool forcedOpen})
-    : _inForcedThought = forcedOpen;
+///
+/// With a forced-thought opening scanner, a tool-call opening also ends a
+/// forced-open thought, as the Qwen3-Coder XML parse does when the output has
+/// no thinking tag. Text from a possible opening on waits: `</think>` releases
+/// it, and at the end of the stream the final parse supplies the rest.
+class _ReasoningGate {
+  _ReasoningGate({
+    required bool forcedOpen,
+    int Function(String text, int from)? forcedThoughtOpening,
+  }) : _inForcedThought = forcedOpen,
+       _forcedThoughtOpening = forcedThoughtOpening;
 
+  final int Function(String text, int from)? _forcedThoughtOpening;
   var _pending = '';
   var _started = false;
   var _separate = false;
+  var _heldAtOpening = false;
   bool _inForcedThought;
 
   /// Adds [reasoning] of the current thought and returns the released text.
   String add(String reasoning) {
     _pending += reasoning;
-    final hold = _pending.endsWith(r'\') ? 1 : 0;
-    final text = _unescape(_pending.substring(0, _pending.length - hold));
+    final opening = _inForcedThought ? _forcedThoughtOpening : null;
+    final openingAt = opening == null ? _pending.length : opening(_pending, 0);
+    _heldAtOpening = openingAt < _pending.length;
+    final head = _pending.substring(0, openingAt);
+    final hold = head.endsWith(r'\') ? 1 : 0;
+    final text = _unescape(head.substring(0, head.length - hold));
     var end = text.length;
     while (end > 0 && _isTrimmed(text.codeUnitAt(end - 1))) {
       end--;
     }
-    _pending = text.substring(end) + _pending.substring(_pending.length - hold);
+    _pending =
+        text.substring(end) +
+        head.substring(head.length - hold) +
+        _pending.substring(openingAt);
     return _release(text.substring(0, end));
   }
 
@@ -1033,7 +1124,16 @@ class _HermesReasoningGate {
     _separate = _separate || _started || _inForcedThought;
     _started = false;
     _inForcedThought = false;
+    _heldAtOpening = false;
     return released;
+  }
+
+  /// Adds the last [reasoning] of the stream and returns the released text.
+  ///
+  /// A forced-open thought held at a tool-call opening stays held.
+  String finish(String reasoning) {
+    final released = add(reasoning);
+    return _heldAtOpening ? released : released + end();
   }
 
   String _release(String text) {

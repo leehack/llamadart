@@ -5,6 +5,12 @@ import 'package:llamadart/src/core/template/handlers/exaone_moe_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ExaoneMoeHandler.toolCallOpening finds a whole or partial opening', () {
+    expect(ExaoneMoeHandler.toolCallOpening('Let me check. <tool_call...'), 14);
+    expect(ExaoneMoeHandler.toolCallOpening('Let me check. <tool'), 14);
+    expect(ExaoneMoeHandler.toolCallOpening('Use <tool> or <x>.'), 18);
+  });
+
   test('ExaoneMoeHandler exposes chat format', () {
     final handler = ExaoneMoeHandler();
     expect(handler.format, isA<ChatFormat>());
