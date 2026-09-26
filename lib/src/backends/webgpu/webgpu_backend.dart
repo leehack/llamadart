@@ -22,6 +22,7 @@ import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
 import 'webgpu_lora.dart';
+import 'webgpu_speculative.dart';
 
 @JS('Object.keys')
 external JSArray _objectKeys(JSObject obj);
@@ -32,6 +33,7 @@ typedef _WebGpuCompletionCapabilities = ({
   bool presencePenalty,
   bool minP,
   bool thinkingBudget,
+  Set<SpeculativeDecodingStrategy> speculativeDecoding,
 });
 
 /// Web backend backed by the llama.cpp bridge runtime.
@@ -68,6 +70,7 @@ class WebGpuLlamaBackend
     presencePenalty: false,
     minP: false,
     thinkingBudget: false,
+    speculativeDecoding: <SpeculativeDecodingStrategy>{},
   );
   static const int _maxThinkingBudgetTokens = 0x7fffffff;
   static final Uint8List _webGpuWarmupRgbBytes = Uint8List.fromList(const <int>[
@@ -98,6 +101,7 @@ class WebGpuLlamaBackend
   bool? _forceRemoteFetchBackendOverride;
   final WebGpuDecisionHeads _decisionHeads = WebGpuDecisionHeads();
   final WebGpuLoraAdapters _loraAdapters = WebGpuLoraAdapters();
+  final WebGpuDraftModel _draftModel = WebGpuDraftModel();
   _WebGpuCompletionCapabilities _completionCapabilities =
       _noCompletionCapabilities;
 
@@ -1004,6 +1008,12 @@ class WebGpuLlamaBackend
         presencePenalty: reported(capabilities.presencePenalty),
         minP: reported(capabilities.minP),
         thinkingBudget: reported(capabilities.thinkingBudget),
+        speculativeDecoding: webGpuSpeculativeStrategiesFrom(
+          capabilities.speculativeDecoding,
+          hasDraftModelApi:
+              _hasBridgeFunction(bridge, 'loadDraftModel') &&
+              _hasBridgeFunction(bridge, 'unloadDraftModel'),
+        ),
       );
     } catch (error) {
       _emitConsoleText(
@@ -1182,6 +1192,10 @@ class WebGpuLlamaBackend
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: escalation.remoteFetchChunkBytes,
             modelBytesHint: params.modelBytesHint,
+            loadMtp: params.loadMtp ? true : null,
+            speculativeRollbackTokenMax: params.speculativeRollbackTokenMax > 0
+                ? params.speculativeRollbackTokenMax
+                : null,
             progressCallback: setup.progressCallback,
           ),
         );
@@ -1718,9 +1732,11 @@ class WebGpuLlamaBackend
         'assets do not.',
       );
     }
-    if (params.isSpeculativeDecodingEnabled) {
-      throw UnsupportedError(
-        'WebGPU speculative decoding is not supported yet.',
+    final speculativeConfig = params.resolvedSpeculativeDecodingConfig;
+    if (speculativeConfig != null) {
+      requireWebGpuSpeculativeSupport(
+        speculativeConfig,
+        capabilities.speculativeDecoding,
       );
     }
     if (params.grammarLazy) {
@@ -1748,6 +1764,10 @@ class WebGpuLlamaBackend
             thinkingBudget,
             hasMediaParts: mediaParts != null,
           );
+    final speculative = resolveWebGpuSpeculativeRequest(
+      params,
+      hasMediaParts: mediaParts != null,
+    );
 
     final bridge = _requireBridge();
     final isCpuMultimodalRuntime =
@@ -1890,6 +1910,7 @@ class WebGpuLlamaBackend
       seed: params.seed ?? DateTime.now().millisecondsSinceEpoch,
       grammar: params.grammar,
       thinkingBudget: bridgeThinkingBudget,
+      speculativeDecoding: speculative?.options,
       mediaMaxImagePixels: mediaMaxImagePixels,
       mediaMaxImageEdge: mediaMaxImageEdge,
       onToken: onToken as JSFunction,
@@ -1910,6 +1931,20 @@ class WebGpuLlamaBackend
               bridge,
               isCpuMultimodalRuntime: isCpuMultimodalRuntime,
             );
+          }
+          final draftModelUrl = speculative?.draftModelUrl;
+          if (draftModelUrl != null) {
+            try {
+              await _draftModel.prepare(
+                bridge,
+                draftModelUrl,
+                speculative!.draftStrategy!,
+                signal: abortController.signal,
+              );
+            } on Object {
+              if (abortController.signal.aborted) return;
+              rethrow;
+            }
           }
           // The bridge rejects an already-aborted signal with an AbortError
           // (v0.1.36 ignored it on its worker path), so end the stream here
@@ -1937,7 +1972,12 @@ class WebGpuLlamaBackend
           }
         } catch (e, st) {
           if (!stoppedBySequence && !canceledByCaller && !controller.isClosed) {
-            controller.addError(e, st);
+            controller.addError(
+              speculative == null
+                  ? e
+                  : webGpuSpeculativeCompletionError(e, speculative.sourceUrls),
+              st,
+            );
           }
         } finally {
           if (identical(_abortController, abortController)) {
@@ -2227,6 +2267,10 @@ class WebGpuLlamaBackend
   /// Reports the options that the loaded bridge assets'
   /// `getCompletionCapabilities()` reported after the model load; none before
   /// a load or when the probe is missing or failed.
+  ///
+  /// Speculative strategies follow [webGpuSpeculativeStrategiesFrom]: a
+  /// draft-model strategy counts when the assets have `loadDraftModel()`,
+  /// since generation loads the draft.
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     final capabilities = _completionCapabilities;
@@ -2234,6 +2278,7 @@ class WebGpuLlamaBackend
       presencePenalty: capabilities.presencePenalty,
       minP: capabilities.minP,
       thinkingBudget: capabilities.thinkingBudget,
+      speculativeDecodingStrategies: capabilities.speculativeDecoding,
     );
   }
 

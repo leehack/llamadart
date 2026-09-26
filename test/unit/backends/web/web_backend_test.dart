@@ -14,6 +14,7 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
@@ -326,6 +327,10 @@ void main() {
       expect(webGpu.presencePenalty, isFalse);
       expect(webGpu.minP, isTrue);
       expect(webGpu.thinkingBudget, isTrue);
+      expect(
+        webGpu.speculativeDecodingStrategies,
+        <SpeculativeDecodingStrategy>{SpeculativeDecodingStrategy.ngramSimple},
+      );
 
       await backend.modelLoadFromUrl(
         'https://example.com/gemma-4-E2B-it-web.litertlm',
@@ -335,6 +340,7 @@ void main() {
       expect(liteRtLm.presencePenalty, isFalse);
       expect(liteRtLm.minP, isFalse);
       expect(liteRtLm.thinkingBudget, isFalse);
+      expect(liteRtLm.speculativeDecodingStrategies, isEmpty);
       await backend.dispose();
     },
   );
@@ -607,6 +613,9 @@ class _GenerationCapabilitiesBackend extends _NoStateBackend
       presencePenalty: false,
       minP: true,
       thinkingBudget: true,
+      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
+        SpeculativeDecodingStrategy.ngramSimple,
+      },
     );
   }
 }

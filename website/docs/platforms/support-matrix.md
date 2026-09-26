@@ -50,7 +50,7 @@ Android-only; web rejects it.
 | Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
 | Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
 | Min-P | Yes | With bridge assets whose `getCompletionCapabilities()` reports `minP` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
-| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | No | Runtime default or MTP | No |
+| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, and MTP uses the model's own layers; otherwise rejected | Runtime default or MTP | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
@@ -64,10 +64,10 @@ Android-only; web rejects it.
 `LlamaVideoContent` throws `LlamaUnsupportedException`. Web state paths point
 into the bridge's WASMFS virtual filesystem; to keep state across reloads,
 export and import it in app code. The pinned bridge assets report none of the
-WebGPU LoRA, thinking-budget, presence-penalty or Min-P capabilities; the
-bridge pull requests that add them are unreleased.
-`LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P
-and thinking-budget rows for the loaded model. Guides:
+WebGPU LoRA, thinking-budget, presence-penalty, Min-P or speculative decoding
+capabilities; the bridge pull requests that add them are unreleased.
+`LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P,
+thinking-budget and speculative decoding rows for the loaded model. Guides:
 [LoRA adapters](../guides/lora-adapters),
 [Tool calling](../guides/tool-calling#tool-choice-semantics),
 [Performance tuning](../guides/performance-tuning),

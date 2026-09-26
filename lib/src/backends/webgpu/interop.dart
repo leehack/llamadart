@@ -36,6 +36,16 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Reports which optional completion options the loaded core applies.
   external JSPromise<JSAny?>? getCompletionCapabilities();
 
+  /// Loads the draft GGUF at [url] for draft-model speculative decoding,
+  /// replacing any draft.
+  external JSPromise<JSAny?>? loadDraftModel(
+    String url, [
+    WebGpuDraftModelLoadOptions? options,
+  ]);
+
+  /// Frees the draft model.
+  external JSPromise<JSAny?>? unloadDraftModel();
+
   /// Loads multimodal projector from URL/path.
   external JSPromise<JSAny?>? loadMultimodalProjector(String url);
 
@@ -198,6 +208,8 @@ extension type WebGpuLoadModelOptions._(JSObject _) implements JSObject {
     @JS('remoteFetchThresholdBytes') int? remoteFetchThresholdBytes,
     @JS('remoteFetchChunkBytes') int? remoteFetchChunkBytes,
     @JS('modelBytesHint') int? modelBytesHint,
+    @JS('loadMtp') bool? loadMtp,
+    @JS('speculativeRollbackTokenMax') int? speculativeRollbackTokenMax,
     @JS('progressCallback') JSFunction? progressCallback,
   });
 }
@@ -232,6 +244,8 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
     int? seed,
     String? grammar,
     @JS('thinkingBudget') WebGpuThinkingBudgetOptions? thinkingBudget,
+    @JS('speculativeDecoding')
+    WebGpuSpeculativeDecodingOptions? speculativeDecoding,
     @JS('mediaMaxImagePixels') int? mediaMaxImagePixels,
     @JS('mediaMaxImageEdge') int? mediaMaxImageEdge,
     @JS('onToken') JSFunction? onToken,
@@ -273,6 +287,54 @@ extension type WebGpuCompletionCapabilities._(JSObject _) implements JSObject {
   /// Whether the loaded core applies `thinkingBudget`.
   @JS('thinkingBudget')
   external JSAny? get thinkingBudget;
+
+  /// Whether the loaded models can run each speculative strategy, by its
+  /// llama.cpp name.
+  @JS('speculativeDecoding')
+  external JSAny? get speculativeDecoding;
+}
+
+/// Speculative decoding in [WebGpuCompletionOptions]; a null field keeps the
+/// llama.cpp default.
+@JS()
+@anonymous
+extension type WebGpuSpeculativeDecodingOptions._(JSObject _)
+    implements JSObject {
+  /// Creates speculative decoding options.
+  external factory WebGpuSpeculativeDecodingOptions({
+    required JSArray<JSString> strategies,
+    @JS('draftTokenMax') int? draftTokenMax,
+    @JS('draftTokenMin') int? draftTokenMin,
+    @JS('minProbability') double? minProbability,
+    @JS('draftSplitProbability') double? draftSplitProbability,
+    @JS('ngramSizeN') int? ngramSizeN,
+    @JS('ngramSizeM') int? ngramSizeM,
+    @JS('ngramMinHits') int? ngramMinHits,
+    @JS('ngramMatch') int? ngramMatch,
+    @JS('ngramTokenMin') int? ngramTokenMin,
+    @JS('ngramTokenMax') int? ngramTokenMax,
+    @JS('ngramCacheStatic') String? ngramCacheStatic,
+    @JS('ngramCacheDynamic') String? ngramCacheDynamic,
+  });
+}
+
+/// Draft model load options.
+@JS()
+@anonymous
+extension type WebGpuDraftModelLoadOptions._(JSObject _) implements JSObject {
+  /// Creates draft model load options.
+  external factory WebGpuDraftModelLoadOptions({
+    @JS('useCache') bool? useCache,
+    JSAny? signal,
+  });
+}
+
+/// A draft model loaded by `loadDraftModel`.
+@JS()
+@anonymous
+extension type WebGpuDraftModelInfo._(JSObject _) implements JSObject {
+  /// The draft GGUF's `general.architecture`.
+  external JSAny? get architecture;
 }
 
 /// Embedding options.

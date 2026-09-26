@@ -474,11 +474,23 @@ class BackendGenerationCapabilities {
   /// parts or speculative decoding.
   final bool thinkingBudget;
 
+  /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
+  ///
+  /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
+  /// [GenerationParams.speculativeDecoding] flag. Speculative decoding with a
+  /// strategy outside this set is rejected. A runtime can still reject a
+  /// request that uses only these strategies, such as one that combines
+  /// strategies, sets a tuning field or draft model the runtime does not take,
+  /// names a draft model that does not fit the strategy, or has media parts, a
+  /// grammar or a thinking budget.
+  final Set<SpeculativeDecodingStrategy> speculativeDecodingStrategies;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
     required this.minP,
     required this.thinkingBudget,
+    this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
   });
 }
 

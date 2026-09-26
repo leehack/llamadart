@@ -6,6 +6,10 @@
   adapters (`setLora`, `removeLora`, `clearLoras`), on WebGPU with bridge
   assets whose capability probes report them; other assets still reject them
   ([#722](https://github.com/leehack/llamadart/issues/722)).
+- Run speculative decoding on WebGPU with bridge assets whose capability
+  probe reports the strategy, and report each runtime's strategies in
+  `backendGenerationCapabilities.speculativeDecodingStrategies`; other assets
+  still reject it ([#722](https://github.com/leehack/llamadart/issues/722)).
 - Reject a non-zero `GenerationParams.minP` on WebGPU when the bridge lacks
   Min-P, with `LlamaUnsupportedException` instead of ignoring it, and ignore a
   stop sequence equal to a `preservedTokens` entry there, as native llama.cpp

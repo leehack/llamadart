@@ -1139,6 +1139,10 @@ void main() {
     expect(capabilities.presencePenalty, isTrue);
     expect(capabilities.minP, isTrue);
     expect(capabilities.thinkingBudget, isTrue);
+    expect(
+      capabilities.speculativeDecodingStrategies,
+      SpeculativeDecodingStrategy.values.toSet(),
+    );
     expect(backend.isReady, isFalse);
     await backend.dispose();
   });

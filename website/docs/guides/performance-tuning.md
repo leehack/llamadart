@@ -136,9 +136,17 @@ in production.
   ([Backend benchmarks](./backend-benchmarks#speculative-decoding-check)).
 - Native llama.cpp: pass `speculativeDecodingConfig`. The legacy
   `speculativeDecoding: true` flag without a config runs `ngram-mod`.
-- WebGPU and LiteRT-LM web reject speculative decoding.
-- On llama.cpp, speculative decoding is text-only and cannot be combined with
-  `thinkingBudget` or `grammar`.
+- WebGPU: the same configs, with bridge assets whose
+  `getCompletionCapabilities()` reports the strategy; the pinned assets report
+  none. `draftModelPath` and the n-gram cache paths are URLs, and `mtp` uses
+  only the model's own MTP layers. See
+  [WebGPU bridge](../platforms/webgpu-bridge#what-differs-from-native).
+- LiteRT-LM web rejects speculative decoding.
+- On llama.cpp, native or WebGPU, speculative decoding is text-only and cannot
+  be combined with `thinkingBudget` or `grammar`.
+
+`engine.backendGenerationCapabilities` reports the strategies the loaded
+runtime runs in `speculativeDecodingStrategies`.
 
 `SpeculativeDecodingConfig` constructors mirror upstream llama.cpp
 `--spec-type` values:
