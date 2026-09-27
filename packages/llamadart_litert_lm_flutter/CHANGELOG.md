@@ -1,6 +1,6 @@
 ## 0.0.12
 
-* Update the install example for `llamadart` 0.8.25; the LiteRT-LM runtime
+* Update the install example for `llamadart` 0.9.0; the LiteRT-LM runtime
   remains `leehack/litert-lm-native@v0.17.0-6`.
 
 ## 0.0.11

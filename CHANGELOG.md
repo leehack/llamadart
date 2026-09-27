@@ -1,4 +1,4 @@
-## 0.8.25
+## 0.9.0
 
 - Document generic JSON tool calling as an intentional fallback, including
   its prompt and model-reliability limits; runtime behavior is unchanged
