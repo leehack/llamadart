@@ -108,6 +108,36 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
+### When a requested backend is not bundled
+
+`ModelParams.preferredBackend` selects only a module the app has. With the
+default `cpu` and `vulkan`, `GpuBackend.cuda` has no module to load, so on
+Linux and Windows the model loads on CPU with 0 GPU layers rather than on
+another GPU backend. llamadart logs a `LlamaLogLevel.warn` record through the
+Dart logger that names the backend and this user-define, and
+`getBackendName()` reports `CPU`. To use CUDA, add it for the platform:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_backends:
+        platforms:
+          linux-x64: [cpu, vulkan, cuda]
+          windows-x64: [cpu, vulkan, cuda]
+```
+
+- On Windows, `dart run` and `dart test` load only the modules the app
+  bundles, as does a Linux app built with `dart build cli` and run from
+  another directory.
+- On Linux, a process whose working directory is the package root, as with
+  `dart run` and `dart test`, copies each backend module missing from
+  `.dart_tool/lib` out of the hook's download cache,
+  `.dart_tool/llamadart/native_bundles/<tag>/linux-<arch>/extracted`, when the
+  backend starts. The cache holds every module in the release, `cuda` and
+  `hip` included on x64, so there CUDA loads without the user-define when its
+  [system libraries](./linux-prerequisites) are installed.
+
 ### Android arm64 CPU variants
 
 The `android-arm64` map form also takes `cpu_profile` and `cpu_variants`:

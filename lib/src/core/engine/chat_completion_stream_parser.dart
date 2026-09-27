@@ -98,30 +98,35 @@ class ChatCompletionStreamParser {
     var didInitialPartialParse = false;
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
-    final toolCallOpening = parseToolCallsEnabled
-        ? _toolCallOpeningFor(templateResult)
-        : null;
-    final contentGate = toolCallOpening != null
-        ? _ToolEnvelopeContentGate(toolCallOpening)
-        : null;
+    final gatedOpening = _toolCallOpeningFor(templateResult);
+    final toolCallOpening = parseToolCallsEnabled ? gatedOpening : null;
     final isQwen3CoderXml =
         templateResult.format == ChatFormat.qwen3CoderXml.index;
-    final reasoningGate = toolCallOpening != null
-        ? _ReasoningGate(
-            forcedOpen: templateResult.thinkingForcedOpen,
-            forcedThoughtOpening: isQwen3CoderXml ? toolCallOpening : null,
-            unescapes: !isQwen3CoderXml,
-          )
-        : null;
-    final thoughtTags = toolCallOpening != null ? _ThoughtTagState() : null;
+    final pegParsedWithoutTools =
+        !parseToolCallsEnabled && _usesPegParser(templateResult);
+    final contentGate = _ContentGate(
+      toolCallOpening ?? _noOpening,
+      trimsLeading: !pegParsedWithoutTools,
+    );
+    final reasoningGate = _ReasoningGate(
+      forcedOpen: templateResult.thinkingForcedOpen,
+      forcedThoughtOpening: isQwen3CoderXml ? toolCallOpening : null,
+      unescapes: toolCallOpening != null && !isQwen3CoderXml,
+      trimsLeading: !pegParsedWithoutTools,
+    );
+    final thoughtTags = gatedOpening != null ? _ThoughtTagState() : null;
     var atForcedThoughtStart =
         thoughtTags != null && templateResult.thinkingForcedOpen;
+    final rawWithoutTools =
+        !parseToolCallsEnabled &&
+        templateResult.format != ChatFormat.gemma4.index;
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse. Gated
     // formats stream raw: Hermes parses such an envelope as reasoning, and
-    // the Qwen3-Coder XML reasoning gate holds it back.
-    var streamingMode = contentGate != null
+    // the Qwen3-Coder XML reasoning gate holds it back. Without tools, output
+    // other than Gemma 4 streams raw.
+    var streamingMode = rawWithoutTools || toolCallOpening != null
         ? _ToolStreamingMode.raw
         : templateResult.thinkingForcedOpen ||
               _usesPegParser(templateResult) ||
@@ -136,247 +141,202 @@ class ChatCompletionStreamParser {
     final endTag = thinkingTags.endTag;
     var isThinking = templateResult.thinkingForcedOpen;
     var pendingBuffer = '';
-    final useStructuredStreaming =
-        parseToolCallsEnabled ||
-        templateResult.format == ChatFormat.gemma4.index;
 
-    if (useStructuredStreaming) {
-      await for (final token in tokenStream) {
-        buffer.write(token);
+    await for (final token in tokenStream) {
+      buffer.write(token);
 
-        if (streamingMode == _ToolStreamingMode.undecided) {
-          undecidedPrefix += token;
-          final decisionPrefix = _stripLeadingThinkingForToolDecision(
-            undecidedPrefix,
-            startTag: startTag,
-            endTag: endTag,
-          );
-          if (decisionPrefix == null) {
-            continue;
-          }
-          final mode = _decideToolStreamingMode(decisionPrefix);
-          if (mode == _ToolStreamingMode.undecided) {
-            continue;
-          }
-
-          if (mode == _ToolStreamingMode.raw) {
-            streamingMode = _ToolStreamingMode.raw;
-          } else {
-            streamingMode = _ToolStreamingMode.parsed;
-            undecidedPrefix = '';
-          }
+      if (streamingMode == _ToolStreamingMode.undecided) {
+        undecidedPrefix += token;
+        final decisionPrefix = _stripLeadingThinkingForToolDecision(
+          undecidedPrefix,
+          startTag: startTag,
+          endTag: endTag,
+        );
+        if (decisionPrefix == null) {
+          continue;
         }
-
-        if (streamingMode == _ToolStreamingMode.raw) {
-          if (undecidedPrefix.isNotEmpty) {
-            pendingBuffer += undecidedPrefix;
-            undecidedPrefix = '';
-          } else if (token.isNotEmpty) {
-            pendingBuffer += token;
-          }
-
-          // The parse drops a start tag the model repeats at the start of a
-          // forced-open thought and treats the thought as opened by that tag.
-          if (atForcedThoughtStart) {
-            final rest = pendingBuffer.trimLeft();
-            if (rest.length < startTag.length && startTag.startsWith(rest)) {
-              continue;
-            }
-            atForcedThoughtStart = false;
-            if (rest.startsWith(startTag)) {
-              pendingBuffer = rest.substring(startTag.length);
-              thoughtTags!.sawStartTag = true;
-              reasoningGate!.leaveForcedThought();
-            }
-          }
-
-          final split = _splitThinkingBuffer(
-            pendingBuffer: pendingBuffer,
-            isThinking: isThinking,
-            startTag: startTag,
-            endTag: endTag,
-            tagState: thoughtTags,
-          );
-          pendingBuffer = split.pendingBuffer;
-          isThinking = split.isThinking;
-          for (final emission in split.emissions) {
-            var text = emission.text;
-            if (emission.isThinking) {
-              if (reasoningGate != null) {
-                text = reasoningGate.add(text);
-                if (emission.endsThinking) {
-                  text += reasoningGate.end();
-                }
-              }
-              if (text.isEmpty) {
-                continue;
-              }
-              streamedReasoning += text;
-            } else {
-              text = contentGate?.add(text) ?? text;
-              if (text.isEmpty) {
-                continue;
-              }
-              streamedContent += text;
-            }
-            if (emission.isThinking && !enableThinking) {
-              continue;
-            }
-            yield _chunk(
-              completionId: completionId,
-              modelName: modelName,
-              delta: emission.isThinking
-                  ? LlamaCompletionChunkDelta(thinking: text)
-                  : LlamaCompletionChunkDelta(content: text),
-            );
-          }
+        final mode = _decideToolStreamingMode(decisionPrefix);
+        if (mode == _ToolStreamingMode.undecided) {
           continue;
         }
 
-        tokensSincePartialParse++;
-        final tokenHasSignal = _mayNeedStructuredPartialParse(token);
-        if (tokenHasSignal) {
-          sawStructuredOutputSignal = true;
-        }
-        final elapsedMs = partialParseStopwatch.elapsedMilliseconds;
-        final intervalElapsed =
-            elapsedMs - lastPartialParseAtMs >= partialParseMinIntervalMs;
-        final signalParseReady =
-            tokenHasSignal &&
-            intervalElapsed &&
-            tokensSincePartialParse >= signalDrivenPartialParseMinTokens;
-        final periodicParseReady =
-            (sawStructuredOutputSignal &&
-                tokensSincePartialParse >= structuredPartialParseInterval) ||
-            (!sawStructuredOutputSignal &&
-                tokensSincePartialParse >= plainPartialParseProbeInterval);
-        final shouldRunPartialParse =
-            !didInitialPartialParse || signalParseReady || periodicParseReady;
-        if (!shouldRunPartialParse) {
-          continue;
-        }
-        didInitialPartialParse = true;
-        tokensSincePartialParse = 0;
-        lastPartialParseAtMs = elapsedMs;
-
-        try {
-          final partialParsed = ChatTemplateEngine.parse(
-            templateResult.format,
-            buffer.toString(),
-            isPartial: true,
-            parseToolCalls: parseToolCallsEnabled,
-            thinkingForcedOpen: templateResult.thinkingForcedOpen,
-            parser: templateResult.parser,
-            tools: tools,
-          );
-
-          final partialReasoning = partialParsed.reasoningContent ?? '';
-          if (partialReasoning.length > streamedReasoning.length) {
-            final delta = partialReasoning.substring(streamedReasoning.length);
-            if (delta.isNotEmpty && enableThinking) {
-              yield _chunk(
-                completionId: completionId,
-                modelName: modelName,
-                delta: LlamaCompletionChunkDelta(thinking: delta),
-              );
-            }
-          }
-
-          final suppressToolEnvelopeContent =
-              _isToolCallEnvelopeBuffer(
-                buffer.toString(),
-                startTag: startTag,
-                endTag: endTag,
-                thinkingForcedOpen: templateResult.thinkingForcedOpen,
-              ) &&
-              !partialParsed.hasToolCalls;
-          if (!suppressToolEnvelopeContent &&
-              partialParsed.content.length > streamedContent.length) {
-            final delta = partialParsed.content.substring(
-              streamedContent.length,
-            );
-            if (delta.isNotEmpty) {
-              yield _chunk(
-                completionId: completionId,
-                modelName: modelName,
-                delta: LlamaCompletionChunkDelta(content: delta),
-              );
-            }
-          }
-
-          if (partialReasoning.length >= streamedReasoning.length) {
-            streamedReasoning = partialReasoning;
-          }
-          if (!suppressToolEnvelopeContent &&
-              partialParsed.content.length >= streamedContent.length) {
-            streamedContent = partialParsed.content;
-          }
-        } catch (_) {
-          // Partial parser failures are expected during incremental generation.
-          // Keep buffering and let the final parse determine structured output.
-        }
-      }
-
-      // Whitespace-only output never provides enough signal to leave the
-      // undecided state. Preserve it verbatim at EOF, while continuing to
-      // withhold non-whitespace partial control-marker prefixes.
-      if (streamingMode == _ToolStreamingMode.undecided &&
-          undecidedPrefix.trim().isEmpty &&
-          undecidedPrefix.isNotEmpty) {
-        streamingMode = _ToolStreamingMode.raw;
-        pendingBuffer += undecidedPrefix;
-        undecidedPrefix = '';
-      }
-
-      if (contentGate != null && reasoningGate != null) {
-        pendingBuffer = isThinking
-            ? reasoningGate.finish(pendingBuffer)
-            : contentGate.add(pendingBuffer);
-      }
-      if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
-        if (isThinking) {
-          streamedReasoning += pendingBuffer;
+        if (mode == _ToolStreamingMode.raw) {
+          streamingMode = _ToolStreamingMode.raw;
         } else {
-          streamedContent += pendingBuffer;
-        }
-        if (!isThinking || enableThinking) {
-          yield _chunk(
-            completionId: completionId,
-            modelName: modelName,
-            delta: isThinking
-                ? LlamaCompletionChunkDelta(thinking: pendingBuffer)
-                : LlamaCompletionChunkDelta(content: pendingBuffer),
-          );
+          streamingMode = _ToolStreamingMode.parsed;
+          undecidedPrefix = '';
         }
       }
-    } else {
-      await for (final token in tokenStream) {
-        buffer.write(token);
-        pendingBuffer += token;
+
+      if (streamingMode == _ToolStreamingMode.raw) {
+        if (undecidedPrefix.isNotEmpty) {
+          pendingBuffer += undecidedPrefix;
+          undecidedPrefix = '';
+        } else if (token.isNotEmpty) {
+          pendingBuffer += token;
+        }
+
+        // The parse drops a start tag the model repeats at the start of a
+        // forced-open thought and treats the thought as opened by that tag.
+        if (atForcedThoughtStart) {
+          final rest = pendingBuffer.trimLeft();
+          if (rest.length < startTag.length && startTag.startsWith(rest)) {
+            continue;
+          }
+          atForcedThoughtStart = false;
+          if (rest.startsWith(startTag)) {
+            pendingBuffer = rest.substring(startTag.length);
+            thoughtTags!.sawStartTag = true;
+            reasoningGate.leaveForcedThought();
+          }
+        }
+
         final split = _splitThinkingBuffer(
           pendingBuffer: pendingBuffer,
           isThinking: isThinking,
           startTag: startTag,
           endTag: endTag,
+          tagState: thoughtTags,
         );
         pendingBuffer = split.pendingBuffer;
         isThinking = split.isThinking;
         for (final emission in split.emissions) {
-          if (emission.text.isEmpty ||
-              (emission.isThinking && !enableThinking)) {
+          var text = emission.text;
+          if (emission.isThinking) {
+            text = reasoningGate.add(text);
+            if (emission.endsThinking) {
+              text += reasoningGate.end();
+            }
+            if (text.isEmpty) {
+              continue;
+            }
+            streamedReasoning += text;
+          } else {
+            text = contentGate.add(text);
+            if (text.isEmpty) {
+              continue;
+            }
+            streamedContent += text;
+          }
+          if (emission.isThinking && !enableThinking) {
             continue;
           }
           yield _chunk(
             completionId: completionId,
             modelName: modelName,
             delta: emission.isThinking
-                ? LlamaCompletionChunkDelta(thinking: emission.text)
-                : LlamaCompletionChunkDelta(content: emission.text),
+                ? LlamaCompletionChunkDelta(thinking: text)
+                : LlamaCompletionChunkDelta(content: text),
           );
         }
+        continue;
       }
 
-      if (pendingBuffer.isNotEmpty && (!isThinking || enableThinking)) {
+      tokensSincePartialParse++;
+      final tokenHasSignal = _mayNeedStructuredPartialParse(token);
+      if (tokenHasSignal) {
+        sawStructuredOutputSignal = true;
+      }
+      final elapsedMs = partialParseStopwatch.elapsedMilliseconds;
+      final intervalElapsed =
+          elapsedMs - lastPartialParseAtMs >= partialParseMinIntervalMs;
+      final signalParseReady =
+          tokenHasSignal &&
+          intervalElapsed &&
+          tokensSincePartialParse >= signalDrivenPartialParseMinTokens;
+      final periodicParseReady =
+          (sawStructuredOutputSignal &&
+              tokensSincePartialParse >= structuredPartialParseInterval) ||
+          (!sawStructuredOutputSignal &&
+              tokensSincePartialParse >= plainPartialParseProbeInterval);
+      final shouldRunPartialParse =
+          !didInitialPartialParse || signalParseReady || periodicParseReady;
+      if (!shouldRunPartialParse) {
+        continue;
+      }
+      didInitialPartialParse = true;
+      tokensSincePartialParse = 0;
+      lastPartialParseAtMs = elapsedMs;
+
+      try {
+        final partialParsed = ChatTemplateEngine.parse(
+          templateResult.format,
+          buffer.toString(),
+          isPartial: true,
+          parseToolCalls: parseToolCallsEnabled,
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
+          parser: templateResult.parser,
+          tools: tools,
+        );
+
+        final partialReasoning = (partialParsed.reasoningContent ?? '')
+            .trimRight();
+        final partialContent = partialParsed.content.trimRight();
+        if (partialReasoning.length > streamedReasoning.length) {
+          final delta = partialReasoning.substring(streamedReasoning.length);
+          if (delta.isNotEmpty && enableThinking) {
+            yield _chunk(
+              completionId: completionId,
+              modelName: modelName,
+              delta: LlamaCompletionChunkDelta(thinking: delta),
+            );
+          }
+        }
+
+        final suppressToolEnvelopeContent =
+            _isToolCallEnvelopeBuffer(
+              buffer.toString(),
+              startTag: startTag,
+              endTag: endTag,
+              thinkingForcedOpen: templateResult.thinkingForcedOpen,
+            ) &&
+            !partialParsed.hasToolCalls;
+        if (!suppressToolEnvelopeContent &&
+            partialContent.length > streamedContent.length) {
+          final delta = partialContent.substring(streamedContent.length);
+          if (delta.isNotEmpty) {
+            yield _chunk(
+              completionId: completionId,
+              modelName: modelName,
+              delta: LlamaCompletionChunkDelta(content: delta),
+            );
+          }
+        }
+
+        if (partialReasoning.length >= streamedReasoning.length) {
+          streamedReasoning = partialReasoning;
+        }
+        if (!suppressToolEnvelopeContent &&
+            partialContent.length >= streamedContent.length) {
+          streamedContent = partialContent;
+        }
+      } catch (_) {
+        // Partial parser failures are expected during incremental generation.
+        // Keep buffering and let the final parse determine structured output.
+      }
+    }
+
+    // Whitespace-only output never provides enough signal to leave the
+    // undecided state. Preserve it verbatim at EOF, while continuing to
+    // withhold non-whitespace partial control-marker prefixes.
+    if (streamingMode == _ToolStreamingMode.undecided &&
+        undecidedPrefix.trim().isEmpty &&
+        undecidedPrefix.isNotEmpty) {
+      streamingMode = _ToolStreamingMode.raw;
+      pendingBuffer += undecidedPrefix;
+      undecidedPrefix = '';
+    }
+
+    pendingBuffer = isThinking
+        ? reasoningGate.finish(pendingBuffer)
+        : contentGate.add(pendingBuffer);
+    if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
+      if (isThinking) {
+        streamedReasoning += pendingBuffer;
+      } else {
+        streamedContent += pendingBuffer;
+      }
+      if (!isThinking || enableThinking) {
         yield _chunk(
           completionId: completionId,
           modelName: modelName,
@@ -397,46 +357,42 @@ class ChatCompletionStreamParser {
       tools: tools,
     );
 
-    if (useStructuredStreaming) {
-      final finalReasoning = parsed.reasoningContent ?? '';
-      final reasoningDelta = _computeFinalReconciliationDelta(
-        streamedValue: streamedReasoning,
-        finalValue: finalReasoning,
-        channel: 'thinking',
+    final finalReasoning = parsed.reasoningContent ?? '';
+    final reasoningDelta = _computeFinalReconciliationDelta(
+      streamedValue: streamedReasoning,
+      finalValue: finalReasoning,
+      channel: 'thinking',
+    );
+    if (reasoningDelta != null && reasoningDelta.isNotEmpty && enableThinking) {
+      yield _chunk(
+        completionId: completionId,
+        modelName: modelName,
+        delta: LlamaCompletionChunkDelta(thinking: reasoningDelta),
       );
-      if (reasoningDelta != null &&
-          reasoningDelta.isNotEmpty &&
-          enableThinking) {
-        yield _chunk(
-          completionId: completionId,
-          modelName: modelName,
-          delta: LlamaCompletionChunkDelta(thinking: reasoningDelta),
-        );
-      }
+    }
 
-      final suppressFinalToolEnvelopeContent =
-          contentGate == null &&
-          parsed.hasToolCalls &&
-          _isToolCallEnvelopeBuffer(
-            fullOutput,
-            startTag: startTag,
-            endTag: endTag,
-            thinkingForcedOpen: templateResult.thinkingForcedOpen,
-          );
-      final contentDelta = suppressFinalToolEnvelopeContent
-          ? null
-          : _computeFinalReconciliationDelta(
-              streamedValue: streamedContent,
-              finalValue: parsed.content,
-              channel: 'content',
-            );
-      if (contentDelta != null && contentDelta.isNotEmpty) {
-        yield _chunk(
-          completionId: completionId,
-          modelName: modelName,
-          delta: LlamaCompletionChunkDelta(content: contentDelta),
+    final suppressFinalToolEnvelopeContent =
+        toolCallOpening == null &&
+        parsed.hasToolCalls &&
+        _isToolCallEnvelopeBuffer(
+          fullOutput,
+          startTag: startTag,
+          endTag: endTag,
+          thinkingForcedOpen: templateResult.thinkingForcedOpen,
         );
-      }
+    final contentDelta = suppressFinalToolEnvelopeContent
+        ? null
+        : _computeFinalReconciliationDelta(
+            streamedValue: streamedContent,
+            finalValue: parsed.content,
+            channel: 'content',
+          );
+    if (contentDelta != null && contentDelta.isNotEmpty) {
+      yield _chunk(
+        completionId: completionId,
+        modelName: modelName,
+        delta: LlamaCompletionChunkDelta(content: contentDelta),
+      );
     }
 
     LlamaLogger.instance.debug(
@@ -577,6 +533,8 @@ class ChatCompletionStreamParser {
       formatIndex == ChatFormat.glm45.index ||
       formatIndex == ChatFormat.laguna.index ||
       formatIndex == ChatFormat.gemma4.index;
+
+  static int _noOpening(String text, int from) => text.length;
 
   static int? _firstNonWhitespaceIndex(String value) {
     for (var i = 0; i < value.length; i++) {
@@ -1072,15 +1030,17 @@ class ChatCompletionStreamParser {
 
 /// Releases raw content that the final parse keeps.
 ///
-/// The parse of a gated format drops tool-call envelopes from content and
-/// trims it. Text from a possible envelope opening on, found by the format's
-/// opening scanner, and trailing whitespace wait for more output. After a
-/// whole opening, nothing more is released, and the final parse supplies the
-/// rest of the content.
-class _ToolEnvelopeContentGate {
-  _ToolEnvelopeContentGate(this._opening);
+/// The parse trims content, and the parse of a tool-call format drops
+/// tool-call envelopes from it. Text from a possible envelope opening on,
+/// found by the [_opening] scanner, and trailing whitespace wait for more
+/// output. After a whole opening, nothing more is released, and the final
+/// parse supplies the rest of the content. Leading whitespace is dropped
+/// when [trimsLeading] is true and otherwise waits for other text.
+class _ContentGate {
+  _ContentGate(this._opening, {required this.trimsLeading});
 
   final int Function(String text, int from) _opening;
+  final bool trimsLeading;
   var _pending = '';
   var _scanFrom = 0;
   var _releasedAny = false;
@@ -1094,7 +1054,7 @@ class _ToolEnvelopeContentGate {
       end--;
     }
     var start = 0;
-    if (!_releasedAny) {
+    if (trimsLeading && !_releasedAny) {
       while (start < end && _isTrimmed(_pending.codeUnitAt(start))) {
         start++;
       }
@@ -1115,12 +1075,12 @@ class _ToolEnvelopeContentGate {
 
 /// Releases raw reasoning that the final parse keeps.
 ///
-/// The parse of a gated format replaces escaped `\n` and `\r` unless
-/// [unescapes] is false, trims each thought, and joins non-empty thoughts with
-/// a newline. Whitespace that may end a thought waits for more reasoning. The
-/// final parse keeps a forced-open thought that never ends untrimmed; the
-/// final reconciliation adds its trailing whitespace only when the thought has
-/// no leading whitespace.
+/// The parse replaces escaped `\n` and `\r` unless [unescapes] is false,
+/// trims the end of each thought, trims its start unless [trimsLeading] is
+/// false, and joins non-empty thoughts with a newline. Whitespace that may end
+/// a thought waits for more reasoning. The final parse keeps a forced-open
+/// thought that never ends untrimmed; the final reconciliation adds its
+/// trailing whitespace only when the thought has no leading whitespace.
 ///
 /// With a forced-thought opening scanner, a tool-call opening also ends a
 /// forced-open thought, as the Qwen3-Coder XML parse does when the output has
@@ -1130,11 +1090,13 @@ class _ReasoningGate {
   _ReasoningGate({
     required bool forcedOpen,
     required this.unescapes,
+    required this.trimsLeading,
     int Function(String text, int from)? forcedThoughtOpening,
   }) : _inForcedThought = forcedOpen,
        _forcedThoughtOpening = forcedThoughtOpening;
 
   final bool unescapes;
+  final bool trimsLeading;
   final int Function(String text, int from)? _forcedThoughtOpening;
   var _pending = '';
   var _started = false;
@@ -1188,7 +1150,9 @@ class _ReasoningGate {
 
   String _release(String text) {
     if (!_started) {
-      text = text.trimLeft();
+      if (trimsLeading) {
+        text = text.trimLeft();
+      }
       if (text.isEmpty) {
         return '';
       }

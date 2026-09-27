@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart_validation/src/process_memory.dart';
+import 'package:llamadart_validation/src/process_memory_linux.dart';
 import 'package:llamadart_validation/src/speech_runner.dart';
 
 /// Prints resident set and footprint samples as JSON, in a process of its own
@@ -14,7 +15,8 @@ import 'package:llamadart_validation/src/speech_runner.dart';
 /// the last round runs away from VM start-up. `mapped <file> <access>` maps
 /// the file as [_mapped] describes. `leak <kind> <bytes>` runs
 /// [runSpeechValidation] with an adapter whose every `load` leaks that many
-/// dirtied bytes, and prints the memory bounds.
+/// dirtied bytes, and prints the memory bounds. `freed <bytes>` runs
+/// [_freed].
 Future<void> main(List<String> args) async {
   Map<String, int> sample() => {
     'rss': ProcessInfo.currentRss,
@@ -24,9 +26,10 @@ Future<void> main(List<String> args) async {
     ['dirty', final kind, final size] => _dirty(kind, int.parse(size), sample),
     ['mapped', final path, final access] => _mapped(path, access, sample),
     ['leak', final kind, final size] => await _leak(kind, int.parse(size)),
+    ['freed', final size] => _freed(int.parse(size)),
     _ => throw ArgumentError(
       'Usage: dirty <kind> <bytes> | mapped <file> <read|write|copy> | '
-      'leak <kind> <bytes>',
+      'leak <kind> <bytes> | freed <bytes>',
     ),
   };
   stdout.writeln(jsonEncode(samples));
@@ -359,6 +362,26 @@ Map<String, Object> _mapped(
   return {'unmapped': unmapped, 'rounds': rounds, 'sum': sum};
 }
 
+/// Linux only. Samples the footprint, dirties [size] bytes of 64 KiB `malloc`
+/// blocks and frees all but the last, so the allocator keeps the rest, then
+/// reads `/proc/self/status` untrimmed before sampling the footprint again.
+Map<String, int> _freed(int size) {
+  const block = 64 * 1024;
+  final before = memoryFootprintBytes()!;
+  final blocks = [
+    for (var i = 0; i < size ~/ block; i++) allocate('private', block),
+  ];
+  blocks.take(blocks.length - 1).forEach(malloc.free);
+  final untrimmed = linuxFootprintFrom(
+    File('/proc/self/status').readAsStringSync(),
+  )!;
+  return {
+    'before': before,
+    'untrimmed': untrimmed,
+    'footprint': memoryFootprintBytes()!,
+  };
+}
+
 Future<Map<String, Object?>> _leak(String kind, int size) async {
   final result = await runSpeechValidation(
     _LeakingSpeech(kind, size),
@@ -376,6 +399,7 @@ Future<Map<String, Object?>> _leak(String kind, int size) async {
     'peak_footprint_growth': peak['peak_footprint_growth'],
     'leak_slope_bound': leak['status'],
     'cycle_growth_bytes': leak['cycle_growth_bytes'],
+    'slope_bytes_per_cycle': leak['slope_bytes_per_cycle'],
   };
 }
 

@@ -3,7 +3,21 @@
 - Document generic JSON tool calling as an intentional fallback, including
   its prompt and model-reliability limits; runtime behavior is unchanged
   ([#755](https://github.com/leehack/llamadart/issues/755)).
-
+- Load Qwen3.5-0.8B on the Web CPU (WebAssembly) backend at the default
+  `contextSize` using smaller processing batches, while preserving
+  full-context defaults for unknown models, including embedding models
+  ([#752](https://github.com/leehack/llamadart/issues/752)).
+- Report a failed Web model load on a page without cross-origin isolation as
+  `LlamaModelException` with its real cause, not as a COOP/COEP
+  worker-thread error; only a real worker-thread failure still names COOP/COEP
+  ([#753](https://github.com/leehack/llamadart/issues/753)).
+- Log a Dart warning when an explicit `preferredBackend` GPU module is not
+  bundled and the model loads on CPU instead, as happens for `cuda` with the
+  default Windows bundle; the native runtime docs now say when CUDA is bundled
+  ([#756](https://github.com/leehack/llamadart/issues/756)).
+- Fix the `llamadart_server` example exiting at startup on Windows; it stops
+  on Ctrl+C there, and on SIGINT or SIGTERM elsewhere
+  ([#757](https://github.com/leehack/llamadart/issues/757)).
 - Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
   Web ([#723](https://github.com/leehack/llamadart/issues/723)).
 - Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA
@@ -29,6 +43,15 @@
   with the Qwen3.5 template; before, they became line breaks unless a tool
   call ended the thought
   ([#743](https://github.com/leehack/llamadart/issues/743)).
+- Stream content and reasoning with the whitespace the non-streamed parse
+  keeps, with or without tools, so streamed answers and `ChatSession` history
+  no longer start with the blank lines after `</think>`. Only whitespace at
+  either end, and text that may be a tag or tool-call opening, waits for more
+  output, so reasoning still streams token by token. Without tools, Hermes,
+  DeepSeek R1, Qwen3-Coder XML and the other formats the template engine
+  guide lists also drop a start tag repeated at the start of a forced-open
+  thought, as the parse does. The guide lists the exceptions
+  ([#754](https://github.com/leehack/llamadart/issues/754)).
 - Stream content that equals the non-streamed parse for Qwen3-Coder XML,
   Mistral Nemo and 15 more tool-call formats, and for output parsed with a PEG
   parser, so text before a tool call no longer carries the tool-call envelope
@@ -75,13 +98,19 @@
   ([#626](https://github.com/leehack/llamadart/issues/626)).
 - Bound speech validation pack memory by a footprint counter instead of the
   resident set: `phys_footprint` on macOS and iOS, `RssAnon` plus `RssShmem`
-  plus `VmSwap` on Linux and Android, and `PrivateUsage` plus
+  plus `VmSwap` on Linux and Android, read after `malloc_trim(0)` where the C
+  library provides it (glibc, not Android), and `PrivateUsage` plus
   `SharedCommitUsage` on Windows (`PrivateUsage` alone on builds without it).
   Evicting file-backed pages, such as the
-  mmapped weights, or compressing memory under pressure no longer lowers the
-  baseline and fails `peak_memory_bound` without memory growth, and each
-  report names its counter
-  ([#633](https://github.com/leehack/llamadart/issues/633)).
+  mmapped weights, compressing memory under pressure, or glibc keeping freed
+  memory across reloads no longer fails `peak_memory_bound` without memory
+  growth, and each report names its counter
+  ([#633](https://github.com/leehack/llamadart/issues/633),
+  [#762](https://github.com/leehack/llamadart/issues/762)).
+- Fail speech validation `leak_slope_bound` when the least-squares footprint
+  slope over cleanup cycles 1-8 exceeds 7 MiB per cycle; it failed only when
+  every cycle grew by more than 7 MiB, and passed leaks of 16 MiB per reload
+  ([#762](https://github.com/leehack/llamadart/issues/762)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image

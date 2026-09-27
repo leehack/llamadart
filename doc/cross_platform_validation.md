@@ -1185,19 +1185,20 @@ audio timing where available, real-time factor, and generated WAV artifacts.
 Cases cover generation, cancellation, subsequent request, invalid
 input/recovery, independent reload and cleanup. Eight further
 cancel/dispose/load/generate cycles then run, and a `bounds` block records the
-measured cancellation latency, peak memory footprint and per-cycle footprint
-growth against the budgets described in
+measured cancellation latency, peak memory footprint and the least-squares
+footprint slope over cleanup cycles 1-8 against the budgets described in
 `packages/llamadart_validation/assets/speech/README.md`. The footprint is
 `phys_footprint` on macOS and iOS, `RssAnon + RssShmem + VmSwap` on Linux and
-Android, and `PrivateUsage + SharedCommitUsage` on Windows, or `PrivateUsage`
+Android, read after `malloc_trim(0)` where the C library provides it (glibc,
+not Android), and `PrivateUsage + SharedCommitUsage` on Windows, or `PrivateUsage`
 alone on Windows builds without `PROCESS_MEMORY_COUNTERS_EX2`. None counts
 file-backed pages, such as the mmapped weights, so evicting them under memory
 pressure does not shrink it
 ([#633](https://github.com/leehack/llamadart/issues/633)); the speech README
 lists what each counter includes and misses. The peak ratio is
-not applied on Linux CUDA, whose host memory excludes the weights; the per-cycle
-growth bound applies on every backend but misses growth of 7 MiB or less per
-cycle, so a leak that small passes on Linux CUDA
+not applied on Linux CUDA, whose host memory excludes the weights; the slope
+bound applies on every backend but misses a leak of 7 MiB or less per cycle, so
+a leak that small passes on Linux CUDA
 ([#686](https://github.com/leehack/llamadart/issues/686)). The
 single-shot checks and every cycle each cancel twice: once as soon as the task
 is handed back, the window in which `tts` cancellations were dropped until

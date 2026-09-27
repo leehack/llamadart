@@ -122,9 +122,12 @@ const params = ModelParams(
 These `2048` / `2048` values are explicit encoder-throughput settings, not the
 decoder/generative defaults. Start with a smaller `microBatchSize` such as
 `512` on memory-constrained devices and increase it only after measuring.
-WebGPU retains full-context automatic batching because model architecture is
-not available before bridge context creation; set both values explicitly only
-when tuning a known workload.
+Web retains full-context automatic batching on CPU and WebGPU because model
+architecture is not available before bridge context creation. Known decoder
+presets can use smaller batches; see [Performance tuning](./performance-tuning).
+An embedding input must fit its model's context and, for non-causal models,
+one micro-batch. Set both batch values explicitly only when tuning a known
+workload; selecting memory64 does not remove this micro-batch requirement.
 
 - `batchSize` (`n_batch`): max logical tokens per forward pass.
 - `microBatchSize` (`n_ubatch`): scheduler micro-batch size.

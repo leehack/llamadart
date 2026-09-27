@@ -33,6 +33,10 @@ Important fields:
 - `contextSize`: total context window.
 - `gpuLayers`: number of layers offloaded to GPU.
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).
+  On Linux and Windows, an explicit GPU backend whose module is missing loads
+  the model on CPU with 0 GPU layers and logs a Dart warning;
+  `getBackendName()` then reports `CPU`. See
+  [When a requested backend is not bundled](../platforms/native-build-hooks#when-a-requested-backend-is-not-bundled).
 - `splitMode`: model tensor distribution mode passed through to llama.cpp
   `split_mode`. Defaults to upstream `layer` behavior.
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
@@ -44,11 +48,14 @@ Important fields:
   logical batch so embedding inputs are not split incorrectly. WebGPU keeps
   full-context automatic batching because model architecture is not available
   before bridge context creation, though model-specific safety presets may be
-  smaller.
+  smaller. The Qwen3.5-0.8B URL preset uses native decoder defaults on
+  CPU (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`); other models
+  keep full-context defaults.
 - `microBatchSize`: context physical micro-batch size (`n_ubatch`). On native,
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
-  resolved logical batch unless a safety preset applies. Explicit positive
+  resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
+  CPU preset uses `min(n_batch, 512)`. Explicit positive
   values are preserved within `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models and models without a KV cache (such as BERT and
   ModernBERT) embed each input in one micro-batch, so `embed()` throws

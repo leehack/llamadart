@@ -697,80 +697,113 @@ Map<String, Object?> checkRow(Map<String, Object?> result, String id) =>
       (row) => row['id'] == id,
     );
 
-/// Resident MiB after `load` … `after_invalid`, then after each of the next
-/// seven checks, which dispose and reload or cancel, in measured order, from
-/// `tts` runs on GCE g2-standard-8 + NVIDIA L4, Linux CUDA, native v0.5.0
-/// (#686). T1/T2 ran `reload` and three cycles first, B3-L11 ran them after
-/// the #668 interrupt checks, and G1/G2 ran `reload` and six cycles at #687's
-/// first head. Replayed onto `reload` and cycles 1-6; a replay holds the last
-/// value for cycles 7-8.
-const linuxCudaTtsMib = {
-  'T1':
-      '837.7 1134.1 1134.1 1141.2 1148.1 1148.1 1150.3 1159.3 1159.5 1175.7 '
-      '1175.8 1199.7 1299.1 1299.1',
-  'T2':
-      '849.8 1141.8 1141.8 1154.0 1160.9 1160.9 1163.0 1250.8 1255.3 1302.6 '
-      '1325.7 1287.2 1293.5 1282.4',
-  'B3':
-      '840.1 1132.1 1132.1 1135.1 1142.0 1142.0 1143.5 1237.1 1248.3 1261.1 '
-      '1267.8 1303.3 1303.6 1303.7',
-  'B4':
-      '840.9 1137.9 1137.9 1140.5 1145.0 1145.0 1148.9 1214.1 1246.3 1248.2 '
-      '1254.0 1228.2 1265.5 1283.6',
-  'L08':
-      '847.4 1143.7 1143.8 1150.8 1150.9 1150.9 1158.9 1219.9 1231.2 1231.3 '
-      '1274.3 1273.9 1252.7 1258.5',
-  'L10':
-      '853.8 1149.3 1149.3 1151.9 1159.0 1159.1 1160.6 1193.5 1252.9 1254.8 '
-      '1260.5 1259.1 1219.1 1219.3',
-  'L11':
-      '852.5 1144.9 1145.0 1151.0 1157.8 1157.8 1159.9 1181.1 1217.3 1219.2 '
-      '1221.7 1227.1 1259.5 1240.8',
-  'G1':
-      '819.1 1117.2 1117.3 1119.9 1127.2 1127.2 1134.6 1143.7 1200.1 1230.6 '
-      '1298.0 1298.5 1299.0 1310.0',
-  'G2':
-      '846.5 1138.6 1138.7 1141.6 1148.5 1148.5 1160.8 1244.2 1250.2 1264.1 '
-      '1360.1 1371.1 1371.2 1353.6',
+/// Footprint MiB sampled after `malloc_trim(0)`, in the [replay] layout
+/// (`load` … `after_invalid`, `reload`, cycles 1-8), from pack runs on GCE
+/// g2-standard-8 + NVIDIA L4, Linux CUDA, Ubuntu 24.04, glibc 2.39 (#762).
+/// `stt` omits its `bytes_input`, edge-fixture and truncation samples.
+const linuxCudaMib = {
+  'tts r1':
+      '452.6 717.9 718.0 723.2 723.5 723.6 725.7 744.9 733.2 742.5 747.9 754.5 '
+      '737.2 735.5 746.0 741.7',
+  'tts r2':
+      '451.6 715.4 715.6 717.6 723.8 723.9 732.7 738.4 728.9 733.6 743.8 749.0 '
+      '749.5 734.0 731.1 731.6',
+  'tts r3':
+      '462.3 728.1 728.3 730.3 737.8 737.9 743.1 756.7 767.9 769.4 765.4 765.5 '
+      '772.6 751.9 752.4 743.4',
+  'stt':
+      '458.7 611.2 614.9 613.0 614.8 614.9 615.2 653.9 653.1 650.6 631.3 624.6 '
+      '629.7 624.0 624.0 625.9',
 };
 
-/// Resident MiB in the [linuxCudaTtsMib] layout from `tts` runs on GCE
-/// e2-standard-8, Linux x64 CPU, at #687's first head (#686).
-const linuxX64CpuTtsMib = {
-  'C1':
-      '2859.2 3791.7 3791.8 3801.0 3805.6 3805.9 3803.1 3835.0 3808.7 3845.2 '
-      '3900.7 3916.0 3923.9 3923.9',
-  'C2':
-      '2903.5 3833.5 3833.5 3834.8 3837.9 3834.9 3835.0 3807.3 3820.8 3852.3 '
-      '3821.1 3834.9 3830.1 3830.2',
+/// [linuxCudaMib] layout, from `tts` pack runs on GCE n2-standard-8 (x64) and
+/// t2a-standard-8 (arm64), Linux CPU, Ubuntu 24.04, glibc 2.39 (#762).
+const linuxCpuTtsMib = {
+  'x64 r1':
+      '1819.2 2750.5 2750.6 2755.8 2757.2 2757.4 2757.6 2782.9 2757.1 2766.8 '
+      '2771.7 2755.7 2751.1 2751.6 2752.3 2753.7',
+  'x64 r2':
+      '1841.6 2772.7 2772.9 2772.5 2780.0 2780.1 2780.6 2780.2 2760.1 2748.8 '
+      '2751.0 2761.3 2761.7 2750.3 2767.2 2758.0',
+  'arm64':
+      '1179.0 2110.7 2110.9 2115.8 2115.9 2116.0 2118.6 2120.0 2126.4 2111.6 '
+      '2108.5 2112.4 2115.8 2131.9 2114.8 2109.9',
 };
 
-/// macOS arm64 CPU `tts` under memory pressure (#633 pattern), in the
-/// [linuxCudaTtsMib] layout: the #668 interrupt checks, `reload`, 3 cycles.
-const macosPressureTtsMib =
-    '3166.9 5230.6 5230.7 4622.1 4924.8 4924.8 4932.4 5105.7 3844.5 2493.4 '
-    '2688.2 4789.8 4802.4 4811.2';
-
-/// The #634 LiteRT ASR run on the [linuxX64CpuTtsMib] machine: a one-time
-/// jump at `cancel`, then +0.7 MiB per cycle.
+/// Resident MiB of the #634 LiteRT ASR run on GCE e2-standard-8, Linux x64
+/// CPU, after `load` … `after_invalid`, then after each of the next seven
+/// checks (#686): a one-time jump at `cancel`, then +0.7 MiB per cycle.
 const linuxLiteRtAsrMib =
     '384.4 485.2 485.5 570.9 574.5 574.5 574.5 577.9 578.7 579.4 580.0 580.7 '
     '581.4 582.1';
 
-/// Longest run of consecutive steps above [speechLeakCycleGrowthBytes] after
-/// `after_invalid`, the seventh sample.
-int longestGrowthStreak(List<double> series) {
-  var longest = 0;
-  var current = 0;
-  for (var i = 7; i < series.length; i++) {
-    final grew =
-        ((series[i] - series[i - 1]) * mib).round() >
-        speechLeakCycleGrowthBytes;
-    current = grew ? current + 1 : 0;
-    longest = math.max(longest, current);
-  }
-  return longest;
-}
+/// Footprint MiB sampled after `malloc_trim(0)`, in the [replay] layout
+/// (`load` … `after_invalid`, `reload`, cycles 1-8), from GGUF `stt` pack runs
+/// on GCE n2-standard-8 (x64) and t2a-standard-8 (arm64), Ubuntu 24.04, glibc
+/// 2.39 (#762): r1-r4 at 3d6b83865 with the trim added, r5 with this counter.
+/// `stt` omits its `bytes_input`, edge-fixture and truncation samples.
+const linuxTrimmedSttMib = {
+  'x64 r1':
+      '995.2 1169.7 1185.5 1180.4 1176.5 1178.8 1181.3 1181.9 1184.0 1192.5 '
+      '1173.9 1171.2 1177.4 1161.8 1167.2 1164.6',
+  'x64 r2':
+      '980.8 1164.2 1176.4 1165.0 1167.0 1169.6 1166.9 1183.1 1184.1 1198.7 '
+      '1169.9 1169.1 1168.3 1174.0 1176.8 1165.8',
+  'x64 r3':
+      '984.8 1170.8 1185.2 1176.4 1175.5 1176.5 1172.7 1179.1 1189.2 1191.4 '
+      '1168.0 1173.8 1165.4 1171.3 1173.6 1171.2',
+  'x64 r4':
+      '979.0 1159.5 1179.3 1163.4 1163.9 1164.2 1168.0 1188.8 1187.8 1186.2 '
+      '1169.4 1177.7 1167.7 1160.3 1169.9 1168.3',
+  'arm64 r1':
+      '1583.7 1764.1 1781.3 1752.4 1756.1 1759.8 1764.1 1775.3 1780.6 1774.9 '
+      '1781.4 1787.0 1776.1 1781.1 1788.9 1784.3',
+  'arm64 r2':
+      '1569.1 1751.4 1757.9 1745.2 1745.6 1749.3 1756.5 1736.2 1741.9 1749.3 '
+      '1747.4 1757.7 1764.1 1758.6 1754.1 1751.3',
+  'arm64 r3':
+      '1569.0 1753.8 1771.5 1750.8 1752.5 1754.6 1760.9 1753.1 1754.4 1766.0 '
+      '1773.3 1766.5 1764.8 1757.1 1762.1 1777.1',
+  'arm64 r4':
+      '1554.8 1739.6 1756.7 1740.9 1746.8 1748.3 1749.5 1772.4 1771.8 1758.3 '
+      '1766.0 1758.6 1761.0 1763.9 1771.9 1779.6',
+  'x64 r5':
+      '1026.8 1213.3 1216.2 1215.2 1174.5 1174.6 1174.8 1181.6 1192.3 1190.7 '
+      '1186.2 1190.1 1190.9 1196.7 1193.8 1178.2',
+  'arm64 r5':
+      '1570.3 1734.4 1740.3 1738.7 1737.4 1737.6 1738.0 1756.7 1756.0 1763.0 '
+      '1746.0 1745.6 1745.8 1747.0 1750.0 1749.3',
+};
+
+/// [linuxTrimmedSttMib] runs that `malloc` and write a block of the named size
+/// after the `load` in `reload` and in every cycle, and never free it (#762).
+const linuxTrimmedSttLeakMib = {
+  'x64 16 MiB r1':
+      '993.3 1177.0 1196.5 1173.3 1180.2 1180.3 1188.1 1215.6 1211.4 1232.0 '
+      '1243.0 1241.7 1259.3 1268.3 1288.9 1315.1',
+  'x64 16 MiB r2':
+      '991.5 1176.1 1190.4 1184.5 1188.3 1177.8 1178.4 1213.5 1238.0 1238.4 '
+      '1237.6 1252.9 1259.0 1276.3 1288.7 1313.3',
+  'x64 12 MiB':
+      '983.5 1168.1 1182.1 1173.1 1174.6 1172.3 1177.9 1206.6 1219.4 1230.8 '
+      '1218.5 1240.7 1240.3 1256.8 1273.7 1281.3',
+  'arm64 16 MiB r1':
+      '1562.2 1748.9 1769.2 1747.1 1749.8 1750.7 1754.2 1779.6 1805.9 1811.9 '
+      '1842.2 1860.2 1863.9 1883.1 1895.7 1908.8',
+  'arm64 16 MiB r2':
+      '1576.4 1756.6 1776.2 1755.1 1759.9 1757.1 1757.4 1775.1 1785.2 1808.6 '
+      '1811.4 1825.9 1842.3 1862.8 1883.4 1891.4',
+  'arm64 12 MiB':
+      '1563.0 1743.4 1760.2 1746.8 1741.9 1749.7 1754.2 1776.0 1783.0 1796.5 '
+      '1801.4 1813.8 1814.8 1828.8 1845.8 1843.3',
+};
+
+/// The `leak_slope_bound` window, cycles 1-8, of a series in the [replay]
+/// layout, holding its last value as [replay] does.
+List<int> leakWindow(List<double> series) => [
+  for (var i = 8; i <= 8 + speechLeakWindowCycles; i++)
+    (series[math.min(i, series.length - 1)] * mib).round(),
+];
 
 /// Resident MiB after `load` … `after_invalid`, `reload` and 14 cleanup
 /// cycles, macOS arm64 (Apple M4 Max), load average 3.5-6.1, 2026-09-25 (#686).
@@ -1439,8 +1472,10 @@ void main() {
         List.filled(7, perCycle),
         reason: reason,
       );
+      expect(bound['slope_bytes_per_cycle'], perCycle, reason: reason);
       expect(bound['growth_threshold_bytes'], 7 * mib, reason: reason);
       final reported = (result['bounds'] as Map)['leak_slope'] as Map;
+      expect(reported['slope_bytes_per_cycle'], perCycle, reason: reason);
       expect(reported['measured'], true, reason: reason);
       expect(reported['within_budget'], within, reason: reason);
       expect(checkRow(result, 'peak_memory_bound')['status'], 'PASS');
@@ -1469,9 +1504,9 @@ void main() {
     },
   );
   test(
-    'measured Linux CUDA plateaus pass the leak slope and skip only the ratio',
+    'measured Linux CUDA runs pass the leak slope and skip only the ratio',
     () async {
-      for (final MapEntry(key: run, value: text) in linuxCudaTtsMib.entries) {
+      for (final MapEntry(key: run, value: text) in linuxCudaMib.entries) {
         final series = parseMib(text);
         final exempt = await runSpeechValidation(
           FakeSpeech(),
@@ -1479,7 +1514,11 @@ void main() {
           operatingSystem: 'linux',
           backend: 'cuda',
         );
-        expect(checkRow(exempt, 'leak_slope_bound')['status'], 'PASS');
+        expect(
+          checkRow(exempt, 'leak_slope_bound')['status'],
+          'PASS',
+          reason: run,
+        );
         final ratio = checkRow(exempt, 'peak_memory_bound');
         expect(ratio['status'], 'SKIP', reason: run);
         expect(
@@ -1493,21 +1532,7 @@ void main() {
         expect(reported['applies'], false, reason: run);
         expect(reported['within_budget'], isNull, reason: run);
         expect(exempt['functional_pass'], true, reason: run);
-
-        final unknown = await runSpeechValidation(
-          FakeSpeech(),
-          footprintBytes: replay(mibs(series)),
-        );
-        final strict = checkRow(unknown, 'peak_memory_bound');
-        final over = (strict['peak_footprint_growth']! as double) > 1.10;
-        expect(strict['status'], over ? 'FAIL' : 'PASS', reason: run);
-        expect(unknown['functional_pass'], !over, reason: run);
       }
-      final overRatio = [
-        for (final series in linuxCudaTtsMib.values.map(parseMib))
-          if (series.skip(2).reduce(math.max) / series[1] > 1.10) series,
-      ];
-      expect(overRatio, hasLength(8));
     },
   );
   test('measured macOS runs pass both memory bounds everywhere', () async {
@@ -1539,43 +1564,6 @@ void main() {
       }
     }
   });
-  test(
-    'a stepped plateau passes and a steady leak of the same growth fails',
-    () async {
-      // The step sizes are measured Linux CUDA reload steps (#686).
-      final stepped = [
-        ...List.filled(7, 1150.0),
-        1150.0,
-        1150.0,
-        1150.0,
-        1197.3,
-        1197.3,
-        1234.6,
-        1234.6,
-        1270.1,
-        1270.1,
-      ];
-      final total = stepped.last - stepped[8];
-      final steady = [
-        ...List.filled(7, 1150.0),
-        1150.0,
-        for (var i = 0; i <= 7; i++) 1150.0 + total * i / 7,
-      ];
-      for (final (series, pass) in [(stepped, true), (steady, false)]) {
-        final result = await runSpeechValidation(
-          FakeSpeech(),
-          footprintBytes: replay(mibs(series)),
-          operatingSystem: 'linux',
-          backend: 'cuda',
-        );
-        expect(
-          checkRow(result, 'leak_slope_bound')['status'],
-          pass ? 'PASS' : 'FAIL',
-        );
-        expect(result['functional_pass'], pass);
-      }
-    },
-  );
   test('a single spike passes the leak slope but not the ratio', () async {
     final series = [
       ...List.filled(10, 1000.0),
@@ -1592,73 +1580,158 @@ void main() {
     expect(checkRow(result, 'peak_memory_bound')['status'], 'FAIL');
     expect(result['functional_pass'], false);
   });
-  test('growth during warm-up does not count toward the leak slope', () async {
-    // Measured Linux x64 CPU and Linux CUDA reload steps, arranged as a climb
-    // that stops in the last window cycle.
-    final series = mibs([...List.filled(7, 3800.0), 3804.6]);
-    for (final step in [35.0, 17.2, 39.8, 36.7, 35.5, 36.5, 55.5, 0.2]) {
-      series.add(series.last + (step * mib).round());
-    }
-    final result = await runSpeechValidation(
-      FakeSpeech(),
-      footprintBytes: replay(series),
-    );
-    final leak = checkRow(result, 'leak_slope_bound');
-    expect(leak['window_footprint_bytes'], series.sublist(8));
-    expect(leak['status'], 'PASS');
-    expect(result['functional_pass'], true);
-  });
-  test('the leak window spans seven cycles', () async {
-    List<int> streak(int cycles) => mibs([
-      ...List.filled(9, 1000.0),
-      for (var cycle = 1; cycle <= cycles; cycle++) 1000.0 + 8 * cycle,
-      for (var cycle = cycles; cycle < 7; cycle++) 1000.0 + 8 * cycles,
-    ]);
-    for (final (cycles, pass) in [(6, true), (7, false)]) {
+  test('growth before cycle 1 does not count toward the leak slope', () async {
+    List<double> jumpAt(int index) => [
+      for (var i = 0; i < 16; i++) i < index ? 1000.0 : 1300.0,
+    ];
+    for (final (index, pass) in [(8, true), (9, false)]) {
+      final series = jumpAt(index);
       final result = await runSpeechValidation(
         FakeSpeech(),
-        footprintBytes: replay(streak(cycles)),
+        footprintBytes: replay(mibs(series)),
         operatingSystem: 'linux',
         backend: 'cuda',
       );
       final leak = checkRow(result, 'leak_slope_bound');
-      expect(leak['status'], pass ? 'PASS' : 'FAIL', reason: '$cycles');
-      expect(leak['cycle_growth_bytes'], hasLength(7));
+      expect(leak['window_footprint_bytes'], leakWindow(series));
+      expect(leak['status'], pass ? 'PASS' : 'FAIL', reason: '$index');
+      expect(result['functional_pass'], pass, reason: '$index');
     }
   });
-  test('no measured run without a leak grows for a whole window', () {
-    final runs = {
-      ...linuxCudaTtsMib,
-      ...linuxX64CpuTtsMib,
-      ...macosMib,
-      'macos pressure': macosPressureTtsMib,
-    }.map((run, text) => MapEntry(run, longestGrowthStreak(parseMib(text))));
-    expect(runs.values.reduce(math.max), 4, reason: '$runs');
+  test('the leak slope fits the footprint of cycles 1-8', () async {
+    // One step, from cycle 7 to 8 or from cycle 4 to 5, at the largest size
+    // that passes and just past it.
+    for (final (index, step, pass) in [
+      (15, 84.0, true),
+      (15, 84.1, false),
+      (12, 36.75, true),
+      (12, 36.8, false),
+    ]) {
+      final series = [
+        for (var i = 0; i < 16; i++) i < index ? 1000.0 : 1000.0 + step,
+      ];
+      final reason = '$step MiB at sample $index';
+      final result = await runSpeechValidation(
+        FakeSpeech(),
+        footprintBytes: replay(mibs(series)),
+        operatingSystem: 'linux',
+        backend: 'cuda',
+      );
+      final leak = checkRow(result, 'leak_slope_bound');
+      expect(
+        leak['window_footprint_bytes'],
+        leakWindow(series),
+        reason: reason,
+      );
+      expect(leak['cycle_growth_bytes'], hasLength(7), reason: reason);
+      final after = [
+        for (var i = index - 8; i < 8; i++) i - 3.5,
+      ].reduce((a, b) => a + b);
+      expect(
+        leak['slope_bytes_per_cycle'],
+        closeTo(step * mib * after / 42, 1),
+        reason: reason,
+      );
+      expect(leak['status'], pass ? 'PASS' : 'FAIL', reason: reason);
+    }
+  });
+  test(
+    'measured leaks of 12 and 16 MiB per reload fail the leak slope',
+    () async {
+      for (final MapEntry(key: run, value: text)
+          in linuxTrimmedSttLeakMib.entries) {
+        final result = await runSpeechValidation(
+          FakeSpeech(),
+          footprintBytes: replay(mibs(parseMib(text))),
+          operatingSystem: 'linux',
+          backend: 'cpu',
+        );
+        final leak = checkRow(result, 'leak_slope_bound');
+        expect(leak['status'], 'FAIL', reason: run);
+        expect(
+          leak['slope_bytes_per_cycle'],
+          greaterThan(8.5 * mib),
+          reason: run,
+        );
+        // A rule that failed only when every step grew passed all of them.
+        expect(
+          (leak['cycle_growth_bytes']! as List).cast<int>().any(
+            (step) => step <= speechLeakCycleGrowthBytes,
+          ),
+          isTrue,
+          reason: run,
+        );
+        if (run.startsWith('arm64')) {
+          expect(checkRow(result, 'peak_memory_bound')['status'], 'PASS');
+        }
+        expect(result['functional_pass'], false, reason: run);
+      }
+    },
+  );
+  test('measured slopes separate runs without a leak from leaks', () {
+    Iterable<List<double>> offsets(String text) sync* {
+      final series = parseMib(text);
+      for (
+        var offset = 0;
+        offset + speechCleanupCycles < series.length - 7;
+        offset++
+      ) {
+        yield shifted(series, offset);
+      }
+    }
+
+    double slope(List<double> series) =>
+        leastSquaresSlope(leakWindow(series)) / mib;
+    final clean = {
+      for (final MapEntry(key: run, value: text) in {
+        ...linuxTrimmedSttMib,
+        for (final MapEntry(key: run, value: text) in linuxCpuTtsMib.entries)
+          'tts $run': text,
+        for (final MapEntry(key: run, value: text) in linuxCudaMib.entries)
+          'cuda $run': text,
+        for (final MapEntry(key: run, value: text) in macosMib.entries)
+          'macos $run': text,
+      }.entries)
+        run: [
+          for (final series in offsets(text)) slope(series),
+        ].reduce(math.max),
+    };
+    final leaks = {
+      for (final MapEntry(key: run, value: text)
+          in linuxTrimmedSttLeakMib.entries)
+        run: slope(parseMib(text)),
+      'macos LiteRT ASR': [
+        for (final series in offsets(macosLiteRtAsrMib)) slope(series),
+      ].reduce(math.min),
+    };
+    final threshold = speechLeakCycleGrowthBytes / mib;
     expect(
-      [
-        for (final MapEntry(key: run, value: streak) in runs.entries)
-          if (streak == 4) run,
-      ],
-      ['G1', 'C1', 'macos pressure'],
+      clean.values.reduce(math.max),
+      lessThan(threshold),
+      reason: '$clean',
     );
     expect(
-      runs.values.every((streak) => streak < speechLeakWindowCycles),
-      true,
-    );
-    expect(
-      longestGrowthStreak(parseMib(macosLiteRtAsrMib)),
-      greaterThanOrEqualTo(speechLeakWindowCycles),
+      leaks.values.reduce(math.min),
+      greaterThan(threshold),
+      reason: '$leaks',
     );
   });
-  test('measured Linux x64 CPU climbs pass both memory bounds', () async {
-    for (final MapEntry(key: run, value: text) in linuxX64CpuTtsMib.entries) {
+  test('measured Linux CPU runs pass both memory bounds', () async {
+    for (final MapEntry(key: run, value: text) in {
+      ...linuxTrimmedSttMib,
+      ...linuxCpuTtsMib,
+    }.entries) {
       final result = await runSpeechValidation(
         FakeSpeech(),
         footprintBytes: replay(mibs(parseMib(text))),
         operatingSystem: 'linux',
         backend: 'cpu',
       );
-      expect(checkRow(result, 'peak_memory_bound')['status'], 'PASS');
+      expect(
+        checkRow(result, 'peak_memory_bound')['status'],
+        'PASS',
+        reason: run,
+      );
       expect(
         checkRow(result, 'leak_slope_bound')['status'],
         'PASS',
