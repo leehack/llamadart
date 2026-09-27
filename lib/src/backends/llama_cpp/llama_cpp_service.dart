@@ -1829,6 +1829,16 @@ class LlamaCppService {
     _modelLoadParams[handle] = modelParams;
     _activeBackendName = resolvedBackend;
     _activeResolvedGpuLayers = gpuLayers;
+    if (forcedCpuFallback) {
+      final requested = effectiveBackend.name;
+      LlamaLogger.instance.warning(
+        'preferredBackend $requested was requested, but its backend module '
+        'is not bundled for this platform, so the model loaded on '
+        '$resolvedBackend with 0 GPU layers. To bundle it, add $requested to '
+        'the llamadart_native_backends hook user-define in your app '
+        'pubspec.yaml.',
+      );
+    }
 
     return handle;
   }
