@@ -18,8 +18,10 @@ import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
@@ -2419,6 +2421,96 @@ void main() {
       expect(index('CPU', [GpuBackend.cpu]), isNull);
       expect(index(null, [GpuBackend.auto]), isNull);
       expect(index('Unknown', [GpuBackend.auto]), isNull);
+    });
+  });
+
+  group('an explicit GPU backend without a bundled module', () {
+    late Directory tempDir;
+    late List<LlamaLogRecord> records;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('unbundled_backend_');
+      records = <LlamaLogRecord>[];
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.warn)
+        ..setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.none)
+        ..setHandler(null);
+      tempDir.deleteSync(recursive: true);
+    });
+
+    test('loads on CPU and warns how to bundle the backend', () {
+      final service = LlamaCppService();
+      addTearDown(service.dispose);
+      if (service.getBackendInfo().join().toLowerCase().contains('cuda')) {
+        markTestSkipped('This process already registered a CUDA backend.');
+        return;
+      }
+      final moduleDir = Directory(path.join(tempDir.path, 'modules'))
+        ..createSync();
+      _writePrivateForTesting(
+        service,
+        '_backendModuleDirectory',
+        moduleDir.path,
+      );
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+
+      final handle = service.loadModel(
+        modelPath,
+        const ModelParams(
+          contextSize: 512,
+          preferredBackend: GpuBackend.cuda,
+          gpuLayers: 99,
+        ),
+      );
+
+      expect(
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        )[handle],
+        'CPU',
+      );
+      expect(
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        )[handle],
+        0,
+      );
+      expect(records.map((record) => record.level), [LlamaLogLevel.warn]);
+      expect(
+        records.single.message,
+        'preferredBackend cuda was requested, but its backend module is not '
+        'bundled for this platform, so the model loaded on CPU with 0 GPU '
+        'layers. To bundle it, add cuda to the llamadart_native_backends '
+        'hook user-define in your app pubspec.yaml.',
+      );
+    });
+
+    test('does not warn when CPU is requested', () {
+      final service = LlamaCppService();
+      addTearDown(service.dispose);
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+
+      service.loadModel(
+        modelPath,
+        const ModelParams(
+          contextSize: 512,
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 0,
+        ),
+      );
+
+      expect(records, isEmpty);
     });
   });
 

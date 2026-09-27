@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
-/// Waits until SIGINT or SIGTERM is received.
+/// The signals that stop the server: SIGINT everywhere, plus SIGTERM where
+/// Dart can watch it (not on Windows).
+List<ProcessSignal> shutdownSignals({bool? isWindows}) => [
+  ProcessSignal.sigint,
+  if (!(isWindows ?? Platform.isWindows)) ProcessSignal.sigterm,
+];
+
+/// Waits until one of [shutdownSignals] is received.
 Future<void> waitForShutdownSignal() {
   final completer = Completer<void>();
-
-  late final StreamSubscription<ProcessSignal> sigIntSub;
-  late final StreamSubscription<ProcessSignal> sigTermSub;
+  final subscriptions = <StreamSubscription<ProcessSignal>>[];
 
   void completeIfNeeded() {
     if (completer.isCompleted) {
@@ -14,12 +19,14 @@ Future<void> waitForShutdownSignal() {
     }
 
     completer.complete();
-    sigIntSub.cancel();
-    sigTermSub.cancel();
+    for (final subscription in subscriptions) {
+      subscription.cancel();
+    }
   }
 
-  sigIntSub = ProcessSignal.sigint.watch().listen((_) => completeIfNeeded());
-  sigTermSub = ProcessSignal.sigterm.watch().listen((_) => completeIfNeeded());
+  for (final signal in shutdownSignals()) {
+    subscriptions.add(signal.watch().listen((_) => completeIfNeeded()));
+  }
 
   return completer.future;
 }

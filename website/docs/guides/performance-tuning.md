@@ -79,6 +79,15 @@ model architecture before context creation. Two presets apply when
 
 URL matching ignores case.
 
+For the existing Qwen3.5-0.8B URL preset, CPU loads
+(`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`) resolve unset sizes as
+native decoders do: a batch of `min(contextSize, 2048)` and a micro-batch of
+at most `512`. This reduces temporary memory without reducing `contextSize`.
+Other models keep full-context automatic batching on CPU too: applying a
+512-token micro-batch to a non-causal embedding model can abort on longer
+inputs, even with memory64. A renamed Qwen model URL does not select the
+preset; set batch sizes explicitly in that case.
+
 Decoder-focused web apps can set `2048` / `512` explicitly after validating
 their model and browser.
 

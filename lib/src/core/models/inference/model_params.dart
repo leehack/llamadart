@@ -104,6 +104,10 @@ class ModelParams {
   final int gpuLayers;
 
   /// Preferred GPU backend for inference.
+  ///
+  /// On Linux and Windows, an explicit GPU backend whose module is missing
+  /// loads the model on CPU with 0 GPU layers and logs a
+  /// `LlamaLogLevel.warn` record through the Dart logger.
   final GpuBackend preferredBackend;
 
   /// Preferred LiteRT-LM runtime backend for `.litertlm` models.
