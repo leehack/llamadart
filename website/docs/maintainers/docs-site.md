@@ -76,7 +76,12 @@ package with its own analyze and test lane; the root analyzer skips it.
 URLs: the latest release is served at `/docs/...`, the next release at
 `/docs/next/...`, and each older release at `/docs/<version>/...`.
 
-`./tool/docs/build_site.sh` runs `jaspr build`, then `tool/finalize_site.dart`,
+`website/examples/observability` is a docs-owned runnable package. The docs
+build resolves, formats-checks, analyzes and tests it; it is excluded from the
+site analyzer until its own dependencies are resolved. Regenerate its lockfile
+with pub when the core version changes.
+
+`./tool/docs/build_site.sh` validates that example and runs `jaspr build`, then `tool/finalize_site.dart`,
 which writes `route.html` files, `404.html` and `sitemap.xml` and fails on any
 broken internal link or anchor, then indexes search with Pagefind (via `npx`).
 Preview the result as GitHub Pages serves it:

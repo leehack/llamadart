@@ -63,7 +63,8 @@
         "configuration/runtime-parameters",
         "guides/performance-tuning",
         "guides/backend-benchmarks",
-        "configuration/logging"
+        "configuration/logging",
+        "guides/observability"
       ]
     },
     {

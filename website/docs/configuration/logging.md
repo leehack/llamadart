@@ -6,6 +6,9 @@ description: Control Dart-side and native log levels separately, configure loggi
 `llamadart` has separate log levels for Dart-side records and the native
 runtime. Both default to `none`.
 
+For distributed traces, token metrics and exporter setup, see
+[Observability](../guides/observability).
+
 ## Engine log controls
 
 ```dart

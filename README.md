@@ -254,6 +254,12 @@ dart run tool/testing/run_local_e2e.dart --list
 dart run tool/testing/test_matrix.dart --list
 ```
 
+## Observability
+
+Use optional engine observers for tracing and metrics without adding an OTel
+dependency to core. The [observability guide](https://llamadart.leehack.com/docs/guides/observability)
+includes a runnable OpenTelemetry adapter and Langfuse/Grafana recipes.
+
 ## Contributing
 
 Keep public behavior, examples, README, website docs, support matrices, and
