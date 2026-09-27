@@ -74,35 +74,44 @@ stay in device memory, so the resident set after `generate` was only about
 off at 1.13-1.16x, which failed 1.10x without a leak
 ([#686](https://github.com/leehack/llamadart/issues/686)). Every other
 operating system and backend pair, including any the runner does not know, gets
-the ratio.
+the ratio. Those numbers predate the trimmed Linux footprint below: sampled
+after `malloc_trim(0)`, three Linux CUDA `tts` runs and one `stt` run peaked at
+1.05-1.07x ([#762](https://github.com/leehack/llamadart/issues/762)).
 
-`leak_slope_bound` runs on every backend. It skips the first
-`speechLeakWarmupCycles` (1) cycles, then fails if the footprint grew by more
-than `speechLeakCycleGrowthBytes` (7 MiB) in every one of the next
-`speechLeakWindowCycles` (7) cycles. A plateau, a one-off spike or growth in
-steps with a flat cycle between them passes; a steady leak of more than 7 MiB
-per cycle fails. The constants come from resident set measurements taken
-before the bounds used the footprint:
+`leak_slope_bound` runs on every backend. It fits a least-squares line to the
+footprint sampled after cycles 1-8, the last of the
+`speechLeakWarmupCycles` (1) warm-up cycles and the
+`speechLeakWindowCycles` (7) after it, so growth up to the end of cycle 1 does
+not count. It fails if the slope exceeds `speechLeakCycleGrowthBytes` (7 MiB)
+per cycle. A plateau, a one-off spike or
+a steady leak of 7 MiB per cycle or less passes. A steady leak of more fails,
+even when some cycles fall back. So does a single step of more than 36.75 MiB
+between cycles 4 and 5, or of more than 84 MiB between cycles 1 and 2 or 7 and
+8. The constants come from these measurements:
 
-- 7 MiB is half the smallest per-cycle growth of the LiteRT ASR leak in
-  [#634](https://github.com/leehack/llamadart/issues/634): 14.0 MiB across 12
-  warm cycles on macOS arm64.
-- The longest run of consecutive steps above 7 MiB in 46 recorded `stt` and
-  `tts` runs without a known leak is 4 (macOS, Linux and Windows; CPU, Metal
-  and CUDA). It occurred three times: in a macOS `tts` run recovering from memory
-  pressure, in a Linux CUDA `tts` run, and in a Linux x64 CPU `tts` run whose
-  resident set climbed for four cycles and then stopped. A 5-cycle window
-  would leave one cycle of margin. 7 leaves three, at a cost of two cycles
-  per run: about 30 s for `tts` on Linux x64 CPU and about 75 s on Linux
-  arm64 CPU, the slowest recorded, which stays inside the 15-minute deadline.
+- 7 MiB is half the smallest per-cycle resident set growth of the LiteRT ASR
+  leak in [#634](https://github.com/leehack/llamadart/issues/634): 14.0 MiB
+  across 12 warm cycles on macOS arm64. That leak fits 14.1-17.8 MiB per
+  cycle.
+- Without a known leak, 10 GGUF `stt` runs on Linux x64 and arm64 CPU, three
+  `tts` runs on Linux CPU and four Linux CUDA runs, all sampled after
+  `malloc_trim(0)`, fit -4.1 to 1.6 MiB per cycle. Three macOS resident set
+  recordings fit up to 3.5 MiB per cycle.
+- `stt` runs on GCE x64 and arm64 that leaked a `malloc` block after every
+  `load` fit 9.0-15.3 MiB per cycle at 12 and 16 MiB per reload, and all six
+  fail. Before [#762](https://github.com/leehack/llamadart/issues/762) the
+  bound failed only when every cycle grew by more than 7 MiB, and each of
+  those runs had a cycle that grew less, so all six passed. At 8 MiB per
+  reload, 3 of 4 runs fail; at 4 MiB, both pass. On arm64 the 16 MiB leaks
+  raised the peak ratio only to 1.08-1.09x, so only the slope fails them.
 - With `reload`, the warm-up cycle covers the first two reloads, which took
   the largest step in six of nine recorded Linux CUDA `tts` runs.
 
-The slope bound alone does not catch a leak of 7 MiB or less per cycle, a leak
-that releases memory in any window cycle, or growth that arrives in one jump. On
-Linux, the #634 LiteRT ASR resident set growth is one jump of about 85 MiB at
-`cancel`, then 0.7 MiB per cycle; only the peak ratio fails it. On Linux CUDA,
-where the ratio is not applied, a leak like that would pass.
+The slope bound alone does not catch a leak of 7 MiB or less per cycle, or
+growth that arrives in one jump before the window. On Linux, the #634 LiteRT
+ASR resident set growth is one jump of about 85 MiB at `cancel`, then 0.7 MiB
+per cycle; only the peak ratio fails it. On Linux CUDA, where the ratio is not
+applied, a leak like that would pass.
 
 The footprint counts native and Dart allocations together. Each report names
 its counter in `measurement`:
@@ -110,7 +119,8 @@ its counter in `measurement`:
 | Platform | Counter | Counts | Does not count |
 | --- | --- | --- | --- |
 | macOS, iOS | `task_info(TASK_VM_INFO).phys_footprint` | dirty anonymous memory, private or shared, including pages the kernel compressed or swapped out; per XNU's ledger, also IOKit-mapped memory such as graphics and Metal buffers, non-volatile purgeable memory and page tables | file-backed pages, clean or dirty |
-| Linux, Android | `RssAnon` + `RssShmem` + `VmSwap` from `/proc/self/status` | resident anonymous pages, resident shared memory such as `memfd` and `MAP_SHARED \| MAP_ANONYMOUS` pages, and swapped-out anonymous pages | file-backed pages, clean or dirty, and shared memory the kernel swapped out |
+| Linux with glibc | `RssAnon` + `RssShmem` + `VmSwap` from `/proc/self/status`, read after `malloc_trim(0)` | resident anonymous pages, resident shared memory such as `memfd` and `MAP_SHARED \| MAP_ANONYMOUS` pages, and swapped-out anonymous pages | file-backed pages, clean or dirty; shared memory the kernel swapped out; freed heap memory, which the trim first returns to the kernel |
+| Android, and Linux without `malloc_trim`, such as musl | `RssAnon` + `RssShmem` + `VmSwap` from `/proc/self/status` | the same, plus freed heap memory the allocator keeps | file-backed pages, clean or dirty, and shared memory the kernel swapped out |
 | Windows | `PrivateUsage` + `SharedCommitUsage` from `GetProcessMemoryInfo` `PROCESS_MEMORY_COUNTERS_EX2` | committed private memory and committed pagefile-backed shared sections, whether resident or not, including committed pages never written | file-backed sections, clean or dirty |
 | Windows without `PROCESS_MEMORY_COUNTERS_EX2` | `PrivateUsage` from `GetProcessMemoryInfo` `PROCESS_MEMORY_COUNTERS_EX` | committed private memory, whether resident or not, including committed pages never written | pagefile-backed shared sections; file-backed sections, clean or dirty |
 

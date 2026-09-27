@@ -95,13 +95,19 @@ For canonical full release notes, use:
   ([#626](https://github.com/leehack/llamadart/issues/626)).
 - Bound speech validation pack memory by a footprint counter instead of the
   resident set: `phys_footprint` on macOS and iOS, `RssAnon` plus `RssShmem`
-  plus `VmSwap` on Linux and Android, and `PrivateUsage` plus
+  plus `VmSwap` on Linux and Android, read after `malloc_trim(0)` where the C
+  library provides it (glibc, not Android), and `PrivateUsage` plus
   `SharedCommitUsage` on Windows (`PrivateUsage` alone on builds without it).
   Evicting file-backed pages, such as the
-  mmapped weights, or compressing memory under pressure no longer lowers the
-  baseline and fails `peak_memory_bound` without memory growth, and each
-  report names its counter
-  ([#633](https://github.com/leehack/llamadart/issues/633)).
+  mmapped weights, compressing memory under pressure, or glibc keeping freed
+  memory across reloads no longer fails `peak_memory_bound` without memory
+  growth, and each report names its counter
+  ([#633](https://github.com/leehack/llamadart/issues/633),
+  [#762](https://github.com/leehack/llamadart/issues/762)).
+- Fail speech validation `leak_slope_bound` when the least-squares footprint
+  slope over cleanup cycles 1-8 exceeds 7 MiB per cycle; it failed only when
+  every cycle grew by more than 7 MiB, and passed leaks of 16 MiB per reload
+  ([#762](https://github.com/leehack/llamadart/issues/762)).
 - Detect chat template capabilities with llama.cpp's probes, and give
   templates that read only typed content text parts, as llama.cpp does:
   SmolVLM prompts keep the message text, Ministral 3 renders an image

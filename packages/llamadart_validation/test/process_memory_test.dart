@@ -83,6 +83,42 @@ void main() {
         isNull,
       );
     });
+    test('calls malloc_trim(0) before each read, and says so', () {
+      final calls = <String>[];
+      final counter = linuxCounterFrom(
+        (pad) {
+          calls.add('trim $pad');
+          return 1;
+        },
+        () {
+          calls.add('read');
+          return 7;
+        },
+      );
+      expect(counter.source, linuxFootprintSource);
+      expect(counter.source, endsWith('after malloc_trim(0)'));
+      expect(counter.read(), 7);
+      expect(counter.read(), 7);
+      expect(calls, ['trim 0', 'read', 'trim 0', 'read']);
+    });
+    test(
+      'without malloc_trim, as on Android, reads untrimmed, and says so',
+      () {
+        int? read() => 7;
+        final counter = linuxCounterFrom(null, read);
+        expect(counter.source, linuxUntrimmedFootprintSource);
+        expect(counter.source, contains('malloc_trim unavailable'));
+        expect(identical(counter.read, read), isTrue);
+      },
+    );
+    test('glibc provides malloc_trim to this process', () {
+      expect(lookUpMallocTrim(DynamicLibrary.process()), isNotNull);
+      expect(linuxSource(), linuxFootprintSource);
+    }, testOn: 'linux');
+    test('a process without malloc_trim reads untrimmed', () {
+      expect(lookUpMallocTrim(DynamicLibrary.process()), isNull);
+      expect(linuxSource(), linuxUntrimmedFootprintSource);
+    }, testOn: 'mac-os');
   });
 
   group('Darwin task_vm_info', () {
@@ -230,15 +266,15 @@ int main(void) {
 
   group('counter selection', () {
     test('names the counter each platform reads', () {
-      for (final (os, source, read) in [
-        ('macos', darwinFootprintSource, readDarwinFootprint),
-        ('ios', darwinFootprintSource, readDarwinFootprint),
-        ('linux', linuxFootprintSource, readLinuxFootprint),
-        ('android', linuxFootprintSource, readLinuxFootprint),
-      ]) {
+      for (final os in ['macos', 'ios']) {
         final counter = footprintCounterFor(os)!;
-        expect(counter.source, source, reason: os);
-        expect(identical(counter.read, read), isTrue, reason: os);
+        expect(counter.source, darwinFootprintSource, reason: os);
+        expect(identical(counter.read, readDarwinFootprint), isTrue);
+      }
+      for (final os in ['linux', 'android']) {
+        final counter = footprintCounterFor(os)!;
+        expect(identical(counter.describe, linuxSource), isTrue, reason: os);
+        expect(identical(counter.read, readLinuxFootprint), isTrue, reason: os);
       }
       final windows = footprintCounterFor('windows')!;
       expect(identical(windows.describe, windowsSource), isTrue);
@@ -343,6 +379,21 @@ int main(void) {
         ..writeAsBytesSync(Uint8List(size)..fillRange(0, size, 7));
     }
 
+    test('does not count freed heap memory the allocator keeps', () async {
+      const size = 256 * mib;
+      final output = await probe(['freed', '$size']);
+      final reason = '$output';
+      expect(
+        output['untrimmed']! - output['before']!,
+        greaterThan(200 * mib),
+        reason: reason,
+      );
+      expect(
+        (output['footprint']! - output['before']!).abs(),
+        lessThan(64 * mib),
+        reason: reason,
+      );
+    }, testOn: 'linux');
     test('counts committed memory never written', () async {
       const size = 256 * mib;
       final output = await probe(['dirty', 'committed', '$size']);
