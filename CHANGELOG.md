@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Document generic JSON tool calling as an intentional fallback, including
+  its prompt and model-reliability limits; runtime behavior is unchanged
+  ([#755](https://github.com/leehack/llamadart/issues/755)).
+
 - Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
   Web ([#723](https://github.com/leehack/llamadart/issues/723)).
 - Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA

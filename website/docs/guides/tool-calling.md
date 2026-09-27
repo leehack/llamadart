@@ -93,6 +93,49 @@ message with several results is rendered as one tool message per result.
 For an OpenAI-compatible reference, see
 [OpenAI-compatible server](../examples/llamadart-server).
 
+## Generic JSON fallback
+
+For templates without a recognized tool-call format, and for Gemma 2/3/3n,
+llamadart keeps its generic JSON fallback when tools are passed with
+`ToolChoice.auto` or `ToolChoice.required`. It adds a JSON instruction,
+builds a grammar from the supplied tools for runtimes that support it, and
+parses output such as:
+
+```json
+{"tool_call":{"name":"get_weather","arguments":{"city":"Paris"}}}
+```
+
+An ordinary answer uses `{"response":"Hello!"}`. The parser returns the
+answer or tool call through the same API as a model-specific format. Your
+application still decides whether to invoke the tool.
+
+This fallback is an intentional extension to the tested llama.cpp versions
+(`b10549` and `v0.5.0`, commit `7fe450e19`). For the tested ChatML Hermes-3,
+SmolLM2 and SmolVLM templates, those versions render without tool definitions
+or a tool grammar and return JSON tool envelopes as ordinary text. Matching
+that behavior would remove llamadart's existing fallback. The template in the
+actual model file determines routing; a model family name alone does not.
+
+### What the fallback does not guarantee
+
+A valid JSON shape does not establish that a model chose the correct tool or
+arguments. Generic calling depends on instruction following and should be
+validated with the exact model and task.
+
+Tool definitions are passed to the template, but a template that ignores its
+`tools` variable can omit names, descriptions and parameter documentation
+from the prompt. The generic instruction only explains the JSON envelope;
+it does not insert a tool catalog. The grammar can constrain names and
+argument shapes without explaining their meaning to the model. Inspect
+`engine.chatTemplate(...)`; if the definitions are missing, provide them in
+your system instruction or use a template with native tool support.
+
+`ToolChoice.none` disables the fallback tool instruction and tool grammar for
+these templates. Backend restrictions still apply: in particular, this
+fallback does not add grammar enforcement to LiteRT-LM. See
+[Chat templates and output parsing](./chat-template-and-parsing) for runtime
+routing and [model families](../getting-started/model-families) for formats.
+
 ## Tool choice semantics
 
 - `ToolChoice.none`: disable tool calls for that request.
