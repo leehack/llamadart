@@ -3007,7 +3007,7 @@ void main() {
     });
 
     test(
-      'create preserves raw whitespace for plain tool-enabled content',
+      'create trims plain tool-enabled content as the final parse does',
       () async {
         backend.generationChunks = const ['  hello', '  ', '\n'];
         await engine.loadModel('qwen-test.gguf');
@@ -3034,13 +3034,13 @@ void main() {
             .whereType<String>()
             .join();
 
-        expect(streamedContent, equals('  hello  \n'));
+        expect(streamedContent, equals('hello'));
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
     );
 
     test(
-      'create preserves whitespace-only output with tools enabled',
+      'create streams no content for whitespace-only output with tools',
       () async {
         backend.generationChunks = const [' ', '  ', '\n'];
         await engine.loadModel('qwen-test.gguf');
@@ -3067,7 +3067,7 @@ void main() {
             .whereType<String>()
             .join();
 
-        expect(streamedContent, equals('   \n'));
+        expect(streamedContent, isEmpty);
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
     );
@@ -3168,7 +3168,7 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('  {"note": 1}\n'));
+      expect(streamedContent, equals('{"note": 1}'));
       expect(contentChunks.length, greaterThan(1));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
@@ -3201,7 +3201,7 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('  ["note"]\n'));
+      expect(streamedContent, equals('["note"]'));
       expect(contentChunks, hasLength(3));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
@@ -3334,7 +3334,7 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('  <div>hello</div>\n'));
+      expect(streamedContent, equals('<div>hello</div>'));
       expect(contentChunks.length, greaterThan(1));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
@@ -3372,7 +3372,7 @@ void main() {
             .join();
 
         expect(streamedThinking, equals('reason'));
-        expect(streamedContent, equals(' answer'));
+        expect(streamedContent, equals('answer'));
         expect(streamedContent, isNot(contains('reason')));
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
@@ -3398,7 +3398,7 @@ void main() {
             .join();
 
         expect(streamedThinking, isEmpty);
-        expect(streamedContent, equals(' answer'));
+        expect(streamedContent, equals('answer'));
         expect(streamedContent, isNot(contains('reason')));
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
@@ -3438,7 +3438,7 @@ void main() {
             .join();
 
         expect(streamedThinking, isEmpty);
-        expect(streamedContent, equals(' answer'));
+        expect(streamedContent, equals('answer'));
         expect(streamedContent, isNot(contains('reason')));
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
