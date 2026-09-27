@@ -163,6 +163,19 @@ void main() {
       expect(added.length, 2);
     });
 
+    test('history keeps the thought and answer the parse returns', () async {
+      backend.queueResponse('<think>\nPlan.\n</think>\n\nSure.');
+      await session.create([const LlamaTextContent('Hi')]).drain();
+
+      final reply = session.history.last;
+      expect(reply.role, LlamaChatRole.assistant);
+      expect(reply.content, 'Sure.');
+      expect(
+        reply.parts.whereType<LlamaThinkingContent>().single.thinking,
+        'Plan.',
+      );
+    });
+
     test('enforceContextLimit truncation', () async {
       backend.contextSize = 400;
       session.maxContextTokens = 400;

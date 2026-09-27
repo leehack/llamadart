@@ -34,6 +34,15 @@ For canonical full release notes, use:
   with the Qwen3.5 template; before, they became line breaks unless a tool
   call ended the thought
   ([#743](https://github.com/leehack/llamadart/issues/743)).
+- Stream content and reasoning with the whitespace the non-streamed parse
+  keeps, with or without tools, so streamed answers and `ChatSession` history
+  no longer start with the blank lines after `</think>`. Only whitespace at
+  either end, and text that may be a tag or tool-call opening, waits for more
+  output, so reasoning still streams token by token. Without tools, Hermes,
+  DeepSeek R1, Qwen3-Coder XML and the other formats the template engine
+  guide lists also drop a start tag repeated at the start of a forced-open
+  thought, as the parse does. The guide lists the exceptions
+  ([#754](https://github.com/leehack/llamadart/issues/754)).
 - Stream content that equals the non-streamed parse for Qwen3-Coder XML,
   Mistral Nemo and 15 more tool-call formats, and for output parsed with a PEG
   parser, so text before a tool call no longer carries the tool-call envelope

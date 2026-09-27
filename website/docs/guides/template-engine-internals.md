@@ -106,6 +106,13 @@ otherwise its text stays in content. This deliberately differs from upstream
 llama.cpp (`7fe450e1`), which fails to parse this output and returns no tool
 call.
 
+Streamed content and reasoning start and end with the whitespace the final
+parse keeps, with or without tools, apart from the cases below. The parse
+trims content, so the stream holds back leading whitespace until other text
+arrives, and trailing whitespace until more text arrives or generation ends.
+Other text waits only as described below, for example while it may be a
+thinking tag or, with tools, a tool-call opening.
+
 When tool calls are parsed, streamed content equals the content of the final
 parse for Hermes, Mistral Nemo, Magistral, Qwen3-Coder XML, DeepSeek R1 and
 V3, Command R7B, Cohere2 MoE, Granite, Nemotron V2, Apertus, MiniCPM5,
@@ -116,11 +123,12 @@ and trailing whitespace, is held until later output rules the opening out or
 generation ends, as llama.cpp (`7fe450e1`) PEG `until` stops content before a
 whole delimiter or a partial one at the end of the input. With Qwen3-Coder
 XML, a `<tool_call>` also ends a forced-open thought when the output has no
-thinking tag, as its parse does. As in the parse, a start tag the model
-repeats at the start of a forced-open thought is dropped, and when the output
-has no start tag, an end tag after the first one is content. A later start
-tag makes the parse end a thought at each earlier end tag; the stream does so
-only when the start tag arrives in the same token as the end tag.
+thinking tag, as its parse does. For these formats, with or without tools, a
+start tag the model repeats at the start of a forced-open thought is dropped,
+as in the parse, and when the output has no start tag, an end tag after the
+first one is content. A later start tag makes the parse end a thought at each
+earlier end tag; the stream does so only when the start tag arrives in the
+same token as the end tag.
 
 Streamed reasoning equals the parse too. The parse trims each thought;
 upstream llama.cpp (`7fe450e1`) keeps the whitespace before `</think>`, so
@@ -128,8 +136,11 @@ with the Qwen3 template it returns `"Plan it.\n"` for
 `<think>\nPlan it.\n</think>`. Except for Qwen3-Coder XML, the parse also
 replaces an escaped `\n` or `\r` in reasoning with a newline or a carriage
 return; the Qwen3-Coder XML parse keeps them, as llama.cpp (`7fe450e1`) does
-with the Qwen3.5 template. One exception is a forced-open thought that never
-closes and starts with whitespace. The parse keeps it untrimmed,
+with the Qwen3.5 template. When tool calls are parsed, the stream of the
+formats above replaces them too, holding back a trailing `\` until the next
+token; otherwise it keeps them as generated. One exception is a forced-open
+thought that never closes and starts with whitespace, with or without tools.
+The parse keeps it untrimmed,
 but the stream drops the leading whitespace before it can know the thought
 will not close. The streamed text is then no prefix of the parse, so the final
 reconciliation adds nothing and the trailing whitespace is lost too:
@@ -140,9 +151,19 @@ reasoning, as llama.cpp (`7fe450e1`) does with the DeepSeek V3.1 template.
 
 Output parsed with a PEG parser (Ministral, Solar Open, Nemotron V3, or
 Qwen3-Coder XML given a parser) streams the content and reasoning of partial
-PEG parses, which hold back a possible opening themselves. A Ministral
-thought cut off by the token limit therefore streams as reasoning, although
-the final parse returns it, with its `[THINK]` tag, as content.
+PEG parses when tool calls are parsed. Those parses hold back a possible
+opening themselves. A Ministral thought cut off by the token limit therefore
+streams as reasoning, although the final parse returns it, with its `[THINK]`
+tag, as content. Without tools, the PEG parse trims only trailing whitespace,
+so the stream keeps leading whitespace.
+
+Streams built from partial parses hold back trailing whitespace until more
+text arrives. They are used for Gemma 4 output, and, when tool calls are
+parsed, for PEG output, Kimi K3, MiniMax M1 and M3, DeepSeek V3.2 and V4,
+Muse Glimmer, GLM 4.5 and Laguna output, and output of other formats not
+listed above that starts with a forced-open thought or a tool call. A partial
+parse taken before `</think>` arrives can stream leading whitespace of a
+forced-open thought that the final parse trims.
 
 ## `dinja` integration
 

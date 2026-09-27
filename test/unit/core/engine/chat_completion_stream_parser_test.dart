@@ -1114,19 +1114,27 @@ void main() {
                   '$thought.\n</think>\n\nSunny.',
             ),
           ]) {
-            final end = output.indexOf('</think>');
-            final reasoning = await _reasoningBeforeEndTag(
-              format,
-              RegExp(r'\s+|[^\s]+').allMatches(output).map((m) => m[0]!),
-              output.substring(0, end),
-            );
-            final parsed = ChatTemplateEngine.parse(
-              format.index,
-              output,
-              thinkingForcedOpen: true,
-              tools: [_weatherTool],
-            );
-            expect(reasoning, parsed.reasoningContent, reason: format.name);
+            for (final tools in const [true, false]) {
+              final end = output.indexOf('</think>');
+              final reasoning = await _reasoningBeforeEndTag(
+                format,
+                RegExp(r'\s+|[^\s]+').allMatches(output).map((m) => m[0]!),
+                output.substring(0, end),
+                tools: tools,
+              );
+              final parsed = ChatTemplateEngine.parse(
+                format.index,
+                output,
+                parseToolCalls: tools,
+                thinkingForcedOpen: true,
+                tools: tools ? [_weatherTool] : null,
+              );
+              expect(
+                reasoning,
+                parsed.reasoningContent,
+                reason: '${format.name} tools: $tools',
+              );
+            }
           }
         });
 
@@ -1181,6 +1189,228 @@ void main() {
             (' it.', 'Plan it.', ''),
           ]);
         });
+      });
+    });
+
+    group('whitespace matches the final parse', () {
+      String pegParser(
+        ChatTemplateHandler handler, {
+        String templateSource = '{{ messages[0]["content"] }}',
+        bool enableThinking = true,
+      }) {
+        return handler
+            .render(
+              templateSource: templateSource,
+              messages: const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+              ],
+              metadata: const {},
+              tools: [_weatherTool],
+              enableThinking: enableThinking,
+            )
+            .parser!;
+      }
+
+      const nemotronV3Template =
+          '{% set truncate_history_thinking = true %}'
+          '<tool_call><function><function=weather><parameters>'
+          '<parameter=city><think>';
+
+      test('the DeepSeek R1 chunk from #754', () async {
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: Stream.value('<think>\nPlan.\n</think>\n\nSure.'),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.deepseekR1.index,
+          ),
+          parseToolCallsEnabled: false,
+          enableThinking: true,
+          modelName: 'test-model',
+          completionId: 'issue-754',
+        ).toList();
+
+        expect(
+          chunks
+              .map((chunk) => chunk.choices.single.delta.content ?? '')
+              .join(),
+          'Sure.',
+        );
+        expect(
+          chunks
+              .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+              .join(),
+          'Plan.',
+        );
+      });
+
+      test('text in every format, with and without tools', () async {
+        for (final format in ChatFormat.values) {
+          if (format.name.startsWith('peg')) {
+            continue;
+          }
+          for (final output in const [
+            ' \n Hi there. \n ',
+            '\n\nLine one.\n\nLine two.\n',
+            '\u{3000}Lead.\tTab\t\u{3000}',
+            ' \n ',
+            'Let me check.\n<th',
+          ]) {
+            for (final tools in const [true, false]) {
+              await _expectStreamMatchesParse(format, output, tools: tools);
+            }
+          }
+        }
+      });
+
+      test('thoughts in formats whose tool-call streams are gated', () async {
+        const thoughts = [
+          '<think>\nPlan.\n</think>\n\nSure.',
+          '<think>\n Plan. \n</think>\n\n Sure. \n',
+          '\n<think>\nPlan.\n</think>\n\nSure.',
+          '<think>\nA.\n</think>\n\n<think>\n B. \n</think>\n\nDone.',
+          '<think> \n </think> \n ',
+          '<think>\nPlan.\n</think>\n\nSure.\n\n<think>\nLate.\n</think>\n\nOk.',
+        ];
+        const forcedThoughts = [
+          'Plan.\n</think>\n\nSure.',
+          ' \n Plan. \n</think> \n Sure. \n ',
+        ];
+        for (final format in const [
+          ChatFormat.hermes,
+          ChatFormat.mistralNemo,
+          ChatFormat.magistral,
+          ChatFormat.qwen3CoderXml,
+          ChatFormat.deepseekR1,
+          ChatFormat.deepseekV3,
+          ChatFormat.commandR7B,
+          ChatFormat.cohere2Moe,
+          ChatFormat.granite,
+          ChatFormat.nemotronV2,
+          ChatFormat.apertus,
+          ChatFormat.exaoneMoe,
+          ChatFormat.minicpm5,
+          ChatFormat.hunyuanV3,
+          ChatFormat.seedOss,
+          ChatFormat.minimaxM2,
+          ChatFormat.apriel15,
+          ChatFormat.xiaomiMimo,
+        ]) {
+          final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+          String withTags(String output) => output
+              .replaceAll('<think>', tags.startTag)
+              .replaceAll('</think>', tags.endTag);
+          final forcedOpen = switch (format) {
+            ChatFormat.seedOss ||
+            ChatFormat.minimaxM2 ||
+            ChatFormat.apriel15 ||
+            ChatFormat.xiaomiMimo => [false],
+            _ => [false, true],
+          };
+          for (final tools in const [true, false]) {
+            for (final forced in forcedOpen) {
+              for (final output in [
+                ...thoughts,
+                if (forced) ...forcedThoughts,
+                if (forced && format != ChatFormat.exaoneMoe) 'Plan it.  \n\n',
+                if (!forced) '<think>\n Plan never ends. \n',
+                if (!forced) '<think>Plan </thi',
+              ]) {
+                await _expectStreamMatchesParse(
+                  format,
+                  withTags(output),
+                  forcedOpen: forced,
+                  tools: tools,
+                  openings: [tags.startTag, tags.endTag],
+                );
+              }
+            }
+          }
+        }
+      });
+
+      test(
+        'keeps leading whitespace a PEG parse keeps without tools',
+        () async {
+          final ministral = pegParser(MinistralHandler());
+          final qwen = pegParser(
+            Qwen3CoderXmlHandler(),
+            templateSource: nemotronV3Template,
+            enableThinking: false,
+          );
+          final qwenThinking = pegParser(
+            Qwen3CoderXmlHandler(),
+            templateSource: '$nemotronV3Template\n',
+          );
+          for (final (format, parser, forced) in [
+            (ChatFormat.ministral, ministral, false),
+            (ChatFormat.pegNative, ministral, false),
+            (ChatFormat.qwen3CoderXml, qwen, false),
+            (ChatFormat.pegConstructed, qwen, false),
+            (ChatFormat.qwen3CoderXml, qwenThinking, true),
+          ]) {
+            final tags = ChatTemplateEngine.thinkingTagsFor(format.index);
+            for (final output in [
+              ' \n Hi there. \n ',
+              '\n\nLine one.\n\nLine two.\n',
+              if (forced) ' \n Plan. \n${tags.endTag}\n\n Sure. \n',
+            ]) {
+              await _expectStreamMatchesParse(
+                format,
+                output,
+                forcedOpen: forced,
+                parser: parser,
+                tools: false,
+              );
+            }
+          }
+        },
+      );
+
+      test('trailing whitespace of partial parses waits', () async {
+        const namespace = ']<]minimax[>[';
+        await _expectStreamMatchesParse(
+          ChatFormat.minimaxM3,
+          'Let me check.\n$namespace<tool_call>\n'
+          '$namespace<invoke name="weather">'
+          '$namespace<city>Paris$namespace</city>'
+          '$namespace</invoke>\n$namespace</tool_call>',
+        );
+        await _expectStreamMatchesParse(
+          ChatFormat.minimaxM3,
+          'Plan.\n</mm:think>\n\nSure.\n',
+          forcedOpen: true,
+        );
+      });
+
+      test('without tools, text streams as each token arrives', () async {
+        await _expectStreamedAfterEachToken(
+          ChatFormat.deepseekR1,
+          tools: false,
+          const [
+            ('<think>', '', ''),
+            ('\n', '', ''),
+            ('Plan', 'Plan', ''),
+            (' it', 'Plan it', ''),
+            ('.\n', 'Plan it.', ''),
+            ('</think>', 'Plan it.', ''),
+            ('\n\n', 'Plan it.', ''),
+            ('Sure', 'Plan it.', 'Sure'),
+            (' \n', 'Plan it.', 'Sure'),
+            ('thing', 'Plan it.', 'Sure \nthing'),
+          ],
+        );
+        await _expectStreamedAfterEachToken(
+          ChatFormat.hermes,
+          forcedOpen: true,
+          tools: false,
+          const [
+            ('Use ', 'Use', ''),
+            (r'\', r'Use \', ''),
+            ('n', r'Use \n', ''),
+            (' <tool', r'Use \n <tool', ''),
+            ('_call>', r'Use \n <tool_call>', ''),
+          ],
+        );
       });
     });
 
@@ -1797,13 +2027,15 @@ Future<void> _expectStreamMatchesParse(
   bool forcedOpen = false,
   String? parser,
   List<String> openings = const [],
+  bool tools = true,
 }) async {
   final parsed = ChatTemplateEngine.parse(
     format.index,
     output,
+    parseToolCalls: tools,
     thinkingForcedOpen: forcedOpen,
     parser: parser,
-    tools: [_weatherTool],
+    tools: tools ? [_weatherTool] : null,
   );
   for (final tokens in _chunkings(output, openings)) {
     final chunks = await ChatCompletionStreamParser.parse(
@@ -1814,11 +2046,11 @@ Future<void> _expectStreamMatchesParse(
         thinkingForcedOpen: forcedOpen,
         parser: parser,
       ),
-      parseToolCallsEnabled: true,
+      parseToolCallsEnabled: tools,
       enableThinking: true,
       modelName: 'test-model',
       completionId: 'stream-matches-parse',
-      tools: [_weatherTool],
+      tools: tools ? [_weatherTool] : null,
     ).toList();
 
     final calls = chunks
@@ -1827,12 +2059,12 @@ Future<void> _expectStreamMatchesParse(
     expect(
       chunks.map((chunk) => chunk.choices.single.delta.content ?? '').join(),
       parsed.content,
-      reason: '$tokens',
+      reason: '${format.name} tools: $tools $tokens',
     );
     expect(
       chunks.map((chunk) => chunk.choices.single.delta.thinking ?? '').join(),
       parsed.reasoningContent ?? '',
-      reason: '$tokens',
+      reason: '${format.name} tools: $tools $tokens',
     );
     expect(
       [
@@ -1886,8 +2118,9 @@ Future<void> _expectContentAfterEachToken(
 Future<String> _reasoningBeforeEndTag(
   ChatFormat format,
   Iterable<String> tokens,
-  String thought,
-) async {
+  String thought, {
+  bool tools = true,
+}) async {
   final controller = StreamController<String>();
   final reasoning = StringBuffer();
   final subscription =
@@ -1898,11 +2131,11 @@ Future<String> _reasoningBeforeEndTag(
           format: format.index,
           thinkingForcedOpen: true,
         ),
-        parseToolCallsEnabled: true,
+        parseToolCallsEnabled: tools,
         enableThinking: true,
         modelName: 'test-model',
         completionId: 'liveness',
-        tools: [_weatherTool],
+        tools: tools ? [_weatherTool] : null,
       ).listen(
         (chunk) => reasoning.write(chunk.choices.single.delta.thinking ?? ''),
       );
@@ -1927,6 +2160,7 @@ Future<void> _expectStreamedAfterEachToken(
   ChatFormat format,
   List<(String token, String reasoning, String content)> steps, {
   bool forcedOpen = false,
+  bool tools = true,
 }) async {
   final tokens = StreamController<String>();
   final reasoning = StringBuffer();
@@ -1939,11 +2173,11 @@ Future<void> _expectStreamedAfterEachToken(
           format: format.index,
           thinkingForcedOpen: forcedOpen,
         ),
-        parseToolCallsEnabled: true,
+        parseToolCallsEnabled: tools,
         enableThinking: true,
         modelName: 'test-model',
         completionId: 'latency',
-        tools: [_weatherTool],
+        tools: tools ? [_weatherTool] : null,
       ).listen((chunk) {
         reasoning.write(chunk.choices.single.delta.thinking ?? '');
         content.write(chunk.choices.single.delta.content ?? '');
