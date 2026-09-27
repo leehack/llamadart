@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.25
 
 - Document generic JSON tool calling as an intentional fallback, including
   its prompt and model-reliability limits; runtime behavior is unchanged
@@ -181,8 +181,8 @@ For canonical full release notes, use:
   new `LlamaEngine.hasMultimodalProjector`
   ([#325](https://github.com/leehack/llamadart/issues/325)).
 - Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching
-  Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
+  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`) with Apple companion
+  `0.0.20`, regenerated matching Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
   checksum, and aligned current README/website native override docs.
 - Honour `LlamaEngine.cancelGeneration()` issued right after listening to a
   `create`, `generate` or `ChatSession.create` stream, before it reaches the

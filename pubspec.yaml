@@ -1,6 +1,6 @@
 name: llamadart
 description: Cross-platform, on-device LLM inference for Dart and Flutter. Run GGUF (llama.cpp) and LiteRT-LM models locally on Android, iOS, macOS, Windows, Linux and web.
-version: 0.8.24
+version: 0.8.25
 homepage: https://llamadart.leehack.com
 repository: https://github.com/leehack/llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
