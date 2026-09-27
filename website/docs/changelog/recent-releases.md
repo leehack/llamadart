@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Document generic JSON tool calling as an intentional fallback, including
+  its prompt and model-reliability limits; runtime behavior is unchanged
+  ([#755](https://github.com/leehack/llamadart/issues/755)).
 - Load Qwen3.5-0.8B on the Web CPU (WebAssembly) backend at the default
   `contextSize` using smaller processing batches, while preserving
   full-context defaults for unknown models, including embedding models

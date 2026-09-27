@@ -62,10 +62,14 @@ and v3.2, and FireFunction v2. Nemotron 3 Nano and StepFun 3.5 Flash use the
 Qwen3-Coder XML format; Hermes 2 Pro, Hermes 3, Bielik, Reka Edge, MiMo-VL
 and Apriel 1.5 use the Hermes format.
 
-"Generic JSON tool calls" means the family has no native tool-call syntax:
-when you pass tools, llamadart asks the model to answer with a `tool_call` or
-`response` JSON object and parses that. It works best with models that follow
-instructions well.
+"Generic JSON tool calls" means llamadart supplies a fallback protocol when
+the selected template has no recognized tool-call format: it asks the model
+to answer with a `tool_call` or `response` JSON object and parses that. This
+is an intentional extension to the tested llama.cpp behavior, not evidence
+of native tool support or reliable tool selection. Templates can omit tool
+definitions even when a grammar constrains the output. See
+[Generic JSON fallback](../guides/tool-calling#generic-json-fallback) for the
+protocol, upstream comparison and prompt limitations.
 
 Where a format defines reasoning markers, such as `<think>`, Gemma 4's
 thought channel or Mistral's `[THINK]`, the parser returns reasoning
