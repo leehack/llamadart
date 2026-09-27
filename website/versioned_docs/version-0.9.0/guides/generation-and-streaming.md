@@ -182,6 +182,9 @@ final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
   warning and never reaches the caller. Without observers the engine does no
   observation work.
 
+For a runnable observer-to-OpenTelemetry adapter and Langfuse/Grafana recipes,
+see [Observability](./observability).
+
 ## Thinking budget (native llama.cpp)
 
 For GGUF models with a thinking channel, `ThinkingBudget` maps to llama.cpp's

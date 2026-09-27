@@ -1,3 +1,7 @@
+## Unreleased
+
+- Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
+
 ## 0.9.0
 
 - Document generic JSON tool calling as an intentional fallback, including

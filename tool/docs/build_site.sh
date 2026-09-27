@@ -7,6 +7,15 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WEBSITE_DIR="$ROOT_DIR/website"
 PAGEFIND_VERSION="1.5.2"
 
+echo "[docs] Checking the observability example"
+(
+  cd "$WEBSITE_DIR/examples/observability"
+  dart pub get
+  dart format --output=none --set-exit-if-changed .
+  dart analyze --fatal-infos
+  dart test -p vm
+)
+
 cd "$WEBSITE_DIR"
 
 echo "[docs] Resolving website dependencies"
