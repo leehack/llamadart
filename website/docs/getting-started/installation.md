@@ -15,7 +15,7 @@ description: Add llamadart to a Dart or Flutter app, set up Apple and web target
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.24
+  llamadart: ^0.9.0
 ```
 
 Then resolve packages:
@@ -42,12 +42,12 @@ companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.24
-  llamadart_llama_cpp_flutter: ^0.0.19 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.11 # Apple .litertlm / LiteRT-LM targets
+  llamadart: ^0.9.0
+  llamadart_llama_cpp_flutter: ^0.0.20 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.12 # Apple .litertlm / LiteRT-LM targets
 ```
 
-Pair companion `0.0.19` with core `0.8.24`. The build checks the resolved
+Pair companion `0.0.20` with core `0.9.0`. The build checks the resolved
 companion's runtime pin and fails on a mismatch or on an unverified local
 `Artifacts` override; resolve the matching companion and rerun
 `flutter pub get`. Flutter macOS LiteRT-LM builds still use the core package's

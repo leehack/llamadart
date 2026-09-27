@@ -1,4 +1,4 @@
-## Unreleased
+## 0.9.0
 
 - Document generic JSON tool calling as an intentional fallback, including
   its prompt and model-reliability limits; runtime behavior is unchanged
@@ -158,8 +158,8 @@
   ([#696](https://github.com/leehack/llamadart/issues/696)).
 
 * Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`), regenerated matching
-  Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
+  `leehack/llamadart-native@v0.5.0` (llama.cpp `v0.5.0`) with Apple companion
+  `0.0.20`, regenerated matching Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM
   checksum, and aligned current README/website native override docs.
 
 - Add `LlamaEngine.scoreNextToken(...)` for next-token log-probabilities on
