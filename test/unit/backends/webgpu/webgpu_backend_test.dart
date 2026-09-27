@@ -969,6 +969,29 @@ void main() {
       },
     );
 
+    for (final (label, params) in const [
+      ('CPU preference', ModelParams(preferredBackend: GpuBackend.cpu)),
+      ('zero GPU layers', ModelParams(gpuLayers: 0)),
+      (
+        'memory64 CPU',
+        ModelParams(preferredBackend: GpuBackend.cpu, preferMemory64: true),
+      ),
+    ]) {
+      test('keeps long encoder batches with $label', () async {
+        // The URL deliberately gives no architecture hint. The bridge creates
+        // the context before Dart can inspect model metadata.
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          params,
+        );
+
+        expect(requestedContextSizes, <int>[4096]);
+        expect(lastRequestedGpuLayers, 0);
+        expect(lastRequestedBatchSize, 4096);
+        expect(lastRequestedMicroBatchSize, 4096);
+      });
+    }
+
     test('sends no GPU layers when the CPU backend is preferred', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
@@ -1058,8 +1081,8 @@ void main() {
 
         expect(requestedContextSizes, <int>[4096, 4096, 2048]);
         expect(requestedGpuLayerCounts, <int?>[99, 0, 99]);
-        expect(requestedBatchSizes, <int>[4096, 2048, 2048]);
-        expect(requestedMicroBatchSizes, <int>[4096, 512, 2048]);
+        expect(requestedBatchSizes, <int>[4096, 4096, 2048]);
+        expect(requestedMicroBatchSizes, <int>[4096, 4096, 2048]);
       },
     );
 

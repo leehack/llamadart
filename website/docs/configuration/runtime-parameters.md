@@ -48,13 +48,14 @@ Important fields:
   logical batch so embedding inputs are not split incorrectly. WebGPU keeps
   full-context automatic batching because model architecture is not available
   before bridge context creation, though model-specific safety presets may be
-  smaller. Web loads on the CPU (`preferredBackend: GpuBackend.cpu` or
-  `gpuLayers: 0`) use the native decoder defaults.
+  smaller. The Qwen3.5-0.8B URL preset uses native decoder defaults on
+  CPU (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`); other models
+  keep full-context defaults.
 - `microBatchSize`: context physical micro-batch size (`n_ubatch`). On native,
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
-  resolved logical batch unless a safety preset applies; Web CPU loads use
-  `min(n_batch, 512)`. Explicit positive
+  resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
+  CPU preset uses `min(n_batch, 512)`. Explicit positive
   values are preserved within `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models and models without a KV cache (such as BERT and
   ModernBERT) embed each input in one micro-batch, so `embed()` throws

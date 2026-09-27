@@ -783,14 +783,14 @@ class WebGpuLlamaBackend
     }
 
     // The bridge creates the context before Dart can inspect model
-    // architecture. WebGPU keeps full-context automatic batching so
-    // non-causal encoder models do not regress to first-embedding aborts.
-    // CPU attempts use the native decoder defaults, because a full-context
-    // micro-batch of a large-vocabulary decoder can exceed wasm32 memory.
+    // architecture. Keep full-context automatic batching for unknown models:
+    // non-causal encoders must process the whole input in one micro-batch.
+    // Only the existing Qwen3.5-0.8B preset uses decoder defaults on CPU,
+    // because its full-context micro-batch can exceed wasm32 memory.
     final resolved = resolveModelContextBatchSizes(
       params,
       contextSize,
-      useFullContextDefaults: !isCpuAttempt,
+      useFullContextDefaults: !(isCpuAttempt && isQwen35Small),
     );
     return (nBatch: resolved.batchSize, nUbatch: resolved.microBatchSize);
   }

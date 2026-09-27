@@ -1,9 +1,8 @@
 ## Unreleased
 
-- Load Qwen3.5 on the Web CPU (WebAssembly) backend at the default
-  `contextSize`: CPU loads now resolve unset `batchSize` / `microBatchSize` to
-  `min(contextSize, 2048)` / `512`, as native does, instead of the full
-  context, which aborted the core
+- Load Qwen3.5-0.8B on the Web CPU (WebAssembly) backend at the default
+  `contextSize` using smaller processing batches, while preserving
+  full-context defaults for unknown models, including embedding models
   ([#752](https://github.com/leehack/llamadart/issues/752)).
 - Report a failed Web model load on a page without cross-origin isolation as
   `LlamaModelException` with its real cause, not as a COOP/COEP
