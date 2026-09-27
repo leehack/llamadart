@@ -79,6 +79,12 @@ model architecture before context creation. Two presets apply when
 
 URL matching ignores case.
 
+Otherwise, Web loads on the CPU (`preferredBackend: GpuBackend.cpu` or
+`gpuLayers: 0`) resolve unset sizes as native decoders do: a batch of
+`min(contextSize, 2048)` and a micro-batch of at most `512`. A full-context
+micro-batch of a large-vocabulary model such as Qwen3.5 aborts the wasm32
+core.
+
 Decoder-focused web apps can set `2048` / `512` explicitly after validating
 their model and browser.
 

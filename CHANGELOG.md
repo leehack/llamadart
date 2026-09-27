@@ -1,5 +1,21 @@
 ## Unreleased
 
+- Load Qwen3.5 on the Web CPU (WebAssembly) backend at the default
+  `contextSize`: CPU loads now resolve unset `batchSize` / `microBatchSize` to
+  `min(contextSize, 2048)` / `512`, as native does, instead of the full
+  context, which aborted the core
+  ([#752](https://github.com/leehack/llamadart/issues/752)).
+- Report a failed Web model load on a page without cross-origin isolation as
+  `LlamaModelException` with its real cause, not as a COOP/COEP
+  worker-thread error; only a real worker-thread failure still names COOP/COEP
+  ([#753](https://github.com/leehack/llamadart/issues/753)).
+- Log a Dart warning when an explicit `preferredBackend` GPU module is not
+  bundled and the model loads on CPU instead, as happens for `cuda` with the
+  default Windows bundle; the native runtime docs now say when CUDA is bundled
+  ([#756](https://github.com/leehack/llamadart/issues/756)).
+- Fix the `llamadart_server` example exiting at startup on Windows; it stops
+  on Ctrl+C there, and on SIGINT or SIGTERM elsewhere
+  ([#757](https://github.com/leehack/llamadart/issues/757)).
 - Accept MP3 and FLAC bytes, as well as WAV, for Qwen3-ASR speech to text on
   Web ([#723](https://github.com/leehack/llamadart/issues/723)).
 - Apply `presencePenalty`, `minP` and `thinkingBudget`, and runtime LoRA

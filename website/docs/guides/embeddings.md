@@ -124,7 +124,9 @@ decoder/generative defaults. Start with a smaller `microBatchSize` such as
 `512` on memory-constrained devices and increase it only after measuring.
 WebGPU retains full-context automatic batching because model architecture is
 not available before bridge context creation; set both values explicitly only
-when tuning a known workload.
+when tuning a known workload. Web CPU loads (`gpuLayers: 0`) default to a
+micro-batch of at most `512`; raise `microBatchSize` and `batchSize`
+together for longer encoder input there.
 
 - `batchSize` (`n_batch`): max logical tokens per forward pass.
 - `microBatchSize` (`n_ubatch`): scheduler micro-batch size.
