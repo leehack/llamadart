@@ -230,15 +230,15 @@ int main(void) {
 
   group('counter selection', () {
     test('names the counter each platform reads', () {
-      for (final (os, source, read) in [
-        ('macos', darwinFootprintSource, readDarwinFootprint),
-        ('ios', darwinFootprintSource, readDarwinFootprint),
-        ('linux', linuxFootprintSource, readLinuxFootprint),
-        ('android', linuxFootprintSource, readLinuxFootprint),
-      ]) {
+      for (final os in ['macos', 'ios']) {
         final counter = footprintCounterFor(os)!;
-        expect(counter.source, source, reason: os);
-        expect(identical(counter.read, read), isTrue, reason: os);
+        expect(counter.source, darwinFootprintSource, reason: os);
+        expect(identical(counter.read, readDarwinFootprint), isTrue);
+      }
+      for (final os in ['linux', 'android']) {
+        final counter = footprintCounterFor(os)!;
+        expect(identical(counter.describe, linuxSource), isTrue, reason: os);
+        expect(identical(counter.read, readLinuxFootprint), isTrue, reason: os);
       }
       final windows = footprintCounterFor('windows')!;
       expect(identical(windows.describe, windowsSource), isTrue);

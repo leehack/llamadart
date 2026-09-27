@@ -16,7 +16,6 @@ final class FootprintCounter {
 }
 
 String _darwinSource() => darwinFootprintSource;
-String _linuxSource() => linuxFootprintSource;
 
 /// The footprint counter for [operatingSystem], a `Platform.operatingSystem`
 /// value, or null when it has none.
@@ -25,7 +24,7 @@ FootprintCounter? footprintCounterFor(String operatingSystem) =>
       'macos' ||
       'ios' => const FootprintCounter(_darwinSource, readDarwinFootprint),
       'linux' ||
-      'android' => const FootprintCounter(_linuxSource, readLinuxFootprint),
+      'android' => const FootprintCounter(linuxSource, readLinuxFootprint),
       'windows' => const FootprintCounter(windowsSource, readWindowsFootprint),
       _ => null,
     };

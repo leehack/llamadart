@@ -792,22 +792,18 @@ const speechLifecycleCheckCount = 21;
 /// host resident step in six of nine Linux CUDA `tts` runs (#686).
 const speechLeakWarmupCycles = 1;
 
-/// Consecutive cycle-to-cycle footprint deltas `leak_slope_bound` examines.
-///
-/// Three more than the longest run of resident set deltas above
-/// [speechLeakCycleGrowthBytes] measured without a leak: 4, in a macOS `tts`
-/// run recovering from memory pressure and in a Linux x64 CPU `tts` run
-/// (#686).
+/// Cycle-to-cycle steps `leak_slope_bound` fits a slope over: one more
+/// cleanup cycle footprint sample than steps.
 const speechLeakWindowCycles = 7;
 
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
 const speechCleanupCycles = speechLeakWarmupCycles + speechLeakWindowCycles;
 
-/// Footprint growth per cycle above which a cycle counts toward a leak.
+/// Least-squares footprint slope per cycle above which `leak_slope_bound`
+/// fails. A slope equal to it passes.
 ///
 /// Half the smallest per-cycle resident set growth of the LiteRT ASR leak in
-/// #634, 14.0 MiB over 12 warm cycles on macOS arm64. Growth equal to it does
-/// not count.
+/// #634, 14.0 MiB over 12 warm cycles on macOS arm64.
 const speechLeakCycleGrowthBytes = 7 * 1024 * 1024;
 
 /// How long [PublicSpeechValidationAdapter] waits before cancelling with
@@ -1074,6 +1070,21 @@ Map<String, Object?> _truncationOutcome(
   };
 }
 
+/// Least-squares slope of [samples] against their index, in sample units per
+/// index. [samples] needs at least two values.
+double leastSquaresSlope(List<int> samples) {
+  final n = samples.length;
+  final xMean = (n - 1) / 2;
+  final yMean = samples.reduce((a, b) => a + b) / n;
+  var covariance = 0.0;
+  var variance = 0.0;
+  for (var i = 0; i < n; i++) {
+    covariance += (i - xMean) * (samples[i] - yMean);
+    variance += (i - xMean) * (i - xMean);
+  }
+  return covariance / variance;
+}
+
 /// Why [speechPeakFootprintGrowthBudget] is not applied on [operatingSystem]
 /// with [backend], or null when it is, including for any unknown or null pair.
 ///
@@ -1138,9 +1149,9 @@ String? speechPeakRatioExemption({
 /// may `SKIP` in a run whose `functional_pass` is true, and no check may
 /// record `NOT_RUN` in one.
 ///
-/// `leak_slope_bound` fails when the footprint grew by more than
-/// [speechLeakCycleGrowthBytes] in each of the [speechLeakWindowCycles]
-/// cleanup cycles after the first [speechLeakWarmupCycles].
+/// `leak_slope_bound` fails when the [leastSquaresSlope] of the footprint over
+/// the cleanup cycles after the first [speechLeakWarmupCycles] exceeds
+/// [speechLeakCycleGrowthBytes] per cycle.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
 Future<Map<String, Object?>> runSpeechValidation(
@@ -1415,18 +1426,17 @@ Future<Map<String, Object?>> runSpeechValidation(
                 )['footprint_bytes']!
                 as int,
         ];
-        final growth = [
-          for (var i = 1; i < window.length; i++) window[i] - window[i - 1],
-        ];
+        final slope = leastSquaresSlope(window);
         return {
           'measurement': memoryFootprintSource,
           'warmup_cycles': speechLeakWarmupCycles,
           'window_footprint_bytes': window,
-          'cycle_growth_bytes': growth,
+          'cycle_growth_bytes': [
+            for (var i = 1; i < window.length; i++) window[i] - window[i - 1],
+          ],
+          'slope_bytes_per_cycle': slope,
           'growth_threshold_bytes': speechLeakCycleGrowthBytes,
-          'predicate_passed': growth.any(
-            (delta) => delta <= speechLeakCycleGrowthBytes,
-          ),
+          'predicate_passed': slope <= speechLeakCycleGrowthBytes,
         };
       });
       if (checkSynthesisInterrupts) {
@@ -1523,6 +1533,7 @@ Future<Map<String, Object?>> runSpeechValidation(
         'window_cycles': speechLeakWindowCycles,
         'growth_threshold_bytes': speechLeakCycleGrowthBytes,
         'cycle_growth_bytes': leakRow['cycle_growth_bytes'],
+        'slope_bytes_per_cycle': leakRow['slope_bytes_per_cycle'],
         'within_budget': leakMeasured ? leakRow['status'] == 'PASS' : null,
       },
     },
