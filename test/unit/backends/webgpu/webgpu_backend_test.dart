@@ -992,6 +992,43 @@ void main() {
       expect(lastRequestedMicroBatchSize, 512);
     });
 
+    for (final (label, params) in const [
+      ('the CPU backend', ModelParams(preferredBackend: GpuBackend.cpu)),
+      ('zero GPU layers', ModelParams(gpuLayers: 0)),
+    ]) {
+      test('uses native decoder batch defaults for $label', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/Qwen3.5-0.8B-Q4_K_M.gguf',
+          params,
+        );
+
+        expect(requestedContextSizes, <int>[4096]);
+        expect(lastRequestedGpuLayers, 0);
+        expect(lastRequestedBatchSize, 2048);
+        expect(lastRequestedMicroBatchSize, 512);
+      });
+    }
+
+    for (final (batch, microBatch, expected) in const [
+      (2048, 1024, (2048, 1024)),
+      (0, 1024, (2048, 1024)),
+      (4096, 0, (4096, 512)),
+    ]) {
+      test('keeps explicit CPU batches $batch / $microBatch', () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/Qwen3.5-0.8B-Q4_K_M.gguf',
+          ModelParams(
+            preferredBackend: GpuBackend.cpu,
+            batchSize: batch,
+            microBatchSize: microBatch,
+          ),
+        );
+
+        expect(lastRequestedBatchSize, expected.$1);
+        expect(lastRequestedMicroBatchSize, expected.$2);
+      });
+    }
+
     test(
       'recomputes full-context batches when fallback context shrinks',
       () async {
@@ -1020,8 +1057,9 @@ void main() {
         );
 
         expect(requestedContextSizes, <int>[4096, 4096, 2048]);
-        expect(requestedBatchSizes, <int>[4096, 4096, 2048]);
-        expect(requestedMicroBatchSizes, <int>[4096, 4096, 2048]);
+        expect(requestedGpuLayerCounts, <int?>[99, 0, 99]);
+        expect(requestedBatchSizes, <int>[4096, 2048, 2048]);
+        expect(requestedMicroBatchSizes, <int>[4096, 512, 2048]);
       },
     );
 
@@ -1656,6 +1694,60 @@ void main() {
         );
       },
     );
+
+    group('on a page without cross-origin isolation', () {
+      const noCoiNotes =
+          'core_wasm32_active;core_pthreads:1;thread_pool_size:4;'
+          'threads_capped_no_coi;threads_batch:1;model_network_stream';
+
+      test('reports an ordinary load failure as a model error', () async {
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] = noCoiNotes;
+        failLoads(
+          message: 'Failed to fetch model shard: 404',
+          firstAttempts: 99,
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/missing.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => '${error.details}',
+              'details',
+              contains('Failed to fetch model shard: 404'),
+            ),
+          ),
+        );
+      });
+
+      test('still maps a thread constructor failure to the isolation '
+          'error', () async {
+        bridgeRuntimeHints['llamadart.webgpu.core_variant'] = 'wasm32';
+        bridgeRuntimeHints['llamadart.webgpu.runtime_notes'] =
+            '$noCoiNotes;thread_constructor_failed';
+        failLoads(message: 'Aborted()', firstAttempts: 99);
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            'https://example.com/thread-model.gguf',
+            const ModelParams(contextSize: 4096, gpuLayers: 99),
+          ),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              startsWith(
+                'Browser runtime blocked worker thread creation required '
+                'by the fetch-backed web model loader.',
+              ),
+            ),
+          ),
+        );
+      });
+    });
 
     test('logs the runtime hints before disposing the failed bridge', () async {
       final events = captureConsoleWarnings();

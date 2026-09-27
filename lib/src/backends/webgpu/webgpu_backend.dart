@@ -765,11 +765,10 @@ class WebGpuLlamaBackend
     final hasExplicitMicroBatchSize = params.microBatchSize > 0;
     final hasExplicitBatchSizes =
         hasExplicitBatchSize || hasExplicitMicroBatchSize;
-    final shouldUseWebGpuDefaults =
-        !hasExplicitBatchSizes &&
-        params.preferredBackend != GpuBackend.cpu &&
-        gpuLayers != 0;
-    final shouldUseQwen35SmallTuning = shouldUseWebGpuDefaults && isQwen35Small;
+    final isCpuAttempt =
+        params.preferredBackend == GpuBackend.cpu || gpuLayers == 0;
+    final shouldUseQwen35SmallTuning =
+        !hasExplicitBatchSizes && !isCpuAttempt && isQwen35Small;
 
     if (shouldUseQwen35SmallTuning) {
       return (nBatch: 32, nUbatch: 8);
@@ -784,13 +783,14 @@ class WebGpuLlamaBackend
     }
 
     // The bridge creates the context before Dart can inspect model
-    // architecture. Preserve full-context automatic batching here so
+    // architecture. WebGPU keeps full-context automatic batching so
     // non-causal encoder models do not regress to first-embedding aborts.
-    // Decoder-focused web callers can still request 2048/512 explicitly.
+    // CPU attempts use the native decoder defaults, because a full-context
+    // micro-batch of a large-vocabulary decoder can exceed wasm32 memory.
     final resolved = resolveModelContextBatchSizes(
       params,
       contextSize,
-      useFullContextDefaults: true,
+      useFullContextDefaults: !isCpuAttempt,
     );
     return (nBatch: resolved.batchSize, nUbatch: resolved.microBatchSize);
   }
@@ -928,7 +928,6 @@ class WebGpuLlamaBackend
       );
     }
     final threadConstructorFailure =
-        runtimeNotes.contains('threads_capped_no_coi') ||
         runtimeNotes.contains('thread_constructor_failed') ||
         isThreadConstructorFailureText(loweredText);
 
