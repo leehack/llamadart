@@ -792,8 +792,8 @@ const speechLifecycleCheckCount = 21;
 /// host resident step in six of nine Linux CUDA `tts` runs (#686).
 const speechLeakWarmupCycles = 1;
 
-/// Cycle-to-cycle steps `leak_slope_bound` fits a slope over: one more
-/// cleanup cycle footprint sample than steps.
+/// Cleanup cycles after the warm-up whose footprints, with the last warm-up
+/// cycle's, `leak_slope_bound` fits its slope to.
 const speechLeakWindowCycles = 7;
 
 /// Cancel/dispose/load/generate cycles run after the single-shot checks.
@@ -1149,8 +1149,9 @@ String? speechPeakRatioExemption({
 /// may `SKIP` in a run whose `functional_pass` is true, and no check may
 /// record `NOT_RUN` in one.
 ///
-/// `leak_slope_bound` fails when the [leastSquaresSlope] of the footprint over
-/// the cleanup cycles after the first [speechLeakWarmupCycles] exceeds
+/// `leak_slope_bound` fails when the [leastSquaresSlope] of the footprints
+/// sampled after cleanup cycle [speechLeakWarmupCycles] and the
+/// [speechLeakWindowCycles] cycles after it exceeds
 /// [speechLeakCycleGrowthBytes] per cycle.
 ///
 /// The result deliberately cannot assert hardware or perceptual qualification.
