@@ -57,6 +57,39 @@ void main() {
       expect(result.stdout, contains('Web smoke'));
     });
 
+    test('builds the GBNF validator before the grammar test uses it', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'root-template-e2e',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      final buildDir =
+          Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
+          '/repo/.dart_tool/llama_cpp_chat_tests';
+
+      expect(result.exitCode, 0);
+      final chatTests = result.stdout.indexOf(
+        'dart test --run-skipped -t local-only '
+        'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart',
+      );
+      final grammarTests = result.stdout.indexOf(
+        'LLAMA_CPP_GBNF_VALIDATOR=$buildDir/bin/test-gbnf-validator '
+        'dart test --run-skipped -t local-only '
+        'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
+      );
+      expect(chatTests, isNonNegative);
+      expect(grammarTests, greaterThan(chatTests));
+      final templateTests = Directory('test/e2e/template')
+          .listSync()
+          .whereType<File>()
+          .map((file) => file.path.replaceAll(r'\', '/'))
+          .where((path) => path.endsWith('_test.dart'));
+      expect(templateTests, isNotEmpty);
+      for (final path in templateTests) {
+        expect(result.stdout, contains(path));
+      }
+    });
+
     test(
       'requires a model and wires the bounded LiteRT lifecycle scenario',
       () async {

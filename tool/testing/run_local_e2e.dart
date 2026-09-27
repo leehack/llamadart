@@ -291,9 +291,26 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '--run-skipped',
             '-t',
             'local-only',
-            'test/e2e/template',
+            'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart',
           ],
-          description: 'Dart template E2E',
+          description: 'Upstream llama.cpp chat tests (builds the validator)',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMA_CPP_GBNF_VALIDATOR':
+                '${Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ?? '${context.projectRoot}/.dart_tool/llama_cpp_chat_tests'}'
+                '/bin/test-gbnf-validator',
+          },
+          description: 'Compiled tool-grammar acceptance',
         ),
       ],
     ),
