@@ -197,10 +197,10 @@ The feature-by-runtime table is in the
     `LlamaEngine.getPerformanceContext()` returns null on WebGPU.
 - `presencePenalty`, `minP` and `thinkingBudget` need bridge assets whose
   `getCompletionCapabilities()` reports them; runtime LoRA (`setLora`,
-  `removeLora`, `clearLoras`) needs assets whose
+  `removeLora`, `clearLoras`) and `ModelParams.loras` need assets whose
   `getLoraAdapterCapabilities()` reports support: bridge assets `v0.1.54+`,
-  the default pin among them. On older assets a non-zero `presencePenalty` or
-  `minP`, any `thinkingBudget` and every LoRA call throw
+  the default pin among them. On older assets a non-zero `presencePenalty` or `minP`, any `thinkingBudget`,
+  every LoRA call and a load with `ModelParams.loras` throw
   `LlamaUnsupportedException`.
   `LlamaEngine.backendGenerationCapabilities` reports the completion
   capabilities of the loaded assets. The capabilities come from

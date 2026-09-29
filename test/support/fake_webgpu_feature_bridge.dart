@@ -125,6 +125,9 @@ class FakeFeatureBridge {
       draftLoadError,
       draftUnloadError;
 
+  /// Rejection messages for `loadLoraAdapter` calls, by source.
+  final Map<String, String> loraLoadErrorsBySource = <String, String>{};
+
   /// Pieces `createCompletion` streams through `onToken`, with the running
   /// text as `currentText`.
   List<String> completionPieces = const <String>['Hello'];
@@ -287,7 +290,7 @@ class FakeFeatureBridge {
                 ? (useCache as JSBoolean).toDart
                 : null,
           ));
-          final error = loraLoadError;
+          final error = loraLoadErrorsBySource[source] ?? loraLoadError;
           if (error != null) return rejectWithMessage(error);
           final result = loraLoadResult;
           if (result != null) return Future<JSAny?>.value(result).toJS;

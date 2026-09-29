@@ -13,6 +13,9 @@ For canonical full release notes, use:
   tool calling, web, Flutter apps, multimodal input, embeddings, speech, LoRA
   adapters and decision models; install them with `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
+- Apply `ModelParams.loras` at model load on native llama.cpp and WebGPU,
+  where they were silently ignored; an adapter that cannot be applied, or
+  WebGPU bridge assets before `v0.1.54`, fail the load instead.
 
 ## 0.9.0
 

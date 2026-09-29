@@ -45,7 +45,7 @@ Android-only; web rejects it.
 
 | Feature | Native llama.cpp | WebGPU | Native LiteRT-LM | LiteRT-LM Web |
 | --- | --- | --- | --- | --- |
-| LoRA | `setLora` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
+| LoRA | `ModelParams.loras` at load and `setLora` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
 | Thinking budget | Text-only generation, without speculative decoding | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | No | No |
 | Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
 | Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
