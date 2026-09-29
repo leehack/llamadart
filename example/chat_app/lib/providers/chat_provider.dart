@@ -4524,10 +4524,17 @@ class ChatProvider extends ChangeNotifier {
 
   Future<bool> loadConfiguredMmproj({
     String successMessage = 'Multimodal projector loaded.',
-  }) => _loadConfiguredMmproj(
-    successMessage: successMessage,
-    restoreSessionMedia: true,
-  );
+  }) {
+    // Loading replaces the session, so an in-flight reply is stopped first,
+    // as other projector and model changes do.
+    if (_activeGenerationOperationId != null) {
+      stopGeneration();
+    }
+    return _loadConfiguredMmproj(
+      successMessage: successMessage,
+      restoreSessionMedia: true,
+    );
+  }
 
   // On-demand loads run inside a send whose session identity is already
   // captured, so they keep the current session instead of replacing it.
