@@ -114,6 +114,16 @@ dart pub get
 flutter pub get
 ```
 
+### AI agent skills
+
+llamadart ships [agent skills](https://dart.dev/tools/pub/package-skills) that
+teach coding agents its APIs. Install them into your agent's skills directory
+from your app's root:
+
+```bash
+dart run skills@ get
+```
+
 ## First Generation
 
 ```dart
