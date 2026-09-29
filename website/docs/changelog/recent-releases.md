@@ -9,8 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Ship agent skills for setup, chat and streaming, and tool calling;
-  install them with `dart run skills@ get`.
+- Ship agent skills for coding agents covering setup, chat and streaming,
+  tool calling, web, Flutter apps, multimodal input, embeddings, speech, LoRA
+  adapters and decision models; install them with `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
 
 ## 0.9.0
