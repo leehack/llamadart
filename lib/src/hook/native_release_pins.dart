@@ -143,3 +143,91 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
     },
   ),
 ];
+
+/// `leehack/stable-diffusion-native` release tag downloaded for the opt-in
+/// stable-diffusion.cpp runtime.
+const stableDiffusionReleaseTag = 'v0.1.0';
+
+/// stable_diffusion cache directory version derived from
+/// [stableDiffusionReleaseTag].
+const stableDiffusionVersion = '0.1.0';
+
+/// A published stable-diffusion-native runtime archive and the library it must
+/// contain under `lib/`.
+class StableDiffusionBundleSpec {
+  /// Release bundle key such as `linux-x64-vulkan`.
+  final String bundle;
+
+  /// SHA-256 of the published `.tar.gz` archive.
+  final String sha256;
+
+  /// Library file names the archive must provide under `lib/`.
+  final Set<String> requiredLibraries;
+
+  /// Creates a spec for [bundle].
+  const StableDiffusionBundleSpec(
+    this.bundle, {
+    required this.sha256,
+    required this.requiredLibraries,
+  });
+}
+
+/// Every stable_diffusion bundle the hook can download, keyed by
+/// [StableDiffusionBundleSpec.bundle].
+const stableDiffusionBundleSpecs = <StableDiffusionBundleSpec>[
+  StableDiffusionBundleSpec(
+    'android-arm64',
+    sha256: 'f845703f4c4447b280c9fda4cc0f1ad7f68fd2b1ebc36182fc7d50b5d4c66455',
+    requiredLibraries: {'libstable-diffusion.so'},
+  ),
+  StableDiffusionBundleSpec(
+    'ios-arm64',
+    sha256: '1e59db14c12c093705073f0db2a44377c111c208c6778c47cc3f483771671e86',
+    requiredLibraries: {'libstable-diffusion.dylib'},
+  ),
+  StableDiffusionBundleSpec(
+    'ios-arm64-sim',
+    sha256: 'f80e6c3d6b5807ddb80d74e680ba053d760a04e765d26d9236ecac94e13c9676',
+    requiredLibraries: {'libstable-diffusion.dylib'},
+  ),
+  StableDiffusionBundleSpec(
+    'macos-arm64',
+    sha256: '1c861b33d5463c85ada89b54d40a7b440074d98298af49555212c5364d8534e3',
+    requiredLibraries: {'libstable-diffusion.dylib'},
+  ),
+  StableDiffusionBundleSpec(
+    'macos-x64',
+    sha256: 'e9c067c5c40864e4f4afdb523c757eb8b009171b9240fc28d8e4614d0b340503',
+    requiredLibraries: {'libstable-diffusion.dylib'},
+  ),
+  StableDiffusionBundleSpec(
+    'linux-arm64',
+    sha256: 'a0f5532f979ff57c9b18c245d4a32b245ed53c122b0284a7d2b7597b26d7150f',
+    requiredLibraries: {'libstable-diffusion.so'},
+  ),
+  StableDiffusionBundleSpec(
+    'linux-arm64-vulkan',
+    sha256: '7bc90af228e098efebf102bcbfa2ec7b08111194d9304a3e701fbd71cc4df517',
+    requiredLibraries: {'libstable-diffusion.so'},
+  ),
+  StableDiffusionBundleSpec(
+    'linux-x64',
+    sha256: 'a7028bf593da0d284dc5de63fec37dc777198cd3c27b262de553b68e505091bc',
+    requiredLibraries: {'libstable-diffusion.so'},
+  ),
+  StableDiffusionBundleSpec(
+    'linux-x64-vulkan',
+    sha256: 'd667cc8c980d9664662f92e72c9f3be5fd13b4f9757138a02b85505a341837ff',
+    requiredLibraries: {'libstable-diffusion.so'},
+  ),
+  StableDiffusionBundleSpec(
+    'windows-x64',
+    sha256: 'b1957763b873ef674dce717d05bff0c3fb77deb59acf6a625554446f770fe798',
+    requiredLibraries: {'stable-diffusion.dll'},
+  ),
+  StableDiffusionBundleSpec(
+    'windows-x64-vulkan',
+    sha256: 'd583e9276d93e6dc1af646cb27d8e1fb6584d4b008c08b57e7b3a316be83636a',
+    requiredLibraries: {'stable-diffusion.dll'},
+  ),
+];
