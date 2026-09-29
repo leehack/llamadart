@@ -41,6 +41,18 @@ export 'src/core/engine/chat_session.dart' show ChatSession;
 export 'src/core/speech/speech_to_text.dart';
 export 'src/core/speech/text_to_speech.dart';
 
+// Image generation (experimental)
+export 'src/core/image/generated_image.dart';
+export 'src/core/image/image_generation_engine.dart'
+    show
+        ImageGenerationCapabilities,
+        ImageGenerationEngine,
+        ImageGenerationTask;
+export 'src/core/image/image_generation_events.dart';
+export 'src/core/image/image_generation_model.dart';
+export 'src/core/image/image_generation_request.dart'
+    show ImageGenerationRequest;
+
 // Decision models
 export 'src/core/decision/decision_engine.dart';
 export 'src/core/decision/decision_key.dart';
