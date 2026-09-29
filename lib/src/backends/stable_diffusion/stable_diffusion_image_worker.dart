@@ -27,6 +27,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   final Pointer<sd.sd_ctx_t> _context;
   void Function(int step, int steps)? _onProgress;
   bool _disposed = false;
+  bool _stopped = false;
 
   @override
   final String modelVersion;
@@ -89,10 +90,15 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     ImageGenerationSessionRequest request,
     void Function(int step, int steps) onProgress,
   ) async {
+    if (_stopped) {
+      throw LlamaStateException(
+        'The image-generation worker stopped; load the model again.',
+      );
+    }
     _onProgress = onProgress;
     try {
       _commands.send(request);
-      final reply = _unwrap(await _next(_replyIterator)) as _Generated;
+      final reply = await _reply() as _Generated;
       return reply.images == null
           ? null
           : [
@@ -123,14 +129,27 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     }
     _disposed = true;
     try {
-      _commands.send(const _Dispose());
-      _unwrap(await _next(_replyIterator));
+      if (!_stopped) {
+        _commands.send(const _Dispose());
+        await _reply();
+      }
     } finally {
       _isolate.kill(priority: Isolate.immediate);
       await _replyIterator.cancel();
       _replies.close();
       // The worker cleared the callback before replying, so nothing calls it.
       _progress.close();
+    }
+  }
+
+  /// The next worker reply, unwrapped. Marks the worker stopped when it has
+  /// exited, so later calls fail at once instead of waiting for a reply.
+  Future<Object?> _reply() async {
+    try {
+      return _unwrap(await _next(_replyIterator));
+    } on LlamaStateException {
+      _stopped = true;
+      rethrow;
     }
   }
 
