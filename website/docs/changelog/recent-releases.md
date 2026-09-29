@@ -21,9 +21,10 @@ For canonical full release notes, use:
   native or web LiteRT-LM rejects a `ModelParams` field, including more than
   one LoRA adapter or a non-default adapter scale.
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
-  model with no projector loaded, on native llama.cpp and WebGPU, instead of
-  answering from the text alone; native llama.cpp and LiteRT-LM also throw it
-  for `LlamaImageContent.url`.
+  model with no projector loaded: native llama.cpp answered from the text
+  alone, and WebGPU threw an untyped error surfaced as
+  `LlamaInferenceException`. Native llama.cpp and LiteRT-LM also throw it for
+  `LlamaImageContent.url`.
 - Add `LlamaEngine.supportsEmbeddings`. Native llama.cpp embeddings of an
   encoder-decoder model now throw `LlamaUnsupportedException`, and input
   longer than the context throws `LlamaInferenceException`, instead of a
