@@ -1,0 +1,3 @@
+tags:
+  local-only:
+    skip: "Needs local model files. Use: dart test --run-skipped -t local-only"

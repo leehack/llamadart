@@ -16,6 +16,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
 - **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
+- **Image Generation Demo (experimental)**: Writes a PNG with SDXS or SD-Turbo through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 ## Usage
 
@@ -219,6 +220,67 @@ Decision CLI flags (`bin/llamadart_decision_example.dart`):
   (`ModelParams.numberOfThreadsBatch`; `0` keeps the default).
 - `--json`: Also print the Laya response JSON.
 
+### 8. Image Generation Example (experimental)
+
+Generate a PNG with `ImageGenerationEngine` and the opt-in `stable_diffusion`
+runtime. This example's `pubspec.yaml` opts in:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+```
+
+The first run downloads the runtime (40 to 70 MB) through the build hook and,
+unless `--model` names a local file, the pinned SDXS checkpoint (651 MB) from
+`concedo/sdxs-512-tinySDdistilled-GGUF` into the package-managed cache.
+
+```bash
+dart run bin/llamadart_image_example.dart \
+  -p "a red fox in autumn leaves" --seed 42 -o fox.png
+```
+
+SD-Turbo (1.9 GB) with the TAESD decoder, four steps:
+
+```bash
+dart run bin/llamadart_image_example.dart --preset sd-turbo --taesd default \
+  --steps 4 -p "a lighthouse at dusk" -o lighthouse.png
+```
+
+Progress prints per phase (`encodingPrompt`, `sampling 1/4`, `decoding`).
+Ctrl-C cancels the generation before its next sampling step and exits with
+code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs need AVX2,
+FMA, F16C and BMI2); elsewhere, or when the runtime is not bundled, it exits
+with code 2 and the reason.
+
+Image CLI flags (`bin/llamadart_image_example.dart`):
+
+- `--preset`: `sdxs` (default) or `sd-turbo`.
+- `-m, --model`: Checkpoint as a local path, HTTP(S) URL, or `hf://` source;
+  defaults to the pinned checkpoint for the preset.
+- `--taesd`: TAESD decoder for `sd-turbo`, in the same forms, or `default`
+  for the pinned `madebyollin/taesd`.
+- `-p, --prompt`: Prompt (required). `--negative`: negative prompt.
+- `--width`, `--height`: Multiples of 8 from 64 to 2048 (default `512`).
+- `--steps`, `--guidance`: Override the preset (SDXS and SD-Turbo default to
+  1 step at guidance 1).
+- `--seed`: Seed; random when omitted, and printed either way.
+- `--count`: Images to generate; later files get `-1`, `-2` suffixes.
+- `-o, --out`: PNG path (default `image.png`).
+- `--device`: `auto`, `cpu` or `gpu`. `--threads`: CPU threads (`0`: all
+  physical cores).
+
+With model files on disk, the local-only test runs real generation, including
+determinism, cancellation and the one-generation-at-a-time guard:
+
+```bash
+LLAMADART_SDXS_MODEL=/models/sdxs-512-tinySDdistilled_Q8_0.gguf \
+LLAMADART_SD_TURBO_MODEL=/models/sd_turbo-f16-q8_0.gguf \
+LLAMADART_TAESD=/models/taesd.safetensors \
+  dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
+```
+
 ## Options
 
 - `-m, --model`: Local path, HTTP(S) URL, or `hf://` Hugging Face source for a GGUF model.
@@ -249,6 +311,8 @@ dart test
 - **`bin/llamadart_sqlite_vector_example.dart`**: SQLite vector retrieval CLI example.
 - **`bin/llamadart_decision_example.dart`**: Decision model CLI example.
 - **`lib/services/decision_cli_options.dart`**: Decision CLI flags and pinned model sources.
+- **`bin/llamadart_image_example.dart`**: Image generation CLI example.
+- **`lib/services/image_cli_options.dart`**: Image CLI flags and pinned model sources.
 - **`lib/services/decision_ticket_triage.dart`**: Typed ticket question keys and answer formatting.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.
