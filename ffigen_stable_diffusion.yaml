@@ -1,0 +1,23 @@
+name: StableDiffusion
+description: Bindings to stable-diffusion.cpp from stable-diffusion-native
+output: 'lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart'
+headers:
+  entry-points:
+    - '.dart_tool/llamadart/ffigen_headers_stable_diffusion/include/stable-diffusion.h'
+  include-directives:
+    - '.dart_tool/llamadart/ffigen_headers_stable_diffusion/include/stable-diffusion.h'
+# Incomplete `extern const char* x[]` arrays; ffigen would read the first element
+# as a pointer to the array. Use the *_name functions instead.
+globals:
+  exclude:
+    - 'sample_method_to_str'
+    - 'scheduler_to_str'
+preamble: |
+  // coverage:ignore-file
+  // ignore_for_file: always_specify_types, unused_field
+  // ignore_for_file: camel_case_types
+  // ignore_for_file: non_constant_identifier_names
+  /// @nodoc
+silence-enum-warning: true
+ffi-native:
+  asset-id: 'package:llamadart/stable_diffusion'

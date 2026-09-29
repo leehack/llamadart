@@ -93,6 +93,9 @@ jobs:
       - name: Verify native header sync atomicity
         run: python3 tool/native/test_sync_native_headers_and_bindings.py
 
+      - name: Verify stable_diffusion header sync
+        run: python3 tool/native/test_sync_stable_diffusion_bindings.py
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 
