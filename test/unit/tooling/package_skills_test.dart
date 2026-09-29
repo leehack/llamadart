@@ -24,9 +24,10 @@ void main() {
         ..sort((a, b) => a.path.compareTo(b.path));
   final Map<String, String> skills = {
     for (final Directory directory in directories)
+      // Windows checkouts may convert line endings to CRLF.
       p.basename(directory.path): File(
         p.join(directory.path, 'SKILL.md'),
-      ).readAsStringSync(),
+      ).readAsStringSync().replaceAll('\r\n', '\n'),
   };
 
   test('ships at least one skill', () {

@@ -6,6 +6,7 @@ pubspec.lock
 !example/chat_app/pubspec.lock
 !packages/llamadart_validation/pubspec.lock
 !website/pubspec.lock
+!website/examples/observability/pubspec.lock
 
 # Native runtime profiling output from optional model validation.
 *.profraw
