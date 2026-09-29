@@ -11,7 +11,8 @@ For canonical full release notes, use:
 
 - Ship agent skills for coding agents covering setup, chat and streaming,
   tool calling, web, Flutter apps, multimodal input, embeddings, speech, LoRA
-  adapters and decision models; install them with `dart run skills@ get`.
+  adapters, decision models and image generation; install them with
+  `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
 - Apply `ModelParams.loras` at model load on native llama.cpp and WebGPU,
   where they were silently ignored; an adapter that cannot be applied, or
@@ -25,6 +26,11 @@ For canonical full release notes, use:
   generation; it is never bundled by default or by `all`, and
   `llamadart_stable_diffusion_backends` picks its CPU or Vulkan build on Linux
   and Windows ([#777](https://github.com/leehack/llamadart/issues/777)).
+- Add experimental on-device image generation, `ImageGenerationEngine`, on
+  the opt-in `stable_diffusion` runtime: SDXS and SD-Turbo presets,
+  phase-labelled progress, cancellation, PNG output and a memory check before
+  loading; not available on the web
+  ([#778](https://github.com/leehack/llamadart/issues/778)).
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
   model with no projector loaded: native llama.cpp answered from the text
   alone, and WebGPU threw an untyped error surfaced as

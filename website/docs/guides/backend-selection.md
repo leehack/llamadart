@@ -136,4 +136,5 @@ Native apps include the llama.cpp and LiteRT-LM runtime families by default, so
 one build can load both GGUF and `.litertlm` models. To ship only one, set
 `llamadart_native_runtimes` as described in
 [Native Build Hooks](../platforms/native-build-hooks). The experimental
-`stable_diffusion` runtime is never included unless named there.
+`stable_diffusion` runtime, which [image generation](./image-generation)
+needs, is never included unless named there.

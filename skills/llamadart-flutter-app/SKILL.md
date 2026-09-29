@@ -87,6 +87,9 @@ or shipping runtimes the app does not use.
   otherwise ignored with a warning (only the experimental opt-in
   `stable_diffusion` there still applies); the tag, repository, path and
   backend user-defines do not change SwiftPM binaries either.
+- Image generation (`ImageGenerationEngine`) needs `stable_diffusion` added
+  to `llamadart_native_runtimes`; it is never bundled by default. Details are
+  in the llamadart-image-generation skill.
 - Native runtimes are downloaded by the build hook on the first
   `flutter run` or `flutter build` for each target; no C++ toolchain is
   needed. Expect a slower first build. After changing any

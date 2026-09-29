@@ -46,6 +46,11 @@ for each target.
   transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
+- Experimental text-to-image generation through `ImageGenerationEngine` and
+  the opt-in `stable_diffusion` (stable-diffusion.cpp) runtime: SDXS and
+  SD-Turbo on Android arm64 (CPU), iOS and macOS (Metal), and Linux and
+  Windows (CPU or Vulkan), with progress, cancellation and PNG output;
+  validated on macOS only. Not available on the web.
 - Experimental Laya-style decision models on native llama.cpp through
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
   encoder GGUF and a safetensors head, one encoder pass per question; validated
@@ -217,6 +222,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
 | Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
 | Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
+| Generate images on device | [Image generation](https://llamadart.leehack.com/docs/guides/image-generation) |
 | Answer typed questions with a decision model | [Decision models](https://llamadart.leehack.com/docs/guides/decision-models) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
 | Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores) |

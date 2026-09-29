@@ -42,6 +42,7 @@
         "guides/multimodal",
         "guides/speech-to-text",
         "guides/text-to-speech",
+        "guides/image-generation",
         "guides/decision-models",
         "guides/lora-adapters"
       ]

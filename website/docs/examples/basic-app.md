@@ -1,14 +1,14 @@
 ---
 title: Basic app example
 sidebar_label: Basic app
-description: Minimal Dart console apps for chat, embeddings, SQLite vector retrieval and decision models, the quickest way to see the core llamadart API.
+description: Minimal Dart console apps for chat, embeddings, SQLite vector retrieval, decision models and image generation, the quickest way to see the core llamadart API.
 ---
 
 Path: `example/basic_app` · Platforms: Dart console on macOS, Linux and
 Windows · First-run download: `Qwen3.5-0.8B-Q4_K_M.gguf` (533 MB)
 
-Dart console apps that show the core API: chat, embeddings, vector retrieval
-and decision models, without Flutter.
+Dart console apps that show the core API: chat, embeddings, vector retrieval,
+decision models and image generation, without Flutter.
 
 ## Run
 
@@ -33,6 +33,10 @@ dart run bin/llamadart_sqlite_vector_example.dart \
 # Decision model: triage a support ticket
 # (downloads laya-Q8_0.gguf, 421 MB, and laya-head.safetensors, 106 MB)
 dart run bin/llamadart_decision_example.dart
+
+# Image generation: write a PNG with SDXS (downloads the stable_diffusion
+# runtime and sdxs-512-tinySDdistilled_Q8_0.gguf, 651 MB); Ctrl-C cancels
+dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
 ```
 
 ## What it demonstrates
@@ -51,6 +55,10 @@ dart run bin/llamadart_decision_example.dart
 - Typed choice, score and yes/no answers from a decision model with
   `ChoiceKey.enumOf`, `ScoreKey.of`, `NoulKey.of` and `answerOf`
   ([Decision models](../guides/decision-models#typed-questions)).
+- Experimental image generation with SDXS or SD-Turbo: phase progress,
+  Ctrl-C cancellation and PNG output, with the `stable_diffusion` runtime
+  opted in through the example's `pubspec.yaml`
+  ([Image generation](../guides/image-generation)).
 
 ## Test
 
@@ -59,6 +67,6 @@ cd example/basic_app
 dart test
 ```
 
-Full options: every flag of the four CLIs, the retrieval result fields and
+Full options: every flag of the five CLIs, the retrieval result fields and
 the decision-model head options are in the
 [example README](https://github.com/leehack/llamadart/tree/main/example/basic_app).

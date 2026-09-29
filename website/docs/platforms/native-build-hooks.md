@@ -18,6 +18,7 @@ Configure the hook under `hooks.user_defines.llamadart` in the app's
 | --- | --- | --- |
 | `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm`, and the opt-in `stable_diffusion` | `llama_cpp` and `litert_lm` where published |
 | `llamadart_native_backends` | llama.cpp backend modules, and Android arm64 CPU variants | `cpu` and `vulkan` where present |
+| `llamadart_stable_diffusion_backends` | The `stable_diffusion` build on Linux and Windows: `cpu` or `vulkan` | Follows `llamadart_native_backends` |
 | `llamadart_native_tag` | `leehack/llamadart-native` release to download | The [pinned release](./support-matrix#pinned-runtimes) |
 | `llamadart_native_repository` | GitHub repository to download llama.cpp bundles from | `leehack/llamadart-native` |
 | `llamadart_native_path` | Local archive or bundle directory used instead of a download | Unset |
@@ -76,9 +77,10 @@ hooks:
 
 `stable_diffusion` bundles the
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runtime
-from `leehack/stable-diffusion-native`. It is groundwork for experimental image
-generation and has no public Dart API yet. It adds about 40 to 70 MB per target, so
-it is never bundled by default or by `all`/`both`; name it explicitly:
+from `leehack/stable-diffusion-native` for the experimental
+[`ImageGenerationEngine`](../guides/image-generation). It adds about 40 to
+70 MB per target, so it is never bundled by default or by `all`/`both`; name it
+explicitly:
 
 ```yaml
 hooks:
@@ -89,9 +91,13 @@ hooks:
 ```
 
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`, `macos-arm64`,
-  `macos-x86_64`, `linux-arm64`, `linux-x64` and `windows-x64`. On Android it
-  needs an Armv8.2 CPU with dot-product and fp16 (`asimddp`, `fphp`,
-  `asimdhp`).
+  `macos-x86_64`, `linux-arm64`, `linux-x64` and `windows-x64`, built for iOS
+  16.4 and macOS 13.3 or newer. At run time the engine checks the CPU before
+  loading the library: Android needs an Armv8.2 CPU with dot-product and fp16
+  (`asimddp`, `fphp`, `asimdhp`), and Linux and Windows x64 need AVX2, FMA,
+  F16C and BMI2. Otherwise `ImageGenerationEngine.load` throws
+  `LlamaUnsupportedException` instead of crashing on an illegal
+  instruction.
 - Apple builds use the Metal build and Android the CPU build. Linux and Windows
   publish a CPU build (about 38 MB) and a Vulkan build (about 72 MB) that needs
   the system Vulkan loader (`libvulkan.so.1` or `vulkan-1.dll`) at run time.
@@ -110,10 +116,13 @@ hooks:
         #     windows: [cpu]
   ```
 
-  It accepts `cpu` and `vulkan` and leaves the llama.cpp backends unchanged.
-  Without it, the build follows `llamadart_native_backends` for the same
+  It accepts `cpu` and `vulkan` (alias `vk`) and leaves the llama.cpp
+  backends unchanged. A list naming `vulkan` selects the Vulkan build even
+  when it also names `cpu`. Without an entry for the platform, or with an
+  empty one, the build follows `llamadart_native_backends` for the same
   platform: Vulkan when Vulkan is selected there, which is the default, and
-  CPU otherwise.
+  CPU otherwise. A value naming neither `cpu` nor `vulkan` is ignored with a
+  build warning and the same fallback applies.
 - Other targets, such as `android-x64` or Windows arm64, are skipped with a
   warning. Naming it for that exact bundle key, for example
   `android-x64: [stable_diffusion]`, fails the build instead.
