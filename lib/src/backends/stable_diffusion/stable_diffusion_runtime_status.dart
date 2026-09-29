@@ -88,19 +88,38 @@ const List<String> stableDiffusionRequiredArmFeatures = [
 /// [stableDiffusionRequiredArmFeatures]. `false` when there is no `Features`
 /// line, so an unreadable or foreign format never passes. Every core must
 /// report them because the process may be scheduled on any of them.
-bool cpuInfoReportsRequiredArmFeatures(String cpuInfo) {
-  var sawFeatures = false;
+bool cpuInfoReportsRequiredArmFeatures(String cpuInfo) =>
+    _everyLineReports(cpuInfo, 'features', stableDiffusionRequiredArmFeatures);
+
+/// CPU features the Linux and Windows x64 runtimes are compiled for: ggml's
+/// portable x86 build enables AVX2, FMA, F16C and BMI2, so a CPU without them
+/// crashes with an illegal instruction.
+const List<String> stableDiffusionRequiredX86Features = [
+  'avx2',
+  'fma',
+  'f16c',
+  'bmi2',
+];
+
+/// Whether every `flags` line of an x86 Linux `/proc/cpuinfo` lists all of
+/// [stableDiffusionRequiredX86Features]. `false` when there is no `flags`
+/// line, so an unreadable or foreign format never passes.
+bool cpuInfoReportsRequiredX86Features(String cpuInfo) =>
+    _everyLineReports(cpuInfo, 'flags', stableDiffusionRequiredX86Features);
+
+bool _everyLineReports(String cpuInfo, String key, List<String> required) {
+  var sawKey = false;
   for (final line in cpuInfo.split('\n')) {
     final separator = line.indexOf(':');
     if (separator < 0 ||
-        line.substring(0, separator).trim().toLowerCase() != 'features') {
+        line.substring(0, separator).trim().toLowerCase() != key) {
       continue;
     }
-    sawFeatures = true;
+    sawKey = true;
     final features = line.substring(separator + 1).trim().split(RegExp(r'\s+'));
-    if (!stableDiffusionRequiredArmFeatures.every(features.contains)) {
+    if (!required.every(features.contains)) {
       return false;
     }
   }
-  return sawFeatures;
+  return sawKey;
 }

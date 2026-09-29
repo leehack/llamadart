@@ -103,4 +103,41 @@ void main() {
       );
     });
   });
+
+  group('cpuInfoReportsRequiredX86Features', () {
+    const haswellCore =
+        'flags\t\t: fpu sse4_2 avx f16c fma bmi1 avx2 bmi2 popcnt\n';
+    const sandyBridgeCore = 'flags\t\t: fpu sse4_2 avx popcnt\n';
+
+    test('accepts cores that all report AVX2, FMA, F16C and BMI2', () {
+      expect(cpuInfoReportsRequiredX86Features(haswellCore * 4), isTrue);
+    });
+
+    test('rejects a core without AVX2, even beside cores with it', () {
+      expect(cpuInfoReportsRequiredX86Features(sandyBridgeCore), isFalse);
+      expect(
+        cpuInfoReportsRequiredX86Features(haswellCore + sandyBridgeCore),
+        isFalse,
+      );
+    });
+
+    test('rejects AVX2 without FMA or F16C', () {
+      expect(
+        cpuInfoReportsRequiredX86Features('flags\t: avx avx2 bmi2 f16c\n'),
+        isFalse,
+      );
+      expect(
+        cpuInfoReportsRequiredX86Features('flags\t: avx avx2 bmi2 fma\n'),
+        isFalse,
+      );
+    });
+
+    test('rejects input with no flags line', () {
+      expect(cpuInfoReportsRequiredX86Features(''), isFalse);
+      expect(
+        cpuInfoReportsRequiredX86Features('Features\t: avx2 fma f16c bmi2\n'),
+        isFalse,
+      );
+    });
+  });
 }

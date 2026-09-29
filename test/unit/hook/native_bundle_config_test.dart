@@ -1172,6 +1172,82 @@ void main() {
       }
     });
 
+    test('llamadart_stable_diffusion_backends picks Vulkan over CPU in a '
+        'mixed list', () {
+      for (final (os, arch, base) in [
+        (OS.linux, Architecture.x64, 'linux-x64'),
+        (OS.windows, Architecture.x64, 'windows-x64'),
+      ]) {
+        final nativeSpec = spec(os, arch);
+        final warnings = <String>[];
+        for (final mixed in <Object>[
+          ['cpu', 'vulkan'],
+          ['vulkan', 'cpu'],
+          'cpu, vk',
+          {
+            'platforms': {
+              os.name: ['cpu', 'vulkan'],
+            },
+          },
+        ]) {
+          expect(
+            stableDiffusionBundleForNativeBundle(
+              spec: nativeSpec,
+              rawBackendConfig: {
+                'platforms': {os.name: 'cpu'},
+              },
+              rawStableDiffusionBackendConfig: mixed,
+              warn: warnings.add,
+            ),
+            '$base-vulkan',
+            reason: '$mixed',
+          );
+        }
+        expect(warnings, isEmpty);
+      }
+    });
+
+    test('an empty llamadart_stable_diffusion_backends neither warns nor '
+        'overrides the llama.cpp choice', () {
+      for (final (os, arch, base) in [
+        (OS.linux, Architecture.x64, 'linux-x64'),
+        (OS.windows, Architecture.x64, 'windows-x64'),
+      ]) {
+        final nativeSpec = spec(os, arch);
+        for (final empty in <Object>[
+          <String>[],
+          '',
+          {
+            'platforms': {os.name: <String>[]},
+          },
+          {
+            'platforms': {
+              os.name: {'backends': <String>[]},
+            },
+          },
+        ]) {
+          final warnings = <String>[];
+          String? select(Object? llamaCpp) =>
+              stableDiffusionBundleForNativeBundle(
+                spec: nativeSpec,
+                rawBackendConfig: llamaCpp,
+                rawStableDiffusionBackendConfig: empty,
+                warn: warnings.add,
+              );
+
+          expect(select(null), '$base-vulkan', reason: '$empty');
+          expect(
+            select({
+              'platforms': {os.name: 'cpu'},
+            }),
+            base,
+            reason: '$empty',
+          );
+          expect(warnings, isEmpty, reason: '$empty');
+        }
+      }
+    });
+
     test('llamadart_stable_diffusion_backends does not change Apple or '
         'Android archives', () {
       for (final (nativeSpec, bundle) in [

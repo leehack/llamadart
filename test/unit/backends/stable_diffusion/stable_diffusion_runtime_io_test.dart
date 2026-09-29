@@ -10,6 +10,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 
 const _dotProductCpuInfo =
     'Features\t: fp asimd atomics fphp asimdhp asimddp\n';
+const _haswellCpuInfo = 'flags\t\t: fpu sse4_2 avx f16c fma avx2 bmi2\n';
 
 void main() {
   group('probeStableDiffusionRuntime', () {
@@ -79,19 +80,88 @@ void main() {
       expect(api.calls, greaterThan(0));
     });
 
-    test('desktop probes ignore /proc/cpuinfo', () {
+    test('Arm desktop and Apple probes check no CPU features', () {
+      for (final abi in [Abi.linuxArm64, Abi.macosArm64, Abi.macosX64]) {
+        final status = probeStableDiffusionRuntime(
+          abi: abi,
+          readCpuInfo: () => fail('cpuinfo is not read on $abi'),
+          windowsHasAvx2: () => fail('Windows is not queried on $abi'),
+          api: _FakeApi(),
+        );
+
+        expect(status.isAvailable, isTrue, reason: '$abi');
+      }
+    });
+
+    test('Linux x64 without AVX2, FMA, F16C or BMI2 never loads the '
+        'library', () {
+      for (final cpuInfo in [
+        'flags\t\t: fpu sse4_2 avx popcnt\n',
+        '$_haswellCpuInfo${'flags\t\t: fpu sse4_2 avx avx2\n'}',
+        null,
+      ]) {
+        final api = _FakeApi();
+        final status = probeStableDiffusionRuntime(
+          abi: Abi.linuxX64,
+          readCpuInfo: () => cpuInfo,
+          api: api,
+        );
+
+        expect(api.calls, 0, reason: cpuInfo);
+        expect(
+          status.unavailableReason?.message,
+          allOf(
+            contains('linux-x64'),
+            contains('AVX2, FMA, F16C, BMI2'),
+            cpuInfo == null
+                ? contains('could not be read')
+                : contains('does not report them'),
+          ),
+          reason: cpuInfo,
+        );
+      }
+    });
+
+    test('Linux x64 with the required features on every core loads the '
+        'library', () {
+      final api = _FakeApi();
       final status = probeStableDiffusionRuntime(
-        abi: Abi.linuxArm64,
-        readCpuInfo: () => fail('cpuinfo is only read on Android'),
-        api: _FakeApi(),
+        abi: Abi.linuxX64,
+        readCpuInfo: () => _haswellCpuInfo * 8,
+        api: api,
       );
 
       expect(status.isAvailable, isTrue);
+      expect(api.calls, greaterThan(0));
+    });
+
+    test('Windows x64 requires AVX2 before loading the library', () {
+      final api = _FakeApi();
+      final rejected = probeStableDiffusionRuntime(
+        abi: Abi.windowsX64,
+        readCpuInfo: () => fail('cpuinfo is not read on Windows'),
+        windowsHasAvx2: () => false,
+        api: api,
+      );
+
+      expect(api.calls, 0);
+      expect(
+        rejected.unavailableReason?.message,
+        allOf(contains('windows-x64'), contains('does not report AVX2')),
+      );
+
+      final accepted = probeStableDiffusionRuntime(
+        abi: Abi.windowsX64,
+        windowsHasAvx2: () => true,
+        api: api,
+      );
+      expect(accepted.isAvailable, isTrue);
     });
 
     test('a missing native asset reports how to opt in', () {
       final status = probeStableDiffusionRuntime(
         abi: Abi.linuxX64,
+        readCpuInfo: () => _haswellCpuInfo,
         api: _FakeApi(
           error: ArgumentError(
             "Couldn't resolve native function 'sd_version' in "
@@ -134,7 +204,7 @@ void main() {
 
       expect(message, contains('Vulkan variant'));
       expect(message, contains('libvulkan.so.1'));
-      expect(message, contains('select the CPU backend'));
+      expect(message, contains('llamadart_stable_diffusion_backends to [cpu]'));
       expect(message, isNot(contains('/app/lib')));
     });
 
@@ -175,6 +245,23 @@ void main() {
       );
 
       expect(message, contains('does not export the stable-diffusion.h API'));
+    });
+
+    test('names the Vulkan loader as a possible cause of Windows error '
+        '126', () {
+      final message = stableDiffusionLoadFailure(
+        platform: 'windows-x64',
+        error: ArgumentError(
+          "Couldn't resolve native function 'sd_version' in "
+          "'package:llamadart/stable_diffusion' : Failed to load dynamic "
+          "library 'stable-diffusion.dll': The specified module could not be "
+          'found. (error code: 126)',
+        ),
+      ).message;
+
+      expect(message, contains('could not be loaded on windows-x64'));
+      expect(message, contains('vulkan-1.dll'));
+      expect(message, contains('llamadart_stable_diffusion_backends to [cpu]'));
     });
 
     test('keeps the first line of any other loader failure', () {
