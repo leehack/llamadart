@@ -15,6 +15,9 @@ void main() {
   final sdTurboPath = Platform.environment['LLAMADART_SD_TURBO_MODEL'];
   final taesdPath = Platform.environment['LLAMADART_TAESD'];
   final outputDir = Platform.environment['LLAMADART_IMAGE_OUTPUT_DIR'];
+  if (outputDir != null) {
+    Directory(outputDir).createSync(recursive: true);
+  }
 
   group('SDXS', () {
     late ImageGenerationEngine engine;

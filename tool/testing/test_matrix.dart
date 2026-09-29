@@ -433,6 +433,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app synthesis changes.',
   ),
   TestMatrixRow(
+    id: 'image-generation-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real opt-in stable_diffusion runtime bundled by the example hook, '
+        'SDXS load and 256x256 one-step generation with labelled progress, '
+        'same-seed determinism, pre-start and mid-run cancellation, the '
+        'one-generation guard, dispose during generation, and PNG output; '
+        'SD-Turbo with TAESD when LLAMADART_SD_TURBO_MODEL is set',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-generation-smoke --model-path <sdxs.gguf>',
+    useWhen:
+        'Image generation API, stable_diffusion runtime pins, bindings, '
+        'probe or hook changes.',
+  ),
+  TestMatrixRow(
     id: 'decision-model-smoke',
     tier: 'targeted',
     mode: 'local-only',

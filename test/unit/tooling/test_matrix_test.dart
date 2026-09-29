@@ -54,6 +54,7 @@ void main() {
       expect(ids, contains('gemma4-webgpu-mem64'));
       expect(ids, contains('physical-ios-speech-e2e'));
       expect(ids, contains('decision-model-smoke'));
+      expect(ids, contains('image-generation-smoke'));
     });
 
     test('rows name local E2E scenarios that the runner defines', () {
@@ -71,6 +72,7 @@ void main() {
         }
       }
       expect(referenced, contains('decision-model-smoke'));
+      expect(referenced, contains('image-generation-smoke'));
     });
 
     test('speech-to-text rows take WAV, MP3 or FLAC fixtures', () {

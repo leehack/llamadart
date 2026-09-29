@@ -151,6 +151,7 @@ Pick targeted rows based on the touched surface:
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
+| Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
@@ -284,6 +285,12 @@ dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-web-text-to-speech-smoke \
   [--audio-path /path/to/speaker-reference.wav]
+
+# Runs in example/basic_app, which opts into the stable_diffusion runtime, and
+# writes PNGs to build/image-generation-smoke. Export LLAMADART_SD_TURBO_MODEL
+# (and optionally LLAMADART_TAESD) first to add the SD-Turbo case.
+dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
+  --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
 
 # Runs the 24 Laya 0.3.5 fixture rows: exact token ids and markers, raw
 # marker logits within LLAMADART_DECISION_LOGIT_TOLERANCE (default 0.25), and
