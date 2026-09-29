@@ -67,8 +67,9 @@ try {
 - Stages: `idle`, `resolving`, `checkingCache`, `downloading`, `verifying`,
   `ready`, `failed`, `cancelled`. The cache check only drives UI state; `ready`
   follows the manager's own `ensureModel(...)` validation and any checksum.
-- `cancel()` requests cooperative cancellation. `retry()` after `failed` or
-  `cancelled` reuses the last source and options.
+- `cancel()` requests cooperative cancellation; the pending `start(...)` then
+  throws `LlamaStateException` and the stage becomes `cancelled`. `retry()`
+  after `failed` or `cancelled` reuses the last source and options.
 - The controller owns cancellation: call `controller.cancel()` and leave
   `ModelLoadOptions.cancelToken` unset, or `start(...)` throws.
 - On web, pass a custom manager for browser storage; the default manager's
@@ -160,6 +161,11 @@ await engine.loadModelSource(
 
 `ModelLoadOptions.defaults` is `preferCached`, `resume: true` and
 `maxRetries: 3`.
+
+`cancelToken.cancel()` is cooperative: the download stops at its next
+checkpoint and the load throws `LlamaStateException`, which is never retried.
+Other download failures are typically `LlamaModelException`; check
+`cancelToken.isCancelled` in the `catch` to tell a cancel from a failure.
 
 `ModelSource.path(...)` loads apply only `sha256` and cancellation. A local
 source with a non-default cache policy, `cacheDirectory`, auth headers,
