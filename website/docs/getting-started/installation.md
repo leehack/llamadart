@@ -59,6 +59,18 @@ Web apps must load the WebGPU bridge script in their `web/index.html`; the
 package does not inject it. See
 [Add the bridge to your app](../platforms/webgpu-bridge#add-the-bridge-to-your-app).
 
+## AI agent skills
+
+The package ships [agent skills](https://dart.dev/tools/pub/package-skills)
+that teach coding agents llamadart's APIs. After `pub get`, run this from your
+app's root and pick the skills and agent to install them for:
+
+```bash
+dart run skills@ get
+```
+
+Rerun it after upgrading llamadart to update the installed skills.
+
 ## Verify it works
 
 Run the [Quickstart](./quickstart) example with `maxTokens: 1`. If the runtime

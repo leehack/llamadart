@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Ship agent skills for setup, chat and streaming, and tool calling;
+  install them with `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
 
 ## 0.9.0

@@ -53,6 +53,7 @@ void main() {
       'tool/docs/build_site.sh',
       'example/llamadart_server/lib/src/features/openai_api/presentation/docs/docs.dart',
       'nested/doc/public_api.md',
+      'skills/llamadart-getting-started/SKILL.md',
     ]) {
       expect(
         await _isIgnored(repository, candidate),
