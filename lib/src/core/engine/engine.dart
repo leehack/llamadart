@@ -1272,9 +1272,29 @@ class LlamaEngine {
   // EMBEDDINGS
   // ============================================================
 
+  /// Whether the active backend reports [embed] and [embedBatch] support.
+  ///
+  /// Native llama.cpp and WebGPU backends report true; LiteRT-LM backends
+  /// report false, and calls throw [LlamaUnsupportedException]. Routing
+  /// backends such as [LlamaBackend] pick their runtime when a model loads,
+  /// so check this after loading. A true value is not a model check: a
+  /// rank-pooled or encoder-decoder model, or WebGPU bridge assets older than
+  /// `v0.1.7`, still throw [LlamaUnsupportedException].
+  bool get supportsEmbeddings {
+    final candidate = backend;
+    if (candidate is BackendEmbeddingsSupport) {
+      return (candidate as BackendEmbeddingsSupport).supportsEmbeddings;
+    }
+    return candidate is BackendEmbeddings;
+  }
+
   /// Generates a single embedding vector for [text].
   ///
   /// When [normalize] is true, the returned vector is L2-normalized.
+  ///
+  /// Throws [LlamaUnsupportedException] when [supportsEmbeddings] is false
+  /// or the loaded model cannot embed, and [LlamaInferenceException] when
+  /// native llama.cpp input exceeds the context or a single embedding pass.
   Future<List<double>> embed(String text, {bool normalize = true}) =>
       _observeEmbeddings(
         <String>[text],
@@ -1298,7 +1318,8 @@ class LlamaEngine {
 
   /// Generates embedding vectors for all [texts] in order.
   ///
-  /// When [normalize] is true, each returned vector is L2-normalized.
+  /// When [normalize] is true, each returned vector is L2-normalized. Throws
+  /// the same exceptions as [embed].
   Future<List<List<double>>> embedBatch(
     List<String> texts, {
     bool normalize = true,
@@ -1378,8 +1399,7 @@ class LlamaEngine {
 
   BackendEmbeddings _resolveEmbeddingBackend() {
     final candidate = backend;
-    if (candidate is BackendEmbeddingsSupport &&
-        !(candidate as BackendEmbeddingsSupport).supportsEmbeddings) {
+    if (!supportsEmbeddings) {
       throw LlamaUnsupportedException(
         'Embeddings are not supported by the active backend.',
       );

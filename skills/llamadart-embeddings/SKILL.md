@@ -24,14 +24,15 @@ description: >-
 - Give the embedding model and the chat model separate `LlamaEngine`s. An
   engine holds one model, and switching models per query reloads weights.
 - Embeddings are llama.cpp-only. LiteRT-LM (`.litertlm`) engines, native or
-  web, throw `LlamaUnsupportedException`. There is no public "supports
-  embeddings" getter on `LlamaEngine`: pick a GGUF model for this feature and
-  treat `LlamaUnsupportedException` from `embed` as a configuration error, not
+  web, throw `LlamaUnsupportedException`. After loading, check
+  `engine.supportsEmbeddings` (false on LiteRT-LM) before offering the
+  feature. It reports the backend only, so still treat
+  `LlamaUnsupportedException` from `embed` as a configuration error, not
   something to retry or swallow.
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier
   scores, not embeddings; `embed`/`embedBatch` throw
-  `LlamaUnsupportedException` for them. Encoder-decoder models are not
-  supported for embeddings either.
+  `LlamaUnsupportedException` for them, as do encoder-decoder models such as
+  T5.
 - Web embeddings need llama.cpp bridge assets `v0.1.7` or newer. When
   older assets lack the embedding API, calls throw `LlamaUnsupportedException`
   naming that floor; other web embedding failures surface as

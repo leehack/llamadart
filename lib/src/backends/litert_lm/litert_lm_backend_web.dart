@@ -12,6 +12,7 @@ import 'package:web/web.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
+import '../../core/exceptions.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
@@ -477,7 +478,7 @@ class LiteRtLmBackend
       return _LiteRtLmEngineConstructor._(raw as JSObject);
     }
 
-    throw StateError(
+    throw LlamaBackendInitializationException(
       'LiteRT-LM web runtime is not loaded. Preload @litert-lm/core and set '
       'window.LiteRtLmEngine = module.Engine, or set '
       'window.__llamadartLiteRtLmModuleUrl to the @litert-lm/core module URL.',
@@ -497,7 +498,9 @@ class LiteRtLmBackend
         if (err != null) {
           if (!completer.isCompleted) {
             completer.completeError(
-              StateError('LiteRT-LM web module load failed: $err'),
+              LlamaBackendInitializationException(
+                'LiteRT-LM web module load failed: $err',
+              ),
             );
           }
           return;
@@ -536,7 +539,9 @@ class LiteRtLmBackend
       ((Event _) {
         if (!completer.isCompleted) {
           completer.completeError(
-            StateError('Failed to load LiteRT-LM web module script'),
+            LlamaBackendInitializationException(
+              'Failed to load LiteRT-LM web module script',
+            ),
           );
         }
       }).toJS,
@@ -1110,7 +1115,7 @@ class LiteRtLmBackend
     if (unsupported.isEmpty) {
       return;
     }
-    throw ArgumentError(
+    throw LlamaUnsupportedException(
       'LiteRtLmBackend web does not support these native or '
       'llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM web load options are '

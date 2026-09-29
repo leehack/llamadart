@@ -78,8 +78,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - LiteRT-LM on the web: preload `@litert-lm/core` and set
   `window.LiteRtLmEngine = module.Engine`, or set
   `window.__llamadartLiteRtLmModuleUrl` to its module URL. Otherwise the load
-  fails with `LiteRT-LM web runtime is not loaded`. It needs a `.litertlm` URL
-  and supports CPU or GPU (NPU is rejected).
+  throws `LlamaModelException` whose details say `LiteRT-LM web runtime is not
+  loaded`. It needs a `.litertlm` URL and supports CPU or GPU (NPU is
+  rejected); any other `ModelParams` field, such as `batchSize`, throws
+  `LlamaUnsupportedException`.
 - LiteRT-LM web is single-turn text only: it sends only the last message's
   text, so `ChatSession` history, system prompts and tools are not forwarded.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,

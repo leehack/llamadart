@@ -140,6 +140,58 @@ File writeSyntheticT5EncoderGguf(
   );
 }
 
+/// Writes a one-layer T5 encoder-decoder GGUF with random F32 weights and a
+/// byte-fallback SentencePiece vocabulary to [path].
+///
+/// llama.cpp reports both an encoder and a decoder for this architecture.
+File writeSyntheticT5Gguf(String path, {int seed = 0}) {
+  const arch = 't5';
+  const buckets = 32;
+  final random = math.Random(seed);
+  (List<int>, List<double>) square() => _weights(random, [_embd, _embd]);
+  return _writeGguf(
+    path,
+    arch: arch,
+    metadata: {
+      '$arch.context_length': _GgufValue.uint32(1024),
+      '$arch.embedding_length': _GgufValue.uint32(_embd),
+      '$arch.feed_forward_length': _GgufValue.uint32(_ff),
+      '$arch.block_count': _GgufValue.uint32(1),
+      '$arch.attention.head_count': _GgufValue.uint32(2),
+      '$arch.attention.layer_norm_rms_epsilon': _GgufValue.float32(1e-5),
+      '$arch.attention.relative_buckets_count': _GgufValue.uint32(buckets),
+    },
+    tensors: {
+      'token_embd.weight': _weights(random, [_embd, _tokens.length]),
+      'enc.output_norm.weight': _ones([_embd]),
+      'enc.blk.0.attn_norm.weight': _ones([_embd]),
+      'enc.blk.0.attn_rel_b.weight': _weights(random, [2, buckets]),
+      'enc.blk.0.attn_q.weight': square(),
+      'enc.blk.0.attn_k.weight': square(),
+      'enc.blk.0.attn_v.weight': square(),
+      'enc.blk.0.attn_o.weight': square(),
+      'enc.blk.0.ffn_norm.weight': _ones([_embd]),
+      'enc.blk.0.ffn_up.weight': _weights(random, [_embd, _ff]),
+      'enc.blk.0.ffn_down.weight': _weights(random, [_ff, _embd]),
+      'dec.output_norm.weight': _ones([_embd]),
+      'dec.blk.0.attn_norm.weight': _ones([_embd]),
+      'dec.blk.0.attn_rel_b.weight': _weights(random, [2, buckets]),
+      'dec.blk.0.attn_q.weight': square(),
+      'dec.blk.0.attn_k.weight': square(),
+      'dec.blk.0.attn_v.weight': square(),
+      'dec.blk.0.attn_o.weight': square(),
+      'dec.blk.0.cross_attn_norm.weight': _ones([_embd]),
+      'dec.blk.0.cross_attn_q.weight': square(),
+      'dec.blk.0.cross_attn_k.weight': square(),
+      'dec.blk.0.cross_attn_v.weight': square(),
+      'dec.blk.0.cross_attn_o.weight': square(),
+      'dec.blk.0.ffn_norm.weight': _ones([_embd]),
+      'dec.blk.0.ffn_up.weight': _weights(random, [_embd, _ff]),
+      'dec.blk.0.ffn_down.weight': _weights(random, [_ff, _embd]),
+    },
+  );
+}
+
 final _tokens = <String>[
   '<unk>',
   '<s>',

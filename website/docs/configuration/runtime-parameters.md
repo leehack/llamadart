@@ -101,10 +101,10 @@ runtime default.
 `gpuLayers` must be `0` (CPU) or `ModelParams.maxGpuLayers`. Native
 LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
-throws `LlamaModelException` whose cause is an `ArgumentError`, so a GGUF
+throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. LiteRT-LM web
 accepts `liteRtLmBackend` for CPU or GPU selection and rejects every other
-field in the table.
+field in the table the same way.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.

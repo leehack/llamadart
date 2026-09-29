@@ -917,6 +917,8 @@ class LiteRtLmBackend
 
   Object _exceptionForErrorResponse(LiteRtLmErrorResponse response) {
     switch (response.kind) {
+      case 'llamaUnsupported':
+        return LlamaUnsupportedException(response.message);
       case 'unsupported':
         return UnsupportedError(response.message);
       case 'argument':

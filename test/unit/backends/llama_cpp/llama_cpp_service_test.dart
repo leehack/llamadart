@@ -19,6 +19,7 @@ import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -2514,6 +2515,142 @@ void main() {
     });
   });
 
+  group('media parts', () {
+    const params = ModelParams(
+      contextSize: 512,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    const fakeMtmdHandle = -771;
+    late Directory tempDir;
+    late LlamaCppService service;
+    late int modelHandle;
+    late int contextHandle;
+    late Pointer<Int8> cancelFlag;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('media_parts_');
+      service = LlamaCppService();
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+      modelHandle = service.loadModel(modelPath, params);
+      contextHandle = service.createContext(modelHandle, params);
+      cancelFlag = calloc<Int8>();
+    });
+
+    tearDown(() {
+      _readPrivateForTesting<Map>(service, '_modelToMtmd').remove(modelHandle);
+      _readPrivateForTesting<Map>(
+        service,
+        '_mtmdContexts',
+      ).remove(fakeMtmdHandle);
+      calloc.free(cancelFlag);
+      service.dispose();
+      tempDir.deleteSync(recursive: true);
+    });
+
+    void registerFakeProjector() {
+      _readPrivateForTesting<Map>(service, '_mtmdContexts')[fakeMtmdHandle] =
+          Pointer<mtmd_context>.fromAddress(0x30);
+      _readPrivateForTesting<Map>(service, '_modelToMtmd')[modelHandle] =
+          fakeMtmdHandle;
+    }
+
+    Stream<List<int>> generate(List<LlamaContentPart> parts) =>
+        service.generate(
+          contextHandle,
+          'Describe <__media__>',
+          const GenerationParams(maxTokens: 4, temp: 0, seed: 1),
+          cancelFlag.address,
+          parts: parts,
+        );
+
+    Matcher unsupported(Matcher message) => emitsError(
+      isA<LlamaUnsupportedException>().having(
+        (error) => error.message,
+        'message',
+        message,
+      ),
+    );
+
+    test('rejects image and audio input without a projector', () async {
+      await expectLater(
+        generate([
+          LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+        ]),
+        unsupported(
+          allOf(
+            startsWith('Image input needs a multimodal projector'),
+            contains('loadMultimodalProjector'),
+          ),
+        ),
+      );
+      await expectLater(
+        generate([LlamaAudioContent(samples: Float32List(16))]),
+        unsupported(startsWith('Audio input needs a multimodal projector')),
+      );
+      await expectLater(
+        generate([
+          const LlamaImageContent(path: '/tmp/image.png'),
+          LlamaAudioContent(samples: Float32List(16)),
+        ]),
+        unsupported(startsWith('Image and audio input needs')),
+      );
+    });
+
+    test('still generates text-only prompts without a projector', () async {
+      final bytes = await service
+          .generate(
+            contextHandle,
+            'Hello',
+            const GenerationParams(maxTokens: 2, temp: 0, seed: 1),
+            cancelFlag.address,
+          )
+          .toList();
+      expect(bytes, isNotEmpty);
+    });
+
+    test('rejects remote image URLs before multimodal evaluation', () async {
+      registerFakeProjector();
+      await expectLater(
+        generate([const LlamaImageContent(url: 'https://example.com/a.png')]),
+        unsupported(
+          allOf(
+            contains('remote image URLs'),
+            contains('LlamaImageContent.url'),
+          ),
+        ),
+      );
+    });
+
+    test('accepts local image paths and encoded bytes with a projector', () {
+      void check(List<LlamaContentPart> parts, {required bool projector}) =>
+          _invokePrivateForTesting<void>(
+            service,
+            '_checkLlamaCppMediaParts',
+            [parts],
+            {#projectorLoaded: projector},
+          );
+
+      check(const [LlamaImageContent(path: '/tmp/image.png')], projector: true);
+      check([
+        LlamaImageContent(
+          bytes: Uint8List.fromList([1, 2, 3]),
+          url: 'https://example.com/a.png',
+        ),
+        LlamaAudioContent(samples: Float32List(16)),
+      ], projector: true);
+      expect(
+        () => check(const [
+          LlamaImageContent(url: 'https://example.com/a.png'),
+        ], projector: true),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+  });
+
   group('prompt evaluation cancel', () {
     const params = ModelParams(
       contextSize: 512,
@@ -3027,6 +3164,66 @@ void main() {
 
       expect(() => service.embed(handle, 'query'), rejectsRank);
       expect(() => service.embedBatch(handle, ['a', 'b']), rejectsRank);
+    });
+
+    test('embed and embedBatch reject an encoder-decoder model', () {
+      final modelPath = path.join(tempDir.path, 't5.gguf');
+      writeSyntheticT5Gguf(modelPath);
+      const params = ModelParams(
+        contextSize: 64,
+        maxParallelSequences: 2,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+      final rejectsEncoderDecoder = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('encoder-decoder'),
+        ),
+      );
+
+      expect(() => service.embed(handle, 'query'), rejectsEncoderDecoder);
+      expect(
+        () => service.embedBatch(handle, ['a', 'b']),
+        rejectsEncoderDecoder,
+      );
+    });
+
+    test('embed and embedBatch reject input above the context', () {
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(
+        modelPath,
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_LAST.value,
+      );
+      const params = ModelParams(
+        contextSize: 256,
+        maxParallelSequences: 1,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, params);
+      final handle = service.createContext(modelHandle, params);
+      final rejectsOverflow = throwsA(
+        isA<LlamaInferenceException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('has 257 tokens'),
+            contains('at most 256 tokens'),
+            contains('ModelParams.contextSize'),
+          ),
+        ),
+      );
+
+      expect(service.embed(handle, textOfTokens(256)), hasLength(16));
+      expect(() => service.embed(handle, textOfTokens(257)), rejectsOverflow);
+      expect(
+        () => service.embedBatch(handle, ['a', textOfTokens(257)]),
+        rejectsOverflow,
+      );
     });
 
     test('default micro-batch rejects input above 512 tokens', () {

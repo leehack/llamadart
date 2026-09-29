@@ -1,5 +1,6 @@
 import 'dart:isolate';
 
+import '../../core/exceptions.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
@@ -433,6 +434,9 @@ class LiteRtLmErrorResponse {
 
   /// Creates a typed response from an error object.
   factory LiteRtLmErrorResponse.from(Object error) {
+    if (error is LlamaUnsupportedException) {
+      return LiteRtLmErrorResponse(error.message, kind: 'llamaUnsupported');
+    }
     if (error is UnsupportedError) {
       return LiteRtLmErrorResponse(
         _stripErrorPrefix(error.toString(), 'Unsupported operation: '),

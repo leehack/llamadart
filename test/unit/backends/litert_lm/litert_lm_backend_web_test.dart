@@ -665,8 +665,8 @@ void main() {
           const ModelParams(batchSize: 128),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('batchSize'),
           ),
@@ -686,8 +686,8 @@ void main() {
           ),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             allOf(
               contains('native'),
@@ -708,8 +708,8 @@ void main() {
           const ModelParams(contextSize: 0),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('contextSize=0'),
           ),
@@ -969,7 +969,7 @@ void main() {
         const ModelParams(),
       ),
       throwsA(
-        isA<StateError>().having(
+        isA<LlamaBackendInitializationException>().having(
           (error) => error.message,
           'message',
           contains('__llamadartLiteRtLmModuleUrl'),
@@ -977,6 +977,65 @@ void main() {
       ),
     );
   });
+
+  test('public engine wraps a missing web runtime in a model error', () async {
+    final engine = LlamaEngine(LiteRtLmBackend(readyTimeout: Duration.zero));
+    try {
+      await expectLater(
+        engine.loadModel('https://example.com/model.litertlm'),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => '${error.details}',
+            'details',
+            contains('LiteRT-LM web runtime is not loaded'),
+          ),
+        ),
+      );
+      expect(engine.isReady, isFalse);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
+  test(
+    'public engine rejects unsupported web model params and recovers',
+    () async {
+      var creates = 0;
+      _installFakeEngine(
+        onCreate: (_) {
+          creates++;
+        },
+        chunks: <JSAny?>[_messageChunk('Hello')],
+      );
+      final engine = LlamaEngine(LiteRtLmBackend());
+      try {
+        await expectLater(
+          engine.loadModel(
+            'https://example.com/model.litertlm',
+            modelParams: const ModelParams(batchSize: 128, useMlock: true),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('LiteRtLmBackend web'),
+                contains('batchSize'),
+                contains('useMlock'),
+              ),
+            ),
+          ),
+        );
+        expect(creates, 0, reason: 'Rejection must precede engine creation');
+        expect(engine.isReady, isFalse);
+
+        await engine.loadModel('https://example.com/model.litertlm');
+        expect(await engine.generate('hello').join(), 'Hello');
+      } finally {
+        await engine.dispose();
+      }
+    },
+  );
 
   test('rejects non-LiteRT model sources before loading runtime', () async {
     final backend = LiteRtLmBackend(readyTimeout: Duration.zero);

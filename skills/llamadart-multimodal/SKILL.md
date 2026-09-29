@@ -34,8 +34,8 @@ description: >-
   are `false` for `.litertlm` bundles, whose media support you must know from
   the bundle itself.
 - Always check before sending media to a GGUF model. With no projector loaded,
-  native llama.cpp does not throw: the media part is replaced by a placeholder
-  and the model answers from text alone.
+  image or audio parts throw `LlamaUnsupportedException` on llama.cpp, native
+  and WebGPU.
 - Put media in a message with
   `LlamaChatMessage.withContent(role: ..., content: [...])`, or pass the parts
   to `ChatSession.create`. Place media before the text that refers to it.
@@ -45,8 +45,8 @@ description: >-
   - `LlamaAudioContent(path: ...)`, `LlamaAudioContent(bytes: ...)` with
     encoded audio (for example WAV), or `samples:` (raw PCM `Float32List`).
   - `LlamaImageContent.url` is consumed only by the web bridge. Native
-    llama.cpp fails the request and native LiteRT-LM rejects it; download the
-    image and pass bytes instead.
+    llama.cpp and native LiteRT-LM throw `LlamaUnsupportedException` for it;
+    download the image and pass bytes instead.
   - Native LiteRT-LM also rejects raw PCM `samples` and `bytes` combined with
     `width`/`height` (raw RGB). Do not set `width`/`height` on encoded bytes.
 - Video is not supported. `await engine.supportsVideo` is always `false` and

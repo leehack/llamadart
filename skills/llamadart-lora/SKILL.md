@@ -53,8 +53,8 @@ llamadart applies LoRA adapters at inference time; it does not train them.
     call.
   - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
     passed as `ModelParams.loras` at load. More than one adapter or a
-    non-default scale fails the load. `setLora`, `removeLora` and `clearLoras`
-    throw `LlamaUnsupportedException`.
+    non-default scale fails the load with `LlamaUnsupportedException`.
+    `setLora`, `removeLora` and `clearLoras` throw `LlamaUnsupportedException`.
   - LiteRT-LM on web: no LoRA. Any `ModelParams.loras` entry fails the load and
     the runtime calls throw `LlamaUnsupportedException`.
 - Do not catch and ignore `LlamaUnsupportedException` from LoRA calls; it means

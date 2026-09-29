@@ -4,6 +4,17 @@
   tool calling, web, Flutter apps, multimodal input, embeddings, speech, LoRA
   adapters and decision models; install them with `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
+- Throw `LlamaUnsupportedException` instead of `LlamaModelException` when
+  native or web LiteRT-LM rejects a `ModelParams` field, including more than
+  one LoRA adapter or a non-default adapter scale.
+- Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
+  model with no projector loaded, on native llama.cpp and WebGPU, instead of
+  answering from the text alone; native llama.cpp and LiteRT-LM also throw it
+  for `LlamaImageContent.url`.
+- Add `LlamaEngine.supportsEmbeddings`. Native llama.cpp embeddings of an
+  encoder-decoder model now throw `LlamaUnsupportedException`, and input
+  longer than the context throws `LlamaInferenceException`, instead of a
+  plain `Exception`.
 
 ## 0.9.0
 

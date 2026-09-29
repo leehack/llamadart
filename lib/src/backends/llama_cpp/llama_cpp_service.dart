@@ -3771,6 +3771,40 @@ class LlamaCppService {
     _contexts.remove(handle)?.dispose();
   }
 
+  // Without a projector the prompt would be evaluated as text and the media
+  // silently dropped; upstream llama-server rejects such requests too.
+  void _checkLlamaCppMediaParts(
+    List<LlamaContentPart> parts, {
+    required bool projectorLoaded,
+  }) {
+    if (!projectorLoaded) {
+      final hasImage = parts.any((part) => part is LlamaImageContent);
+      final hasAudio = parts.any((part) => part is LlamaAudioContent);
+      final kind = hasImage && hasAudio
+          ? 'Image and audio'
+          : hasImage
+          ? 'Image'
+          : 'Audio';
+      throw LlamaUnsupportedException(
+        '$kind input needs a multimodal projector on llama.cpp, and none is '
+        'loaded. Call LlamaEngine.loadMultimodalProjector before sending '
+        'media.',
+      );
+    }
+    for (final part in parts) {
+      if (part is LlamaImageContent &&
+          part.path == null &&
+          part.bytes == null &&
+          part.url != null) {
+        throw LlamaUnsupportedException(
+          'llama.cpp does not load remote image URLs '
+          '(LlamaImageContent.url). Pass a local image file path or encoded '
+          'image bytes.',
+        );
+      }
+    }
+  }
+
   _LlamaCppThinkingBudgetConfig? _resolveLlamaCppThinkingBudgetConfig(
     GenerationParams params, {
     required bool hasMediaParts,
@@ -4270,6 +4304,12 @@ class LlamaCppService {
           'Extract and send image frames instead.',
         );
       }
+      if (hasMediaParts) {
+        _checkLlamaCppMediaParts(
+          parts!,
+          projectorLoaded: _modelToMtmd[modelHandle] != null,
+        );
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -4655,8 +4695,9 @@ class LlamaCppService {
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
     if (hasEncoder && hasDecoder) {
-      throw Exception(
-        'Embedding extraction for encoder-decoder models is not supported',
+      throw LlamaUnsupportedException(
+        'Embeddings are not supported for encoder-decoder models such as T5; '
+        'use an encoder-only or decoder-only embedding model.',
       );
     }
     final useEncoderPath = hasEncoder && !hasDecoder;
@@ -4713,7 +4754,7 @@ class LlamaCppService {
             ? llama_encode(ctx.pointer, batch)
             : llama_decode(ctx.pointer, batch);
         if (status != 0) {
-          throw Exception('Embedding forward pass failed');
+          throw LlamaInferenceException('Embedding forward pass failed');
         }
 
         decodedTokens += chunkTokenCount;
@@ -4736,7 +4777,7 @@ class LlamaCppService {
       }
 
       if (embeddingPtr == nullptr) {
-        throw Exception('Embedding output is unavailable');
+        throw LlamaInferenceException('Embedding output is unavailable');
       }
 
       final vector = List<double>.from(
@@ -4788,8 +4829,9 @@ class LlamaCppService {
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
     if (hasEncoder && hasDecoder) {
-      throw Exception(
-        'Embedding extraction for encoder-decoder models is not supported',
+      throw LlamaUnsupportedException(
+        'Embeddings are not supported for encoder-decoder models such as T5; '
+        'use an encoder-only or decoder-only embedding model.',
       );
     }
     final useEncoderPath = hasEncoder && !hasDecoder;
@@ -4900,7 +4942,7 @@ class LlamaCppService {
             ? llama_encode(ctx.pointer, batch)
             : llama_decode(ctx.pointer, batch);
         if (status != 0) {
-          throw Exception('Batch embedding forward pass failed');
+          throw LlamaInferenceException('Batch embedding forward pass failed');
         }
 
         for (int sequence = 0; sequence < groupSize; sequence++) {
@@ -4909,7 +4951,9 @@ class LlamaCppService {
             embeddingPtr = llama_get_embeddings(ctx.pointer);
           }
           if (embeddingPtr == nullptr) {
-            throw Exception('Batch embedding output is unavailable');
+            throw LlamaInferenceException(
+              'Batch embedding output is unavailable',
+            );
           }
 
           final vector = List<double>.from(
@@ -4947,9 +4991,19 @@ class LlamaCppService {
       true,
     );
 
-    if (requiredTokenCount <= 0 || requiredTokenCount > maxTokens) {
+    if (requiredTokenCount <= 0) {
       malloc.free(textPtr);
-      throw Exception('Failed to tokenize embedding input');
+      throw LlamaInferenceException(
+        'Failed to tokenize embedding input: it produced no tokens.',
+      );
+    }
+    if (requiredTokenCount > maxTokens) {
+      malloc.free(textPtr);
+      throw LlamaInferenceException(
+        'The embedding input has $requiredTokenCount tokens, but the context '
+        'holds at most $maxTokens tokens per sequence. Shorten the input or '
+        'raise ModelParams.contextSize.',
+      );
     }
 
     final tokensPtr = malloc<Int32>(requiredTokenCount);
@@ -4964,7 +5018,7 @@ class LlamaCppService {
         true,
       );
       if (actualTokenCount <= 0 || actualTokenCount > maxTokens) {
-        throw Exception('Failed to encode embedding input');
+        throw LlamaInferenceException('Failed to encode embedding input');
       }
 
       return List<int>.from(tokensPtr.asTypedList(actualTokenCount));
@@ -5001,7 +5055,7 @@ class LlamaCppService {
       embeddingSize = llama_model_n_embd(modelPointer);
     }
     if (embeddingSize <= 0) {
-      throw Exception('Failed to resolve embedding dimension');
+      throw LlamaInferenceException('Failed to resolve embedding dimension');
     }
     return embeddingSize;
   }
