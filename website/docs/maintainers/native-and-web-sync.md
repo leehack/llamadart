@@ -151,10 +151,10 @@ its releases are GitHub prereleases, so name the tag explicitly.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.1.0 \
+  --stable-diffusion-tag v0.1.1 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.1.0
+  --stable-diffusion-tag v0.1.1
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
