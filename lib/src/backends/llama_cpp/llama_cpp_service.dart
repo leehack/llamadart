@@ -5000,7 +5000,8 @@ class LlamaCppService {
       throw LlamaInferenceException(
         'The embedding input has $requiredTokenCount tokens, but the context '
         'holds at most $maxTokens tokens per sequence. Shorten the input or '
-        'raise ModelParams.contextSize.',
+        'raise ModelParams.contextSize; with ModelParams.kvUnified false, the '
+        'context is split across ModelParams.maxParallelSequences.',
       );
     }
 

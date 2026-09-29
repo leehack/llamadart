@@ -53,7 +53,8 @@ Future<void> main() async {
   `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
   model.
 - On native, an input with more tokens than the context holds per sequence
-  throws `LlamaInferenceException`; shorten it or raise `contextSize`.
+  throws `LlamaInferenceException`; shorten it or raise `contextSize`. With
+  `kvUnified: false`, the context is split across `maxParallelSequences`.
 - On native, encoder-only models and models without a KV cache (such as
   BERT-family and ModernBERT GGUFs) embed each input in one pass. An input
   longer than the context's `microBatchSize` (512 tokens by default for

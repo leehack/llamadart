@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_message.dart';
@@ -87,6 +89,42 @@ void main() {
       expect(session.history, hasLength(2));
       expect(session.history.first.role, LlamaChatRole.user);
       expect(session.history.last.role, LlamaChatRole.assistant);
+    });
+
+    test('replaces media the runtime cannot accept with text markers', () {
+      final message = ChatMessage(
+        text: 'compare',
+        isUser: true,
+        parts: <LlamaContentPart>[
+          LlamaImageContent(bytes: Uint8List.fromList(const [1])),
+          LlamaAudioContent(bytes: Uint8List.fromList(const [2])),
+          const LlamaTextContent('compare'),
+        ],
+      );
+
+      final textOnly = service.toLlamaChatMessage(
+        message,
+        acceptsImages: false,
+        acceptsAudio: false,
+      )!;
+      expect(
+        textOnly.parts.map((part) => (part as LlamaTextContent).text),
+        <String>[
+          ChatSessionService.omittedImageMarker,
+          ChatSessionService.omittedAudioMarker,
+          'compare',
+        ],
+      );
+
+      final visionOnly = service.toLlamaChatMessage(
+        message,
+        acceptsAudio: false,
+      )!;
+      expect(visionOnly.parts.first, isA<LlamaImageContent>());
+      expect(
+        (visionOnly.parts[1] as LlamaTextContent).text,
+        ChatSessionService.omittedAudioMarker,
+      );
     });
   });
 }
