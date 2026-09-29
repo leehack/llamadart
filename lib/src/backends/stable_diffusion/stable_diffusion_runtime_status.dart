@@ -76,11 +76,19 @@ List<StableDiffusionDevice> parseStableDiffusionDeviceList(String text) {
   return devices;
 }
 
-/// Whether every `Features` line of an Arm Linux `/proc/cpuinfo` lists
-/// `asimddp` (Armv8.2 dot-product). `false` when there is no `Features` line,
-/// so an unreadable or foreign format never passes. Every core must report
-/// it because the process may be scheduled on any of them.
-bool cpuInfoReportsAsimddp(String cpuInfo) {
+/// CPU features the Android arm64 runtime is compiled for
+/// (`armv8.2-a+dotprod+fp16`): dot-product plus scalar and vector fp16.
+const List<String> stableDiffusionRequiredArmFeatures = [
+  'asimddp',
+  'fphp',
+  'asimdhp',
+];
+
+/// Whether every `Features` line of an Arm Linux `/proc/cpuinfo` lists all of
+/// [stableDiffusionRequiredArmFeatures]. `false` when there is no `Features`
+/// line, so an unreadable or foreign format never passes. Every core must
+/// report them because the process may be scheduled on any of them.
+bool cpuInfoReportsRequiredArmFeatures(String cpuInfo) {
   var sawFeatures = false;
   for (final line in cpuInfo.split('\n')) {
     final separator = line.indexOf(':');
@@ -90,7 +98,7 @@ bool cpuInfoReportsAsimddp(String cpuInfo) {
     }
     sawFeatures = true;
     final features = line.substring(separator + 1).trim().split(RegExp(r'\s+'));
-    if (!features.contains('asimddp')) {
+    if (!stableDiffusionRequiredArmFeatures.every(features.contains)) {
       return false;
     }
   }

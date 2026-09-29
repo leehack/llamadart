@@ -90,7 +90,8 @@ hooks:
 
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`, `macos-arm64`,
   `macos-x86_64`, `linux-arm64`, `linux-x64` and `windows-x64`. On Android it
-  needs an Armv8.2 CPU with the dot-product extension (`asimddp`).
+  needs an Armv8.2 CPU with dot-product and fp16 (`asimddp`, `fphp`,
+  `asimdhp`).
 - Apple builds use the Metal build and Android the CPU build. Linux and Windows
   follow `llamadart_native_backends` for the same platform: the Vulkan build
   when Vulkan is selected, which is the default, otherwise the CPU build. The

@@ -37,8 +37,9 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// (`package:llamadart/stable_diffusion`) on the first native call, so
 /// nothing is loaded before the platform checks pass: an unpublished ABI is
 /// rejected up front, and on Android arm64 `/proc/cpuinfo` must report
-/// `asimddp` because the runtime is built for Armv8.2 dot-product and would
-/// crash with an illegal instruction otherwise. Then `sd_version`,
+/// [stableDiffusionRequiredArmFeatures] because the runtime is built for
+/// Armv8.2 dot-product and fp16 and would crash with an illegal instruction
+/// otherwise. Then `sd_version`,
 /// `sd_commit` and `sd_list_devices` must answer.
 ///
 /// [abi], [readCpuInfo] and [api] default to the host and the bundled
@@ -66,17 +67,17 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
       return StableDiffusionRuntimeStatus.unavailable(
         LlamaUnsupportedException(
           'stable_diffusion runtime on $platform requires Armv8.2 '
-          'dot-product (asimddp), and /proc/cpuinfo could not be read to '
-          'confirm it.',
+          'dot-product and fp16 ($_armFeatureList), and /proc/cpuinfo could '
+          'not be read to confirm it.',
         ),
       );
     }
-    if (!cpuInfoReportsAsimddp(cpuInfo)) {
+    if (!cpuInfoReportsRequiredArmFeatures(cpuInfo)) {
       return StableDiffusionRuntimeStatus.unavailable(
         LlamaUnsupportedException(
           'stable_diffusion runtime on $platform requires Armv8.2 '
-          'dot-product (asimddp), which this CPU does not report in '
-          '/proc/cpuinfo.',
+          'dot-product and fp16 ($_armFeatureList), which this CPU does not '
+          'report on every core in /proc/cpuinfo.',
         ),
       );
     }
@@ -102,26 +103,28 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
 ///
 /// The VM reports a missing asset, a library that fails to load and a missing
 /// symbol through the same [ArgumentError]; only its message tells them
-/// apart. A dynamic-loader failure names the library that could not be found,
-/// so a missing Vulkan loader shows up as `vulkan` in it.
+/// apart. A missing asset is checked first because that message lists every
+/// bundled asset, which on Linux and Windows includes llama.cpp's
+/// `ggml-vulkan`. A dynamic-loader failure names the loader library it could
+/// not find.
 LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
 }) {
   final detail = '${error.message ?? error}';
-  if (detail.toLowerCase().contains('vulkan')) {
-    return LlamaUnsupportedException(
-      'stable_diffusion runtime on $platform is the Vulkan variant, which '
-      'requires the Vulkan loader (libvulkan.so.1 on Linux, vulkan-1.dll on '
-      'Windows); install it, or select the CPU backend for this platform in '
-      'llamadart_native_backends and rebuild.',
-    );
-  }
   if (detail.contains('No asset with id')) {
     return LlamaUnsupportedException(
       'stable_diffusion runtime is not bundled for $platform; add '
       'stable_diffusion to hooks.user_defines.llamadart.'
       'llamadart_native_runtimes and rebuild.',
+    );
+  }
+  if (_vulkanLoaderNames.any(detail.toLowerCase().contains)) {
+    return LlamaUnsupportedException(
+      'stable_diffusion runtime on $platform is the Vulkan variant, which '
+      'requires the Vulkan loader (libvulkan.so.1 on Linux, vulkan-1.dll on '
+      'Windows); install it, or select the CPU backend for this platform in '
+      'llamadart_native_backends and rebuild.',
     );
   }
   if (detail.contains('Failed to lookup symbol')) {
@@ -136,6 +139,10 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
     '${detail.split('\n').first}',
   );
 }
+
+final String _armFeatureList = stableDiffusionRequiredArmFeatures.join(', ');
+
+const List<String> _vulkanLoaderNames = ['libvulkan.so', 'vulkan-1.dll'];
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 

@@ -8,7 +8,8 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 
-const _dotProductCpuInfo = 'Features\t: fp asimd atomics asimddp\n';
+const _dotProductCpuInfo =
+    'Features\t: fp asimd atomics fphp asimdhp asimddp\n';
 
 void main() {
   group('probeStableDiffusionRuntime', () {
@@ -58,14 +59,15 @@ void main() {
           status.unavailableReason?.message,
           allOf(
             contains('android-arm64'),
-            contains('Armv8.2 dot-product (asimddp)'),
+            contains('Armv8.2 dot-product and fp16 (asimddp, fphp, asimdhp)'),
           ),
           reason: cpuInfo,
         );
       }
     });
 
-    test('Android arm64 with asimddp on every core loads the library', () {
+    test('Android arm64 with the required features on every core loads the '
+        'library', () {
       final api = _FakeApi();
       final status = probeStableDiffusionRuntime(
         abi: Abi.androidArm64,
@@ -134,6 +136,35 @@ void main() {
       expect(message, contains('libvulkan.so.1'));
       expect(message, contains('select the CPU backend'));
       expect(message, isNot(contains('/app/lib')));
+    });
+
+    test('a missing asset beside llama.cpp Vulkan assets is not a loader '
+        'failure', () {
+      // Default Linux and Windows builds bundle llama.cpp's ggml-vulkan, and
+      // the VM lists every bundled asset in the missing-asset message.
+      final message = messageFor(
+        "Couldn't resolve native function 'sd_version' in "
+        "'package:llamadart/stable_diffusion' : No asset with id "
+        "'package:llamadart/stable_diffusion' found. Available native "
+        'assets: package:llamadart/llamadart, package:llamadart/ggml-base, '
+        'package:llamadart/ggml-cpu, package:llamadart/ggml-vulkan. Attempted '
+        'to fallback to process lookup.',
+      );
+
+      expect(message, contains('not bundled for linux-x64'));
+      expect(message, isNot(contains('Vulkan variant')));
+    });
+
+    test('a path containing "vulkan" is not a loader failure', () {
+      final message = messageFor(
+        "Couldn't resolve native function 'sd_version' in "
+        "'package:llamadart/stable_diffusion' : Failed to load dynamic "
+        "library '/opt/vulkan-demo/lib/libstable-diffusion.so': "
+        'libstdc++.so.6: cannot open shared object file',
+      );
+
+      expect(message, isNot(contains('Vulkan variant')));
+      expect(message, contains('could not be loaded on linux-x64'));
     });
 
     test('reports a symbol missing from a mismatched runtime', () {

@@ -56,7 +56,7 @@ void main() {
     });
   });
 
-  group('cpuInfoReportsAsimddp', () {
+  group('cpuInfoReportsRequiredArmFeatures', () {
     const dotProductCore =
         'processor\t: 0\n'
         'Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp '
@@ -65,26 +65,40 @@ void main() {
         'processor\t: 4\n'
         'Features\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 cpuid\n';
 
-    test('accepts cores that all report asimddp', () {
-      expect(cpuInfoReportsAsimddp(dotProductCore * 2), isTrue);
+    test('accepts cores that all report dot-product and fp16', () {
+      expect(cpuInfoReportsRequiredArmFeatures(dotProductCore * 2), isTrue);
     });
 
     test('rejects a core without asimddp, even beside cores with it', () {
-      expect(cpuInfoReportsAsimddp(baselineCore), isFalse);
-      expect(cpuInfoReportsAsimddp(dotProductCore + baselineCore), isFalse);
+      expect(cpuInfoReportsRequiredArmFeatures(baselineCore), isFalse);
+      expect(
+        cpuInfoReportsRequiredArmFeatures(dotProductCore + baselineCore),
+        isFalse,
+      );
+    });
+
+    test('rejects a dot-product core without fp16 arithmetic', () {
+      expect(
+        cpuInfoReportsRequiredArmFeatures(
+          'Features\t: fp asimd atomics asimdrdm asimddp\n',
+        ),
+        isFalse,
+      );
     });
 
     test('rejects a feature that only contains the name', () {
       expect(
-        cpuInfoReportsAsimddp('Features\t: fp asimd asimddpx sve\n'),
+        cpuInfoReportsRequiredArmFeatures(
+          'Features\t: fp asimd asimddpx sve\n',
+        ),
         isFalse,
       );
     });
 
     test('rejects input with no Features line', () {
-      expect(cpuInfoReportsAsimddp(''), isFalse);
+      expect(cpuInfoReportsRequiredArmFeatures(''), isFalse);
       expect(
-        cpuInfoReportsAsimddp('flags\t: fpu vme de pse asimddp\n'),
+        cpuInfoReportsRequiredArmFeatures('flags\t: fpu vme de pse asimddp\n'),
         isFalse,
       );
     });
