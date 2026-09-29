@@ -16,7 +16,7 @@ Configure the hook under `hooks.user_defines.llamadart` in the app's
 
 | Key | Selects | Default |
 | --- | --- | --- |
-| `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm` | Every family published for the target |
+| `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm`, and the opt-in `stable_diffusion` | `llama_cpp` and `litert_lm` where published |
 | `llamadart_native_backends` | llama.cpp backend modules, and Android arm64 CPU variants | `cpu` and `vulkan` where present |
 | `llamadart_native_tag` | `leehack/llamadart-native` release to download | The [pinned release](./support-matrix#pinned-runtimes) |
 | `llamadart_native_repository` | GitHub repository to download llama.cpp bundles from | `leehack/llamadart-native` |
@@ -63,13 +63,44 @@ hooks:
   `macos-x86_64`, `windows-arm64` and `windows-x64`. For each bundle the
   exact bundle key wins, then its OS key, then `runtimes`, then every family.
 - Aliases: `gguf`, `llama`, `llama.cpp` for `llama_cpp`; `litert`,
-  `litert-lm`, `litertlm`, `.litertlm` for `litert_lm`. `all` and `both` select
-  every family. Unknown names are dropped with a warning.
+  `litert-lm`, `litertlm`, `.litertlm` for `litert_lm`; `stable-diffusion` for
+  `stable_diffusion`. `all` and `both` select `llama_cpp` and `litert_lm`.
+  Unknown names are dropped with a warning.
 - Selecting `litert_lm` by name for a target without a LiteRT-LM runtime, such
   as the iOS x86_64 simulator or Windows arm64, fails the build. When it is only
   implied by the default or `all`, the hook drops it with a warning.
-- An empty or all-unknown selection falls back to every family; one that
-  leaves no runtime, such as `none`, fails the build.
+- An empty or all-unknown selection falls back to `llama_cpp` and
+  `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
+
+### Opt-in stable_diffusion runtime (experimental)
+
+`stable_diffusion` bundles the
+[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runtime
+from `leehack/stable-diffusion-native`. It is groundwork for experimental image
+generation and has no public Dart API yet. It adds about 40 to 70 MB per target, so
+it is never bundled by default or by `all`/`both`; name it explicitly:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        runtimes: [llama_cpp, stable_diffusion]
+```
+
+- Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`, `macos-arm64`,
+  `macos-x86_64`, `linux-arm64`, `linux-x64` and `windows-x64`. On Android it
+  needs an Armv8.2 CPU with the dot-product extension (`asimddp`).
+- Apple builds use the Metal build and Android the CPU build. Linux and Windows
+  follow `llamadart_native_backends` for the same platform: the Vulkan build
+  when Vulkan is selected, which is the default, otherwise the CPU build. The
+  Vulkan build needs the system Vulkan loader (`libvulkan.so.1` or
+  `vulkan-1.dll`) at run time; select `cpu` for that platform to avoid it.
+- Other targets, such as `android-x64` or Windows arm64, are skipped with a
+  warning. Naming it for that exact bundle key, for example
+  `android-x64: [stable_diffusion]`, fails the build instead.
+- Flutter Apple builds that use the companion packages still bundle it through
+  the hook, since it has no companion package.
 
 ## Choose llama.cpp backend modules
 
@@ -210,8 +241,10 @@ companion package is a dependency:
 - `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks.
 - `llamadart_litert_lm_flutter` links the LiteRT-LM iOS XCFrameworks.
 
-When a companion is present, the installed companions choose the Apple runtime
-families and `llamadart_native_runtimes` is ignored with a warning. The tag,
+When a companion is present, the installed companions choose the Apple
+`llama_cpp` and `litert_lm` families and the rest of
+`llamadart_native_runtimes` is ignored with a warning; an opt-in
+`stable_diffusion` there is still bundled. The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. Flutter macOS LiteRT-LM still uses the hook-managed

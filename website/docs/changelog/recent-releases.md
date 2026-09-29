@@ -20,6 +20,10 @@ For canonical full release notes, use:
 - Throw `LlamaUnsupportedException` instead of `LlamaModelException` when
   native or web LiteRT-LM rejects a `ModelParams` field, including more than
   one LoRA adapter or a non-default adapter scale.
+- Add an experimental opt-in `stable_diffusion` native runtime
+  (stable-diffusion.cpp) to `llamadart_native_runtimes`, groundwork for image
+  generation; it is never bundled by default or by `all`
+  ([#777](https://github.com/leehack/llamadart/issues/777)).
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
   model with no projector loaded: native llama.cpp answered from the text
   alone, and WebGPU threw an untyped error surfaced as

@@ -104,6 +104,7 @@ thinking-budget and speculative decoding rows for the loaded model. Guides:
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.5.0` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-6` |
+| stable-diffusion.cpp native (opt-in, experimental) | `leehack/stable-diffusion-native@v0.1.0`; see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental) |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag

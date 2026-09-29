@@ -83,9 +83,10 @@ or shipping runtimes the app does not use.
   version and rerun `flutter pub get`. Flutter macOS LiteRT-LM still uses the
   core hook's native assets.
 - When a companion is present, the installed companions pick the Apple
-  runtime families and `llamadart_native_runtimes` is ignored with a warning;
-  the tag, repository, path and backend user-defines do not change SwiftPM
-  binaries either.
+  llama.cpp and LiteRT-LM runtime families and `llamadart_native_runtimes` is
+  otherwise ignored with a warning (only the experimental opt-in
+  `stable_diffusion` there still applies); the tag, repository, path and
+  backend user-defines do not change SwiftPM binaries either.
 - Native runtimes are downloaded by the build hook on the first
   `flutter run` or `flutter build` for each target; no C++ toolchain is
   needed. Expect a slower first build. After changing any

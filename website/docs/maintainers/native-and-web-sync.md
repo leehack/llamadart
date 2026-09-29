@@ -26,7 +26,8 @@ framework. Non-Apple native-assets and LiteRT selection are unchanged.
 
 When native behavior or bindings need updates:
 
-1. Make and release changes in `llamadart-native` or `litert-lm-native` first.
+1. Make and release changes in `llamadart-native`, `litert-lm-native` or
+   `stable-diffusion-native` first.
 2. Sync native version and bindings in this repo.
 3. Sync matching Apple SPM pins in the Flutter runtime companion packages under
    `packages/` when Apple XCFramework releases changed.
@@ -41,6 +42,7 @@ bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 | --- | --- | --- |
 | llama.cpp / GGUF | `lib/src/hook/native_release_pins.dart` `llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
 | LiteRT-LM / `.litertlm` | `lib/src/hook/native_release_pins.dart` `liteRtLmReleaseTag` and per-bundle checksums, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
+| stable-diffusion.cpp (opt-in `stable_diffusion`) | `lib/src/hook/native_release_pins.dart` `stableDiffusionReleaseTag` and per-bundle checksums, repository `leehack/stable-diffusion-native` | None yet; Apple builds bundle the dylib through the hook, including Flutter builds that use the companion packages |
 
 Preferred in-repo workflow:
 
@@ -140,12 +142,50 @@ sync, never `latest`, and do not regenerate bindings. The symbols and wrapper
 fixes a replacement runtime must provide are listed in
 [Override the llama.cpp release](../platforms/native-build-hooks#override-the-llamacpp-release).
 
+## stable_diffusion runtime sync
+
+The opt-in `stable_diffusion` runtime is not wired into
+`sync_native_bindings.yml` yet; sync it by hand. `stable-diffusion-native`
+tags are `vMAJOR.MINOR.PATCH`, or `vMAJOR.MINOR.PATCH-N` for a rebuild, and
+its releases are GitHub prereleases, so name the tag explicitly.
+
+```bash
+python3 tool/native/sync_native_release_pins.py \
+  --stable-diffusion-tag v0.1.0 \
+  --dry-run
+python3 tool/native/sync_native_release_pins.py \
+  --stable-diffusion-tag v0.1.0
+python3 tool/native/sync_stable_diffusion_bindings.py
+```
+
+The pin sync reads the release `manifest.json`, requires it to match its GitHub
+asset digest, requires every runtime archive's manifest SHA-256 to match its
+GitHub digest, and rewrites `stableDiffusionReleaseTag`,
+`stableDiffusionVersion` and each pinned bundle's checksum and library. It
+fails if a pinned bundle is no longer published or the tag moves backwards,
+and only notes new targets: a new target needs a `StableDiffusionBundleSpec`
+and a `stableDiffusionBundleForNativeBundle` mapping by hand.
+
+`sync_stable_diffusion_bindings.py` downloads the pinned `linux-x64` archive
+(or takes `--archive`), checks it against the pin, stages
+`include/stable-diffusion.h` under
+`.dart_tool/llamadart/ffigen_headers_stable_diffusion/`, and regenerates
+`lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart` with
+`ffigen_stable_diffusion.yaml`. The bindings resolve the library through the
+`package:llamadart/stable_diffusion` native-asset id that the hook emits.
+
+After a sync, run
+`dart test --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
+on macOS: it builds a throwaway consumer against the new pin and probes the
+runtime it bundles.
+
 ## Native version update checklist
 
 Use this checklist in native sync PRs:
 
-- Confirm `llamadart-native` or `litert-lm-native` has published the target
-  release and the required per-platform native-assets archives.
+- Confirm `llamadart-native`, `litert-lm-native` or `stable-diffusion-native`
+  has published the target release and the required per-platform
+  native-assets archives.
 - For a stable-channel llama.cpp native sync, confirm the release tag is an
   upstream-aligned `vMAJOR.MINOR.PATCH` or an explicitly selected wrapper rebuild,
   `assets.json` records the correct distinct native/upstream tags and hook

@@ -88,7 +88,8 @@ dart test -p chrome --exclude-tags local-only
 
 Never patch upstream native or web bridge sources here. Owners:
 `llamadart-native` (llama.cpp runtime), `litert-lm-native` (LiteRT-LM runtime),
-`llama-web-bridge` (web bridge), `llama-web-bridge-assets` (published assets).
+`stable-diffusion-native` (stable-diffusion.cpp runtime), `llama-web-bridge`
+(web bridge), `llama-web-bridge-assets` (published assets).
 This repo only consumes them: native hook/config/bindings, and bridge tag
 pinning, fetch and runtime wiring
 (`website/docs/maintainers/runtime-ownership.md`). Checkouts often keep them as
