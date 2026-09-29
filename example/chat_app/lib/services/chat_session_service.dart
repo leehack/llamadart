@@ -6,6 +6,9 @@ import '../models/chat_message.dart';
 class ChatSessionService {
   const ChatSessionService();
 
+  static const String omittedImageMarker = '[image omitted]';
+  static const String omittedAudioMarker = '[audio omitted]';
+
   ChatSession createSession({
     required LlamaEngine engine,
     required int contextSize,
@@ -23,6 +26,8 @@ class ChatSessionService {
     required int contextSize,
     String? systemPrompt,
     required Iterable<ChatMessage> messages,
+    bool acceptsImages = true,
+    bool acceptsAudio = true,
   }) {
     final session = createSession(
       engine: engine,
@@ -31,7 +36,11 @@ class ChatSessionService {
     );
 
     for (final message in messages) {
-      final serialized = toLlamaChatMessage(message);
+      final serialized = toLlamaChatMessage(
+        message,
+        acceptsImages: acceptsImages,
+        acceptsAudio: acceptsAudio,
+      );
       if (serialized != null) {
         session.addMessage(serialized);
       }
@@ -40,7 +49,11 @@ class ChatSessionService {
     return session;
   }
 
-  LlamaChatMessage? toLlamaChatMessage(ChatMessage message) {
+  LlamaChatMessage? toLlamaChatMessage(
+    ChatMessage message, {
+    bool acceptsImages = true,
+    bool acceptsAudio = true,
+  }) {
     if (message.isInfo) {
       return null;
     }
@@ -57,8 +70,19 @@ class ChatSessionService {
               role == LlamaChatRole.tool || part is! LlamaToolResultContent,
         )
         .toList(growable: false);
+    // Media the runtime cannot accept becomes a text marker rather than being
+    // dropped, so media-only turns stay non-empty and roles keep alternating
+    // for strict chat templates.
     final parts = storedParts != null && storedParts.isNotEmpty
-        ? List<LlamaContentPart>.from(storedParts)
+        ? <LlamaContentPart>[
+            for (final part in storedParts)
+              if (part is LlamaImageContent && !acceptsImages)
+                const LlamaTextContent(omittedImageMarker)
+              else if (part is LlamaAudioContent && !acceptsAudio)
+                const LlamaTextContent(omittedAudioMarker)
+              else
+                part,
+          ]
         : <LlamaContentPart>[
             if (message.text.trim().isNotEmpty) LlamaTextContent(message.text),
           ];

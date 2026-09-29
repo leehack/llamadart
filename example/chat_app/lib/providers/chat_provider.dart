@@ -679,11 +679,20 @@ class ChatProvider extends ChangeNotifier {
     }
 
     _session?.reset();
-    _session = _chatSessionService.rebuildFromMessages(
+    _session = _rebuildSession(_messages);
+  }
+
+  // Runtimes reject media parts without a matching loaded projector, so
+  // history is rebuilt with only the media the runtime can currently accept.
+  ChatSession _rebuildSession(Iterable<ChatMessage> history) {
+    final projectorReady = _settings.directMediaInput || _mmprojLoaded;
+    return _chatSessionService.rebuildFromMessages(
       engine: _chatService.engine,
       contextSize: _settings.contextSize,
       systemPrompt: _sessionSystemPrompt(),
-      messages: _messages,
+      messages: history,
+      acceptsImages: projectorReady && _supportsVision,
+      acceptsAudio: projectorReady && _supportsAudio,
     );
   }
 
@@ -1767,12 +1776,7 @@ class ChatProvider extends ChangeNotifier {
     final history = _settings.singleTurnMode
         ? const <ChatMessage>[]
         : _messages.take(userIndex);
-    _session = _chatSessionService.rebuildFromMessages(
-      engine: _chatService.engine,
-      contextSize: _settings.contextSize,
-      systemPrompt: _sessionSystemPrompt(),
-      messages: history,
-    );
+    _session = _rebuildSession(history);
     final generationContext = _beginGeneration();
     if (generationContext == null) {
       return;
@@ -1937,8 +1941,9 @@ class ChatProvider extends ChangeNotifier {
       return false;
     }
 
-    return loadConfiguredMmproj(
+    return _loadConfiguredMmproj(
       successMessage: 'Multimodal projector loaded on demand.',
+      restoreSessionMedia: false,
     );
   }
 
@@ -2341,6 +2346,14 @@ class ChatProvider extends ChangeNotifier {
             text:
                 'This multimodal turn exceeded the active context window before decoding could finish. '
                 'Try a smaller image, a larger Context size, or clearing earlier image turns.',
+            isUser: false,
+            isInfo: true,
+          ),
+        );
+      } else if (e is LlamaUnsupportedException) {
+        _messages.add(
+          ChatMessage(
+            text: _redactPotentiallySensitiveUrls(e.message),
             isUser: false,
             isInfo: true,
           ),
@@ -4511,6 +4524,16 @@ class ChatProvider extends ChangeNotifier {
 
   Future<bool> loadConfiguredMmproj({
     String successMessage = 'Multimodal projector loaded.',
+  }) => _loadConfiguredMmproj(
+    successMessage: successMessage,
+    restoreSessionMedia: true,
+  );
+
+  // On-demand loads run inside a send whose session identity is already
+  // captured, so they keep the current session instead of replacing it.
+  Future<bool> _loadConfiguredMmproj({
+    required String successMessage,
+    required bool restoreSessionMedia,
   }) async {
     await _cancelAndAwaitAudioRecording();
     final mmprojPath = (_settings.mmprojPath ?? '').trim();
@@ -4541,6 +4564,9 @@ class ChatProvider extends ChangeNotifier {
       _loadedMmprojPath = mmprojPath;
       _supportsVision = await _chatService.engine.supportsVision;
       _supportsAudio = await _chatService.engine.supportsAudio;
+      if (restoreSessionMedia) {
+        _restoreSessionFromMessages();
+      }
       _addInfoMessage(successMessage);
       notifyListeners();
       return true;
@@ -4576,6 +4602,7 @@ class ChatProvider extends ChangeNotifier {
     _supportsVision = false;
     _supportsAudio = false;
     _mmprojLoaded = false;
+    _restoreSessionFromMessages();
     _addInfoMessage(
       'Switched to text-only mode. Multimodal projector cleared.',
     );

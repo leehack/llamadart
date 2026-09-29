@@ -128,6 +128,7 @@ class MockLlamaEngine extends LlamaEngine {
   List<LlamaChatMessage>? lastCreateMessages;
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
+  bool rejectMediaWithoutProjector = false;
   String? lastLoadedModelPath;
   String? lastLoadedMmprojPath;
   String? lastLoadedModelUrl;
@@ -236,6 +237,17 @@ class MockLlamaEngine extends LlamaEngine {
         ? null
         : Map<String, dynamic>.from(chatTemplateKwargs);
     lastCreateMessages = List<LlamaChatMessage>.from(messages);
+    if (rejectMediaWithoutProjector &&
+        !mmprojLoaded &&
+        messages.any(
+          (message) => message.parts.any(
+            (part) => part is LlamaImageContent || part is LlamaAudioContent,
+          ),
+        )) {
+      throw LlamaUnsupportedException(
+        'Image and audio input require a loaded multimodal projector.',
+      );
+    }
     for (final content in createChunkContents) {
       yield LlamaCompletionChunk(
         id: "mock-id",

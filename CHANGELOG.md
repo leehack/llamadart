@@ -19,6 +19,10 @@
   encoder-decoder model now throw `LlamaUnsupportedException`, and input
   longer than the context throws `LlamaInferenceException`, instead of a
   plain `Exception`.
+- Fix the example chat app failing every later turn after its projector is
+  cleared or a text-only model is loaded in a conversation that already has
+  images or audio; earlier media is now left out of the prompt, and
+  unsupported-input errors are shown instead of generic reload advice.
 
 ## 0.9.0
 

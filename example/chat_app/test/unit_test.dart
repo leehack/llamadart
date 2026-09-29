@@ -8,6 +8,7 @@ import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/services/chat_service.dart';
+import 'package:llamadart_chat_example/services/chat_session_service.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart'
     as app_model_service;
 import 'package:path/path.dart' as p;
@@ -851,6 +852,95 @@ void main() {
       expect(mmprojProvider.isMmprojLoaded, isFalse);
       expect(mockEngine.unloadMultimodalProjectorCalls, 1);
     });
+
+    group('media history after the projector changes', () {
+      late MockLlamaEngine mediaEngine;
+      late ChatProvider mediaProvider;
+
+      setUp(() async {
+        mediaEngine = MockLlamaEngine()..rejectMediaWithoutProjector = true;
+        mediaProvider = ChatProvider(
+          chatService: MockChatService(engine: mediaEngine),
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(
+            modelPath: 'test_model.gguf',
+            mmprojPath: 'test-mmproj.gguf',
+          ),
+        );
+        addTearDown(mediaProvider.dispose);
+
+        await mediaProvider.loadModel();
+        expect(
+          await mediaProvider.stageImageAttachment(
+            Uint8List.fromList(const [1, 2, 3]),
+          ),
+          isTrue,
+        );
+        await mediaProvider.sendMessage('What is in this image?');
+        expect(mediaProvider.messages.last.text, 'Hi there');
+      });
+
+      List<LlamaContentPart> sentParts() => mediaEngine.lastCreateMessages!
+          .expand((message) => message.parts)
+          .toList();
+
+      test('keeps earlier images while the projector is loaded', () async {
+        await mediaProvider.sendMessage('And the colors?');
+
+        expect(mediaProvider.messages.last.text, 'Hi there');
+        expect(sentParts().whereType<LlamaImageContent>(), hasLength(1));
+      });
+
+      test(
+        'omits earlier images from engine history once the projector is cleared',
+        () async {
+          await mediaProvider.clearMmprojPath();
+          await mediaProvider.sendMessage('And the colors?');
+
+          expect(mediaProvider.messages.last.text, 'Hi there');
+          expect(sentParts().whereType<LlamaImageContent>(), isEmpty);
+          expect(
+            sentParts().whereType<LlamaTextContent>().map((part) => part.text),
+            contains(ChatSessionService.omittedImageMarker),
+          );
+          expect(
+            mediaProvider.messages
+                .firstWhere((message) => message.isUser)
+                .parts!
+                .whereType<LlamaImageContent>(),
+            hasLength(1),
+          );
+        },
+      );
+    });
+
+    test(
+      'surfaces unsupported-option errors instead of reload advice',
+      () async {
+        final unsupportedProvider = ChatProvider(
+          chatService: MockChatService(
+            engine: _FailingCreateEngine(
+              LlamaUnsupportedException(
+                'Image and audio input require a loaded multimodal projector.',
+              ),
+            ),
+          ),
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+        );
+        addTearDown(unsupportedProvider.dispose);
+
+        await unsupportedProvider.loadModel();
+        await unsupportedProvider.sendMessage('Hello');
+
+        final errorMessage = unsupportedProvider.messages.last;
+        expect(errorMessage.isInfo, isTrue);
+        expect(
+          errorMessage.text,
+          'Image and audio input require a loaded multimodal projector.',
+        );
+      },
+    );
 
     test(
       'Gemma projector audio warning requires declared audio capability',
