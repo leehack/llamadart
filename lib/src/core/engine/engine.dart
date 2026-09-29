@@ -459,6 +459,10 @@ class LlamaEngine {
 
   /// Loads a multimodal projector model for vision/audio support.
   ///
+  /// A model must already be loaded with [loadModel], [loadModelSource], or
+  /// [loadModelFromUrl]. Calling this before the model is ready throws a
+  /// [LlamaContextException].
+  ///
   /// On the native llama.cpp backend, throws [LlamaModelException] when
   /// [mmProjPath] is not an existing file or the runtime rejects the projector
   /// for the loaded model, and [LlamaUnsupportedException] only when the
