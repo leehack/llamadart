@@ -284,7 +284,10 @@ tag:
   `getLoraAdapterCapabilities()` reports `apiVersion: 1` and
   `supported: true`; otherwise it throws `UnsupportedError`, which
   `LlamaEngine` reports as `LlamaUnsupportedException`. Each path is loaded
-  once per model load and mapped to its bridge handle. Source:
+  once per model load and mapped to its bridge handle. `contextCreate`
+  applies `ModelParams.loras` through the same calls after the model loads;
+  when one fails it clears the adapters and throws, and `LlamaEngine` then
+  frees the model. Source:
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142).
 - Speculative decoding reads `speculativeDecoding` from the same probe, a map
   from llama.cpp strategy name to boolean. With no n-gram strategy `true`, no

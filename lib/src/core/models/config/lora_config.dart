@@ -1,6 +1,7 @@
 /// Configuration for a LoRA (Low-Rank Adaptation) adapter.
 class LoraAdapterConfig {
-  /// Local file path to the LoRA adapter file (.gguf or .bin).
+  /// Path to the LoRA adapter file (.gguf or .bin): a local file path, or a
+  /// URL on WebGPU.
   final String path;
 
   /// The strength of the adapter (typically 0.0 to 1.0).

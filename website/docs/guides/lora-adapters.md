@@ -4,8 +4,9 @@ sidebar_label: LoRA adapters
 description: Load, stack, scale and remove LoRA adapters at inference time with LlamaEngine, with platform notes and troubleshooting.
 ---
 
-This guide covers practical LoRA usage in `llamadart` with runtime adapter
-management APIs.
+This guide covers practical LoRA usage in `llamadart`: adapters loaded with
+the model through `ModelParams.loras`, and the runtime adapter management
+APIs.
 
 `llamadart` itself is an inference/runtime library. LoRA training is done in a
 separate training workflow, then adapters are loaded at inference time.
@@ -50,6 +51,33 @@ Future<void> main() async {
 }
 ```
 
+## Loading adapters with the model
+
+Pass adapters as `ModelParams.loras` to apply them as part of the load:
+
+```dart
+await engine.loadModel(
+  '/models/base-model.gguf',
+  modelParams: const ModelParams(
+    loras: [
+      LoraAdapterConfig(path: '/models/lora/style.gguf', scale: 0.35),
+      LoraAdapterConfig(path: '/models/lora/domain.gguf', scale: 0.70),
+    ],
+  ),
+);
+```
+
+- On llama.cpp, native and WebGPU, each adapter is applied in list order at
+  its scale, exactly as `setLora(path, scale: ...)` would, once the model is
+  loaded. `setLora`, `removeLora` and `clearLoras` can change them afterwards.
+- If an adapter cannot be applied, the load fails and the model is unloaded:
+  an aLoRA adapter, or WebGPU bridge assets without runtime LoRA, throw
+  `LlamaUnsupportedException`; any other failure, such as a missing file or an
+  adapter for another base model, throws `LlamaModelException`. Both name the
+  adapter.
+- Every load applies its own `ModelParams.loras` again, so a reload with the
+  same `ModelParams` restores the same adapters.
+
 ## Stacking adapters
 
 You can activate multiple adapters on the same loaded model:
@@ -75,7 +103,8 @@ Recommended workflow:
 2. Train LoRA weights (for example, QLoRA/PEFT flow in the notebook).
 3. Export adapter artifacts from training.
 4. Convert adapter artifacts into llama.cpp-compatible GGUF adapter files.
-5. Validate outputs in a native test run, then load adapters with `setLora(...)`.
+5. Validate outputs in a native test run, then load adapters with
+   `ModelParams.loras` or `setLora(...)`.
 
 Practical compatibility checks:
 
@@ -97,8 +126,8 @@ every adapter from the start of generation, so an aLoRA adapter used this way
 would change output without any error — the failure is silent and looks like a
 badly behaved LoRA.
 
-`engine.setLora` inspects each adapter after loading it and throws
-`LlamaUnsupportedException` for an aLoRA adapter:
+`engine.setLora`, and a load with `ModelParams.loras`, inspect each adapter
+after loading it and throw `LlamaUnsupportedException` for an aLoRA adapter:
 
 ```text
 The adapter at <path> is an aLoRA adapter (N invocation token(s)). llamadart
@@ -119,30 +148,34 @@ Custom native runtimes must export the aLoRA metadata functions; see
 
 - LoRA activation is tied to the active context.
 - `unloadModel()` or `dispose()` releases model/context resources and clears
-  active adapter state.
-- Re-apply adapters after reloading a model.
+  active adapter state, including changes made with `setLora`.
+- Each load applies its `ModelParams.loras`; re-apply adapters set with
+  `setLora` after reloading a model.
 
 ## Platform notes
 
-- Runtime LoRA operations are supported by native llama.cpp/GGUF backends.
+- `ModelParams.loras` and runtime LoRA operations are supported by native
+  llama.cpp/GGUF backends.
 - Native LiteRT-LM can accept one default-scale text LoRA adapter at model load
   through `ModelParams.loras`; runtime LoRA updates, stacking, and custom scales
   remain unsupported there.
-- WebGPU applies runtime LoRA adapters with bridge assets whose
+- WebGPU applies `ModelParams.loras` and runtime LoRA adapters with bridge
+  assets whose
   `getLoraAdapterCapabilities()` reports support
   (bridge assets `v0.1.54+`, the default pin among them;
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)).
   The path is a URL; the bridge downloads each adapter once per
   model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
   adapter it cannot load, such as one for another base model, throws
-  `LlamaModelException`. On older bridge assets every WebGPU LoRA call throws
-  `LlamaUnsupportedException`.
+  `LlamaModelException`. On older bridge assets every WebGPU LoRA call, and
+  every load with `ModelParams.loras`, throws `LlamaUnsupportedException`.
 - LiteRT-LM web runtime LoRA calls throw `LlamaUnsupportedException` instead of
   reporting no-op success.
 
 ## Troubleshooting
 
-- If `setLora(...)` fails, verify the adapter path is accessible at runtime.
+- If `setLora(...)` or a load with `ModelParams.loras` fails, verify the
+  adapter path is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
 - When behavior seems unchanged, confirm you are testing on a llama.cpp/GGUF
   target, native or WebGPU with capable bridge assets, and not a LiteRT-LM
