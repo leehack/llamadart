@@ -33,6 +33,8 @@ For canonical full release notes, use:
   cleared or a text-only model is loaded in a conversation that already has
   images or audio; earlier media is now left out of the prompt, and
   unsupported-input errors are shown instead of generic reload advice.
+- Fix the example chat app garbling a streaming reply when mmproj is loaded
+  manually mid-reply; the reply is now stopped first, as with Stop.
 
 ## 0.9.0
 

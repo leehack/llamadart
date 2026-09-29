@@ -912,6 +912,158 @@ void main() {
           );
         },
       );
+
+      test(
+        'restores earlier images once the projector is loaded manually again',
+        () async {
+          await mediaProvider.clearMmprojPath();
+          mediaProvider.updateMmprojPath('test-mmproj.gguf');
+          expect(await mediaProvider.loadConfiguredMmproj(), isTrue);
+          await mediaProvider.sendMessage('And the colors?');
+
+          expect(mediaProvider.messages.last.text, 'Hi there');
+          expect(sentParts().whereType<LlamaImageContent>(), hasLength(1));
+          expect(
+            sentParts().whereType<LlamaTextContent>().map((part) => part.text),
+            isNot(contains(ChatSessionService.omittedImageMarker)),
+          );
+        },
+      );
+
+      test('on-demand projector load keeps the in-flight session, so earlier '
+          'images stay omitted until the next session restore', () async {
+        await mediaProvider.clearMmprojPath();
+        mediaProvider.updateMmprojPath('test-mmproj.gguf');
+        expect(mediaProvider.isMmprojLoaded, isFalse);
+        expect(
+          await mediaProvider.stageImageAttachment(
+            Uint8List.fromList(const [4, 5, 6]),
+          ),
+          isTrue,
+        );
+
+        await mediaProvider.sendMessage('And this one?');
+
+        expect(mediaProvider.isMmprojLoaded, isTrue);
+        expect(mediaProvider.messages.last.text, 'Hi there');
+        expect(
+          mediaProvider.messages.map((message) => message.text),
+          contains('Multimodal projector loaded on demand.'),
+        );
+        expect(sentParts().whereType<LlamaImageContent>().single.bytes, const [
+          4,
+          5,
+          6,
+        ]);
+        expect(
+          sentParts().whereType<LlamaTextContent>().map((part) => part.text),
+          contains(ChatSessionService.omittedImageMarker),
+        );
+      });
+
+      test(
+        'regenerate keeps earlier images while the projector is loaded',
+        () async {
+          await mediaProvider.sendMessage('And the colors?');
+          expect(mediaProvider.canRegenerateLastResponse, isTrue);
+
+          await mediaProvider.regenerateLastResponse();
+
+          expect(mediaProvider.messages.last.text, 'Hi there');
+          expect(sentParts().whereType<LlamaImageContent>(), hasLength(1));
+        },
+      );
+
+      test(
+        'model reload keeps earlier images while the projector is loaded',
+        () async {
+          await mediaProvider.loadModel();
+          await mediaProvider.sendMessage('And the colors?');
+
+          expect(mediaProvider.messages.last.text, 'Hi there');
+          expect(sentParts().whereType<LlamaImageContent>(), hasLength(1));
+        },
+      );
+    });
+
+    test(
+      'direct media runtimes keep supported audio in rebuilt history',
+      () async {
+        final directEngine = MockLlamaEngine()
+          ..rejectMediaWithoutProjector = true;
+        final directProvider = ChatProvider(
+          chatService: MockChatService(engine: directEngine),
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(
+            modelPath: 'gemma-4-E2B-it.litertlm',
+            directMediaInput: true,
+            modelSupportsAudio: true,
+          ),
+        );
+        addTearDown(directProvider.dispose);
+        await directProvider.loadModel();
+        expect(
+          directProvider.stageAudioAttachment(Uint8List.fromList(const [9, 9])),
+          isTrue,
+        );
+        await directProvider.sendMessage('What is said?');
+
+        await directProvider.loadModel();
+        await directProvider.sendMessage('Summarize it');
+
+        final sent = directEngine.lastCreateMessages!
+            .expand((message) => message.parts)
+            .toList();
+        expect(sent.whereType<LlamaAudioContent>(), hasLength(1));
+        expect(
+          sent.whereType<LlamaTextContent>().map((part) => part.text),
+          isNot(contains(ChatSessionService.omittedAudioMarker)),
+        );
+      },
+    );
+
+    test('manual projector load stops an in-flight reply before replacing the '
+        'session', () async {
+      final gatedEngine = _GatedCreateEngine();
+      final gatedProvider = ChatProvider(
+        chatService: MockChatService(engine: gatedEngine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+      );
+      addTearDown(gatedProvider.dispose);
+      await gatedProvider.loadModel();
+      gatedProvider.updateMmprojPath('test-mmproj.gguf');
+
+      final release = Completer<void>();
+      gatedEngine.release = release;
+      final send = gatedProvider.sendMessage('hello');
+      await gatedEngine.firstChunkSent.future;
+      expect(gatedProvider.isGenerating, isTrue);
+
+      expect(await gatedProvider.loadConfiguredMmproj(), isTrue);
+      expect(gatedProvider.isGenerating, isFalse);
+      final stoppedReplyText = gatedProvider.messages
+          .lastWhere((message) => !message.isUser && !message.isInfo)
+          .text;
+      release.complete();
+      await send;
+
+      expect(gatedProvider.messages.last.text, 'Multimodal projector loaded.');
+      expect(
+        gatedProvider.messages.where(
+          (message) => message.text.contains('complete answer'),
+        ),
+        isEmpty,
+      );
+
+      await gatedProvider.sendMessage('again');
+      expect(gatedProvider.messages.last.text, 'Hi there');
+      expect(
+        gatedEngine.lastCreateMessages!
+            .where((message) => message.role == LlamaChatRole.assistant)
+            .map((message) => message.content),
+        [stoppedReplyText],
+      );
     });
 
     test(
@@ -2522,6 +2674,51 @@ class _UnloadRecordingEngine extends MockLlamaEngine {
     unloadModelCalls += 1;
     initialized = false;
   }
+}
+
+class _GatedCreateEngine extends MockLlamaEngine {
+  final Completer<void> firstChunkSent = Completer<void>();
+  Completer<void>? release;
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    final gate = release;
+    if (gate == null) {
+      yield* super.create(messages, params: params);
+      return;
+    }
+    release = null;
+    lastCreateMessages = List<LlamaChatMessage>.from(messages);
+    yield _chunk('Partial');
+    firstChunkSent.complete();
+    await gate.future;
+    yield _chunk(' complete answer');
+  }
+
+  LlamaCompletionChunk _chunk(String content) => LlamaCompletionChunk(
+    id: 'gated-id',
+    object: 'chat.completion.chunk',
+    created: 1234567890,
+    model: 'mock-model',
+    choices: [
+      LlamaCompletionChunkChoice(
+        index: 0,
+        delta: LlamaCompletionChunkDelta(content: content),
+      ),
+    ],
+  );
 }
 
 class _TokenizerlessEngine extends MockLlamaEngine {
