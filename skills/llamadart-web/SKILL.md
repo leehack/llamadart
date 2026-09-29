@@ -65,8 +65,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     Unreported controls throw `LlamaUnsupportedException`.
   - `engine.supportsNextTokenScoring` (bridge `v0.1.52+`) and
     `engine.supportsStatePersistence` (bridge `v0.1.15+`).
-  - Runtime LoRA calls throw `LlamaUnsupportedException` unless the assets
-    report LoRA support (`v0.1.54+`).
+  - Runtime LoRA calls, and loads with `ModelParams.loras`, throw
+    `LlamaUnsupportedException` unless the assets report LoRA support
+    (`v0.1.54+`).
   - Other floors: embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS

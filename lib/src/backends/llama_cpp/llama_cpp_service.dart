@@ -3771,6 +3771,10 @@ class LlamaCppService {
     _contexts.remove(handle)?.dispose();
   }
 
+  static const String _encoderDecoderEmbeddingsUnsupported =
+      'Embeddings are not supported for encoder-decoder models such as T5; '
+      'use an encoder-only or decoder-only embedding model.';
+
   // Without a projector the prompt would be evaluated as text and the media
   // silently dropped; upstream llama-server rejects such requests too.
   void _checkLlamaCppMediaParts(
@@ -4695,10 +4699,7 @@ class LlamaCppService {
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
     if (hasEncoder && hasDecoder) {
-      throw LlamaUnsupportedException(
-        'Embeddings are not supported for encoder-decoder models such as T5; '
-        'use an encoder-only or decoder-only embedding model.',
-      );
+      throw LlamaUnsupportedException(_encoderDecoderEmbeddingsUnsupported);
     }
     final useEncoderPath = hasEncoder && !hasDecoder;
     final poolingType = llama_pooling_type$1(ctx.pointer);
@@ -4829,10 +4830,7 @@ class LlamaCppService {
     final hasEncoder = llama_model_has_encoder(model.pointer);
     final hasDecoder = llama_model_has_decoder(model.pointer);
     if (hasEncoder && hasDecoder) {
-      throw LlamaUnsupportedException(
-        'Embeddings are not supported for encoder-decoder models such as T5; '
-        'use an encoder-only or decoder-only embedding model.',
-      );
+      throw LlamaUnsupportedException(_encoderDecoderEmbeddingsUnsupported);
     }
     final useEncoderPath = hasEncoder && !hasDecoder;
 
