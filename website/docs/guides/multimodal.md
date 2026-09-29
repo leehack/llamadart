@@ -32,8 +32,8 @@ Native/file-backed backends download remote projectors through the configured
 `ModelDownloadManager` before loading the cached local path. URL-loading web
 backends support remote unauthenticated projector URLs directly and reject local
 filesystem paths or options that require native cache IO such as auth headers,
-checksum verification, explicit cache policy changes, custom cache directories,
-disabled resume, and custom retry counts.
+a `cancelToken`, checksum verification, explicit cache policy changes, custom
+cache directories, disabled resume, and custom retry counts.
 
 Projector offload follows effective model-load configuration. If model loading
 is CPU-only (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`), projector
@@ -77,6 +77,12 @@ await for (final chunk in engine.create([message])) {
   }
 }
 ```
+
+On native `llama.cpp`, a request that carries image or audio parts and sets
+`GenerationParams.thinkingBudget` or speculative decoding
+(`speculativeDecoding` or `speculativeDecodingConfig`) throws
+`LlamaUnsupportedException`; both are text-only there. Leave them unset for
+media turns.
 
 ## Capability checks
 
