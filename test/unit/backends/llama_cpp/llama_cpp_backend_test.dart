@@ -22,6 +22,7 @@ import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -1071,6 +1072,128 @@ void main() {
         harness.received.whereType<LoraRequest>().map((r) => r.op),
         containsAll(<String>['set', 'remove', 'clear']),
       );
+    });
+
+    test('contextCreate applies ModelParams.loras at their scales', () async {
+      final contextHandle = await backend.contextCreate(
+        11,
+        const ModelParams(
+          loras: [
+            LoraAdapterConfig(path: 'style.gguf', scale: 0.5),
+            LoraAdapterConfig(path: 'domain.gguf'),
+          ],
+        ),
+      );
+
+      expect(contextHandle, 22);
+      expect(
+        harness.received.whereType<LoraRequest>().map(
+          (r) => (r.contextHandle, r.op, r.path, r.scale),
+        ),
+        [(22, 'set', 'style.gguf', 0.5), (22, 'set', 'domain.gguf', 1.0)],
+      );
+      expect(harness.received.whereType<ContextFreeRequest>(), isEmpty);
+    });
+
+    test(
+      'a failing ModelParams.loras adapter frees the context and is named',
+      () async {
+        await expectLater(
+          backend.contextCreate(
+            11,
+            const ModelParams(
+              loras: [
+                LoraAdapterConfig(path: 'ordinary.gguf'),
+                LoraAdapterConfig(path: 'missing.gguf'),
+              ],
+            ),
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.toString(),
+              'toString',
+              allOf(
+                contains('ModelParams.loras'),
+                contains('missing.gguf'),
+                contains('Failed to load LoRA at missing.gguf'),
+              ),
+            ),
+          ),
+        );
+        expect(
+          harness.received.whereType<ContextFreeRequest>().map(
+            (r) => r.contextHandle,
+          ),
+          [22],
+        );
+      },
+    );
+
+    test('an unsupported ModelParams.loras adapter stays typed and frees the '
+        'context', () async {
+      await expectLater(
+        backend.contextCreate(
+          11,
+          const ModelParams(loras: [LoraAdapterConfig(path: 'alora.gguf')]),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('ModelParams.loras'), contains('aLoRA adapter')),
+          ),
+        ),
+      );
+      expect(
+        harness.received.whereType<ContextFreeRequest>().map(
+          (r) => r.contextHandle,
+        ),
+        [22],
+      );
+    });
+
+    test('engine loads apply ModelParams.loras each time and roll back a '
+        'failed adapter', () async {
+      final engine = LlamaEngine(backend);
+      List<(int, String, String?, double?)> loraRequests() => harness.received
+          .whereType<LoraRequest>()
+          .map((r) => (r.contextHandle, r.op, r.path, r.scale))
+          .toList();
+
+      await expectLater(
+        engine.loadModel(
+          'ok.gguf',
+          modelParams: const ModelParams(
+            loras: [LoraAdapterConfig(path: 'missing.gguf')],
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.toString(),
+            'toString',
+            contains('ModelParams.loras adapter missing.gguf'),
+          ),
+        ),
+      );
+      expect(engine.isReady, isFalse);
+      expect(harness.received.whereType<ContextFreeRequest>(), hasLength(1));
+      expect(harness.received.whereType<ModelFreeRequest>(), hasLength(1));
+
+      const withAdapter = ModelParams(
+        loras: [LoraAdapterConfig(path: 'ordinary.gguf', scale: 0.25)],
+      );
+      await engine.loadModel('ok.gguf', modelParams: withAdapter);
+      await engine.unloadModel();
+      await engine.loadModel('ok.gguf', modelParams: withAdapter);
+      expect(loraRequests().skip(1), [
+        (22, 'set', 'ordinary.gguf', 0.25),
+        (22, 'set', 'ordinary.gguf', 0.25),
+      ]);
+
+      await engine.unloadModel();
+      await engine.loadModel('ok.gguf');
+      expect(loraRequests(), hasLength(3));
+      await engine.unloadModel();
     });
 
     test('modelLoadFromUrl remains unsupported on native backend', () {

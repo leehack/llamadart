@@ -34,23 +34,30 @@ llamadart applies LoRA adapters at inference time; it does not train them.
 - Adapters stack: each distinct path passed to `setLora` stays active with its
   own scale until removed. Start tuning scales around `0.4`-`0.8`; lower
   (`0.1`-`0.3`) preserves more base behavior, higher can over-steer.
-- Apply adapters after `loadModel` with `setLora`. On llama.cpp (native and
-  WebGPU), `ModelParams.loras` is not read by the backend, so adapters listed
-  there are silently not applied; `example/basic_app --lora` also calls
-  `setLora` after loading.
+- Adapters you know at load time go in `ModelParams.loras`. On llama.cpp
+  (native and WebGPU) each is applied in list order at its scale, as `setLora`
+  would, once the model loads; `setLora`, `removeLora` and `clearLoras` can
+  change them afterwards. If one cannot be applied the load fails and nothing
+  stays loaded: `LlamaUnsupportedException` for an unsupported adapter or
+  WebGPU bridge assets, otherwise `LlamaModelException`; both name the
+  adapter.
 - Adapter state belongs to the loaded model. `unloadModel()` and `dispose()`
-  drop it; re-apply adapters after every reload or model switch.
+  drop it, including `setLora` changes. Each load applies its own
+  `ModelParams.loras` again; re-apply `setLora` adapters after a reload or
+  model switch.
 - An aLoRA (activated LoRA) adapter throws `LlamaUnsupportedException` from
-  `setLora`: llamadart applies adapters from the first token and does not
-  implement invocation-sequence activation. Use a standard LoRA adapter.
+  `setLora` or from a load that lists it in `ModelParams.loras`: llamadart
+  applies adapters from the first token and does not implement
+  invocation-sequence activation. Use a standard LoRA adapter.
 - Runtime support by target:
-  - Native llama.cpp (GGUF): full runtime API, multiple adapters, custom
-    scales. `path` is a local file path.
+  - Native llama.cpp (GGUF): `ModelParams.loras` and the full runtime API,
+    multiple adapters, custom scales. `path` is a local file path.
   - WebGPU (GGUF on web): needs bridge assets whose
     `getLoraAdapterCapabilities()` reports support (bridge `v0.1.54+`, which
-    includes the default pin). `path` is a URL, downloaded once per model
-    load. Older bridge assets throw `LlamaUnsupportedException` on every LoRA
-    call.
+    includes the default pin), for `ModelParams.loras` and the runtime API.
+    `path` is a URL, downloaded once per model load. Older bridge assets throw
+    `LlamaUnsupportedException` on every LoRA call and on a load with
+    `ModelParams.loras`.
   - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
     passed as `ModelParams.loras` at load. More than one adapter or a
     non-default scale fails the load with `LlamaUnsupportedException`.
@@ -92,34 +99,36 @@ cd example/basic_app && dart run bin/llamadart_basic_example.dart \
   --lora ../../my_adapter.gguf
 ```
 
-Stack, rescale and remove adapters on a GGUF model, re-applying after reload:
+Load stacked adapters with a GGUF model, then rescale and remove them; a
+reload applies `ModelParams.loras` again:
 
 ```dart
 import 'package:llamadart/llamadart.dart';
 
-const List<LoraAdapterConfig> adapters = [
-  LoraAdapterConfig(path: '/models/lora/style.gguf', scale: 0.35),
-  LoraAdapterConfig(path: '/models/lora/domain.gguf', scale: 0.7),
-];
-
-Future<void> loadWithAdapters(LlamaEngine engine, String modelPath) async {
-  await engine.loadModel(modelPath);
-  for (final LoraAdapterConfig adapter in adapters) {
-    await engine.setLora(adapter.path, scale: adapter.scale);
-  }
-}
+const ModelParams withAdapters = ModelParams(
+  loras: [
+    LoraAdapterConfig(path: '/models/lora/style.gguf', scale: 0.35),
+    LoraAdapterConfig(path: '/models/lora/domain.gguf', scale: 0.7),
+  ],
+);
 
 Future<void> main() async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
   try {
-    await loadWithAdapters(engine, '/models/base-model.gguf');
+    await engine.loadModel(
+      '/models/base-model.gguf',
+      modelParams: withAdapters,
+    );
 
     await engine.setLora('/models/lora/domain.gguf', scale: 0.4);
     await engine.removeLora('/models/lora/style.gguf');
     await engine.clearLoras();
 
     await engine.unloadModel();
-    await loadWithAdapters(engine, '/models/base-model.gguf');
+    await engine.loadModel(
+      '/models/base-model.gguf',
+      modelParams: withAdapters,
+    );
   } on LlamaUnsupportedException catch (error) {
     print('LoRA not available here: ${error.message}');
   } finally {

@@ -78,6 +78,10 @@ Important fields:
 - `liteRtLm*` fields: native LiteRT-LM `.litertlm` loads only; see
   [LiteRT-LM runtime controls](#litert-lm-runtime-controls).
 
+- `loras` (llama.cpp, native and WebGPU): LoRA adapters applied at their
+  scales once the model loads; an adapter that cannot be applied fails the
+  load. WebGPU needs bridge assets `v0.1.54+`.
+
 For runtime LoRA control (`setLora`, `removeLora`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).
 

@@ -177,10 +177,19 @@ class ModelParams {
 
   /// Initial LoRA adapters to load along with the model.
   ///
-  /// llama.cpp backends support multiple adapters with custom scales. Native
-  /// LiteRT-LM supports one default-scale text LoRA adapter at model load;
-  /// runtime adapter updates, stacking, custom scales, and LiteRT-LM web LoRA
-  /// are unsupported.
+  /// llama.cpp backends apply every adapter at its [LoraAdapterConfig.scale],
+  /// in list order, once the model and its context are created, as
+  /// `LlamaEngine.setLora` would; `setLora`, `removeLora` and `clearLoras`
+  /// can change them afterwards. Each load applies the list again. On WebGPU
+  /// this needs bridge assets `v0.1.54+` whose runtime LoRA API reports
+  /// support. When an adapter cannot be applied the load fails and nothing
+  /// stays loaded: an unsupported adapter, such as an aLoRA adapter, or older
+  /// bridge assets throw `LlamaUnsupportedException`, and any other failure
+  /// throws `LlamaModelException`; both name the adapter.
+  ///
+  /// Native LiteRT-LM supports one default-scale text LoRA adapter at model
+  /// load; runtime adapter updates, stacking, custom scales, and LiteRT-LM
+  /// web LoRA are unsupported.
   final List<LoraAdapterConfig> loras;
 
   /// Optional chat template to override the model's default template.

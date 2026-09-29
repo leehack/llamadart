@@ -5471,11 +5471,126 @@ void main() {
               isA<LlamaUnsupportedException>().having(
                 (error) => error.message,
                 'message',
-                contains('lack the LoRA methods'),
+                allOf(contains('lack the LoRA methods'), contains('v0.1.54+')),
               ),
             ),
           );
         }
+      });
+
+      const modelParamsLoras = ModelParams(
+        loras: [
+          LoraAdapterConfig(path: 'style.gguf', scale: 0.5),
+          LoraAdapterConfig(path: 'domain.gguf'),
+        ],
+      );
+
+      test('contextCreate applies ModelParams.loras at their scales', () async {
+        await loadModel();
+        expect(await backend.contextCreate(1, modelParamsLoras), 1);
+
+        expect(fake().loraLoads.map((load) => load.source), <String>[
+          'style.gguf',
+          'domain.gguf',
+        ]);
+        expect(fake().appliedAdapters, <int, double>{7: 0.5, 8: 1.0});
+      });
+
+      test('LlamaEngine applies ModelParams.loras on every load', () async {
+        final engine = LlamaEngine(backend);
+        await engine.loadModelFromUrl(
+          'model.gguf',
+          modelParams: modelParamsLoras,
+        );
+        expect(fake().appliedAdapters.values, <double>[0.5, 1.0]);
+
+        await engine.unloadModel();
+        await engine.loadModelFromUrl(
+          'model.gguf',
+          modelParams: modelParamsLoras,
+        );
+        expect(bridges, hasLength(2));
+        expect(fake().appliedAdapters.values, <double>[0.5, 1.0]);
+
+        await engine.unloadModel();
+        await engine.loadModelFromUrl('model.gguf');
+        expect(fake().loraLoads, isEmpty);
+        await engine.unloadModel();
+      });
+
+      test('a failing ModelParams.loras adapter rolls back the load', () async {
+        const signed = 'https://example.com/domain.gguf?token=secret';
+        newBridge = () => FakeFeatureBridge()
+          ..loraLoadErrorsBySource[signed] =
+              "Failed to load LoRA adapter: tensor 'blk.0.attn_k.weight' has "
+              'incorrect shape (hint: maybe wrong base model?)';
+        final engine = LlamaEngine(backend);
+
+        await expectLater(
+          engine.loadModelFromUrl(
+            'model.gguf',
+            modelParams: const ModelParams(
+              loras: [
+                LoraAdapterConfig(path: 'style.gguf', scale: 0.5),
+                LoraAdapterConfig(path: signed),
+              ],
+            ),
+          ),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.toString(),
+              'toString',
+              allOf(
+                contains('ModelParams.loras adapter'),
+                contains('domain.gguf'),
+                contains('incorrect shape'),
+                isNot(contains('secret')),
+              ),
+            ),
+          ),
+        );
+        expect(engine.isReady, isFalse);
+        expect(fake().calls, contains('lora:clear'));
+        expect(fake().calls.last, 'dispose');
+        expect(fake().appliedAdapters, isEmpty);
+      });
+
+      test('bridge assets without runtime LoRA reject ModelParams.loras '
+          'before loading an adapter', () async {
+        final engine = LlamaEngine(backend);
+        for (final older in <FakeFeatureBridge Function()>[
+          () => FakeFeatureBridge(withLoraApi: false),
+          () => FakeFeatureBridge()..loraApiVersion = 2,
+          () => FakeFeatureBridge()..loraSupported = false,
+        ]) {
+          newBridge = older;
+          await expectLater(
+            engine.loadModelFromUrl(
+              'model.gguf',
+              modelParams: const ModelParams(
+                loras: [LoraAdapterConfig(path: 'style.gguf')],
+              ),
+            ),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  contains('ModelParams.loras adapter style.gguf'),
+                  contains('v0.1.54+'),
+                ),
+              ),
+            ),
+          );
+          expect(engine.isReady, isFalse);
+          expect(fake().loraLoads, isEmpty);
+          expect(fake().calls.last, 'dispose');
+        }
+
+        newBridge = () => FakeFeatureBridge(withLoraApi: false);
+        await engine.loadModelFromUrl('model.gguf');
+        expect(engine.isReady, isTrue);
+        await engine.unloadModel();
       });
     });
 

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../backend.dart';
+import '../model_params_loras.dart';
 import '../../core/engine/engine_observer.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
@@ -367,9 +368,17 @@ class NativeLlamaBackend
     _sendPort!.send(ContextCreateRequest(modelHandle, params, rp.sendPort));
     final res = await rp.first;
     rp.close();
-    if (res is HandleResponse) return res.handle;
     if (res is ErrorResponse) throw _workerError(res);
-    throw Exception("Unknown response during context creation");
+    if (res is! HandleResponse) {
+      throw Exception("Unknown response during context creation");
+    }
+    final contextHandle = res.handle;
+    await applyModelParamsLoras(
+      params.loras,
+      apply: (lora) => setLoraAdapter(contextHandle, lora.path, lora.scale),
+      rollback: () => contextFree(contextHandle),
+    );
+    return contextHandle;
   }
 
   @override

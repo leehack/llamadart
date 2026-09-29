@@ -170,9 +170,12 @@ web backend load options).
 
 - The first load of a model URL fetches from the network and stores it in the
   cache; later loads of the same URL can come from the cache.
-- Model URLs with userinfo, query strings or fragments are treated as
-  credential-sensitive: `llamadart` passes `useCache: false`, so the bridge
-  loads them with no persistent Cache Storage key.
+- Model URLs with userinfo, a fragment or a credential-like query key (such as
+  `token`, `key`, `sig`, `signature`, `expires`, `session`, or any `x-amz-*` or
+  `x-goog-*` key) are treated as credential-sensitive: `llamadart` passes
+  `useCache: false`, so the bridge loads them with no persistent Cache Storage
+  key. Other query strings, such as Hugging Face's `?download=true`, keep the
+  cache; `hasPersistentCacheSensitiveUrlParts` applies the rule.
 - Multimodal projector loads are direct bridge fetches and do not use the
   model cache.
 - Cache availability depends on browser storage quota and private-mode policy.
@@ -284,7 +287,10 @@ tag:
   `getLoraAdapterCapabilities()` reports `apiVersion: 1` and
   `supported: true`; otherwise it throws `UnsupportedError`, which
   `LlamaEngine` reports as `LlamaUnsupportedException`. Each path is loaded
-  once per model load and mapped to its bridge handle. Source:
+  once per model load and mapped to its bridge handle. `contextCreate`
+  applies `ModelParams.loras` through the same calls after the model loads;
+  when one fails it clears the adapters and throws, and `LlamaEngine` then
+  frees the model. Source:
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142).
 - Speculative decoding reads `speculativeDecoding` from the same probe, a map
   from llama.cpp strategy name to boolean. With no n-gram strategy `true`, no

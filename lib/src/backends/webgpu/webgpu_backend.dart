@@ -19,6 +19,7 @@ import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
+import '../model_params_loras.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
@@ -1378,9 +1379,16 @@ class WebGpuLlamaBackend
     await _safeDisposeBridge();
   }
 
+  /// Applies [ModelParams.loras] through the runtime LoRA API, so non-empty
+  /// `loras` need the bridge assets [setLoraAdapter] needs.
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
-    _requireBridge();
+    final bridge = _requireBridge();
+    await applyModelParamsLoras(
+      params.loras,
+      apply: (lora) => _loraAdapters.set(bridge, lora.path, lora.scale),
+      rollback: () => _loraAdapters.clear(bridge),
+    );
     return 1;
   }
 

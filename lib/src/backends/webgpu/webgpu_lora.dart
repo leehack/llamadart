@@ -188,8 +188,8 @@ class WebGpuLoraAdapters {
   static String _unsupported(String reason) =>
       'WebGPU LoRA adapters need bridge assets whose '
       'getLoraAdapterCapabilities() reports LoRA API version '
-      '$webGpuLoraApiVersion as supported; $reason. Use a native llama.cpp '
-      'backend for runtime LoRA adapters.';
+      '$webGpuLoraApiVersion as supported (v0.1.54+); $reason. Use a native '
+      'llama.cpp backend for LoRA adapters.';
 
   static Future<JSAny?> _settle(JSAny? value) async {
     if (value != null && value.isA<JSPromise>()) {
