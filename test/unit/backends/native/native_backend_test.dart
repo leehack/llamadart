@@ -1021,9 +1021,9 @@ void main() {
           ),
         ),
         throwsA(
-          isA<LlamaModelException>().having(
-            (error) => error.details.toString(),
-            'details',
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
             contains('batchSize'),
           ),
         ),

@@ -51,8 +51,9 @@ await engine.loadModel('/path/to/model.litertlm');
 
 Native LiteRT-LM accepts `LlamaImageContent` and `LlamaAudioContent` backed by
 local paths or encoded media bytes. Remote image URLs and raw PCM
-`Float32List` audio samples are rejected before native generation because the
-current LiteRT-LM C message loader expects a local `path` or base64 `blob`.
+`Float32List` audio samples are rejected with `LlamaUnsupportedException`
+before native generation because the current LiteRT-LM C message loader
+expects a local `path` or base64 `blob`.
 
 Native LiteRT-LM starts audio preprocessing on the selected backend (CPU when
 NPU is selected). If that fails, it retries on CPU and keeps CPU audio for the
@@ -92,10 +93,13 @@ final supportsAudio = await engine.supportsAudio;
 final supportsVideo = await engine.supportsVideo; // false in current releases
 ```
 
-Always prefer these runtime checks over model-card assumptions. A loaded
-projector can expose only a subset of the family-level modalities. The current
-Gemma 4 E2B GGUF projector path in native `llama.cpp` mtmd reports both vision
-and audio support; audio remains experimental upstream. Web continues to rely
+Always prefer these runtime checks over model-card assumptions. With no
+projector loaded, a GGUF model (native `llama.cpp` or WebGPU) rejects image
+and audio parts with `LlamaUnsupportedException` instead of answering from the
+text alone. A loaded projector can expose only a subset of the family-level
+modalities. The current Gemma 4 E2B GGUF projector path in native `llama.cpp`
+mtmd reports both vision and audio support; audio remains experimental
+upstream. Web continues to rely
 on the loaded bridge's runtime capability report.
 
 Native `.litertlm` bundles process media themselves. `loadMultimodalProjector*`,
@@ -116,7 +120,9 @@ does not by itself provide a transcript contract. For typed transcription, see
   URLs on URL-loading web backends; source options that require the native
   download/cache manager are unsupported there.
 - Local file path media inputs are native-first; web flows use browser file
-  bytes/URLs.
+  bytes/URLs. `LlamaImageContent.url` is read only by the web bridge: native
+  `llama.cpp` throws `LlamaUnsupportedException` for it, so download the image
+  and pass its bytes.
 - LiteRT-LM web through `@litert-lm/core` remains text-only in `llamadart`.
 
 ## Tuning notes

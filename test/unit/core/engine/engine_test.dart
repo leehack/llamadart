@@ -795,6 +795,14 @@ class MockEmbeddingBackend extends MockLlamaBackend
   }
 }
 
+class ProbedEmbeddingBackend extends MockEmbeddingBackend
+    implements BackendEmbeddingsSupport {
+  ProbedEmbeddingBackend({required this.supportsEmbeddings});
+
+  @override
+  final bool supportsEmbeddings;
+}
+
 class MockBatchEmbeddingBackend extends MockLlamaBackend
     implements BackendBatchEmbeddings {
   int embedCalls = 0;
@@ -2033,10 +2041,48 @@ void main() {
     test('embed throws when backend does not support embeddings', () async {
       await engine.loadModel('qwen-test.gguf');
 
+      expect(engine.supportsEmbeddings, isFalse);
       expect(
         () => engine.embed('hello'),
         throwsA(isA<LlamaUnsupportedException>()),
       );
+    });
+
+    test('embeddings honour the backend support probe', () async {
+      final unsupportedBackend = ProbedEmbeddingBackend(
+        supportsEmbeddings: false,
+      );
+      final unsupportedEngine = LlamaEngine(unsupportedBackend);
+      final supportedBackend = ProbedEmbeddingBackend(supportsEmbeddings: true);
+      final supportedEngine = LlamaEngine(supportedBackend);
+      try {
+        await unsupportedEngine.loadModel('qwen-test.gguf');
+        await supportedEngine.loadModel('qwen-test.gguf');
+
+        expect(unsupportedEngine.supportsEmbeddings, isFalse);
+        await expectLater(
+          unsupportedEngine.embedBatch(const ['a']),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              'Embeddings are not supported by the active backend.',
+            ),
+          ),
+        );
+        expect(unsupportedBackend.embedCalls, 0);
+
+        expect(supportedEngine.supportsEmbeddings, isTrue);
+        expect(await supportedEngine.embed('a', normalize: false), [
+          1.0,
+          3.0,
+          4.0,
+        ]);
+        expect(supportedBackend.embedCalls, 1);
+      } finally {
+        await unsupportedEngine.dispose();
+        await supportedEngine.dispose();
+      }
     });
 
     test('next-token scoring is unsupported without the capability', () async {
@@ -2234,6 +2280,7 @@ void main() {
       await embeddingEngine.loadModel('qwen-test.gguf');
       final vector = await embeddingEngine.embed('hello');
 
+      expect(embeddingEngine.supportsEmbeddings, isTrue);
       expect(vector.length, 3);
       expect(vector[0], closeTo(0.7071067, 0.000001));
       expect(vector[1], closeTo(0.4242640, 0.000001));

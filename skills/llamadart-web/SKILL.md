@@ -65,8 +65,9 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     Unreported controls throw `LlamaUnsupportedException`.
   - `engine.supportsNextTokenScoring` (bridge `v0.1.52+`) and
     `engine.supportsStatePersistence` (bridge `v0.1.15+`).
-  - Runtime LoRA calls throw `LlamaUnsupportedException` unless the assets
-    report LoRA support (`v0.1.54+`).
+  - Runtime LoRA calls, and loads with `ModelParams.loras`, throw
+    `LlamaUnsupportedException` unless the assets report LoRA support
+    (`v0.1.54+`).
   - Other floors: embeddings `v0.1.7+`, decision models `v0.1.47+`, per-request
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS
@@ -78,8 +79,10 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
 - LiteRT-LM on the web: preload `@litert-lm/core` and set
   `window.LiteRtLmEngine = module.Engine`, or set
   `window.__llamadartLiteRtLmModuleUrl` to its module URL. Otherwise the load
-  fails with `LiteRT-LM web runtime is not loaded`. It needs a `.litertlm` URL
-  and supports CPU or GPU (NPU is rejected).
+  throws `LlamaModelException` whose details say `LiteRT-LM web runtime is not
+  loaded`. It needs a `.litertlm` URL and supports CPU or GPU (NPU is
+  rejected); any other `ModelParams` field, such as `batchSize`, throws
+  `LlamaUnsupportedException`.
 - LiteRT-LM web is single-turn text only: it sends only the last message's
   text, so `ChatSession` history, system prompts and tools are not forwarded.
   It rejects media parts, grammar, `penalty`, `minP`, `presencePenalty`,

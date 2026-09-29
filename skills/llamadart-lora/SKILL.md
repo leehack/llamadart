@@ -37,10 +37,10 @@ llamadart applies LoRA adapters at inference time; it does not train them.
 - Adapters you know at load time go in `ModelParams.loras`. On llama.cpp
   (native and WebGPU) each is applied in list order at its scale, as `setLora`
   would, once the model loads; `setLora`, `removeLora` and `clearLoras` can
-  change them afterwards. If one cannot be applied the load fails and nothing
-  stays loaded: `LlamaUnsupportedException` for an unsupported adapter or
-  WebGPU bridge assets, otherwise `LlamaModelException`; both name the
-  adapter.
+  change them afterwards. If one cannot be applied the load fails and the
+  engine is left with no model: `LlamaUnsupportedException` (naming the
+  adapter) for an unsupported adapter or WebGPU bridge assets, otherwise
+  `LlamaModelException` with the adapter and cause in its `details`.
 - Adapter state belongs to the loaded model. `unloadModel()` and `dispose()`
   drop it, including `setLora` changes. Each load applies its own
   `ModelParams.loras` again; re-apply `setLora` adapters after a reload or
@@ -60,8 +60,8 @@ llamadart applies LoRA adapters at inference time; it does not train them.
     `ModelParams.loras`.
   - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
     passed as `ModelParams.loras` at load. More than one adapter or a
-    non-default scale fails the load. `setLora`, `removeLora` and `clearLoras`
-    throw `LlamaUnsupportedException`.
+    non-default scale fails the load with `LlamaUnsupportedException`.
+    `setLora`, `removeLora` and `clearLoras` throw `LlamaUnsupportedException`.
   - LiteRT-LM on web: no LoRA. Any `ModelParams.loras` entry fails the load and
     the runtime calls throw `LlamaUnsupportedException`.
 - Do not catch and ignore `LlamaUnsupportedException` from LoRA calls; it means

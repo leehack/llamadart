@@ -189,6 +189,35 @@ void main() {
     }
   });
 
+  test('public engine rejects unsupported model params and recovers', () async {
+    final engine = LlamaEngine(LiteRtLmBackend());
+
+    try {
+      await expectLater(
+        engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(batchSize: 128, useMlock: true),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('batchSize'), contains('useMlock')),
+          ),
+        ),
+      );
+      expect(engine.isReady, isFalse);
+
+      await engine.loadModel(
+        modelFile.path,
+        modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      expect(engine.isReady, isTrue);
+    } finally {
+      await engine.dispose();
+    }
+  });
+
   test('loads local litertlm model and exposes metadata', () async {
     final backend = LiteRtLmBackend();
 
@@ -810,6 +839,34 @@ void main() {
       expect(request.tools?.single['function']['name'], 'get_weather');
       expect(request.toolChoice, ToolChoice.auto);
       expect(request.chatTemplateKwargs, {'locale': 'en_CA'});
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('keeps typed unsupported worker errors across the isolate', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationErrorResponse: LiteRtLmErrorResponse(
+        'remote image URLs are unsupported',
+        kind: 'llamaUnsupported',
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await expectLater(
+        backend.generate(7, 'prompt', const GenerationParams()).drain<void>(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'remote image URLs are unsupported',
+          ),
+        ),
+      );
     } finally {
       await backend.dispose();
       worker.close();

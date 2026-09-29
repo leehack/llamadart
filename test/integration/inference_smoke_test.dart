@@ -40,26 +40,36 @@ void main() {
         expect(engine.isReady, isTrue);
         print('Model loaded successfully.');
         print('Running 5-token generation check...');
-        final stream = engine.create(
-          [
-            LlamaChatMessage.withContent(
-              role: LlamaChatRole.user,
-              content: [
-                LlamaTextContent('Hello'),
-                LlamaImageContent(
-                  bytes: Uint8List.fromList([0, 0, 0]),
-                  width: 1,
-                  height: 1,
-                ),
-              ],
+        const grammarParams = GenerationParams(
+          maxTokens: 5,
+          penalty: 1.2,
+          grammar: 'root ::= "World"',
+        );
+        final imageMessage = LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaTextContent('Hello'),
+            LlamaImageContent(
+              bytes: Uint8List.fromList([0, 0, 0]),
+              width: 1,
+              height: 1,
             ),
           ],
-          params: const GenerationParams(
-            maxTokens: 5,
-            penalty: 1.2,
-            grammar: 'root ::= "World"',
+        );
+        await expectLater(
+          engine.create([imageMessage], params: grammarParams),
+          emitsError(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('needs a multimodal projector'),
+            ),
           ),
         );
+
+        final stream = engine.create([
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+        ], params: grammarParams);
 
         final tokens = <String>[];
         await for (final chunk in stream.timeout(const Duration(seconds: 60))) {

@@ -9,6 +9,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -554,8 +555,8 @@ void main() {
         () =>
             service.loadModel(modelFile.path, const ModelParams(gpuLayers: 12)),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('gpuLayers=12'),
           ),
@@ -568,8 +569,8 @@ void main() {
           const ModelParams(contextSize: 0),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('contextSize=0'),
           ),
@@ -585,8 +586,8 @@ void main() {
           ),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             contains('gpuLayers=12'),
           ),
@@ -599,8 +600,8 @@ void main() {
           const ModelParams(batchSize: 128, useMlock: true),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             allOf(contains('batchSize'), contains('useMlock')),
           ),
@@ -630,8 +631,8 @@ void main() {
           ),
         ),
         throwsA(
-          isA<ArgumentError>().having(
-            (error) => error.message.toString(),
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
             'message',
             predicate<String>(
               (message) => const <String>[
@@ -1287,10 +1288,13 @@ void main() {
             ),
           ], const GenerationParams()),
           emitsError(
-            isA<UnsupportedError>().having(
-              (error) => error.message.toString(),
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
               'message',
-              contains('remote image URLs'),
+              allOf(
+                contains('remote image URLs'),
+                contains('LlamaImageContent.url'),
+              ),
             ),
           ),
         );

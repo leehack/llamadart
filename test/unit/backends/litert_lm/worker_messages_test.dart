@@ -114,6 +114,11 @@ void main() {
       );
       expect(LiteRtLmErrorResponse.from(ArgumentError('bad')).kind, 'argument');
       expect(LiteRtLmErrorResponse.from(StateError('wrong')).kind, 'state');
+      final unsupported = LiteRtLmErrorResponse.from(
+        LlamaUnsupportedException('no remote images'),
+      );
+      expect(unsupported.kind, 'llamaUnsupported');
+      expect(unsupported.message, 'no remote images');
 
       final generic = LiteRtLmErrorResponse.from(Exception('native failed'));
       expect(generic.kind, 'exception');

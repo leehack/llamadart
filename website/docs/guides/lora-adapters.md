@@ -73,8 +73,9 @@ await engine.loadModel(
 - If an adapter cannot be applied, the load fails and the model is unloaded:
   an aLoRA adapter, or WebGPU bridge assets without runtime LoRA, throw
   `LlamaUnsupportedException`; any other failure, such as a missing file or an
-  adapter for another base model, throws `LlamaModelException`. Both name the
-  adapter.
+  adapter for another base model, throws `LlamaModelException`. The
+  unsupported error names the adapter in its message; `LlamaModelException`
+  carries the adapter and cause in `details`.
 - Every load applies its own `ModelParams.loras` again, so a reload with the
   same `ModelParams` restores the same adapters.
 

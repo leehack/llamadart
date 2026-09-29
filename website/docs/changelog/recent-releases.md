@@ -17,6 +17,17 @@ For canonical full release notes, use:
   where they were silently ignored; an adapter that cannot be applied, or
   WebGPU bridge assets before `v0.1.54`, fail the load instead
   ([#709](https://github.com/leehack/llamadart/issues/709)).
+- Throw `LlamaUnsupportedException` instead of `LlamaModelException` when
+  native or web LiteRT-LM rejects a `ModelParams` field, including more than
+  one LoRA adapter or a non-default adapter scale.
+- Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
+  model with no projector loaded, on native llama.cpp and WebGPU, instead of
+  answering from the text alone; native llama.cpp and LiteRT-LM also throw it
+  for `LlamaImageContent.url`.
+- Add `LlamaEngine.supportsEmbeddings`. Native llama.cpp embeddings of an
+  encoder-decoder model now throw `LlamaUnsupportedException`, and input
+  longer than the context throws `LlamaInferenceException`, instead of a
+  plain `Exception`.
 
 ## 0.9.0
 

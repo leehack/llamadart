@@ -3861,8 +3861,18 @@ void main() {
             LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
           ],
         ),
-        throwsA(isA<StateError>()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('needs a multimodal projector'),
+              contains('loadMultimodalProjector'),
+            ),
+          ),
+        ),
       );
+      expect(sawMediaParts, isFalse);
     });
 
     test('rejects video parts instead of silently dropping them', () async {

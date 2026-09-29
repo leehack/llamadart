@@ -1802,8 +1802,10 @@ class WebGpuLlamaBackend
 
     final mediaParts = _buildMultimodalParts(parts);
     if (mediaParts != null && !_mmContextActive) {
-      throw StateError(
-        'Multimodal input requires loadMultimodalProjector() before generate().',
+      throw LlamaUnsupportedException(
+        'Media input needs a multimodal projector on WebGPU, and none is '
+        'loaded. Call LlamaEngine.loadMultimodalProjector before sending '
+        'image or audio parts.',
       );
     }
     final bridgeThinkingBudget = thinkingBudget == null

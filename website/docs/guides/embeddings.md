@@ -17,6 +17,10 @@ Future<void> main() async {
 
   try {
     await engine.loadModel('path/to/embedding-model.gguf');
+    if (!engine.supportsEmbeddings) {
+      print('This backend cannot embed.');
+      return;
+    }
 
     final List<double> vector = await engine.embed('hello world');
     final List<List<double>> batch = await engine.embedBatch([
@@ -34,15 +38,22 @@ Future<void> main() async {
 
 ## Backend support and compatibility
 
-- Embeddings are an optional backend capability.
-- If the active backend does not support embeddings, `LlamaEngine.embed(...)`
-  and `embedBatch(...)` throw `LlamaUnsupportedException`.
+- Embeddings are an optional backend capability. After loading a model,
+  `LlamaEngine.supportsEmbeddings` reports whether the active backend
+  supports them; when it is false, `LlamaEngine.embed(...)` and
+  `embedBatch(...)` throw `LlamaUnsupportedException`. It does not inspect the
+  model, so the model limits below still apply.
 - Native llama.cpp/GGUF backends support embeddings, including batched
   embeddings, when the loaded model was built for embedding output.
 - On native, rank-pooled reranker GGUFs (such as Qwen3-Reranker) return
   classifier scores rather than embeddings, so `embed(...)` and
   `embedBatch(...)` throw `LlamaUnsupportedException` for them. Reranking is
   tracked in [#323](https://github.com/leehack/llamadart/issues/323).
+- On native, encoder-decoder GGUFs (such as T5) throw
+  `LlamaUnsupportedException`; use an encoder-only or decoder-only embedding
+  model.
+- On native, an input with more tokens than the context holds per sequence
+  throws `LlamaInferenceException`; shorten it or raise `contextSize`.
 - On native, encoder-only models and models without a KV cache (such as
   BERT-family and ModernBERT GGUFs) embed each input in one pass. An input
   longer than the context's `microBatchSize` (512 tokens by default for

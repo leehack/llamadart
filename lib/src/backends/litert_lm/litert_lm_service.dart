@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -826,9 +827,10 @@ class LiteRtLmService {
 
     final imageUrl = part.url;
     if (imageUrl != null) {
-      throw UnsupportedError(
-        'LiteRtLmBackend does not support remote image URLs yet. Pass a local '
-        'image file path or encoded image bytes.',
+      throw LlamaUnsupportedException(
+        'LiteRtLmBackend does not support remote image URLs '
+        '(LlamaImageContent.url). Pass a local image file path or encoded '
+        'image bytes.',
       );
     }
 
@@ -968,7 +970,7 @@ class LiteRtLmService {
     if (unsupported.isEmpty) {
       return;
     }
-    throw ArgumentError(
+    throw LlamaUnsupportedException(
       'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '

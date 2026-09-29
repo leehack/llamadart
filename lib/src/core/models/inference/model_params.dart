@@ -182,10 +182,11 @@ class ModelParams {
   /// `LlamaEngine.setLora` would; `setLora`, `removeLora` and `clearLoras`
   /// can change them afterwards. Each load applies the list again. On WebGPU
   /// this needs bridge assets `v0.1.54+` whose runtime LoRA API reports
-  /// support. When an adapter cannot be applied the load fails and nothing
-  /// stays loaded: an unsupported adapter, such as an aLoRA adapter, or older
-  /// bridge assets throw `LlamaUnsupportedException`, and any other failure
-  /// throws `LlamaModelException`; both name the adapter.
+  /// support. When an adapter cannot be applied the load fails, and a load
+  /// through `LlamaEngine` leaves no model loaded. An unsupported adapter,
+  /// such as an aLoRA adapter, or older bridge assets throw
+  /// `LlamaUnsupportedException` naming the adapter; any other failure throws
+  /// `LlamaModelException`, with the adapter and cause in its `details`.
   ///
   /// Native LiteRT-LM supports one default-scale text LoRA adapter at model
   /// load; runtime adapter updates, stacking, custom scales, and LiteRT-LM
