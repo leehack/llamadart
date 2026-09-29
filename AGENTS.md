@@ -78,6 +78,9 @@ dart test -p chrome --exclude-tags local-only
 - Tests close the ports, streams and controllers they open.
 - A public capability or platform-support change updates README, website
   docs/support matrix, examples and changelog in the same PR.
+- `skills/` is published to consumers' coding agents: a public API or behavior
+  change updates the affected `SKILL.md` in the same PR
+  (`test/unit/tooling/package_skills_test.dart` analyzes its examples).
 - Keep credentials, tokens, signed URLs and secret-bearing paths out of logs,
   errors, cache keys, metadata and snapshots.
 
