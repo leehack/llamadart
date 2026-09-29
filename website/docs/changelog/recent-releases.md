@@ -22,8 +22,9 @@ For canonical full release notes, use:
   one LoRA adapter or a non-default adapter scale.
 - Add an experimental opt-in `stable_diffusion` native runtime
   (stable-diffusion.cpp) to `llamadart_native_runtimes`, groundwork for image
-  generation; it is never bundled by default or by `all`
-  ([#777](https://github.com/leehack/llamadart/issues/777)).
+  generation; it is never bundled by default or by `all`, and
+  `llamadart_stable_diffusion_backends` picks its CPU or Vulkan build on Linux
+  and Windows ([#777](https://github.com/leehack/llamadart/issues/777)).
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
   model with no projector loaded: native llama.cpp answered from the text
   alone, and WebGPU threw an untyped error surfaced as

@@ -93,10 +93,27 @@ hooks:
   needs an Armv8.2 CPU with dot-product and fp16 (`asimddp`, `fphp`,
   `asimdhp`).
 - Apple builds use the Metal build and Android the CPU build. Linux and Windows
-  follow `llamadart_native_backends` for the same platform: the Vulkan build
-  when Vulkan is selected, which is the default, otherwise the CPU build. The
-  Vulkan build needs the system Vulkan loader (`libvulkan.so.1` or
-  `vulkan-1.dll`) at run time; select `cpu` for that platform to avoid it.
+  publish a CPU build (about 38 MB) and a Vulkan build (about 72 MB) that needs
+  the system Vulkan loader (`libvulkan.so.1` or `vulkan-1.dll`) at run time.
+  `llamadart_stable_diffusion_backends` picks one, as a list for every
+  platform or a `platforms` map like `llamadart_native_backends`:
+
+  ```yaml
+  hooks:
+    user_defines:
+      llamadart:
+        llamadart_stable_diffusion_backends: [cpu]
+        # or per platform:
+        # llamadart_stable_diffusion_backends:
+        #   platforms:
+        #     linux: [vulkan]
+        #     windows: [cpu]
+  ```
+
+  It accepts `cpu` and `vulkan` and leaves the llama.cpp backends unchanged.
+  Without it, the build follows `llamadart_native_backends` for the same
+  platform: Vulkan when Vulkan is selected there, which is the default, and
+  CPU otherwise.
 - Other targets, such as `android-x64` or Windows arm64, are skipped with a
   warning. Naming it for that exact bundle key, for example
   `android-x64: [stable_diffusion]`, fails the build instead.

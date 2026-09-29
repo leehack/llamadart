@@ -201,6 +201,9 @@ void main(List<String> args) async {
         _stableDiffusionBundles[stableDiffusionBundleForNativeBundle(
           spec: spec,
           rawBackendConfig: input.userDefines[nativeBackendUserDefineKey],
+          rawStableDiffusionBackendConfig:
+              input.userDefines[stableDiffusionBackendUserDefineKey],
+          warn: log.warning,
         )];
     if (selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
         stableDiffusionBundleSpec == null) {

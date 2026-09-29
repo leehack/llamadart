@@ -175,6 +175,35 @@ void main() {
     );
   });
 
+  test('stable_diffusion picks its own build independently of llama.cpp '
+      'backends', () async {
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.linux,
+      targetArchitecture: Architecture.x64,
+      userDefines: _userDefines({
+        'llamadart_native_runtimes': ['llama_cpp', 'stable_diffusion'],
+        'llamadart_stable_diffusion_backends': {
+          'platforms': {'linux': 'cpu'},
+        },
+      }),
+      check: (_, output) {
+        final assets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset);
+        expect(
+          assets.map((asset) => path.basename(asset.file!.toFilePath())),
+          contains('libggml-vulkan.so'),
+          reason: 'llama.cpp keeps its default Vulkan backend',
+        );
+        expect(
+          File.fromUri(_stableDiffusionAsset(output).file!).readAsStringSync(),
+          'fake-sd-linux-x64',
+        );
+      },
+    );
+  });
+
   test('stable_diffusion can be bundled without llama.cpp', () async {
     await testCodeBuildHook(
       mainMethod: build_hook.main,

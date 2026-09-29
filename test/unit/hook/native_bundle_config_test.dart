@@ -1115,5 +1115,79 @@ void main() {
         );
       }
     });
+
+    test('llamadart_stable_diffusion_backends overrides the llama.cpp choice '
+        'on Linux and Windows', () {
+      for (final (os, arch, base) in [
+        (OS.linux, Architecture.x64, 'linux-x64'),
+        (OS.linux, Architecture.arm64, 'linux-arm64'),
+        (OS.windows, Architecture.x64, 'windows-x64'),
+      ]) {
+        final nativeSpec = spec(os, arch);
+        final warnings = <String>[];
+        String? select(Object? llamaCpp, Object? stableDiffusion) =>
+            stableDiffusionBundleForNativeBundle(
+              spec: nativeSpec,
+              rawBackendConfig: llamaCpp,
+              rawStableDiffusionBackendConfig: stableDiffusion,
+              warn: warnings.add,
+            );
+
+        expect(select(null, ['cpu']), base, reason: 'CPU beside Vulkan text');
+        expect(
+          select({
+            'platforms': {os.name: 'cpu'},
+          }, 'vulkan'),
+          '$base-vulkan',
+          reason: 'Vulkan images beside CPU-only text',
+        );
+        expect(
+          select(null, {
+            'platforms': {
+              nativeSpec.bundle: {
+                'backends': ['cpu'],
+              },
+            },
+          }),
+          base,
+        );
+        expect(
+          select(null, {
+            'platforms': {'android': 'cpu'},
+          }),
+          '$base-vulkan',
+          reason: 'an entry for another platform leaves the llama.cpp choice',
+        );
+        expect(warnings, isEmpty);
+
+        expect(select(null, 'cuda'), '$base-vulkan');
+        expect(
+          warnings.single,
+          allOf(
+            contains('llamadart_stable_diffusion_backends'),
+            contains(nativeSpec.bundle),
+            contains('cuda'),
+          ),
+        );
+      }
+    });
+
+    test('llamadart_stable_diffusion_backends does not change Apple or '
+        'Android archives', () {
+      for (final (nativeSpec, bundle) in [
+        (spec(OS.android, Architecture.arm64), 'android-arm64'),
+        (spec(OS.macOS, Architecture.arm64), 'macos-arm64'),
+        (spec(OS.iOS, Architecture.arm64), 'ios-arm64'),
+      ]) {
+        expect(
+          stableDiffusionBundleForNativeBundle(
+            spec: nativeSpec,
+            rawBackendConfig: null,
+            rawStableDiffusionBackendConfig: 'vulkan',
+          ),
+          bundle,
+        );
+      }
+    });
   });
 }

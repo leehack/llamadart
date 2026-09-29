@@ -36,6 +36,12 @@ export 'native_release_tag.dart';
 /// backend list; [selectLibrariesForBundling] decodes the CPU policy.
 const String nativeBackendUserDefineKey = 'llamadart_native_backends';
 
+/// User-define key choosing the stable_diffusion build (`cpu` or `vulkan`) on
+/// Linux and Windows independently of the llama.cpp backends; same shape as
+/// [nativeBackendUserDefineKey]. See [stableDiffusionBundleForNativeBundle].
+const String stableDiffusionBackendUserDefineKey =
+    'llamadart_stable_diffusion_backends';
+
 /// `llamadart-native` release tag to download; resolved in `hook/build.dart`.
 const String nativeTagUserDefineKey = 'llamadart_native_tag';
 
@@ -650,15 +656,22 @@ bool nativeRuntimeNamedForExactBundle({
 /// `windows-arm64`).
 ///
 /// Linux and Windows publish a CPU and a `-vulkan` archive; only one is
-/// bundled. The choice follows the llama.cpp backend selection for the same
-/// platform under `llamadart_native_backends`: the `-vulkan` archive when
-/// Vulkan is requested there, or when nothing is requested and Vulkan is among
-/// [NativeBundleSpec.defaultBackends]; the CPU archive otherwise. Apple
-/// bundles are Metal builds and Android arm64 is CPU-only, whatever the
-/// backend config says.
+/// bundled. [rawStableDiffusionBackendConfig]
+/// (`llamadart_stable_diffusion_backends`: a list or string for every
+/// platform, or a `platforms` map like `llamadart_native_backends`) decides
+/// first: `-vulkan` when it names
+/// `vulkan`, the CPU archive when it names only `cpu`. An entry naming neither
+/// is ignored with a [warn]. Without an entry the choice follows the llama.cpp
+/// selection under `llamadart_native_backends` ([rawBackendConfig]): the
+/// `-vulkan` archive when Vulkan is requested there, or when nothing is
+/// requested and Vulkan is among [NativeBundleSpec.defaultBackends]; the CPU
+/// archive otherwise. Apple bundles are Metal builds and Android arm64 is
+/// CPU-only, whatever either config says.
 String? stableDiffusionBundleForNativeBundle({
   required NativeBundleSpec spec,
   required Object? rawBackendConfig,
+  Object? rawStableDiffusionBackendConfig,
+  void Function(String message)? warn,
 }) {
   final base = switch (spec.bundle) {
     'android-arm64' => 'android-arm64',
@@ -675,6 +688,27 @@ String? stableDiffusionBundleForNativeBundle({
       !(spec.bundle.startsWith('linux-') ||
           spec.bundle.startsWith('windows-'))) {
     return base;
+  }
+  final own =
+      rawStableDiffusionBackendConfig is String ||
+          rawStableDiffusionBackendConfig is List
+      ? _parseBackendList(rawStableDiffusionBackendConfig)
+      : parseRequestedBackends(
+          bundle: spec.bundle,
+          rawUserConfig: rawStableDiffusionBackendConfig,
+        );
+  if (own != null && own.isNotEmpty) {
+    if (own.contains('vulkan')) {
+      return '$base-vulkan';
+    }
+    if (own.contains('cpu')) {
+      return base;
+    }
+    warn?.call(
+      '$stableDiffusionBackendUserDefineKey for ${spec.bundle} names '
+      '${own.join(', ')}; stable_diffusion supports cpu and vulkan there. '
+      'Following $nativeBackendUserDefineKey instead.',
+    );
   }
   final requested = parseRequestedBackends(
     bundle: spec.bundle,
