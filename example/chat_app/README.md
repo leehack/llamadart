@@ -292,8 +292,10 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
   to download SDXS, generate a seeded image, and save the PNG and a screen
   capture to the app's temporary directory. It has passed on macOS, the iOS
-  simulator and Galaxy S24 and A53 phones; on an iPhone 16 Pro it passed with
-  the seed-entry fix it now uses. Results are in #779.
+  simulator and Galaxy S24 and A53 phones (the phone results are in #779). On
+  an iPhone 16 Pro the earlier `enterText` version failed its seed check; a
+  scratch test using the seed entry this test now uses generated with seed 42
+  there, but this test itself has not been re-run on a physical iPhone.
 
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings control in the top bar.
