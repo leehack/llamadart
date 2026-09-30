@@ -22,6 +22,9 @@
   phase-labelled progress, cancellation, PNG output and a memory check before
   loading; not available on the web
   ([#778](https://github.com/leehack/llamadart/issues/778)).
+- Add an experimental image-generation screen to the Flutter chat example,
+  with SDXS and SD-Turbo downloads
+  ([#776](https://github.com/leehack/llamadart/issues/776)).
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
   model with no projector loaded: native llama.cpp answered from the text
   alone, and WebGPU threw an untyped error surfaced as

@@ -206,4 +206,6 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).
 
-The [basic app](../examples/basic-app) has a command-line image example.
+The [basic app](../examples/basic-app) has a command-line image example, and
+the [chat app](../examples/chat-app) has an image screen that downloads SDXS
+or SD-Turbo with TAESD and generates on device.

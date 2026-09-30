@@ -30,6 +30,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🔊 **Text to speech**: The cross-platform Qwen3-TTS preset switches the
   composer into a dedicated synthesis mode with language, optional speaker
   reference, cancellation, playback, and WAV export.
+- 🖌️ **Image generation (experimental)**: **Image generation** in the sidebar
+  opens an on-device text-to-image screen backed by `ImageGenerationEngine`.
+  See [Image generation](#image-generation).
 - 📱 Material Design 3 UI with conversation-first navigation; settings open
   full-screen on narrow (mobile) layouts
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers,
@@ -59,13 +62,17 @@ If you run this app on Apple platforms with the Flutter SwiftPM companion
 packages enabled, set the Xcode project deployment target to iOS `16.4` or
 macOS `14.0` or newer first.
 
-This app keeps the default all-runtime native-assets configuration and declares
+This app bundles the `llama_cpp` and `litert_lm` native runtimes and declares
 both Apple companion packages so GGUF and `.litertlm` presets work on supported
-targets. If you copy this app and only ship GGUF models, set
-`llamadart_native_runtimes` to `[llama_cpp]` and keep only
-`llamadart_llama_cpp_flutter` to reduce bundle size. Flutter iOS/macOS apps
-should declare the companion package for every runtime they ship beside
-`llamadart`.
+targets. It also opts into the experimental `stable_diffusion` runtime for the
+image screen, which adds about 37 MB per iOS, macOS and Android arm64 target
+and 38 to 72 MB on Linux and Windows (CPU or Vulkan build; Vulkan by default).
+Android x64 has no `stable_diffusion` build and skips it with a build warning;
+the iOS x86_64 Simulator and Windows arm64 entries leave it out. If you copy
+this app and only ship GGUF models, set `llamadart_native_runtimes` to
+`[llama_cpp]` and keep only `llamadart_llama_cpp_flutter` to reduce bundle
+size. Flutter iOS/macOS apps should declare the companion package for every
+runtime they ship beside `llamadart`.
 
 ### 1.1 Run Tests
 ```bash
@@ -245,6 +252,47 @@ flutter test --run-skipped -t local-only \
      x86_64 Simulator architecture while the arm64-only LiteRT-LM companion is
      enabled; Windows arm64 remains GGUF-only.
 
+### Image generation
+
+**Image generation** in the sidebar (or the navigation drawer on narrow
+layouts) opens a separate screen for the experimental `ImageGenerationEngine`
+([guide](https://llamadart.leehack.com/docs/guides/image-generation)).
+
+- Models: **SDXS-512** (683 MB, recommended, fits most phones) and
+  **SD-Turbo + TAESD** (2.0 GB). Both download into the app's model cache
+  from pinned Hugging Face revisions with exact sizes and SHA-256 checks; an
+  interrupted download resumes. SD-Turbo shows a memory note: it needs about
+  2.8 GB free, so phones with less than 8 GB of RAM usually cannot load it.
+- Controls: prompt, optional negative prompt (ignored at guidance 1, which
+  both presets use), 256 or 512 px, steps (1 to 4, defaulting to the preset's
+  1), and a seed that is random when empty. The result shows the seed it used,
+  with **Reuse seed** and **Save PNG** (the same save dialog as WAV export).
+  Progress follows the engine's phases: loading the model, encoding the
+  prompt, sampling steps, and decoding.
+- Lifecycle: the model loads on the first **Generate** and stays loaded while
+  the screen is open and the model stays selected. Selecting another model,
+  deleting it, or leaving the screen frees it; leaving also cancels a running
+  download, which resumes next time. A running generation is cancelled when
+  a mobile app is backgrounded. The engine allows one generation at a time;
+  its `LlamaStateException` is shown if another is running.
+- Chat models: image and chat models can be loaded together, so memory is the
+  limit. Before loading, the engine compares the model's estimated memory with
+  what the device reports and refuses a model that does not fit; the screen
+  shows that message and, when a chat model is loaded, offers **Unload chat
+  model** so the next attempt has its memory. Windows reports no memory
+  figure, and macOS compares with physical memory, so there a loaded chat
+  model is not counted.
+- Support: Android arm64 (CPU), iOS 16.4+ and macOS (Metal), Linux and
+  Windows x64 (Vulkan build). The screen shows the runtime's reason instead of
+  the controls on the web, on targets without a `stable_diffusion` build, on
+  CPUs without the required instructions, and when the Vulkan loader is
+  missing on Linux or Windows. It is the device QA path for
+  [#779](https://github.com/leehack/llamadart/issues/779): run
+  `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
+  to download SDXS, generate a seeded image, and save the PNG and a screen
+  capture to the app's temporary directory. macOS has passed; the other
+  platforms are not yet validated.
+
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings control in the top bar.
 2. Adjust **GPU Layers**, **Context Size**, and **Preferred Backend**. Expand
@@ -305,6 +353,7 @@ lib/
 ├── screens/
 │   ├── app_shell_screen.dart       # Responsive shell/navigation host
 │   ├── chat_screen.dart            # Main chat UI
+│   ├── image_generation_screen.dart # Text-to-image screen
 │   └── manage_models_screen.dart   # Model library + inference controls
 ├── widgets/
 │   ├── chat_input.dart             # Message input + media staging
