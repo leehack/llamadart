@@ -81,7 +81,7 @@ why generation is unavailable. See [Image generation](../guides/image-generation
 ```bash
 cd example/chat_app
 flutter test
-flutter test --platform chrome test/chat_generation_service_test.dart
+flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart
 ```
 
 The second command covers Web-only paths.
