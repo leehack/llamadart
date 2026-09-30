@@ -1,6 +1,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:io';
+
 import 'package:test/test.dart';
 
 import '../../../tool/testing/run_local_e2e.dart';
@@ -55,6 +57,25 @@ void main() {
       expect(ids, contains('physical-ios-speech-e2e'));
       expect(ids, contains('decision-model-smoke'));
       expect(ids, contains('image-generation-smoke'));
+      expect(ids, contains('chat-app-image-generation-smoke'));
+    });
+
+    test('chat-app image row runs the local-only device test', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'chat-app-image-generation-smoke',
+      );
+
+      expect(row.mode, 'local-only');
+      expect(
+        row.command,
+        contains('integration_test/image_generation_e2e_test.dart'),
+      );
+      expect(
+        File(
+          'example/chat_app/integration_test/image_generation_e2e_test.dart',
+        ).existsSync(),
+        isTrue,
+      );
     });
 
     test('rows name local E2E scenarios that the runner defines', () {
