@@ -10,6 +10,7 @@ import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/models/live_speech_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/app_shell_screen.dart';
+import 'package:llamadart_chat_example/screens/image_generation_screen.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
 import 'package:llamadart_chat_example/services/live_speech_model_service.dart';
 import 'package:llamadart_chat_example/services/live_speech_transcription_service.dart';
@@ -568,6 +569,46 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(provider.conversations, hasLength(1));
+    });
+
+    testWidgets('opens image generation from the navigation drawer', (
+      tester,
+    ) async {
+      final oldSize = tester.view.physicalSize;
+      final oldRatio = tester.view.devicePixelRatio;
+      tester.view
+        ..physicalSize = const Size(854, 700)
+        ..devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view
+          ..physicalSize = oldSize
+          ..devicePixelRatio = oldRatio;
+      });
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: const MaterialApp(home: AppShellScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('open_image_generation_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(ImageGenerationScreen), findsOneWidget);
+      expect(find.byType(Drawer), findsNothing);
     });
   });
 }

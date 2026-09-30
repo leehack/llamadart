@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../providers/chat_provider.dart';
 import '../services/model_download_ui_controller.dart';
 import 'chat_screen.dart';
+import 'image_generation_screen.dart';
 import 'manage_models_screen.dart';
 
 class AppShellScreen extends StatefulWidget {
@@ -44,6 +45,20 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
   void _startNewConversation() {
     context.read<ChatProvider>().createConversation();
+  }
+
+  void _openImageGeneration() {
+    final chat = context.read<ChatProvider>();
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => ImageGenerationScreen(
+            isChatModelLoaded: () => chat.isLoaded,
+            unloadChatModel: chat.unloadModel,
+          ),
+        ),
+      ),
+    );
   }
 
   void _openSettingsPanel({required bool canPin}) {
@@ -132,6 +147,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   child: SafeArea(
                     child: _ShellSidebar(
                       onNewConversation: _startNewConversation,
+                      onOpenImageGeneration: () {
+                        Navigator.of(context).pop();
+                        _openImageGeneration();
+                      },
                       onDeleteConversation: _confirmDeleteConversation,
                       onConversationActivated: () {
                         Navigator.of(context).pop();
@@ -210,6 +229,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                           width: 248,
                           child: _ShellSidebar(
                             onNewConversation: _startNewConversation,
+                            onOpenImageGeneration: _openImageGeneration,
                             onDeleteConversation: _confirmDeleteConversation,
                           ),
                         ),
@@ -603,12 +623,14 @@ class _ShellSidebar extends StatelessWidget {
   static final Uri _pubDevUri = Uri.parse('https://pub.dev/packages/llamadart');
 
   final VoidCallback onNewConversation;
+  final VoidCallback onOpenImageGeneration;
   final Future<void> Function(String conversationId, String conversationTitle)
   onDeleteConversation;
   final VoidCallback? onConversationActivated;
 
   const _ShellSidebar({
     required this.onNewConversation,
+    required this.onOpenImageGeneration,
     required this.onDeleteConversation,
     this.onConversationActivated,
   });
@@ -627,6 +649,13 @@ class _ShellSidebar extends StatelessWidget {
             onPressed: onNewConversation,
             icon: const Icon(Icons.add_rounded),
             label: const Text('New conversation'),
+          ),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            key: const ValueKey<String>('open_image_generation_button'),
+            onPressed: onOpenImageGeneration,
+            icon: const Icon(Icons.image_outlined),
+            label: const Text('Image generation'),
           ),
           const SizedBox(height: 14),
           Text(
