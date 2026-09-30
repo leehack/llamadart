@@ -10,9 +10,9 @@ style.
 ## Example catalog
 
 - [Basic app](./basic-app): Dart console apps for chat, embeddings, SQLite
-  vector retrieval and decision models.
+  vector retrieval, decision models and image generation.
 - [Chat app](./chat-app): Flutter chat app with a model library, runtime
-  controls, multimodal input and speech.
+  controls, multimodal input, speech and image generation.
 - [Laya Tetris](./laya-tetris): Flutter game played in real time by a
   decision model.
 - [Laya Command Bar](./laya-command-bar): Flutter text field that a decision

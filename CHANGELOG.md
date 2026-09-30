@@ -13,7 +13,7 @@
   native or web LiteRT-LM rejects a `ModelParams` field, including more than
   one LoRA adapter or a non-default adapter scale.
 - Add an experimental opt-in `stable_diffusion` native runtime
-  (stable-diffusion.cpp) to `llamadart_native_runtimes`, groundwork for image
+  (stable-diffusion.cpp) to `llamadart_native_runtimes` for image
   generation; it is never bundled by default or by `all`, and
   `llamadart_stable_diffusion_backends` picks its CPU or Vulkan build on Linux
   and Windows ([#777](https://github.com/leehack/llamadart/issues/777)).
