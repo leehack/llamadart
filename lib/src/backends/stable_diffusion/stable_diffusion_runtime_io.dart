@@ -52,12 +52,14 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 ///
 /// Then `sd_version`, `sd_commit` and `sd_list_devices` must answer.
 ///
-/// [abi], [readCpuInfo], [windowsHasAvx2] and [api] default to the host and
-/// the bundled library; tests replace them.
+/// [abi], [readCpuInfo], [windowsHasAvx2], [missingWindowsLibraries] and
+/// [api] default to the host and the bundled library; tests replace them.
 StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   Abi? abi,
   String? Function() readCpuInfo = _readProcCpuInfo,
   bool Function() windowsHasAvx2 = _windowsHasAvx2,
+  List<String> Function(List<String> names) missingWindowsLibraries =
+      _missingWindowsLibraries,
   StableDiffusionNativeApi api = const _BundledStableDiffusionApi(),
 }) {
   final targetAbi = abi ?? Abi.current();
@@ -129,7 +131,11 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
     );
   } on ArgumentError catch (error) {
     return StableDiffusionRuntimeStatus.unavailable(
-      stableDiffusionLoadFailure(platform: platform, error: error),
+      stableDiffusionLoadFailure(
+        platform: platform,
+        error: error,
+        missingWindowsLibraries: missingWindowsLibraries,
+      ),
     );
   }
 }
@@ -141,11 +147,15 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
 /// apart. A missing asset is checked first because that message lists every
 /// bundled asset, which on Linux and Windows includes llama.cpp's
 /// `ggml-vulkan`. A Linux dynamic-loader failure names the loader library it
-/// could not find; Windows reports only error 126, so that message names the
-/// Vulkan loader as a possible cause.
+/// could not find. Windows reports only error 126 without naming the
+/// dependency, so [missingWindowsLibraries] checks which of the runtime's
+/// imports fail to load: the Visual C++ runtime, which stock Windows Server
+/// lacks, and the Vulkan loader.
 LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
+  List<String> Function(List<String> names) missingWindowsLibraries =
+      _missingWindowsLibraries,
 }) {
   final detail = '${error.message ?? error}';
   if (detail.contains('No asset with id')) {
@@ -173,12 +183,31 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
   }
   final firstLine = detail.split('\n').first.trimRight();
   if (detail.contains('error code: 126')) {
+    final cause = firstLine.replaceFirst(RegExp(r'\.+$'), '');
+    final missingRuntime = missingWindowsLibraries(
+      _windowsVisualCppRuntimeLibraries,
+    );
+    if (missingRuntime.isNotEmpty) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime could not be loaded on $platform: $cause. '
+        'It requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), '
+        'and ${missingRuntime.join(', ')} could not be loaded; install '
+        'vc_redist.x64.exe or ship those DLLs next to the app.',
+      );
+    }
+    if (missingWindowsLibraries(const ['vulkan-1.dll']).isNotEmpty) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime could not be loaded on $platform: $cause. '
+        'vulkan-1.dll could not be loaded; if the app bundles the Vulkan '
+        'build, install a GPU driver that provides the Vulkan loader, or set '
+        'hooks.user_defines.llamadart.llamadart_stable_diffusion_backends to '
+        '[cpu] and rebuild.',
+      );
+    }
     return LlamaUnsupportedException(
-      'stable_diffusion runtime could not be loaded on $platform: $firstLine. '
-      'Windows does not name the missing dependency; if the app bundles the '
-      'Vulkan build, install the Vulkan loader (vulkan-1.dll) or set '
-      'hooks.user_defines.llamadart.llamadart_stable_diffusion_backends to '
-      '[cpu] and rebuild.',
+      'stable_diffusion runtime could not be loaded on $platform: $cause. '
+      'Windows does not name the missing dependency, and the Visual C++ '
+      'runtime and Vulkan loader both load.',
     );
   }
   return LlamaUnsupportedException(
@@ -196,6 +225,28 @@ final String _x86FeatureList = stableDiffusionRequiredX86Features
 const int _pfAvx2InstructionsAvailable = 40;
 
 const List<String> _vulkanLoaderNames = ['libvulkan.so', 'vulkan-1.dll'];
+
+/// The Visual C++ runtime DLLs `stable-diffusion.dll` imports.
+const List<String> _windowsVisualCppRuntimeLibraries = [
+  'msvcp140.dll',
+  'msvcp140_codecvt_ids.dll',
+  'vcruntime140.dll',
+  'vcruntime140_1.dll',
+];
+
+List<String> _missingWindowsLibraries(List<String> names) => [
+  for (final name in names)
+    if (!_canLoadLibrary(name)) name,
+];
+
+bool _canLoadLibrary(String name) {
+  try {
+    DynamicLibrary.open(name);
+    return true;
+  } on ArgumentError {
+    return false;
+  }
+}
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 
