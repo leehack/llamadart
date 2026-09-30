@@ -192,7 +192,7 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
         'stable_diffusion runtime could not be loaded on $platform: $cause. '
         'It requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), '
         'and ${missingRuntime.join(', ')} could not be loaded; install '
-        'vc_redist.x64.exe or ship those DLLs next to the app.',
+        'vc_redist.x64.exe or ship those DLLs next to stable-diffusion.dll.',
       );
     }
     if (missingWindowsLibraries(const ['vulkan-1.dll']).isNotEmpty) {

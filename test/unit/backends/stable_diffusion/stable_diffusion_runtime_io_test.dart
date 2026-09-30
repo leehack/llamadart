@@ -2,6 +2,7 @@
 library;
 
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:test/test.dart';
 
@@ -252,7 +253,7 @@ void main() {
         "Couldn't resolve native function 'sd_version' in "
         "'package:llamadart/stable_diffusion' : Failed to load dynamic "
         "library 'stable-diffusion.dll': The specified module could not be "
-        'found.\n(error code: 126)',
+        'found.\r\n (error code: 126).\n',
       );
 
       String messageWithMissing(Set<String> missing) {
@@ -293,6 +294,32 @@ void main() {
         expect(message, isNot(contains('Visual C++')));
         expect(message, isNot(contains('..')));
       });
+
+      test(
+        'the default check probes every Visual C++ DLL the runtime imports',
+        () {
+          // Off Windows none of these load, so the real check must report all
+          // of them: this pins the list against stable-diffusion.dll's PE
+          // imports (MSVCP140, MSVCP140_CODECVT_IDS, VCRUNTIME140,
+          // VCRUNTIME140_1).
+          final message = stableDiffusionLoadFailure(
+            platform: 'windows-x64',
+            error: error126,
+          ).message;
+
+          expect(
+            message,
+            contains(
+              'msvcp140.dll, msvcp140_codecvt_ids.dll, vcruntime140.dll, '
+              'vcruntime140_1.dll could not be loaded',
+            ),
+          );
+          expect(message, contains('could not be found. It requires'));
+        },
+        skip: Platform.isWindows
+            ? 'the Visual C++ runtime loads on Windows hosts'
+            : false,
+      );
 
       test('says neither dependency is missing when both load', () {
         final message = messageWithMissing(const {});
