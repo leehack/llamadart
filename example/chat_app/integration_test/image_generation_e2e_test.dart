@@ -68,13 +68,23 @@ void main() {
     }
     expect(provider.selectedProfile.id, profile.id);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('image_seed_field')),
-      '42',
+    // enterText is dropped in release-mode integration tests (physical iOS
+    // XCTest runs Release): the binding registers no test text input, and the
+    // engine accepts its client id only inside a debug assert.
+    tester
+            .widget<TextField>(
+              find.byKey(const ValueKey<String>('image_seed_field')),
+            )
+            .controller!
+            .text =
+        '42';
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    final generateButton = find.byKey(
+      const ValueKey<String>('generate_image_button'),
     );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('generate_image_button')),
-    );
+    await tester.ensureVisible(generateButton);
+    await tester.tap(generateButton);
     await _pumpUntil(
       tester,
       () => provider.output != null || provider.error != null,
