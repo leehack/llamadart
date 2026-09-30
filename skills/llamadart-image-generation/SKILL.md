@@ -64,7 +64,8 @@ description: >-
 - `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
   invalid requests throw `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048 (512 is native; 256 is fine for
-  SDXS and SD-Turbo), steps 1 to 150, guidance 0 to 30, count 1 to 16.
+  SDXS and SD-Turbo; the runtime rounds up to 64, so read the size from
+  `GeneratedImage`), steps 1 to 150, guidance 0 to 30, count 1 to 16.
   `seed: null` is random; `result.seed` reports it, image `i` used
   `seed + i`, and the same seed reproduces the same pixels.
 - `task.events` (single subscription): `ImageGenerationProgressEvent`

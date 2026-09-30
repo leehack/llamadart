@@ -305,6 +305,45 @@ void main() {
       await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
     });
 
+    test('rejects invalid custom model defaults before starting', () async {
+      for (final defaults in const [
+        ImageGenerationDefaults(steps: 0),
+        ImageGenerationDefaults(steps: -3),
+        ImageGenerationDefaults(steps: 1000),
+        ImageGenerationDefaults(guidanceScale: double.nan),
+        ImageGenerationDefaults(guidanceScale: -1),
+      ]) {
+        final engine = await load(
+          ImageGenerationModel.custom(
+            const ImageGenerationModelFiles(model: _model),
+            defaults: defaults,
+          ),
+        );
+        expect(
+          () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+          throwsA(isA<LlamaImageGenerationException>()),
+          reason: 'steps ${defaults.steps}, guidance ${defaults.guidanceScale}',
+        );
+        expect(driver.session.requests, isEmpty);
+
+        // A valid request value still overrides an invalid default, and the
+        // rejection above released the operation lock.
+        await engine
+            .generate(
+              const ImageGenerationRequest(
+                prompt: 'a',
+                steps: 2,
+                guidanceScale: 1,
+              ),
+            )
+            .done;
+        expect(driver.session.requests.single.steps, 2);
+        await engine.dispose();
+        driver = _FakeDriver();
+        debugImageGenerationDriverOverride = driver;
+      }
+    });
+
     test('fills unset steps and guidance from the model defaults', () async {
       final sdxs = await load(ImageGenerationModel.sdxs(_model));
       await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;

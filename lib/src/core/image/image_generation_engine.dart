@@ -193,7 +193,7 @@ class ImageGenerationEngine {
   ///
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
   /// platform reports it, the model's estimated memory
-  /// ([estimateImageGenerationMemoryBytes] of its file sizes) is compared
+  /// (a quarter more than its file sizes, plus 256 MiB) is compared
   /// with the memory available: `MemAvailable` on Android and Linux, the
   /// app's remaining memory limit on iOS, and physical memory on macOS.
   /// Windows reports nothing and is not checked. A model that does not fit
@@ -292,7 +292,8 @@ class ImageGenerationEngine {
   /// Unset steps and guidance come from [ImageGenerationModel.defaults], and
   /// an unset seed is picked at random and reported in the result.
   ///
-  /// Throws [LlamaImageGenerationException] for an invalid request, and
+  /// Throws [LlamaImageGenerationException] for an invalid request, including
+  /// invalid steps or guidance from [ImageGenerationModel.defaults], and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running. A runtime failure after the task starts, such as an
   /// aborted GPU command buffer, fails the task with
@@ -301,17 +302,29 @@ class ImageGenerationEngine {
     if (_disposal != null) {
       throw LlamaStateException('The ImageGenerationEngine is disposed.');
     }
-    validateImageGenerationRequest(request);
-    final operation = _acquireOperation();
-    final resolved = ImageGenerationSessionRequest(
+    // Validate after applying the model defaults: custom defaults are not
+    // checked when the model is built, and the runtime crashes on 0 steps.
+    final effective = ImageGenerationRequest(
       prompt: request.prompt,
       negativePrompt: request.negativePrompt,
       width: request.width,
       height: request.height,
       steps: request.steps ?? model.defaults.steps,
       guidanceScale: request.guidanceScale ?? model.defaults.guidanceScale,
-      seed: request.seed ?? _seedRandom.nextInt(0x7FFFFFFF),
+      seed: request.seed,
       count: request.count,
+    );
+    validateImageGenerationRequest(effective);
+    final operation = _acquireOperation();
+    final resolved = ImageGenerationSessionRequest(
+      prompt: effective.prompt,
+      negativePrompt: effective.negativePrompt,
+      width: effective.width,
+      height: effective.height,
+      steps: effective.steps!,
+      guidanceScale: effective.guidanceScale!,
+      seed: effective.seed ?? _seedRandom.nextInt(0x7FFFFFFF),
+      count: effective.count,
     );
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;

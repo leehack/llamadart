@@ -25,11 +25,12 @@ class ImageGenerationRequest {
   final String negativePrompt;
 
   /// Output width in pixels: a multiple of 8 from [minDimension] to
-  /// [maxDimension]. SD 1.x and 2.x models are trained at 512.
+  /// [maxDimension]. SD 1.x and 2.x models are trained at 512. The runtime
+  /// rounds up to a multiple of 64 for these models; `GeneratedImage.width`
+  /// reports the size produced.
   final int width;
 
-  /// Output height in pixels: a multiple of 8 from [minDimension] to
-  /// [maxDimension].
+  /// Output height in pixels, with the same range and rounding as [width].
   final int height;
 
   /// Sampling steps from 1 to [maxSteps]. `null` uses the model's default.

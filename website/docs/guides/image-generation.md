@@ -117,7 +117,9 @@ await engine.dispose();
 `ImageGenerationResult` or throws the failure.
 
 - Width and height are multiples of 8 from 64 to 2048. SD 1.x/2.x models are
-  trained at 512; SDXS and SD-Turbo also work at 256.
+  trained at 512; SDXS and SD-Turbo also work at 256. The runtime rounds the
+  size up to a multiple of 64 for these models, so a 200x136 request produces
+  256x192; `GeneratedImage.width` and `height` report the real size.
 - `steps` and `guidanceScale` fall back to the model's defaults. A guidance of
   1 skips the negative prompt and halves the work per step.
 - A `null` seed picks one at random. `result.seed` reports the seed used, and
