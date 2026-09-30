@@ -17,10 +17,10 @@ inpainting, LoRA or ControlNet yet.
 | Platform | Device | Minimum OS | Notes |
 | --- | --- | --- | --- |
 | macOS (arm64, x86_64) | Metal, CPU | macOS 13.3 | Validated on an M4 Max |
-| iOS (arm64, arm64 simulator) | Metal, CPU | iOS 16.4 | No x86_64 simulator runtime |
-| Android arm64 | CPU | Not set by llamadart | Needs Armv8.2 dot-product and fp16 (`asimddp`, `fphp`, `asimdhp`); no x64 runtime |
-| Linux (arm64, x64) | CPU, or Vulkan with the Vulkan build | Not set by llamadart | x64 CPUs need AVX2, FMA, F16C and BMI2 |
-| Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | CPUs need AVX2; no arm64 runtime |
+| iOS (arm64, arm64 simulator) | Metal, CPU | iOS 16.4 | Validated on iPhone 16 Pro and iPhone SE 3; no x86_64 simulator runtime |
+| Android arm64 | CPU | Not set by llamadart | Needs Armv8.2 dot-product and fp16 (`asimddp`, `fphp`, `asimdhp`); validated on Pixel 9 Pro, Galaxy S24 and Galaxy A53; no x64 runtime |
+| Linux (arm64, x64) | CPU, or Vulkan with the Vulkan build | Not set by llamadart | x64 CPUs need AVX2, FMA, F16C and BMI2; validated on x64 with CPU and an NVIDIA L4 |
+| Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | Needs the Microsoft Visual C++ 2015-2022 Redistributable (x64) and AVX2; the Vulkan build needs a GPU driver that provides `vulkan-1.dll`; validated on Windows Server 2022 with CPU and an NVIDIA L4; no arm64 runtime |
 | Web | None | | `load` throws `LlamaUnsupportedException` |
 
 Measured with the prototype on the same runtime, 512x512, one step, warm:
@@ -200,9 +200,8 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps); the task fails and the next request runs.
-- Windows is not memory-checked, and Linux, Windows and Android have not yet
-  run real generation in this API's validation
-  ([#779](https://github.com/leehack/llamadart/issues/779)).
+- Windows is not memory-checked. Per-platform validation results, including
+  timings, are in [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).
 

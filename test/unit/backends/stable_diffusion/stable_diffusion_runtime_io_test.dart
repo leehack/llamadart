@@ -247,21 +247,59 @@ void main() {
       expect(message, contains('does not export the stable-diffusion.h API'));
     });
 
-    test('names the Vulkan loader as a possible cause of Windows error '
-        '126', () {
-      final message = stableDiffusionLoadFailure(
-        platform: 'windows-x64',
-        error: ArgumentError(
-          "Couldn't resolve native function 'sd_version' in "
-          "'package:llamadart/stable_diffusion' : Failed to load dynamic "
-          "library 'stable-diffusion.dll': The specified module could not be "
-          'found. (error code: 126)',
-        ),
-      ).message;
+    group('Windows error 126', () {
+      final error126 = ArgumentError(
+        "Couldn't resolve native function 'sd_version' in "
+        "'package:llamadart/stable_diffusion' : Failed to load dynamic "
+        "library 'stable-diffusion.dll': The specified module could not be "
+        'found.\n(error code: 126)',
+      );
 
-      expect(message, contains('could not be loaded on windows-x64'));
-      expect(message, contains('vulkan-1.dll'));
-      expect(message, contains('llamadart_stable_diffusion_backends to [cpu]'));
+      String messageWithMissing(Set<String> missing) {
+        final checked = <String>[];
+        final message = stableDiffusionLoadFailure(
+          platform: 'windows-x64',
+          error: error126,
+          missingWindowsLibraries: (names) {
+            checked.addAll(names);
+            return [
+              for (final name in names)
+                if (missing.contains(name)) name,
+            ];
+          },
+        ).message;
+        expect(checked, isNotEmpty);
+        return message;
+      }
+
+      test('names a missing Visual C++ runtime before the Vulkan loader', () {
+        final message = messageWithMissing({'msvcp140.dll', 'vulkan-1.dll'});
+
+        expect(message, contains('could not be loaded on windows-x64'));
+        expect(message, contains('Visual C++ 2015-2022 Redistributable'));
+        expect(message, contains('msvcp140.dll could not be loaded'));
+        expect(message, isNot(contains('vulkan-1.dll')));
+        expect(message, isNot(contains('..')));
+      });
+
+      test('names the Vulkan loader when the runtime is present', () {
+        final message = messageWithMissing({'vulkan-1.dll'});
+
+        expect(message, contains('vulkan-1.dll could not be loaded'));
+        expect(
+          message,
+          contains('llamadart_stable_diffusion_backends to [cpu]'),
+        );
+        expect(message, isNot(contains('Visual C++')));
+        expect(message, isNot(contains('..')));
+      });
+
+      test('says neither dependency is missing when both load', () {
+        final message = messageWithMissing(const {});
+
+        expect(message, contains('does not name the missing dependency'));
+        expect(message, isNot(contains('install')));
+      });
     });
 
     test('keeps the first line of any other loader failure', () {
