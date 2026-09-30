@@ -50,7 +50,9 @@ for each target.
   the opt-in `stable_diffusion` (stable-diffusion.cpp) runtime: SDXS and
   SD-Turbo on Android arm64 (CPU), iOS and macOS (Metal), and Linux and
   Windows (CPU or Vulkan), with progress, cancellation and PNG output;
-  validated on macOS only. Not available on the web.
+  validated with real models on macOS, iOS, Android, Linux x64 and Windows x64
+  ([#779](https://github.com/leehack/llamadart/issues/779)). Not available on
+  the web.
 - Experimental Laya-style decision models on native llama.cpp through
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
   encoder GGUF and a safetensors head, one encoder pass per question; validated

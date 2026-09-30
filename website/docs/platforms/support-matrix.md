@@ -14,17 +14,18 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; untested | Supported |
-| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; arm64 only; untested | Supported |
+| Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
+| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; arm64 only; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
-| Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; untested | Supported |
-| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2; untested | Supported |
+| Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
+| Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | No | Experimental |
 
 Speech to text, text to speech, decision models and image generation are
 experimental. Image generation needs the opt-in `stable_diffusion` runtime,
 built for iOS 16.4 and macOS 13.3; x64 Linux and Windows CPUs need AVX2, FMA,
-F16C and BMI2, and Android arm64 needs dot-product and fp16. See
+F16C and BMI2, Windows needs the Microsoft Visual C++ 2015-2022
+Redistributable (x64), and Android arm64 needs dot-product and fp16. See
 [Image generation](../guides/image-generation#support). GGUF
 Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
