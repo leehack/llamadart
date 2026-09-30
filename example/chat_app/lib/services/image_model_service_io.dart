@@ -5,10 +5,12 @@ import '../models/image_model_profile.dart';
 import 'image_model_service.dart';
 import 'model_service_io.dart';
 
-class _IoImageModelService implements ImageModelService {
+/// Stores image models in the app's managed model cache.
+class IoImageModelService implements ImageModelService {
   final ModelServiceIO _modelService;
 
-  _IoImageModelService({ModelServiceIO? modelService})
+  /// Creates the service; tests inject [modelService].
+  IoImageModelService({ModelServiceIO? modelService})
     : _modelService = modelService ?? ModelServiceIO();
 
   @override
@@ -94,4 +96,4 @@ class _IoImageModelService implements ImageModelService {
 }
 
 /// Creates the native image model service.
-ImageModelService createImageModelService() => _IoImageModelService();
+ImageModelService createImageModelService() => IoImageModelService();
