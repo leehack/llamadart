@@ -472,7 +472,7 @@ class _ImageModelTile extends StatelessWidget {
     final installed = provider.isInstalled(profile);
     final selected = provider.selectedProfile.id == profile.id;
     final installing = provider.installingId == profile.id;
-    final canSelect = installed && !provider.isBusy;
+    final canSelect = installed && provider.canChangeModel;
 
     return Card(
       key: ValueKey<String>('image_model_${profile.id}'),
@@ -546,7 +546,7 @@ class _ImageModelTile extends StatelessWidget {
                     IconButton(
                       key: ValueKey<String>('delete_${profile.id}'),
                       tooltip: 'Delete model files',
-                      onPressed: provider.isBusy ? null : onDelete,
+                      onPressed: provider.canChangeModel ? onDelete : null,
                       icon: const Icon(Icons.delete_outline_rounded),
                     )
                   else

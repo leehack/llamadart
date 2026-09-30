@@ -56,6 +56,18 @@ Future<Uint8List> _encodePngInBackground(GeneratedImage image) =>
 
 Uint8List _encodePng(GeneratedImage image) => image.toPng();
 
+/// Whether [error] is the engine's memory preflight refusal.
+///
+/// The library has no dedicated exception type for it, so this matches the
+/// stable phrasing of the `LlamaModelException` thrown by
+/// `ImageGenerationEngine.load` when the model does not fit ("The image model
+/// needs about ... GiB ..., but only ... GiB is available (...)"). Other load
+/// failures, such as a missing file, must not match.
+bool isImageMemoryRefusal(Object error) =>
+    error is LlamaModelException &&
+    error.message.startsWith('The image model needs about ') &&
+    error.message.contains(' GiB is available (');
+
 /// State and engine lifecycle of the image-generation screen.
 ///
 /// The model loads on the first generation and stays loaded while it stays
@@ -90,6 +102,7 @@ class ImageGenerationProvider extends ChangeNotifier {
   CancelToken? _installToken;
   double _installProgress = 0;
   bool _isVerifyingInstall = false;
+  String? _deletingId;
 
   ImageGenerator? _generator;
   String? _generatorModelId;
@@ -176,6 +189,8 @@ class ImageGenerationProvider extends ChangeNotifier {
   /// Whether a load or generation is running.
   bool get isBusy => _stage != ImageGenerationStage.idle;
 
+  bool get _isLocked => isBusy || _deletingId != null;
+
   /// Latest progress event of the running generation.
   ImageGenerationProgressEvent? get progress => _progress;
 
@@ -188,8 +203,8 @@ class ImageGenerationProvider extends ChangeNotifier {
   /// Last error, as the library reported it.
   String? get error => _error;
 
-  /// Whether [error] was a load failure while a chat model is loaded, so
-  /// unloading the chat model may free enough memory.
+  /// Whether [error] was the engine's memory refusal while a chat model is
+  /// loaded, so unloading the chat model may free enough memory.
   bool get canUnloadChatModel =>
       _canUnloadChatModel && _unloadChatModel != null;
 
@@ -207,7 +222,10 @@ class ImageGenerationProvider extends ChangeNotifier {
   }
 
   /// Whether a generation can start now.
-  bool get canGenerate => isSupported && isSelectedInstalled && !isBusy;
+  bool get canGenerate => isSupported && isSelectedInstalled && !_isLocked;
+
+  /// Whether a model can be selected or deleted now.
+  bool get canChangeModel => !_isLocked;
 
   /// Probes the runtime and finds installed models.
   Future<void> initialize() async {
@@ -247,7 +265,7 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   /// Selects [profile], freeing the engine of the previous model.
   Future<void> selectModel(ImageModelProfile profile) async {
-    if (profile.id == _selected.id || isBusy) {
+    if (profile.id == _selected.id || _isLocked) {
       return;
     }
     _select(profile);
@@ -339,13 +357,15 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   /// Deletes the files of [profile], freeing its engine first.
   Future<void> deleteModel(ImageModelProfile profile) async {
-    if (isBusy || _installingId == profile.id) {
+    if (_isLocked || _installingId == profile.id) {
       return;
     }
-    if (_generatorModelId == profile.id) {
-      await releaseEngine();
-    }
+    _deletingId = profile.id;
+    _notify();
     try {
+      if (_generatorModelId == profile.id) {
+        await releaseEngine();
+      }
       await _modelService.delete(profile);
       _installed.remove(profile.id);
       if (profile.id == _selected.id) {
@@ -353,8 +373,10 @@ class ImageGenerationProvider extends ChangeNotifier {
       }
     } catch (error) {
       _error = 'Could not delete ${profile.name}: ${_describe(error)}';
+    } finally {
+      _deletingId = null;
+      _notify();
     }
-    _notify();
   }
 
   /// Generates one image with the selected model, loading it first when
@@ -365,7 +387,7 @@ class ImageGenerationProvider extends ChangeNotifier {
     int? seed,
   }) async {
     final installed = _installed[_selected.id];
-    if (installed == null || isBusy || !isSupported) {
+    if (installed == null || _isLocked || !isSupported) {
       return;
     }
     _error = null;
@@ -429,8 +451,7 @@ class ImageGenerationProvider extends ChangeNotifier {
       }
     } catch (error) {
       _error = _describe(error);
-      _canUnloadChatModel =
-          error is LlamaModelException && _isChatModelLoaded();
+      _canUnloadChatModel = isImageMemoryRefusal(error) && _isChatModelLoaded();
     } finally {
       // The run closes its events before `done` completes, so this only
       // detaches the listener.
@@ -470,14 +491,21 @@ class ImageGenerationProvider extends ChangeNotifier {
     _run?.cancel();
   }
 
-  /// Unloads the chat model after a load failure, so the next generation
-  /// has its memory.
+  /// Unloads the chat model after a memory refusal, so the next generation
+  /// has its memory. A failure is reported in [error], not thrown.
   Future<void> unloadChatModel() async {
     final unload = _unloadChatModel;
     if (unload == null) {
       return;
     }
-    await unload();
+    try {
+      await unload();
+    } catch (error) {
+      _canUnloadChatModel = false;
+      _error = 'Could not unload the chat model: ${_describe(error)}';
+      _notify();
+      return;
+    }
     _canUnloadChatModel = false;
     _error = null;
     _status = 'Chat model unloaded. Generate again to retry.';
