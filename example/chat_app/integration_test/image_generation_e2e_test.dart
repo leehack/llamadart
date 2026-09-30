@@ -68,9 +68,10 @@ void main() {
     }
     expect(provider.selectedProfile.id, profile.id);
 
-    // enterText is dropped in release-mode integration tests (physical iOS
-    // XCTest runs Release): the binding registers no test text input, and the
-    // engine accepts its client id only inside a debug assert.
+    // enterText is dropped in profile and release integration tests
+    // (physical iOS XCTest runs Release): the binding registers no test text
+    // input, and Flutter's TextInput accepts its client id only inside a
+    // debug assert.
     tester
             .widget<TextField>(
               find.byKey(const ValueKey<String>('image_seed_field')),
