@@ -152,6 +152,7 @@ Pick targeted rows based on the touched surface:
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
+| Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |

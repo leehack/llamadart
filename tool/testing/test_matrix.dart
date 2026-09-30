@@ -577,6 +577,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'downloads, chat composer dictation, or microphone lifecycle changes.',
   ),
   TestMatrixRow(
+    id: 'chat-app-image-generation-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'chat-app image screen on a device with the bundled stable_diffusion '
+        'runtime: runtime probe, SDXS download through the screen when not '
+        'installed, seeded 512x512 generation with the used seed shown, and '
+        'PNG plus screen-capture output in the app temporary directory',
+    command:
+        'cd example/chat_app && flutter test --run-skipped -t local-only '
+        'integration_test/image_generation_e2e_test.dart -d <device>',
+    useWhen:
+        'Chat-app image screen, image model catalog or download, or device '
+        'QA of the stable_diffusion runtime on Android, iOS, macOS, Linux or '
+        'Windows (#779). Record device, backend, timing and memory.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-voice-question-smoke',
     tier: 'targeted',
     mode: 'manual/device',
