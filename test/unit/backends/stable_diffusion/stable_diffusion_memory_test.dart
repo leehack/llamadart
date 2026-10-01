@@ -41,15 +41,27 @@ MemAvailable:    2097152 kB
 Buffers:           10000 kB
 ''';
 
+const _status = '''
+Name:	llamadart_chat_example
+VmPeak:	  9000000 kB
+VmRSS:	   307200 kB
+''';
+
 void main() {
-  group('parseMemAvailableBytes', () {
-    test('reads MemAvailable in bytes', () {
-      expect(parseMemAvailableBytes(_memInfo), 2097152 * 1024);
+  group('parseProcMemoryBytes', () {
+    test('reads a kB field in bytes', () {
+      expect(parseProcMemoryBytes(_memInfo, 'MemAvailable'), 2097152 * 1024);
+      expect(parseProcMemoryBytes(_memInfo, 'MemTotal'), 5750000 * 1024);
+      expect(parseProcMemoryBytes(_status, 'VmRSS'), 300 << 20);
     });
 
-    test('is null without a MemAvailable line', () {
-      expect(parseMemAvailableBytes('MemTotal: 5750000 kB\n'), isNull);
-      expect(parseMemAvailableBytes(''), isNull);
+    test('is null without the field', () {
+      expect(
+        parseProcMemoryBytes('MemTotal: 5750000 kB\n', 'MemAvailable'),
+        isNull,
+      );
+      expect(parseProcMemoryBytes('', 'MemAvailable'), isNull);
+      expect(parseProcMemoryBytes(_status, 'VmHWM'), isNull);
     });
   });
 
@@ -57,6 +69,7 @@ void main() {
     ({int bytes, String source})? read(
       Abi abi, {
       String? memInfo,
+      String? status,
       int? ios,
       int? macos,
       int? metal,
@@ -65,19 +78,108 @@ void main() {
       device: device,
       abi: abi,
       readMemInfo: () => memInfo,
+      readProcessStatus: () => status,
       iosAvailableMemory: () => ios,
       macosPhysicalMemory: () => macos,
       metalRecommendedWorkingSet: () => metal,
     );
 
-    test('uses MemAvailable on Android and Linux', () {
-      for (final abi in [Abi.androidArm64, Abi.linuxX64, Abi.linuxArm64]) {
-        expect(read(abi, memInfo: _memInfo, ios: 1, macos: 1), (
+    test('uses MemAvailable on Linux', () {
+      for (final abi in [Abi.linuxX64, Abi.linuxArm64]) {
+        expect(read(abi, memInfo: _memInfo, status: _status, ios: 1), (
           bytes: 2 << 30,
           source: 'MemAvailable in /proc/meminfo',
         ));
         expect(read(abi), isNull, reason: 'unreadable /proc/meminfo');
       }
+    });
+
+    group('on Android', () {
+      String memInfo({required int totalKib, int? availableKib}) =>
+          'MemTotal:       $totalKib kB\n'
+          'MemFree:          100000 kB\n'
+          '${availableKib == null ? '' : 'MemAvailable:   $availableKib kB\n'}';
+
+      test('uses half of MemTotal less the app when that is larger', () {
+        // A 6 GB phone: 5.26 GiB MemTotal, 1.70 GiB MemAvailable, 300 MiB
+        // in the app.
+        expect(
+          read(
+            Abi.androidArm64,
+            memInfo: memInfo(totalKib: 5515000, availableKib: 1782579),
+            status: _status,
+          ),
+          (
+            bytes: 5515000 * 1024 ~/ 2 - (300 << 20),
+            source: "half of MemTotal in /proc/meminfo less the app's memory",
+          ),
+        );
+      });
+
+      test('uses MemAvailable when that is larger', () {
+        expect(
+          read(
+            Abi.androidArm64,
+            memInfo: memInfo(totalKib: 15926000, availableKib: 9646000),
+            status: _status,
+          ),
+          (bytes: 9646000 * 1024, source: 'MemAvailable in /proc/meminfo'),
+        );
+      });
+
+      test('subtracts memory the app already holds, swapped or not', () {
+        int? budget(String status) => read(
+          Abi.androidArm64,
+          memInfo: memInfo(totalKib: 8 << 20, availableKib: 1 << 20),
+          status: status,
+        )?.bytes;
+        expect(budget('VmRSS:\t 2097152 kB\n'), 2 << 30);
+        expect(budget('VmRSS:\t 1048576 kB\nVmSwap:\t 1048576 kB\n'), 2 << 30);
+      });
+
+      test("reads the app's memory from /proc/self/status by default", () {
+        final budget = readStableDiffusionMemoryBudget(
+          abi: Abi.androidArm64,
+          readMemInfo: () => 'MemTotal:  1073741824 kB\nMemAvailable:  1 kB\n',
+        );
+        final status = File('/proc/self/status').readAsStringSync();
+        final own =
+            parseProcMemoryBytes(status, 'VmRSS')! +
+            (parseProcMemoryBytes(status, 'VmSwap') ?? 0);
+        expect(
+          budget?.source,
+          "half of MemTotal in /proc/meminfo less the app's memory",
+        );
+        // The process grows a little between the two reads.
+        expect(budget!.bytes, closeTo((1 << 39) - own, 64 << 20));
+      }, testOn: 'linux');
+
+      test('falls back to MemAvailable without MemTotal or VmRSS', () {
+        expect(read(Abi.androidArm64, memInfo: _memInfo), (
+          bytes: 2 << 30,
+          source: 'MemAvailable in /proc/meminfo',
+        ), reason: 'unreadable /proc/self/status');
+        expect(
+          read(
+            Abi.androidArm64,
+            memInfo: 'MemAvailable:    2097152 kB\n',
+            status: _status,
+          ),
+          (bytes: 2 << 30, source: 'MemAvailable in /proc/meminfo'),
+        );
+        expect(read(Abi.androidArm64, status: _status), isNull);
+      });
+
+      test('uses half of MemTotal without MemAvailable', () {
+        expect(
+          read(
+            Abi.androidArm64,
+            memInfo: memInfo(totalKib: 4 << 20),
+            status: _status,
+          )?.bytes,
+          (2 << 30) - (300 << 20),
+        );
+      });
     });
 
     test("uses the app's remaining memory limit on iOS", () {

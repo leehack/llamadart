@@ -240,12 +240,13 @@ class ImageGenerationEngine {
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
   /// device's memory is known, the model's estimated memory (a quarter more
   /// than its file sizes, plus 512 MiB) is compared with the memory
-  /// available: `MemAvailable` on Android and Linux, the app's remaining
-  /// memory limit on iOS, and physical memory on macOS, capped on Metal by
-  /// the GPU's recommended working set. Windows, and GPUs other than Metal
-  /// (whose device memory the runtime does not report), are not checked. A
-  /// model that does not fit throws [LlamaModelException] naming both
-  /// figures, instead of letting the system kill the app.
+  /// available: on Android the larger of `MemAvailable` and half of physical
+  /// memory less what the app already holds, `MemAvailable` on Linux, the
+  /// app's remaining memory limit on iOS, and physical memory on macOS,
+  /// capped on Metal by the GPU's recommended working set. Windows, and GPUs
+  /// other than Metal (whose device memory the runtime does not report), are
+  /// not checked. A model that does not fit throws [LlamaModelException]
+  /// naming both figures, instead of letting the system kill the app.
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see
@@ -660,7 +661,10 @@ class ImageGenerationEngine {
 /// used 1.30 GiB on Metal and SD-Turbo Q8 (1.88 GiB) 2.66 GiB on the CPU,
 /// both on an M4 Max; 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image
 /// on Metal stayed 0.5 to 1.6 GiB under it, while SD 3.5 Medium with its
-/// full VAE peaked 0.3 GiB above. Larger sizes than a model's native one
-/// need more, especially on the CPU.
+/// full VAE peaked 0.3 GiB above. On five Android phones, loading and
+/// generating at 512x512 added at most 1.16 GiB to the app for SDXS, 2.26 GiB
+/// for SD-Turbo Q8 with TAESD and 2.64 GiB for SD-Turbo Q8 with its full VAE,
+/// against estimates of 1.30, 2.87 and 2.86 GiB. Larger sizes than a model's
+/// native one need more, especially on the CPU.
 int estimateImageGenerationMemoryBytes(int weightBytes) =>
     weightBytes + weightBytes ~/ 4 + (512 << 20);

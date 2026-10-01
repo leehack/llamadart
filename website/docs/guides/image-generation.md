@@ -34,7 +34,7 @@ Measured with the prototype on the same runtime, 512x512, one step, warm:
 | M4 Max, Metal | 1.5 s | 1.2 s |
 | iPhone 16 Pro, Metal | 1.7 s | 4.1 s |
 | Galaxy S24, CPU | 5.9 s | 11.8 s |
-| Galaxy A53, CPU | 26 to 29 s | Does not fit in memory |
+| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](#memory-check) |
 
 `await ImageGenerationEngine.checkRuntime()` reports whether this build and
 device can generate images, and why not, without loading a model or blocking
@@ -339,7 +339,8 @@ device the model loads on:
 
 | Platform and device | Compared with |
 | --- | --- |
-| Android, Linux: CPU | `MemAvailable` from `/proc/meminfo` |
+| Android: CPU | The larger of `MemAvailable` and half of `MemTotal` less the app's own memory (`VmRSS` plus `VmSwap`), from `/proc` |
+| Linux: CPU | `MemAvailable` from `/proc/meminfo` |
 | iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
 | macOS: CPU | Physical memory |
 | macOS: Metal | Physical memory, capped at the GPU's `recommendedMaxWorkingSetSize` (about two thirds to three quarters of it) |
@@ -350,10 +351,36 @@ A model that does not fit throws `LlamaModelException` naming both figures,
 instead of the system killing the app. Set
 `ImageGenerationOptions(checkMemory: false)` to load anyway.
 
+On Android, `MemAvailable` alone is too strict: it leaves out the memory the
+low-memory killer frees by stopping cached apps and what it swaps to zram,
+and it varied by up to a gigabyte between idle readings. On Firebase Test
+Lab, an app that kept touching all of its memory was killed only after
+allocating 0.9 to 3.6 GiB more than `MemAvailable`:
+
+| Phone (RAM) | `MemTotal` | `MemAvailable` at idle | Allocated when killed | Half of `MemTotal` less the app |
+| --- | --- | --- | --- | --- |
+| Moto G Play 2024 (4 GB) | 3.57 GiB | 1.38 GiB | 2.31 GiB | 1.45 GiB |
+| Galaxy A53 (6 GB) | 5.26 GiB | 1.81 GiB | 2.81 GiB | 2.31 GiB |
+| Pixel 6a (6 GB) | 5.45 GiB | 1.87 GiB | 3.63 GiB | 2.37 GiB |
+| Galaxy S24 (8 GB) | 6.95 GiB | 2.38 GiB | 3.88 GiB | 3.10 GiB |
+| Pixel 8a (8 GB) | 7.38 GiB | 2.56 GiB | 4.81 GiB | 3.29 GiB |
+| Pixel 9 Pro (16 GB) | 15.19 GiB | 9.13 GiB | 12.75 GiB | 7.18 GiB |
+
+So 8 GB phones load SD-Turbo with TAESD (2.87 GiB estimated) even when
+`MemAvailable` reads 2.1 GiB, unless the app already holds more than about
+0.6 GiB, such as a loaded chat model, and 6 GB phones refuse it unless
+`MemAvailable` alone covers it. With the check
+off, no SD-Turbo variant was killed on these phones, but the Galaxy A53
+swapped most of the app out: a one-step image took 65 s with TAESD and 282 s
+with the full VAE, against 18 s and 67 s on the Pixel 6a.
+
 The estimate does not depend on the image size. It covers the measured peaks
 at each model's native size with the automatic attention and VAE settings:
 SDXS used 1.30 GiB and SD-Turbo on the CPU 2.66 GiB of process memory on an
-M4 Max, and 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image stayed 0.5
+M4 Max; on five Android phones, loading and generating at 512x512 added at
+most 1.16 GiB to the app for SDXS, 2.26 GiB for SD-Turbo with TAESD and
+2.64 GiB for SD-Turbo with its full VAE (estimates 1.30, 2.87 and 2.86 GiB);
+and 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image stayed 0.5
 to 1.6 GiB under it on Metal. SD 3.5 Medium, whose single file decodes with
 the full VAE, peaked 0.3 GiB above it (11.6 against 11.3 GiB). Larger sizes
 need more, especially on the CPU: SD-Turbo at 1024x1024

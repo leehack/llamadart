@@ -21,9 +21,15 @@ int? stableDiffusionFileSize(String path) {
 /// from, or `null` when it is not known.
 ///
 /// On the CPU, host memory:
-/// - Android and Linux: `MemAvailable` from `/proc/meminfo`, the memory the
-///   kernel can hand out without swapping. Android's low-memory killer acts
-///   on the same figure.
+/// - Android: the larger of `MemAvailable` from `/proc/meminfo` and half of
+///   `MemTotal` less the app's own memory (`VmRSS` plus `VmSwap`).
+///   `MemAvailable`
+///   leaves out what the low-memory killer frees by stopping cached apps and
+///   what it swaps to zram: on six 4 to 16 GB phones, a foreground app that
+///   kept touching all of its memory was killed only after allocating 0.9 to
+///   3.6 GiB more than `MemAvailable`, 53 to 84% of `MemTotal`.
+/// - Linux: `MemAvailable`, the memory the kernel can hand out without
+///   swapping.
 /// - iOS: `os_proc_available_memory()`, what the app can still allocate
 ///   before it reaches its memory limit.
 /// - macOS: physical memory (`hw.memsize`). macOS compresses and swaps, so
@@ -38,12 +44,14 @@ int? stableDiffusionFileSize(String path) {
 /// which the runtime does not report (stable-diffusion-native#9), so host
 /// memory would be the wrong figure.
 ///
-/// [abi], [readMemInfo], [iosAvailableMemory], [macosPhysicalMemory] and
-/// [metalRecommendedWorkingSet] default to the host; tests replace them.
+/// [abi], [readMemInfo], [readProcessStatus], [iosAvailableMemory],
+/// [macosPhysicalMemory] and [metalRecommendedWorkingSet] default to the
+/// host; tests replace them.
 ({int bytes, String source})? readStableDiffusionMemoryBudget({
   ImageGenerationComputeDevice device = ImageGenerationComputeDevice.cpu,
   Abi? abi,
   String? Function() readMemInfo = _readProcMemInfo,
+  String? Function() readProcessStatus = _readProcSelfStatus,
   int? Function() iosAvailableMemory = _iosAvailableMemory,
   int? Function() macosPhysicalMemory = _macosPhysicalMemory,
   int? Function() metalRecommendedWorkingSet = _metalRecommendedWorkingSet,
@@ -54,12 +62,13 @@ int? stableDiffusionFileSize(String path) {
   final target = abi ?? Abi.current();
   final os = target.toString().split('_').first;
   final (int?, String) reading = switch (os) {
-    'android' || 'linux' => (
+    'android' => _androidMemoryBudget(readMemInfo(), readProcessStatus()),
+    'linux' => (
       switch (readMemInfo()) {
-        final String memInfo => parseMemAvailableBytes(memInfo),
+        final String memInfo => parseProcMemoryBytes(memInfo, 'MemAvailable'),
         null => null,
       },
-      'MemAvailable in /proc/meminfo',
+      _memAvailableSource,
     ),
     'ios' => (iosAvailableMemory(), "the app's remaining iOS memory limit"),
     'macos' => (macosPhysicalMemory(), 'physical memory'),
@@ -78,20 +87,50 @@ int? stableDiffusionFileSize(String path) {
   return (bytes: bytes, source: reading.$2);
 }
 
-/// `MemAvailable` from `/proc/meminfo` text, in bytes, or `null` when the
-/// line is missing or malformed (kernels before 3.14 do not report it).
-int? parseMemAvailableBytes(String memInfo) {
+const String _memAvailableSource = 'MemAvailable in /proc/meminfo';
+
+(int?, String) _androidMemoryBudget(String? memInfo, String? status) {
+  if (memInfo == null) {
+    return (null, _memAvailableSource);
+  }
+  final available = parseProcMemoryBytes(memInfo, 'MemAvailable');
+  final total = parseProcMemoryBytes(memInfo, 'MemTotal');
+  final resident = status == null
+      ? null
+      : parseProcMemoryBytes(status, 'VmRSS');
+  if (total == null || resident == null) {
+    return (available, _memAvailableSource);
+  }
+  final swapped = parseProcMemoryBytes(status!, 'VmSwap') ?? 0;
+  final halfLessApp = total ~/ 2 - resident - swapped;
+  if (available != null && available >= halfLessApp) {
+    return (available, _memAvailableSource);
+  }
+  return (
+    halfLessApp,
+    "half of MemTotal in /proc/meminfo less the app's memory",
+  );
+}
+
+/// The `[field]:  <n> kB` line of `/proc/meminfo` or `/proc/self/status`
+/// text, in bytes, or `null` when it is missing or malformed (kernels before
+/// 3.14 do not report `MemAvailable`).
+int? parseProcMemoryBytes(String text, String field) {
   final match = RegExp(
-    r'^MemAvailable:\s+(\d+)\s*kB\s*$',
+    '^${RegExp.escape(field)}:\\s+(\\d+)\\s*kB\\s*\$',
     multiLine: true,
-  ).firstMatch(memInfo);
+  ).firstMatch(text);
   final kib = match == null ? null : int.tryParse(match.group(1)!);
   return kib == null ? null : kib * 1024;
 }
 
-String? _readProcMemInfo() {
+String? _readProcMemInfo() => _readProcFile('/proc/meminfo');
+
+String? _readProcSelfStatus() => _readProcFile('/proc/self/status');
+
+String? _readProcFile(String path) {
   try {
-    return File('/proc/meminfo').readAsStringSync();
+    return File(path).readAsStringSync();
   } on FileSystemException {
     return null;
   }

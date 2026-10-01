@@ -94,11 +94,13 @@ description: >-
 - `load` checks every file exists and, unless
   `ImageGenerationOptions(checkMemory: false)`, refuses a model whose estimate
   (file sizes plus a quarter plus 512 MiB, for the model's native size)
-  exceeds the device figure with `LlamaModelException`: `MemAvailable` on
-  Android/Linux CPU, the app's limit on iOS, physical memory on macOS, capped
-  on Metal by the GPU's recommended working set. Vulkan GPUs and Windows are
-  not checked (GPU memory is not reported). SD-Turbo does not fit 6 GB
-  Android phones; offer SDXS there.
+  exceeds the device figure with `LlamaModelException`: on Android the larger
+  of `MemAvailable` and half of `MemTotal` less the app's own memory,
+  `MemAvailable` on Linux CPU, the app's limit on iOS, physical memory on
+  macOS, capped on Metal by the GPU's recommended working set. Vulkan GPUs and
+  Windows are not checked (GPU memory is not reported). SD-Turbo usually
+  loads on 8 GB Android phones when no chat model is loaded, and is usually
+  refused on 6 GB ones; offer SDXS there.
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
   `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
