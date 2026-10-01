@@ -328,7 +328,10 @@ avoids by loading them eagerly.
   still loaded aborts the process. Flutter desktop apps do not run
   `State.dispose` on quit, so await `dispose()` in
   `AppLifecycleListener.onExitRequested`. If `ImageGenerationEngine.load` is
-  still running, await it there and dispose the engine it returns.
+  still running, await it there and dispose the engine it returns. If the
+  engine's owner can be disposed before quit, such as a pushed route, use one
+  app-level exit listener that also awaits a disposal the owner already
+  started; see [Model lifecycle](./model-lifecycle).
 - Generation runs in a worker isolate; the calling isolate stays responsive.
 
 ## Memory check

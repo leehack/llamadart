@@ -12,6 +12,7 @@ import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/app_shell_screen.dart';
 import 'package:llamadart_chat_example/screens/image_generation_screen.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
+import 'package:llamadart_chat_example/services/app_exit_coordinator.dart';
 import 'package:llamadart_chat_example/services/live_speech_model_service.dart';
 import 'package:llamadart_chat_example/services/live_speech_transcription_service.dart';
 import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
@@ -590,10 +591,14 @@ void main() {
         settingsService: MockSettingsService(),
       );
       addTearDown(provider.dispose);
+      final exitCoordinator = AppExitCoordinator();
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<ChatProvider>.value(
-          value: provider,
+        MultiProvider(
+          providers: [
+            Provider<AppExitCoordinator>.value(value: exitCoordinator),
+            ChangeNotifierProvider<ChatProvider>.value(value: provider),
+          ],
           child: const MaterialApp(home: AppShellScreen()),
         ),
       );
@@ -609,6 +614,12 @@ void main() {
 
       expect(find.byType(ImageGenerationScreen), findsOneWidget);
       expect(find.byType(Drawer), findsNothing);
+      expect(
+        tester
+            .widget<ImageGenerationScreen>(find.byType(ImageGenerationScreen))
+            .exitCoordinator,
+        same(exitCoordinator),
+      );
     });
   });
 }

@@ -20,6 +20,9 @@ class ChatService {
   LlamaEngine get engine => _engine;
 
   /// Initializes the engine with the given settings.
+  ///
+  /// Throws [LlamaStateException] after [dispose]: a model loaded then would
+  /// still be allocated when the app exits.
   Future<void> init(
     ChatSettings settings, {
     Function(double progress)? onProgress,
@@ -27,6 +30,7 @@ class ChatService {
     bool eagerWarmUpLiteRtLmRuntime = true,
   }) async {
     if (settings.modelPath == null) throw Exception("Model path is null");
+    _throwIfDisposed();
 
     // Unload existing model if any
     if (_engine.isReady) {
@@ -71,6 +75,7 @@ class ChatService {
     final modelParams = _buildModelParams(settings);
 
     try {
+      _throwIfDisposed();
       if (settings.modelPath!.startsWith('http')) {
         await _engine.loadModelFromUrl(
           settings.modelPath!,
@@ -298,6 +303,7 @@ class ChatService {
     if (mmprojPath.isEmpty) {
       throw Exception('Multimodal projector path is empty.');
     }
+    _throwIfDisposed();
 
     try {
       await _engine.loadMultimodalProjector(mmprojPath);
@@ -347,6 +353,12 @@ class ChatService {
     _engine.cancelGeneration();
     if (_engine.isReady) {
       await _engine.unloadModel();
+    }
+  }
+
+  void _throwIfDisposed() {
+    if (_disposed) {
+      throw LlamaStateException('The chat engine is disposed.');
     }
   }
 

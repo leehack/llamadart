@@ -10,6 +10,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/image_model_profile.dart';
 import 'package:llamadart_chat_example/providers/image_generation_provider.dart';
 import 'package:llamadart_chat_example/screens/image_generation_screen.dart';
+import 'package:llamadart_chat_example/services/app_exit_coordinator.dart';
 import 'package:llamadart_chat_example/services/image_generation_service.dart';
 import 'package:llamadart_chat_example/services/image_model_service.dart';
 
@@ -28,7 +29,9 @@ void main() {
     chatUnloadError = null;
   });
 
-  ImageGenerationProvider createUnownedProvider() => ImageGenerationProvider(
+  ImageGenerationProvider createUnownedProvider({
+    AppExitCoordinator? exitCoordinator,
+  }) => ImageGenerationProvider(
     generationService: generation,
     modelService: models,
     isChatModelLoaded: () => chatModelLoaded,
@@ -40,10 +43,13 @@ void main() {
       chatModelLoaded = false;
     },
     encodePng: (image) async => image.toPng(),
+    exitCoordinator: exitCoordinator,
   );
 
-  ImageGenerationProvider createProvider() {
-    final provider = createUnownedProvider();
+  ImageGenerationProvider createProvider({
+    AppExitCoordinator? exitCoordinator,
+  }) {
+    final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
     addTearDown(provider.dispose);
     return provider;
   }
@@ -54,12 +60,15 @@ void main() {
     return provider;
   }
 
-  Future<ImageGenerationProvider> pumpScreen(WidgetTester tester) async {
+  Future<ImageGenerationProvider> pumpScreen(
+    WidgetTester tester, {
+    AppExitCoordinator? exitCoordinator,
+  }) async {
     tester.view
       ..physicalSize = const Size(900, 2400)
       ..devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final provider = createProvider();
+    final provider = createProvider(exitCoordinator: exitCoordinator);
     await tester.pumpWidget(
       MaterialApp(home: ImageGenerationScreen(provider: provider)),
     );
@@ -361,9 +370,18 @@ void main() {
     expect(find.text('Generation cancelled.'), findsOneWidget);
   });
 
+  AppExitCoordinator listenForAppExit() {
+    final exitCoordinator = AppExitCoordinator();
+    final listener = AppLifecycleListener(
+      onExitRequested: exitCoordinator.handleExitRequest,
+    );
+    addTearDown(listener.dispose);
+    return exitCoordinator;
+  }
+
   testWidgets('frees the image model before the app exits', (tester) async {
     models.installed.add(ImageModelProfile.sdxs.id);
-    await pumpScreen(tester);
+    await pumpScreen(tester, exitCoordinator: listenForAppExit());
     await tester.tap(
       find.byKey(const ValueKey<String>('generate_image_button')),
     );
@@ -382,7 +400,7 @@ void main() {
   testWidgets('frees a model still loading when the app exits', (tester) async {
     models.installed.add(ImageModelProfile.sdxs.id);
     final loadGate = generation.loadGate = Completer<void>();
-    await pumpScreen(tester);
+    await pumpScreen(tester, exitCoordinator: listenForAppExit());
     await tester.tap(
       find.byKey(const ValueKey<String>('generate_image_button')),
     );
@@ -624,6 +642,214 @@ void main() {
     );
   }, skip: !kIsWeb);
 
+  group('app exit', () {
+    late AppExitCoordinator exitCoordinator;
+
+    setUp(() => exitCoordinator = AppExitCoordinator());
+
+    Future<bool> isDone(Future<void> future) async {
+      var done = false;
+      unawaited(future.whenComplete(() => done = true));
+      await pumpEventQueue();
+      return done;
+    }
+
+    Future<ImageGenerationProvider> providerWithLoadedModel({
+      bool owned = true,
+    }) async {
+      models.installed
+        ..add(ImageModelProfile.sdxs.id)
+        ..add(ImageModelProfile.sdTurbo.id);
+      final provider = owned
+          ? createProvider(exitCoordinator: exitCoordinator)
+          : createUnownedProvider(exitCoordinator: exitCoordinator);
+      await provider.initialize();
+      final generating = provider.generate(prompt: 'fox');
+      await pumpEventQueue();
+      generation.generator!.runs.single.completeWith(seed: 1);
+      await generating;
+      return provider;
+    }
+
+    test('waits for a model loading in a provider already disposed', () async {
+      models.installed.add(ImageModelProfile.sdxs.id);
+      final loadGate = generation.loadGate = Completer<void>();
+      final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
+      await provider.initialize();
+      final generating = provider.generate(prompt: 'fox');
+      await pumpEventQueue();
+
+      provider.dispose();
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      loadGate.complete();
+      await exit;
+      expect(generation.generator!.disposed, isTrue);
+      expect(generation.generator!.runs, isEmpty);
+      await generating;
+    });
+
+    test('waits for a generation in a provider already disposed', () async {
+      final provider = await providerWithLoadedModel(owned: false);
+      final generating = provider.generate(prompt: 'owl');
+      await pumpEventQueue();
+      final engine = generation.generator!;
+      final disposeGate = engine.disposeGate = Completer<void>();
+
+      provider.dispose();
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      expect(engine.runs.last.cancelled, isTrue);
+      disposeGate.complete();
+      await exit;
+      await generating;
+    });
+
+    test('waits for an engine freed by a model switch', () async {
+      final provider = await providerWithLoadedModel();
+      final engine = generation.generator!;
+      final disposeGate = engine.disposeGate = Completer<void>();
+
+      final switching = provider.selectModel(ImageModelProfile.sdTurbo);
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      disposeGate.complete();
+      await exit;
+      await switching;
+      expect(engine.disposed, isTrue);
+    });
+
+    test('waits for an engine freed by a model delete', () async {
+      final provider = await providerWithLoadedModel();
+      final engine = generation.generator!;
+      final disposeGate = engine.disposeGate = Completer<void>();
+
+      final deleting = provider.deleteModel(ImageModelProfile.sdxs);
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      disposeGate.complete();
+      await exit;
+      await deleting;
+    });
+
+    test('ignores Generate once the exit started', () async {
+      final provider = await providerWithLoadedModel();
+      final engine = generation.generator!;
+      final disposeGate = engine.disposeGate = Completer<void>();
+      final exit = exitCoordinator.releaseAll();
+      await pumpEventQueue();
+
+      expect(provider.canGenerate, isFalse);
+      await provider.selectModel(ImageModelProfile.sdTurbo);
+      await provider.generate(prompt: 'owl');
+      expect(generation.loadCount, 1);
+
+      disposeGate.complete();
+      await exit;
+      await provider.generate(prompt: 'owl');
+      expect(generation.loadCount, 1);
+      expect(engine.runs, hasLength(1));
+      expect(exitCoordinator.isExiting, isTrue);
+    });
+
+    test('frees a model whose load the exit request overtook', () async {
+      models.installed.add(ImageModelProfile.sdxs.id);
+      final loadGate = generation.loadGate = Completer<void>();
+      final provider = createProvider(exitCoordinator: exitCoordinator);
+      await provider.initialize();
+      final generating = provider.generate(prompt: 'fox');
+      await pumpEventQueue();
+
+      final exit = exitCoordinator.releaseAll();
+      loadGate.complete();
+      await exit;
+      await generating;
+
+      expect(generation.generator!.disposed, isTrue);
+      expect(generation.generator!.runs, isEmpty);
+      expect(provider.status, 'Generation cancelled.');
+    });
+
+    testWidgets(
+      'registers the screen\'s own provider until the screen closes',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ImageGenerationScreen(exitCoordinator: exitCoordinator),
+          ),
+        );
+
+        expect(exitCoordinator.releaseCount, 1);
+
+        await tester.pumpWidget(const SizedBox());
+
+        expect(exitCoordinator.releaseCount, 0);
+      },
+    );
+
+    test('hands its release to the exit when disposed', () async {
+      final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
+      expect(exitCoordinator.releaseCount, 1);
+
+      provider.dispose();
+
+      expect(exitCoordinator.releaseCount, 0);
+    });
+
+    test('skips the runtime check once the exit started', () async {
+      final blocker = Completer<void>();
+      exitCoordinator.track(blocker.future);
+      final exit = exitCoordinator.releaseAll();
+      final provider = createProvider(exitCoordinator: exitCoordinator);
+
+      await provider.initialize();
+
+      expect(generation.checkCalls, 0);
+      expect(provider.isInitialized, isFalse);
+      blocker.complete();
+      await exit;
+    });
+
+    test('waits for every engine when one fails to free', () async {
+      final provider = await providerWithLoadedModel();
+      final switched = generation.generator!;
+      final switchedGate = switched.disposeGate = Completer<void>();
+      final switching = provider.selectModel(ImageModelProfile.sdTurbo);
+      final generating = provider.generate(prompt: 'owl');
+      await pumpEventQueue();
+      generation.generator!.runs.single.completeWith(seed: 2);
+      await generating;
+      generation.generator!.disposeError = StateError('Metal free failed');
+
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      switchedGate.complete();
+      await exit;
+      await switching;
+      expect(switched.disposed, isTrue);
+    });
+
+    test('waits for the runtime check', () async {
+      final checkGate = generation.checkGate = Completer<void>();
+      final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
+      final initializing = provider.initialize();
+      await pumpEventQueue();
+
+      provider.dispose();
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      checkGate.complete();
+      await exit;
+      await initializing;
+    });
+  });
+
   group('ImageModelProfile catalog', () {
     test('pins immutable sources with exact sizes and hashes', () {
       for (final profile in ImageModelProfile.defaultModels) {
@@ -725,6 +951,8 @@ class FakeImageGenerator implements ImageGenerator {
   final Object? generateError;
   final List<FakeImageGenerationRun> runs = <FakeImageGenerationRun>[];
   bool disposed = false;
+  Completer<void>? disposeGate;
+  Object? disposeError;
 
   FakeImageGenerator(this.generateError);
 
@@ -751,6 +979,10 @@ class FakeImageGenerator implements ImageGenerator {
     disposed = true;
     for (final run in runs) {
       run.cancel();
+    }
+    await disposeGate?.future;
+    if (disposeError case final error?) {
+      throw error;
     }
   }
 }
