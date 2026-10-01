@@ -4,11 +4,11 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/image/image_generation_request.dart';
 
 void main() {
-  test('defaults to one 512x512 image with the model defaults', () {
+  test('defaults to one image with the model defaults', () {
     const request = ImageGenerationRequest(prompt: 'a fox');
 
-    expect(request.width, 512);
-    expect(request.height, 512);
+    expect(request.width, isNull);
+    expect(request.height, isNull);
     expect(request.count, 1);
     expect(request.negativePrompt, '');
     expect(request.steps, isNull);

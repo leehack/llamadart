@@ -350,12 +350,12 @@ class ImageGenerationEngine {
 
   /// Starts generating the images [request] describes.
   ///
-  /// Unset steps, guidance, sampler, scheduler and flow shift come from
-  /// [ImageGenerationModel.defaults], and an unset seed is picked at random
-  /// and reported in the result.
+  /// Unset width, height, steps, guidance, sampler, scheduler and flow shift
+  /// come from [ImageGenerationModel.defaults], and an unset seed is picked
+  /// at random and reported in the result.
   ///
   /// Throws [LlamaImageGenerationException] for an invalid request, including
-  /// invalid steps, guidance or flow shift from
+  /// an invalid size, steps, guidance or flow shift from
   /// [ImageGenerationModel.defaults], and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running. A runtime failure after the task starts, such as an
@@ -367,8 +367,8 @@ class ImageGenerationEngine {
     final resolved = ImageGenerationSessionRequest(
       prompt: effective.prompt,
       negativePrompt: effective.negativePrompt,
-      width: effective.width,
-      height: effective.height,
+      width: effective.width!,
+      height: effective.height!,
       steps: effective.steps!,
       guidanceScale: effective.guidanceScale!,
       seed: effective.seed ?? _seedRandom.nextInt(0x7FFFFFFF),
@@ -411,7 +411,13 @@ class ImageGenerationEngine {
   /// compiled shaders on disk, so later launches are faster.
   ///
   /// Use the size the app will generate: ggml picks some pipelines by tensor
-  /// size, so another size can still compile more.
+  /// size, so another size can still compile more. An unset [width] or
+  /// [height] uses the model's (`ImageGenerationDefaults.width` and
+  /// `height`), like an unset request size in [generate]. For the desktop
+  /// presets that is 1024x1024, so the warm-up costs one sampling step and
+  /// a decode at that size: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on
+  /// an M4 Max, and the same peak memory as an image, which the memory
+  /// check in [load] covers.
   ///
   /// On the CPU there is nothing to compile, so this returns at once.
   ///
@@ -423,7 +429,7 @@ class ImageGenerationEngine {
   /// model defaults, [LlamaStateException] after [dispose] or while another
   /// generation or load is running, and [LlamaInferenceException] when the
   /// runtime fails the generation.
-  Future<void> warmUp({int width = 512, int height = 512}) async {
+  Future<void> warmUp({int? width, int? height}) async {
     final request = ImageGenerationRequest(
       prompt: 'warm-up',
       width: width,
@@ -467,8 +473,8 @@ class ImageGenerationEngine {
     final effective = ImageGenerationRequest(
       prompt: request.prompt,
       negativePrompt: request.negativePrompt,
-      width: request.width,
-      height: request.height,
+      width: request.width ?? model.defaults.width,
+      height: request.height ?? model.defaults.height,
       steps: request.steps ?? model.defaults.steps,
       guidanceScale: request.guidanceScale ?? model.defaults.guidanceScale,
       seed: request.seed,

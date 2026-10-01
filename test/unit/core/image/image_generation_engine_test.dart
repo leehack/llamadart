@@ -638,6 +638,113 @@ void main() {
       expect(driver.session.requests.last.guidanceScale, 7);
     });
 
+    test('fills an unset size from the model defaults, and a request '
+        'overrides each side', () async {
+      final presets = <ImageGenerationModel>[
+        ImageGenerationModel.sdxs(_model),
+        ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd),
+        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
+        ImageGenerationModel.flux1Schnell(
+          diffusionModelPath: _model,
+          clipLPath: _taesd,
+          t5xxlPath: _taesd,
+          taesdPath: _taesd,
+        ),
+        ImageGenerationModel.sd35LargeTurbo(
+          diffusionModelPath: _model,
+          clipLPath: _taesd,
+          clipGPath: _taesd,
+          t5xxlPath: _taesd,
+          taesdPath: _taesd,
+        ),
+        ImageGenerationModel.zImageTurbo(
+          diffusionModelPath: _model,
+          llmPath: _taesd,
+          vaePath: _taesd,
+        ),
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model),
+        ),
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model),
+          defaults: const ImageGenerationDefaults(width: 1024, height: 768),
+        ),
+      ];
+      final sizes = <(ImageGenerationModelFamily, int, int)>[];
+      for (final model in presets) {
+        final engine = await load(model);
+        await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
+        final sent = driver.session.requests.last;
+        sizes.add((model.family, sent.width, sent.height));
+        await engine.dispose();
+      }
+      expect(sizes, [
+        (ImageGenerationModelFamily.sdxs, 512, 512),
+        (ImageGenerationModelFamily.sdTurbo, 512, 512),
+        (ImageGenerationModelFamily.sdxlLightning, 1024, 1024),
+        (ImageGenerationModelFamily.flux1Schnell, 1024, 1024),
+        (ImageGenerationModelFamily.sd35LargeTurbo, 1024, 1024),
+        (ImageGenerationModelFamily.zImageTurbo, 1024, 1024),
+        (ImageGenerationModelFamily.custom, 512, 512),
+        (ImageGenerationModelFamily.custom, 1024, 768),
+      ]);
+
+      final lightning = await load(
+        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
+      );
+      for (final request in const [
+        ImageGenerationRequest(prompt: 'a', width: 512, height: 512),
+        ImageGenerationRequest(prompt: 'a', width: 768),
+        ImageGenerationRequest(prompt: 'a', height: 640),
+      ]) {
+        await lightning.generate(request).done;
+      }
+      expect(
+        driver.session.requests.reversed
+            .take(3)
+            .toList()
+            .reversed
+            .map((r) => (r.width, r.height)),
+        [(512, 512), (768, 1024), (1024, 640)],
+      );
+    });
+
+    test('rejects an invalid size from the model defaults', () async {
+      for (final (defaults, field) in const [
+        (ImageGenerationDefaults(width: 500), 'width'),
+        (ImageGenerationDefaults(height: 4096), 'height'),
+      ]) {
+        final engine = await load(
+          ImageGenerationModel.custom(
+            const ImageGenerationModelFiles(model: _model),
+            defaults: defaults,
+          ),
+        );
+        expect(
+          () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+          throwsA(
+            isA<LlamaImageGenerationException>().having(
+              (error) => error.message,
+              'message',
+              startsWith(field),
+            ),
+          ),
+        );
+        // A valid request size still overrides an invalid default.
+        await engine
+            .generate(
+              const ImageGenerationRequest(
+                prompt: 'a',
+                width: 256,
+                height: 256,
+              ),
+            )
+            .done;
+        expect(driver.session.requests.last.width, 256);
+        await engine.dispose();
+      }
+    });
+
     test('fills unset sampler, scheduler and flow shift from the model '
         'defaults, and a request overrides them', () async {
       final engine = await load(
@@ -951,6 +1058,21 @@ void main() {
       await custom.warmUp();
       expect(driver.session.requests.last.steps, 1);
       expect(driver.session.requests.last.guidanceScale, 7);
+    });
+
+    test('defaults to the model size, and a given side overrides it', () async {
+      final lightning = await load(
+        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
+      );
+      await lightning.warmUp();
+      await lightning.warmUp(width: 512, height: 512);
+      await lightning.warmUp(height: 768);
+
+      expect(driver.session.requests.map((r) => (r.width, r.height, r.steps)), [
+        (1024, 1024, 1),
+        (512, 512, 1),
+        (1024, 768, 1),
+      ]);
     });
 
     test('runs nothing on the CPU but still checks the size and the engine '

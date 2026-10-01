@@ -29,13 +29,15 @@ class ImageGenerationRequest {
   final String negativePrompt;
 
   /// Output width in pixels: a multiple of 8 from [minDimension] to
-  /// [maxDimension]. SD 1.x and 2.x models are trained at 512. The runtime
-  /// rounds up to a multiple of 64 for these models; `GeneratedImage.width`
-  /// reports the size produced.
-  final int width;
+  /// [maxDimension]. `null` uses the model's native width
+  /// (`ImageGenerationDefaults.width`): 512 for SDXS and SD-Turbo, 1024 for
+  /// the desktop presets. The runtime rounds SD 1.x and 2.x sizes up to a
+  /// multiple of 64; `GeneratedImage.width` reports the size produced.
+  final int? width;
 
-  /// Output height in pixels, with the same range and rounding as [width].
-  final int height;
+  /// Output height in pixels, with the same range, default and rounding as
+  /// [width].
+  final int? height;
 
   /// Sampling steps from 1 to [maxSteps]. `null` uses the model's default.
   final int? steps;
@@ -66,8 +68,8 @@ class ImageGenerationRequest {
   const ImageGenerationRequest({
     required this.prompt,
     this.negativePrompt = '',
-    this.width = 512,
-    this.height = 512,
+    this.width,
+    this.height,
     this.steps,
     this.guidanceScale,
     this.seed,
@@ -91,9 +93,10 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
     ('width', request.width),
     ('height', request.height),
   ]) {
-    if (value < ImageGenerationRequest.minDimension ||
-        value > ImageGenerationRequest.maxDimension ||
-        value % 8 != 0) {
+    if (value != null &&
+        (value < ImageGenerationRequest.minDimension ||
+            value > ImageGenerationRequest.maxDimension ||
+            value % 8 != 0)) {
       reject(
         '$name must be a multiple of 8 from '
         '${ImageGenerationRequest.minDimension} to '

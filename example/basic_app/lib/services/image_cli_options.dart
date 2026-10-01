@@ -101,7 +101,6 @@ enum ImagePreset {
     defaultSdxlLightningModelSource,
     taesd: defaultTaesdxlSource,
     roles: {'vae'},
-    size: 1024,
   ),
 
   /// FLUX.1-schnell: 4 steps at 1024x1024 from split files.
@@ -115,7 +114,6 @@ enum ImagePreset {
       'clipL': defaultClipLSource,
       't5xxl': defaultT5xxlSource,
     },
-    size: 1024,
   ),
 
   /// SD 3.5 Large Turbo: 4 steps at 1024x1024 from split files.
@@ -130,7 +128,6 @@ enum ImagePreset {
       'clipG': defaultClipGSource,
       't5xxl': defaultT5xxlSource,
     },
-    size: 1024,
   ),
 
   /// Z-Image-Turbo: 8 steps at 1024x1024 with a Qwen3 text encoder.
@@ -139,7 +136,6 @@ enum ImagePreset {
     defaultZImageTurboModelSource,
     roles: {'vae', 'llm'},
     defaults: {'vae': defaultFluxVaeSource, 'llm': defaultQwen3LlmSource},
-    size: 1024,
   );
 
   const ImagePreset(
@@ -148,7 +144,6 @@ enum ImagePreset {
     this.taesd,
     this.roles = const {},
     this.defaults = const {},
-    this.size = 512,
   });
 
   /// Value of `--preset`.
@@ -167,9 +162,6 @@ enum ImagePreset {
 
   /// Pinned sources for the roles the user leaves unset.
   final Map<String, String> defaults;
-
-  /// Native width and height, the default output size.
-  final int size;
 }
 
 /// Command-line flag of each file role besides the main weights.
@@ -305,8 +297,8 @@ ArgParser createImageArgParser() {
   return parser
     ..addOption('prompt', abbr: 'p', help: 'Prompt (required).')
     ..addOption('negative', help: 'Negative prompt.', defaultsTo: '')
-    ..addOption('width', help: 'Width in pixels (default: the preset size).')
-    ..addOption('height', help: 'Height in pixels (default: the preset size).')
+    ..addOption('width', help: 'Width in pixels (default: the model size).')
+    ..addOption('height', help: 'Height in pixels (default: the model size).')
     ..addOption('steps', help: 'Sampling steps (default: the preset).')
     ..addOption('guidance', help: 'Guidance scale (default: the preset).')
     ..addOption('seed', help: 'Seed (default: random).')
@@ -370,8 +362,8 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
     request: ImageGenerationRequest(
       prompt: prompt,
       negativePrompt: results['negative'] as String,
-      width: _int(results, 'width') ?? preset.size,
-      height: _int(results, 'height') ?? preset.size,
+      width: _int(results, 'width'),
+      height: _int(results, 'height'),
       steps: _int(results, 'steps'),
       guidanceScale: _double(results, 'guidance'),
       seed: _int(results, 'seed'),

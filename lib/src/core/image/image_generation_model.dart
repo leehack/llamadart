@@ -97,8 +97,15 @@ enum ImageGenerationScheduler {
   simple,
 }
 
-/// Sampling defaults a model needs when a request leaves them unset.
+/// Output size and sampling defaults a model needs when a request leaves
+/// them unset.
 class ImageGenerationDefaults {
+  /// Output width in pixels: the model's native width.
+  final int width;
+
+  /// Output height in pixels: the model's native height.
+  final int height;
+
   /// Sampling steps.
   final int steps;
 
@@ -118,9 +125,12 @@ class ImageGenerationDefaults {
   /// models ignore it. Qwen-Image's reference settings use 3.
   final double? flowShift;
 
-  /// Creates sampling defaults. The defaults suit undistilled SD 1.x and 2.x
-  /// checkpoints.
+  /// Creates generation defaults. The defaults suit undistilled SD 1.x and
+  /// 2.x checkpoints; set [width] and [height] to 1024 for SDXL, SD 3.5,
+  /// FLUX and Z-Image checkpoints.
   const ImageGenerationDefaults({
+    this.width = 512,
+    this.height = 512,
     this.steps = 20,
     this.guidanceScale = 7.0,
     this.sampler,
@@ -154,15 +164,17 @@ enum ImageGenerationModelFamily {
   custom,
 }
 
-/// An image-generation model: its files and the sampling defaults it needs.
+/// An image-generation model: its files and the generation defaults it
+/// needs.
 ///
 /// Use a preset for the validated models, or [ImageGenerationModel.custom]
 /// for other checkpoints stable-diffusion.cpp can load.
 /// [ImageGenerationModel.sdxs] and [ImageGenerationModel.sdTurbo] fit
-/// phones. [ImageGenerationModel.sdxlLightning],
+/// phones and generate at 512x512 by default.
+/// [ImageGenerationModel.sdxlLightning],
 /// [ImageGenerationModel.flux1Schnell], [ImageGenerationModel.sd35LargeTurbo]
 /// and [ImageGenerationModel.zImageTurbo] are for desktop GPUs and Macs and
-/// generate at 1024x1024.
+/// generate at 1024x1024 by default.
 class ImageGenerationModel {
   /// Family the preset was built for.
   final ImageGenerationModelFamily family;
@@ -170,7 +182,8 @@ class ImageGenerationModel {
   /// Local weight files.
   final ImageGenerationModelFiles files;
 
-  /// Defaults applied when a request leaves steps or guidance unset.
+  /// Defaults applied when a request leaves the size, steps, guidance,
+  /// sampler, scheduler or flow shift unset.
   final ImageGenerationDefaults defaults;
 
   const ImageGenerationModel._(this.family, this.files, this.defaults);
@@ -204,13 +217,14 @@ class ImageGenerationModel {
   /// SDXL-Lightning 4-step from ByteDance/SDXL-Lightning's
   /// `sdxl_lightning_4step.safetensors` (6.9 GB), a single-file checkpoint.
   ///
-  /// Generates at 1024x1024 in 4 steps at guidance 1 with Euler and the
-  /// `sgmUniform` schedule, as the model card recommends. [vaePath] replaces
-  /// the checkpoint's VAE, for example with `madebyollin/sdxl-vae-fp16-fix`;
-  /// [taesdPath] decodes with `madebyollin/taesdxl`'s
-  /// `diffusion_pytorch_model.safetensors` instead, which halved the time
-  /// per image on an M4 Max at no visible quality cost. The memory check
-  /// asks for about 8.6 GiB: a desktop GPU or a Mac with 16 GB or more.
+  /// Generates at 1024x1024 by default, in 4 steps at guidance 1 with Euler
+  /// and the `sgmUniform` schedule, as the model card recommends. [vaePath]
+  /// replaces the checkpoint's VAE, for example with
+  /// `madebyollin/sdxl-vae-fp16-fix`; [taesdPath] decodes with
+  /// `madebyollin/taesdxl`'s `diffusion_pytorch_model.safetensors` instead,
+  /// which halved the time per image on an M4 Max at no visible quality
+  /// cost. The memory check asks for about 8.6 GiB: a desktop GPU or a Mac
+  /// with 16 GB or more.
   factory ImageGenerationModel.sdxlLightning(
     String modelPath, {
     String? vaePath,
@@ -219,6 +233,8 @@ class ImageGenerationModel {
     ImageGenerationModelFamily.sdxlLightning,
     ImageGenerationModelFiles(model: modelPath, vae: vaePath, taesd: taesdPath),
     const ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
       steps: 4,
       guidanceScale: 1,
       sampler: ImageGenerationSampler.euler,
@@ -233,9 +249,9 @@ class ImageGenerationModel {
   /// FLUX autoencoder (`ae.safetensors`) or [taesdPath] for
   /// `madebyollin/taef1`.
   ///
-  /// Generates at 1024x1024 in 4 steps at guidance 1. The memory check asks
-  /// for about 14.5 GiB: a desktop GPU with 16 GB or a Mac with 24 GB or
-  /// more.
+  /// Generates at 1024x1024 by default, in 4 steps at guidance 1. The memory
+  /// check asks for about 14.5 GiB: a desktop GPU with 16 GB or a Mac with
+  /// 24 GB or more.
   ///
   /// Throws [ArgumentError] when neither [vaePath] nor [taesdPath] is set.
   factory ImageGenerationModel.flux1Schnell({
@@ -253,7 +269,12 @@ class ImageGenerationModel {
       clipL: clipLPath,
       t5xxl: t5xxlPath,
     ),
-    const ImageGenerationDefaults(steps: 4, guidanceScale: 1),
+    const ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 4,
+      guidanceScale: 1,
+    ),
   );
 
   /// SD 3.5 Large Turbo from split files: the diffusion transformer (such as
@@ -264,9 +285,9 @@ class ImageGenerationModel {
   /// together) and a decoder: [vaePath] for the SD 3.5 VAE or [taesdPath]
   /// for `madebyollin/taesd3`.
   ///
-  /// Generates at 1024x1024 in 4 steps at guidance 1. The memory check asks
-  /// for about 13.1 GiB: a desktop GPU with 16 GB or a Mac with 24 GB or
-  /// more.
+  /// Generates at 1024x1024 by default, in 4 steps at guidance 1. The memory
+  /// check asks for about 13.1 GiB: a desktop GPU with 16 GB or a Mac with
+  /// 24 GB or more.
   ///
   /// Throws [ArgumentError] when neither [vaePath] nor [taesdPath] is set.
   factory ImageGenerationModel.sd35LargeTurbo({
@@ -286,7 +307,12 @@ class ImageGenerationModel {
       clipG: clipGPath,
       t5xxl: t5xxlPath,
     ),
-    const ImageGenerationDefaults(steps: 4, guidanceScale: 1),
+    const ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 4,
+      guidanceScale: 1,
+    ),
   );
 
   /// Z-Image-Turbo from split files: the diffusion transformer (such as
@@ -295,9 +321,9 @@ class ImageGenerationModel {
   /// `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, 2.5 GB) and the FLUX autoencoder
   /// (`ae.safetensors`, 335 MB).
   ///
-  /// Generates at 1024x1024 in 8 steps at guidance 1. The memory check asks
-  /// for about 8.3 GiB: a desktop GPU with 12 GB or a Mac with 16 GB or
-  /// more.
+  /// Generates at 1024x1024 by default, in 8 steps at guidance 1. The memory
+  /// check asks for about 8.3 GiB: a desktop GPU with 12 GB or a Mac with
+  /// 16 GB or more.
   factory ImageGenerationModel.zImageTurbo({
     required String diffusionModelPath,
     required String llmPath,
@@ -309,7 +335,12 @@ class ImageGenerationModel {
       vae: vaePath,
       llm: llmPath,
     ),
-    const ImageGenerationDefaults(steps: 8, guidanceScale: 1),
+    const ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 8,
+      guidanceScale: 1,
+    ),
   );
 
   static String? _decoder(String? vaePath, String? taesdPath, String preset) {
@@ -321,14 +352,15 @@ class ImageGenerationModel {
     return vaePath;
   }
 
-  /// Any other checkpoint, with the sampling [defaults] it needs.
+  /// Any other checkpoint, with the size and sampling [defaults] it needs.
   ///
   /// Experimental. Any family the bundled stable-diffusion.cpp supports can
   /// load, including SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image; the
   /// runtime detects the family from the weights. Each family needs its own
   /// file roles (see [ImageGenerationModelFiles]) and [defaults]: distilled
   /// models such as SDXL-Lightning or FLUX.1-schnell use about 4 steps at
-  /// guidance 1. A single-file checkpoint that includes its VAE and text
+  /// guidance 1, and families trained at 1024x1024 need `width: 1024,
+  /// height: 1024`, since the defaults are 512x512. A single-file checkpoint that includes its VAE and text
   /// encoders, such as an SD 3.5 Medium GGUF, goes in
   /// [ImageGenerationModelFiles.model], not `diffusionModel`.
   ///

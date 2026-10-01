@@ -90,8 +90,8 @@ experimental and may change, and the runtime is opt-in.
   Linux x64 and Windows x64
   ([#779](https://github.com/leehack/llamadart/issues/779)). The
   SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-  desktop presets generate 1024x1024 images and are validated on macOS Metal
-  only ([#802](https://github.com/leehack/llamadart/issues/802)).
+  desktop presets generate 1024x1024 images by default and are validated on
+  macOS Metal only ([#802](https://github.com/leehack/llamadart/issues/802)).
 - **Model licenses differ**, including for commercial use. Check each
   model's license before shipping it; the guide lists each preset's license.
 

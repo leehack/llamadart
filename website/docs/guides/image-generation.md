@@ -89,13 +89,13 @@ selects Vulkan, which it does by default; set
 
 | Preset | Files | Defaults |
 | --- | --- | --- |
-| `ImageGenerationModel.sdxs(path)` | `sdxs-512-tinySDdistilled_Q8_0.gguf` from [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) (651 MB) | 1 step, guidance 1 |
-| `ImageGenerationModel.sdTurbo(path, taesdPath: ...)` | `sd_turbo-f16-q8_0.gguf` from [`Green-Sky/SD-Turbo-GGUF`](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) (1.9 GB), optionally `diffusion_pytorch_model.safetensors` from [`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd) (9 MB) | 1 step, guidance 1 |
-| `ImageGenerationModel.sdxlLightning(path, vaePath: ..., taesdPath: ...)` | `sdxl_lightning_4step.safetensors` from [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) (6.9 GB), optionally [`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl) | 4 steps, guidance 1, Euler, `sgmUniform` |
-| `ImageGenerationModel.flux1Schnell(...)` | `flux1-schnell-Q4_0.gguf` and `ae.safetensors` from [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF) (7.0 GB), `clip_l-Q8_0.gguf` and `t5xxl-Q8_0.gguf` (5.3 GB); [`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1) can replace `ae` | 4 steps, guidance 1 |
-| `ImageGenerationModel.sd35LargeTurbo(...)` | `sd3.5_large_turbo-Q4_0.gguf` from [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) (4.8 GB), `clip_l`, `clip_g` and `t5xxl` Q8_0 from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) (6.1 GB), and [`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3) or an SD 3.5 VAE | 4 steps, guidance 1 |
-| `ImageGenerationModel.zImageTurbo(...)` | `z_image_turbo-Q4_K.gguf` from [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (3.9 GB), `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` from [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (2.5 GB) and FLUX's `ae.safetensors` | 8 steps, guidance 1 |
-| `ImageGenerationModel.custom(files, defaults: ...)` | Any other checkpoint stable-diffusion.cpp loads, single-file or split | 20 steps, guidance 7 |
+| `ImageGenerationModel.sdxs(path)` | `sdxs-512-tinySDdistilled_Q8_0.gguf` from [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) (651 MB) | 512x512, 1 step, guidance 1 |
+| `ImageGenerationModel.sdTurbo(path, taesdPath: ...)` | `sd_turbo-f16-q8_0.gguf` from [`Green-Sky/SD-Turbo-GGUF`](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) (1.9 GB), optionally `diffusion_pytorch_model.safetensors` from [`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd) (9 MB) | 512x512, 1 step, guidance 1 |
+| `ImageGenerationModel.sdxlLightning(path, vaePath: ..., taesdPath: ...)` | `sdxl_lightning_4step.safetensors` from [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) (6.9 GB), optionally [`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl) | 1024x1024, 4 steps, guidance 1, Euler, `sgmUniform` |
+| `ImageGenerationModel.flux1Schnell(...)` | `flux1-schnell-Q4_0.gguf` and `ae.safetensors` from [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF) (7.0 GB), `clip_l-Q8_0.gguf` and `t5xxl-Q8_0.gguf` (5.3 GB); [`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1) can replace `ae` | 1024x1024, 4 steps, guidance 1 |
+| `ImageGenerationModel.sd35LargeTurbo(...)` | `sd3.5_large_turbo-Q4_0.gguf` from [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) (4.8 GB), `clip_l`, `clip_g` and `t5xxl` Q8_0 from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) (6.1 GB), and [`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3) or an SD 3.5 VAE | 1024x1024, 4 steps, guidance 1 |
+| `ImageGenerationModel.zImageTurbo(...)` | `z_image_turbo-Q4_K.gguf` from [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (3.9 GB), `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` from [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (2.5 GB) and FLUX's `ae.safetensors` | 1024x1024, 8 steps, guidance 1 |
+| `ImageGenerationModel.custom(files, defaults: ...)` | Any other checkpoint stable-diffusion.cpp loads, single-file or split | 512x512, 20 steps, guidance 7 |
 
 SDXS is distilled for exactly one step. SD-Turbo takes one to four steps; four
 add detail at about four times the sampling time. TAESD replaces the full VAE
@@ -138,7 +138,7 @@ A model loaded with `.custom` carries its own license.
 ### Desktop presets
 
 The SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-presets generate at 1024x1024; pass `width: 1024, height: 1024`. They are
+presets generate at 1024x1024 unless a request sets another size. They are
 for desktop GPUs and Macs, not phones. Measured from
 [#802](https://github.com/leehack/llamadart/issues/802), first image in a new
 process, automatic attention and VAE settings:
@@ -172,7 +172,8 @@ and Macs. Each family takes its own files in `ImageGenerationModelFiles`:
 | FLUX | `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl` |
 | Z-Image, Qwen-Image | `diffusionModel`, `vae`, `llm` (the language-model text encoder) |
 
-Give each model its sampling defaults. Settings run in
+Give each model its size and sampling defaults; the size defaults to
+512x512, so set 1024x1024 for families trained at it. Settings run in
 [#802](https://github.com/leehack/llamadart/issues/802) (SD 3.5 Medium took
 about 3 minutes per 1024x1024 image on an M4 Max, Qwen-Image about 11):
 
@@ -184,7 +185,12 @@ final sd35Medium = ImageGenerationModel.custom(
     clipG: 'clip_g-Q8_0.gguf',
     t5xxl: 't5xxl-Q8_0.gguf',
   ),
-  defaults: const ImageGenerationDefaults(steps: 28, guidanceScale: 4.5),
+  defaults: const ImageGenerationDefaults(
+    width: 1024,
+    height: 1024,
+    steps: 28,
+    guidanceScale: 4.5,
+  ),
 );
 final qwenImage = ImageGenerationModel.custom(
   const ImageGenerationModelFiles(
@@ -193,6 +199,8 @@ final qwenImage = ImageGenerationModel.custom(
     llm: 'Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf',
   ),
   defaults: const ImageGenerationDefaults(
+    width: 1024,
+    height: 1024,
     steps: 20,
     guidanceScale: 2.5,
     flowShift: 3,
@@ -219,8 +227,6 @@ print('${engine.capabilities.modelVersion} on '
 final task = engine.generate(
   const ImageGenerationRequest(
     prompt: 'a red fox in autumn leaves',
-    width: 512,
-    height: 512,
     seed: 42,
   ),
 );
@@ -239,11 +245,14 @@ await engine.dispose();
 `engine.generateImage(request)` is the one-call form; it returns the
 `ImageGenerationResult` or throws the failure.
 
-- Width and height are multiples of 8 from 64 to 2048. SD 1.x/2.x models are
-  trained at 512; SDXS and SD-Turbo also work at 256. The runtime rounds the
+- Width and height are multiples of 8 from 64 to 2048. Unset, each uses the
+  model's default (`ImageGenerationDefaults.width` and `height`), its native
+  size: 512x512 for SDXS, SD-Turbo and `.custom`, 1024x1024 for the desktop
+  presets. SDXS and SD-Turbo also work at 256. The runtime rounds the
   size up to a multiple of 64 for these models, so a 200x136 request produces
   256x192; `GeneratedImage.width` and `height` report the real size.
-- `steps` and `guidanceScale` fall back to the model's defaults. A guidance of
+- `steps`, `guidanceScale`, `sampler`, `scheduler` and `flowShift` fall back
+  to the model's defaults. A guidance of
   1 skips the negative prompt and halves the work per step.
 - A `null` seed picks one at random. `result.seed` reports the seed used, and
   image `i` of `count` used `seed + i`. The same seed, size, steps and model
@@ -303,17 +312,23 @@ turns the Metal shader cache off. The Vulkan figures are from
 nothing; its first image is as fast as the next.
 
 `warmUp` moves the pipeline compile off the first real image. It runs one
-single-step generation at the given size and discards it:
+single-step generation and discards it, at the model's size unless given
+another:
 
 ```dart
 final engine = await ImageGenerationEngine.load(model);
 // While the user writes the prompt:
-await engine.warmUp(width: 512, height: 512);
+await engine.warmUp();
 ```
 
-- Warm up at the size the app will generate. ggml picks some pipelines by
-  tensor size: on the M4 Max a 64x64 warm-up left about 0.1 s of the 512x512
-  compile, while a 512x512 warm-up left none.
+- Warm up at the size the app will generate; pass `width` and `height` when
+  it is not the model's. ggml picks some pipelines by tensor size: on the
+  M4 Max a 64x64 warm-up left about 0.1 s of the 512x512 compile, while a
+  512x512 warm-up left none.
+- For the desktop presets the default warm-up is one sampling step and a
+  decode at 1024x1024: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on the
+  M4 Max, with or without the Metal shader cache, and the same peak memory
+  as an image, which the [memory check](#memory-check) already covers.
 - It moves the cost, it does not remove it. Call it while the user is not
   waiting, such as right after `load` while they type; `load`, `warmUp` and
   `generate` back to back take no less time than `load` and `generate`.
@@ -426,7 +441,8 @@ swapped most of the app out: a one-step image took 65 s with TAESD and 282 s
 with the full VAE, against 18 s and 67 s on the Pixel 6a.
 
 The estimate does not depend on the image size. It covers the measured peaks
-at each model's native size with the automatic attention and VAE settings:
+at each model's native size, which requests and `warmUp` use unless they set
+another, with the automatic attention and VAE settings:
 SDXS used 1.30 GiB and SD-Turbo on the CPU 2.66 GiB of process memory on an
 M4 Max; on five Android phones, loading and generating at 512x512 added at
 most 1.16 GiB to the app for SDXS, 2.26 GiB for SD-Turbo with TAESD and
