@@ -2,7 +2,7 @@
 name: llamadart-image-generation
 description: >-
   Use when generating images from text prompts in a llamadart app with the
-  experimental ImageGenerationEngine: opting into the stable_diffusion
+  Preview (experimental) ImageGenerationEngine: opting into the stable_diffusion
   runtime, loading SDXS or SD-Turbo (with TAESD) or the desktop SDXL-Lightning,
   FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo presets, showing
   progress, cancelling,
@@ -14,10 +14,10 @@ description: >-
 
 ## Guidelines
 
-- Image generation is the experimental `ImageGenerationEngine`, separate from
-  `LlamaEngine`. It runs stable-diffusion.cpp through the opt-in
-  `stable_diffusion` native runtime. Text-to-image only: no image-to-image,
-  inpainting, LoRA or ControlNet.
+- Image generation is a Preview: the `ImageGenerationEngine` API is
+  experimental and may change. It is separate from `LlamaEngine`. It runs
+  stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
+  Text-to-image only: no image-to-image, inpainting, LoRA or ControlNet.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default or by `all`. In the app's `pubspec.yaml`:
 
@@ -85,6 +85,11 @@ description: >-
     includes the VAE (SD 3.5 Medium) goes in `model`, not `diffusionModel`.
     Distilled models need their own defaults, such as `steps: 4,
     guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell.
+- Model licenses differ by preset, including on commercial use (Stability AI
+  Community License for SD-Turbo and SD 3.5 Large Turbo, CreativeML Open
+  RAIL++-M for SDXS and SDXL-Lightning, Apache 2.0 for FLUX.1-schnell and
+  Z-Image-Turbo). Tell users to check the model card's license before
+  shipping a model; the guide's Model licenses table links each one.
 - `ImageGenerationDefaults` and `ImageGenerationRequest` also take
   `sampler` (`ImageGenerationSampler`), `scheduler`
   (`ImageGenerationScheduler`) and `flowShift` (flow-matching models only,

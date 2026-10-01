@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Label image generation a Preview in the README and docs, and list each
+  image preset's model license.
 - Render and parse llama.cpp chat with `ModelParams.chatTemplate`, which
   `engine.create` and `engine.chatTemplate` ignored in favor of the GGUF
   template; WebGPU `LlamaBackend.applyChatTemplate` now throws

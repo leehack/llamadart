@@ -26,6 +26,7 @@ for each target.
 | Check runtime support | [Platform & backend matrix](https://llamadart.leehack.com/docs/platforms/support-matrix) |
 | Read API reference | [pub.dev API docs](https://pub.dev/documentation/llamadart/latest/) |
 | Try the Flutter demo | [Hosted chat app](https://leehack-llamadart.static.hf.space) |
+| Generate images on device (Preview) | [Image generation](https://llamadart.leehack.com/docs/guides/image-generation) |
 
 ## What It Supports
 
@@ -46,16 +47,9 @@ for each target.
   transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
-- Experimental text-to-image generation through `ImageGenerationEngine` and
-  the opt-in `stable_diffusion` (stable-diffusion.cpp) runtime: SDXS and
-  SD-Turbo on Android arm64 (CPU), iOS and macOS (Metal), and Linux and
-  Windows (CPU or Vulkan), with progress, cancellation and PNG output;
-  validated with real models on macOS, iOS, Android, Linux x64 and Windows x64
-  ([#779](https://github.com/leehack/llamadart/issues/779)). Desktop presets
-  for SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-  generate 1024x1024 images; they are validated on macOS Metal only
-  ([#802](https://github.com/leehack/llamadart/issues/802)). Not available on
-  the web.
+- **Preview:** on-device text-to-image generation through
+  `ImageGenerationEngine` on native targets; see
+  [Image generation (Preview)](#image-generation-preview).
 - Experimental Laya-style decision models on native llama.cpp through
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT
   encoder GGUF and a safetensors head, one encoder pass per question; validated
@@ -69,6 +63,58 @@ a specific model format or platform. After a model loads,
 `LlamaEngine.backendGenerationCapabilities` reports whether the runtime applies
 `presencePenalty`, `minP` and `thinkingBudget`, and which speculative decoding
 strategies it runs.
+
+## Image generation (Preview)
+
+`ImageGenerationEngine` turns a text prompt into PNG images on the device
+through [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp),
+with progress events and cancellation. It is a Preview: the API is
+experimental and may change, and the runtime is opt-in.
+
+- **Opt in** to the runtime (about 40 to 70 MB per target) in the app's
+  `pubspec.yaml`, then run `flutter clean` once:
+
+  ```yaml
+  hooks:
+    user_defines:
+      llamadart:
+        llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+  ```
+
+- **Platforms:** Android arm64 (CPU), iOS and macOS (Metal), Linux arm64/x64
+  and Windows x64 (CPU or Vulkan). Not available on the web yet
+  ([#780](https://github.com/leehack/llamadart/issues/780)).
+- **Validated:** SDXS and SD-Turbo with real models on macOS, iOS, Android,
+  Linux x64 and Windows x64
+  ([#779](https://github.com/leehack/llamadart/issues/779)). The
+  SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
+  desktop presets generate 1024x1024 images and are validated on macOS Metal
+  only ([#802](https://github.com/leehack/llamadart/issues/802)).
+- **Model licenses differ**, including for commercial use. Check each
+  model's license before shipping it; the guide lists each preset's license.
+
+```dart
+import 'dart:io';
+
+import 'package:llamadart/llamadart.dart';
+
+Future<void> main() async {
+  final engine = await ImageGenerationEngine.load(
+    ImageGenerationModel.sdxs('sdxs-512-tinySDdistilled_Q8_0.gguf'),
+  );
+  try {
+    final result = await engine.generateImage(
+      const ImageGenerationRequest(prompt: 'a red fox in autumn leaves'),
+    );
+    await File('fox.png').writeAsBytes(result.images.first.toPng());
+  } finally {
+    await engine.dispose();
+  }
+}
+```
+
+See the [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
+for downloads, presets, memory checks and known limits.
 
 ## Requirements
 

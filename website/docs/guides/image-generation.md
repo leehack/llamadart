@@ -1,8 +1,34 @@
 ---
-title: On-device image generation
-sidebar_label: Image generation
-description: Generate images from text prompts on device with the experimental ImageGenerationEngine and the opt-in stable-diffusion.cpp runtime.
+title: On-device image generation (Preview)
+sidebar_label: Image generation (Preview)
+description: Generate images from text prompts on device with the Preview ImageGenerationEngine and the opt-in stable-diffusion.cpp runtime.
 ---
+
+:::warning Preview
+Image generation is a Preview.
+
+- The `ImageGenerationEngine` API is experimental and may change in a later
+  release.
+- The `stable_diffusion` runtime is opt-in: an app bundles it only when it
+  [names it in `pubspec.yaml`](#bundle-the-runtime).
+- SDXS and SD-Turbo are validated with real models on macOS (M4 Max), iOS
+  (iPhone 16 Pro, iPhone SE 3), Android (Pixel 9 Pro, Galaxy S24,
+  Galaxy A53), Linux x64 and Windows x64
+  ([#779](https://github.com/leehack/llamadart/issues/779)). The
+  [desktop presets](#desktop-presets) are validated on macOS Metal only
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Open limits: no web runtime yet
+  ([#780](https://github.com/leehack/llamadart/issues/780)); Vulkan GPU
+  memory is not checked before loading
+  ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9));
+  the automatic attention and VAE settings were measured on an M4 Max and
+  still need re-measuring on Android phones and iPhone
+  ([#805](https://github.com/leehack/llamadart/issues/805)); the chat app's
+  image end-to-end test has not been re-run on a physical iPhone since its
+  last fix ([#789](https://github.com/leehack/llamadart/issues/789)).
+- Model licenses differ, including on commercial use; see
+  [Model licenses](#model-licenses).
+:::
 
 `ImageGenerationEngine` turns a text prompt into images on the device. It runs
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) through
@@ -90,6 +116,24 @@ final entry = await downloads.ensureModel(
 );
 final model = ImageGenerationModel.sdxs(entry.filePath);
 ```
+
+### Model licenses
+
+Each preset's weights carry their own license, and commercial-use terms
+differ between them. llamadart does not license any model; check the license
+on the linked model card before you ship or use a model commercially. Licenses
+as stated on the pinned repositories and their upstream model cards:
+
+| Preset | Model license | Other files |
+| --- | --- | --- |
+| SDXS | CreativeML Open RAIL++-M, per [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) and its upstream [`IDKiro/sdxs-512-dreamshaper`](https://huggingface.co/IDKiro/sdxs-512-dreamshaper) | None |
+| SD-Turbo | [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md), per [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai/sd-turbo), whose card says to see [stability.ai/license](https://stability.ai/license) for commercial use | TAESD: MIT ([`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd)) |
+| SDXL-Lightning | [CreativeML Open RAIL++-M](https://huggingface.co/ByteDance/SDXL-Lightning/blob/main/LICENSE.md), per [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) | TAESDXL: MIT ([`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl)) |
+| FLUX.1-schnell | Apache 2.0, per [`black-forest-labs/FLUX.1-schnell`](https://huggingface.co/black-forest-labs/FLUX.1-schnell) and [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF), which also hosts `ae`, `clip_l` and `t5xxl` | TAEF1: MIT ([`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1)) |
+| SD 3.5 Large Turbo | [Stability AI Community License](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md), per the gated [`stabilityai/stable-diffusion-3.5-large-turbo`](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo), whose card limits free commercial use to organizations or individuals under $1M in total annual revenue and asks those above it for an Enterprise License; [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) keeps the original terms | Text encoders from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF): Stability AI Community License; TAESD3: MIT ([`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3)) |
+| Z-Image-Turbo | Apache 2.0, per [`Tongyi-MAI/Z-Image-Turbo`](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo) and [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) | Qwen3-4B-Instruct-2507: [Apache 2.0](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/LICENSE) ([`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF)); `ae` as for FLUX.1-schnell |
+
+A model loaded with `.custom` carries its own license.
 
 ### Desktop presets
 
