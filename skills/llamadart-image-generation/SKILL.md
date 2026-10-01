@@ -3,7 +3,9 @@ name: llamadart-image-generation
 description: >-
   Use when generating images from text prompts in a llamadart app with the
   experimental ImageGenerationEngine: opting into the stable_diffusion
-  runtime, loading SDXS or SD-Turbo (with TAESD), showing progress, cancelling,
+  runtime, loading SDXS or SD-Turbo (with TAESD) or the desktop SDXL-Lightning,
+  FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo presets, showing
+  progress, cancelling,
   saving PNGs, or handling unsupported platforms, memory refusals and
   concurrent-generation errors.
 ---
@@ -52,6 +54,27 @@ description: >-
     step at guidance 1; up to 4 steps add detail. For TAESD use
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
+  - Desktop presets, 1024x1024, for desktop GPUs and Macs with 16 GB or
+    more (not phones); each needs a VAE or TAESD decoder where it takes one:
+    - `ImageGenerationModel.sdxlLightning(path, vaePath:, taesdPath:)`:
+      `ByteDance/SDXL-Lightning` `sdxl_lightning_4step.safetensors`; 4 steps,
+      guidance 1, Euler with `sgmUniform`. `madebyollin/taesdxl` halves the
+      time per image.
+    - `ImageGenerationModel.flux1Schnell(diffusionModelPath:, clipLPath:,
+      t5xxlPath:, vaePath: or taesdPath:)`: `second-state/FLUX.1-schnell-GGUF`
+      Q4_0, `clip_l`, `t5xxl` Q8_0, `ae.safetensors` or `madebyollin/taef1`;
+      4 steps at guidance 1.
+    - `ImageGenerationModel.sd35LargeTurbo(diffusionModelPath:, clipLPath:,
+      clipGPath:, t5xxlPath:, vaePath: or taesdPath:)`:
+      `city96/stable-diffusion-3.5-large-turbo-gguf` Q4_0 with the
+      `second-state/stable-diffusion-3.5-medium-GGUF` encoders and
+      `madebyollin/taesd3` (the SD 3.5 VAE repository is gated); 4 steps.
+    - `ImageGenerationModel.zImageTurbo(diffusionModelPath:, llmPath:,
+      vaePath:)`: `leejet/Z-Image-Turbo-GGUF` Q4_K,
+      `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M and the FLUX
+      `ae.safetensors`; 8 steps.
+    - These factories throw `ArgumentError` when a split preset has neither
+      `vaePath` nor `taesdPath`.
   - `ImageGenerationModel.custom(ImageGenerationModelFiles(...), defaults:
     ImageGenerationDefaults(steps:, guidanceScale:))` for any other family
     stable-diffusion.cpp loads (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image);

@@ -29,6 +29,118 @@ void main() {
     expect(withTaesd.defaults.guidanceScale, 1);
   });
 
+  test('sdxlLightning samples 4 Euler steps on the sgm_uniform schedule', () {
+    final model = ImageGenerationModel.sdxlLightning(
+      '/m/lightning.safetensors',
+      taesdPath: '/m/taesdxl.safetensors',
+    );
+
+    expect(model.family, ImageGenerationModelFamily.sdxlLightning);
+    expect(model.files.paths, {
+      'model': '/m/lightning.safetensors',
+      'taesd': '/m/taesdxl.safetensors',
+    });
+    expect(model.defaults.steps, 4);
+    expect(model.defaults.guidanceScale, 1);
+    expect(model.defaults.sampler, ImageGenerationSampler.euler);
+    expect(model.defaults.scheduler, ImageGenerationScheduler.sgmUniform);
+    expect(
+      ImageGenerationModel.sdxlLightning(
+        '/m/lightning.safetensors',
+        vaePath: '/m/vae.safetensors',
+      ).files.paths.keys,
+      ['model', 'vae'],
+    );
+  });
+
+  test('flux1Schnell takes split files and 4 steps at guidance 1', () {
+    final model = ImageGenerationModel.flux1Schnell(
+      diffusionModelPath: '/m/flux.gguf',
+      clipLPath: '/m/clip_l.gguf',
+      t5xxlPath: '/m/t5.gguf',
+      vaePath: '/m/ae.safetensors',
+    );
+
+    expect(model.family, ImageGenerationModelFamily.flux1Schnell);
+    expect(model.files.paths, {
+      'diffusionModel': '/m/flux.gguf',
+      'vae': '/m/ae.safetensors',
+      'clipL': '/m/clip_l.gguf',
+      't5xxl': '/m/t5.gguf',
+    });
+    expect((model.defaults.steps, model.defaults.guidanceScale), (4, 1.0));
+    expect(model.defaults.sampler, isNull);
+  });
+
+  test('sd35LargeTurbo takes three text encoders and 4 steps', () {
+    final model = ImageGenerationModel.sd35LargeTurbo(
+      diffusionModelPath: '/m/sd35lt.gguf',
+      clipLPath: '/m/clip_l.gguf',
+      clipGPath: '/m/clip_g.gguf',
+      t5xxlPath: '/m/t5.gguf',
+      taesdPath: '/m/taesd3.safetensors',
+    );
+
+    expect(model.family, ImageGenerationModelFamily.sd35LargeTurbo);
+    expect(model.files.paths, {
+      'diffusionModel': '/m/sd35lt.gguf',
+      'taesd': '/m/taesd3.safetensors',
+      'clipL': '/m/clip_l.gguf',
+      'clipG': '/m/clip_g.gguf',
+      't5xxl': '/m/t5.gguf',
+    });
+    expect((model.defaults.steps, model.defaults.guidanceScale), (4, 1.0));
+  });
+
+  test('zImageTurbo takes an llm text encoder and 8 steps', () {
+    final model = ImageGenerationModel.zImageTurbo(
+      diffusionModelPath: '/m/z.gguf',
+      llmPath: '/m/qwen3.gguf',
+      vaePath: '/m/ae.safetensors',
+    );
+
+    expect(model.family, ImageGenerationModelFamily.zImageTurbo);
+    expect(model.files.paths, {
+      'diffusionModel': '/m/z.gguf',
+      'vae': '/m/ae.safetensors',
+      'llm': '/m/qwen3.gguf',
+    });
+    expect((model.defaults.steps, model.defaults.guidanceScale), (8, 1.0));
+  });
+
+  test('split presets need a VAE or TAESD decoder', () {
+    for (final (name, build) in <(String, ImageGenerationModel Function())>[
+      (
+        'flux1Schnell',
+        () => ImageGenerationModel.flux1Schnell(
+          diffusionModelPath: '/m/flux.gguf',
+          clipLPath: '/m/clip_l.gguf',
+          t5xxlPath: '/m/t5.gguf',
+        ),
+      ),
+      (
+        'sd35LargeTurbo',
+        () => ImageGenerationModel.sd35LargeTurbo(
+          diffusionModelPath: '/m/sd35lt.gguf',
+          clipLPath: '/m/clip_l.gguf',
+          clipGPath: '/m/clip_g.gguf',
+          t5xxlPath: '/m/t5.gguf',
+        ),
+      ),
+    ]) {
+      expect(
+        build,
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => '${error.message}',
+            'message',
+            contains('$name needs vaePath or taesdPath'),
+          ),
+        ),
+      );
+    }
+  });
+
   test('custom keeps its files and defaults to 20 steps at guidance 7', () {
     final model = ImageGenerationModel.custom(
       const ImageGenerationModelFiles(

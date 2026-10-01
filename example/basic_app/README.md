@@ -16,7 +16,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
 - **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
-- **Image Generation Demo (experimental)**: Writes a PNG with SDXS or SD-Turbo through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
+- **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop preset (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 ## Usage
 
@@ -248,6 +248,15 @@ dart run bin/llamadart_image_example.dart --preset sd-turbo --taesd default \
   --steps 4 -p "a lighthouse at dusk" -o lighthouse.png
 ```
 
+The desktop presets generate 1024x1024 images and download 7 to 12 GB of
+pinned files; they need a desktop GPU or a Mac with 16 GB or more (FLUX.1 and
+SD 3.5 want 24 GB). SDXL-Lightning with the TAESDXL decoder:
+
+```bash
+dart run bin/llamadart_image_example.dart --preset sdxl-lightning \
+  --taesd default -p "a red fox in autumn leaves" -o fox.png
+```
+
 Progress prints per phase (`encodingPrompt`, `sampling 1/4`, `decoding`).
 Ctrl-C cancels the generation before its next sampling step and exits with
 code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs need AVX2,
@@ -256,15 +265,23 @@ with code 2 and the reason.
 
 Image CLI flags (`bin/llamadart_image_example.dart`):
 
-- `--preset`: `sdxs` (default) or `sd-turbo`.
-- `-m, --model`: Checkpoint as a local path, HTTP(S) URL, or `hf://` source;
-  defaults to the pinned checkpoint for the preset.
-- `--taesd`: TAESD decoder for `sd-turbo`, in the same forms, or `default`
-  for the pinned `madebyollin/taesd`.
+- `--preset`: `sdxs` (default), `sd-turbo`, `sdxl-lightning`,
+  `flux1-schnell`, `sd35-large-turbo` or `z-image-turbo`.
+- `-m, --model`: Checkpoint, or the diffusion model of a split preset, as a
+  local path, HTTP(S) URL, or `hf://` source; defaults to the pinned file for
+  the preset.
+- `--taesd`: Tiny autoencoder decoder, in the same forms, or `default` for
+  the preset's pinned one (`taesd`, `taesdxl`, `taef1` or `taesd3`). Not for
+  `sdxs` or `z-image-turbo`. SD 3.5 Large Turbo uses TAESD3 unless `--vae`
+  names a VAE, since the SD 3.5 VAE repository is gated.
+- `--vae`, `--clip-l`, `--clip-g`, `--t5xxl`, `--llm`: Override a pinned file
+  of a desktop preset; a preset rejects a role it does not take.
 - `-p, --prompt`: Prompt (required). `--negative`: negative prompt.
-- `--width`, `--height`: Multiples of 8 from 64 to 2048 (default `512`).
+- `--width`, `--height`: Multiples of 8 from 64 to 2048 (default `512`, or
+  `1024` for the desktop presets).
 - `--steps`, `--guidance`: Override the preset (SDXS and SD-Turbo default to
-  1 step at guidance 1).
+  1 step at guidance 1; the desktop presets to 4 steps, or 8 for
+  Z-Image-Turbo, at guidance 1).
 - `--seed`: Seed; random when omitted, and printed either way.
 - `--count`: Images to generate; later files get `-1`, `-2` suffixes.
 - `-o, --out`: PNG path (default `image.png`).

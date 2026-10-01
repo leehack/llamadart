@@ -72,6 +72,13 @@ class ImageModelProfile {
     ImageGenerationModelFamily.custom => ImageGenerationModel.custom(
       ImageGenerationModelFiles(model: modelPath, taesd: taesdPath),
     ),
+    ImageGenerationModelFamily.sdxlLightning ||
+    ImageGenerationModelFamily.flux1Schnell ||
+    ImageGenerationModelFamily.sd35LargeTurbo ||
+    ImageGenerationModelFamily.zImageTurbo => throw UnsupportedError(
+      'The example app offers only single-file phone presets, not '
+      '${family.name}.',
+    ),
   };
 
   /// Sampling defaults of the library preset.

@@ -9,9 +9,10 @@ description: Generate images from text prompts on device with the experimental I
 the opt-in `stable_diffusion` native runtime, separately from `LlamaEngine`.
 
 The API is experimental. Two small, distilled SD 1.x/2.x-family presets are
-validated on phones and desktops: SDXS-512 and SD-Turbo. Larger families
-such as SDXL, SD 3.5, FLUX and Z-Image load through
-[`.custom`](#larger-models-with-custom) on desktop GPUs and Macs. It is text-to-image only: no image-to-image,
+validated on phones and desktops: SDXS-512 and SD-Turbo.
+[Desktop presets](#desktop-presets) cover SDXL-Lightning, FLUX.1-schnell,
+SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs, and
+[`.custom`](#larger-models-with-custom) loads other families. It is text-to-image only: no image-to-image,
 inpainting, LoRA or ControlNet yet.
 
 ## Support
@@ -63,6 +64,10 @@ selects Vulkan, which it does by default; set
 | --- | --- | --- |
 | `ImageGenerationModel.sdxs(path)` | `sdxs-512-tinySDdistilled_Q8_0.gguf` from [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) (651 MB) | 1 step, guidance 1 |
 | `ImageGenerationModel.sdTurbo(path, taesdPath: ...)` | `sd_turbo-f16-q8_0.gguf` from [`Green-Sky/SD-Turbo-GGUF`](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) (1.9 GB), optionally `diffusion_pytorch_model.safetensors` from [`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd) (9 MB) | 1 step, guidance 1 |
+| `ImageGenerationModel.sdxlLightning(path, vaePath: ..., taesdPath: ...)` | `sdxl_lightning_4step.safetensors` from [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) (6.9 GB), optionally [`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl) | 4 steps, guidance 1, Euler, `sgmUniform` |
+| `ImageGenerationModel.flux1Schnell(...)` | `flux1-schnell-Q4_0.gguf` and `ae.safetensors` from [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF) (7.0 GB), `clip_l-Q8_0.gguf` and `t5xxl-Q8_0.gguf` (5.3 GB); [`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1) can replace `ae` | 4 steps, guidance 1 |
+| `ImageGenerationModel.sd35LargeTurbo(...)` | `sd3.5_large_turbo-Q4_0.gguf` from [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) (4.8 GB), `clip_l`, `clip_g` and `t5xxl` Q8_0 from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) (6.1 GB), and [`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3) or an SD 3.5 VAE | 4 steps, guidance 1 |
+| `ImageGenerationModel.zImageTurbo(...)` | `z_image_turbo-Q4_K.gguf` from [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (3.9 GB), `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` from [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (2.5 GB) and FLUX's `ae.safetensors` | 8 steps, guidance 1 |
 | `ImageGenerationModel.custom(files, defaults: ...)` | Any other checkpoint stable-diffusion.cpp loads, single-file or split | 20 steps, guidance 7 |
 
 SDXS is distilled for exactly one step. SD-Turbo takes one to four steps; four
@@ -85,11 +90,34 @@ final entry = await downloads.ensureModel(
 final model = ImageGenerationModel.sdxs(entry.filePath);
 ```
 
+### Desktop presets
+
+The SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
+presets generate at 1024x1024; pass `width: 1024, height: 1024`. They are
+for desktop GPUs and Macs, not phones. Measured from
+[#802](https://github.com/leehack/llamadart/issues/802), first image in a new
+process, automatic attention and VAE settings:
+
+| Preset | M4 Max, Metal: time, peak process memory | Memory check asks for | NVIDIA L4, Vulkan (native CLI, warm) |
+| --- | --- | --- | --- |
+| SDXL-Lightning + TAESDXL | 6.1 s, 7.8 GiB (12.1 s with the checkpoint's VAE) | 8.6 GiB | 4.4 s |
+| FLUX.1-schnell Q4_0 + TAEF1 | 61 s, 12.9 GiB | 14.5 GiB | 25.3 s with `ae` |
+| SD 3.5 Large Turbo Q4_0 + TAESD3 | 16.1 s, 12.3 GiB | 13.1 GiB | 19.4 s with the SD 3.5 VAE |
+| Z-Image-Turbo Q4_K | 91 s, 7.8 GiB | 8.3 GiB | 35.0 s (Q8_0) |
+
+The Vulkan figures come from stable-diffusion.cpp's own CLI on the same
+runtime commit with `vae_conv_direct`, which the engine now sets on Vulkan;
+llamadart itself was not run there. The tiny autoencoders (TAESDXL, TAEF1,
+TAESD3) cut 6 to 9 s from each 1024x1024 decode on the M4 Max with no visible
+quality loss in these samples. The SD 3.5 VAE repository is gated, so TAESD3
+is the ungated choice. `flux1Schnell` and `sd35LargeTurbo` throw
+`ArgumentError` without `vaePath` or `taesdPath`.
+
 ### Larger models with `.custom`
 
 `.custom` is experimental. It loads any family the bundled
-stable-diffusion.cpp supports, including SDXL, SD 3.5, FLUX, Z-Image and
-Qwen-Image. These need several GB of memory and are meant for desktop GPUs
+stable-diffusion.cpp supports, including other SDXL, SD 3.5, FLUX, Z-Image
+and Qwen-Image checkpoints. These need several GB of memory and are meant for desktop GPUs
 and Macs. Each family takes its own files in `ImageGenerationModelFiles`:
 
 | Family | Files |
@@ -99,25 +127,30 @@ and Macs. Each family takes its own files in `ImageGenerationModelFiles`:
 | FLUX | `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl` |
 | Z-Image, Qwen-Image | `diffusionModel`, `vae`, `llm` (the language-model text encoder) |
 
-Give distilled models their sampling defaults. Measured settings from
-[#802](https://github.com/leehack/llamadart/issues/802):
+Give each model its sampling defaults. Settings run in
+[#802](https://github.com/leehack/llamadart/issues/802) (SD 3.5 Medium took
+about 3 minutes per 1024x1024 image on an M4 Max, Qwen-Image about 11):
 
 ```dart
-final zImageTurbo = ImageGenerationModel.custom(
+final sd35Medium = ImageGenerationModel.custom(
   const ImageGenerationModelFiles(
-    diffusionModel: 'z_image_turbo-Q4_K.gguf',
-    vae: 'ae.safetensors',
-    llm: 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+    model: 'sd3.5_medium-Q8_0.gguf', // includes the VAE
+    clipL: 'clip_l-Q8_0.gguf',
+    clipG: 'clip_g-Q8_0.gguf',
+    t5xxl: 't5xxl-Q8_0.gguf',
   ),
-  defaults: const ImageGenerationDefaults(steps: 8, guidanceScale: 1),
+  defaults: const ImageGenerationDefaults(steps: 28, guidanceScale: 4.5),
 );
-final sdxlLightning = ImageGenerationModel.custom(
-  const ImageGenerationModelFiles(model: 'sdxl_lightning_4step.safetensors'),
+final qwenImage = ImageGenerationModel.custom(
+  const ImageGenerationModelFiles(
+    diffusionModel: 'Qwen_Image-Q4_0.gguf',
+    vae: 'qwen_image_vae.safetensors',
+    llm: 'Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf',
+  ),
   defaults: const ImageGenerationDefaults(
-    steps: 4,
-    guidanceScale: 1,
-    sampler: ImageGenerationSampler.euler,
-    scheduler: ImageGenerationScheduler.sgmUniform,
+    steps: 20,
+    guidanceScale: 2.5,
+    flowShift: 3,
   ),
 );
 ```
@@ -357,4 +390,5 @@ does not fail the load.
 
 The [basic app](../examples/basic-app) has a command-line image example, and
 the [chat app](../examples/chat-app) has an image screen that downloads SDXS
-or SD-Turbo with TAESD and generates on device.
+or SD-Turbo with TAESD and generates on device. The command-line example
+also runs the desktop presets from pinned downloads.
