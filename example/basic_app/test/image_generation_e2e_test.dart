@@ -19,6 +19,36 @@ void main() {
     Directory(outputDir).createSync(recursive: true);
   }
 
+  // Runs first, so the process has not compiled any GPU pipeline yet.
+  test('after warmUp the first image is about as fast as a warm one', () async {
+    final engine = await ImageGenerationEngine.load(
+      ImageGenerationModel.sdxs(sdxsPath!),
+    );
+    addTearDown(engine.dispose);
+    const request = ImageGenerationRequest(
+      prompt: 'a red fox in autumn leaves',
+      width: 256,
+      height: 256,
+      seed: 42,
+    );
+
+    final warmUp = Stopwatch()..start();
+    await engine.warmUp(width: 256, height: 256);
+    warmUp.stop();
+    final first = (await engine.generateImage(request)).elapsed;
+    final second = (await engine.generateImage(request)).elapsed;
+
+    print(
+      'warm-up on ${engine.capabilities.backendName}: '
+      '${warmUp.elapsedMilliseconds} ms; first image '
+      '${first.inMilliseconds} ms; second ${second.inMilliseconds} ms',
+    );
+    // Without a warm-up the first image pays the pipeline compile: 0.6 s
+    // against 0.12 s on an M4 Max run with MTL_SHADER_CACHE_SIZE=0 (no
+    // Metal shader cache), and 12 to 45 s on a cold Vulkan driver cache.
+    expect(first, lessThan(second * 2 + const Duration(milliseconds: 250)));
+  }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
   group('SDXS', () {
     late ImageGenerationEngine engine;
 
