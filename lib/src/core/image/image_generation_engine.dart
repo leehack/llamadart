@@ -169,8 +169,10 @@ class ImageGenerationEngine {
   ///
   /// The first probe in a process, here or in [load], initializes the GPU
   /// backend on the calling isolate. With an empty Metal shader cache that
-  /// compiles ggml's Metal library: about 15 s on an M4 Max. macOS keeps the
-  /// result in its shader cache, so later launches take under 0.5 s.
+  /// compiles ggml's Metal library: about 16 s on an M4 Max. macOS keeps the
+  /// result in its shader cache, so later launches take under 0.5 s. To keep
+  /// a UI isolate responsive, make the first call from another isolate, such
+  /// as with `Isolate.run`; later calls then return at once.
   static ImageGenerationCapabilities runtimeCapabilities() {
     final status = _driver.probe();
     final reason = status.unavailableReason;
