@@ -140,6 +140,7 @@ class ImageGenerationTask {
 /// ```
 class ImageGenerationEngine {
   static Object? _activeOperation;
+  static Future<StableDiffusionRuntimeStatus>? _runningProbe;
   static final Random _seedRandom = Random();
 
   /// The loaded model.
@@ -162,19 +163,38 @@ class ImageGenerationEngine {
     this._backendName,
   );
 
-  /// Probes the bundled runtime without loading a model.
+  /// Probes the bundled runtime without loading a model, on the calling
+  /// isolate.
   ///
   /// Reports unsupported when the runtime is not bundled, the platform or CPU
   /// is not supported, or on the web.
   ///
-  /// The first probe in a process, here or in [load], initializes the GPU
-  /// backend on the calling isolate. With an empty Metal shader cache that
-  /// compiles ggml's Metal library: about 16 s on an M4 Max. macOS keeps the
-  /// result in its shader cache, so later launches take under 0.5 s. To keep
-  /// a UI isolate responsive, make the first call from another isolate, such
-  /// as with `Isolate.run`; later calls then return at once.
-  static ImageGenerationCapabilities runtimeCapabilities() {
-    final status = _driver.probe();
+  /// The first probe in a process initializes the GPU backend. With an empty
+  /// Metal shader cache that compiles ggml's Metal library: about 16 s on an
+  /// M4 Max, during which this call blocks the calling isolate. macOS keeps
+  /// the result in its shader cache, so later launches take under 0.5 s, and
+  /// later probes in the process return at once. A call made while
+  /// [checkRuntime] or [load] is still probing blocks until that probe
+  /// finishes. From a UI isolate, use [checkRuntime] instead.
+  static ImageGenerationCapabilities runtimeCapabilities() =>
+      _capabilitiesOf(_driver.probe());
+
+  /// Probes the bundled runtime like [runtimeCapabilities], without blocking
+  /// the calling isolate.
+  ///
+  /// On native platforms the probe runs in a short-lived isolate, so the
+  /// first probe's GPU backend initialization (see [runtimeCapabilities])
+  /// does not freeze a UI isolate; the calling isolate can still pause once
+  /// for up to about 0.5 s while the probe isolate loads the runtime library.
+  /// Calls on this isolate, including [load], share a probe that is still
+  /// running, and all of them get its result or its error. On the web it
+  /// completes with the same unsupported result as [runtimeCapabilities].
+  static Future<ImageGenerationCapabilities> checkRuntime() async =>
+      _capabilitiesOf(await _probeRuntime(_driver));
+
+  static ImageGenerationCapabilities _capabilitiesOf(
+    StableDiffusionRuntimeStatus status,
+  ) {
     final reason = status.unavailableReason;
     if (reason != null) {
       return ImageGenerationCapabilities(
@@ -192,11 +212,30 @@ class ImageGenerationEngine {
     );
   }
 
+  static Future<StableDiffusionRuntimeStatus> _probeRuntime(
+    ImageGenerationDriver driver,
+  ) {
+    final running = _runningProbe;
+    if (running != null) {
+      return running;
+    }
+    late final Future<StableDiffusionRuntimeStatus> probe;
+    probe = driver.probeInBackground().whenComplete(() {
+      if (identical(_runningProbe, probe)) {
+        _runningProbe = null;
+      }
+    });
+    return _runningProbe = probe;
+  }
+
   /// Loads [model] and returns a ready engine.
   ///
   /// Weights load eagerly, so the first [generate] does not pay for them. The
   /// first GPU generation in a process still compiles GPU pipelines; see
   /// [warmUp].
+  ///
+  /// The runtime probe that comes first runs off the calling isolate, as in
+  /// [checkRuntime].
   ///
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
   /// platform reports it, the model's estimated memory
@@ -219,7 +258,8 @@ class ImageGenerationEngine {
     ImageGenerationOptions options = const ImageGenerationOptions(),
   }) async {
     final driver = _driver;
-    final runtime = driver.probe()..throwIfUnavailable();
+    final runtime = await _probeRuntime(driver)
+      ..throwIfUnavailable();
     final backendName = _backendNameFor(options.device, runtime.devices);
     if (options.threads < 0) {
       throw LlamaImageGenerationException(

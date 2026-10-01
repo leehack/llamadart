@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import '../../backends/stable_diffusion/stable_diffusion_image_worker.dart';
 import '../../backends/stable_diffusion/stable_diffusion_memory.dart';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_io.dart';
@@ -13,6 +15,10 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   StableDiffusionRuntimeStatus probe() => probeStableDiffusionRuntime();
+
+  @override
+  Future<StableDiffusionRuntimeStatus> probeInBackground() =>
+      Isolate.run(probeStableDiffusionRuntime);
 
   @override
   int? fileSize(String path) => stableDiffusionFileSize(path);

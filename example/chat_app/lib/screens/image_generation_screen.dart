@@ -162,7 +162,7 @@ class _ImageGenerationScreenState extends State<ImageGenerationScreen> {
         listenable: _provider,
         builder: (context, _) {
           if (!_provider.isInitialized) {
-            return const Center(child: CircularProgressIndicator());
+            return const _CheckingRuntimeView();
           }
           if (!_provider.isSupported) {
             return _UnsupportedView(reason: _provider.unsupportedReason!);
@@ -686,6 +686,32 @@ class _OutputView extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CheckingRuntimeView extends StatelessWidget {
+  const _CheckingRuntimeView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          key: const ValueKey<String>('image_generation_checking_runtime'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            Text(
+              'Checking the image runtime…',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
       ),
     );
   }

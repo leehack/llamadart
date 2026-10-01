@@ -63,7 +63,105 @@ void main() {
     });
   });
 
+  group('checkRuntime', () {
+    void expectSameCapabilities(
+      ImageGenerationCapabilities actual,
+      ImageGenerationCapabilities expected,
+    ) {
+      expect(actual.isSupported, expected.isSupported);
+      expect(actual.unsupportedReason, expected.unsupportedReason);
+      expect(actual.backendName, expected.backendName);
+      expect(actual.deviceNames, expected.deviceNames);
+      expect(actual.runtimeVersion, expected.runtimeVersion);
+      expect(actual.modelVersion, expected.modelVersion);
+      expect(actual.supportsCancellation, expected.supportsCancellation);
+      expect(actual.maxConcurrentTasks, expected.maxConcurrentTasks);
+    }
+
+    test('reports what runtimeCapabilities reports, probing in the '
+        'background', () async {
+      final capabilities = await ImageGenerationEngine.checkRuntime();
+
+      expect(driver.backgroundProbes, 1);
+      expect(driver.syncProbes, 0);
+      expect(capabilities.backendName, 'MTL0');
+      expectSameCapabilities(
+        capabilities,
+        ImageGenerationEngine.runtimeCapabilities(),
+      );
+    });
+
+    test('reports why the runtime is unavailable, like '
+        'runtimeCapabilities', () async {
+      driver.status = StableDiffusionRuntimeStatus.unavailable(
+        LlamaUnsupportedException('stable_diffusion runtime is not bundled'),
+      );
+
+      final capabilities = await ImageGenerationEngine.checkRuntime();
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('not bundled'));
+      expectSameCapabilities(
+        capabilities,
+        ImageGenerationEngine.runtimeCapabilities(),
+      );
+    });
+
+    test('checks started while a probe runs share it, and a later check '
+        'probes again', () async {
+      final gate = driver.probeGate = Completer<void>();
+
+      final first = ImageGenerationEngine.checkRuntime();
+      final second = ImageGenerationEngine.checkRuntime();
+      await pumpEventQueue();
+      expect(driver.backgroundProbes, 1);
+      gate.complete();
+      expect((await first).backendName, 'MTL0');
+      expect((await second).backendName, 'MTL0');
+
+      driver.status = _available('CPU\tHost\n');
+      expect((await ImageGenerationEngine.checkRuntime()).backendName, 'CPU');
+      expect(driver.backgroundProbes, 2);
+    });
+
+    test('a failed probe fails every check that shared it, and the next '
+        'check probes again', () async {
+      final gate = driver.probeGate = Completer<void>();
+      driver.probeError = StateError('probe isolate failed');
+
+      final first = ImageGenerationEngine.checkRuntime();
+      final second = ImageGenerationEngine.checkRuntime();
+      gate.complete();
+      await expectLater(first, throwsA(same(driver.probeError)));
+      await expectLater(second, throwsA(same(driver.probeError)));
+      expect(driver.backgroundProbes, 1);
+
+      driver
+        ..probeGate = null
+        ..probeError = null;
+      expect((await ImageGenerationEngine.checkRuntime()).isSupported, isTrue);
+      expect(driver.backgroundProbes, 2);
+    });
+  });
+
   group('load', () {
+    test('probes the runtime in the background and shares a running '
+        'checkRuntime probe', () async {
+      final gate = driver.probeGate = Completer<void>();
+
+      final check = ImageGenerationEngine.checkRuntime();
+      final loading = load(ImageGenerationModel.sdxs(_model));
+      await pumpEventQueue();
+      expect(driver.started, isEmpty);
+      gate.complete();
+      await check;
+      final engine = await loading;
+
+      expect(driver.backgroundProbes, 1);
+      expect(driver.syncProbes, 0);
+      expect(engine.capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
+    });
+
     test('throws the probe reason and loads nothing when the runtime is '
         'unavailable', () async {
       driver.status = StableDiffusionRuntimeStatus.unavailable(
@@ -774,9 +872,27 @@ final class _FakeDriver implements ImageGenerationDriver {
   Object? startError;
   final List<ImageGenerationSessionConfig> started = [];
   _FakeSession session = _FakeSession();
+  Completer<void>? probeGate;
+  Object? probeError;
+  int syncProbes = 0;
+  int backgroundProbes = 0;
 
   @override
-  StableDiffusionRuntimeStatus probe() => status;
+  StableDiffusionRuntimeStatus probe() {
+    syncProbes++;
+    return status;
+  }
+
+  @override
+  Future<StableDiffusionRuntimeStatus> probeInBackground() async {
+    backgroundProbes++;
+    await probeGate?.future;
+    final error = probeError;
+    if (error != null) {
+      throw error;
+    }
+    return status;
+  }
 
   @override
   int? fileSize(String path) => sizes[path];

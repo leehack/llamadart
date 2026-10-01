@@ -92,6 +92,57 @@ void main() {
     expect(models.resolveCalls, 0);
   });
 
+  testWidgets('shows a checking state while the runtime probe runs', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 2400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final checkGate = generation.checkGate = Completer<void>();
+    final provider = createProvider();
+
+    await tester.pumpWidget(
+      MaterialApp(home: ImageGenerationScreen(provider: provider)),
+    );
+    await tester.pump();
+
+    expect(generation.checkCalls, 1);
+    expect(provider.isInitialized, isFalse);
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_checking_runtime')),
+      findsOneWidget,
+    );
+    expect(find.text('Checking the image runtime…'), findsOneWidget);
+    expect(models.resolveCalls, 0);
+
+    checkGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(provider.isInitialized, isTrue);
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_checking_runtime')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('generate_image_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('shows a failed runtime check as unsupported', (tester) async {
+    generation.checkError = StateError('probe isolate failed');
+
+    await pumpScreen(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_unsupported')),
+      findsOneWidget,
+    );
+    expect(find.text('Bad state: probe isolate failed'), findsOneWidget);
+    expect(models.resolveCalls, 0);
+  });
+
   testWidgets('lists catalog sizes, the SD-Turbo memory note and downloads', (
     tester,
   ) async {
@@ -511,6 +562,24 @@ void main() {
       expect(provider.output!.profile.id, ImageModelProfile.sdxs.id);
     });
 
+    test('stops initializing when disposed during the runtime check', () async {
+      models.installed.add(ImageModelProfile.sdxs.id);
+      final checkGate = generation.checkGate = Completer<void>();
+      final provider = createUnownedProvider();
+      var notifications = 0;
+      provider.addListener(() => notifications += 1);
+
+      final initializing = provider.initialize();
+      await pumpEventQueue();
+      provider.dispose();
+      checkGate.complete();
+      await initializing;
+
+      expect(notifications, 0);
+      expect(models.resolveCalls, 0);
+      expect(provider.isInitialized, isFalse);
+    });
+
     test('cancelInstall cancels the running download', () async {
       final provider = await initializedProvider();
 
@@ -626,8 +695,19 @@ class FakeImageGenerationService implements ImageGenerationService {
   final List<ImageGenerationModel> loadedModels = <ImageGenerationModel>[];
   FakeImageGenerator? generator;
 
+  Completer<void>? checkGate;
+  Object? checkError;
+  int checkCalls = 0;
+
   @override
-  ImageGenerationCapabilities runtimeCapabilities() => capabilities;
+  Future<ImageGenerationCapabilities> checkRuntime() async {
+    checkCalls += 1;
+    await checkGate?.future;
+    if (checkError case final error?) {
+      throw error;
+    }
+    return capabilities;
+  }
 
   @override
   Future<ImageGenerator> load(ImageGenerationModel model) async {

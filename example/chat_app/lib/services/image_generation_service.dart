@@ -6,8 +6,9 @@ abstract interface class ImageGenerationService {
   /// Creates the service backed by [ImageGenerationEngine].
   factory ImageGenerationService() = _EngineImageGenerationService;
 
-  /// Probes the bundled runtime without loading a model.
-  ImageGenerationCapabilities runtimeCapabilities();
+  /// Probes the bundled runtime without loading a model or blocking the UI
+  /// isolate.
+  Future<ImageGenerationCapabilities> checkRuntime();
 
   /// Loads [model]; throws what [ImageGenerationEngine.load] throws.
   Future<ImageGenerator> load(ImageGenerationModel model);
@@ -40,8 +41,8 @@ abstract interface class ImageGenerationRun {
 
 class _EngineImageGenerationService implements ImageGenerationService {
   @override
-  ImageGenerationCapabilities runtimeCapabilities() =>
-      ImageGenerationEngine.runtimeCapabilities();
+  Future<ImageGenerationCapabilities> checkRuntime() =>
+      ImageGenerationEngine.checkRuntime();
 
   @override
   Future<ImageGenerator> load(ImageGenerationModel model) async =>
