@@ -166,6 +166,11 @@ class ImageGenerationEngine {
   ///
   /// Reports unsupported when the runtime is not bundled, the platform or CPU
   /// is not supported, or on the web.
+  ///
+  /// The first probe in a process, here or in [load], initializes the GPU
+  /// backend on the calling isolate. With an empty Metal shader cache that
+  /// compiles ggml's Metal library: about 15 s on an M4 Max. macOS keeps the
+  /// result in its shader cache, so later launches take under 0.5 s.
   static ImageGenerationCapabilities runtimeCapabilities() {
     final status = _driver.probe();
     final reason = status.unavailableReason;
@@ -187,9 +192,9 @@ class ImageGenerationEngine {
 
   /// Loads [model] and returns a ready engine.
   ///
-  /// Weights load eagerly, so the first [generate] does not pay for them. On
-  /// Apple GPUs the first generation after a load is still slower while
-  /// Metal compiles its shaders (about 19 s on an iPhone 16 Pro).
+  /// Weights load eagerly, so the first [generate] does not pay for them. The
+  /// first GPU generation in a process still compiles GPU pipelines; see
+  /// [warmUp].
   ///
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
   /// platform reports it, the model's estimated memory
@@ -299,22 +304,7 @@ class ImageGenerationEngine {
   /// aborted GPU command buffer, fails the task with
   /// [LlamaInferenceException]; the engine stays usable.
   ImageGenerationTask generate(ImageGenerationRequest request) {
-    if (_disposal != null) {
-      throw LlamaStateException('The ImageGenerationEngine is disposed.');
-    }
-    // Validate after applying the model defaults: custom defaults are not
-    // checked when the model is built, and the runtime crashes on 0 steps.
-    final effective = ImageGenerationRequest(
-      prompt: request.prompt,
-      negativePrompt: request.negativePrompt,
-      width: request.width,
-      height: request.height,
-      steps: request.steps ?? model.defaults.steps,
-      guidanceScale: request.guidanceScale ?? model.defaults.guidanceScale,
-      seed: request.seed,
-      count: request.count,
-    );
-    validateImageGenerationRequest(effective);
+    final effective = _resolve(request);
     final operation = _acquireOperation();
     final resolved = ImageGenerationSessionRequest(
       prompt: effective.prompt,
@@ -349,6 +339,48 @@ class ImageGenerationEngine {
     };
   }
 
+  /// Compiles the GPU pipelines a [width] by [height] generation needs, by
+  /// running one single-step generation and discarding its image, so the
+  /// first real image does not pay for them.
+  ///
+  /// ggml compiles each GPU pipeline the first time a process uses it. That
+  /// made the first image take 12 s on Linux Vulkan and 45 s on Windows
+  /// Vulkan (NVIDIA L4) instead of under 0.6 s, and added about 0.5 s on an
+  /// M4 Max with an empty Metal shader cache. GPU drivers and macOS cache
+  /// compiled shaders on disk, so later launches are faster.
+  ///
+  /// Use the size the app will generate: ggml picks some pipelines by tensor
+  /// size, so another size can still compile more.
+  ///
+  /// On the CPU there is nothing to compile, so this returns at once.
+  ///
+  /// The warm-up holds the one-operation slot like [generate]: await it
+  /// before the next [generate] or [load]. [dispose] cancels a running
+  /// warm-up, which then completes normally.
+  ///
+  /// Throws [LlamaImageGenerationException] for an invalid size or invalid
+  /// model defaults, [LlamaStateException] after [dispose] or while another
+  /// generation or load is running, and [LlamaInferenceException] when the
+  /// runtime fails the generation.
+  Future<void> warmUp({int width = 512, int height = 512}) async {
+    final request = ImageGenerationRequest(
+      prompt: 'warm-up',
+      width: width,
+      height: height,
+      steps: 1,
+      seed: 0,
+    );
+    if (!_isGpu(_backendName)) {
+      _resolve(request);
+      _releaseOperation(_acquireOperation());
+      return;
+    }
+    final completion = await generate(request).done;
+    if (completion.state == ImageGenerationCompletionState.failed) {
+      throw completion.error!;
+    }
+  }
+
   /// Cancels a running generation, waits for it to stop, and frees the
   /// model. Calling this more than once is safe.
   Future<void> dispose() => _disposal ??= _dispose();
@@ -360,6 +392,28 @@ class ImageGenerationEngine {
       await task.done;
     }
     await _session.dispose();
+  }
+
+  /// [request] with the model defaults applied, after checking that it can
+  /// run.
+  ImageGenerationRequest _resolve(ImageGenerationRequest request) {
+    if (_disposal != null) {
+      throw LlamaStateException('The ImageGenerationEngine is disposed.');
+    }
+    // Validate after applying the model defaults: custom defaults are not
+    // checked when the model is built, and the runtime crashes on 0 steps.
+    final effective = ImageGenerationRequest(
+      prompt: request.prompt,
+      negativePrompt: request.negativePrompt,
+      width: request.width,
+      height: request.height,
+      steps: request.steps ?? model.defaults.steps,
+      guidanceScale: request.guidanceScale ?? model.defaults.guidanceScale,
+      seed: request.seed,
+      count: request.count,
+    );
+    validateImageGenerationRequest(effective);
+    return effective;
   }
 
   Future<void> _run(
@@ -473,7 +527,7 @@ class ImageGenerationEngine {
     ImageGenerationDevice device,
     List<StableDiffusionDevice> devices,
   ) {
-    final gpu = devices.where(_isGpu).firstOrNull?.name;
+    final gpu = devices.map((d) => d.name).where(_isGpu).firstOrNull;
     final cpu = devices
         .where((d) => d.name.toUpperCase() == 'CPU')
         .firstOrNull
@@ -494,8 +548,8 @@ class ImageGenerationEngine {
     };
   }
 
-  static bool _isGpu(StableDiffusionDevice device) {
-    final name = device.name.toLowerCase();
+  static bool _isGpu(String deviceName) {
+    final name = deviceName.toLowerCase();
     return _gpuDevicePrefixes.any(name.startsWith);
   }
 

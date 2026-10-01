@@ -597,6 +597,165 @@ void main() {
       );
     });
   });
+
+  group('warmUp', () {
+    test('runs one discarded single-step generation at the given size with '
+        'the model guidance', () async {
+      final sdxs = await load(ImageGenerationModel.sdxs(_model));
+      await sdxs.warmUp();
+      await sdxs.warmUp(width: 256, height: 384);
+
+      expect(
+        driver.session.requests.map(
+          (r) => (r.width, r.height, r.steps, r.guidanceScale, r.count),
+        ),
+        [(512, 512, 1, 1.0, 1), (256, 384, 1, 1.0, 1)],
+      );
+
+      final custom = await load(
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model),
+        ),
+      );
+      await custom.warmUp();
+      expect(driver.session.requests.last.steps, 1);
+      expect(driver.session.requests.last.guidanceScale, 7);
+    });
+
+    test('runs nothing on the CPU but still checks the size and the engine '
+        'state', () async {
+      driver.status = _available('CPU\tCortex-A78\n');
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+
+      await engine.warmUp();
+      expect(driver.session.requests, isEmpty);
+
+      await expectLater(
+        engine.warmUp(width: 500),
+        throwsA(isA<LlamaImageGenerationException>()),
+      );
+
+      final gate = driver.session.gate = Completer<void>();
+      final running = engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
+      );
+      await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
+      gate.complete();
+      await running.done;
+
+      await engine.dispose();
+      await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
+    });
+
+    test('rejects an invalid size before running anything', () async {
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+
+      for (final (width, height) in [(500, 512), (512, 56), (4096, 512)]) {
+        await expectLater(
+          engine.warmUp(width: width, height: height),
+          throwsA(isA<LlamaImageGenerationException>()),
+        );
+      }
+      expect(driver.session.requests, isEmpty);
+    });
+
+    test('holds the one-operation slot until it finishes', () async {
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final gate = driver.session.gate = Completer<void>();
+
+      final warmUp = engine.warmUp();
+
+      expect(
+        () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await expectLater(
+        load(ImageGenerationModel.sdxs(_model)),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
+
+      gate.complete();
+      await warmUp;
+      driver.session.gate = null;
+
+      final result = await engine.generateImage(
+        const ImageGenerationRequest(prompt: 'b'),
+      );
+      expect(result.images, hasLength(1));
+      expect(driver.session.requests, hasLength(2));
+    });
+
+    test('throws LlamaStateException while a generation runs', () async {
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final gate = driver.session.gate = Completer<void>();
+      final running = engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
+      );
+
+      await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
+
+      gate.complete();
+      expect(
+        (await running.done).state,
+        ImageGenerationCompletionState.completed,
+      );
+      expect(driver.session.requests, hasLength(1));
+    });
+
+    test('dispose cancels a running warm-up, which completes normally, and '
+        'later warm-ups throw', () async {
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final gate = driver.session.gate = Completer<void>();
+
+      final warmUp = engine.warmUp();
+      final disposal = engine.dispose();
+      gate.complete();
+      await disposal;
+      await warmUp;
+
+      expect(driver.session.stepsRun, 0);
+      expect(driver.session.disposedAfterGenerate, isTrue);
+      await expectLater(
+        engine.warmUp(),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+    });
+
+    test('throws a runtime failure and leaves the engine usable', () async {
+      final engine = await load(ImageGenerationModel.sdxs(_model));
+
+      driver.session.failNext = true;
+      await expectLater(
+        engine.warmUp(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+
+      driver.session.error = StateError('worker bug');
+      await expectLater(
+        engine.warmUp(),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.details,
+            'details',
+            isA<StateError>(),
+          ),
+        ),
+      );
+
+      await engine.warmUp();
+      final next = await engine.generateImage(
+        const ImageGenerationRequest(prompt: 'b'),
+      );
+      expect(next.images, hasLength(1));
+    });
+  });
 }
 
 StableDiffusionRuntimeStatus _available(String devices) =>
