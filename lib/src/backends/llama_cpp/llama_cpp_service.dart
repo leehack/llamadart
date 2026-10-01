@@ -637,6 +637,23 @@ class LlamaCppService {
         SpeculativeDecodingStrategy.draftDspark,
       };
 
+  /// Creates the service; tests replace the runtime's first native call and
+  /// the host probes behind its Windows load diagnostics.
+  LlamaCppService({
+    void Function()? backendInit,
+    Abi? abi,
+    bool? isWindows,
+    List<String> Function(List<String> names) missingWindowsLibraries =
+        findMissingWindowsLibraries,
+  }) : _backendInit = backendInit ?? (() => llama_backend_init()),
+       _abi = abi ?? Abi.current(),
+       _isWindows = isWindows ?? Platform.isWindows,
+       _missingWindowsLibraries = missingWindowsLibraries;
+
+  final void Function() _backendInit;
+  final Abi _abi;
+  final bool _isWindows;
+  final List<String> Function(List<String> names) _missingWindowsLibraries;
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -961,7 +978,11 @@ class LlamaCppService {
           _resolveLinuxPrimaryLibraryDirectory();
     }
     _applyConfiguredLogLevel();
-    runLlamaBackendInit(() => llama_backend_init(), abi: Abi.current());
+    runLlamaBackendInit(
+      _backendInit,
+      abi: _abi,
+      missingWindowsLibraries: _missingWindowsLibraries,
+    );
     _refreshBackendModuleDirectoryAfterPrimaryLoad();
     _applyConfiguredLogLevel();
 
@@ -2240,7 +2261,8 @@ class LlamaCppService {
     _failedBackendModules.add(backend);
     final missingLoader = describeMissingWindowsBackendLoader(
       backend,
-      isWindows: Platform.isWindows,
+      isWindows: _isWindows,
+      missingWindowsLibraries: _missingWindowsLibraries,
     );
     _recordStartupDiagnostic(
       'Backend module `$backend` not loaded from any candidate: '
@@ -3240,6 +3262,16 @@ class LlamaCppService {
       candidates.add(path.join('llama.framework', 'llama'));
     }
     return candidates;
+  }
+
+  /// Tries to load the ggml [backend] module from [moduleDirectory], as model
+  /// loading does, for VM regression tests.
+  bool debugTryLoadBackendModuleForTesting(
+    String backend, {
+    required String moduleDirectory,
+  }) {
+    _backendModuleDirectory = moduleDirectory;
+    return _tryLoadBackendModule(backend);
   }
 
   /// Returns wrapper-library lookup candidates for VM regression tests.

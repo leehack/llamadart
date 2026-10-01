@@ -4136,6 +4136,57 @@ void main() {
       );
     });
 
+    test('initializeBackend reports the missing runtime', () {
+      final checked = <String>[];
+      final service = LlamaCppService(
+        backendInit: () => throw error126,
+        abi: Abi.windowsArm64,
+        missingWindowsLibraries: missingFrom({'msvcp140.dll'}, checked),
+      );
+
+      expect(
+        service.initializeBackend,
+        throwsA(
+          isA<LlamaBackendInitializationException>().having(
+            (error) => error.message,
+            'message',
+            contains('on windows-arm64:'),
+          ),
+        ),
+      );
+      expect(checked, ['msvcp140.dll', 'vcruntime140.dll']);
+    });
+
+    test('a failed Windows GPU module load names its missing loader', () {
+      final moduleDirectory = Directory.systemTemp.createTempSync(
+        'llamadart_backend_modules_',
+      );
+      addTearDown(() => moduleDirectory.deleteSync(recursive: true));
+      final checked = <String>[];
+      final service = LlamaCppService(
+        isWindows: true,
+        missingWindowsLibraries: missingFrom({'nvcuda.dll'}, checked),
+      );
+
+      expect(
+        service.debugTryLoadBackendModuleForTesting(
+          'cuda',
+          moduleDirectory: moduleDirectory.path,
+        ),
+        isFalse,
+      );
+      expect(checked, ['nvcuda.dll']);
+      expect(
+        service.getStartupDiagnostics().last,
+        allOf(
+          startsWith('Backend module `cuda` not loaded from any candidate: '),
+          endsWith(
+            ' nvcuda.dll could not be loaded; install an NVIDIA driver.',
+          ),
+        ),
+      );
+    });
+
     test('names the loader a Windows GPU backend module could not load', () {
       final allMissing = missingFrom({'vulkan-1.dll', 'nvcuda.dll'});
 
