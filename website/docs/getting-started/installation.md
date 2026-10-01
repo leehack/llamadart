@@ -48,11 +48,11 @@ companion packages you need:
 ```yaml
 dependencies:
   llamadart: ^0.10.0
-  llamadart_llama_cpp_flutter: ^0.0.21 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.13 # Apple .litertlm / LiteRT-LM targets
+  llamadart_llama_cpp_flutter: ^0.0.20 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.12 # Apple .litertlm / LiteRT-LM targets
 ```
 
-Pair companion `0.0.21` with core `0.10.0`. The build checks the resolved
+Pair companion `0.0.20` with core `0.10.0`. The build checks the resolved
 companion's runtime pin and fails on a mismatch or on an unverified local
 `Artifacts` override; resolve the matching companion and rerun
 `flutter pub get`. Flutter macOS LiteRT-LM builds still use the core package's
