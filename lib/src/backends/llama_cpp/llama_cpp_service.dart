@@ -1820,6 +1820,11 @@ class LlamaCppService {
     Pointer<llama_model> modelPtr = nullptr;
     try {
       modelPtr = llama_model_load_from_file(modelPathPtr.cast(), mparams);
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.model,
+        _llamaModelFreeAddress,
+        modelPtr,
+      );
     } finally {
       malloc.free(modelPathPtr);
       if (preferredDevices != null) {
@@ -1946,6 +1951,11 @@ class LlamaCppService {
     Pointer<llama_model> modelPtr = nullptr;
     try {
       modelPtr = llama_model_load_from_file(modelPathPtr.cast(), mparams);
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.model,
+        _llamaModelFreeAddress,
+        modelPtr,
+      );
     } finally {
       malloc.free(modelPathPtr);
       if (preferredDevices != null) {
@@ -2009,11 +2019,6 @@ class LlamaCppService {
     Pointer<llama_model> modelPointer, {
     required String sourcePath,
   }) {
-    IsolateShutdownReleases.current.hold(
-      ShutdownStage.model,
-      _llamaModelFreeAddress,
-      modelPointer,
-    );
     try {
       final vocab = llama_model_get_vocab(modelPointer);
       return _LlamaModelWrapper(
@@ -3760,14 +3765,14 @@ class LlamaCppService {
     }
 
     final ctxPtr = llama_init_from_model(model.pointer, ctxParams);
-    if (ctxPtr == nullptr) {
-      throw Exception("Failed to create context");
-    }
     IsolateShutdownReleases.current.hold(
       ShutdownStage.context,
       _llamaFreeAddress,
       ctxPtr,
     );
+    if (ctxPtr == nullptr) {
+      throw Exception("Failed to create context");
+    }
 
     final handle = _getHandle();
     _contexts[handle] = _LlamaContextWrapper(ctxPtr, model);
@@ -4418,14 +4423,14 @@ class LlamaCppService {
           contextParams: modelParams,
           config: speculativeConfig,
         );
-        if (speculativeSession == nullptr) {
-          throw _speculativeInitFailure(speculativeConfig);
-        }
         IsolateShutdownReleases.current.hold(
           ShutdownStage.session,
           speculativeApi.freeAddress,
           speculativeSession,
         );
+        if (speculativeSession == nullptr) {
+          throw _speculativeInitFailure(speculativeConfig);
+        }
         if (speculativeApi.needEmbd(speculativeSession)) {
           llama_set_embeddings(ctx.pointer, true);
         }
@@ -8249,16 +8254,16 @@ class LlamaCppService {
       }
 
       context = llama_init_from_model(model.pointer, ctxParams);
-      if (context == nullptr) {
-        throw LlamaContextException(
-          'Failed to create the decision encoder context of $maxTokens tokens.',
-        );
-      }
       IsolateShutdownReleases.current.hold(
         ShutdownStage.context,
         _llamaFreeAddress,
         context,
       );
+      if (context == nullptr) {
+        throw LlamaContextException(
+          'Failed to create the decision encoder context of $maxTokens tokens.',
+        );
+      }
       try {
         tokenLimit = llama_n_ubatch(context);
         checkDecisionEncoderContext(

@@ -255,7 +255,7 @@ void main() {
 
     test('holds what create made for isolate shutdown until dispose', () {
       final releases = IsolateShutdownReleases.current;
-      final before = releases.debugHeldCountForTesting;
+      final before = releases.debugHeldForTesting.length;
       final runtime = DecisionHeadRuntime.create(
         weightsOf(SyntheticDecisionHead(d: 64, layers: 1, seed: 27)),
         cpuThreads: 1,
@@ -263,14 +263,14 @@ void main() {
       );
 
       // The CPU backend, the weights buffer and the scheduler.
-      expect(releases.debugHeldCountForTesting, before + 3);
+      expect(releases.debugHeldForTesting.length, before + 3);
       runtime.dispose();
-      expect(releases.debugHeldCountForTesting, before);
+      expect(releases.debugHeldForTesting.length, before);
     });
 
     test('create releases what it held when the scheduler fails', () {
       final releases = IsolateShutdownReleases.current;
-      final before = releases.debugHeldCountForTesting;
+      final before = releases.debugHeldForTesting.length;
 
       expect(
         () => DecisionHeadRuntime.create(
@@ -281,7 +281,7 @@ void main() {
         ),
         throwsA(isA<LlamaModelException>()),
       );
-      expect(releases.debugHeldCountForTesting, before);
+      expect(releases.debugHeldForTesting.length, before);
     });
 
     test('create frees what it made when the scheduler fails', () {

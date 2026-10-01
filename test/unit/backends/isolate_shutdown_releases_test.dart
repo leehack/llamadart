@@ -30,14 +30,17 @@ void main() {
     await Isolate.run(() {
       _hold(file, 'model ', ShutdownStage.model);
       _hold(file, 'context ', ShutdownStage.context);
+      _hold(file, 'backend ', ShutdownStage.backend);
       _hold(file, 'session ', ShutdownStage.session);
       _hold(file, 'buffer ', ShutdownStage.modelUser);
+      _hold(file, 'scheduler ', ShutdownStage.scheduler);
       _hold(file, 'model2 ', ShutdownStage.model);
     });
 
+    // Each object goes before the objects it uses.
     expect(
       File(file).readAsStringSync(),
-      'session context buffer model model2 ',
+      'session scheduler context buffer backend model model2 ',
     );
   });
 

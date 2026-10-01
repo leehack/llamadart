@@ -29,10 +29,15 @@ decision head or image model still loaded
 - A Dart program that returns from `main` or dies of an unhandled error does
   not need to dispose first: llamadart frees what its engines still hold as
   the program ends, after any native call still running finishes. The exit
-  still aborts when the program dies of an error during an image generation:
-  stable-diffusion.cpp reports progress through a Dart callback, which the
-  shutting-down VM rejects. `exit()` from `dart:io` skips the native teardown
-  and never aborts.
+  can still abort when the program dies of an error:
+  - while a model, context or image model is being created: the VM stops the
+    worker as soon as that native call returns, before llamadart can track
+    the new object;
+  - while an image model loads or generates: stable-diffusion.cpp reports
+    progress through a Dart callback, which the shutting-down VM rejects;
+  - rarely, while `dispose()` is freeing objects, which can leave one unfreed.
+
+  `exit()` from `dart:io` skips the native teardown and never aborts.
 - A Flutter app that quits through AppKit (Cmd-Q or closing its last window)
   ends the process without that cleanup, so dispose every engine, including
   `DecisionEngine` and `ImageGenerationEngine`, before it quits. Desktop

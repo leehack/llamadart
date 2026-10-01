@@ -71,8 +71,13 @@ final class IsolateShutdownReleases {
     finalizer.attach(_anchor, object.cast(), key);
   }
 
-  /// How many objects are held.
-  int get debugHeldCountForTesting => _held.length;
+  /// The free function and stage of each held object, in the order they
+  /// were held.
+  List<({Pointer<NativeFinalizerFunction> free, ShutdownStage stage})>
+  get debugHeldForTesting => [
+    for (final (finalizer, _) in _held.values)
+      (free: finalizer.free, stage: finalizer.stage),
+  ];
 
   /// Stops freeing [object] at shutdown; does nothing if it is not held.
   void release(Pointer<NativeType> object) {
