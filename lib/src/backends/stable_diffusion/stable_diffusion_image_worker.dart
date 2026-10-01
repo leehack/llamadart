@@ -8,7 +8,7 @@ import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
 import 'stable_diffusion_bindings.dart' as sd;
-import 'stable_diffusion_sampling.dart';
+import 'stable_diffusion_params.dart';
 
 typedef _ProgressCallback = NativeCallable<sd.sd_progress_cb_tFunction>;
 
@@ -313,33 +313,9 @@ T _withProgress<T>(
 
 Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
   return using((arena) {
-    Pointer<Char> text(String? value) =>
-        value == null ? nullptr : value.toNativeUtf8(allocator: arena).cast();
-
     final params = arena<sd.sd_ctx_params_t>();
     sd.sd_ctx_params_init(params);
-    final files = config.files;
-    params.ref
-      ..model_path = text(files['model'])
-      ..diffusion_model_path = text(files['diffusionModel'])
-      ..vae_path = text(files['vae'])
-      ..taesd_path = text(files['taesd'])
-      ..clip_l_path = text(files['clipL'])
-      ..clip_g_path = text(files['clipG'])
-      ..t5xxl_path = text(files['t5xxl'])
-      ..llm_path = text(files['llm'])
-      ..backend = text(config.backend)
-      ..diffusion_flash_attn = config.flashAttention
-      ..vae_conv_direct = config.vaeDirectConvolution
-      // Load every weight now, so the load pays for reading the files and
-      // progress during generation is only sampling. A model that does not
-      // fit the device does not fail the load: the runtime's automatic fit
-      // keeps some weights in host memory or on disk, which makes sampling
-      // slower.
-      ..eager_load = true;
-    if (config.threads > 0) {
-      params.ref.n_threads = config.threads;
-    }
+    applyStableDiffusionContextParams(params, config, arena);
     return sd.new_sd_ctx(params);
   });
 }
@@ -351,21 +327,7 @@ _Generated _generate(
   return using((arena) {
     final params = arena<sd.sd_img_gen_params_t>();
     sd.sd_img_gen_params_init(params);
-    params.ref
-      ..prompt = request.prompt.toNativeUtf8(allocator: arena).cast()
-      ..negative_prompt = request.negativePrompt
-          .toNativeUtf8(allocator: arena)
-          .cast()
-      ..width = request.width
-      ..height = request.height
-      ..seed = request.seed
-      ..batch_count = request.count;
-    params.ref.sample_params
-      ..sample_steps = request.steps
-      ..guidance.txt_cfg = request.guidanceScale
-      ..sample_method = stableDiffusionSampleMethod(request.sampler)
-      ..scheduler = stableDiffusionScheduler(request.scheduler)
-      ..flow_shift = stableDiffusionFlowShift(request.flowShift);
+    applyStableDiffusionGenerationParams(params, request, arena);
 
     final imagesOut = arena<Pointer<sd.sd_image_t>>();
     final countOut = arena<Int>();
