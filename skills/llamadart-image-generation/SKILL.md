@@ -53,8 +53,21 @@ description: >-
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
   - `ImageGenerationModel.custom(ImageGenerationModelFiles(...), defaults:
-    ImageGenerationDefaults(steps:, guidanceScale:))` for other SD 1.x/2.x
-    checkpoints; experimental and unvalidated.
+    ImageGenerationDefaults(steps:, guidanceScale:))` for any other family
+    stable-diffusion.cpp loads (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image);
+    experimental, for desktop GPUs and Macs. Split files: SD 3.5 takes
+    `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; FLUX
+    `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl`; Z-Image and
+    Qwen-Image `diffusionModel`, `vae`, `llm`. A single-file GGUF that
+    includes the VAE (SD 3.5 Medium) goes in `model`, not `diffusionModel`.
+    Distilled models need their own defaults, such as `steps: 4,
+    guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell.
+- `ImageGenerationDefaults` and `ImageGenerationRequest` also take
+  `sampler` (`ImageGenerationSampler`), `scheduler`
+  (`ImageGenerationScheduler`) and `flowShift` (flow-matching models only,
+  greater than 0, at most 100); a request value overrides the model default,
+  and `null` keeps the runtime's default for the model. SDXL-Lightning wants
+  `euler` with `sgmUniform`.
 - `load` checks every file exists and, unless
   `ImageGenerationOptions(checkMemory: false)`, refuses a model whose estimate
   (file sizes plus a quarter plus 256 MiB) exceeds the device figure
@@ -63,6 +76,11 @@ description: >-
   fit 6 GB Android phones; offer SDXS there.
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
+  `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
+  per device: flash attention on for the CPU and Metal, off on Vulkan; direct
+  VAE convolutions on except on Metal (about 7 times slower there) and with a
+  tiny autoencoder. Leave them `null` unless measuring; neither changes the
+  image beyond rounding.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()`, `runtimeCapabilities()`
   or `load()`) compiles the Metal library on Apple (about 16 s on an M4 Max

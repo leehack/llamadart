@@ -8,8 +8,10 @@ description: Generate images from text prompts on device with the experimental I
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) through
 the opt-in `stable_diffusion` native runtime, separately from `LlamaEngine`.
 
-The API is experimental. Two small, distilled SD 1.x/2.x-family models are
-validated: SDXS-512 and SD-Turbo. It is text-to-image only: no image-to-image,
+The API is experimental. Two small, distilled SD 1.x/2.x-family presets are
+validated on phones and desktops: SDXS-512 and SD-Turbo. Larger families
+such as SDXL, SD 3.5, FLUX and Z-Image load through
+[`.custom`](#larger-models-with-custom) on desktop GPUs and Macs. It is text-to-image only: no image-to-image,
 inpainting, LoRA or ControlNet yet.
 
 ## Support
@@ -61,7 +63,7 @@ selects Vulkan, which it does by default; set
 | --- | --- | --- |
 | `ImageGenerationModel.sdxs(path)` | `sdxs-512-tinySDdistilled_Q8_0.gguf` from [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) (651 MB) | 1 step, guidance 1 |
 | `ImageGenerationModel.sdTurbo(path, taesdPath: ...)` | `sd_turbo-f16-q8_0.gguf` from [`Green-Sky/SD-Turbo-GGUF`](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) (1.9 GB), optionally `diffusion_pytorch_model.safetensors` from [`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd) (9 MB) | 1 step, guidance 1 |
-| `ImageGenerationModel.custom(files, defaults: ...)` | Other SD 1.x/2.x checkpoints, single-file or split | 20 steps, guidance 7 |
+| `ImageGenerationModel.custom(files, defaults: ...)` | Any other checkpoint stable-diffusion.cpp loads, single-file or split | 20 steps, guidance 7 |
 
 SDXS is distilled for exactly one step. SD-Turbo takes one to four steps; four
 add detail at about four times the sampling time. TAESD replaces the full VAE
@@ -83,8 +85,48 @@ final entry = await downloads.ensureModel(
 final model = ImageGenerationModel.sdxs(entry.filePath);
 ```
 
-`.custom` is experimental. Larger families stable-diffusion.cpp supports, such
-as SDXL or FLUX, may load but are untested and can exceed phone memory.
+### Larger models with `.custom`
+
+`.custom` is experimental. It loads any family the bundled
+stable-diffusion.cpp supports, including SDXL, SD 3.5, FLUX, Z-Image and
+Qwen-Image. These need several GB of memory and are meant for desktop GPUs
+and Macs. Each family takes its own files in `ImageGenerationModelFiles`:
+
+| Family | Files |
+| --- | --- |
+| SD 1.x, 2.x, SDXL | `model` (single file), optionally `vae` or `taesd` |
+| SD 3.5 | `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; a single-file GGUF that includes the VAE and encoders, such as SD 3.5 Medium, goes in `model` instead |
+| FLUX | `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl` |
+| Z-Image, Qwen-Image | `diffusionModel`, `vae`, `llm` (the language-model text encoder) |
+
+Give distilled models their sampling defaults. Measured settings from
+[#802](https://github.com/leehack/llamadart/issues/802):
+
+```dart
+final zImageTurbo = ImageGenerationModel.custom(
+  const ImageGenerationModelFiles(
+    diffusionModel: 'z_image_turbo-Q4_K.gguf',
+    vae: 'ae.safetensors',
+    llm: 'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+  ),
+  defaults: const ImageGenerationDefaults(steps: 8, guidanceScale: 1),
+);
+final sdxlLightning = ImageGenerationModel.custom(
+  const ImageGenerationModelFiles(model: 'sdxl_lightning_4step.safetensors'),
+  defaults: const ImageGenerationDefaults(
+    steps: 4,
+    guidanceScale: 1,
+    sampler: ImageGenerationSampler.euler,
+    scheduler: ImageGenerationScheduler.sgmUniform,
+  ),
+);
+```
+
+`sampler`, `scheduler` and `flowShift` can also be set per request. Left
+unset, the runtime picks the model's own: Euler for SD 3.5, FLUX and Z-Image,
+Euler ancestral with the discrete schedule for SD 1.x, 2.x and SDXL.
+`flowShift` applies only to flow-matching models; Qwen-Image's reference
+settings use 3.
 
 ## Generate
 
@@ -135,6 +177,21 @@ await engine.dispose();
 `load` loads every weight up front. The first image in a process can still be
 slow while the GPU compiles shaders; see
 [First-image latency and warm-up](#first-image-latency-and-warm-up).
+
+## Attention and VAE settings
+
+Two runtime settings in `ImageGenerationOptions` change speed and memory but
+not the image. Left `null`, the engine picks them for the device it loads
+on:
+
+| Setting | Automatic choice | Measured |
+| --- | --- | --- |
+| `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GB to 0.3 GB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. Output differs only in rounding |
+| `vaeDirectConvolution` (full VAE decode) | On, except on Metal and with a tiny autoencoder (`taesd` or SDXS) | NVIDIA L4 Vulkan, 1024x1024: decode 23 to 56 s to about 1 s, 4 to 5 GB less device memory. M4 Max CPU, SD-Turbo 512x512: decode unchanged, peak 3.6 GB to 2.7 GB. Metal: about 7 times slower. Identical output |
+
+Vulkan flash attention has not been measured yet, so it stays off there;
+pass `flashAttention: true` to try it. The runtime falls back to regular
+attention where a device has no kernel for it.
 
 ## First-image latency and warm-up
 

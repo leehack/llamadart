@@ -1,5 +1,6 @@
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
+import 'image_generation_model.dart';
 
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
@@ -13,11 +14,19 @@ final class ImageGenerationSessionConfig {
   /// CPU threads; `0` uses the physical core count.
   final int threads;
 
+  /// Whether the diffusion model uses flash attention.
+  final bool flashAttention;
+
+  /// Whether the VAE decodes with direct convolutions.
+  final bool vaeDirectConvolution;
+
   /// Creates a session configuration.
   const ImageGenerationSessionConfig({
     required this.files,
     required this.backend,
     required this.threads,
+    this.flashAttention = false,
+    this.vaeDirectConvolution = false,
   });
 }
 
@@ -47,6 +56,15 @@ final class ImageGenerationSessionRequest {
   /// Number of images.
   final int count;
 
+  /// Sampling method, or `null` for the runtime default.
+  final ImageGenerationSampler? sampler;
+
+  /// Noise schedule, or `null` for the runtime default.
+  final ImageGenerationScheduler? scheduler;
+
+  /// Flow shift, or `null` for the runtime default.
+  final double? flowShift;
+
   /// Creates resolved generation parameters.
   const ImageGenerationSessionRequest({
     required this.prompt,
@@ -57,6 +75,9 @@ final class ImageGenerationSessionRequest {
     required this.guidanceScale,
     required this.seed,
     required this.count,
+    this.sampler,
+    this.scheduler,
+    this.flowShift,
   });
 }
 

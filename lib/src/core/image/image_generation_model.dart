@@ -1,9 +1,11 @@
 /// Local weight files for one image-generation model.
 ///
 /// Single-file checkpoints set [model]. Split checkpoints set
-/// [diffusionModel] and the matching [vae] and text encoders. [taesd] adds
-/// the tiny autoencoder, which replaces the VAE decoder for faster,
-/// lower-memory decoding at a small quality cost.
+/// [diffusionModel] and the matching [vae] and text encoders: [clipL] and
+/// [clipG] for SDXL-style models, [clipL], [clipG] and [t5xxl] for SD 3.5,
+/// [clipL] and [t5xxl] for FLUX, and [llm] for Z-Image and Qwen-Image.
+/// [taesd] adds the tiny autoencoder, which replaces the VAE decoder for
+/// faster, lower-memory decoding at a small quality cost.
 class ImageGenerationModelFiles {
   /// Single-file checkpoint (`.gguf`, `.safetensors` or `.ckpt`).
   final String? model;
@@ -27,6 +29,10 @@ class ImageGenerationModelFiles {
   /// Standalone T5-XXL text encoder.
   final String? t5xxl;
 
+  /// Standalone language-model text encoder, such as Qwen3-4B for Z-Image or
+  /// Qwen2.5-VL-7B for Qwen-Image, as a `.gguf` or `.safetensors` file.
+  final String? llm;
+
   /// Creates a file set. Every path is a local file.
   const ImageGenerationModelFiles({
     this.model,
@@ -36,6 +42,7 @@ class ImageGenerationModelFiles {
     this.clipL,
     this.clipG,
     this.t5xxl,
+    this.llm,
   });
 
   /// Every non-null path, keyed by its role, in declaration order.
@@ -47,7 +54,47 @@ class ImageGenerationModelFiles {
     'clipL': ?clipL,
     'clipG': ?clipG,
     't5xxl': ?t5xxl,
+    'llm': ?llm,
   };
+}
+
+/// Sampling method of a generation.
+///
+/// A subset of stable-diffusion.cpp's samplers. When neither the request nor
+/// the model sets one, the runtime picks the model's default: Euler for
+/// transformer models such as SD 3.5, FLUX and Z-Image, and Euler ancestral
+/// for UNet models such as SD 1.x, 2.x and SDXL.
+enum ImageGenerationSampler {
+  /// Euler.
+  euler,
+
+  /// Euler ancestral, which adds fresh noise every step.
+  eulerAncestral,
+
+  /// DPM++ 2M.
+  dpmpp2m,
+
+  /// Latent consistency model sampling, for LCM-distilled checkpoints.
+  lcm,
+}
+
+/// Noise schedule of a generation.
+///
+/// A subset of stable-diffusion.cpp's schedulers. When neither the request
+/// nor the model sets one, the runtime picks the default for the model and
+/// sampler.
+enum ImageGenerationScheduler {
+  /// The model's discrete training schedule.
+  discrete,
+
+  /// Karras et al. (2022) noise levels.
+  karras,
+
+  /// Uniform in sigma, as SDXL-Lightning's model card recommends.
+  sgmUniform,
+
+  /// Evenly spaced training timesteps.
+  simple,
 }
 
 /// Sampling defaults a model needs when a request leaves them unset.
@@ -59,9 +106,27 @@ class ImageGenerationDefaults {
   /// halves the work per step.
   final double guidanceScale;
 
+  /// Sampling method, or `null` for the runtime's default for the model.
+  final ImageGenerationSampler? sampler;
+
+  /// Noise schedule, or `null` for the runtime's default for the model and
+  /// sampler.
+  final ImageGenerationScheduler? scheduler;
+
+  /// Timestep shift of flow-matching models (SD 3.5, FLUX, Z-Image,
+  /// Qwen-Image), or `null` for the runtime's default for the model. Other
+  /// models ignore it. Qwen-Image's reference settings use 3.
+  final double? flowShift;
+
   /// Creates sampling defaults. The defaults suit undistilled SD 1.x and 2.x
   /// checkpoints.
-  const ImageGenerationDefaults({this.steps = 20, this.guidanceScale = 7.0});
+  const ImageGenerationDefaults({
+    this.steps = 20,
+    this.guidanceScale = 7.0,
+    this.sampler,
+    this.scheduler,
+    this.flowShift,
+  });
 }
 
 /// Model family a preset was built for.
@@ -79,7 +144,7 @@ enum ImageGenerationModelFamily {
 /// An image-generation model: its files and the sampling defaults it needs.
 ///
 /// Use a preset for the validated models, or [ImageGenerationModel.custom]
-/// for other SD 1.x and 2.x checkpoints stable-diffusion.cpp can load.
+/// for other checkpoints stable-diffusion.cpp can load.
 class ImageGenerationModel {
   /// Family the preset was built for.
   final ImageGenerationModelFamily family;
@@ -120,10 +185,17 @@ class ImageGenerationModel {
 
   /// Any other checkpoint, with the sampling [defaults] it needs.
   ///
-  /// Experimental: only SD 1.x and 2.x-family checkpoints are in scope, and
-  /// only SDXS and SD-Turbo are validated. Larger families that
-  /// stable-diffusion.cpp supports, such as SDXL or FLUX, may load but are
-  /// untested and can exceed phone memory.
+  /// Experimental. Any family the bundled stable-diffusion.cpp supports can
+  /// load, including SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image; the
+  /// runtime detects the family from the weights. Each family needs its own
+  /// file roles (see [ImageGenerationModelFiles]) and [defaults]: distilled
+  /// models such as SDXL-Lightning or FLUX.1-schnell use about 4 steps at
+  /// guidance 1. A single-file checkpoint that includes its VAE and text
+  /// encoders, such as an SD 3.5 Medium GGUF, goes in
+  /// [ImageGenerationModelFiles.model], not `diffusionModel`.
+  ///
+  /// SDXL and newer families need several GB of memory and are meant for
+  /// desktop GPUs and Macs, not phones.
   factory ImageGenerationModel.custom(
     ImageGenerationModelFiles files, {
     ImageGenerationDefaults defaults = const ImageGenerationDefaults(),
@@ -161,10 +233,37 @@ class ImageGenerationOptions {
   /// estimate says cannot fit the device. See `ImageGenerationEngine.load`.
   final bool checkMemory;
 
+  /// Whether the diffusion model uses flash attention, which needs less
+  /// memory and is often faster, with output that differs only in rounding.
+  ///
+  /// `null` turns it on for the CPU and Metal, where it was measured, and
+  /// leaves it off on other GPUs such as Vulkan. On an M4 Max it made
+  /// SD 3.5 Medium sampling 1.6 times as fast and cut its compute buffer
+  /// from 1.8 GB to 0.3 GB, sped up FLUX and SDXL slightly and left
+  /// SD 1.x and 2.x unchanged; on its CPU, SD-Turbo sampling was about a
+  /// fifth faster. The runtime falls back to regular attention where the
+  /// device lacks a kernel.
+  final bool? flashAttention;
+
+  /// Whether the full VAE decodes with direct convolutions instead of
+  /// unfolding its input first. The output is identical.
+  ///
+  /// `null` turns it on, except on Metal and when a tiny autoencoder decodes
+  /// (an `ImageGenerationModelFiles.taesd` file or the SDXS preset). On an
+  /// NVIDIA L4 with Vulkan it cut a 1024x1024 decode from 23 to 56 s to
+  /// about 1 s and peak device memory by 4 to 5 GB. On an M4 Max CPU it
+  /// left a 512x512 SD-Turbo decode within measurement noise and cut peak
+  /// memory from 3.6 to 2.7 GB. On Metal it made decoding about 7 times
+  /// slower, and with a tiny autoencoder it saved little memory and slowed
+  /// decoding by about 40%.
+  final bool? vaeDirectConvolution;
+
   /// Creates runtime settings.
   const ImageGenerationOptions({
     this.device = ImageGenerationDevice.auto,
     this.threads = 0,
     this.checkMemory = true,
+    this.flashAttention,
+    this.vaeDirectConvolution,
   });
 }

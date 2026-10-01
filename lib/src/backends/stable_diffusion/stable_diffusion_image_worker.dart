@@ -8,6 +8,7 @@ import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
 import 'stable_diffusion_bindings.dart' as sd;
+import 'stable_diffusion_sampling.dart';
 
 typedef _ProgressCallback = NativeCallable<sd.sd_progress_cb_tFunction>;
 
@@ -289,9 +290,15 @@ Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
       ..clip_l_path = text(files['clipL'])
       ..clip_g_path = text(files['clipG'])
       ..t5xxl_path = text(files['t5xxl'])
+      ..llm_path = text(files['llm'])
       ..backend = text(config.backend)
-      // Load every weight now, so a model that does not fit fails the load
-      // and progress during generation is only sampling.
+      ..diffusion_flash_attn = config.flashAttention
+      ..vae_conv_direct = config.vaeDirectConvolution
+      // Load every weight now, so the load pays for reading the files and
+      // progress during generation is only sampling. A model that does not
+      // fit the device does not fail the load: the runtime's automatic fit
+      // keeps some weights in host memory or on disk, which makes sampling
+      // slower.
       ..eager_load = true;
     if (config.threads > 0) {
       params.ref.n_threads = config.threads;
@@ -318,7 +325,10 @@ _Generated _generate(
       ..batch_count = request.count;
     params.ref.sample_params
       ..sample_steps = request.steps
-      ..guidance.txt_cfg = request.guidanceScale;
+      ..guidance.txt_cfg = request.guidanceScale
+      ..sample_method = stableDiffusionSampleMethod(request.sampler)
+      ..scheduler = stableDiffusionScheduler(request.scheduler)
+      ..flow_shift = stableDiffusionFlowShift(request.flowShift);
 
     final imagesOut = arena<Pointer<sd.sd_image_t>>();
     final countOut = arena<Int>();

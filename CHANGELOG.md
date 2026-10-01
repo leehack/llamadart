@@ -55,6 +55,12 @@
   Windows GPU module does not load; the docs now list the latest Visual C++
   v14 Redistributable as a Windows requirement
   ([#788](https://github.com/leehack/llamadart/issues/788)).
+- Add desktop-model settings to experimental image generation: an `llm`
+  text-encoder file for Z-Image and Qwen-Image, sampler, scheduler and flow
+  shift on the request and model defaults, and flash attention and direct
+  VAE convolutions, which now turn on automatically where measured faster or
+  smaller, such as a 1024x1024 Vulkan decode in about 1 s instead of up to
+  56 s ([#802](https://github.com/leehack/llamadart/issues/802)).
 
 ## 0.9.0
 

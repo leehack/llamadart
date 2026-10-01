@@ -298,6 +298,11 @@ class ImageGenerationEngine {
             ImageGenerationDevice.gpu => 'gpu',
           },
           threads: options.threads,
+          flashAttention:
+              options.flashAttention ?? _flashAttentionByDefault(backendName),
+          vaeDirectConvolution:
+              options.vaeDirectConvolution ??
+              _vaeDirectConvolutionByDefault(backendName, model),
         ),
       );
       return ImageGenerationEngine._(
@@ -336,11 +341,13 @@ class ImageGenerationEngine {
 
   /// Starts generating the images [request] describes.
   ///
-  /// Unset steps and guidance come from [ImageGenerationModel.defaults], and
-  /// an unset seed is picked at random and reported in the result.
+  /// Unset steps, guidance, sampler, scheduler and flow shift come from
+  /// [ImageGenerationModel.defaults], and an unset seed is picked at random
+  /// and reported in the result.
   ///
   /// Throws [LlamaImageGenerationException] for an invalid request, including
-  /// invalid steps or guidance from [ImageGenerationModel.defaults], and
+  /// invalid steps, guidance or flow shift from
+  /// [ImageGenerationModel.defaults], and
   /// [LlamaStateException] after [dispose] or while another generation or
   /// load is running. A runtime failure after the task starts, such as an
   /// aborted GPU command buffer, fails the task with
@@ -357,6 +364,9 @@ class ImageGenerationEngine {
       guidanceScale: effective.guidanceScale!,
       seed: effective.seed ?? _seedRandom.nextInt(0x7FFFFFFF),
       count: effective.count,
+      sampler: effective.sampler,
+      scheduler: effective.scheduler,
+      flowShift: effective.flowShift,
     );
     final task = ImageGenerationTask._(_session.cancel);
     _activeTask = task;
@@ -454,6 +464,9 @@ class ImageGenerationEngine {
       guidanceScale: request.guidanceScale ?? model.defaults.guidanceScale,
       seed: request.seed,
       count: request.count,
+      sampler: request.sampler ?? model.defaults.sampler,
+      scheduler: request.scheduler ?? model.defaults.scheduler,
+      flowShift: request.flowShift ?? model.defaults.flowShift,
     );
     validateImageGenerationRequest(effective);
     return effective;
@@ -595,6 +608,26 @@ class ImageGenerationEngine {
     final name = deviceName.toLowerCase();
     return _gpuDevicePrefixes.any(name.startsWith);
   }
+
+  static bool _isMetal(String deviceName) {
+    final name = deviceName.toLowerCase();
+    return name.startsWith('mtl') || name.startsWith('metal');
+  }
+
+  /// Flash attention was measured faster or neutral on the CPU and Metal;
+  /// other GPU backends keep the runtime default until measured.
+  static bool _flashAttentionByDefault(String backendName) =>
+      !_isGpu(backendName) || _isMetal(backendName);
+
+  /// Direct VAE convolutions are much slower on Metal, and gain little with
+  /// a tiny autoencoder, which SDXS embeds.
+  static bool _vaeDirectConvolutionByDefault(
+    String backendName,
+    ImageGenerationModel model,
+  ) =>
+      !_isMetal(backendName) &&
+      model.files.taesd == null &&
+      model.family != ImageGenerationModelFamily.sdxs;
 
   /// ggml registry names of GPU devices. The published runtimes use Metal
   /// (`MTL0`) and Vulkan (`Vulkan0`).

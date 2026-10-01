@@ -37,6 +37,7 @@ void main() {
         clipL: '/m/clip_l.safetensors',
         clipG: '/m/clip_g.safetensors',
         t5xxl: '/m/t5.gguf',
+        llm: '/m/qwen3.gguf',
       ),
     );
 
@@ -47,9 +48,13 @@ void main() {
       'clipL',
       'clipG',
       't5xxl',
+      'llm',
     ]);
     expect(model.defaults.steps, 20);
     expect(model.defaults.guidanceScale, 7);
+    expect(model.defaults.sampler, isNull);
+    expect(model.defaults.scheduler, isNull);
+    expect(model.defaults.flowShift, isNull);
 
     final tuned = ImageGenerationModel.custom(
       const ImageGenerationModelFiles(model: '/m/sd15.safetensors'),
@@ -65,5 +70,7 @@ void main() {
     expect(options.device, ImageGenerationDevice.auto);
     expect(options.threads, 0);
     expect(options.checkMemory, isTrue);
+    expect(options.flashAttention, isNull);
+    expect(options.vaeDirectConvolution, isNull);
   });
 }
