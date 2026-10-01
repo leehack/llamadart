@@ -433,6 +433,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app synthesis changes.',
   ),
   TestMatrixRow(
+    id: 'image-generation-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real opt-in stable_diffusion runtime bundled by the example hook, '
+        'SDXS load and 256x256 one-step generation with labelled progress, '
+        'same-seed determinism, pre-start and mid-run cancellation, the '
+        'one-generation guard, dispose during generation, and PNG output; '
+        'SD-Turbo with TAESD when LLAMADART_SD_TURBO_MODEL is set',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-generation-smoke --model-path <sdxs.gguf>',
+    useWhen:
+        'Image generation API, stable_diffusion runtime pins, bindings, '
+        'probe or hook changes.',
+  ),
+  TestMatrixRow(
     id: 'decision-model-smoke',
     tier: 'targeted',
     mode: 'local-only',
@@ -558,6 +575,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen:
         'LiteRT-LM live ASR, worker isolation, PCM streaming, sidecar model '
         'downloads, chat composer dictation, or microphone lifecycle changes.',
+  ),
+  TestMatrixRow(
+    id: 'chat-app-image-generation-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'chat-app image screen on a device with the bundled stable_diffusion '
+        'runtime: runtime probe, SDXS download through the screen when not '
+        'installed, seeded 512x512 generation with the used seed shown, and '
+        'PNG plus screen-capture output in the app temporary directory',
+    command:
+        'cd example/chat_app && flutter test --run-skipped -t local-only '
+        'integration_test/image_generation_e2e_test.dart -d <device>',
+    useWhen:
+        'Chat-app image screen, image model catalog or download, or device '
+        'QA of the stable_diffusion runtime on Android, iOS, macOS, Linux or '
+        'Windows (#779). Record device, backend, timing and memory.',
   ),
   TestMatrixRow(
     id: 'chat-app-voice-question-smoke',

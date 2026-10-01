@@ -30,6 +30,8 @@ macOS, Linux, Windows and the web, behind one Dart API.
 - [Image and audio input](./guides/multimodal) with multimodal models.
 - [Speech to text](./guides/speech-to-text) and
   [text to speech](./guides/text-to-speech).
+- [Image generation](./guides/image-generation) from text prompts, with the
+  opt-in stable-diffusion.cpp runtime (experimental).
 - [Decision models](./guides/decision-models) that answer typed questions
   without generating text.
 - Runtime [LoRA adapters](./guides/lora-adapters).

@@ -94,6 +94,13 @@ class LlamaStateException extends LlamaException {
   LlamaStateException(super.message, [super.details]);
 }
 
+/// Exception thrown when an image-generation request or image buffer is
+/// invalid.
+class LlamaImageGenerationException extends LlamaException {
+  /// Creates a new [LlamaImageGenerationException].
+  LlamaImageGenerationException(super.message, [super.details]);
+}
+
 /// Exception thrown when a decision-model request is invalid or cannot be answered.
 class LlamaDecisionException extends LlamaException {
   /// Creates a new [LlamaDecisionException].

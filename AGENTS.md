@@ -25,8 +25,9 @@ dart test -p chrome --exclude-tags local-only
   test, SwiftPM and publish-validation lanes, and the Jaspr docs site its own
   analyze and test lane (`ci.yml`).
 - Chat app changes: `(cd example/chat_app && flutter test)`, plus
-  `flutter test --platform chrome test/chat_generation_service_test.dart` there
-  for Web-only paths such as LiteRT-LM generation settings.
+  `flutter test --platform chrome test/chat_generation_service_test.dart
+  test/image_generation_screen_test.dart` there for Web-only paths such as
+  LiteRT-LM generation settings and the image screen's unsupported state.
 - Pick further validation from `dart run tool/testing/test_matrix.dart --list`
   (`doc/testing_matrix.md`) and put its `--pr-template` rows in the PR.
 - Heavy, device- or model-backed checks stay out of default CI: tag such tests
@@ -88,7 +89,8 @@ dart test -p chrome --exclude-tags local-only
 
 Never patch upstream native or web bridge sources here. Owners:
 `llamadart-native` (llama.cpp runtime), `litert-lm-native` (LiteRT-LM runtime),
-`llama-web-bridge` (web bridge), `llama-web-bridge-assets` (published assets).
+`stable-diffusion-native` (stable-diffusion.cpp runtime), `llama-web-bridge`
+(web bridge), `llama-web-bridge-assets` (published assets).
 This repo only consumes them: native hook/config/bindings, and bridge tag
 pinning, fetch and runtime wiring
 (`website/docs/maintainers/runtime-ownership.md`). Checkouts often keep them as

@@ -16,3 +16,9 @@ dependencies:
 dev_dependencies:
   lints: ^6.1.0
   test: ^1.26.3
+
+hooks:
+  user_defines:
+    llamadart:
+      # The image example needs the opt-in stable_diffusion runtime.
+      llamadart_native_runtimes: [llama_cpp, stable_diffusion]

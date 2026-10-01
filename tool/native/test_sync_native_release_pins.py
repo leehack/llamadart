@@ -2338,5 +2338,212 @@ class CompanionChangelogUnreleasedTest(unittest.TestCase):
         self.assertTrue(updated.startswith(f"## Unreleased\n\n{self.entry}\n\n## 0.0.11"))
 
 
+
+SD_REPO = "leehack/stable-diffusion-native"
+SD_BUNDLES = {
+    "android-arm64": "libstable-diffusion.so",
+    "ios-arm64": "libstable-diffusion.dylib",
+    "ios-arm64-sim": "libstable-diffusion.dylib",
+    "macos-arm64": "libstable-diffusion.dylib",
+    "macos-x64": "libstable-diffusion.dylib",
+    "linux-arm64": "libstable-diffusion.so",
+    "linux-arm64-vulkan": "libstable-diffusion.so",
+    "linux-x64": "libstable-diffusion.so",
+    "linux-x64-vulkan": "libstable-diffusion.so",
+    "windows-x64": "stable-diffusion.dll",
+    "windows-x64-vulkan": "stable-diffusion.dll",
+}
+
+
+def _sd_fixture(tag: str, targets: dict[str, str]) -> tuple[dict, dict]:
+    artifacts = []
+    assets = []
+    for index, (target, library) in enumerate(sorted(targets.items())):
+        for kind in ("runtime", "symbols"):
+            name = f"stable-diffusion-native-{kind}-{target}-{tag}.tar.gz"
+            checksum = hashlib.sha256(f"{kind}-{target}-{tag}".encode()).hexdigest()
+            artifacts.append(
+                {
+                    "target": target,
+                    "kind": kind,
+                    "file": name,
+                    "sha256": checksum,
+                    "size": 1000 + index,
+                    "library": library,
+                    "accelerators": ["cpu"],
+                }
+            )
+            assets.append(
+                {
+                    "name": name,
+                    "digest": f"sha256:{checksum}",
+                    "browser_download_url": (
+                        f"https://github.com/{SD_REPO}/releases/download/{tag}/{name}"
+                    ),
+                }
+            )
+    manifest = {
+        "schemaVersion": 1,
+        "package": "stable-diffusion-native",
+        "tag": tag,
+        "upstream": {
+            "repository": "leejet/stable-diffusion.cpp",
+            "commit": "3f8527a46c54ecf4cb4ed6003da8e8982283c73c",
+        },
+        "artifacts": artifacts,
+    }
+    release = {"tag_name": tag, "assets": assets}
+    return manifest, release
+
+
+class StableDiffusionPinSyncTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.repo_root = self.root / "repo"
+        self.pins = self.repo_root / "lib/src/hook/native_release_pins.dart"
+        self.pins.parent.mkdir(parents=True)
+        shutil.copyfile(
+            Path(__file__).resolve().parents[2] / "lib/src/hook/native_release_pins.dart",
+            self.pins,
+        )
+        self.pins.write_text(
+            re.sub(
+                r"const stableDiffusionReleaseTag = '[^']+';",
+                "const stableDiffusionReleaseTag = 'v0.1.0';",
+                self.pins.read_text(encoding="utf-8"),
+            ),
+            encoding="utf-8",
+        )
+        self.release_dir = self.root / "releases"
+        self.release_dir.mkdir()
+
+    def run_sync(
+        self,
+        tag: str,
+        manifest: dict,
+        release: dict,
+        *,
+        manifest_digest: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        manifest_bytes = json.dumps(manifest).encode("utf-8")
+        prefix = SD_REPO.replace("/", "__")
+        (self.release_dir / f"{prefix}__{tag}__manifest.json").write_bytes(
+            manifest_bytes
+        )
+        release = json.loads(json.dumps(release))
+        release["assets"].append(
+            {
+                "name": "manifest.json",
+                "digest": "sha256:"
+                + (manifest_digest or hashlib.sha256(manifest_bytes).hexdigest()),
+                "browser_download_url": (
+                    f"https://github.com/{SD_REPO}/releases/download/{tag}/manifest.json"
+                ),
+            }
+        )
+        (self.release_dir / f"{prefix}__{tag}.json").write_text(
+            json.dumps(release), encoding="utf-8"
+        )
+        return subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve().parent / "sync_native_release_pins.py"),
+                "--repo-root",
+                str(self.repo_root),
+                "--release-json-dir",
+                str(self.release_dir),
+                "--stable-diffusion-tag",
+                tag,
+            ],
+            cwd=self.repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_rewrites_tag_version_and_every_bundle_from_the_manifest(self) -> None:
+        manifest, release = _sd_fixture(
+            "v0.2.0", {**SD_BUNDLES, "android-x64": "libstable-diffusion.so"}
+        )
+        result = self.run_sync("v0.2.0", manifest, release)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("also publishes android-x64", result.stderr)
+        text = self.pins.read_text(encoding="utf-8")
+        self.assertIn("const stableDiffusionReleaseTag = 'v0.2.0';", text)
+        self.assertIn("const stableDiffusionVersion = '0.2.0';", text)
+        self.assertEqual(pins.stable_diffusion_bundle_names(text), list(SD_BUNDLES))
+        for artifact in manifest["artifacts"]:
+            if artifact["kind"] != "runtime" or artifact["target"] == "android-x64":
+                continue
+            self.assertIn(
+                f"'{artifact['target']}',\n    sha256: '{artifact['sha256']}',\n"
+                f"    requiredLibraries: {{'{artifact['library']}'}},",
+                text,
+            )
+
+    def test_rejects_untrusted_or_incomplete_releases(self) -> None:
+        def missing_bundle(manifest: dict, release: dict) -> None:
+            manifest["artifacts"] = [
+                a for a in manifest["artifacts"] if a["target"] != "linux-x64-vulkan"
+            ]
+
+        def digest_mismatch(manifest: dict, release: dict) -> None:
+            release["assets"][0]["digest"] = "sha256:" + "0" * 64
+
+        def wrong_file(manifest: dict, release: dict) -> None:
+            manifest["artifacts"][0]["file"] = "other.tar.gz"
+
+        def unsafe_library(manifest: dict, release: dict) -> None:
+            manifest["artifacts"][0]["library"] = "../libevil.so"
+
+        def wrong_package(manifest: dict, release: dict) -> None:
+            manifest["package"] = "litert-lm-native"
+
+        for mutate, message in (
+            (missing_bundle, "does not publish pinned bundles: linux-x64-vulkan"),
+            (digest_mismatch, "does not match its GitHub digest"),
+            (wrong_file, "artifact must be"),
+            (unsafe_library, "library name is invalid"),
+            (wrong_package, "names another package"),
+        ):
+            with self.subTest(message=message):
+                original = self.pins.read_text(encoding="utf-8")
+                manifest, release = _sd_fixture("v0.2.0", SD_BUNDLES)
+                mutate(manifest, release)
+                result = self.run_sync("v0.2.0", manifest, release)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(self.pins.read_text(encoding="utf-8"), original)
+
+    def test_rejects_a_manifest_that_differs_from_its_github_digest(self) -> None:
+        manifest, release = _sd_fixture("v0.2.0", SD_BUNDLES)
+        result = self.run_sync(
+            "v0.2.0", manifest, release, manifest_digest="1" * 64
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("manifest.json does not match its GitHub digest", result.stderr)
+
+    def test_rejects_rollback_and_foreign_tag_grammar(self) -> None:
+        manifest, release = _sd_fixture("v0.0.9", SD_BUNDLES)
+        result = self.run_sync("v0.0.9", manifest, release)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("rollback from v0.1.0 to v0.0.9", result.stderr)
+
+        for tag in ("b1234", "v0.1", "v0.1.0-0", "v0.1.0-native.1"):
+            with self.subTest(tag=tag):
+                with self.assertRaises(ReleaseError):
+                    pins.normalize_stable_diffusion_release_tag(tag)
+        self.assertEqual(
+            pins.normalize_stable_diffusion_release_tag("v0.1.0-2"), "v0.1.0-2"
+        )
+        self.assertLess(
+            pins.stable_diffusion_release_order("v0.1.0"),
+            pins.stable_diffusion_release_order("v0.1.0-1"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

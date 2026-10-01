@@ -771,6 +771,39 @@ void main() {
       expect(result.stderr, contains('--model-path and --mmproj-path'));
     });
 
+    test('dry-runs image generation in the opted-in example', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'image-generation-smoke',
+        '--model-path',
+        'models/sdxs-512-tinySDdistilled_Q8_0.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          "cd /repo/example/basic_app && LLAMADART_SDXS_MODEL="
+          "models/sdxs-512-tinySDdistilled_Q8_0.gguf "
+          "LLAMADART_IMAGE_OUTPUT_DIR=/repo/build/image-generation-smoke "
+          "dart test --run-skipped -t local-only "
+          "test/image_generation_e2e_test.dart",
+        ),
+      );
+    });
+
+    test('requires an SDXS model for image generation', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'image-generation-smoke',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--model-path <sdxs.gguf> is required'));
+    });
+
     test('passes the GGUF stop-sequence backend only when given', () async {
       Future<String> dryRun(List<String> backend) async {
         final result = await runLocalE2e([

@@ -12,6 +12,7 @@ A simple console application showing:
 - Text generation
 - Embedding generation
 - Decision-model answers with `DecisionEngine`
+- Image generation with `ImageGenerationEngine` (`bin/llamadart_image_example.dart`)
 - Resource cleanup
 
 **Best for:** Understanding the core API
@@ -42,6 +43,7 @@ A Flutter UI application showing:
 - Settings persistence
 - Streaming text generation
 - GGUF plus LiteRT-LM `.litertlm` model routing
+- On-device image generation screen (SDXS, SD-Turbo)
 - Material Design UI
 
 **Best for:** Real-world Flutter integration

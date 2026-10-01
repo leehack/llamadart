@@ -93,6 +93,9 @@ jobs:
       - name: Verify native header sync atomicity
         run: python3 tool/native/test_sync_native_headers_and_bindings.py
 
+      - name: Verify stable_diffusion header sync
+        run: python3 tool/native/test_sync_stable_diffusion_bindings.py
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 
@@ -369,7 +372,7 @@ jobs:
         working-directory: example/chat_app
         run: |
           flutter test
-          flutter test --platform chrome test/chat_generation_service_test.dart
+          flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart
 
       - name: Build and validate deployable Web artifact
         env:

@@ -132,7 +132,9 @@ Pixel 9 Pro, macOS, and web, including speculative decoding.
 
 ## Reduce app size
 
-Native apps include every available runtime family by default, so one build can
-load both GGUF and `.litertlm` models. To ship only one, set
+Native apps include the llama.cpp and LiteRT-LM runtime families by default, so
+one build can load both GGUF and `.litertlm` models. To ship only one, set
 `llamadart_native_runtimes` as described in
-[Native Build Hooks](../platforms/native-build-hooks).
+[Native Build Hooks](../platforms/native-build-hooks). The experimental
+`stable_diffusion` runtime, which [image generation](./image-generation)
+needs, is never included unless named there.

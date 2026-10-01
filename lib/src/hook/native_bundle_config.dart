@@ -10,11 +10,16 @@
 /// Entry-point roles, deliberately not a call order `hook/build.dart` may
 /// reorder: [resolveNativeBundleSpec] names the target's release bundle;
 /// [selectNativeRuntimesForBundle] picks the runtime families and
-/// [nativeRuntimeExplicitlySelectedForBundle] says how hard to fail when one
-/// is unpublished; [describeNativeLibrary] classifies a discovered file;
-/// [selectLibrariesForBundling] picks which ship; [codeAssetNameForLibrary]
-/// names each as a code asset. A Flutter Apple build depending on a companion
-/// package takes the families from it, not [selectNativeRuntimesForBundle].
+/// [nativeRuntimeExplicitlySelectedForBundle] and
+/// [nativeRuntimeNamedForExactBundle] say how hard to fail when one is
+/// unpublished; [stableDiffusionBundleForNativeBundle] names the opt-in
+/// stable_diffusion archive; [describeNativeLibrary] classifies a discovered
+/// file; [selectLibrariesForBundling] picks which ship;
+/// [codeAssetNameForLibrary] names each as a code asset. A Flutter Apple build
+/// depending on a companion package takes the llama_cpp and litert_lm
+/// families from it, not [selectNativeRuntimesForBundle]; stable_diffusion,
+/// which has no companion package, still comes from
+/// [selectNativeRuntimesForBundle].
 ///
 /// User-facing docs: `website/docs/platforms/native-build-hooks.md` and
 /// `website/docs/guides/backend-selection.md`.
@@ -30,6 +35,12 @@ export 'native_release_tag.dart';
 /// `cpu_profile`/`cpu_variants` policy. [parseRequestedBackends] decodes the
 /// backend list; [selectLibrariesForBundling] decodes the CPU policy.
 const String nativeBackendUserDefineKey = 'llamadart_native_backends';
+
+/// User-define key choosing the stable_diffusion build (`cpu` or `vulkan`) on
+/// Linux and Windows independently of the llama.cpp backends; same shape as
+/// [nativeBackendUserDefineKey]. See [stableDiffusionBundleForNativeBundle].
+const String stableDiffusionBackendUserDefineKey =
+    'llamadart_stable_diffusion_backends';
 
 /// `llamadart-native` release tag to download; resolved in `hook/build.dart`.
 const String nativeTagUserDefineKey = 'llamadart_native_tag';
@@ -51,10 +62,23 @@ const String nativeRuntimeLlamaCpp = 'llama_cpp';
 /// The LiteRT-LM runtime family; not published for every bundle.
 const String nativeRuntimeLiteRtLm = 'litert_lm';
 
-/// Every runtime family, in the order `all` and `both` expand to.
+/// The experimental stable-diffusion.cpp runtime family. Opt-in only: it is
+/// bundled when named, never by default and never through `all` or `both`,
+/// because it adds tens of megabytes per platform. Not published for every
+/// bundle; see [stableDiffusionBundleForNativeBundle].
+const String nativeRuntimeStableDiffusion = 'stable_diffusion';
+
+/// The runtime families `all` and `both` expand to, in that order. Opt-in
+/// families such as [nativeRuntimeStableDiffusion] are not included.
 const List<String> allNativeRuntimes = [
   nativeRuntimeLlamaCpp,
   nativeRuntimeLiteRtLm,
+];
+
+/// Every runtime family a config may name.
+const List<String> supportedNativeRuntimes = [
+  ...allNativeRuntimes,
+  nativeRuntimeStableDiffusion,
 ];
 
 /// Fallback families for config that names no runtimes. An explicit `none`
@@ -163,6 +187,7 @@ const Map<String, String> _runtimeAliases = {
   'litert-lm': nativeRuntimeLiteRtLm,
   'litert.lm': nativeRuntimeLiteRtLm,
   '.litertlm': nativeRuntimeLiteRtLm,
+  'stable-diffusion': nativeRuntimeStableDiffusion,
 };
 
 final _cudaRuntimeDependencyNamePattern = RegExp(
@@ -518,8 +543,9 @@ List<String>? parseRequestedBackends({
 ///
 /// Tokens are trimmed, lowercased and `_`-to-`-` normalised before alias
 /// lookup: `gguf` and `llama.cpp` reach `llama_cpp`; `litert`, `litertlm` and
-/// `.litertlm` reach `litert_lm`. `all` and `both` expand to
-/// [allNativeRuntimes]; the string tokens `none`, `off` and `false` clear what
+/// `.litertlm` reach `litert_lm`; `stable-diffusion` reaches
+/// `stable_diffusion`. `all` and `both` expand to [allNativeRuntimes], which
+/// leaves out the opt-in `stable_diffusion`; the string tokens `none`, `off` and `false` clear what
 /// has accumulated. A bare YAML boolean `false` clears it too, including in a
 /// list.
 /// Unrecognised non-empty tokens are dropped and reported once through
@@ -552,7 +578,7 @@ List<String> selectNativeRuntimesForBundle({
   if (invalid.isNotEmpty) {
     warn(
       'Ignoring unknown native runtime(s) for $bundle: ${invalid.join(', ')}. '
-      'Supported runtimes: llama_cpp, litert_lm.',
+      'Supported runtimes: ${supportedNativeRuntimes.join(', ')}.',
     );
   }
 
@@ -583,6 +609,115 @@ bool nativeRuntimeExplicitlySelectedForBundle({
     rawUserConfig: rawUserConfig,
   );
   return parsed?.explicit.contains(normalizedRuntime) ?? false;
+}
+
+/// Whether [runtime] is named in the `platforms` entry whose key is exactly
+/// [bundle] (after [canonicalizeBundleKey]); an OS key such as `android`, the
+/// top-level `runtimes`/`default` keys and a bare list do not count. Order and
+/// `none` apply as in [nativeRuntimeExplicitlySelectedForBundle].
+///
+/// `hook/build.dart` fails the build only for such a bundle-scoped request
+/// when the bundle publishes no stable_diffusion archive. A broader request,
+/// such as a top-level `runtimes: [llama_cpp, stable_diffusion]`, would
+/// otherwise break Flutter Android builds that also target `android-x64`.
+bool nativeRuntimeNamedForExactBundle({
+  required String bundle,
+  required Object? rawUserConfig,
+  required String runtime,
+}) {
+  final normalizedRuntime = _normalizeRuntime(runtime);
+  final root = _toStringMap(rawUserConfig);
+  if (normalizedRuntime == null || root == null) {
+    return false;
+  }
+  final platformsMap = _extractPlatformsMap(root);
+  if (platformsMap == null) {
+    return false;
+  }
+  final canonicalBundle = canonicalizeBundleKey(bundle);
+  for (final entry in platformsMap.entries) {
+    if (canonicalizeBundleKey(entry.key) != canonicalBundle) {
+      continue;
+    }
+    final value = entry.value;
+    final platformMap = _toStringMap(value);
+    final parsed = _parseRuntimeList(
+      platformMap != null && platformMap.containsKey('runtimes')
+          ? platformMap['runtimes']
+          : value,
+    );
+    return parsed.explicit.contains(normalizedRuntime);
+  }
+  return false;
+}
+
+/// The stable-diffusion-native release bundle for the llama.cpp [spec], or
+/// `null` when none is published (`android-x64`, `ios-x86_64-sim`,
+/// `windows-arm64`).
+///
+/// Linux and Windows publish a CPU and a `-vulkan` archive; only one is
+/// bundled. [rawStableDiffusionBackendConfig]
+/// (`llamadart_stable_diffusion_backends`: a list or string for every
+/// platform, or a `platforms` map like `llamadart_native_backends`) decides
+/// first: `-vulkan` when it names
+/// `vulkan`, the CPU archive when it names only `cpu`. An entry naming neither
+/// is ignored with a [warn]. Without an entry the choice follows the llama.cpp
+/// selection under `llamadart_native_backends` ([rawBackendConfig]): the
+/// `-vulkan` archive when Vulkan is requested there, or when nothing is
+/// requested and Vulkan is among [NativeBundleSpec.defaultBackends]; the CPU
+/// archive otherwise. Apple bundles are Metal builds and Android arm64 is
+/// CPU-only, whatever either config says.
+String? stableDiffusionBundleForNativeBundle({
+  required NativeBundleSpec spec,
+  required Object? rawBackendConfig,
+  Object? rawStableDiffusionBackendConfig,
+  void Function(String message)? warn,
+}) {
+  final base = switch (spec.bundle) {
+    'android-arm64' => 'android-arm64',
+    'ios-arm64' => 'ios-arm64',
+    'ios-arm64-sim' => 'ios-arm64-sim',
+    'macos-arm64' => 'macos-arm64',
+    'macos-x86_64' => 'macos-x64',
+    'linux-arm64' => 'linux-arm64',
+    'linux-x64' => 'linux-x64',
+    'windows-x64' => 'windows-x64',
+    _ => null,
+  };
+  if (base == null ||
+      !(spec.bundle.startsWith('linux-') ||
+          spec.bundle.startsWith('windows-'))) {
+    return base;
+  }
+  final own =
+      rawStableDiffusionBackendConfig is String ||
+          rawStableDiffusionBackendConfig is List
+      ? _parseBackendList(rawStableDiffusionBackendConfig)
+      : parseRequestedBackends(
+          bundle: spec.bundle,
+          rawUserConfig: rawStableDiffusionBackendConfig,
+        );
+  if (own != null && own.isNotEmpty) {
+    if (own.contains('vulkan')) {
+      return '$base-vulkan';
+    }
+    if (own.contains('cpu')) {
+      return base;
+    }
+    warn?.call(
+      '$stableDiffusionBackendUserDefineKey for ${spec.bundle} names '
+      '${own.join(', ')}; stable_diffusion supports cpu and vulkan there. '
+      'Following $nativeBackendUserDefineKey instead.',
+    );
+  }
+  final requested = parseRequestedBackends(
+    bundle: spec.bundle,
+    rawUserConfig: rawBackendConfig,
+  );
+  final backends = requested == null || requested.isEmpty
+      ? spec.defaultBackends
+      : requested;
+  return backends.contains('vulkan') ? '$base-vulkan' : base;
 }
 
 /// The backend modules to bundle for [spec], constrained to

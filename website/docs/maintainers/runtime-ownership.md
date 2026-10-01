@@ -12,6 +12,7 @@ page is the single list of which repository owns which change.
 | --- | --- |
 | llama.cpp native wrapper, runtime bundles, Apple SPM-compatible artifacts | `leehack/llamadart-native` |
 | LiteRT-LM native wrapper, runtime bundles, Apple SPM-compatible artifacts | `leehack/litert-lm-native` |
+| stable-diffusion.cpp runtime bundles and exported `stable-diffusion.h` API (opt-in `stable_diffusion` runtime) | `leehack/stable-diffusion-native` |
 | Web bridge runtime source and build | `leehack/llama-web-bridge` |
 | Published bridge assets | `leehack/llama-web-bridge-assets` |
 | Flutter Apple SPM package manifests | `packages/llamadart_llama_cpp_flutter` and `packages/llamadart_litert_lm_flutter` in this repo |
@@ -19,9 +20,10 @@ page is the single list of which repository owns which change.
 
 ## Rules
 
-- Do not patch upstream llama.cpp, LiteRT-LM or bridge sources in this repo.
-- Do not add native build graph changes that belong in `llamadart-native` or
-  `litert-lm-native`.
+- Do not patch upstream llama.cpp, LiteRT-LM, stable-diffusion.cpp or bridge
+  sources in this repo.
+- Do not add native build graph changes that belong in `llamadart-native`,
+  `litert-lm-native` or `stable-diffusion-native`.
 - Keep Apple SPM runtime binaries and Flutter plugin manifests out of the core
   package root; they live in the companion packages under `packages/`.
 - Commit, push and release a runtime change in its owning repository first,

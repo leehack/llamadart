@@ -23,6 +23,7 @@ from typing import Any, NamedTuple
 
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
+DEFAULT_STABLE_DIFFUSION_NATIVE_REPO = "leehack/stable-diffusion-native"
 DEFAULT_NATIVE_RELEASE_PINS = "lib/src/hook/native_release_pins.dart"
 DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
     "packages/llamadart_llama_cpp_flutter/darwin/"
@@ -87,6 +88,10 @@ LEGACY_LITERT_TAG_RE = re.compile(
 FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SAFE_LITERT_LIBRARY_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
+STABLE_DIFFUSION_TAG_RE = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([1-9][0-9]*))?$"
+)
+STABLE_DIFFUSION_TARGET_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 DART_FORMAT_PAGE_WIDTH = 80
 LEGACY_ALLOWLIST_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "legacy_release_allowlist.json"
@@ -710,9 +715,13 @@ def main() -> int:
     summaries: list[str] = []
     resolved_llama_cpp_tag = ""
     resolved_litert_lm_tag = "keep"
+    resolved_stable_diffusion_tag = "keep"
 
     llama_cpp_tag_input = normalize_release_tag(args.llama_cpp_tag)
     litert_lm_tag_input = normalize_litert_lm_release_tag(args.litert_lm_tag)
+    stable_diffusion_tag_input = normalize_stable_diffusion_release_tag(
+        args.stable_diffusion_tag
+    )
 
     if llama_cpp_tag_input != "keep":
         release = fetch_release(
@@ -924,6 +933,71 @@ def main() -> int:
             f"LiteRT-LM -> {args.litert_lm_native_repo}@{resolved_litert_lm_tag}"
         )
 
+    if stable_diffusion_tag_input != "keep":
+        release = fetch_release(
+            args.stable_diffusion_native_repo,
+            stable_diffusion_tag_input,
+            args.release_json_dir,
+        )
+        resolved_stable_diffusion_tag = normalize_stable_diffusion_release_tag(
+            release["tag_name"]
+        )
+        if resolved_stable_diffusion_tag in {"keep", "latest"}:
+            raise ReleaseError(
+                "stable-diffusion-native release resolved an invalid tag"
+            )
+        validate_stable_diffusion_transition(
+            current_stable_diffusion_release_tag(pins_text),
+            resolved_stable_diffusion_tag,
+        )
+        runtime_artifacts = validate_stable_diffusion_release_manifest(
+            release,
+            repo=args.stable_diffusion_native_repo,
+            tag=resolved_stable_diffusion_tag,
+            release_json_dir=args.release_json_dir,
+        )
+        pinned_bundles = stable_diffusion_bundle_names(pins_text)
+        missing = sorted(set(pinned_bundles) - set(runtime_artifacts))
+        if missing:
+            raise ReleaseError(
+                "stable-diffusion-native "
+                f"{resolved_stable_diffusion_tag} does not publish pinned "
+                "bundles: " + ", ".join(missing)
+            )
+        unpinned = sorted(set(runtime_artifacts) - set(pinned_bundles))
+        if unpinned:
+            print(
+                "note: stable-diffusion-native "
+                f"{resolved_stable_diffusion_tag} also publishes "
+                + ", ".join(unpinned)
+                + "; add a StableDiffusionBundleSpec and hook mapping to use "
+                "them.",
+                file=sys.stderr,
+            )
+        pins_text = replace_one(
+            pins_text,
+            r"const stableDiffusionReleaseTag = '[^']+';",
+            "const stableDiffusionReleaseTag = "
+            f"'{resolved_stable_diffusion_tag}';",
+            "native pins stable_diffusion release tag",
+        )
+        pins_text = replace_one(
+            pins_text,
+            r"const stableDiffusionVersion = '[^']+';",
+            "const stableDiffusionVersion = "
+            f"'{resolved_stable_diffusion_tag[1:]}';",
+            "native pins stable_diffusion version",
+        )
+        for bundle in pinned_bundles:
+            checksum, library = runtime_artifacts[bundle]
+            pins_text = replace_stable_diffusion_bundle(
+                pins_text, bundle, checksum, library
+            )
+        summaries.append(
+            "stable_diffusion -> "
+            f"{args.stable_diffusion_native_repo}@{resolved_stable_diffusion_tag}"
+        )
+
     if not summaries:
         print("No native release pins requested; pass a tag or latest.")
         return 0
@@ -948,6 +1022,7 @@ def main() -> int:
         {
             "resolved_llama_cpp_tag": resolved_llama_cpp_tag,
             "resolved_litert_lm_tag": resolved_litert_lm_tag,
+            "resolved_stable_diffusion_tag": resolved_stable_diffusion_tag,
         }
     )
     return 0
@@ -1036,6 +1111,16 @@ def parse_args() -> argparse.Namespace:
         "--litert-lm-native-repo",
         default=DEFAULT_LITERT_LM_NATIVE_REPO,
         help="GitHub repo slug for LiteRT-LM native artifacts.",
+    )
+    parser.add_argument(
+        "--stable-diffusion-tag",
+        default="keep",
+        help="stable-diffusion-native vX.Y.Z or vX.Y.Z-N, latest, or keep.",
+    )
+    parser.add_argument(
+        "--stable-diffusion-native-repo",
+        default=DEFAULT_STABLE_DIFFUSION_NATIVE_REPO,
+        help="GitHub repo slug for stable_diffusion native artifacts.",
     )
     parser.add_argument(
         "--dry-run",
@@ -2570,6 +2655,157 @@ def fetch_litert_lm_release_manifest(
     if not isinstance(manifest, dict):
         raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
     return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def normalize_stable_diffusion_release_tag(tag: str) -> str:
+    if tag in {"keep", "latest"} or STABLE_DIFFUSION_TAG_RE.fullmatch(tag):
+        return tag
+    raise ReleaseError(
+        f"Unsupported stable-diffusion-native tag {tag!r}; expected "
+        "vX.Y.Z, vX.Y.Z-N, latest, or keep"
+    )
+
+
+def stable_diffusion_release_order(tag: str) -> tuple[int, int, int, int]:
+    match = STABLE_DIFFUSION_TAG_RE.fullmatch(tag)
+    if match is None:
+        raise ReleaseError(f"Unsupported stable-diffusion-native tag {tag!r}")
+    major, minor, patch, rebuild = match.groups()
+    return int(major), int(minor), int(patch), int(rebuild or 0)
+
+
+def current_stable_diffusion_release_tag(pins_text: str) -> str:
+    match = re.search(r"const stableDiffusionReleaseTag = '([^']+)';", pins_text)
+    if match is None:
+        raise ReleaseError(
+            f"Could not find stableDiffusionReleaseTag in {DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    return match.group(1)
+
+
+def validate_stable_diffusion_transition(current: str, resolved: str) -> None:
+    if stable_diffusion_release_order(resolved) < stable_diffusion_release_order(
+        current
+    ):
+        raise ReleaseError(
+            f"Refusing stable-diffusion-native rollback from {current} to {resolved}"
+        )
+
+
+def validate_stable_diffusion_release_manifest(
+    release: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> dict[str, tuple[str, str]]:
+    """Map each runtime target to its (sha256, library) from manifest.json.
+
+    Every archive digest must equal the GitHub digest of the release asset of
+    the same name, so the manifest cannot vouch for bytes GitHub did not serve.
+    """
+    fetched = fetch_litert_lm_release_manifest(
+        release, repo=repo, tag=tag, release_json_dir=release_json_dir
+    )
+    if fetched is None:
+        raise ReleaseError(f"Release {repo}@{tag} has no manifest.json")
+    manifest, manifest_sha256 = fetched
+    manifest_asset = find_release_asset(release, "manifest.json")
+    if require_github_sha256_digest(manifest_asset, tag, "manifest.json") != (
+        manifest_sha256
+    ):
+        raise ReleaseError(
+            f"Release {repo}@{tag} manifest.json does not match its GitHub digest"
+        )
+    if manifest.get("schemaVersion") != 1:
+        raise ReleaseError(
+            f"Release {repo}@{tag} manifest schemaVersion must be 1"
+        )
+    if manifest.get("package") != "stable-diffusion-native":
+        raise ReleaseError(f"Release {repo}@{tag} manifest names another package")
+    if manifest.get("tag") != tag:
+        raise ReleaseError(f"Release {repo}@{tag} manifest names another tag")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReleaseError(f"Release {repo}@{tag} manifest artifacts must be a list")
+
+    runtime: dict[str, tuple[str, str]] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise ReleaseError(f"Release {repo}@{tag} manifest has an invalid artifact")
+        if artifact.get("kind") != "runtime":
+            continue
+        target = artifact.get("target")
+        if not isinstance(target, str) or (
+            STABLE_DIFFUSION_TARGET_RE.fullmatch(target) is None
+        ):
+            raise ReleaseError(f"stable_diffusion target {target!r} is invalid")
+        if target in runtime:
+            raise ReleaseError(f"stable_diffusion target {target} is duplicated")
+        file_name = f"stable-diffusion-native-runtime-{target}-{tag}.tar.gz"
+        if artifact.get("file") != file_name:
+            raise ReleaseError(
+                f"stable_diffusion {target} artifact must be {file_name}"
+            )
+        checksum = artifact.get("sha256")
+        if not isinstance(checksum, str) or SHA256_RE.fullmatch(checksum) is None:
+            raise ReleaseError(f"stable_diffusion {target} sha256 is invalid")
+        library = artifact.get("library")
+        if not isinstance(library, str) or (
+            SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library) is None
+        ):
+            raise ReleaseError(f"stable_diffusion {target} library name is invalid")
+        asset = find_release_asset(release, file_name)
+        if asset is None:
+            raise ReleaseError(f"Release {repo}@{tag} does not contain {file_name}")
+        if require_github_sha256_digest(asset, tag, file_name) != checksum:
+            raise ReleaseError(
+                f"stable_diffusion {file_name} manifest sha256 does not match "
+                "its GitHub digest"
+            )
+        runtime[target] = (checksum, library)
+    if not runtime:
+        raise ReleaseError(f"Release {repo}@{tag} manifest lists no runtime archives")
+    return runtime
+
+
+def stable_diffusion_bundle_names(pins_text: str) -> list[str]:
+    bundles = re.findall(
+        r"\bStableDiffusionBundleSpec\(\s*'([^']+)',\s*sha256: '[0-9a-f]+'",
+        pins_text,
+    )
+    if not bundles:
+        raise ReleaseError(
+            "Could not find stable_diffusion bundle specs in "
+            f"{DEFAULT_NATIVE_RELEASE_PINS}"
+        )
+    if len(bundles) != len(set(bundles)):
+        raise ReleaseError(
+            f"{DEFAULT_NATIVE_RELEASE_PINS} contains duplicate stable_diffusion "
+            "bundle specs"
+        )
+    return bundles
+
+
+def replace_stable_diffusion_bundle(
+    pins_text: str,
+    bundle: str,
+    checksum: str,
+    library: str,
+) -> str:
+    pattern = re.compile(
+        rf"(\bStableDiffusionBundleSpec\(\s*'{re.escape(bundle)}',\s*sha256: ')"
+        r"[0-9a-f]+(',\s*requiredLibraries: \{')[^']+('\},)"
+    )
+    updated, count = pattern.subn(
+        lambda match: f"{match.group(1)}{checksum}{match.group(2)}{library}"
+        f"{match.group(3)}",
+        pins_text,
+        count=1,
+    )
+    if count != 1:
+        raise ReleaseError(f"Could not replace stable_diffusion pins for {bundle}")
+    return updated
 
 
 def fetch_ref_commit(

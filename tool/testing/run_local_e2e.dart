@@ -587,6 +587,34 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-generation-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run experimental ImageGenerationEngine on SDXS through the opt-in '
+          'stable_diffusion runtime; SD-Turbo too when '
+          'LLAMADART_SD_TURBO_MODEL is set.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/image_generation_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_SDXS_MODEL': context.modelPath!,
+            'LLAMADART_IMAGE_OUTPUT_DIR':
+                '${context.projectRoot}/build/image-generation-smoke',
+          },
+          description: 'Image generation real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'decision-model-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1447,6 +1475,13 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --tokenizer-path, --audio-path, and a nonempty '
           '--expect are required for litert-lm-asr-smoke.\n',
+    );
+  }
+  if (scenario.name == 'image-generation-smoke' && parsed.modelPath == null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path <sdxs.gguf> is required for image-generation-smoke.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&

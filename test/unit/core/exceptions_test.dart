@@ -69,5 +69,12 @@ void main() {
       expect(ex.details, 'plan');
       expect(ex.toString(), 'LlamaException: Too many options (plan)');
     });
+
+    test('LlamaImageGenerationException properties', () {
+      final ex = LlamaImageGenerationException('width must be 64..2048', 7);
+      expect(ex.message, 'width must be 64..2048');
+      expect(ex.details, 7);
+      expect(ex.toString(), 'LlamaException: width must be 64..2048 (7)');
+    });
   });
 }

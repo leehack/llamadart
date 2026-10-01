@@ -36,6 +36,11 @@ const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     '$liteRtLmReleaseTag';
 const _litertLmCacheDir = 'litert_lm';
+const _stableDiffusionNativeReleaseBaseUrl =
+    'https://github.com/leehack/stable-diffusion-native/releases/download/'
+    '$stableDiffusionReleaseTag';
+const _stableDiffusionCacheDir = 'stable_diffusion';
+const _stableDiffusionAssetName = 'stable_diffusion';
 const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
 const _runtimeBundleDownloadTransferTimeout = Duration(minutes: 10);
@@ -51,6 +56,10 @@ typedef RuntimeBundleDownloadFallbackForTesting =
 
 final _litertLmBundles = Map.unmodifiable({
   for (final bundle in liteRtLmBundleSpecs) bundle.bundle: bundle,
+});
+
+final _stableDiffusionBundles = Map.unmodifiable({
+  for (final bundle in stableDiffusionBundleSpecs) bundle.bundle: bundle,
 });
 
 const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
@@ -97,6 +106,13 @@ extension _LiteRtLmBundleSpecPaths on LiteRtLmBundleSpec {
   String get releaseUrl => '$_litertLmNativeReleaseBaseUrl/$archiveName';
 
   String get sourcePrefix => directoryName;
+}
+
+extension _StableDiffusionBundleSpecPaths on StableDiffusionBundleSpec {
+  String get archiveName =>
+      'stable-diffusion-native-runtime-$bundle-$stableDiffusionReleaseTag.tar.gz';
+
+  String get releaseUrl => '$_stableDiffusionNativeReleaseBaseUrl/$archiveName';
 }
 
 void main(List<String> args) async {
@@ -146,13 +162,18 @@ void main(List<String> args) async {
       output: output,
       log: log,
     );
-    var selectedRuntimes =
-        appleSpmRuntimes ??
-        selectNativeRuntimesForBundle(
-          bundle: spec.bundle,
-          rawUserConfig: rawNativeRuntimeConfig,
-          warn: log.warning,
-        );
+    final configuredRuntimes = selectNativeRuntimesForBundle(
+      bundle: spec.bundle,
+      rawUserConfig: rawNativeRuntimeConfig,
+      warn: log.warning,
+    );
+    var selectedRuntimes = appleSpmRuntimes == null
+        ? configuredRuntimes
+        : [
+            ...appleSpmRuntimes,
+            if (configuredRuntimes.contains(nativeRuntimeStableDiffusion))
+              nativeRuntimeStableDiffusion,
+          ];
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
         liteRtLmBundleSpec == null) {
@@ -176,10 +197,41 @@ void main(List<String> args) async {
         'available runtime families: ${selectedRuntimes.join(', ')}.',
       );
     }
+    final stableDiffusionBundleSpec =
+        _stableDiffusionBundles[stableDiffusionBundleForNativeBundle(
+          spec: spec,
+          rawBackendConfig: input.userDefines[nativeBackendUserDefineKey],
+          rawStableDiffusionBackendConfig:
+              input.userDefines[stableDiffusionBackendUserDefineKey],
+          warn: log.warning,
+        )];
+    if (selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
+        stableDiffusionBundleSpec == null) {
+      if (nativeRuntimeNamedForExactBundle(
+        bundle: spec.bundle,
+        rawUserConfig: rawNativeRuntimeConfig,
+        runtime: nativeRuntimeStableDiffusion,
+      )) {
+        throw Exception(
+          'stable_diffusion runtime is not available for ${spec.bundle}.',
+        );
+      }
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => runtime != nativeRuntimeStableDiffusion)
+          .toList(growable: false);
+      log.warning(
+        'stable_diffusion runtime is not available for ${spec.bundle}; no '
+        'stable_diffusion assets will be bundled for this target.',
+      );
+      if (selectedRuntimes.isEmpty) {
+        return;
+      }
+    }
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '
-        '$nativeRuntimesUserDefineKey with llama_cpp, litert_lm, or both.',
+        '$nativeRuntimesUserDefineKey with '
+        '${supportedNativeRuntimes.join(', ')}, or all.',
       );
     }
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
@@ -206,6 +258,9 @@ void main(List<String> args) async {
     }
     final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
     final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
+    final includeStableDiffusion = selectedRuntimes.contains(
+      nativeRuntimeStableDiffusion,
+    );
 
     final nativeConfig = _resolveNativeBundleConfig(input.userDefines);
     log.info('Using native runtime source: ${nativeConfig.sourceLabel}');
@@ -320,6 +375,17 @@ void main(List<String> args) async {
       );
     }
 
+    if (includeStableDiffusion) {
+      await _emitStableDiffusionAssets(
+        bundleSpec: stableDiffusionBundleSpec!,
+        output: output,
+        packageRoot: pkgRoot,
+        reportDirPath: reportDirPath,
+        usedAssetNames: usedAssetNames,
+        log: log,
+      );
+    }
+
     if (includeLlamaCpp && !usedAssetNames.contains(_packageName)) {
       throw Exception(
         'Primary asset package:$_packageName/$_packageName was not emitted.',
@@ -351,8 +417,10 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
     log.warning(
       'Flutter Apple builds select native runtimes from companion package '
       'dependencies ($_llamaCppFlutterPackageName and '
-      '$_liteRtLmFlutterPackageName). Ignoring $nativeRuntimesUserDefineKey '
-      'for this Apple build.',
+      '$_liteRtLmFlutterPackageName). Ignoring the llama_cpp and litert_lm '
+      'selection in $nativeRuntimesUserDefineKey for this Apple build; '
+      'stable_diffusion has no companion package and is still bundled when '
+      'named there.',
     );
   }
   if (hasNativeSourceOverride) {
@@ -765,6 +833,157 @@ Future<void> _emitLiteRtLmAssets({
       '`package:$_packageName/$assetName`.',
     );
   }
+}
+
+Future<void> _emitStableDiffusionAssets({
+  required StableDiffusionBundleSpec bundleSpec,
+  required BuildOutputBuilder output,
+  required String packageRoot,
+  required String reportDirPath,
+  required Set<String> usedAssetNames,
+  required Logger log,
+}) async {
+  final bundleDir = await _acquireStableDiffusionBundle(
+    packageRoot: packageRoot,
+    bundleSpec: bundleSpec,
+    log: log,
+  );
+  // One library per bundle; the Dart bindings resolve it by this asset id.
+  final fileName = bundleSpec.requiredLibraries.single;
+  final destinationPath = path.join(reportDirPath, fileName);
+  await File(path.join(bundleDir.path, fileName)).copy(destinationPath);
+  if (!usedAssetNames.add(_stableDiffusionAssetName)) {
+    throw Exception(
+      'Code asset package:$_packageName/$_stableDiffusionAssetName is '
+      'already taken.',
+    );
+  }
+  output.assets.code.add(
+    CodeAsset(
+      package: _packageName,
+      name: _stableDiffusionAssetName,
+      linkMode: DynamicLoadingBundled(),
+      file: Uri.file(path.absolute(destinationPath)),
+    ),
+  );
+  log.info(
+    'Reporting stable_diffusion library `$fileName` from '
+    '${bundleSpec.archiveName} as code asset '
+    '`package:$_packageName/$_stableDiffusionAssetName`.',
+  );
+}
+
+Future<Directory> _acquireStableDiffusionBundle({
+  required String packageRoot,
+  required StableDiffusionBundleSpec bundleSpec,
+  required Logger log,
+}) async {
+  final cacheDir = path.join(
+    packageRoot,
+    _dartToolDir,
+    _cacheBaseDir,
+    _stableDiffusionCacheDir,
+    stableDiffusionVersion,
+  );
+  final extractedDir = Directory(path.join(cacheDir, bundleSpec.bundle));
+  if (_missingStableDiffusionLibraries(extractedDir, bundleSpec).isEmpty) {
+    log.info('Using cached stable_diffusion bundle: ${extractedDir.path}');
+    return extractedDir;
+  }
+
+  await Directory(cacheDir).create(recursive: true);
+  final archiveFile = File(path.join(cacheDir, bundleSpec.archiveName));
+  if (archiveFile.existsSync() &&
+      !await _stableDiffusionArchiveMatchesPin(archiveFile, bundleSpec)) {
+    log.warning(
+      'Cached ${bundleSpec.archiveName} does not match its pinned SHA-256; '
+      'redownloading.',
+    );
+    await archiveFile.delete();
+  }
+  if (!archiveFile.existsSync()) {
+    log.info(
+      'Downloading stable_diffusion bundle from ${bundleSpec.releaseUrl}',
+    );
+    await _downloadRuntimeBundle(
+      url: bundleSpec.releaseUrl,
+      destination: archiveFile,
+      description: 'stable_diffusion bundle',
+      log: log,
+    );
+    if (!await _stableDiffusionArchiveMatchesPin(archiveFile, bundleSpec)) {
+      await archiveFile.delete();
+      throw Exception(
+        'stable_diffusion archive ${bundleSpec.archiveName} does not match '
+        'its pinned SHA-256 ${bundleSpec.sha256}.',
+      );
+    }
+  }
+
+  await _extractStableDiffusionLibraries(
+    archiveFile: archiveFile,
+    extractedDir: extractedDir,
+    bundleSpec: bundleSpec,
+  );
+  log.info('Extracted stable_diffusion bundle to ${extractedDir.path}');
+  return extractedDir;
+}
+
+Future<bool> _stableDiffusionArchiveMatchesPin(
+  File archiveFile,
+  StableDiffusionBundleSpec bundleSpec,
+) async {
+  final digest = sha256.convert(await archiveFile.readAsBytes()).toString();
+  return digest == bundleSpec.sha256;
+}
+
+/// Writes only the pinned `lib/<library>` entries, by basename, so no archive
+/// path can escape [extractedDir].
+Future<void> _extractStableDiffusionLibraries({
+  required File archiveFile,
+  required Directory extractedDir,
+  required StableDiffusionBundleSpec bundleSpec,
+}) async {
+  if (extractedDir.existsSync()) {
+    await extractedDir.delete(recursive: true);
+  }
+  await extractedDir.create(recursive: true);
+  final archive = TarDecoder().decodeBytes(
+    GZipDecoder().decodeBytes(await archiveFile.readAsBytes()),
+  );
+  for (final entry in archive.files) {
+    if (!entry.isFile) {
+      continue;
+    }
+    final entryPath = path.posix.normalize(entry.name);
+    final fileName = path.posix.basename(entryPath);
+    if (entryPath != 'lib/$fileName' ||
+        !bundleSpec.requiredLibraries.contains(fileName)) {
+      continue;
+    }
+    await File(
+      path.join(extractedDir.path, fileName),
+    ).writeAsBytes(entry.content as List<int>);
+  }
+  final missing = _missingStableDiffusionLibraries(extractedDir, bundleSpec);
+  if (missing.isNotEmpty) {
+    await extractedDir.delete(recursive: true);
+    throw Exception(
+      'stable_diffusion bundle ${bundleSpec.archiveName} is missing required '
+      'libraries: ${missing.join(', ')}',
+    );
+  }
+}
+
+List<String> _missingStableDiffusionLibraries(
+  Directory directory,
+  StableDiffusionBundleSpec bundleSpec,
+) {
+  return bundleSpec.requiredLibraries
+      .where(
+        (library) => !File(path.join(directory.path, library)).existsSync(),
+      )
+      .toList(growable: false);
 }
 
 Future<void> _makeOwnerWritableForAppleStrip(

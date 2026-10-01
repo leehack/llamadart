@@ -1,7 +1,7 @@
 ---
 title: Chat app example
 sidebar_label: Chat app
-description: A Flutter chat app with a model library, queued downloads, runtime controls, multimodal input, speech and streaming chat.
+description: A Flutter chat app with a model library, queued downloads, runtime controls, multimodal input, speech, image generation and streaming chat.
 ---
 
 Path: `example/chat_app` · Platforms: Android, iOS 16.4+, macOS 14.0+,
@@ -66,12 +66,22 @@ question through **Ask with voice**, and the Qwen3-TTS preset switches the
 composer to speech synthesis. See [Speech to text](../guides/speech-to-text) and
 [Text to speech](../guides/text-to-speech).
 
+## Image generation
+
+**Image generation** in the sidebar opens an experimental text-to-image
+screen on the opt-in `stable_diffusion` runtime, which the app bundles. It
+downloads SDXS-512 (683 MB) or SD-Turbo with TAESD (2.0 GB), then generates
+at 256 or 512 px with phase progress, cancellation, a reusable seed and PNG
+save. A model that does not fit in memory shows the engine's refusal, with an
+offer to unload the chat model. The web and targets without the runtime show
+why generation is unavailable. See [Image generation](../guides/image-generation).
+
 ## Test
 
 ```bash
 cd example/chat_app
 flutter test
-flutter test --platform chrome test/chat_generation_service_test.dart
+flutter test --platform chrome test/chat_generation_service_test.dart test/image_generation_screen_test.dart
 ```
 
 The second command covers Web-only paths.
