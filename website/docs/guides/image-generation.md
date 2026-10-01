@@ -180,14 +180,15 @@ slow while the GPU compiles shaders; see
 
 ## Attention and VAE settings
 
-Two runtime settings in `ImageGenerationOptions` change speed and memory but
-not the image. Left `null`, the engine picks them for the device it loads
+Two runtime settings in `ImageGenerationOptions` change speed and memory.
+Direct VAE convolutions leave the image identical; flash attention changes
+pixels slightly, by rounding. Left `null`, the engine picks them for the device it loads
 on:
 
 | Setting | Automatic choice | Measured |
 | --- | --- | --- |
-| `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GB to 0.3 GB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. Output differs only in rounding |
-| `vaeDirectConvolution` (full VAE decode) | On, except on Metal and with a tiny autoencoder (`taesd` or SDXS) | NVIDIA L4 Vulkan, 1024x1024: decode 23 to 56 s to about 1 s, 4 to 5 GB less device memory. M4 Max CPU, SD-Turbo 512x512: decode unchanged, peak 3.6 GB to 2.7 GB. Metal: about 7 times slower. Identical output |
+| `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GiB to 0.3 GiB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x sampling time unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. Pixels change slightly |
+| `vaeDirectConvolution` (full VAE decode) | On, except on Metal and with a tiny autoencoder (`taesd` or SDXS) | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Metal: about 7 times slower. Identical output |
 
 Vulkan flash attention has not been measured yet, so it stays off there;
 pass `flashAttention: true` to try it. The runtime falls back to regular

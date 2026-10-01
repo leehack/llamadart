@@ -69,7 +69,8 @@ For canonical full release notes, use:
   shift on the request and model defaults, and flash attention and direct
   VAE convolutions, which now turn on automatically where measured faster or
   smaller, such as a 1024x1024 Vulkan decode in about 1 s instead of up to
-  56 s ([#802](https://github.com/leehack/llamadart/issues/802)).
+  56 s in stable-diffusion.cpp's native CLI
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
 
 ## 0.9.0
 
