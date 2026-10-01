@@ -99,8 +99,9 @@ await for (final chunk in engine.create(
 
 `chunk.model` is the last path segment of the source the model was loaded
 from, such as `qwen.gguf`: a local path's file name, or the last segment of a
-URL path without its query or fragment. It is `llama_model` when that segment
-could carry more than a file name, and for `data:` and `blob:` URLs. It leaves
+URL path without its query or fragment. A local file name is reported as
+written, `%` included. It is `llama_model` when that segment could carry more
+than a file name, and for `data:` and `blob:` URLs. It leaves
 out directories and hosts, but not the segment itself: a URL whose last
 segment is a token reports that token. An OpenAI-compatible server that
 exposes its own model id should set that id on its responses instead.

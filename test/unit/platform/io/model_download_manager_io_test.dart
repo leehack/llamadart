@@ -1034,6 +1034,58 @@ void main() {
       );
     });
 
+    test('local paths holding %, # and ? resolve to the same file', () async {
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      for (final relative in [
+        '100% done/qwen 100%.gguf',
+        '50%25 off/m%41%C3.gguf',
+        'a#b%zz/m#1.gguf',
+        if (!Platform.isWindows) 'a?b/m?.gguf',
+      ]) {
+        final localFile = File(path.join(tempDir.path, relative))
+          ..createSync(recursive: true)
+          ..writeAsStringSync(relative);
+
+        final entry = await manager.ensureModel(
+          ModelSource.parse(localFile.path),
+        );
+
+        expect(
+          entry.filePath,
+          path.normalize(localFile.path),
+          reason: relative,
+        );
+        expect(entry.fileName, path.basename(relative), reason: relative);
+        expect(
+          File(entry.filePath).readAsStringSync(),
+          relative,
+          reason: relative,
+        );
+      }
+    });
+
+    test('a cache directory holding % reuses its completed entry', () async {
+      server.payload = utf8.encode('percent-cache-model');
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: path.join(tempDir.path, '100% cache', '50%25'),
+      );
+      final source = ModelSource.url(
+        server.modelUri,
+        fileName: 'qwen%20100%25.gguf',
+      );
+
+      final entry = await manager.ensureModel(source);
+      final cached = await manager.ensureModel(source);
+
+      expect(server.requestCount, 1);
+      expect(entry.fileName, 'qwen 100%.gguf');
+      expect(entry.filePath, contains('${path.separator}50%25'));
+      expect(cached.filePath, entry.filePath);
+      expect(File(cached.filePath).readAsStringSync(), 'percent-cache-model');
+    });
+
     test('local path sha256 is verified before metadata is returned', () async {
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: tempDir.path,

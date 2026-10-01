@@ -237,6 +237,26 @@ void main() {
     expect((raw as JSNumber).toDartInt, LlamaLogLevel.error.index);
   });
 
+  test('names a model URL holding a lone or escaped % once decoded', () async {
+    for (final (url, name) in const [
+      ('https://example.com/m/qwen%20100%25.litertlm', 'qwen 100%.litertlm'),
+      ('https://example.com/m/qwen 100%.litertlm', 'qwen 100%.litertlm'),
+      ('https://example.com/m%C3.litertlm', null),
+    ]) {
+      _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+      final backend = LiteRtLmBackend();
+      final modelHandle = await backend.modelLoadFromUrl(
+        url,
+        const ModelParams(),
+      );
+
+      final metadata = await backend.modelMetadata(modelHandle);
+      await backend.dispose();
+
+      expect(metadata['general.name'], name, reason: url);
+    }
+  });
+
   test(
     'exposes single-turn latest-message template for JS conversation runtime',
     () async {

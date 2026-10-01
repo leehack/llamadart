@@ -101,10 +101,11 @@ class LlamaCompletionChunk {
   /// `LlamaEngine` reports the last path segment of the source the model was
   /// loaded from, such as `qwen.gguf`: the file name of a local path, or the
   /// last segment of a URL path without its query or fragment. For a
-  /// downloaded `ModelSource`, that is its `fileName`. It is `llama_model`
-  /// when that segment is empty, has an invalid percent escape or contains
-  /// one of `/ \ ? # @ ; & =` once percent-decoded, and for `data:` and
-  /// `blob:` URLs.
+  /// downloaded `ModelSource`, that is its `fileName`. A local file name is
+  /// reported as written, `%` included; a URL segment is percent-decoded. It
+  /// is `llama_model` when that segment is empty or contains one of
+  /// `/ \ ? # @ ; & =` as written or percent-escaped, when a URL segment
+  /// does not percent-decode to UTF-8, and for `data:` and `blob:` URLs.
   ///
   /// The value leaves out directories, hosts, queries and fragments, but not
   /// the segment itself: a URL whose last segment is a token reports that

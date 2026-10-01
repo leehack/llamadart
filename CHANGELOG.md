@@ -15,6 +15,12 @@
   ([#718](https://github.com/leehack/llamadart/issues/718)).
 - Strip URL userinfo, query and fragment from the `litert_lm.model_url`
   metadata that web LiteRT-LM reports.
+- Load models whose local path contains `%`, such as
+  `C:\models\qwen 100%.gguf`, or whose URL file name decodes to one,
+  instead of throwing `ArgumentError`; `loadModelSource` and
+  `ModelCacheEntry` keep `%` in local and cache paths literal instead of
+  percent-decoding them into another file
+  ([#819](https://github.com/leehack/llamadart/issues/819)).
 - Fix Dart programs aborting on macOS Metal when `main` returns or throws
   with a model, decision head or image model still loaded; llamadart now
   frees them as the program ends, and an undisposed `ImageGenerationEngine`
