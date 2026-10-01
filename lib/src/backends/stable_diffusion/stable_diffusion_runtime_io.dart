@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
+import '../windows_runtime_libraries.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_runtime_status.dart';
 
@@ -59,7 +60,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   String? Function() readCpuInfo = _readProcCpuInfo,
   bool Function() windowsHasAvx2 = _windowsHasAvx2,
   List<String> Function(List<String> names) missingWindowsLibraries =
-      _missingWindowsLibraries,
+      findMissingWindowsLibraries,
   StableDiffusionNativeApi api = const _BundledStableDiffusionApi(),
 }) {
   final targetAbi = abi ?? Abi.current();
@@ -155,7 +156,7 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
   List<String> Function(List<String> names) missingWindowsLibraries =
-      _missingWindowsLibraries,
+      findMissingWindowsLibraries,
 }) {
   final detail = '${error.message ?? error}';
   if (detail.contains('No asset with id')) {
@@ -188,11 +189,14 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
       _windowsVisualCppRuntimeLibraries,
     );
     if (missingRuntime.isNotEmpty) {
+      final advice = visualCppRuntimeAdvice(
+        architecture: 'x64',
+        missing: missingRuntime,
+        library: 'stable-diffusion.dll',
+      );
       return LlamaUnsupportedException(
         'stable_diffusion runtime could not be loaded on $platform: $cause. '
-        'It requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), '
-        'and ${missingRuntime.join(', ')} could not be loaded; install '
-        'vc_redist.x64.exe or ship those DLLs next to stable-diffusion.dll.',
+        '$advice',
       );
     }
     if (missingWindowsLibraries(const ['vulkan-1.dll']).isNotEmpty) {
@@ -233,20 +237,6 @@ const List<String> _windowsVisualCppRuntimeLibraries = [
   'vcruntime140.dll',
   'vcruntime140_1.dll',
 ];
-
-List<String> _missingWindowsLibraries(List<String> names) => [
-  for (final name in names)
-    if (!_canLoadLibrary(name)) name,
-];
-
-bool _canLoadLibrary(String name) {
-  try {
-    DynamicLibrary.open(name);
-    return true;
-  } on ArgumentError {
-    return false;
-  }
-}
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 
