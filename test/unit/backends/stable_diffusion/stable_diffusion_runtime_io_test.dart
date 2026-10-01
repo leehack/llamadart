@@ -277,7 +277,10 @@ void main() {
         final message = messageWithMissing({'msvcp140.dll', 'vulkan-1.dll'});
 
         expect(message, contains('could not be loaded on windows-x64'));
-        expect(message, contains('Visual C++ 2015-2022 Redistributable'));
+        expect(
+          message,
+          contains('latest Microsoft Visual C++ v14 Redistributable (x64)'),
+        );
         expect(message, contains('msvcp140.dll could not be loaded'));
         expect(message, isNot(contains('vulkan-1.dll')));
         expect(message, isNot(contains('..')));

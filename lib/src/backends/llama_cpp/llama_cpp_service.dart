@@ -9810,7 +9810,7 @@ void runLlamaBackendInit(
 /// runtime it lacks.
 ///
 /// Every llama.cpp library in the pinned Windows bundles imports the Visual
-/// C++ 2015-2022 runtime, which stock Windows Server does not ship, and
+/// C++ v14 runtime, which stock Windows Server does not ship, and
 /// Windows reports the missing import only as error 126 without naming it.
 /// Returns `null` off Windows, for any other error, and when
 /// [missingWindowsLibraries] reports none of the runtime missing, so the
@@ -9823,7 +9823,7 @@ LlamaBackendInitializationException? llamaCppWindowsLoadFailure({
 }) {
   final architecture = switch (abi) {
     Abi.windowsX64 => 'x64',
-    Abi.windowsArm64 => 'ARM64',
+    Abi.windowsArm64 => 'arm64',
     _ => null,
   };
   final detail = '${error.message ?? error}';
@@ -9851,7 +9851,7 @@ LlamaBackendInitializationException? llamaCppWindowsLoadFailure({
   );
   return LlamaBackendInitializationException(
     'llama.cpp runtime could not be loaded on '
-    'windows-${architecture.toLowerCase()}: $cause. $advice',
+    'windows-$architecture: $cause. $advice',
   );
 }
 

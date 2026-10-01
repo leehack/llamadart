@@ -3972,9 +3972,11 @@ void main() {
         "resolve native function 'llama_backend_init' in "
         "'package:llamadart/llamadart' : Failed to load dynamic library "
         "'llamadart.dll': The specified module could not be found. It "
-        'requires the Microsoft Visual C++ 2015-2022 Redistributable (x64), '
-        'and msvcp140.dll, vcruntime140_1.dll could not be loaded; install '
-        'vc_redist.x64.exe or ship those DLLs next to llamadart.dll.',
+        'requires the latest Microsoft Visual C++ v14 Redistributable (x64), '
+        'at least as new as the build tools of llamadart.dll, and '
+        'msvcp140.dll, vcruntime140_1.dll could not be loaded; install '
+        'https://aka.ms/vc14/vc_redist.x64.exe or ship those DLLs next to '
+        'llamadart.dll.',
       );
     });
 
@@ -3988,8 +3990,11 @@ void main() {
 
       expect(checked, ['msvcp140.dll', 'vcruntime140.dll']);
       expect(failure!.message, contains('on windows-arm64:'));
-      expect(failure.message, contains('Redistributable (ARM64)'));
-      expect(failure.message, contains('vc_redist.arm64.exe'));
+      expect(failure.message, contains('Redistributable (arm64)'));
+      expect(
+        failure.message,
+        contains('https://aka.ms/vc14/vc_redist.arm64.exe'),
+      );
     });
 
     test('recognizes error 126 without an English system message', () {

@@ -97,8 +97,8 @@ hooks:
   (`asimddp`, `fphp`, `asimdhp`), and Linux and Windows x64 need AVX2, FMA,
   F16C and BMI2. Otherwise `ImageGenerationEngine.load` throws
   `LlamaUnsupportedException` instead of crashing on an illegal
-  instruction. On Windows the runtime also needs the Microsoft Visual C++
-  2015-2022 Redistributable (x64); stock Windows Server lacks it, and the
+  instruction. On Windows the runtime also needs the latest Microsoft Visual
+  C++ v14 Redistributable (x64); stock Windows Server lacks it, and the
   error names the DLL that failed to load.
 - Apple builds use the Metal build and Android the CPU build. Linux and Windows
   publish a CPU build (about 38 MB) and a Vulkan build (about 72 MB) that needs
@@ -168,8 +168,9 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
-On Windows every module needs the Microsoft Visual C++ 2015-2022
-Redistributable (x64 or ARM64). The bundles ship only the OpenMP runtime
+On Windows every module needs the latest Microsoft Visual C++ v14
+Redistributable (x64 or arm64), at least as new as the build tools of the
+bundled DLLs. The bundles ship only the OpenMP runtime
 (`vcomp140.dll` on x64, `libomp140.aarch64.dll` on arm64), not
 `msvcp140.dll` or `vcruntime140.dll`. `vulkan` also needs a GPU driver that
 provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,

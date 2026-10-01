@@ -12,16 +12,20 @@ List<String> findMissingWindowsLibraries(List<String> names) => [
 
 /// Advice for a [library] whose Visual C++ runtime imports in [missing] could
 /// not be loaded, for the redistributable built for [architecture] (`x64` or
-/// `ARM64`).
+/// `arm64`).
+///
+/// Microsoft requires a redistributable at least as new as the MSVC build
+/// tools the library was built with, so the advice names the latest one.
 String visualCppRuntimeAdvice({
   required String architecture,
   required List<String> missing,
   required String library,
 }) =>
-    'It requires the Microsoft Visual C++ 2015-2022 Redistributable '
-    '($architecture), and ${missing.join(', ')} could not be loaded; install '
-    'vc_redist.${architecture.toLowerCase()}.exe or ship those DLLs next to '
-    '$library.';
+    'It requires the latest Microsoft Visual C++ v14 Redistributable '
+    '($architecture), at least as new as the build tools of $library, and '
+    '${missing.join(', ')} could not be loaded; install '
+    'https://aka.ms/vc14/vc_redist.$architecture.exe or ship those DLLs next '
+    'to $library.';
 
 /// Whether a `DynamicLibrary.open` failure [detail] is Windows error 126
 /// (`ERROR_MOD_NOT_FOUND`), the library or one of its imports missing.

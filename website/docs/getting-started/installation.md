@@ -10,9 +10,10 @@ description: Add llamadart to a Dart or Flutter app, set up Apple and web target
 - Flutter SDK `>= 3.38.0` (if you build Flutter apps)
 - Flutter iOS apps: deployment target `16.4` or newer
 - Flutter macOS apps: deployment target `14.0` or newer
-- Windows: the Microsoft Visual C++ 2015-2022 Redistributable for the app's
-  architecture (x64 or ARM64) on every machine that runs the app. Stock
-  Windows Server lacks it; see
+- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
+  architecture (x64 or arm64) on every machine that runs the app, at least as
+  new as the build tools of the bundled DLLs. Stock Windows Server lacks it;
+  see
   [Native library won't load](../troubleshooting/common-issues#llamacpp-runtime-could-not-be-loaded-on-windows-x64).
 
 ## Add the package

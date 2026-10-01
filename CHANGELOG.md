@@ -42,8 +42,8 @@
   manually mid-reply; the reply is now stopped first, as with Stop.
 - Name the missing Visual C++ runtime DLLs when native llama.cpp fails to
   load on Windows, and the missing Vulkan loader or NVIDIA driver when a
-  Windows GPU module does not load; the docs now list the Visual C++
-  2015-2022 Redistributable as a Windows requirement
+  Windows GPU module does not load; the docs now list the latest Visual C++
+  v14 Redistributable as a Windows requirement
   ([#788](https://github.com/leehack/llamadart/issues/788)).
 
 ## 0.9.0

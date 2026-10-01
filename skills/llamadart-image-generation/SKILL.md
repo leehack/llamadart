@@ -33,8 +33,8 @@ description: >-
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64, the iOS x86_64
-  simulator and Windows arm64 are unsupported. Windows needs the Visual C++
-  2015-2022 x64 runtime.
+  simulator and Windows arm64 are unsupported. Windows needs the latest
+  Microsoft Visual C++ v14 Redistributable (x64).
 - Gate UI on `ImageGenerationEngine.runtimeCapabilities()` (synchronous; no
   model needed): show `unsupportedReason` when `isSupported` is false.
   `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same

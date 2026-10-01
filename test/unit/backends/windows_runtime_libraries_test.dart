@@ -64,13 +64,15 @@ void main() {
     test('names the redistributable, its installer and the DLLs', () {
       expect(
         visualCppRuntimeAdvice(
-          architecture: 'ARM64',
+          architecture: 'arm64',
           missing: const ['msvcp140.dll', 'vcruntime140.dll'],
           library: 'llamadart.dll',
         ),
-        'It requires the Microsoft Visual C++ 2015-2022 Redistributable '
-        '(ARM64), and msvcp140.dll, vcruntime140.dll could not be loaded; '
-        'install vc_redist.arm64.exe or ship those DLLs next to llamadart.dll.',
+        'It requires the latest Microsoft Visual C++ v14 Redistributable '
+        '(arm64), at least as new as the build tools of llamadart.dll, and '
+        'msvcp140.dll, vcruntime140.dll could not be loaded; install '
+        'https://aka.ms/vc14/vc_redist.arm64.exe or ship those DLLs next to '
+        'llamadart.dll.',
       );
     });
   });

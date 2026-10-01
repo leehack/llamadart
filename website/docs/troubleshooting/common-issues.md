@@ -61,10 +61,13 @@ resolves binaries: [Native build hooks](../platforms/native-build-hooks).
 `LlamaBackendInitializationException`, which `loadModel` wraps in
 `LlamaModelException`: Windows could not load a DLL that llama.cpp imports,
 and the message names the Visual C++ runtime DLLs that did not load, such as
-`msvcp140.dll` or `vcruntime140.dll`. Install the Microsoft Visual C++
-2015-2022 Redistributable for the app's architecture (`vc_redist.x64.exe`, or
-`vc_redist.arm64.exe` on Windows arm64) on that machine, or ship those DLLs
-next to `llamadart.dll`. Stock Windows Server lacks it.
+`msvcp140.dll` or `vcruntime140.dll`. Install the latest Microsoft Visual C++
+v14 Redistributable for the app's architecture
+([`vc_redist.x64.exe`](https://aka.ms/vc14/vc_redist.x64.exe), or
+[`vc_redist.arm64.exe`](https://aka.ms/vc14/vc_redist.arm64.exe) on Windows
+arm64) on that machine, or ship those DLLs next to `llamadart.dll`. It must be
+at least as new as the build tools of the bundled DLLs, so update an older
+installed copy too. Stock Windows Server lacks it.
 
 ### `libgomp.so.1: cannot open shared object file`
 
