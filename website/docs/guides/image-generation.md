@@ -34,7 +34,7 @@ Measured with the prototype on the same runtime, 512x512, one step, warm:
 | M4 Max, Metal | 1.5 s | 1.2 s |
 | iPhone 16 Pro, Metal | 1.7 s | 4.1 s |
 | Galaxy S24, CPU | 5.9 s | 11.8 s |
-| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](#memory-check); 65 s with it off, swapping |
+| Galaxy A53, CPU | 26 to 29 s | Refused by the [memory check](#memory-check) |
 
 `await ImageGenerationEngine.checkRuntime()` reports whether this build and
 device can generate images, and why not, without loading a model or blocking
@@ -339,7 +339,7 @@ device the model loads on:
 
 | Platform and device | Compared with |
 | --- | --- |
-| Android: CPU | The larger of `MemAvailable` and half of `MemTotal` less the app's resident memory (`VmRSS`), from `/proc` |
+| Android: CPU | The larger of `MemAvailable` and half of `MemTotal` less the app's own memory (`VmRSS` plus `VmSwap`), from `/proc` |
 | Linux: CPU | `MemAvailable` from `/proc/meminfo` |
 | iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
 | macOS: CPU | Physical memory |
@@ -367,7 +367,9 @@ allocating 0.9 to 3.6 GiB more than `MemAvailable`:
 | Pixel 9 Pro (16 GB) | 15.19 GiB | 9.13 GiB | 12.75 GiB | 7.18 GiB |
 
 So 8 GB phones load SD-Turbo with TAESD (2.87 GiB estimated) even when
-`MemAvailable` reads 2.1 GiB, and 6 GB phones still refuse it. With the check
+`MemAvailable` reads 2.1 GiB, unless the app already holds more than about
+0.6 GiB, such as a loaded chat model, and 6 GB phones refuse it unless
+`MemAvailable` alone covers it. With the check
 off, no SD-Turbo variant was killed on these phones, but the Galaxy A53
 swapped most of the app out: a one-step image took 65 s with TAESD and 282 s
 with the full VAE, against 18 s and 67 s on the Pixel 6a.

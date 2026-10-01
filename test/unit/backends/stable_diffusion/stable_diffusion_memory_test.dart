@@ -102,7 +102,7 @@ void main() {
 
       test('uses half of MemTotal less the app when that is larger', () {
         // A 6 GB phone: 5.26 GiB MemTotal, 1.70 GiB MemAvailable, 300 MiB
-        // resident.
+        // in the app.
         expect(
           read(
             Abi.androidArm64,
@@ -111,9 +111,7 @@ void main() {
           ),
           (
             bytes: 5515000 * 1024 ~/ 2 - (300 << 20),
-            source:
-                "half of MemTotal in /proc/meminfo less the app's resident "
-                'memory',
+            source: "half of MemTotal in /proc/meminfo less the app's memory",
           ),
         );
       });
@@ -129,14 +127,32 @@ void main() {
         );
       });
 
-      test('subtracts memory the app already holds', () {
-        final budget = read(
+      test('subtracts memory the app already holds, swapped or not', () {
+        int? budget(String status) => read(
           Abi.androidArm64,
           memInfo: memInfo(totalKib: 8 << 20, availableKib: 1 << 20),
-          status: 'VmRSS:\t 2097152 kB\n',
-        );
-        expect(budget?.bytes, 2 << 30);
+          status: status,
+        )?.bytes;
+        expect(budget('VmRSS:\t 2097152 kB\n'), 2 << 30);
+        expect(budget('VmRSS:\t 1048576 kB\nVmSwap:\t 1048576 kB\n'), 2 << 30);
       });
+
+      test("reads the app's memory from /proc/self/status by default", () {
+        final budget = readStableDiffusionMemoryBudget(
+          abi: Abi.androidArm64,
+          readMemInfo: () => 'MemTotal:  1073741824 kB\nMemAvailable:  1 kB\n',
+        );
+        final status = File('/proc/self/status').readAsStringSync();
+        final own =
+            parseProcMemoryBytes(status, 'VmRSS')! +
+            (parseProcMemoryBytes(status, 'VmSwap') ?? 0);
+        expect(
+          budget?.source,
+          "half of MemTotal in /proc/meminfo less the app's memory",
+        );
+        // The process grows a little between the two reads.
+        expect(budget!.bytes, closeTo((1 << 39) - own, 64 << 20));
+      }, testOn: 'linux');
 
       test('falls back to MemAvailable without MemTotal or VmRSS', () {
         expect(read(Abi.androidArm64, memInfo: _memInfo), (

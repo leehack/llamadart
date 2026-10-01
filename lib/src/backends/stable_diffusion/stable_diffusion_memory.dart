@@ -22,7 +22,8 @@ int? stableDiffusionFileSize(String path) {
 ///
 /// On the CPU, host memory:
 /// - Android: the larger of `MemAvailable` from `/proc/meminfo` and half of
-///   `MemTotal` less the app's resident memory (`VmRSS`). `MemAvailable`
+///   `MemTotal` less the app's own memory (`VmRSS` plus `VmSwap`).
+///   `MemAvailable`
 ///   leaves out what the low-memory killer frees by stopping cached apps and
 ///   what it swaps to zram: on six 4 to 16 GB phones, a foreground app that
 ///   kept touching all of its memory was killed only after allocating 0.9 to
@@ -100,13 +101,14 @@ const String _memAvailableSource = 'MemAvailable in /proc/meminfo';
   if (total == null || resident == null) {
     return (available, _memAvailableSource);
   }
-  final halfLessApp = total ~/ 2 - resident;
+  final swapped = parseProcMemoryBytes(status!, 'VmSwap') ?? 0;
+  final halfLessApp = total ~/ 2 - resident - swapped;
   if (available != null && available >= halfLessApp) {
     return (available, _memAvailableSource);
   }
   return (
     halfLessApp,
-    "half of MemTotal in /proc/meminfo less the app's resident memory",
+    "half of MemTotal in /proc/meminfo less the app's memory",
   );
 }
 

@@ -244,10 +244,9 @@ class ImageGenerationEngine {
   /// memory less what the app already holds, `MemAvailable` on Linux, the
   /// app's remaining memory limit on iOS, and physical memory on macOS,
   /// capped on Metal by the GPU's recommended working set. Windows, and GPUs
-  /// other than Metal
-  /// (whose device memory the runtime does not report), are not checked. A
-  /// model that does not fit throws [LlamaModelException] naming both
-  /// figures, instead of letting the system kill the app.
+  /// other than Metal (whose device memory the runtime does not report), are
+  /// not checked. A model that does not fit throws [LlamaModelException]
+  /// naming both figures, instead of letting the system kill the app.
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see

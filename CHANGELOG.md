@@ -72,7 +72,7 @@
 - Check image models on Android against the larger of `MemAvailable` and
   half of physical memory less the app's own memory, so SD-Turbo loads on
   8 GB phones whose `MemAvailable` leaves out memory the system frees on
-  demand; SD-Turbo is still refused on 6 GB phones
+  demand; 6 GB phones still refuse it in most cases
   ([#792](https://github.com/leehack/llamadart/issues/792)).
 - Add experimental desktop image presets: SDXL-Lightning, FLUX.1-schnell,
   SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
