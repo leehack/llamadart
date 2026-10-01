@@ -60,8 +60,20 @@ description: >-
   fit 6 GB Android phones; offer SDXS there.
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
-- `load` loads weights eagerly; on Apple the first generation is still slow
-  (about 19 s on iPhone) while Metal compiles shaders. Show progress.
+- `load` loads weights eagerly, but GPU shaders compile on first use: the
+  first `runtimeCapabilities()` or `load()` in a process compiles the Metal
+  library on Apple (about 16 s on an M4 Max with an empty shader cache, on
+  the calling isolate), and the first GPU image compiles its pipelines (12 s
+  on Linux Vulkan, 45 s on Windows Vulkan, against under 0.6 s warm). The OS
+  or driver caches them for later launches. Show progress.
+- `await engine.warmUp(width: 512, height: 512)` right after `load`, while
+  the user writes the prompt, moves the pipeline compile off the first real
+  image. Pass the size the app will generate; another size can compile
+  more. It runs one discarded single-step image, returns at once on the CPU,
+  holds the one-operation slot (await it before `generate`), and completes
+  normally when `dispose()` cancels it. To keep a Flutter UI responsive on a
+  first launch, make the first probe from another isolate:
+  `await Isolate.run(ImageGenerationEngine.runtimeCapabilities)`.
 - `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
   invalid requests throw `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048 (512 is native; 256 is fine for

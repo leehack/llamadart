@@ -129,9 +129,68 @@ await engine.dispose();
 - Invalid requests throw `LlamaImageGenerationException` before a task
   starts.
 
-`load` loads every weight up front. On Apple GPUs the first generation after a
-load is still slower while Metal compiles its shaders: about 19 s on an
-iPhone 16 Pro, then 1.7 s per SDXS image.
+`load` loads every weight up front. The first image in a process can still be
+slow while the GPU compiles shaders; see
+[First-image latency and warm-up](#first-image-latency-and-warm-up).
+
+## First-image latency and warm-up
+
+ggml compiles GPU shaders the first time a process needs them, in two places:
+
+- The first `runtimeCapabilities()` or `load()` in a process initializes the
+  GPU backend. On Apple GPUs this compiles ggml's Metal library, on the
+  calling isolate.
+- The first generation on the GPU compiles the pipelines it runs.
+
+The operating system or GPU driver caches the compiled shaders on disk, so
+later launches are faster. ggml in the bundled runtime keeps no cache of its
+own (no Metal binary archive or Vulkan pipeline cache); whether iOS and
+Android keep the driver cache across launches is not measured yet.
+
+| Device and step | Empty shader cache | Cached shaders |
+| --- | --- | --- |
+| M4 Max, Metal: first `runtimeCapabilities()` or `load()` | 15.7 to 16.6 s | 0.4 to 0.5 s |
+| M4 Max, Metal: SDXS 512x512, first image, then next | 1.0 s, then 0.46 s | 0.41 to 0.48 s, then 0.38 to 0.45 s |
+| M4 Max, Metal: SD-Turbo + TAESD 512x512, first image, then next | 0.79 to 0.90 s, then 0.54 to 0.66 s | 0.68 to 0.73 s, then 0.67 to 0.68 s |
+| NVIDIA L4, Linux Vulkan: first image, then SDXS warm | About 12 s, then 176 ms | Later processes reuse the driver cache |
+| NVIDIA L4, Windows Vulkan: first image, then SDXS warm | About 45 s, then 571 ms | Later processes reuse the driver cache |
+| iPhone 16 Pro, Metal | About 19 s before the first image on first launch, not split between the probe and the image | Not measured |
+
+The empty-cache M4 Max figures ran with `MTL_SHADER_CACHE_SIZE=0`, which
+turns the Metal shader cache off. The Vulkan figures are from
+[#779](https://github.com/leehack/llamadart/issues/779). The CPU compiles
+nothing; its first image is as fast as the next.
+
+`warmUp` moves the pipeline compile off the first real image. It runs one
+single-step generation at the given size and discards it:
+
+```dart
+final engine = await ImageGenerationEngine.load(model);
+// While the user writes the prompt:
+await engine.warmUp(width: 512, height: 512);
+```
+
+- Warm up at the size the app will generate. ggml picks some pipelines by
+  tensor size: on the M4 Max a 64x64 warm-up left about 0.1 s of the 512x512
+  compile, while a 512x512 warm-up left none.
+- It moves the cost, it does not remove it. Call it while the user is not
+  waiting, such as right after `load` while they type; `load`, `warmUp` and
+  `generate` back to back take no less time than `load` and `generate`.
+- It holds the one-operation slot: await it before the next `generate` or
+  `load`, which otherwise throw `LlamaStateException`. `dispose()` cancels a
+  running warm-up, which then completes normally.
+- On the CPU it returns at once.
+
+`warmUp` cannot move the Metal library compile, which happens before an
+engine exists. To keep a Flutter UI responsive on a first launch, run the
+first probe on another isolate; the process then has the library, and later
+probes return at once:
+
+```dart
+final capabilities = await Isolate.run(
+  ImageGenerationEngine.runtimeCapabilities,
+);
+```
 
 ## Progress phases
 
