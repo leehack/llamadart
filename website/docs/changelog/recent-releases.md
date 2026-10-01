@@ -82,6 +82,9 @@ For canonical full release notes, use:
   SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
   basic example's image CLI downloads them
   ([#802](https://github.com/leehack/llamadart/issues/802)).
+  **Breaking:** `ImageGenerationModelFamily` gains four values before
+  `custom`, so an exhaustive `switch` over it needs new cases and
+  `ImageGenerationModelFamily.custom.index` changes from 2 to 6.
 
 ## 0.9.0
 

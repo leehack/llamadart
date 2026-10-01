@@ -209,8 +209,8 @@ class ImageGenerationModel {
   /// the checkpoint's VAE, for example with `madebyollin/sdxl-vae-fp16-fix`;
   /// [taesdPath] decodes with `madebyollin/taesdxl`'s
   /// `diffusion_pytorch_model.safetensors` instead, which halved the time
-  /// per image on an M4 Max at no visible quality cost. Needs about 8.5 GB
-  /// of memory: a desktop GPU or a Mac with 16 GB or more.
+  /// per image on an M4 Max at no visible quality cost. The memory check
+  /// asks for about 8.6 GiB: a desktop GPU or a Mac with 16 GB or more.
   factory ImageGenerationModel.sdxlLightning(
     String modelPath, {
     String? vaePath,
@@ -233,8 +233,9 @@ class ImageGenerationModel {
   /// FLUX autoencoder (`ae.safetensors`) or [taesdPath] for
   /// `madebyollin/taef1`.
   ///
-  /// Generates at 1024x1024 in 4 steps at guidance 1. Needs about 15 GB of
-  /// memory: a desktop GPU with 16 GB or a Mac with 24 GB or more.
+  /// Generates at 1024x1024 in 4 steps at guidance 1. The memory check asks
+  /// for about 14.5 GiB: a desktop GPU with 16 GB or a Mac with 24 GB or
+  /// more.
   ///
   /// Throws [ArgumentError] when neither [vaePath] nor [taesdPath] is set.
   factory ImageGenerationModel.flux1Schnell({
@@ -263,8 +264,9 @@ class ImageGenerationModel {
   /// together) and a decoder: [vaePath] for the SD 3.5 VAE or [taesdPath]
   /// for `madebyollin/taesd3`.
   ///
-  /// Generates at 1024x1024 in 4 steps at guidance 1. Needs about 14 GB of
-  /// memory: a desktop GPU with 16 GB or a Mac with 24 GB or more.
+  /// Generates at 1024x1024 in 4 steps at guidance 1. The memory check asks
+  /// for about 13.1 GiB: a desktop GPU with 16 GB or a Mac with 24 GB or
+  /// more.
   ///
   /// Throws [ArgumentError] when neither [vaePath] nor [taesdPath] is set.
   factory ImageGenerationModel.sd35LargeTurbo({
@@ -293,8 +295,9 @@ class ImageGenerationModel {
   /// `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, 2.5 GB) and the FLUX autoencoder
   /// (`ae.safetensors`, 335 MB).
   ///
-  /// Generates at 1024x1024 in 8 steps at guidance 1. Needs about 8.5 GB of
-  /// memory: a desktop GPU with 12 GB or a Mac with 16 GB or more.
+  /// Generates at 1024x1024 in 8 steps at guidance 1. The memory check asks
+  /// for about 8.3 GiB: a desktop GPU with 12 GB or a Mac with 16 GB or
+  /// more.
   factory ImageGenerationModel.zImageTurbo({
     required String diffusionModelPath,
     required String llmPath,

@@ -11,9 +11,10 @@ the opt-in `stable_diffusion` native runtime, separately from `LlamaEngine`.
 The API is experimental. Two small, distilled SD 1.x/2.x-family presets are
 validated on phones and desktops: SDXS-512 and SD-Turbo.
 [Desktop presets](#desktop-presets) cover SDXL-Lightning, FLUX.1-schnell,
-SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs, and
-[`.custom`](#larger-models-with-custom) loads other families. It is text-to-image only: no image-to-image,
-inpainting, LoRA or ControlNet yet.
+SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (validated
+on macOS Metal only), and [`.custom`](#larger-models-with-custom) loads
+other families. It is text-to-image only: no image-to-image, inpainting,
+LoRA or ControlNet yet.
 
 ## Support
 

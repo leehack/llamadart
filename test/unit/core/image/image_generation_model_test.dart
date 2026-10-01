@@ -72,6 +72,22 @@ void main() {
     expect(model.defaults.sampler, isNull);
   });
 
+  test('flux1Schnell decodes with TAESD alone when no VAE is given', () {
+    final model = ImageGenerationModel.flux1Schnell(
+      diffusionModelPath: '/m/flux.gguf',
+      clipLPath: '/m/clip_l.gguf',
+      t5xxlPath: '/m/t5.gguf',
+      taesdPath: '/m/taef1.safetensors',
+    );
+
+    expect(model.files.paths, {
+      'diffusionModel': '/m/flux.gguf',
+      'taesd': '/m/taef1.safetensors',
+      'clipL': '/m/clip_l.gguf',
+      't5xxl': '/m/t5.gguf',
+    });
+  });
+
   test('sd35LargeTurbo takes three text encoders and 4 steps', () {
     final model = ImageGenerationModel.sd35LargeTurbo(
       diffusionModelPath: '/m/sd35lt.gguf',
