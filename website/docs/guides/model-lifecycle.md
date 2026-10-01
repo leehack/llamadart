@@ -38,11 +38,12 @@ decision head or image model still loaded
   - rarely, while `dispose()` is freeing objects, which can leave one unfreed.
 
   `exit()` from `dart:io` skips the native teardown and never aborts.
-- A Flutter app that quits through AppKit (Cmd-Q or closing its last window)
-  ends the process without that cleanup, so dispose every engine, including
-  `DecisionEngine` and `ImageGenerationEngine`, before it quits. Desktop
-  Flutter apps do not run `State.dispose` on quit, so dispose from an exit
-  request instead (`AppExitResponse` comes from `dart:ui`):
+- A Flutter app that quits through AppKit (Cmd-Q, closing its last window, or
+  `ServicesBinding.exitApplication`) is not guaranteed to run that cleanup,
+  so dispose every engine, including `DecisionEngine` and
+  `ImageGenerationEngine`, before it quits. Desktop Flutter apps do not run
+  `State.dispose` on quit, so dispose from an exit request instead
+  (`AppExitResponse` comes from `dart:ui`):
 
 ```dart
 final listener = AppLifecycleListener(

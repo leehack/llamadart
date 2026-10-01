@@ -151,12 +151,11 @@ class HomeLayout extends SiteLayout {
         section(classes: 'home-section', [
           h2([Component.text('What you can build')]),
           div(classes: 'feature-grid', [
-            for (final (title, body, href, experimental) in _features)
+            for (final (title, body, href, tag) in _features)
               a(href: href, classes: 'feature', [
                 h3([
                   Component.text(title),
-                  if (experimental)
-                    span(classes: 'tag', [Component.text('experimental')]),
+                  if (tag != null) span(classes: 'tag', [Component.text(tag)]),
                 ]),
                 p([Component.text(body)]),
               ]),
@@ -191,37 +190,44 @@ const _features = [
     'Stateless completions with LlamaEngine, or multi-turn history with '
         'ChatSession, streamed as chunks.',
     '/docs/guides/generation-and-streaming',
-    false,
+    null,
   ),
   (
     'Tool calling',
     'Let the model call your Dart functions and handle the calls.',
     '/docs/guides/tool-calling',
-    false,
+    null,
   ),
   (
     'Embeddings',
     'Generate local embeddings for retrieval-style workflows.',
     '/docs/guides/embeddings',
-    false,
+    null,
   ),
   (
     'Multimodal',
     "Prompt with images and text, within each platform's limits.",
     '/docs/guides/multimodal',
-    false,
+    null,
   ),
   (
     'Speech to text',
     'Transcribe audio with the typed speech API.',
     '/docs/guides/speech-to-text',
-    true,
+    'experimental',
   ),
   (
     'Text to speech',
     'Generate PCM and WAV audio with Qwen3-TTS on native and WebGPU.',
     '/docs/guides/text-to-speech',
-    true,
+    'experimental',
+  ),
+  (
+    'Image generation',
+    'Generate images from text prompts on native platforms with the opt-in '
+        'stable-diffusion.cpp runtime.',
+    '/docs/next/guides/image-generation',
+    'preview',
   ),
 ];
 
