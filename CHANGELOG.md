@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Report only the last path segment of the model source, such as
+  `qwen.gguf`, in `LlamaCompletionChunk.model` instead of the full local path
+  or redacted URL; compare it with the file name, not the path. Like
+  `LlamaOperation.model`, it now reads local paths as paths and leaves out
+  `data:` and `blob:` URLs
+  ([#718](https://github.com/leehack/llamadart/issues/718)).
+- Strip URL userinfo, query and fragment from the `litert_lm.model_url`
+  metadata that web LiteRT-LM reports.
 - Fix the Flutter chat example aborting on macOS when quit while an image or
   chat model was still being freed, such as right after leaving the image
   screen ([#796](https://github.com/leehack/llamadart/issues/796)).
