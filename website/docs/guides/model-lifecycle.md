@@ -22,6 +22,24 @@ try {
 `dispose()` unloads the model and releases the backend. Call `unloadModel()`
 instead when the engine will load another model.
 
+Dispose every engine before the app quits, including `DecisionEngine` and
+`ImageGenerationEngine`. When a macOS app quits through AppKit (Cmd-Q or
+closing its last window) with a model, context, decision head or image model
+still loaded on Metal, ggml aborts the process
+(`GGML_ASSERT([rsets->data count] == 0)` in `ggml_metal_rsets_free`).
+Desktop Flutter apps do not run `State.dispose` on quit, so dispose from an
+exit request instead (`AppExitResponse` comes from `dart:ui`):
+
+```dart
+final listener = AppLifecycleListener(
+  onExitRequested: () async {
+    await engine.dispose();
+    return AppExitResponse.exit;
+  },
+);
+// Call listener.dispose() when its owner is disposed.
+```
+
 `LlamaBackend()` routes by file extension: `.gguf` to llama.cpp and
 `.litertlm` to LiteRT-LM, with the same lifecycle:
 

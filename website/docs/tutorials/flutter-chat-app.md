@@ -39,6 +39,7 @@ Then apply the platform setup:
 
 ```dart
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -88,10 +89,12 @@ class _ChatScreenState extends State<ChatScreen> {
   double? _downloadFraction;
   String _status = 'Starting...';
   bool _generating = false;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
     unawaited(_loadModel());
   }
 
@@ -165,8 +168,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _engine.cancelGeneration();
   }
 
+  Future<AppExitResponse> _onExitRequested() async {
+    _downloadCancel.cancel();
+    _engine.cancelGeneration();
+    await _engine.dispose();
+    return AppExitResponse.exit;
+  }
+
   @override
   void dispose() {
+    _lifecycle.dispose();
     _downloadCancel.cancel();
     _engine.cancelGeneration();
     unawaited(_engine.dispose());
@@ -251,7 +262,9 @@ package cache; later launches load it from there.
 
 - **One engine per screen.** `_ChatScreenState` owns the `LlamaEngine`.
   `State.dispose` cancels any running download and generation, then disposes
-  the engine. An engine holds one model at a time.
+  the engine. Quitting a desktop app does not run `State.dispose`, so
+  `onExitRequested` disposes the engine too; on macOS Metal, a model still
+  loaded at exit aborts the process. An engine holds one model at a time.
 - **Download with progress.** `loadModelSource` resolves the `hf://` reference,
   downloads it with resume support and reports `ModelDownloadProgress`.
   `fraction` is `null` while the total size is unknown, which
