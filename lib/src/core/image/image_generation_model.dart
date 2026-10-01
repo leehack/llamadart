@@ -239,9 +239,9 @@ class ImageGenerationOptions {
   /// `null` turns it on for the CPU and Metal, where it was measured, and
   /// leaves it off on other GPUs such as Vulkan. On an M4 Max it made
   /// SD 3.5 Medium sampling 1.6 times as fast and cut its compute buffer
-  /// from 1.8 GB to 0.3 GB, sped up FLUX and SDXL slightly and left
-  /// SD 1.x and 2.x unchanged; on its CPU, SD-Turbo sampling was about a
-  /// fifth faster. The runtime falls back to regular attention where the
+  /// from 1.8 GiB to 0.3 GiB, sped up FLUX and SDXL slightly and left
+  /// SD 1.x and 2.x sampling time unchanged; on its CPU, SD-Turbo sampling
+  /// was about a fifth faster. Pixels change slightly. The runtime falls back to regular attention where the
   /// device lacks a kernel.
   final bool? flashAttention;
 
@@ -249,13 +249,13 @@ class ImageGenerationOptions {
   /// unfolding its input first. The output is identical.
   ///
   /// `null` turns it on, except on Metal and when a tiny autoencoder decodes
-  /// (an `ImageGenerationModelFiles.taesd` file or the SDXS preset). On an
-  /// NVIDIA L4 with Vulkan it cut a 1024x1024 decode from 23 to 56 s to
-  /// about 1 s and peak device memory by 4 to 5 GB. On an M4 Max CPU it
-  /// left a 512x512 SD-Turbo decode within measurement noise and cut peak
-  /// memory from 3.6 to 2.7 GB. On Metal it made decoding about 7 times
-  /// slower, and with a tiny autoencoder it saved little memory and slowed
-  /// decoding by about 40%.
+  /// (an `ImageGenerationModelFiles.taesd` file or the SDXS preset). In
+  /// stable-diffusion.cpp's native CLI on an NVIDIA L4 with Vulkan it cut a
+  /// 1024x1024 decode from 23 to 56 s to about 1 s and peak device memory by
+  /// 4 to 5 GiB. On an M4 Max CPU it made a 512x512 SD-Turbo image about 5%
+  /// slower end to end and cut peak memory from 3.6 to 2.7 GiB. On Metal it
+  /// made decoding about 7 times slower, and with a tiny autoencoder it saved
+  /// little memory and slowed decoding by about 40%.
   final bool? vaeDirectConvolution;
 
   /// Creates runtime settings.
