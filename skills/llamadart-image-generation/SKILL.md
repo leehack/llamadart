@@ -85,6 +85,9 @@ description: >-
 - `task.cancel()` stops before the next sampling step; `done` reports
   `cancelled` and the stream closes without a final event. `dispose()` cancels
   a running task, waits, then frees the model.
+- Dispose before the process exits: on macOS Metal a model still loaded at
+  exit aborts the process. Flutter desktop apps skip `State.dispose` on quit;
+  await `dispose()` in `AppLifecycleListener.onExitRequested`.
 - A runtime failure (for example an aborted Metal command buffer or out of
   memory) fails the task with `LlamaInferenceException`; the engine stays
   usable for the next request.

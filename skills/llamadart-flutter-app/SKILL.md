@@ -23,6 +23,12 @@ or shipping runtimes the app does not use.
   `State.dispose` is synchronous, so wrap the call in `unawaited(...)`.
   `dispose()` waits for an in-flight load or unload, then unloads the model
   and releases the backend.
+- Quitting a desktop app (Cmd-Q, closing the last window) does not run
+  `State.dispose`. Also dispose `LlamaEngine`, `DecisionEngine` and
+  `ImageGenerationEngine` instances from
+  `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
+  returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
+  still loaded at process exit aborts in `ggml_metal_rsets_free`.
 - Keep inference state out of widgets. Put a plain Dart controller between
   the engine and the UI (example below) and adapt it to `ChangeNotifier`,
   `ValueNotifier`, BLoC or Riverpod. Loading, chat history and streaming
@@ -138,8 +144,9 @@ hooks:
 
 A Flutter-free chat controller the widget layer owns. A `State` or
 `ChangeNotifier` creates it in `initState`, calls `load()`, rebuilds from
-`onChanged`, wires Send to `send`, Stop to `stop`, and calls
-`unawaited(controller.dispose())` from its own `dispose`:
+`onChanged`, wires Send to `send`, Stop to `stop`, calls
+`unawaited(controller.dispose())` from its own `dispose`, and awaits
+`controller.dispose()` in `onExitRequested`:
 
 ```dart
 import 'dart:async';

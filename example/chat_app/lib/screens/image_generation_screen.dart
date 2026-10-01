@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -57,7 +58,15 @@ class _ImageGenerationScreenState extends State<ImageGenerationScreen> {
         );
     // A backgrounded mobile app cannot keep the GPU busy, so a running
     // generation is cancelled; the loaded model stays for the next one.
-    _lifecycle = AppLifecycleListener(onPause: _provider.cancelGeneration);
+    // Desktop quit skips dispose, and a model still loaded at exit aborts
+    // the process on macOS Metal, so it is freed before the app exits.
+    _lifecycle = AppLifecycleListener(
+      onPause: _provider.cancelGeneration,
+      onExitRequested: () async {
+        await _provider.releaseEngine();
+        return AppExitResponse.exit;
+      },
+    );
     if (!_provider.isInitialized) {
       unawaited(_provider.initialize());
     }
