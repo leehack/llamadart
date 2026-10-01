@@ -3055,8 +3055,7 @@ class WebGpuLlamaBackend
     String? customTemplate,
     bool addAssistant = true,
   }) async {
-    if ((customTemplate?.isNotEmpty ?? false) ||
-        (_chatTemplate?.isNotEmpty ?? false)) {
+    if (customTemplate != null || (_chatTemplate?.isNotEmpty ?? false)) {
       throw LlamaUnsupportedException(
         'The WebGPU backend applyChatTemplate cannot render a custom chat '
         'template (customTemplate or ModelParams.chatTemplate): the web '

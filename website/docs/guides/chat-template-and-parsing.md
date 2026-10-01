@@ -99,7 +99,9 @@ embedded template is missing or broken, load it with
 then render with that template instead of `tokenizer.chat_template` and its
 `tool_use` variant, and detect the tool-call and reasoning format from it, as
 llama.cpp's `--chat-template-file` does. Null or empty keeps the model's
-template.
+template. The value is Jinja source: unlike llama.cpp's `--chat-template`, a
+name such as `chatml` is not mapped to a built-in template.
+`engine.getMetadata()` still reports the GGUF `tokenizer.chat_template`.
 
 To preview a different template for one call, pass `customTemplate` to
 `engine.chatTemplate(...)`; it takes precedence over `ModelParams.chatTemplate`.

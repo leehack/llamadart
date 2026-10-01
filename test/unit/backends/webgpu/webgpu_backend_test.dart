@@ -615,6 +615,10 @@ void main() {
         backend.applyChatTemplate(handle, messages, customTemplate: 'X'),
         unsupported,
       );
+      await expectLater(
+        backend.applyChatTemplate(handle, messages, customTemplate: ''),
+        unsupported,
+      );
       await backend.modelFree(handle);
 
       final overridden = await backend.modelLoadFromUrl(
@@ -626,6 +630,16 @@ void main() {
         unsupported,
       );
       await backend.modelFree(overridden);
+
+      final emptyOverride = await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(chatTemplate: ''),
+      );
+      expect(
+        await backend.applyChatTemplate(emptyOverride, messages),
+        'templated',
+      );
+      await backend.modelFree(emptyOverride);
 
       final reloaded = await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
