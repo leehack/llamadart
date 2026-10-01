@@ -1192,6 +1192,80 @@ void main() {
       },
     );
 
+    test('loads local paths holding %, # and ? as literal files', () async {
+      final logs = <String>[];
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.info)
+        ..setHandler((record) => logs.add(record.message));
+      addTearDown(
+        () => LlamaLogger.instance
+          ..setHandler(null)
+          ..setLevel(LlamaLogLevel.none),
+      );
+
+      for (final (path, model) in const [
+        (r'C:\models\qwen 100%.gguf', 'qwen 100%.gguf'),
+        ('C:/models/qwen 100%.gguf', 'qwen 100%.gguf'),
+        (r'C:\models\50%25 off.gguf', '50%25 off.gguf'),
+        (r'C:\models\a#b?c%zz\qwen%41.gguf', 'qwen%41.gguf'),
+        (r'\\server\share\100%\qwen%.gguf', 'qwen%.gguf'),
+        ('/Users/alice/100% done/qwen 100%.gguf', 'qwen 100%.gguf'),
+        ('/Users/alice/a#b?c%zz/qwen%41.gguf', 'qwen%41.gguf'),
+        ('models/%E0%A4%A.gguf', '%E0%A4%A.gguf'),
+        (r'C:\models\c?d%zz.gguf', 'llama_model'),
+        (r'C:\models\x%2Fy%.gguf', 'llama_model'),
+        ('models/a%3ftoken%3Dx%.gguf', 'llama_model'),
+      ]) {
+        logs.clear();
+        final backend = MockLlamaBackend()..generationText = 'hello';
+        final pathEngine = LlamaEngine(backend);
+
+        await pathEngine.loadModel(path);
+        await pathEngine.loadMultimodalProjector(path);
+        final chunks = await pathEngine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList();
+        await pathEngine.dispose();
+
+        expect(backend.lastModelPath, path, reason: path);
+        expect(backend.lastMultimodalProjectorPath, path, reason: path);
+        expect(chunks.map((chunk) => chunk.model).toSet(), {
+          model,
+        }, reason: path);
+        if (model != 'llama_model') {
+          expect(logs, contains('Loading model: $model'), reason: path);
+          expect(
+            logs,
+            contains('Loading multimodal projector: $model'),
+            reason: path,
+          );
+        }
+      }
+    });
+
+    test('URL loads holding a lone or escaped % succeed', () async {
+      for (final (url, model) in const [
+        ('https://example.com/m/qwen 100%.gguf', 'llama_model'),
+        ('https://example.com/m/qwen%20100%25.gguf', 'qwen 100%.gguf'),
+        ('models/qwen 100%.gguf', 'llama_model'),
+      ]) {
+        final backend = MockLlamaBackend(urlLoadingSupported: true)
+          ..generationText = 'hello';
+        final urlEngine = LlamaEngine(backend);
+
+        await urlEngine.loadModelFromUrl(url);
+        final chunks = await urlEngine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList();
+        await urlEngine.dispose();
+
+        expect(backend.lastModelUrl, url, reason: url);
+        expect(chunks.map((chunk) => chunk.model).toSet(), {
+          model,
+        }, reason: url);
+      }
+    });
+
     test('completion chunks name a downloaded source by its file', () async {
       final source = ModelSource.url(
         Uri.parse('https://example.com/org/qwen.gguf?token=abc'),

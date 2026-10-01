@@ -73,10 +73,11 @@ abstract final class LlamaOperation {
   /// the path or URL it was loaded from. For a [LlamaModelLoadOperation],
   /// that last segment of the model being loaded.
   ///
-  /// Null when no model is loaded, when that segment is empty, has a
-  /// percent escape that does not decode to UTF-8, or contains one of
-  /// `/ \ ? # @ ; & =` once decoded, so the segment is never a directory
-  /// path, URL query, fragment or userinfo, and for `data:` and `blob:` URLs.
+  /// Null when no model is loaded, when that segment is empty or contains
+  /// one of `/ \ ? # @ ; & =` as written or percent-escaped, so the segment
+  /// is never a directory path, URL query, fragment or userinfo, when a URL's
+  /// segment does not percent-decode to UTF-8, and for `data:` and `blob:`
+  /// URLs. A local file name is reported as written, `%` included.
   /// `general.name` is reported as the model file declares it.
   final String? model;
 
