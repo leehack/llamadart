@@ -16,8 +16,8 @@ void main() {
     );
     expect(options.taesdSource, isNull);
     expect(options.request.prompt, 'a fox');
-    expect(options.request.width, 512);
-    expect(options.request.height, 512);
+    expect(options.request.width, isNull);
+    expect(options.request.height, isNull);
     expect(options.request.steps, isNull);
     expect(options.request.guidanceScale, isNull);
     expect(options.request.seed, isNull);
@@ -131,7 +131,7 @@ void main() {
     }
   });
 
-  test('desktop presets default to pinned files at 1024x1024', () {
+  test('desktop presets default to pinned files and the model size', () {
     String key(String source) => ModelSource.parse(source).canonicalKey;
     Map<String, String> keys(ImageCliOptions options) => {
       for (final MapEntry(key: role, value: source)
@@ -145,7 +145,7 @@ void main() {
       key(defaultSdxlLightningModelSource),
     );
     expect(lightning.fileSources, isEmpty);
-    expect((lightning.request.width, lightning.request.height), (1024, 1024));
+    expect((lightning.request.width, lightning.request.height), (null, null));
 
     final flux = _parse(const ['--preset', 'flux1-schnell', '-p', 'a']);
     expect(flux.modelSource.canonicalKey, key(defaultFlux1SchnellModelSource));

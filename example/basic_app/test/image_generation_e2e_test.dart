@@ -10,11 +10,15 @@ import 'package:test/test.dart';
 
 // Real image generation through the stable_diffusion runtime this example
 // opts into. Downloads nothing: set LLAMADART_SDXS_MODEL, and optionally
-// LLAMADART_SD_TURBO_MODEL, LLAMADART_TAESD and LLAMADART_IMAGE_OUTPUT_DIR.
+// LLAMADART_SD_TURBO_MODEL, LLAMADART_TAESD, LLAMADART_SDXL_LIGHTNING_MODEL,
+// LLAMADART_TAESDXL and LLAMADART_IMAGE_OUTPUT_DIR.
 void main() {
   final sdxsPath = Platform.environment['LLAMADART_SDXS_MODEL'];
   final sdTurboPath = Platform.environment['LLAMADART_SD_TURBO_MODEL'];
   final taesdPath = Platform.environment['LLAMADART_TAESD'];
+  final sdxlLightningPath =
+      Platform.environment['LLAMADART_SDXL_LIGHTNING_MODEL'];
+  final taesdxlPath = Platform.environment['LLAMADART_TAESDXL'];
   final outputDir = Platform.environment['LLAMADART_IMAGE_OUTPUT_DIR'];
   if (outputDir != null) {
     Directory(outputDir).createSync(recursive: true);
@@ -256,6 +260,45 @@ void main() {
       ).writeAsBytesSync(result.images.single.toPng());
     }
   });
+
+  test(
+    'SDXL-Lightning warms up and generates at 1024x1024 by default',
+    () async {
+      // A skip: argument would not apply: the scenario passes --run-skipped.
+      if (sdxlLightningPath == null) {
+        markTestSkipped('Set LLAMADART_SDXL_LIGHTNING_MODEL');
+        return;
+      }
+      final engine = await ImageGenerationEngine.load(
+        ImageGenerationModel.sdxlLightning(
+          sdxlLightningPath,
+          taesdPath: taesdxlPath,
+        ),
+      );
+      addTearDown(engine.dispose);
+
+      final warmUp = Stopwatch()..start();
+      await engine.warmUp();
+      warmUp.stop();
+      final result = await engine.generateImage(
+        const ImageGenerationRequest(prompt: 'a lighthouse at dusk', seed: 42),
+      );
+
+      final image = result.images.single;
+      print(
+        'SDXL-Lightning on ${engine.capabilities.backendName}: warm-up '
+        '${warmUp.elapsedMilliseconds} ms; ${image.width}x${image.height} '
+        'image ${result.elapsed.inMilliseconds} ms',
+      );
+      expect((image.width, image.height), (1024, 1024));
+      expect(image.pixels.toSet().length, greaterThan(64));
+      if (outputDir != null) {
+        File(
+          '$outputDir/sdxl-lightning-default-seed42.png',
+        ).writeAsBytesSync(image.toPng());
+      }
+    },
+  );
 
   test('dispose during a generation cancels it', () async {
     final engine = await ImageGenerationEngine.load(

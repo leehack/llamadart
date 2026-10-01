@@ -54,8 +54,9 @@ description: >-
     step at guidance 1; up to 4 steps add detail. For TAESD use
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
-  - Desktop presets, 1024x1024, for desktop GPUs and Macs with 16 GB or
-    more (not phones); each needs a VAE or TAESD decoder where it takes one:
+  - Desktop presets, 1024x1024 by default, for desktop GPUs and Macs with
+    16 GB or more (not phones); each needs a VAE or TAESD decoder where it
+    takes one:
     - `ImageGenerationModel.sdxlLightning(path, vaePath:, taesdPath:)`:
       `ByteDance/SDXL-Lightning` `sdxl_lightning_4step.safetensors`; 4 steps,
       guidance 1, Euler with `sgmUniform`. `madebyollin/taesdxl` halves the
@@ -76,15 +77,18 @@ description: >-
     - These factories throw `ArgumentError` when a split preset has neither
       `vaePath` nor `taesdPath`.
   - `ImageGenerationModel.custom(ImageGenerationModelFiles(...), defaults:
-    ImageGenerationDefaults(steps:, guidanceScale:))` for any other family
-    stable-diffusion.cpp loads (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image);
-    experimental, for desktop GPUs and Macs. Split files: SD 3.5 takes
-    `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; FLUX
-    `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl`; Z-Image and
-    Qwen-Image `diffusionModel`, `vae`, `llm`. A single-file GGUF that
-    includes the VAE (SD 3.5 Medium) goes in `model`, not `diffusionModel`.
+    ImageGenerationDefaults(width:, height:, steps:, guidanceScale:))` for
+    any other family stable-diffusion.cpp loads (SDXL, SD 3.5, FLUX,
+    Z-Image, Qwen-Image); experimental, for desktop GPUs and Macs. Split
+    files: SD 3.5 takes `diffusionModel`, `vae` or `taesd`, `clipL`,
+    `clipG`, `t5xxl`; FLUX `diffusionModel`, `vae` or `taesd`, `clipL`,
+    `t5xxl`; Z-Image and Qwen-Image `diffusionModel`, `vae`, `llm`. A
+    single-file GGUF that includes the VAE (SD 3.5 Medium) goes in `model`,
+    not `diffusionModel`.
     Distilled models need their own defaults, such as `steps: 4,
-    guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell.
+    guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell, and the size
+    defaults to 512x512, so set `width: 1024, height: 1024` for families
+    trained at 1024.
 - `ImageGenerationDefaults` and `ImageGenerationRequest` also take
   `sampler` (`ImageGenerationSampler`), `scheduler`
   (`ImageGenerationScheduler`) and `flowShift` (flow-matching models only,
@@ -116,17 +120,21 @@ description: >-
   isolate for it), and the first GPU image compiles its pipelines (12 s
   on Linux Vulkan, 45 s on Windows Vulkan, against under 0.6 s warm). The OS
   or driver caches them for later launches. Show progress.
-- `await engine.warmUp(width: 512, height: 512)` right after `load`, while
-  the user writes the prompt, moves the pipeline compile off the first real
-  image. Pass the size the app will generate; another size can compile
-  more. It runs one discarded single-step image, returns at once on the CPU,
-  holds the one-operation slot (await it before `generate`), and completes
-  normally when `dispose()` cancels it.
+- `await engine.warmUp()` right after `load`, while the user writes the
+  prompt, moves the pipeline compile off the first real image. It warms up
+  at the model's size; pass `width` and `height` when the app generates at
+  another, since another size can compile more. At a desktop preset's
+  1024x1024 it costs one step and a decode (3 to 4 s for SDXL-Lightning
+  with TAESDXL on an M4 Max). It runs one discarded single-step image,
+  returns at once on the CPU, holds the one-operation slot (await it before
+  `generate`), and completes normally when `dispose()` cancels it.
 - `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
   invalid requests throw `LlamaImageGenerationException` first. Width and
-  height are multiples of 8 from 64 to 2048 (512 is native; 256 is fine for
-  SDXS and SD-Turbo; the runtime rounds up to 64, so read the size from
-  `GeneratedImage`), steps 1 to 150, guidance 0 to 30, count 1 to 16.
+  height are multiples of 8 from 64 to 2048; leave them `null` for the
+  model's native size (512x512 for SDXS, SD-Turbo and `.custom`, 1024x1024
+  for the desktop presets). 256 is fine for SDXS and SD-Turbo; the runtime
+  rounds up to 64, so read the size from `GeneratedImage`. Steps are 1 to
+  150, guidance 0 to 30, count 1 to 16.
   `seed: null` is random; `result.seed` reports it, image `i` used
   `seed + i`, and the same seed reproduces the same pixels.
 - `task.events` (single subscription): `ImageGenerationProgressEvent`
@@ -187,8 +195,6 @@ Future<void> generateFox(String sdxsPath, String outputPath) async {
     final ImageGenerationTask task = engine.generate(
       const ImageGenerationRequest(
         prompt: 'a red fox in autumn leaves',
-        width: 512,
-        height: 512,
         seed: 42,
       ),
     );

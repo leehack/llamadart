@@ -48,8 +48,9 @@
   and Windows ([#777](https://github.com/leehack/llamadart/issues/777)).
 - Add experimental on-device image generation, `ImageGenerationEngine`, on
   the opt-in `stable_diffusion` runtime: SDXS and SD-Turbo presets,
-  phase-labelled progress, cancellation, PNG output and a memory check before
-  loading; not available on the web
+  phase-labelled progress, cancellation, PNG output, a memory check before
+  loading, and an output size that defaults to the model's
+  (`ImageGenerationDefaults.width` and `height`); not available on the web
   ([#778](https://github.com/leehack/llamadart/issues/778)).
 - Add an experimental image-generation screen to the Flutter chat example,
   with SDXS and SD-Turbo downloads
@@ -102,8 +103,9 @@
   demand; 6 GB phones still refuse it in most cases
   ([#792](https://github.com/leehack/llamadart/issues/792)).
 - Add experimental desktop image presets: SDXL-Lightning, FLUX.1-schnell,
-  SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
-  basic example's image CLI downloads them
+  SD 3.5 Large Turbo and Z-Image-Turbo, which generate and warm up at
+  1024x1024 when a request or `warmUp` leaves the size unset, and the basic
+  example's image CLI downloads them
   ([#802](https://github.com/leehack/llamadart/issues/802)).
   **Breaking:** `ImageGenerationModelFamily` gains four values before
   `custom`, so an exhaustive `switch` over it needs new cases and
