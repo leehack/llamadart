@@ -373,6 +373,7 @@ class ImageGenerationEngine {
       seed: 0,
     );
     if (!_isGpu(_backendName)) {
+      // Fail where a GPU warm-up would, so callers behave the same on both.
       _resolve(request);
       _releaseOperation(_acquireOperation());
       return;
