@@ -34,6 +34,10 @@ description: >-
   `engine.create` when reasoning output is not wanted.
 - Token usage (`chunk.usage`) is only on the final chunk and may be null (for
   example on LiteRT-LM or a cancelled request). Never assume it is present.
+- `chunk.model` is the last path segment of the model source (`qwen.gguf`),
+  without directories or hosts, or `llama_model`. Compare it with the file
+  name, and set your own model id on OpenAI-compatible responses: a URL whose
+  last segment is a token reports that token.
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding with a grammar and
   validates the final output. Runtimes without grammar support (LiteRT-LM)
