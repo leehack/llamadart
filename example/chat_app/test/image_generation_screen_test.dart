@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -307,6 +308,47 @@ void main() {
 
     expect(run.cancelled, isTrue);
     expect(find.text('Generation cancelled.'), findsOneWidget);
+  });
+
+  testWidgets('frees the image model before the app exits', (tester) async {
+    models.installed.add(ImageModelProfile.sdxs.id);
+    await pumpScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('generate_image_button')),
+    );
+    await tester.pump();
+    await tester.pump();
+    final engine = generation.generator!;
+    final run = engine.runs.single;
+
+    final response = await tester.binding.handleRequestAppExit();
+
+    expect(response, AppExitResponse.exit);
+    expect(engine.disposed, isTrue);
+    expect(run.cancelled, isTrue);
+  });
+
+  testWidgets('frees a model still loading when the app exits', (tester) async {
+    models.installed.add(ImageModelProfile.sdxs.id);
+    final loadGate = generation.loadGate = Completer<void>();
+    await pumpScreen(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('generate_image_button')),
+    );
+    await tester.pump();
+
+    var exited = false;
+    final exit = tester.binding.handleRequestAppExit().whenComplete(
+      () => exited = true,
+    );
+    await tester.pump();
+    expect(exited, isFalse);
+
+    loadGate.complete();
+    expect(await exit, AppExitResponse.exit);
+    final engine = generation.generator!;
+    expect(engine.disposed, isTrue);
+    expect(engine.runs, isEmpty);
   });
 
   testWidgets('reports a busy runtime without the unload offer', (
