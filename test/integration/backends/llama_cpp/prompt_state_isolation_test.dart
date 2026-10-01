@@ -223,6 +223,8 @@ final class _FakeMtmd {
       #contextParamsDefault: unused,
       #initFromFile: unused,
       #free: (Pointer<mtmd_context> _) {},
+      // Unused: this fake never creates an mtmd context to hold.
+      #freeAddress: nullptr.cast<NativeFinalizerFunction>(),
       #inputChunksInit: () => Pointer<mtmd_input_chunks>.fromAddress(0x10),
       #inputChunksFree: (Pointer<mtmd_input_chunks> _) {},
       #helperInitOptDefault: unused,

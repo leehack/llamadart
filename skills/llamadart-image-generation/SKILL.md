@@ -145,8 +145,11 @@ description: >-
 - `task.cancel()` stops before the next sampling step; `done` reports
   `cancelled` and the stream closes without a final event. `dispose()` cancels
   a running task, waits, then frees the model.
-- Dispose before the app quits: on macOS Metal, quitting with a model still
-  loaded aborts the process. Flutter desktop apps skip `State.dispose` on
+- Dispose before a Flutter app quits: on macOS Metal, quitting with a model
+  still loaded aborts the process. A plain Dart program that ends with the
+  model loaded frees it on the way out, unless it dies of an error while the
+  model loads or generates; a Flutter quit does not. Flutter
+  desktop apps skip `State.dispose` on
   quit; await `dispose()` in `AppLifecycleListener.onExitRequested`. If
   `ImageGenerationEngine.load` is still running, await it there and dispose
   the engine it returns. When the engine's owner can be disposed before quit

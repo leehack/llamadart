@@ -12,11 +12,13 @@ const _alignment = 32;
 ///
 /// llama.cpp creates no KV cache for this architecture. [poolingType] is the
 /// raw `llama_pooling_type` value; [classifierLabels] adds a
-/// `cls.output.weight` head with one output per label.
+/// `cls.output.weight` head with one output per label. [decisionTokens] sets
+/// the SEP (`</s>`) and MASK (`<unk>`) tokens a decision head needs.
 File writeSyntheticModernBertGguf(
   String path, {
   int? poolingType,
   List<String>? classifierLabels,
+  bool decisionTokens = false,
   int contextLength = 1024,
   int seed = 0,
 }) {
@@ -37,6 +39,10 @@ File writeSyntheticModernBertGguf(
         '$arch.pooling_type': _GgufValue.uint32(poolingType),
       if (classifierLabels != null)
         '$arch.classifier.output_labels': _GgufValue.strings(classifierLabels),
+      if (decisionTokens) ...{
+        'tokenizer.ggml.seperator_token_id': _GgufValue.uint32(2),
+        'tokenizer.ggml.mask_token_id': _GgufValue.uint32(0),
+      },
     },
     tensors: {
       'token_embd.weight': _weights(random, [_embd, _tokens.length]),
