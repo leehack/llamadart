@@ -37,6 +37,7 @@ final listener = AppLifecycleListener(
     return AppExitResponse.exit;
   },
 );
+// Call listener.dispose() when its owner is disposed.
 ```
 
 `LlamaBackend()` routes by file extension: `.gguf` to llama.cpp and

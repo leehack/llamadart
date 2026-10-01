@@ -9,10 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Document that apps must dispose `LlamaEngine`, `DecisionEngine` and
-  `ImageGenerationEngine` before exit, since on macOS Metal the process aborts
-  at exit while a model is loaded. The Flutter tutorial, skills and example
-  chat app now dispose from `AppLifecycleListener.onExitRequested`.
+- Document disposing engines from `AppLifecycleListener.onExitRequested`,
+  since quitting a macOS app with a Metal model loaded aborts the process.
 - Ship agent skills for coding agents covering setup, chat and streaming,
   tool calling, web, Flutter apps, multimodal input, embeddings, speech, LoRA
   adapters, decision models and image generation; install them with
