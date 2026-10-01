@@ -9,6 +9,7 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../backend.dart';
+import '../windows_runtime_libraries.dart';
 import '../../core/decision/decision_decoder.dart';
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
@@ -636,6 +637,23 @@ class LlamaCppService {
         SpeculativeDecodingStrategy.draftDspark,
       };
 
+  /// Creates the service; tests replace the runtime's first native call and
+  /// the host probes behind its Windows load diagnostics.
+  LlamaCppService({
+    void Function()? backendInit,
+    Abi? abi,
+    bool? isWindows,
+    List<String> Function(List<String> names) missingWindowsLibraries =
+        findMissingWindowsLibraries,
+  }) : _backendInit = backendInit ?? (() => llama_backend_init()),
+       _abi = abi ?? Abi.current(),
+       _isWindows = isWindows ?? Platform.isWindows,
+       _missingWindowsLibraries = missingWindowsLibraries;
+
+  final void Function() _backendInit;
+  final Abi _abi;
+  final bool _isWindows;
+  final List<String> Function(List<String> names) _missingWindowsLibraries;
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -960,7 +978,11 @@ class LlamaCppService {
           _resolveLinuxPrimaryLibraryDirectory();
     }
     _applyConfiguredLogLevel();
-    llama_backend_init();
+    runLlamaBackendInit(
+      _backendInit,
+      abi: _abi,
+      missingWindowsLibraries: _missingWindowsLibraries,
+    );
     _refreshBackendModuleDirectoryAfterPrimaryLoad();
     _applyConfiguredLogLevel();
 
@@ -2237,9 +2259,14 @@ class LlamaCppService {
     }
 
     _failedBackendModules.add(backend);
+    final missingLoader = describeMissingWindowsBackendLoader(
+      backend,
+      isWindows: _isWindows,
+      missingWindowsLibraries: _missingWindowsLibraries,
+    );
     _recordStartupDiagnostic(
       'Backend module `$backend` not loaded from any candidate: '
-      '${failures.describe()}.',
+      '${failures.describe()}.$missingLoader',
     );
     return false;
   }
@@ -3235,6 +3262,16 @@ class LlamaCppService {
       candidates.add(path.join('llama.framework', 'llama'));
     }
     return candidates;
+  }
+
+  /// Tries to load the ggml [backend] module from [moduleDirectory], as model
+  /// loading does, for VM regression tests.
+  bool debugTryLoadBackendModuleForTesting(
+    String backend, {
+    required String moduleDirectory,
+  }) {
+    _backendModuleDirectory = moduleDirectory;
+    return _tryLoadBackendModule(backend);
   }
 
   /// Returns wrapper-library lookup candidates for VM regression tests.
@@ -9743,6 +9780,109 @@ String probeCandidateIdentity(String candidate) {
     return bare;
   }
   return path.basename(bare);
+}
+
+/// Runs [init], the first call that loads the llama.cpp runtime, and replaces
+/// a Windows load failure with [llamaCppWindowsLoadFailure] when that names
+/// the missing Visual C++ runtime; any other error is rethrown unchanged.
+void runLlamaBackendInit(
+  void Function() init, {
+  required Abi abi,
+  List<String> Function(List<String> names) missingWindowsLibraries =
+      findMissingWindowsLibraries,
+}) {
+  try {
+    init();
+  } on ArgumentError catch (error) {
+    final failure = llamaCppWindowsLoadFailure(
+      error: error,
+      abi: abi,
+      missingWindowsLibraries: missingWindowsLibraries,
+    );
+    if (failure == null) {
+      rethrow;
+    }
+    throw failure;
+  }
+}
+
+/// Maps a failure to load the llama.cpp runtime on Windows to the Visual C++
+/// runtime it lacks.
+///
+/// Every llama.cpp library in the pinned Windows bundles imports the Visual
+/// C++ v14 runtime, which stock Windows Server does not ship, and
+/// Windows reports the missing import only as error 126 without naming it.
+/// Returns `null` off Windows, for any other error, and when
+/// [missingWindowsLibraries] reports none of the runtime missing, so the
+/// caller keeps the loader's own error.
+LlamaBackendInitializationException? llamaCppWindowsLoadFailure({
+  required ArgumentError error,
+  required Abi abi,
+  List<String> Function(List<String> names) missingWindowsLibraries =
+      findMissingWindowsLibraries,
+}) {
+  final architecture = switch (abi) {
+    Abi.windowsX64 => 'x64',
+    Abi.windowsArm64 => 'arm64',
+    _ => null,
+  };
+  final detail = '${error.message ?? error}';
+  if (architecture == null || !isWindowsModuleNotFoundError(detail)) {
+    return null;
+  }
+  final missing = missingWindowsLibraries([
+    'msvcp140.dll',
+    'vcruntime140.dll',
+    // Only the x64 libraries import the x64 C++ exception-handling runtime.
+    if (abi == Abi.windowsX64) 'vcruntime140_1.dll',
+  ]);
+  if (missing.isEmpty) {
+    return null;
+  }
+  final cause = detail
+      .split('\n')
+      .first
+      .trimRight()
+      .replaceFirst(RegExp(r'\.+$'), '');
+  final advice = visualCppRuntimeAdvice(
+    architecture: architecture,
+    missing: missing,
+    library: 'llamadart.dll',
+  );
+  return LlamaBackendInitializationException(
+    'llama.cpp runtime could not be loaded on '
+    'windows-$architecture: $cause. $advice',
+  );
+}
+
+/// Names the system library a Windows GPU [backend] module could not load,
+/// as a sentence to append to its load-failure diagnostic.
+///
+/// The bundles ship each module's other imports, but not the Vulkan loader
+/// (`vulkan-1.dll`), which a GPU driver installs, nor `nvcuda.dll`, which
+/// the NVIDIA driver installs. Returns an empty string off Windows, for other
+/// backends, and when [missingWindowsLibraries] does not report the library
+/// missing.
+String describeMissingWindowsBackendLoader(
+  String backend, {
+  required bool isWindows,
+  List<String> Function(List<String> names) missingWindowsLibraries =
+      findMissingWindowsLibraries,
+}) {
+  final (library, provider) = switch (backend) {
+    'vulkan' => (
+      'vulkan-1.dll',
+      'a GPU driver that provides the Vulkan loader',
+    ),
+    'cuda' => ('nvcuda.dll', 'an NVIDIA driver'),
+    _ => (null, null),
+  };
+  if (!isWindows ||
+      library == null ||
+      missingWindowsLibraries([library]).isEmpty) {
+    return '';
+  }
+  return ' $library could not be loaded; install $provider.';
 }
 
 /// Classifies a `DynamicLibrary.open` failure for [candidate] as one of

@@ -3928,6 +3928,326 @@ void main() {
     });
   });
 
+  group('Windows runtime load failures', () {
+    final error126 = ArgumentError(
+      "Couldn't resolve native function 'llama_backend_init' in "
+      "'package:llamadart/llamadart' : Failed to load dynamic library "
+      "'llamadart.dll': The specified module could not be found.\r\n "
+      '(error code: 126).\n',
+    );
+
+    List<String> Function(List<String>) missingFrom(
+      Set<String> missing, [
+      List<String>? checked,
+    ]) {
+      return (names) {
+        checked?.addAll(names);
+        return [
+          for (final name in names)
+            if (missing.contains(name)) name,
+        ];
+      };
+    }
+
+    test('names the missing Visual C++ runtime on Windows x64', () {
+      final checked = <String>[];
+      final failure = llamaCppWindowsLoadFailure(
+        error: error126,
+        abi: Abi.windowsX64,
+        missingWindowsLibraries: missingFrom({
+          'msvcp140.dll',
+          'vcruntime140_1.dll',
+        }, checked),
+      );
+
+      expect(checked, [
+        'msvcp140.dll',
+        'vcruntime140.dll',
+        'vcruntime140_1.dll',
+      ]);
+      expect(failure, isA<LlamaBackendInitializationException>());
+      expect(
+        failure!.message,
+        "llama.cpp runtime could not be loaded on windows-x64: Couldn't "
+        "resolve native function 'llama_backend_init' in "
+        "'package:llamadart/llamadart' : Failed to load dynamic library "
+        "'llamadart.dll': The specified module could not be found. It "
+        'requires the latest Microsoft Visual C++ v14 Redistributable (x64), '
+        'at least as new as the build tools of llamadart.dll, and '
+        'msvcp140.dll, vcruntime140_1.dll could not be loaded; install '
+        'https://aka.ms/vc14/vc_redist.x64.exe or ship those DLLs next to '
+        'llamadart.dll.',
+      );
+    });
+
+    test('Windows arm64 checks only the DLLs its libraries import', () {
+      final checked = <String>[];
+      final failure = llamaCppWindowsLoadFailure(
+        error: error126,
+        abi: Abi.windowsArm64,
+        missingWindowsLibraries: missingFrom({'vcruntime140.dll'}, checked),
+      );
+
+      expect(checked, ['msvcp140.dll', 'vcruntime140.dll']);
+      expect(failure!.message, contains('on windows-arm64:'));
+      expect(failure.message, contains('Redistributable (arm64)'));
+      expect(
+        failure.message,
+        contains('https://aka.ms/vc14/vc_redist.arm64.exe'),
+      );
+    });
+
+    test('recognizes error 126 without an English system message', () {
+      final failure = llamaCppWindowsLoadFailure(
+        error: ArgumentError(
+          "Couldn't resolve native function 'llama_backend_init' in "
+          "'package:llamadart/llamadart' : Failed to load dynamic library "
+          "'llamadart.dll': error code 126",
+        ),
+        abi: Abi.windowsX64,
+        missingWindowsLibraries: missingFrom({'msvcp140.dll'}),
+      );
+
+      expect(failure!.message, contains("'llamadart.dll': error code 126."));
+      expect(failure.message, contains('msvcp140.dll could not be loaded'));
+    });
+
+    test('does not treat error 1260 as error 126', () {
+      final checked = <String>[];
+
+      expect(
+        llamaCppWindowsLoadFailure(
+          error: ArgumentError(
+            "Failed to load dynamic library 'llamadart.dll': This program is "
+            'blocked by group policy.\r\n (error code: 1260).\n',
+          ),
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom({'msvcp140.dll'}, checked),
+        ),
+        isNull,
+      );
+      expect(checked, isEmpty);
+    });
+
+    test('keeps the loader error when the runtime loads', () {
+      expect(
+        llamaCppWindowsLoadFailure(
+          error: error126,
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom(const {}),
+        ),
+        isNull,
+      );
+    });
+
+    test('ignores other errors and other platforms without probing', () {
+      final checked = <String>[];
+      final everythingMissing = missingFrom({
+        'msvcp140.dll',
+        'vcruntime140.dll',
+        'vcruntime140_1.dll',
+      }, checked);
+
+      expect(
+        llamaCppWindowsLoadFailure(
+          error: ArgumentError(
+            "Couldn't resolve native function 'llama_backend_init' in "
+            "'package:llamadart/llamadart' : Failed to load dynamic library "
+            "'llamadart.dll': %1 is not a valid Win32 application.\r\n "
+            '(error code: 193).\n',
+          ),
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: everythingMissing,
+        ),
+        isNull,
+      );
+      expect(
+        llamaCppWindowsLoadFailure(
+          error: error126,
+          abi: Abi.linuxX64,
+          missingWindowsLibraries: everythingMissing,
+        ),
+        isNull,
+      );
+      expect(checked, isEmpty);
+    });
+
+    test(
+      'the default check probes every Visual C++ DLL llama.cpp imports',
+      () {
+        // Off Windows none of these load, so the real check must report all
+        // of them: this pins the list against the pinned Windows x64 PE
+        // imports (MSVCP140, VCRUNTIME140, VCRUNTIME140_1).
+        final failure = llamaCppWindowsLoadFailure(
+          error: error126,
+          abi: Abi.windowsX64,
+        );
+
+        expect(
+          failure!.message,
+          contains(
+            'msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll could not be '
+            'loaded',
+          ),
+        );
+      },
+      skip: Platform.isWindows
+          ? 'the Visual C++ runtime loads on Windows hosts'
+          : false,
+    );
+
+    test('backend init reports the missing runtime instead of error 126', () {
+      expect(
+        () => runLlamaBackendInit(
+          () => throw error126,
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom({'vcruntime140.dll'}),
+        ),
+        throwsA(
+          isA<LlamaBackendInitializationException>().having(
+            (error) => error.message,
+            'message',
+            contains('vcruntime140.dll could not be loaded'),
+          ),
+        ),
+      );
+    });
+
+    test('backend init rethrows other failures unchanged', () {
+      var calls = 0;
+      runLlamaBackendInit(
+        () => calls++,
+        abi: Abi.windowsX64,
+        missingWindowsLibraries: missingFrom({'msvcp140.dll'}),
+      );
+      expect(calls, 1);
+
+      expect(
+        () => runLlamaBackendInit(
+          () => throw error126,
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom(const {}),
+        ),
+        throwsA(same(error126)),
+      );
+      final stateError = StateError('not a loader failure');
+      expect(
+        () => runLlamaBackendInit(
+          () => throw stateError,
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom({'msvcp140.dll'}),
+        ),
+        throwsA(same(stateError)),
+      );
+    });
+
+    test('initializeBackend reports the missing runtime', () {
+      final checked = <String>[];
+      final service = LlamaCppService(
+        backendInit: () => throw error126,
+        abi: Abi.windowsArm64,
+        missingWindowsLibraries: missingFrom({'msvcp140.dll'}, checked),
+      );
+
+      expect(
+        service.initializeBackend,
+        throwsA(
+          isA<LlamaBackendInitializationException>().having(
+            (error) => error.message,
+            'message',
+            contains('on windows-arm64:'),
+          ),
+        ),
+      );
+      expect(checked, ['msvcp140.dll', 'vcruntime140.dll']);
+    });
+
+    test('a failed Windows GPU module load names its missing loader', () {
+      final moduleDirectory = Directory.systemTemp.createTempSync(
+        'llamadart_backend_modules_',
+      );
+      addTearDown(() => moduleDirectory.deleteSync(recursive: true));
+      final checked = <String>[];
+      final service = LlamaCppService(
+        isWindows: true,
+        missingWindowsLibraries: missingFrom({'nvcuda.dll'}, checked),
+      );
+
+      expect(
+        service.debugTryLoadBackendModuleForTesting(
+          'cuda',
+          moduleDirectory: moduleDirectory.path,
+        ),
+        isFalse,
+      );
+      expect(checked, ['nvcuda.dll']);
+      expect(
+        service.getStartupDiagnostics().last,
+        allOf(
+          startsWith('Backend module `cuda` not loaded from any candidate: '),
+          endsWith(
+            ' nvcuda.dll could not be loaded; install an NVIDIA driver.',
+          ),
+        ),
+      );
+    });
+
+    test('names the loader a Windows GPU backend module could not load', () {
+      final allMissing = missingFrom({'vulkan-1.dll', 'nvcuda.dll'});
+
+      expect(
+        describeMissingWindowsBackendLoader(
+          'vulkan',
+          isWindows: true,
+          missingWindowsLibraries: allMissing,
+        ),
+        ' vulkan-1.dll could not be loaded; install a GPU driver that '
+        'provides the Vulkan loader.',
+      );
+      expect(
+        describeMissingWindowsBackendLoader(
+          'cuda',
+          isWindows: true,
+          missingWindowsLibraries: allMissing,
+        ),
+        ' nvcuda.dll could not be loaded; install an NVIDIA driver.',
+      );
+    });
+
+    test('adds nothing when the loader loads, off Windows or for CPU', () {
+      final checked = <String>[];
+
+      expect(
+        describeMissingWindowsBackendLoader(
+          'vulkan',
+          isWindows: true,
+          missingWindowsLibraries: missingFrom(const {}, checked),
+        ),
+        isEmpty,
+      );
+      expect(checked, ['vulkan-1.dll']);
+      checked.clear();
+      final allMissing = missingFrom({'vulkan-1.dll'}, checked);
+      expect(
+        describeMissingWindowsBackendLoader(
+          'vulkan',
+          isWindows: false,
+          missingWindowsLibraries: allMissing,
+        ),
+        isEmpty,
+      );
+      expect(
+        describeMissingWindowsBackendLoader(
+          'cpu',
+          isWindows: true,
+          missingWindowsLibraries: allMissing,
+        ),
+        isEmpty,
+      );
+      expect(checked, isEmpty);
+    });
+  });
+
   group('shouldDisableContextGpuOffload', () {
     test('disables offload for explicit CPU backend', () {
       const params = ModelParams(

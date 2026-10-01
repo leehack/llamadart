@@ -277,7 +277,10 @@ void main() {
         final message = messageWithMissing({'msvcp140.dll', 'vulkan-1.dll'});
 
         expect(message, contains('could not be loaded on windows-x64'));
-        expect(message, contains('Visual C++ 2015-2022 Redistributable'));
+        expect(
+          message,
+          contains('latest Microsoft Visual C++ v14 Redistributable (x64)'),
+        );
         expect(message, contains('msvcp140.dll could not be loaded'));
         expect(message, isNot(contains('vulkan-1.dll')));
         expect(message, isNot(contains('..')));
@@ -320,6 +323,40 @@ void main() {
             ? 'the Visual C++ runtime loads on Windows hosts'
             : false,
       );
+
+      test('recognizes error 126 without an English system message', () {
+        final message = stableDiffusionLoadFailure(
+          platform: 'windows-x64',
+          error: ArgumentError(
+            "Couldn't resolve native function 'sd_version' in "
+            "'package:llamadart/stable_diffusion' : Failed to load dynamic "
+            "library 'stable-diffusion.dll': error code 126",
+          ),
+          missingWindowsLibraries: (names) =>
+              names.contains('msvcp140.dll') ? ['msvcp140.dll'] : const [],
+        ).message;
+
+        expect(message, contains("'stable-diffusion.dll': error code 126."));
+        expect(message, contains('msvcp140.dll could not be loaded'));
+      });
+
+      test('does not treat error 1260 as error 126', () {
+        final checked = <String>[];
+        final message = stableDiffusionLoadFailure(
+          platform: 'windows-x64',
+          error: ArgumentError(
+            "Failed to load dynamic library 'stable-diffusion.dll': This "
+            'program is blocked by group policy.\r\n (error code: 1260).\n',
+          ),
+          missingWindowsLibraries: (names) {
+            checked.addAll(names);
+            return names;
+          },
+        ).message;
+
+        expect(checked, isEmpty);
+        expect(message, isNot(contains('Visual C++')));
+      });
 
       test('says neither dependency is missing when both load', () {
         final message = messageWithMissing(const {});

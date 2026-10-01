@@ -21,10 +21,15 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
 | Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | No | Experimental |
 
+On Windows, llama.cpp needs the latest Microsoft Visual C++ v14
+Redistributable for the app's architecture (x64 or arm64), at least as new as
+the build tools of the bundled DLLs, which the bundles do not ship. Stock Windows Server lacks it, and the load error names the DLLs
+that failed to load.
+
 Speech to text, text to speech, decision models and image generation are
 experimental. Image generation needs the opt-in `stable_diffusion` runtime,
 built for iOS 16.4 and macOS 13.3; x64 Linux and Windows CPUs need AVX2, FMA,
-F16C and BMI2, Windows needs the Microsoft Visual C++ 2015-2022
+F16C and BMI2, Windows needs the latest Microsoft Visual C++ v14
 Redistributable (x64), and Android arm64 needs dot-product and fp16. See
 [Image generation](../guides/image-generation#support). GGUF
 Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
