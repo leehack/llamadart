@@ -193,7 +193,15 @@ class ModelParams {
   /// web LoRA are unsupported.
   final List<LoraAdapterConfig> loras;
 
-  /// Optional chat template to override the model's default template.
+  /// Optional Jinja chat template that replaces the model's own template.
+  ///
+  /// `LlamaEngine.create` and `LlamaEngine.chatTemplate` render prompts with
+  /// it and detect the tool-call and reasoning format from it, so output
+  /// parsing follows the same template. On llama.cpp (native and WebGPU) it
+  /// replaces the GGUF `tokenizer.chat_template` and its `tool_use` variant,
+  /// as llama.cpp's `--chat-template-file` does; on LiteRT-LM it replaces the
+  /// built-in template chosen for the bundle. A per-call `customTemplate`
+  /// still takes precedence, and null or empty keeps the model's template.
   final String? chatTemplate;
 
   /// Number of threads to use for generation (n_threads).

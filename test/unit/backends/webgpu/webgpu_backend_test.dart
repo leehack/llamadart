@@ -593,6 +593,47 @@ void main() {
       expect(await backend.getContextSize(1), 4096);
     });
 
+    test('applyChatTemplate rejects custom templates the bridge would '
+        'ignore', () async {
+      const messages = [
+        {'role': 'user', 'content': 'hi'},
+      ];
+      final unsupported = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('WebGPU'), contains('LlamaEngine.chatTemplate')),
+        ),
+      );
+
+      final handle = await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      expect(await backend.applyChatTemplate(handle, messages), 'templated');
+      await expectLater(
+        backend.applyChatTemplate(handle, messages, customTemplate: 'X'),
+        unsupported,
+      );
+      await backend.modelFree(handle);
+
+      final overridden = await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(chatTemplate: '{{ messages[0]["content"] }}'),
+      );
+      await expectLater(
+        backend.applyChatTemplate(overridden, messages),
+        unsupported,
+      );
+      await backend.modelFree(overridden);
+
+      final reloaded = await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      expect(await backend.applyChatTemplate(reloaded, messages), 'templated');
+    });
+
     test('forwards bridge load progress to onProgress', () async {
       bridge.setProperty(
         'loadModelFromUrl'.toJS,

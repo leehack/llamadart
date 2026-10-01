@@ -37,7 +37,9 @@ description: >-
   native tool format use a generic JSON fallback that constrains the output
   shape but does not guarantee the right tool or arguments. If calls look
   wrong, inspect `engine.chatTemplate(...)` to see whether tool definitions
-  reach the prompt, and describe the tools in the system prompt if not.
+  reach the prompt, and describe the tools in the system prompt if not. To
+  replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;
+  prompts and tool-call parsing then both follow that template.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does
   not forward tools, and WebGPU `ToolChoice.auto` parses calls best-effort.
   Test tool flows on every target runtime.

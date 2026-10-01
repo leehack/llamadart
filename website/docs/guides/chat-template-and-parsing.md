@@ -93,8 +93,18 @@ coverage, smoke commands, and contribution notes live in
 
 ## Custom template overrides
 
-For application code, the supported customization path is `customTemplate` on
-`engine.chatTemplate(...)`.
+To replace a model's template for every request, such as a GGUF file whose
+embedded template is missing or broken, load it with
+`ModelParams(chatTemplate: ...)`. `engine.create` and `engine.chatTemplate`
+then render with that template instead of `tokenizer.chat_template` and its
+`tool_use` variant, and detect the tool-call and reasoning format from it, as
+llama.cpp's `--chat-template-file` does. Null or empty keeps the model's
+template.
+
+To preview a different template for one call, pass `customTemplate` to
+`engine.chatTemplate(...)`; it takes precedence over `ModelParams.chatTemplate`.
+The low-level WebGPU `LlamaBackend.applyChatTemplate` cannot render either
+override and throws `LlamaUnsupportedException`.
 
 ```dart
 import 'package:llamadart/llamadart.dart';

@@ -98,6 +98,7 @@ class LlamaEngine {
   bool _isReady = false;
   String? _modelPath;
   Map<String, String>? _cachedModelMetadata;
+  String? _modelChatTemplate;
   LlamaLogLevel _dartLogLevel = LlamaLogLevel.none;
   LlamaLogLevel _nativeLogLevel = LlamaLogLevel.none;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
@@ -232,6 +233,7 @@ class LlamaEngine {
       _cachedModelMetadata = null;
       _modelHandle = await backend.modelLoad(path, modelParams);
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedPath));
     } catch (e, stackTrace) {
@@ -423,6 +425,7 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
 
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
@@ -671,6 +674,7 @@ class LlamaEngine {
     }
     _modelPath = null;
     _cachedModelMetadata = null;
+    _modelChatTemplate = null;
     _observedModel = null;
     _observedRuntime = null;
     _isReady = false;
@@ -936,7 +940,9 @@ class LlamaEngine {
   /// This is useful for preparing messages before calling [generate] directly,
   /// or for inspecting the formatted prompt for debugging purposes.
   ///
-  /// Pass [customTemplate] to override default routing.
+  /// The template is the model's own unless the model was loaded with a
+  /// non-empty [ModelParams.chatTemplate]; [create] renders with the same
+  /// template. Pass [customTemplate] to override both for this call.
   /// Pass [responseFormat] to request structured output grammar generation.
   /// Supported shapes are:
   /// - `{'type': 'json_object'}`
@@ -992,6 +998,7 @@ class LlamaEngine {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       customTemplate: customTemplate,
+      modelTemplate: _modelChatTemplate,
       sourceLangCode: sourceLangCode,
       targetLangCode: targetLangCode,
       includeTokenCount: includeTokenCount,
@@ -2105,6 +2112,7 @@ class LlamaEngine {
     }
     _modelPath = null;
     _cachedModelMetadata = null;
+    _modelChatTemplate = null;
     _isReady = false;
   }
 

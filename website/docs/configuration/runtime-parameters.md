@@ -69,8 +69,12 @@ Important fields:
   `draftModelPath`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
   the bridge only when set; bridge assets without speculative decoding ignore
   both.
-- `chatTemplate`: template override for `.litertlm` models. `engine.create`
-  on GGUF models uses the template embedded in the file.
+- `chatTemplate`: Jinja chat template that replaces the model's own, like
+  llama.cpp's `--chat-template-file`. `engine.create` and
+  `engine.chatTemplate` render the prompt and parse tool calls and reasoning
+  with it on every runtime; on GGUF models it replaces the embedded template
+  and its `tool_use` variant. A per-call `customTemplate` wins; null or empty
+  keeps the model's template.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
   (mem64) bridge core; see
   [Model size and memory64](../platforms/webgpu-bridge#model-size-and-memory64).

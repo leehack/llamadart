@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Render and parse llama.cpp chat with `ModelParams.chatTemplate`, which
+  `engine.create` and `engine.chatTemplate` ignored in favor of the GGUF
+  template; WebGPU `LlamaBackend.applyChatTemplate` now throws
+  `LlamaUnsupportedException` for a template override it cannot render
+  ([#710](https://github.com/leehack/llamadart/issues/710)).
 - Fix the Flutter chat example aborting on macOS when quit while an image or
   chat model was still being freed, such as right after leaving the image
   screen ([#796](https://github.com/leehack/llamadart/issues/796)).

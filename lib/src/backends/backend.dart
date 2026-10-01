@@ -120,7 +120,10 @@ abstract class LlamaBackend {
   /// Applies the model's chat template to the given [messages].
   ///
   /// If [customTemplate] is provided, it will be used instead of the model's
-  /// default template.
+  /// default template; otherwise a non-empty [ModelParams.chatTemplate] from
+  /// the load is used. The WebGPU backend cannot render either and throws
+  /// `LlamaUnsupportedException`; `LlamaEngine.chatTemplate` renders both on
+  /// every backend.
   ///
   /// Returns the formatted prompt string.
   Future<String> applyChatTemplate(

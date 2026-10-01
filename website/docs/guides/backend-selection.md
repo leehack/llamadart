@@ -87,8 +87,9 @@ JavaScript runtime.
 Load-time controls differ by runtime:
 
 - GGUF / llama.cpp: `preferredBackend`, `gpuLayers`, `contextSize`,
-  `numberOfThreads` / `numberOfThreadsBatch`, `batchSize` / `microBatchSize`,
-  `splitMode` / `mainGpu`, and the LoRA and state-persistence APIs.
+  `chatTemplate`, `numberOfThreads` / `numberOfThreadsBatch`, `batchSize` /
+  `microBatchSize`, `splitMode` / `mainGpu`, and the LoRA and
+  state-persistence APIs.
 - `.litertlm` / LiteRT-LM: `liteRtLmBackend` (`auto`, `cpu`, `gpu`, or
   Android-native `npu`), `contextSize`, `chatTemplate`, `numberOfThreads`, one
   default-scale text LoRA adapter through `ModelParams.loras`, and the native

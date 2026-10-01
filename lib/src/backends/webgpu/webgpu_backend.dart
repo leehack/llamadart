@@ -92,6 +92,7 @@ class WebGpuLlamaBackend
   LlamaWebGpuBridge? _bridge;
   bool _usingBridge = false;
   bool _isReady = false;
+  String? _chatTemplate;
   LlamaLogLevel _logLevel = LlamaLogLevel.info;
   AbortController? _abortController;
   AbortController? _textToSpeechAbortController;
@@ -398,6 +399,7 @@ class WebGpuLlamaBackend
     final abortController = _abortController;
     _bridge = null;
     _abortController = null;
+    _chatTemplate = null;
     _decisionHeads.clear();
     _loraAdapters.forget();
     _completionCapabilities = _noCompletionCapabilities;
@@ -1255,6 +1257,7 @@ class WebGpuLlamaBackend
         }
 
         _isReady = true;
+        _chatTemplate = params.chatTemplate;
         _mmContextActive = false;
         _decisionHeads.clear();
         _resetWebGpuMultimodalWarmupState();
@@ -3052,6 +3055,15 @@ class WebGpuLlamaBackend
     String? customTemplate,
     bool addAssistant = true,
   }) async {
+    if ((customTemplate?.isNotEmpty ?? false) ||
+        (_chatTemplate?.isNotEmpty ?? false)) {
+      throw LlamaUnsupportedException(
+        'The WebGPU backend applyChatTemplate cannot render a custom chat '
+        'template (customTemplate or ModelParams.chatTemplate): the web '
+        'bridge formats messages without Jinja. Use LlamaEngine.chatTemplate '
+        'or LlamaEngine.create, which render it in Dart.',
+      );
+    }
     if (!_usingBridge || _bridge == null) {
       final lines = messages
           .map(
