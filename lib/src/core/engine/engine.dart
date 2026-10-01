@@ -382,11 +382,15 @@ class LlamaEngine {
   }
 
   static final RegExp _sourceScheme = RegExp(r'^([A-Za-z][A-Za-z0-9+.-]+):');
-  static final RegExp _unsafeModelName = RegExp(r'[/\\?#@;&=]');
+  static final RegExp _unsafeModelName = RegExp(
+    r'[/\\?#@;&=]|%(?:2f|5c|3f|23|40|3b|26|3d)',
+    caseSensitive: false,
+  );
 
-  /// The last path segment of [source], or null when it is empty, has an
-  /// invalid percent escape, holds URL syntax that could carry more than a
-  /// file name once percent-decoded, or [source] is a `data:` or `blob:` URL.
+  /// The last path segment of [source], or null when it is empty, holds URL
+  /// syntax that could carry more than a file name, as written or as a percent
+  /// escape, or [source] is a `data:` or `blob:` URL. A URL's segment is
+  /// percent-decoded, and null when that fails; a file name is literal.
   ///
   /// [source] is a URL when it has a scheme of two or more characters (so a
   /// Windows drive letter is not one), starts with `//`, or the backend loads
@@ -412,16 +416,15 @@ class LlamaEngine {
       }
     }
     final name = path.split('/').last;
-    final String decoded;
+    if (name.isEmpty || name.contains(_unsafeModelName)) return null;
+    if (!isUrl) return name;
     try {
-      decoded = Uri.decodeComponent(name);
+      return Uri.decodeComponent(name);
     } on ArgumentError {
       return null;
     } on FormatException {
       return null;
     }
-    if (decoded.isEmpty || decoded.contains(_unsafeModelName)) return null;
-    return isUrl ? decoded : name;
   }
 
   Future<void> _loadModelFromUrl(
@@ -2200,21 +2203,13 @@ class LlamaEngine {
     }
   }
 
-  /// The last path segment of [source] with its URL secrets redacted.
+  /// The model name of [source], or else the last segment of [source] with
+  /// its URL secrets redacted.
   String _displayNameForSource(String source) {
+    final name = _modelNameForSource(source);
+    if (name != null) return name;
     final redacted = _redactedSource(source);
-    final parsedUri = Uri.tryParse(redacted);
-    if (parsedUri != null &&
-        parsedUri.hasScheme &&
-        parsedUri.pathSegments.isNotEmpty) {
-      final lastSegment = parsedUri.pathSegments.last;
-      if (lastSegment.isNotEmpty) {
-        return Uri.decodeComponent(lastSegment);
-      }
-    }
-
-    final segments = redacted.replaceAll('\\', '/').split('/');
-    final lastSegment = segments.last;
+    final lastSegment = redacted.replaceAll('\\', '/').split('/').last;
     return lastSegment.isNotEmpty ? lastSegment : redacted;
   }
 

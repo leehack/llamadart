@@ -229,6 +229,30 @@ void main() {
     }
   });
 
+  test('names a bundle whose path holds %, # and ? literally', () async {
+    final service = LiteRtLmService();
+    final name = Platform.isWindows
+        ? 'gemma-4 100%#1.litertlm'
+        : 'gemma-4 100%#?.litertlm';
+    final bundle = File('${tempDir.path}/100% a#b%zz%25/$name')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('fake model');
+
+    try {
+      final modelHandle = await service.loadModel(
+        bundle.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(
+        service.getMetadata(modelHandle),
+        containsPair('general.name', name),
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('exposes Gemma 4 chat template metadata for Gemma 4 bundles', () async {
     final service = LiteRtLmService();
     final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');

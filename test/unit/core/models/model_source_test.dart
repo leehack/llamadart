@@ -367,6 +367,30 @@ void main() {
       expect(source.resolvedUri, isNull);
     });
 
+    test('parse keeps %, # and ? in local paths literal', () {
+      for (final (value, fileName) in const [
+        (r'C:\models\qwen 100%.gguf', 'qwen 100%.gguf'),
+        ('C:/models/a#b/qwen%zz.gguf', 'qwen%zz.gguf'),
+        (r'C:\models\x%2Fy%3F.gguf', 'x%2Fy%3F.gguf'),
+        (r'\\server\share\100%\qwen#1.gguf', 'qwen#1.gguf'),
+        ('/Users/alice/a#b?c%zz/qwen 100%.gguf', 'qwen 100%.gguf'),
+        ('models/%C3?.gguf', '%C3?.gguf'),
+      ]) {
+        final source = ModelSource.parse(value);
+
+        expect(source.kind, ModelSourceKind.path, reason: value);
+        expect(source.path, value, reason: value);
+        expect(source.fileName, fileName, reason: value);
+        expect(source.canonicalKey, 'path:$value', reason: value);
+        expect(source.metadataSourceKey, 'path:$value', reason: value);
+        expect(
+          source.cacheDirectoryName,
+          matches(RegExp(r'^[A-Za-z0-9._-]+-[0-9a-f]{12}$')),
+          reason: value,
+        );
+      }
+    });
+
     test('parse rejects invalid schemes', () {
       expect(
         () => ModelSource.parse('ftp://host/model.gguf'),

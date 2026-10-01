@@ -293,5 +293,16 @@ void main() {
       expect(stableDiffusionFileSize(directory.path), isNull);
       expect(stableDiffusionFileSize('${file.path}.missing'), isNull);
     });
+
+    test('sizes a file whose path holds %, # and ? literally', () async {
+      final directory = await Directory.systemTemp.createTemp('llamadart-sd-');
+      addTearDown(() => directory.delete(recursive: true));
+      final name = Platform.isWindows ? 'a#b%zz%25' : 'a#b?c%zz%25';
+      final file = File('${directory.path}/100% $name/sd 100%.gguf')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(List.filled(7, 1));
+
+      expect(stableDiffusionFileSize(file.path), 7);
+    });
   });
 }

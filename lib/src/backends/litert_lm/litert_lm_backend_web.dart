@@ -301,9 +301,8 @@ class LiteRtLmBackend
           _chatTemplate ?? _passthroughLatestMessageTemplate,
     };
     if (modelUrl != null) {
-      final modelName = Uri.tryParse(modelUrl)?.pathSegments.last;
-      if (modelName != null && modelName.isNotEmpty) {
-        metadata['general.name'] = Uri.decodeComponent(modelName);
+      if (_modelUrlName(modelUrl) case final modelName?) {
+        metadata['general.name'] = modelName;
       }
       metadata['litert_lm.model_url'] = _modelUrlDisplay(modelUrl);
     }
@@ -1346,6 +1345,17 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
   external bool get done;
 
   external JSAny? get value;
+}
+
+/// The percent-decoded last path segment of [url], or null when it is empty
+/// or not valid UTF-8 once decoded.
+String? _modelUrlName(String url) {
+  try {
+    final name = Uri.tryParse(url)?.pathSegments.lastOrNull;
+    return name == null || name.isEmpty ? null : name;
+  } on FormatException {
+    return null;
+  }
 }
 
 /// [url] as the browser resolves it, without userinfo, query or fragment.

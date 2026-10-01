@@ -259,11 +259,9 @@ void main() {
       );
       addTearDown(observed.dispose);
 
-      await expectLater(
-        observed.loadModelFromUrl('https://host/m%C3.gguf'),
-        throwsFormatException,
-      );
+      await observed.loadModelFromUrl('https://host/m%C3.gguf');
 
+      expect(observed.isReady, isTrue);
       expect(names.operations.single.model, isNull);
     });
 
@@ -278,6 +276,8 @@ void main() {
         ('/home/alice/', null),
         ('/home/alice/C#/tiny.gguf', 'tiny.gguf'),
         ('models/a%2Fb%3Ftoken%3Dx', null),
+        (r'C:\models\qwen 100%.gguf', 'qwen 100%.gguf'),
+        ('/home/alice/100%/qwen%C3.gguf', 'qwen%C3.gguf'),
         ('data:,payload', null),
       ]) {
         await observed.loadModel(source);
