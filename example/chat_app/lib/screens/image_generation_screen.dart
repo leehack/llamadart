@@ -63,7 +63,7 @@ class _ImageGenerationScreenState extends State<ImageGenerationScreen> {
     _lifecycle = AppLifecycleListener(
       onPause: _provider.cancelGeneration,
       onExitRequested: () async {
-        await _provider.releaseEngine();
+        await _provider.shutdown();
         return AppExitResponse.exit;
       },
     );

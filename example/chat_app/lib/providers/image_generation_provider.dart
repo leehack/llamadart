@@ -106,6 +106,8 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   ImageGenerator? _generator;
   String? _generatorModelId;
+  Future<ImageGenerator>? _loading;
+  Future<void>? _shutdown;
   ImageGenerationRun? _run;
   ImageGenerationStage _stage = ImageGenerationStage.idle;
   bool _cancelRequested = false;
@@ -469,10 +471,22 @@ class ImageGenerationProvider extends ChangeNotifier {
       return current;
     }
     await releaseEngine();
+    final loading = _loadGenerator(installed);
+    _loading = loading;
+    try {
+      return await loading;
+    } finally {
+      if (identical(_loading, loading)) {
+        _loading = null;
+      }
+    }
+  }
+
+  Future<ImageGenerator> _loadGenerator(InstalledImageModel installed) async {
     final generator = await _generationService.load(
       installed.toGenerationModel(),
     );
-    if (_disposed) {
+    if (_disposed || _shutdown != null) {
       await generator.dispose();
       return generator;
     }
@@ -520,6 +534,20 @@ class ImageGenerationProvider extends ChangeNotifier {
     if (generator != null) {
       await generator.dispose();
     }
+  }
+
+  /// Frees the model before the app exits, waiting for a load in flight so
+  /// its model is freed too. Repeated calls share one release.
+  Future<void> shutdown() => _shutdown ??= _releaseForShutdown();
+
+  Future<void> _releaseForShutdown() async {
+    cancelGeneration();
+    try {
+      await _loading;
+    } catch (_) {
+      // A failed load left nothing to free.
+    }
+    await releaseEngine();
   }
 
   String _describe(Object error) =>

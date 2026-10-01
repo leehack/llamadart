@@ -158,10 +158,12 @@ avoids by loading them eagerly.
   covers engines in one isolate; do not generate from several isolates at
   once.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
-  Call it before the process exits: on macOS Metal a model still loaded at
-  exit aborts the process. Flutter desktop apps do not run `State.dispose` on
-  quit; await `dispose()` in `AppLifecycleListener.onExitRequested`.
   `generateImage` then throws `LlamaStateException`.
+- Free the model before the app quits: on macOS Metal, quitting with a model
+  still loaded aborts the process. Flutter desktop apps do not run
+  `State.dispose` on quit, so await `dispose()` in
+  `AppLifecycleListener.onExitRequested`. If `ImageGenerationEngine.load` is
+  still running, await it there and dispose the engine it returns.
 - Generation runs in a worker isolate; the calling isolate stays responsive.
 
 ## Memory check
