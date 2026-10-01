@@ -2,7 +2,7 @@
 name: llamadart-image-generation
 description: >-
   Use when generating images from text prompts in a llamadart app with the
-  experimental ImageGenerationEngine: opting into the stable_diffusion
+  Preview (experimental) ImageGenerationEngine: opting into the stable_diffusion
   runtime, loading SDXS or SD-Turbo (with TAESD) or the desktop SDXL-Lightning,
   FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo presets, showing
   progress, cancelling,
@@ -14,10 +14,10 @@ description: >-
 
 ## Guidelines
 
-- Image generation is the experimental `ImageGenerationEngine`, separate from
-  `LlamaEngine`. It runs stable-diffusion.cpp through the opt-in
-  `stable_diffusion` native runtime. Text-to-image only: no image-to-image,
-  inpainting, LoRA or ControlNet.
+- Image generation is a Preview: the `ImageGenerationEngine` API is
+  experimental and may change. It is separate from `LlamaEngine`. It runs
+  stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
+  Text-to-image only: no image-to-image, inpainting, LoRA or ControlNet.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
   included by default or by `all`. In the app's `pubspec.yaml`:
 
@@ -54,9 +54,13 @@ description: >-
     step at guidance 1; up to 4 steps add detail. For TAESD use
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
-  - Desktop presets, 1024x1024 by default, for desktop GPUs and Macs with
-    16 GB or more (not phones); each needs a VAE or TAESD decoder where it
-    takes one:
+  - Desktop presets, 1024x1024 by default, for desktop GPUs and Macs, not
+    phones. The memory check asks for about 8.6 GiB for SDXL-Lightning (a
+    desktop GPU or a Mac with 16 GB or more), 8.3 GiB for Z-Image-Turbo (a
+    12 GB desktop GPU or a 16 GB Mac), and 14.5 GiB for FLUX.1-schnell and
+    13.1 GiB for SD 3.5 Large Turbo (a 16 GB desktop GPU or a Mac with 24 GB
+    or more; `load` refuses them on a 16 GB Mac under Metal's working-set
+    cap). Each needs a VAE or TAESD decoder where it takes one:
     - `ImageGenerationModel.sdxlLightning(path, vaePath:, taesdPath:)`:
       `ByteDance/SDXL-Lightning` `sdxl_lightning_4step.safetensors`; 4 steps,
       guidance 1, Euler with `sgmUniform`. `madebyollin/taesdxl` halves the
@@ -89,6 +93,11 @@ description: >-
     guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell, and the size
     defaults to 512x512, so set `width: 1024, height: 1024` for families
     trained at 1024.
+- Model licenses differ by preset, including on commercial use (Stability AI
+  Community License for SD-Turbo and SD 3.5 Large Turbo, CreativeML Open
+  RAIL++-M for SDXS and SDXL-Lightning, Apache 2.0 for FLUX.1-schnell and
+  Z-Image-Turbo). Tell users to check the model card's license before
+  shipping a model; the guide's Model licenses table links each one.
 - `ImageGenerationDefaults` and `ImageGenerationRequest` also take
   `sampler` (`ImageGenerationSampler`), `scheduler`
   (`ImageGenerationScheduler`) and `flowShift` (flow-matching models only,

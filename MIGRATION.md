@@ -2,6 +2,76 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
+
+No public signature changes, but several calls now return or throw something
+different. Check each item that your app uses.
+
+1. **`ModelParams.chatTemplate` now drives llama.cpp chat.** Before, native
+   llama.cpp and WebGPU ignored it in `LlamaEngine.create`,
+   `LlamaEngine.chatTemplate` and `ChatSession`, and used the GGUF
+   `tokenizer.chat_template`. Now a non-empty value renders the prompt and
+   selects the tool-call and reasoning parser. If you set it only as a
+   fallback, pass `null` to keep the GGUF template. The value is Jinja
+   source, so a name such as `chatml` is not mapped to a built-in template.
+
+2. **WebGPU `LlamaBackend.applyChatTemplate` throws for a template
+   override.** Before, it ignored `customTemplate` and
+   `ModelParams.chatTemplate` and returned `role: content` lines. Now it
+   throws `LlamaUnsupportedException`. Render through
+   `LlamaEngine.chatTemplate` or `LlamaEngine.create` instead, which apply
+   the override in Dart on every backend.
+
+3. **`LlamaCompletionChunk.model` is the file name.** Before, it held the
+   load source: the full local path, the cache path, or the redacted URL.
+   Now it is the last path segment, such as `qwen.gguf`, or `llama_model`
+   when there is none or it contains URL syntax such as `?`, `#` or `@`
+   (`data:` and `blob:` URLs report `llama_model` too). Compare it with
+   the file name instead of the path:
+
+   ```dart
+   // Before
+   if (chunk.model == modelPath) { ... }
+   // After
+   if (chunk.model == path.basename(modelPath)) { ... }
+   ```
+
+4. **`%` in local and cache paths stays literal.** Before,
+   `loadModelSource` and `ModelCacheEntry` percent-decoded paths, so
+   `qwen%2541.gguf` loaded a different file and a lone `%` threw
+   `ArgumentError`. Now the path is used as written: pass the path as it is
+   on disk, not percent-encoded.
+
+5. **`ModelParams.loras` is applied at load on native llama.cpp and WebGPU.**
+   Before, those backends ignored it and loaded the base model. Now each
+   adapter is applied in order with its scale, and a load whose adapter
+   cannot be applied fails: `LlamaUnsupportedException` for an unsupported
+   adapter or WebGPU bridge assets without LoRA support (the minimum version
+   is in the LoRA adapters guide), otherwise `LlamaModelException` with the
+   adapter in `details`. Remove adapters you did not mean to apply, and catch
+   both exceptions around `loadModel`.
+
+6. **LiteRT-LM `ModelParams` rejections throw `LlamaUnsupportedException`.**
+   Before, native and web LiteRT-LM wrapped them in `LlamaModelException`.
+   This covers more than one LoRA adapter and a non-default adapter scale.
+
+   ```dart
+   // Before
+   } on LlamaModelException catch (e) { ... }
+   // After
+   } on LlamaUnsupportedException catch (e) {
+     // ModelParams option this runtime does not support.
+   } on LlamaModelException catch (e) { ... }
+   ```
+
+7. **Media without a projector throws.** Before, image or audio parts sent
+   to a GGUF model with no projector loaded were answered from the text
+   alone on native llama.cpp and failed as `LlamaInferenceException` on
+   WebGPU. Now both throw `LlamaUnsupportedException`, and native llama.cpp
+   and LiteRT-LM throw it for `LlamaImageContent.url`. Load a projector with
+   `loadMultimodalProjector` first, or drop media parts from requests and
+   history when none is loaded; pass image bytes or a file instead of a URL.
+
 ## `0.8.9` -> `0.8.10`: model download/cache defaults
 
 No source migration is required for existing calls: `DefaultModelDownloadManager`

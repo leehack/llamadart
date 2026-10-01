@@ -12,22 +12,23 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 
 ## At a glance
 
-| Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation | Status |
+| Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
 | iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; arm64 only; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
-| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | No | Experimental |
+| Web | WebGPU, WebAssembly CPU | CPU, GPU through `@litert-lm/core` | Chrome 128, Firefox 129, Safari 17.4 | Qwen3-ASR, WAV, MP3 or FLAC bytes, bridge `v0.1.30+` | Qwen3-TTS, bridge `v0.1.33+`, memory64 | Bridge `v0.1.47+`; checked in headless Chromium on macOS | Not yet ([#780](https://github.com/leehack/llamadart/issues/780)) | Experimental |
 
 On Windows, llama.cpp needs the latest Microsoft Visual C++ v14
 Redistributable for the app's architecture (x64 or arm64), at least as new as
 the build tools of the bundled DLLs, which the bundles do not ship. Stock Windows Server lacks it, and the load error names the DLLs
 that failed to load.
 
-Speech to text, text to speech, decision models and image generation are
-experimental. Image generation needs the opt-in `stable_diffusion` runtime,
+Speech to text, text to speech and decision models are experimental. Image
+generation is a Preview: its API is experimental and may change, and it needs
+the opt-in `stable_diffusion` runtime,
 built for iOS 16.4 and macOS 13.3; x64 Linux and Windows CPUs need AVX2, FMA,
 F16C and BMI2, Windows needs the latest Microsoft Visual C++ v14
 Redistributable (x64), and Android arm64 needs dot-product and fp16. The
@@ -117,7 +118,7 @@ thinking-budget and speculative decoding rows for the loaded model. Guides:
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.5.0` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-6` |
-| stable-diffusion.cpp native (opt-in, experimental) | `leehack/stable-diffusion-native@v0.1.1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental) |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.1.1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental) |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag

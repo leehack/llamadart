@@ -68,13 +68,14 @@ composer to speech synthesis. See [Speech to text](../guides/speech-to-text) and
 
 ## Image generation
 
-**Image generation** in the sidebar opens an experimental text-to-image
+**Image generation** in the sidebar opens a Preview text-to-image
 screen on the opt-in `stable_diffusion` runtime, which the app bundles. It
 downloads SDXS-512 (683 MB) or SD-Turbo with TAESD (2.0 GB), then generates
 at 256 or 512 px with phase progress, cancellation, a reusable seed and PNG
 save. A model that does not fit in memory shows the engine's refusal, with an
 offer to unload the chat model. The web and targets without the runtime show
-why generation is unavailable. See [Image generation](../guides/image-generation).
+why generation is unavailable. See [Image generation](../guides/image-generation),
+including its [model licenses](../guides/image-generation#model-licenses).
 
 ## Test
 
