@@ -16,6 +16,7 @@ doc/testing_matrix.md @leehack
 doc/pr_branch_writer_inventory.md @leehack
 doc/high_risk_pre_merge_readiness.md @leehack
 hook/build.dart @leehack
+lib/src/hook/native_release_pins.dart @leehack
 tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
 tool/testing/high_risk_readiness.dart @leehack

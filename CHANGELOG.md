@@ -1,4 +1,4 @@
-## Unreleased
+## 0.10.0
 
 - Label image generation a Preview in the README and docs, and list each
   image preset's model license.
@@ -111,6 +111,11 @@
   1024x1024 when a request or `warmUp` leaves the size unset, and the basic
   example's image CLI downloads them
   ([#802](https://github.com/leehack/llamadart/issues/802)).
+* Aligned the default WebGPU bridge assets to `v0.1.54`, unchanged from 0.9.0:
+  they embed llama.cpp `v0.5.0`, are qualified against native `v0.5.0`, and keep
+  Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity
+  and Web `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 
 ## 0.9.0
 

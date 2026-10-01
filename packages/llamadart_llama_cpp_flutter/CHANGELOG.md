@@ -1,3 +1,8 @@
+## 0.0.21
+
+* Update the install example for `llamadart` 0.10.0; the Apple SwiftPM
+  pin remains `leehack/llamadart-native@v0.5.0`.
+
 ## 0.0.20
 
 * Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.5.0`.

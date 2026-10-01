@@ -1,6 +1,6 @@
 # Observability example
 
-An application-owned OTel adapter for llamadart 0.9.0. This is not the optional
+An application-owned OTel adapter for llamadart 0.10.0. This is not the optional
 companion package tracked in [#696](https://github.com/leehack/llamadart/issues/696).
 Core dependencies and runtime behavior are unchanged.
 
