@@ -35,10 +35,13 @@ description: >-
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64, the iOS x86_64
   simulator and Windows arm64 are unsupported. Windows needs the Visual C++
   2015-2022 x64 runtime.
-- Gate UI on `ImageGenerationEngine.runtimeCapabilities()` (synchronous; no
-  model needed): show `unsupportedReason` when `isSupported` is false.
+- Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
+  probes on a separate isolate): show a progress indicator until it
+  completes, then `unsupportedReason` when `isSupported` is false.
   `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same
-  cases.
+  cases. The synchronous `runtimeCapabilities()` returns the same result but
+  blocks the calling isolate on the first probe; do not call it from a UI
+  isolate before `checkRuntime()` has completed.
 - Models (local files; download with `DefaultModelDownloadManager` or
   `ModelSource` first):
   - `ImageGenerationModel.sdxs(path)`: `concedo/sdxs-512-tinySDdistilled-GGUF`
@@ -61,9 +64,10 @@ description: >-
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
-  first `runtimeCapabilities()` or `load()` in a process compiles the Metal
-  library on Apple (about 16 s on an M4 Max with an empty shader cache, on
-  the calling isolate), and the first GPU image compiles its pipelines (12 s
+  first runtime probe in a process (`checkRuntime()`, `runtimeCapabilities()`
+  or `load()`) compiles the Metal library on Apple (about 16 s on an M4 Max
+  with an empty shader cache; only `runtimeCapabilities()` blocks the calling
+  isolate for it), and the first GPU image compiles its pipelines (12 s
   on Linux Vulkan, 45 s on Windows Vulkan, against under 0.6 s warm). The OS
   or driver caches them for later launches. Show progress.
 - `await engine.warmUp(width: 512, height: 512)` right after `load`, while
@@ -71,9 +75,7 @@ description: >-
   image. Pass the size the app will generate; another size can compile
   more. It runs one discarded single-step image, returns at once on the CPU,
   holds the one-operation slot (await it before `generate`), and completes
-  normally when `dispose()` cancels it. To keep a Flutter UI responsive on a
-  first launch, make the first probe from another isolate:
-  `await Isolate.run(ImageGenerationEngine.runtimeCapabilities)`.
+  normally when `dispose()` cancels it.
 - `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
   invalid requests throw `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048 (512 is native; 256 is fine for
@@ -113,7 +115,7 @@ import 'package:llamadart/llamadart.dart';
 
 Future<void> generateFox(String sdxsPath, String outputPath) async {
   final ImageGenerationCapabilities runtime =
-      ImageGenerationEngine.runtimeCapabilities();
+      await ImageGenerationEngine.checkRuntime();
   if (!runtime.isSupported) {
     throw LlamaUnsupportedException(runtime.unsupportedReason!);
   }

@@ -23,7 +23,7 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
-  final runtime = ImageGenerationEngine.runtimeCapabilities();
+  final runtime = await ImageGenerationEngine.checkRuntime();
   if (!runtime.isSupported) {
     stderr.writeln(
       'Image generation is unavailable: ${runtime.unsupportedReason}',

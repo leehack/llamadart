@@ -32,8 +32,11 @@ Measured with the prototype on the same runtime, 512x512, one step, warm:
 | Galaxy S24, CPU | 5.9 s | 11.8 s |
 | Galaxy A53, CPU | 26 to 29 s | Does not fit in memory |
 
-`ImageGenerationEngine.runtimeCapabilities()` reports whether this build and
-device can generate images, and why not, without loading a model.
+`await ImageGenerationEngine.checkRuntime()` reports whether this build and
+device can generate images, and why not, without loading a model or blocking
+the calling isolate. `ImageGenerationEngine.runtimeCapabilities()` returns the
+same result synchronously, but its first call can block for seconds; see
+[First-image latency and warm-up](#first-image-latency-and-warm-up).
 
 ## Bundle the runtime
 
@@ -137,9 +140,11 @@ slow while the GPU compiles shaders; see
 
 ggml compiles GPU shaders the first time a process needs them, in two places:
 
-- The first `runtimeCapabilities()` or `load()` in a process initializes the
-  GPU backend. On Apple GPUs this compiles ggml's Metal library, on the
-  calling isolate.
+- The first runtime probe in a process (`checkRuntime()`,
+  `runtimeCapabilities()` or `load()`) initializes the GPU backend. On Apple
+  GPUs this compiles ggml's Metal library. `checkRuntime()` and `load()` run
+  the probe on a separate isolate; `runtimeCapabilities()` runs it on the
+  calling isolate and blocks it.
 - The first generation on the GPU compiles the pipelines it runs.
 
 The operating system or GPU driver caches the compiled shaders on disk, so
@@ -149,7 +154,7 @@ Android keep the driver cache across launches is not measured yet.
 
 | Device and step | Empty shader cache | Cached shaders |
 | --- | --- | --- |
-| M4 Max, Metal: first `runtimeCapabilities()` or `load()` | 15.7 to 16.6 s | 0.4 to 0.5 s |
+| M4 Max, Metal: first runtime probe | 15.5 to 18.7 s | 0.4 to 0.5 s |
 | M4 Max, Metal: SDXS 512x512, first image, then next | 1.0 s, then 0.46 s | 0.41 to 0.48 s, then 0.38 to 0.45 s |
 | M4 Max, Metal: SD-Turbo + TAESD 512x512, first image, then next | 0.79 to 0.90 s, then 0.54 to 0.66 s | 0.68 to 0.73 s, then 0.67 to 0.68 s |
 | NVIDIA L4, Linux Vulkan: first image, then SDXS warm | About 12 s, then 176 ms | Later processes reuse the driver cache |
@@ -182,15 +187,24 @@ await engine.warmUp(width: 512, height: 512);
 - On the CPU it returns at once.
 
 `warmUp` cannot move the Metal library compile, which happens before an
-engine exists. To keep a Flutter UI responsive on a first launch, run the
-first probe on another isolate; the process then has the library, and later
-probes return at once:
+engine exists. To keep a Flutter UI responsive on a first launch, check the
+runtime with `checkRuntime()` and show a progress indicator until it
+completes:
 
 ```dart
-final capabilities = await Isolate.run(
-  ImageGenerationEngine.runtimeCapabilities,
-);
+final capabilities = await ImageGenerationEngine.checkRuntime();
 ```
+
+With an empty shader cache on the M4 Max, `runtimeCapabilities()` stalled a
+10 ms timer on the calling isolate for the whole 16 s probe. During
+`checkRuntime()` the timer kept firing, with gaps of 13 to 31 ms in most
+runs. One pause remains: a garbage collection on the calling isolate waits
+while the probe isolate loads the runtime library (about 0.4 s), so an
+allocating UI can pause once for up to that long (179 ms in the chat
+example's macOS E2E). Calls that overlap share one probe. The compiled
+library belongs to the process, so later probes, including
+`runtimeCapabilities()`, return at once. `load()` probes the same way and
+does not block the caller either.
 
 ## Progress phases
 
