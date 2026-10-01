@@ -29,6 +29,11 @@ class AppExitCoordinator {
   /// stays true and no new model should load.
   bool get isExiting => _exit != null;
 
+  /// Number of releases added with [addRelease] that still wait for the
+  /// exit.
+  @visibleForTesting
+  int get releaseCount => _releases.length;
+
   /// Runs [release] when the app exits; the returned callback removes it.
   ///
   /// A release added after the exit started runs at once.

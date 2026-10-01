@@ -774,6 +774,66 @@ void main() {
       expect(provider.status, 'Generation cancelled.');
     });
 
+    testWidgets(
+      'registers the screen\'s own provider until the screen closes',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ImageGenerationScreen(exitCoordinator: exitCoordinator),
+          ),
+        );
+
+        expect(exitCoordinator.releaseCount, 1);
+
+        await tester.pumpWidget(const SizedBox());
+
+        expect(exitCoordinator.releaseCount, 0);
+      },
+    );
+
+    test('hands its release to the exit when disposed', () async {
+      final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
+      expect(exitCoordinator.releaseCount, 1);
+
+      provider.dispose();
+
+      expect(exitCoordinator.releaseCount, 0);
+    });
+
+    test('skips the runtime check once the exit started', () async {
+      final blocker = Completer<void>();
+      exitCoordinator.track(blocker.future);
+      final exit = exitCoordinator.releaseAll();
+      final provider = createProvider(exitCoordinator: exitCoordinator);
+
+      await provider.initialize();
+
+      expect(generation.checkCalls, 0);
+      expect(provider.isInitialized, isFalse);
+      blocker.complete();
+      await exit;
+    });
+
+    test('waits for every engine when one fails to free', () async {
+      final provider = await providerWithLoadedModel();
+      final switched = generation.generator!;
+      final switchedGate = switched.disposeGate = Completer<void>();
+      final switching = provider.selectModel(ImageModelProfile.sdTurbo);
+      final generating = provider.generate(prompt: 'owl');
+      await pumpEventQueue();
+      generation.generator!.runs.single.completeWith(seed: 2);
+      await generating;
+      generation.generator!.disposeError = StateError('Metal free failed');
+
+      final exit = exitCoordinator.releaseAll();
+
+      expect(await isDone(exit), isFalse);
+      switchedGate.complete();
+      await exit;
+      await switching;
+      expect(switched.disposed, isTrue);
+    });
+
     test('waits for the runtime check', () async {
       final checkGate = generation.checkGate = Completer<void>();
       final provider = createUnownedProvider(exitCoordinator: exitCoordinator);
@@ -892,6 +952,7 @@ class FakeImageGenerator implements ImageGenerator {
   final List<FakeImageGenerationRun> runs = <FakeImageGenerationRun>[];
   bool disposed = false;
   Completer<void>? disposeGate;
+  Object? disposeError;
 
   FakeImageGenerator(this.generateError);
 
@@ -920,6 +981,9 @@ class FakeImageGenerator implements ImageGenerator {
       run.cancel();
     }
     await disposeGate?.future;
+    if (disposeError case final error?) {
+      throw error;
+    }
   }
 }
 

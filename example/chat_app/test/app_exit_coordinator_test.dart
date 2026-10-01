@@ -1,10 +1,14 @@
 import 'dart:async';
 import 'dart:ui';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:llamadart_chat_example/main.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/services/app_exit_coordinator.dart';
@@ -161,6 +165,22 @@ void main() {
 
       expect(await exit, AppExitResponse.exit);
     });
+  });
+
+  testWidgets('the app routes its exit request through the coordinator', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    GoogleFonts.config.allowRuntimeFetching = false;
+    await tester.pumpWidget(const MyApp());
+    final exitCoordinator = Provider.of<AppExitCoordinator>(
+      tester.element(find.byType(MaterialApp)),
+      listen: false,
+    );
+
+    expect(exitCoordinator.releaseCount, 1);
+    expect(await tester.binding.handleRequestAppExit(), AppExitResponse.exit);
+    expect(exitCoordinator.isExiting, isTrue);
   });
 
   group('ChatProvider.shutdown', () {

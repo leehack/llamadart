@@ -246,7 +246,15 @@ class ImageGenerationProvider extends ChangeNotifier {
   /// The first probe in a process can take seconds while the GPU backend
   /// compiles its shaders; it runs off the UI isolate, and
   /// [isInitialized] stays false until it finishes.
-  Future<void> initialize() => _initializing = _initialize();
+  ///
+  /// Does nothing once the provider is disposed or shut down: a check
+  /// started then would still be running when the app exits.
+  Future<void> initialize() async {
+    if (_isClosed) {
+      return;
+    }
+    await (_initializing = _initialize());
+  }
 
   Future<void> _initialize() async {
     ImageGenerationCapabilities capabilities;
@@ -586,9 +594,18 @@ class ImageGenerationProvider extends ChangeNotifier {
     } catch (_) {
       // A failed load left nothing to free.
     }
-    await releaseEngine();
-    await Future.wait(List<Future<void>>.of(_disposals));
+    try {
+      await releaseEngine();
+    } catch (error) {
+      _logReleaseError(error);
+    }
+    await Future.wait([
+      for (final disposal in _disposals) disposal.catchError(_logReleaseError),
+    ]);
   }
+
+  void _logReleaseError(Object error) =>
+      debugPrint('Could not free an image model before exit: $error');
 
   String _describe(Object error) =>
       error is LlamaException ? error.message : error.toString();

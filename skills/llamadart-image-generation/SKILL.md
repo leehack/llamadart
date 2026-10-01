@@ -147,7 +147,10 @@ description: >-
   loaded aborts the process. Flutter desktop apps skip `State.dispose` on
   quit; await `dispose()` in `AppLifecycleListener.onExitRequested`. If
   `ImageGenerationEngine.load` is still running, await it there and dispose
-  the engine it returns.
+  the engine it returns. When the engine's owner can be disposed before quit
+  (a pushed route), its listener goes with it: make one app-level exit
+  listener await every engine's disposal, including one its owner already
+  started.
 - A runtime failure (for example an aborted Metal command buffer or out of
   memory) fails the task with `LlamaInferenceException`; the engine stays
   usable for the next request.
