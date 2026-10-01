@@ -54,8 +54,13 @@ description: >-
     step at guidance 1; up to 4 steps add detail. For TAESD use
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
-  - Desktop presets, 1024x1024, for desktop GPUs and Macs with 16 GB or
-    more (not phones); each needs a VAE or TAESD decoder where it takes one:
+  - Desktop presets, 1024x1024, for desktop GPUs and Macs, not phones. The
+    memory check asks for about 8.6 GiB for SDXL-Lightning (a desktop GPU
+    or a Mac with 16 GB or more), 8.3 GiB for Z-Image-Turbo (a 12 GB desktop
+    GPU or a 16 GB Mac), and 14.5 GiB for FLUX.1-schnell and 13.1 GiB for
+    SD 3.5 Large Turbo (a 16 GB desktop GPU or a Mac with 24 GB or more;
+    `load` refuses them on a 16 GB Mac under Metal's working-set cap). Each
+    needs a VAE or TAESD decoder where it takes one:
     - `ImageGenerationModel.sdxlLightning(path, vaePath:, taesdPath:)`:
       `ByteDance/SDXL-Lightning` `sdxl_lightning_4step.safetensors`; 4 steps,
       guidance 1, Euler with `sgmUniform`. `madebyollin/taesdxl` halves the

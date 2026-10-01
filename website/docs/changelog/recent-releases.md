@@ -11,25 +11,26 @@ For canonical full release notes, use:
 
 - Label image generation a Preview in the README and docs, and list each
   image preset's model license.
-- Render and parse llama.cpp chat with `ModelParams.chatTemplate`, which
-  `engine.create` and `engine.chatTemplate` ignored in favor of the GGUF
-  template; WebGPU `LlamaBackend.applyChatTemplate` now throws
+- **Behavior change:** render and parse llama.cpp chat with
+  `ModelParams.chatTemplate`, which `engine.create` and
+  `engine.chatTemplate` ignored in favor of the GGUF template
+  ([#710](https://github.com/leehack/llamadart/issues/710)).
+- **Breaking:** WebGPU `LlamaBackend.applyChatTemplate` now throws
   `LlamaUnsupportedException` for a template override it cannot render
   ([#710](https://github.com/leehack/llamadart/issues/710)).
-- Report only the last path segment of the model source, such as
-  `qwen.gguf`, in `LlamaCompletionChunk.model` instead of the full local path
-  or redacted URL; compare it with the file name, not the path. Like
-  `LlamaOperation.model`, it now reads local paths as paths and leaves out
-  `data:` and `blob:` URLs
+- **Behavior change:** report only the last path segment of the model
+  source, such as `qwen.gguf`, in `LlamaCompletionChunk.model` instead of
+  the full local path or redacted URL; compare it with the file name, not
+  the path. Like `LlamaOperation.model`, it now reads local paths as paths
+  and leaves out `data:` and `blob:` URLs
   ([#718](https://github.com/leehack/llamadart/issues/718)).
 - Strip URL userinfo, query and fragment from the `litert_lm.model_url`
   metadata that web LiteRT-LM reports.
-- Load models whose local path contains `%`, such as
-  `C:\models\qwen 100%.gguf`, or whose URL file name decodes to one,
-  instead of throwing `ArgumentError`; `loadModelSource` and
-  `ModelCacheEntry` keep `%` in local and cache paths literal instead of
-  percent-decoding them into another file
-  ([#819](https://github.com/leehack/llamadart/issues/819)).
+- **Behavior change:** load models whose local path contains `%`, such as
+  `C:\models\qwen 100%.gguf`, or whose URL file name decodes to one, instead
+  of throwing `ArgumentError`; `loadModelSource` and `ModelCacheEntry` keep
+  `%` in local and cache paths literal instead of percent-decoding them into
+  another file ([#819](https://github.com/leehack/llamadart/issues/819)).
 - Fix Dart programs aborting on macOS Metal when `main` returns or throws
   with a model, decision head or image model still loaded; llamadart now
   frees them as the program ends, and an undisposed `ImageGenerationEngine`
@@ -45,13 +46,14 @@ For canonical full release notes, use:
   adapters, decision models and image generation; install them with
   `dart run skills@ get`.
 - Add an observability guide and tested optional OpenTelemetry example with Langfuse and Grafana recipes.
-- Apply `ModelParams.loras` at model load on native llama.cpp and WebGPU,
-  where they were silently ignored; an adapter that cannot be applied, or
-  WebGPU bridge assets before `v0.1.54`, fail the load instead
-  ([#709](https://github.com/leehack/llamadart/issues/709)).
-- Throw `LlamaUnsupportedException` instead of `LlamaModelException` when
-  native or web LiteRT-LM rejects a `ModelParams` field, including more than
-  one LoRA adapter or a non-default adapter scale.
+- **Behavior change:** apply `ModelParams.loras` at model load on native
+  llama.cpp and WebGPU, where they were silently ignored; an adapter that
+  cannot be applied, or WebGPU bridge assets before `v0.1.54`, fail the load
+  instead ([#709](https://github.com/leehack/llamadart/issues/709)).
+- **Breaking:** throw `LlamaUnsupportedException` instead of
+  `LlamaModelException` when native or web LiteRT-LM rejects a `ModelParams`
+  field, including more than one LoRA adapter or a non-default adapter
+  scale.
 - Add an experimental opt-in `stable_diffusion` native runtime
   (stable-diffusion.cpp) to `llamadart_native_runtimes` for image
   generation; it is never bundled by default or by `all`, and
@@ -73,11 +75,11 @@ For canonical full release notes, use:
   the chat example uses it, so the first probe's Metal library compile (about
   16 s with an empty shader cache) no longer freezes the UI
   ([#798](https://github.com/leehack/llamadart/issues/798)).
-- Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
-  model with no projector loaded: native llama.cpp answered from the text
-  alone, and WebGPU threw an untyped error surfaced as
-  `LlamaInferenceException`. Native llama.cpp and LiteRT-LM also throw it for
-  `LlamaImageContent.url`.
+- **Breaking:** throw `LlamaUnsupportedException` for image or audio parts
+  sent to a GGUF model with no projector loaded: native llama.cpp answered
+  from the text alone, and WebGPU threw an untyped error surfaced as
+  `LlamaInferenceException`. Native llama.cpp and LiteRT-LM also throw it
+  for `LlamaImageContent.url`.
 - Add `LlamaEngine.supportsEmbeddings`. Native llama.cpp embeddings of an
   encoder-decoder model now throw `LlamaUnsupportedException`, and input
   longer than the context throws `LlamaInferenceException`, instead of a
@@ -116,9 +118,6 @@ For canonical full release notes, use:
   SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
   basic example's image CLI downloads them
   ([#802](https://github.com/leehack/llamadart/issues/802)).
-  **Breaking:** `ImageGenerationModelFamily` gains four values before
-  `custom`, so an exhaustive `switch` over it needs new cases and
-  `ImageGenerationModelFamily.custom.index` changes from 2 to 6.
 
 ## 0.9.0
 

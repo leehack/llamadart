@@ -28,11 +28,12 @@ or shipping runtimes the app does not use.
   `ImageGenerationEngine` instances from
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
   returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
-  still loaded when the app quits aborts in `ggml_metal_rsets_free`: llamadart
-  frees leftover models when a plain Dart program ends, but an AppKit quit
-  ends the process without that cleanup. When the
-  engine's owner can be disposed before quit (a pushed route), its listener
-  goes with it: make one app-level exit listener await every engine's
+  still loaded when the process exits aborts in `ggml_metal_rsets_free`.
+  llamadart frees leftover models as a Dart program or an AppKit-quit app
+  ends, but that cleanup is best-effort (Cmd-Q was not re-tested, and a quit
+  mid-load or mid-generation can still abort), so dispose explicitly. When
+  the engine's owner can be disposed before quit (a pushed route), its
+  listener goes with it: make one app-level exit listener await every engine's
   disposal, including one its owner already started.
 - Keep inference state out of widgets. Put a plain Dart controller between
   the engine and the UI (example below) and adapt it to `ChangeNotifier`,
