@@ -258,6 +258,11 @@ flutter test --run-skipped -t local-only \
 layouts) opens a separate screen for the experimental `ImageGenerationEngine`
 ([guide](https://llamadart.leehack.com/docs/guides/image-generation)).
 
+- Opening the screen checks the image runtime off the UI isolate with
+  `ImageGenerationEngine.checkRuntime()`, showing **Checking the image
+  runtime…** meanwhile. With an empty Metal shader cache the first check
+  compiles ggml's Metal library, about 16 s on an M4 Max; with the cache warm
+  it takes under 0.5 s.
 - Models: **SDXS-512** (683 MB, recommended, fits most phones) and
   **SD-Turbo + TAESD** (2.0 GB). Both download into the app's model cache
   from pinned Hugging Face revisions with exact sizes and SHA-256 checks; an

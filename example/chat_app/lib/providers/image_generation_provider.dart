@@ -228,15 +228,22 @@ class ImageGenerationProvider extends ChangeNotifier {
   bool get canChangeModel => !_isLocked;
 
   /// Probes the runtime and finds installed models.
+  ///
+  /// The first probe in a process can take seconds while the GPU backend
+  /// compiles its shaders; it runs off the UI isolate, and
+  /// [isInitialized] stays false until it finishes.
   Future<void> initialize() async {
     ImageGenerationCapabilities capabilities;
     try {
-      capabilities = _generationService.runtimeCapabilities();
+      capabilities = await _generationService.checkRuntime();
     } catch (error) {
       capabilities = ImageGenerationCapabilities(
         isSupported: false,
         unsupportedReason: _describe(error),
       );
+    }
+    if (_disposed) {
+      return;
     }
     if (capabilities.isSupported && _modelService.isSupported) {
       try {
