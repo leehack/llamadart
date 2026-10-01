@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -7,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'providers/chat_provider.dart';
 import 'screens/app_shell_screen.dart';
+import 'services/app_exit_coordinator.dart';
 
 void main() {
   runApp(const MyApp());
@@ -30,10 +30,12 @@ class _MyAppState extends State<MyApp> {
 
   late final AppLifecycleListener _listener;
   final ChatProvider _chatProvider = ChatProvider();
+  final AppExitCoordinator _exitCoordinator = AppExitCoordinator();
 
   @override
   void initState() {
     super.initState();
+    _exitCoordinator.addRelease(_chatProvider.shutdown);
     _listener = AppLifecycleListener(
       onHide: () {
         unawaited(_chatProvider.cancelAudioRecording());
@@ -44,10 +46,7 @@ class _MyAppState extends State<MyApp> {
       onDetach: () {
         unawaited(_chatProvider.shutdown());
       },
-      onExitRequested: () async {
-        await _chatProvider.shutdown();
-        return AppExitResponse.exit;
-      },
+      onExitRequested: _exitCoordinator.handleExitRequest,
     );
   }
 
@@ -78,8 +77,11 @@ class _MyAppState extends State<MyApp> {
           outlineVariant: const Color(0xFF303845),
         );
 
-    return ChangeNotifierProvider.value(
-      value: _chatProvider,
+    return MultiProvider(
+      providers: [
+        Provider<AppExitCoordinator>.value(value: _exitCoordinator),
+        ChangeNotifierProvider<ChatProvider>.value(value: _chatProvider),
+      ],
       child: MaterialApp(
         title: 'llamadart chat',
         debugShowCheckedModeBanner: false,

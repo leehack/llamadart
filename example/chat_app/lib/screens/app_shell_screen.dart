@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/chat_provider.dart';
+import '../services/app_exit_coordinator.dart';
 import '../services/model_download_ui_controller.dart';
 import 'chat_screen.dart';
 import 'image_generation_screen.dart';
@@ -49,12 +50,14 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
   void _openImageGeneration() {
     final chat = context.read<ChatProvider>();
+    final exitCoordinator = context.read<AppExitCoordinator>();
     unawaited(
       Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => ImageGenerationScreen(
             isChatModelLoaded: () => chat.isLoaded,
             unloadChatModel: chat.unloadModel,
+            exitCoordinator: exitCoordinator,
           ),
         ),
       ),

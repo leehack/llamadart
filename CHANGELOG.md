@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Fix the Flutter chat example aborting on macOS when quit while an image or
+  chat model was still being freed, such as right after leaving the image
+  screen ([#796](https://github.com/leehack/llamadart/issues/796)).
 - Document disposing engines from `AppLifecycleListener.onExitRequested`,
   since quitting a macOS app with a Metal model loaded aborts the process.
 - Ship agent skills for coding agents covering setup, chat and streaming,

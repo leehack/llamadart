@@ -40,6 +40,13 @@ final listener = AppLifecycleListener(
 // Call listener.dispose() when its owner is disposed.
 ```
 
+If the engine's owner can go away before the app quits, such as a pushed
+route, its listener goes with it, and the `dispose()` it started in
+`State.dispose` may still be running at quit. Register disposal with one
+app-level exit listener instead, and have that listener also await disposals
+already in progress. The example chat app does this with
+[`AppExitCoordinator`](https://github.com/leehack/llamadart/blob/main/example/chat_app/lib/services/app_exit_coordinator.dart).
+
 `LlamaBackend()` routes by file extension: `.gguf` to llama.cpp and
 `.litertlm` to LiteRT-LM, with the same lifecycle:
 

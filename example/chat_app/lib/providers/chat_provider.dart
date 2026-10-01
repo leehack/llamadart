@@ -176,7 +176,7 @@ class ChatProvider extends ChangeNotifier {
   bool _isGenerating = false;
   bool _isTranscribing = false;
   ChatAudioRecordingState _audioRecordingState = ChatAudioRecordingState.idle;
-  bool _isShuttingDown = false;
+  Future<void>? _shutdown;
   bool _supportsVision = false;
   bool _supportsAudio = false;
   bool _templateSupportsTools = true;
@@ -4671,12 +4671,16 @@ class ChatProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> shutdown() async {
-    if (_isShuttingDown) {
-      return;
-    }
+  /// Stops all work and frees every model. A call made while a shutdown
+  /// runs waits for it, so a second quit request cannot exit before the
+  /// model is freed.
+  Future<void> shutdown() => _shutdown ??= _runShutdown().whenComplete(() {
+    _shutdown = null;
+  });
 
-    _isShuttingDown = true;
+  Future<void> _runShutdown() async {
+    // The engine is freed even if an earlier step fails: a model left
+    // loaded at exit aborts the process on macOS Metal.
     try {
       await _saveSettingsNow();
       await _cancelAndAwaitAudioRecording();
@@ -4708,9 +4712,8 @@ class ChatProvider extends ChangeNotifier {
       _runtimeModelCacheState = null;
       await _audioRecordingService.dispose();
       await _liveSpeechTranscriptionService.dispose();
-      await _chatService.dispose();
     } finally {
-      _isShuttingDown = false;
+      await _chatService.dispose();
     }
   }
 

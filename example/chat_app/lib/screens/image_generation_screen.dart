@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -9,6 +8,7 @@ import 'package:llamadart/llamadart.dart';
 
 import '../models/image_model_profile.dart';
 import '../providers/image_generation_provider.dart';
+import '../services/app_exit_coordinator.dart';
 
 /// On-device text-to-image generation with the experimental
 /// `ImageGenerationEngine`.
@@ -24,12 +24,17 @@ class ImageGenerationScreen extends StatefulWidget {
   /// Unloads the chat model.
   final Future<void> Function()? unloadChatModel;
 
+  /// Makes the app's exit wait until the screen's own provider has freed its
+  /// model, including after the screen is closed.
+  final AppExitCoordinator? exitCoordinator;
+
   /// Creates the image-generation screen.
   const ImageGenerationScreen({
     super.key,
     this.provider,
     this.isChatModelLoaded,
     this.unloadChatModel,
+    this.exitCoordinator,
   });
 
   @override
@@ -55,18 +60,11 @@ class _ImageGenerationScreenState extends State<ImageGenerationScreen> {
         ImageGenerationProvider(
           isChatModelLoaded: widget.isChatModelLoaded,
           unloadChatModel: widget.unloadChatModel,
+          exitCoordinator: widget.exitCoordinator,
         );
     // A backgrounded mobile app cannot keep the GPU busy, so a running
     // generation is cancelled; the loaded model stays for the next one.
-    // Desktop quit skips dispose, and a model still loaded at exit aborts
-    // the process on macOS Metal, so it is freed before the app exits.
-    _lifecycle = AppLifecycleListener(
-      onPause: _provider.cancelGeneration,
-      onExitRequested: () async {
-        await _provider.shutdown();
-        return AppExitResponse.exit;
-      },
-    );
+    _lifecycle = AppLifecycleListener(onPause: _provider.cancelGeneration);
     if (!_provider.isInitialized) {
       unawaited(_provider.initialize());
     }

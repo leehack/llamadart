@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 
 import '../models/image_model_profile.dart';
+import '../services/app_exit_coordinator.dart';
 import '../services/image_generation_service.dart';
 import '../services/image_model_service.dart';
 
@@ -72,9 +73,10 @@ bool isImageMemoryRefusal(Object error) =>
 ///
 /// The model loads on the first generation and stays loaded while it stays
 /// selected; selecting another model, deleting it, or disposing this
-/// provider frees it. It can be loaded next to a chat model: the library's
-/// memory check refuses a model that does not fit, and the provider then
-/// offers to unload the chat model.
+/// provider frees it. With an [AppExitCoordinator], the app's exit waits for
+/// that release, even after this provider is disposed. It can be loaded next
+/// to a chat model: the library's memory check refuses a model that does not
+/// fit, and the provider then offers to unload the chat model.
 class ImageGenerationProvider extends ChangeNotifier {
   /// Output sizes offered by the screen.
   static const List<int> sizes = <int>[256, 512];
@@ -87,6 +89,8 @@ class ImageGenerationProvider extends ChangeNotifier {
   final bool Function() _isChatModelLoaded;
   final Future<void> Function()? _unloadChatModel;
   final Future<Uint8List> Function(GeneratedImage image) _encode;
+  final AppExitCoordinator? _exitCoordinator;
+  VoidCallback? _removeExitRelease;
 
   /// Models the screen offers.
   final List<ImageModelProfile> profiles;
@@ -106,7 +110,9 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   ImageGenerator? _generator;
   String? _generatorModelId;
-  Future<ImageGenerator>? _loading;
+  Future<ImageGenerator?>? _loading;
+  Future<void>? _initializing;
+  final Set<Future<void>> _disposals = <Future<void>>{};
   Future<void>? _shutdown;
   ImageGenerationRun? _run;
   ImageGenerationStage _stage = ImageGenerationStage.idle;
@@ -125,12 +131,15 @@ class ImageGenerationProvider extends ChangeNotifier {
     bool Function()? isChatModelLoaded,
     Future<void> Function()? unloadChatModel,
     Future<Uint8List> Function(GeneratedImage image)? encodePng,
+    AppExitCoordinator? exitCoordinator,
     this.profiles = ImageModelProfile.defaultModels,
   }) : _generationService = generationService ?? ImageGenerationService(),
        _modelService = modelService ?? ImageModelService(),
        _isChatModelLoaded = isChatModelLoaded ?? _never,
        _unloadChatModel = unloadChatModel,
-       _encode = encodePng ?? _encodePngInBackground {
+       _encode = encodePng ?? _encodePngInBackground,
+       _exitCoordinator = exitCoordinator {
+    _removeExitRelease = exitCoordinator?.addRelease(shutdown);
     _selected = profiles.firstWhere(
       (profile) => profile.isRecommended,
       orElse: () => profiles.first,
@@ -193,6 +202,8 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   bool get _isLocked => isBusy || _deletingId != null;
 
+  bool get _isClosed => _disposed || _shutdown != null;
+
   /// Latest progress event of the running generation.
   ImageGenerationProgressEvent? get progress => _progress;
 
@@ -224,7 +235,8 @@ class ImageGenerationProvider extends ChangeNotifier {
   }
 
   /// Whether a generation can start now.
-  bool get canGenerate => isSupported && isSelectedInstalled && !_isLocked;
+  bool get canGenerate =>
+      isSupported && isSelectedInstalled && !_isLocked && !_isClosed;
 
   /// Whether a model can be selected or deleted now.
   bool get canChangeModel => !_isLocked;
@@ -234,7 +246,9 @@ class ImageGenerationProvider extends ChangeNotifier {
   /// The first probe in a process can take seconds while the GPU backend
   /// compiles its shaders; it runs off the UI isolate, and
   /// [isInitialized] stays false until it finishes.
-  Future<void> initialize() async {
+  Future<void> initialize() => _initializing = _initialize();
+
+  Future<void> _initialize() async {
     ImageGenerationCapabilities capabilities;
     try {
       capabilities = await _generationService.checkRuntime();
@@ -396,7 +410,7 @@ class ImageGenerationProvider extends ChangeNotifier {
     int? seed,
   }) async {
     final installed = _installed[_selected.id];
-    if (installed == null || _isLocked || !isSupported) {
+    if (installed == null || _isLocked || _isClosed || !isSupported) {
       return;
     }
     _error = null;
@@ -415,7 +429,7 @@ class ImageGenerationProvider extends ChangeNotifier {
       if (_disposed) {
         return;
       }
-      if (_cancelRequested) {
+      if (generator == null || _cancelRequested) {
         _status = 'Generation cancelled.';
         return;
       }
@@ -472,7 +486,11 @@ class ImageGenerationProvider extends ChangeNotifier {
     }
   }
 
-  Future<ImageGenerator> _ensureGenerator(InstalledImageModel installed) async {
+  /// The loaded engine for [installed], or `null` when the provider closed
+  /// before it loaded.
+  Future<ImageGenerator?> _ensureGenerator(
+    InstalledImageModel installed,
+  ) async {
     final current = _generator;
     if (current != null && _generatorModelId == installed.profile.id) {
       return current;
@@ -489,13 +507,13 @@ class ImageGenerationProvider extends ChangeNotifier {
     }
   }
 
-  Future<ImageGenerator> _loadGenerator(InstalledImageModel installed) async {
+  Future<ImageGenerator?> _loadGenerator(InstalledImageModel installed) async {
     final generator = await _generationService.load(
       installed.toGenerationModel(),
     );
-    if (_disposed || _shutdown != null) {
-      await generator.dispose();
-      return generator;
+    if (_isClosed) {
+      await _trackDisposal(generator.dispose());
+      return null;
     }
     _generator = generator;
     _generatorModelId = installed.profile.id;
@@ -539,22 +557,37 @@ class ImageGenerationProvider extends ChangeNotifier {
     _generator = null;
     _generatorModelId = null;
     if (generator != null) {
-      await generator.dispose();
+      await _trackDisposal(generator.dispose());
     }
   }
 
-  /// Frees the model before the app exits, waiting for a load in flight so
-  /// its model is freed too. Repeated calls share one release.
+  // [shutdown] must also wait for a disposal that [releaseEngine] started
+  // earlier, such as during a model switch, because the engine is no longer
+  // in [_generator] while it is being freed.
+  Future<void> _trackDisposal(Future<void> disposal) {
+    _disposals.add(disposal);
+    return disposal.whenComplete(() => _disposals.remove(disposal));
+  }
+
+  /// Frees every model before the app exits: waits for a runtime check or a
+  /// load in flight and for a release already running, then frees the
+  /// loaded model. No model loads afterwards; the app exit that calls this
+  /// is never cancelled. Repeated calls share one release.
   Future<void> shutdown() => _shutdown ??= _releaseForShutdown();
 
   Future<void> _releaseForShutdown() async {
+    _notify();
     cancelGeneration();
+    // The runtime check runs in its own isolate and initializes the GPU
+    // backend, so the app must not exit in the middle of it.
+    await _initializing;
     try {
       await _loading;
     } catch (_) {
       // A failed load left nothing to free.
     }
     await releaseEngine();
+    await Future.wait(List<Future<void>>.of(_disposals));
   }
 
   String _describe(Object error) =>
@@ -570,7 +603,14 @@ class ImageGenerationProvider extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _installToken?.cancel('Image model download cancelled on screen exit.');
-    unawaited(releaseEngine());
+    _removeExitRelease?.call();
+    final release = shutdown();
+    final exitCoordinator = _exitCoordinator;
+    if (exitCoordinator != null) {
+      exitCoordinator.track(release);
+    } else {
+      unawaited(release);
+    }
     super.dispose();
   }
 }
