@@ -179,8 +179,13 @@ void main() {
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 
   test('SD-Turbo with TAESD generates in one step', () async {
+    // A skip: argument would not apply: the scenario passes --run-skipped.
+    if (sdTurboPath == null) {
+      markTestSkipped('Set LLAMADART_SD_TURBO_MODEL');
+      return;
+    }
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdTurbo(sdTurboPath!, taesdPath: taesdPath),
+      ImageGenerationModel.sdTurbo(sdTurboPath, taesdPath: taesdPath),
     );
     addTearDown(engine.dispose);
 
@@ -200,7 +205,7 @@ void main() {
         '$outputDir/sd-turbo-256-seed42.png',
       ).writeAsBytesSync(result.images.single.toPng());
     }
-  }, skip: sdTurboPath == null ? 'Set LLAMADART_SD_TURBO_MODEL' : false);
+  });
 
   test('dispose during a generation cancels it', () async {
     final engine = await ImageGenerationEngine.load(
