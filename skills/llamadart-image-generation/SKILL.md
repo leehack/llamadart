@@ -125,7 +125,10 @@ description: >-
 - A runtime failure (for example an aborted Metal command buffer or out of
   memory) fails the task with `LlamaInferenceException`; the engine stays
   usable for the next request.
-- Runtime logs are not forwarded to `LlamaLogger`.
+- Runtime logs are not forwarded to `LlamaLogger`, so a runtime load
+  failure (`LlamaModelException`) cannot quote stable-diffusion.cpp's reason.
+  For a split checkpoint it names the missing roles (no `vae`/`taesd`, no
+  text encoder); otherwise check that each file is in its role.
 
 ## Examples
 

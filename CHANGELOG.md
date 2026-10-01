@@ -61,6 +61,9 @@
   VAE convolutions, which now turn on automatically where measured faster or
   smaller, such as a 1024x1024 Vulkan decode in about 1 s instead of up to
   56 s ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Name the missing VAE or text-encoder role when stable-diffusion.cpp
+  rejects a split image checkpoint, instead of a generic load error
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
 
 ## 0.9.0
 

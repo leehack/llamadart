@@ -162,7 +162,10 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   }
 
   static Object? _unwrap(Object? reply) => switch (reply) {
-    _LoadFailure(:final message) => throw LlamaModelException(message),
+    _LoadFailure(:final message, :final details) => throw LlamaModelException(
+      message,
+      details,
+    ),
     null => throw LlamaStateException(
       'The image-generation worker exited unexpectedly.',
     ),
@@ -174,6 +177,40 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   };
 }
 
+/// Why stable-diffusion.cpp may have rejected [files], keyed by role as in
+/// `ImageGenerationModelFiles.paths`.
+///
+/// The runtime logs its reason only through a callback whose text is gone by
+/// the time Dart can read it (stable-diffusion-native#3), so the message
+/// names the file roles a split checkpoint is missing.
+String describeStableDiffusionLoadFailure(Map<String, String> files) {
+  final hints = <String>[
+    if (!files.containsKey('model')) ...[
+      if (!files.containsKey('vae') && !files.containsKey('taesd'))
+        'A split checkpoint (diffusionModel) needs a vae or taesd file; a '
+            'single-file checkpoint that includes its VAE, such as an '
+            'SD 3.5 Medium GGUF, goes in model instead.',
+      if (!_textEncoderRoles.any(files.containsKey))
+        'A split checkpoint needs its text encoders: clipL, clipG and t5xxl '
+            'for SD 3.5, clipL and t5xxl for FLUX, and llm for Z-Image and '
+            'Qwen-Image.',
+    ],
+  ];
+  return [
+    'stable-diffusion.cpp could not load the image model files.',
+    if (hints.isEmpty)
+      'Check that they form a checkpoint the runtime supports, that each '
+          'file is in its role (a single-file checkpoint goes in model, '
+          'standalone diffusion weights in diffusionModel), and that the '
+          'device has enough memory.'
+    else
+      ...hints,
+    'The runtime does not report its reason to llamadart yet.',
+  ].join(' ');
+}
+
+const List<String> _textEncoderRoles = ['clipL', 'clipG', 't5xxl', 'llm'];
+
 final class _Loaded {
   final SendPort commands;
   final int context;
@@ -184,8 +221,9 @@ final class _Loaded {
 
 final class _LoadFailure {
   final String message;
+  final String? details;
 
-  const _LoadFailure(this.message);
+  const _LoadFailure(this.message, [this.details]);
 }
 
 final class _Dispose {
@@ -221,10 +259,9 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
   final context = _withProgress(progress, () => _newContext(config));
   if (context == nullptr) {
     replies.send(
-      const _LoadFailure(
-        'stable-diffusion.cpp could not load the image model files; check '
-        'that they form a supported checkpoint and that the device has '
-        'enough memory.',
+      _LoadFailure(
+        describeStableDiffusionLoadFailure(config.files),
+        'files: ${config.files.keys.join(', ')}',
       ),
     );
     return;

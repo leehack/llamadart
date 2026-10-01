@@ -319,7 +319,7 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
 | Exception | When |
 | --- | --- |
 | `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, or `ImageGenerationDevice.gpu` without a GPU |
-| `LlamaModelException` | A file is missing, the model does not fit, or the runtime cannot load it as an image model |
+| `LlamaModelException` | A file is missing, the model does not fit, or the runtime cannot load it as an image model. A rejected split checkpoint names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or options |
 | `LlamaStateException` | Another generation or load is running, or the engine is disposed |
 | `LlamaInferenceException` | The runtime failed a generation, for example an aborted Metal command buffer or running out of memory; the engine runs the next request |
@@ -329,7 +329,9 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
 - Runtime logs are not forwarded to `LlamaLogger`: stable-diffusion.cpp's log
   text is only valid during a call made from its own threads
   ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
-  ggml's own backend messages still reach stderr.
+  ggml's own backend messages still reach stderr. The same gap keeps the
+  runtime's own reason out of a load failure; the error names missing file
+  roles instead.
 - Android runs on the CPU only: ggml Vulkan and OpenCL crashed or ran slower
   on the phones tried
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
