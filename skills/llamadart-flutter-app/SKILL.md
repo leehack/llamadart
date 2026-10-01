@@ -72,6 +72,8 @@ or shipping runtimes the app does not use.
     `DebugProfile.entitlements` and `Release.entitlements`.
   - Android release builds need the `INTERNET` permission in
     `AndroidManifest.xml`.
+  - Windows machines that run the app need the Microsoft Visual C++
+    2015-2022 Redistributable (x64 or ARM64); stock Windows Server lacks it.
   - Web needs the WebGPU bridge script in `web/index.html`; the package does
     not inject it. LiteRT-LM on web is single-turn text only (no
     `ChatSession`).

@@ -168,6 +168,14 @@ Selection rules:
 Linux modules need system libraries; see
 [Linux prerequisites](./linux-prerequisites).
 
+On Windows every module needs the Microsoft Visual C++ 2015-2022
+Redistributable (x64 or ARM64). The bundles ship only the OpenMP runtime
+(`vcomp140.dll` on x64, `libomp140.aarch64.dll` on arm64), not
+`msvcp140.dll` or `vcruntime140.dll`. `vulkan` also needs a GPU driver that
+provides the Vulkan loader, `vulkan-1.dll`, and `cuda` an NVIDIA driver,
+which provides `nvcuda.dll`. When one of those is missing, the module's
+startup diagnostic, which a failed model load reports, names it.
+
 ### When a requested backend is not bundled
 
 `ModelParams.preferredBackend` selects only a module the app has. With the
