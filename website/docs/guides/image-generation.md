@@ -199,7 +199,7 @@ With an empty shader cache on the M4 Max, `runtimeCapabilities()` stalled a
 10 ms timer on the calling isolate for the whole 16 s probe. During
 `checkRuntime()` the timer kept firing, with gaps of 13 to 31 ms in most
 runs. One pause remains: a garbage collection on the calling isolate waits
-while the probe isolate loads the runtime library (about 0.4 s), so an
+while the probe isolate loads the runtime library (0.4 to 0.5 s), so an
 allocating UI can pause once for up to that long (179 ms in the chat
 example's macOS E2E). Calls that overlap share one probe. The compiled
 library belongs to the process, so later probes, including

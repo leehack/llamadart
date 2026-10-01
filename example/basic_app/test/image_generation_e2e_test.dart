@@ -34,7 +34,7 @@ void main() {
     // A probe on this isolate would stall it for the whole probe: about 16 s
     // on an M4 Max run with MTL_SHADER_CACHE_SIZE=0 (no Metal shader cache).
     // With the cache warm the probe takes about 0.45 s, too close to the
-    // pause of up to 0.4 s when a garbage collection here waits for the probe
+    // pause of up to 0.5 s when a garbage collection here waits for the probe
     // isolate to load the library, so only the cold case is caught.
     expect(longestGap.gap, lessThan(const Duration(seconds: 2)));
   });

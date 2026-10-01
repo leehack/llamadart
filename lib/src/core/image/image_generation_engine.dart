@@ -184,10 +184,11 @@ class ImageGenerationEngine {
   ///
   /// On native platforms the probe runs in a short-lived isolate, so the
   /// first probe's GPU backend initialization (see [runtimeCapabilities])
-  /// does not freeze a UI isolate. Calls on this isolate, including [load],
-  /// share a probe that is still running, and all of them get its result or
-  /// its error. On the web it completes with the same unsupported result as
-  /// [runtimeCapabilities].
+  /// does not freeze a UI isolate; the calling isolate can still pause once
+  /// for up to about 0.5 s while the probe isolate loads the runtime library.
+  /// Calls on this isolate, including [load], share a probe that is still
+  /// running, and all of them get its result or its error. On the web it
+  /// completes with the same unsupported result as [runtimeCapabilities].
   static Future<ImageGenerationCapabilities> checkRuntime() async =>
       _capabilitiesOf(await _probeRuntime(_driver));
 

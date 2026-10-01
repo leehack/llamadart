@@ -52,6 +52,7 @@ void main() {
       const Duration(milliseconds: 10),
       (_) => tick(),
     );
+    addTearDown(ticker.cancel);
     final checking = Stopwatch()..start();
     await tester.pumpWidget(
       RepaintBoundary(
