@@ -34,6 +34,9 @@ For canonical full release notes, use:
 - Add an experimental image-generation screen to the Flutter chat example,
   with SDXS and SD-Turbo downloads
   ([#776](https://github.com/leehack/llamadart/issues/776)).
+- Add `ImageGenerationEngine.warmUp`, which compiles the GPU pipelines of
+  the first image ahead of time, and document first-image latency per
+  platform ([#790](https://github.com/leehack/llamadart/issues/790)).
 - Throw `LlamaUnsupportedException` for image or audio parts sent to a GGUF
   model with no projector loaded: native llama.cpp answered from the text
   alone, and WebGPU threw an untyped error surfaced as
