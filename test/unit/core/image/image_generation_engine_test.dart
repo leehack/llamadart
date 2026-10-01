@@ -461,7 +461,7 @@ void main() {
             (error) => error.message,
             'message',
             allOf(
-              contains('about 2.75 GiB'),
+              contains('about 3.00 GiB'),
               contains('2.00 GiB of weights'),
               contains('only 2.00 GiB is available'),
               contains('MemAvailable in /proc/meminfo'),
@@ -501,12 +501,46 @@ void main() {
       expect(driver.started, hasLength(2));
     });
 
-    test('the estimate adds a quarter and 256 MiB to the weights', () {
-      expect(estimateImageGenerationMemoryBytes(0), 256 << 20);
+    test('the estimate adds a quarter and 512 MiB to the weights', () {
+      expect(estimateImageGenerationMemoryBytes(0), 512 << 20);
       expect(
         estimateImageGenerationMemoryBytes(4 * _gib),
-        5 * _gib + (256 << 20),
+        5 * _gib + (512 << 20),
       );
+    });
+
+    test('asks for the budget of the device the model loads on', () async {
+      for (final (devices, device, expected) in [
+        (
+          'MTL0\tApple M4\nCPU\tApple M4\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.metal,
+        ),
+        (
+          'MTL0\tApple M4\nCPU\tApple M4\n',
+          ImageGenerationDevice.cpu,
+          ImageGenerationComputeDevice.cpu,
+        ),
+        (
+          'Vulkan0\tNVIDIA L4\nCPU\tHost\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.otherGpu,
+        ),
+        (
+          'CPU\tCortex-A78\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.cpu,
+        ),
+      ]) {
+        driver
+          ..status = _available(devices)
+          ..budgetDevices.clear();
+        await load(
+          ImageGenerationModel.sdxs(_model),
+          options: ImageGenerationOptions(device: device),
+        );
+        expect(driver.budgetDevices, [expected], reason: devices);
+      }
     });
   });
 
@@ -1096,8 +1130,15 @@ final class _FakeDriver implements ImageGenerationDriver {
   @override
   int? fileSize(String path) => sizes[path];
 
+  final List<ImageGenerationComputeDevice> budgetDevices = [];
+
   @override
-  ImageGenerationMemoryBudget? memoryBudget() => budget;
+  ImageGenerationMemoryBudget? memoryBudget(
+    ImageGenerationComputeDevice device,
+  ) {
+    budgetDevices.add(device);
+    return budget;
+  }
 
   @override
   Future<ImageGenerationSession> start(

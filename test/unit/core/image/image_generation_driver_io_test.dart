@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_driver_io.dart';
 
 void main() {
@@ -39,14 +40,22 @@ void main() {
     );
   });
 
-  test('reports a memory budget on macOS and Linux hosts', () {
-    final budget = createImageGenerationDriver().memoryBudget();
+  test('reports a CPU and Metal memory budget on macOS and Linux hosts, and '
+      'none for other GPUs', () {
+    final driver = createImageGenerationDriver();
 
-    if (Platform.isMacOS || Platform.isLinux) {
-      expect(budget, isNotNull);
-      expect(budget!.bytes, greaterThan(0));
-    } else if (Platform.isWindows) {
-      expect(budget, isNull);
+    for (final device in [
+      ImageGenerationComputeDevice.cpu,
+      ImageGenerationComputeDevice.metal,
+    ]) {
+      final budget = driver.memoryBudget(device);
+      if (Platform.isMacOS || Platform.isLinux) {
+        expect(budget, isNotNull);
+        expect(budget!.bytes, greaterThan(0));
+      } else if (Platform.isWindows) {
+        expect(budget, isNull);
+      }
     }
+    expect(driver.memoryBudget(ImageGenerationComputeDevice.otherGpu), isNull);
   });
 }

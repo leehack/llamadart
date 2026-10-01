@@ -14,7 +14,9 @@ void main() {
       contains('not available on the web'),
     );
     expect(driver.fileSize('/models/sdxs.gguf'), isNull);
-    expect(driver.memoryBudget(), isNull);
+    for (final device in ImageGenerationComputeDevice.values) {
+      expect(driver.memoryBudget(device), isNull);
+    }
     await expectLater(
       driver.start(
         const ImageGenerationSessionConfig(

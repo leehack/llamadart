@@ -118,7 +118,7 @@ class ImageModelProfile {
           'db169d69145ec4ff064e49d99c95fa05d3eb04ee453de35824a6d0f325513549',
     ),
     memoryNote:
-        'Needs about 2.8 GB of free memory; phones with less than 8 GB of '
+        'Needs about 3.1 GB of free memory; phones with less than 8 GB of '
         'RAM usually cannot load it.',
   );
 

@@ -70,10 +70,12 @@ description: >-
   `euler` with `sgmUniform`.
 - `load` checks every file exists and, unless
   `ImageGenerationOptions(checkMemory: false)`, refuses a model whose estimate
-  (file sizes plus a quarter plus 256 MiB) exceeds the device figure
-  (`MemAvailable` on Android/Linux, the app's limit on iOS, physical memory on
-  macOS; Windows is not checked) with `LlamaModelException`. SD-Turbo does not
-  fit 6 GB Android phones; offer SDXS there.
+  (file sizes plus a quarter plus 512 MiB, for the model's native size)
+  exceeds the device figure with `LlamaModelException`: `MemAvailable` on
+  Android/Linux CPU, the app's limit on iOS, physical memory on macOS, capped
+  on Metal by the GPU's recommended working set. Vulkan GPUs and Windows are
+  not checked (GPU memory is not reported). SD-Turbo does not fit 6 GB
+  Android phones; offer SDXS there.
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
   `flashAttention` and `vaeDirectConvolution` default to `null`, which picks

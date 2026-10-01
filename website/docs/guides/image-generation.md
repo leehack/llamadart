@@ -299,20 +299,32 @@ avoids by loading them eagerly.
 ## Memory check
 
 Before loading, the engine estimates the model's peak memory as its file
-sizes plus a quarter, plus 256 MiB, and compares that with what the device
-reports:
+sizes plus a quarter, plus 512 MiB, and compares that with the memory of the
+device the model loads on:
 
-| Platform | Compared with |
+| Platform and device | Compared with |
 | --- | --- |
-| Android, Linux | `MemAvailable` from `/proc/meminfo` |
-| iOS | The app's remaining memory limit (`os_proc_available_memory`) |
-| macOS | Physical memory |
-| Windows | Not checked |
+| Android, Linux: CPU | `MemAvailable` from `/proc/meminfo` |
+| iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
+| macOS: CPU | Physical memory |
+| macOS: Metal | Physical memory, capped at the GPU's `recommendedMaxWorkingSetSize` (about two thirds to three quarters of it) |
+| Linux, Windows: Vulkan | Not checked: the weights live in GPU memory, which the runtime does not report yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)) |
+| Windows: CPU | Not checked |
 
 A model that does not fit throws `LlamaModelException` naming both figures,
-instead of the system killing the app. The estimate is simple and matches the
-measured SDXS peaks (1.06 to 1.55 GB of process memory); set
+instead of the system killing the app. Set
 `ImageGenerationOptions(checkMemory: false)` to load anyway.
+
+The estimate does not depend on the image size. It covers the measured peaks
+at each model's native size with the automatic attention and VAE settings:
+SDXS used 1.30 GiB and SD-Turbo on the CPU 2.66 GiB of process memory on an
+M4 Max, and 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image stayed 0.5
+to 1.6 GiB under it on Metal. SD 3.5 Medium, whose single file decodes with
+the full VAE, peaked 0.3 GiB above it (11.6 against 11.3 GiB). Larger sizes
+need more, especially on the CPU: SD-Turbo at 1024x1024
+peaked at 4.7 GiB there. On a Vulkan GPU too small for the model,
+stable-diffusion.cpp keeps some weights in host memory, which is slower but
+does not fail the load.
 
 ## Errors
 
@@ -337,8 +349,9 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps); the task fails and the next request runs.
-- Windows is not memory-checked. Per-platform validation results, including
-  timings, are in [#779](https://github.com/leehack/llamadart/issues/779).
+- Windows and Vulkan GPUs are not memory-checked. Per-platform validation
+  results, including timings, are in
+  [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).
 

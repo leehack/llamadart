@@ -20,7 +20,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   int? fileSize(String path) => null;
 
   @override
-  ImageGenerationMemoryBudget? memoryBudget() => null;
+  ImageGenerationMemoryBudget? memoryBudget(
+    ImageGenerationComputeDevice device,
+  ) => null;
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>

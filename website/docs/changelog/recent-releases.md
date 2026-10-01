@@ -73,6 +73,10 @@ For canonical full release notes, use:
 - Name the missing VAE or text-encoder role when stable-diffusion.cpp
   rejects a split image checkpoint, instead of a generic load error
   ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Check image models against Metal's recommended GPU working set on macOS,
+  skip the check on Vulkan instead of comparing with host memory, and raise
+  the estimate's fixed allowance to 512 MiB so it covers measured CPU peaks
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
 
 ## 0.9.0
 

@@ -84,6 +84,20 @@ final class ImageGenerationSessionRequest {
 /// Memory the device can give an image model, and where the figure came from.
 typedef ImageGenerationMemoryBudget = ({int bytes, String source});
 
+/// Kind of device a model loads on, which decides whose memory bounds it.
+enum ImageGenerationComputeDevice {
+  /// The CPU: host memory.
+  cpu,
+
+  /// An Apple GPU through Metal: unified memory, bounded by Metal's
+  /// recommended working set.
+  metal,
+
+  /// Any other GPU, such as Vulkan: its own device memory, which the runtime
+  /// does not report.
+  otherGpu,
+}
+
 /// A loaded native image-generation context.
 abstract interface class ImageGenerationSession {
   /// Model family the runtime detected, such as `SD 2.x`.
@@ -120,9 +134,11 @@ abstract interface class ImageGenerationDriver {
   /// Size of the file at [path] in bytes, or `null` when it does not exist.
   int? fileSize(String path);
 
-  /// Memory available to a new model, or `null` when the platform does not
-  /// report it.
-  ImageGenerationMemoryBudget? memoryBudget();
+  /// Memory available to a new model on [device], or `null` when it is not
+  /// known.
+  ImageGenerationMemoryBudget? memoryBudget(
+    ImageGenerationComputeDevice device,
+  );
 
   /// Loads a native context.
   ///

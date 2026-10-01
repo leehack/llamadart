@@ -238,13 +238,14 @@ class ImageGenerationEngine {
   /// [checkRuntime].
   ///
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
-  /// platform reports it, the model's estimated memory
-  /// (a quarter more than its file sizes, plus 256 MiB) is compared
-  /// with the memory available: `MemAvailable` on Android and Linux, the
-  /// app's remaining memory limit on iOS, and physical memory on macOS.
-  /// Windows reports nothing and is not checked. A model that does not fit
-  /// throws [LlamaModelException] naming both figures, instead of letting the
-  /// system kill the app.
+  /// device's memory is known, the model's estimated memory (a quarter more
+  /// than its file sizes, plus 512 MiB) is compared with the memory
+  /// available: `MemAvailable` on Android and Linux, the app's remaining
+  /// memory limit on iOS, and physical memory on macOS, capped on Metal by
+  /// the GPU's recommended working set. Windows, and GPUs other than Metal
+  /// (whose device memory the runtime does not report), are not checked. A
+  /// model that does not fit throws [LlamaModelException] naming both
+  /// figures, instead of letting the system kill the app.
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see
@@ -284,7 +285,14 @@ class ImageGenerationEngine {
       weightBytes += size;
     }
     if (options.checkMemory) {
-      _checkMemory(weightBytes, driver.memoryBudget());
+      _checkMemory(
+        weightBytes,
+        driver.memoryBudget(switch (backendName) {
+          _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
+          _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
+          _ => ImageGenerationComputeDevice.cpu,
+        }),
+      );
     }
 
     final operation = _acquireOperation();
@@ -645,10 +653,14 @@ class ImageGenerationEngine {
 
 /// Estimated peak memory, in bytes, of an image model whose files total
 /// [weightBytes]: the weights plus a quarter for compute buffers, plus
-/// 256 MiB for the text encoder, VAE decode and runtime.
+/// 512 MiB for the VAE decode and the runtime.
 ///
-/// Measured peaks at 512x512 fit it: SDXS Q8 (651 MB of weights) used 1.06
-/// to 1.55 GB of process memory, including the app, on iPhone, Mac and
-/// Android.
+/// Measured process peaks at each model's native size, with the automatic
+/// attention and VAE settings, stay under it: SDXS Q8 (0.64 GiB of weights)
+/// used 1.30 GiB on Metal and SD-Turbo Q8 (1.88 GiB) 2.66 GiB on the CPU,
+/// both on an M4 Max; 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image
+/// on Metal stayed 0.5 to 1.6 GiB under it, while SD 3.5 Medium with its
+/// full VAE peaked 0.3 GiB above. Larger sizes than a model's native one
+/// need more, especially on the CPU.
 int estimateImageGenerationMemoryBytes(int weightBytes) =>
-    weightBytes + weightBytes ~/ 4 + (256 << 20);
+    weightBytes + weightBytes ~/ 4 + (512 << 20);
