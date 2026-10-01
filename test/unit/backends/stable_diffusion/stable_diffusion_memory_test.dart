@@ -9,6 +9,31 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 
+/// Whether `MTLCreateSystemDefaultDevice` returns a device, checked apart
+/// from the code under test.
+bool _hostHasMetalDevice() {
+  final metal = DynamicLibrary.open(
+    '/System/Library/Frameworks/Metal.framework/Metal',
+  );
+  final createDevice = metal
+      .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
+        'MTLCreateSystemDefaultDevice',
+      );
+  final release =
+      DynamicLibrary.open(
+        '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation',
+      ).lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('CFRelease');
+  final device = createDevice();
+  if (device == nullptr) {
+    return false;
+  }
+  release(device);
+  return true;
+}
+
 const _memInfo = '''
 MemTotal:        5750000 kB
 MemFree:          300000 kB
@@ -143,10 +168,16 @@ void main() {
       final metal = readStableDiffusionMemoryBudget(
         device: ImageGenerationComputeDevice.metal,
       );
-      if (Platform.isMacOS) {
-        expect(metal!.bytes, inInclusiveRange(1 << 30, physical!));
+      if (!Platform.isMacOS) {
+        return;
       }
-    });
+      expect(metal!.bytes, inInclusiveRange(1 << 30, physical!));
+      if (_hostHasMetalDevice()) {
+        // Apple GPUs recommend less than physical memory, so the cap applies.
+        expect(metal.source, "Metal's recommended GPU working set");
+        expect(metal.bytes, lessThan(physical));
+      }
+    }, skip: Platform.isMacOS ? false : 'macOS only');
   });
 
   group('stableDiffusionFileSize', () {

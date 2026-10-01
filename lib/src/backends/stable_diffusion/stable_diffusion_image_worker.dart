@@ -8,7 +8,7 @@ import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
 import 'stable_diffusion_bindings.dart' as sd;
-import 'stable_diffusion_sampling.dart';
+import 'stable_diffusion_params.dart';
 
 typedef _ProgressCallback = NativeCallable<sd.sd_progress_cb_tFunction>;
 
@@ -162,10 +162,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   }
 
   static Object? _unwrap(Object? reply) => switch (reply) {
-    _LoadFailure(:final message, :final details) => throw LlamaModelException(
-      message,
-      details,
-    ),
+    _LoadFailure(:final error) => throw error,
     null => throw LlamaStateException(
       'The image-generation worker exited unexpectedly.',
     ),
@@ -177,13 +174,14 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   };
 }
 
-/// Why stable-diffusion.cpp may have rejected [files], keyed by role as in
-/// `ImageGenerationModelFiles.paths`.
+/// The error for stable-diffusion.cpp rejecting [files], keyed by role as in
+/// `ImageGenerationModelFiles.paths`. Its details list the roles, never the
+/// paths.
 ///
 /// The runtime logs its reason only through a callback whose text is gone by
 /// the time Dart can read it (stable-diffusion-native#3), so the message
 /// names the file roles a split checkpoint is missing.
-String describeStableDiffusionLoadFailure(Map<String, String> files) {
+LlamaModelException stableDiffusionModelLoadFailure(Map<String, String> files) {
   final hints = <String>[
     if (!files.containsKey('model')) ...[
       if (!files.containsKey('vae') && !files.containsKey('taesd'))
@@ -196,7 +194,7 @@ String describeStableDiffusionLoadFailure(Map<String, String> files) {
             'Qwen-Image.',
     ],
   ];
-  return [
+  final message = [
     'stable-diffusion.cpp could not load the image model files.',
     if (hints.isEmpty)
       'Check that they form a checkpoint the runtime supports, that each '
@@ -207,6 +205,7 @@ String describeStableDiffusionLoadFailure(Map<String, String> files) {
       ...hints,
     'The runtime does not report its reason to llamadart yet.',
   ].join(' ');
+  return LlamaModelException(message, 'files: ${files.keys.join(', ')}');
 }
 
 const List<String> _textEncoderRoles = ['clipL', 'clipG', 't5xxl', 'llm'];
@@ -220,10 +219,9 @@ final class _Loaded {
 }
 
 final class _LoadFailure {
-  final String message;
-  final String? details;
+  final LlamaModelException error;
 
-  const _LoadFailure(this.message, [this.details]);
+  const _LoadFailure(this.error);
 }
 
 final class _Dispose {
@@ -258,18 +256,17 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
 
   final context = _withProgress(progress, () => _newContext(config));
   if (context == nullptr) {
-    replies.send(
-      _LoadFailure(
-        describeStableDiffusionLoadFailure(config.files),
-        'files: ${config.files.keys.join(', ')}',
-      ),
-    );
+    replies.send(_LoadFailure(stableDiffusionModelLoadFailure(config.files)));
     return;
   }
   if (!sd.sd_ctx_supports_image_generation(context)) {
     sd.free_sd_ctx(context);
     replies.send(
-      const _LoadFailure('The loaded model does not support image generation.'),
+      _LoadFailure(
+        LlamaModelException(
+          'The loaded model does not support image generation.',
+        ),
+      ),
     );
     return;
   }
@@ -313,33 +310,9 @@ T _withProgress<T>(
 
 Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
   return using((arena) {
-    Pointer<Char> text(String? value) =>
-        value == null ? nullptr : value.toNativeUtf8(allocator: arena).cast();
-
     final params = arena<sd.sd_ctx_params_t>();
     sd.sd_ctx_params_init(params);
-    final files = config.files;
-    params.ref
-      ..model_path = text(files['model'])
-      ..diffusion_model_path = text(files['diffusionModel'])
-      ..vae_path = text(files['vae'])
-      ..taesd_path = text(files['taesd'])
-      ..clip_l_path = text(files['clipL'])
-      ..clip_g_path = text(files['clipG'])
-      ..t5xxl_path = text(files['t5xxl'])
-      ..llm_path = text(files['llm'])
-      ..backend = text(config.backend)
-      ..diffusion_flash_attn = config.flashAttention
-      ..vae_conv_direct = config.vaeDirectConvolution
-      // Load every weight now, so the load pays for reading the files and
-      // progress during generation is only sampling. A model that does not
-      // fit the device does not fail the load: the runtime's automatic fit
-      // keeps some weights in host memory or on disk, which makes sampling
-      // slower.
-      ..eager_load = true;
-    if (config.threads > 0) {
-      params.ref.n_threads = config.threads;
-    }
+    applyStableDiffusionContextParams(params, config, arena);
     return sd.new_sd_ctx(params);
   });
 }
@@ -351,21 +324,7 @@ _Generated _generate(
   return using((arena) {
     final params = arena<sd.sd_img_gen_params_t>();
     sd.sd_img_gen_params_init(params);
-    params.ref
-      ..prompt = request.prompt.toNativeUtf8(allocator: arena).cast()
-      ..negative_prompt = request.negativePrompt
-          .toNativeUtf8(allocator: arena)
-          .cast()
-      ..width = request.width
-      ..height = request.height
-      ..seed = request.seed
-      ..batch_count = request.count;
-    params.ref.sample_params
-      ..sample_steps = request.steps
-      ..guidance.txt_cfg = request.guidanceScale
-      ..sample_method = stableDiffusionSampleMethod(request.sampler)
-      ..scheduler = stableDiffusionScheduler(request.scheduler)
-      ..flow_shift = stableDiffusionFlowShift(request.flowShift);
+    applyStableDiffusionGenerationParams(params, request, arena);
 
     final imagesOut = arena<Pointer<sd.sd_image_t>>();
     final countOut = arena<Int>();

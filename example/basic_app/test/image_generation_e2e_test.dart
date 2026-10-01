@@ -70,6 +70,35 @@ void main() {
     expect(first, lessThan(second * 2 + const Duration(milliseconds: 250)));
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 
+  test('a rejected split checkpoint names the roles it lacks', () async {
+    // SDXS is a single-file checkpoint; as diffusionModel alone it has no VAE
+    // or text encoder, so the runtime rejects it.
+    await expectLater(
+      ImageGenerationEngine.load(
+        ImageGenerationModel.custom(
+          ImageGenerationModelFiles(diffusionModel: sdxsPath!),
+        ),
+      ),
+      throwsA(
+        isA<LlamaModelException>()
+            .having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('needs a vae or taesd file'),
+                contains('needs its text encoders'),
+              ),
+            )
+            .having(
+              (error) => error.details,
+              'details',
+              'files: diffusionModel',
+            )
+            .having((error) => '$error', 'toString', isNot(contains(sdxsPath))),
+      ),
+    );
+  }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
   group('SDXS', () {
     late ImageGenerationEngine engine;
 

@@ -104,8 +104,9 @@ description: >-
   `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
   per device: flash attention on for the CPU and Metal, off on Vulkan; direct
   VAE convolutions on except on Metal (about 7 times slower there) and with a
-  tiny autoencoder. Leave them `null` unless measuring; neither changes the
-  image beyond rounding.
+  tiny autoencoder. Leave them `null` unless measuring. Direct VAE
+  convolutions leave the image identical; flash attention changes pixels
+  slightly.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()`, `runtimeCapabilities()`
   or `load()`) compiles the Metal library on Apple (about 16 s on an M4 Max
