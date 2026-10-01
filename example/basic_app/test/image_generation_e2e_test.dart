@@ -2,6 +2,7 @@
 @Timeout(Duration(minutes: 10))
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
@@ -19,7 +20,27 @@ void main() {
     Directory(outputDir).createSync(recursive: true);
   }
 
-  // Runs first, so the process has not compiled any GPU pipeline yet.
+  // Runs first, so this is the process's first runtime probe.
+  test('checkRuntime keeps the calling isolate responsive', () async {
+    final longestGap = await _longestEventLoopGap(
+      ImageGenerationEngine.checkRuntime,
+    );
+
+    print(
+      'checkRuntime: ${longestGap.elapsed.inMilliseconds} ms; longest event '
+      'loop gap ${longestGap.gap.inMilliseconds} ms',
+    );
+    expect(longestGap.result.isSupported, isTrue);
+    // A probe on this isolate would stall it for the whole probe: about 16 s
+    // on an M4 Max run with MTL_SHADER_CACHE_SIZE=0 (no Metal shader cache).
+    // With the cache warm the probe takes about 0.45 s, too close to the
+    // pause of up to 0.4 s when a garbage collection here waits for the probe
+    // isolate to load the library, so only the cold case is caught.
+    expect(longestGap.gap, lessThan(const Duration(seconds: 2)));
+  });
+
+  // Runs before any generation, so the process has not compiled any GPU
+  // pipeline yet.
   test('after warmUp the first image is about as fast as a warm one', () async {
     final engine = await ImageGenerationEngine.load(
       ImageGenerationModel.sdxs(sdxsPath!),
@@ -222,4 +243,31 @@ void main() {
     await cancelled;
     expect(engine.capabilities.isSupported, isFalse);
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+}
+
+/// Runs [body] while a 10 ms periodic timer measures the longest time the
+/// event loop went without running it.
+Future<({T result, Duration elapsed, Duration gap})> _longestEventLoopGap<T>(
+  Future<T> Function() body,
+) async {
+  var longest = Duration.zero;
+  final sinceTick = Stopwatch()..start();
+  void tick() {
+    if (sinceTick.elapsed > longest) {
+      longest = sinceTick.elapsed;
+    }
+    sinceTick.reset();
+  }
+
+  final timer = Timer.periodic(const Duration(milliseconds: 10), (_) => tick());
+  final elapsed = Stopwatch()..start();
+  try {
+    final result = await body();
+    // Counts a stall at the end, whose overdue tick would not run before the
+    // timer is cancelled.
+    tick();
+    return (result: result, elapsed: elapsed.elapsed, gap: longest);
+  } finally {
+    timer.cancel();
+  }
 }

@@ -1,9 +1,10 @@
 @Tags(['local-only', 'e2e'])
 @Timeout(Duration(minutes: 40))
 /// Local-only device check of the image screen with the real
-/// stable_diffusion runtime: downloads SDXS-512 (683 MB) through the screen
-/// when it is not installed, generates a seeded 512x512 image, and writes the
-/// PNG and a capture of the screen to the app's temporary directory.
+/// stable_diffusion runtime: checks that the runtime probe leaves the UI
+/// isolate responsive, downloads SDXS-512 (683 MB) through the screen when it
+/// is not installed, generates a seeded 512x512 image, and writes the PNG and
+/// a capture of the screen to the app's temporary directory.
 ///
 /// ```bash
 /// cd example/chat_app
@@ -12,6 +13,7 @@
 /// ```
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -37,6 +39,20 @@ void main() {
     final provider = ImageGenerationProvider();
     addTearDown(provider.dispose);
     final captureKey = GlobalKey();
+    var longestGap = Duration.zero;
+    final sinceTick = Stopwatch()..start();
+    void tick() {
+      if (sinceTick.elapsed > longestGap) {
+        longestGap = sinceTick.elapsed;
+      }
+      sinceTick.reset();
+    }
+
+    final ticker = Timer.periodic(
+      const Duration(milliseconds: 10),
+      (_) => tick(),
+    );
+    final checking = Stopwatch()..start();
     await tester.pumpWidget(
       RepaintBoundary(
         key: captureKey,
@@ -53,8 +69,17 @@ void main() {
       ),
     );
     await _pumpUntil(tester, () => provider.isInitialized);
+    tick();
+    ticker.cancel();
     expect(provider.isSupported, isTrue, reason: provider.unsupportedReason);
-    debugPrint('E2E image runtime backend: ${provider.runtimeBackend}');
+    debugPrint(
+      'E2E image runtime backend: ${provider.runtimeBackend}; check '
+      '${checking.elapsedMilliseconds} ms, longest UI isolate gap '
+      '${longestGap.inMilliseconds} ms',
+    );
+    // The first runtime probe can take about 16 s with an empty Metal shader
+    // cache (MTL_SHADER_CACHE_SIZE=0 on macOS); it must not stall the UI.
+    expect(longestGap, lessThan(const Duration(seconds: 2)));
 
     const profile = ImageModelProfile.sdxs;
     if (!provider.isInstalled(profile)) {
