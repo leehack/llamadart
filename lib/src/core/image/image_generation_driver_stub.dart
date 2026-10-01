@@ -14,6 +14,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
   StableDiffusionRuntimeStatus probe() => probeStableDiffusionRuntime();
 
   @override
+  Future<StableDiffusionRuntimeStatus> probeInBackground() async => probe();
+
+  @override
   int? fileSize(String path) => null;
 
   @override

@@ -91,6 +91,11 @@ abstract interface class ImageGenerationDriver {
   /// Probes the stable_diffusion runtime without loading a model.
   StableDiffusionRuntimeStatus probe();
 
+  /// [probe] without blocking the calling isolate: on native platforms it
+  /// runs in a short-lived isolate, because the first probe in a process can
+  /// compile GPU shaders for seconds.
+  Future<StableDiffusionRuntimeStatus> probeInBackground();
+
   /// Size of the file at [path] in bytes, or `null` when it does not exist.
   int? fileSize(String path);
 

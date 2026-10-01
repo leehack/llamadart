@@ -27,6 +27,18 @@ void main() {
     expect(status.unavailableReason?.message, contains('stable_diffusion'));
   });
 
+  test('probes in a background isolate with the same result', () async {
+    final driver = createImageGenerationDriver();
+
+    final status = await driver.probeInBackground();
+
+    expect(status.isAvailable, isFalse);
+    expect(
+      status.unavailableReason?.message,
+      driver.probe().unavailableReason?.message,
+    );
+  });
+
   test('reports a memory budget on macOS and Linux hosts', () {
     final budget = createImageGenerationDriver().memoryBudget();
 
