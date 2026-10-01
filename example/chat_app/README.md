@@ -292,7 +292,7 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   the controls on the web, on targets without a `stable_diffusion` build, on
   CPUs without the required instructions, and when a library the runtime
   needs is missing: the Vulkan loader on Linux or Windows, or the Visual C++
-  2015-2022 runtime on Windows. It is the device QA path for
+  runtime on Windows. It is the device QA path for
   [#779](https://github.com/leehack/llamadart/issues/779): run
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
   to download SDXS, generate a seeded image, and save the PNG and a screen

@@ -73,6 +73,9 @@ strategies it runs.
 - Flutter SDK `>=3.38.0` for Flutter apps
 - iOS deployment target `16.4` or newer for Flutter iOS apps
 - macOS deployment target `14.0` or newer for Flutter macOS apps
+- Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
+  architecture (x64 or arm64) on every machine that runs it, at least as new
+  as the build tools of the bundled DLLs; stock Windows Server lacks it
 
 Consumers do not need a local C++ toolchain. Native runtime archives are
 resolved by the package build hook on first build or run.

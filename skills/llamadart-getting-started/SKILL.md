@@ -42,6 +42,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `Exception`.
 - Platform setup the code cannot do for you:
   - Flutter iOS needs deployment target 16.4+, macOS 14.0+.
+  - Windows machines that run the app need the latest Microsoft Visual C++
+    v14 Redistributable (x64 or arm64), at least as new as the build tools of
+    the bundled DLLs; stock Windows Server lacks it, and llama.cpp then fails
+    to load with an error naming the missing DLLs.
   - Web apps must add the WebGPU bridge script to `web/index.html`; the package
     does not inject it.
   - To ship one runtime family only, set
