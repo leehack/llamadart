@@ -324,8 +324,10 @@ avoids by loading them eagerly.
   once.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
   `generateImage` then throws `LlamaStateException`.
-- Free the model before the app quits: on macOS Metal, quitting with a model
-  still loaded aborts the process. Flutter desktop apps do not run
+- Free the model before a Flutter app quits: on macOS Metal, quitting with a
+  model still loaded aborts the process. A Dart program that ends with the
+  model loaded frees it on the way out and does not abort, but a Flutter
+  app's quit skips that cleanup. Flutter desktop apps do not run
   `State.dispose` on quit, so await `dispose()` in
   `AppLifecycleListener.onExitRequested`. If `ImageGenerationEngine.load` is
   still running, await it there and dispose the engine it returns. If the

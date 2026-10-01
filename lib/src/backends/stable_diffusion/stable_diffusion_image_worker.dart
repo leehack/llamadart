@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
+import '../isolate_shutdown_releases.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_params.dart';
 
@@ -19,10 +20,13 @@ typedef _ProgressCallback = NativeCallable<sd.sd_progress_cb_tFunction>;
 /// isolate, which is safe to invoke from any runtime thread. Cancellation
 /// calls `sd_cancel_generation` from the calling isolate, since the worker is
 /// blocked inside `generate_image`; the runtime flag is atomic.
+///
+/// Only a pending reply keeps the calling isolate alive, so a program that
+/// ends with a model loaded exits; the worker then frees the model as it shuts
+/// down.
 final class StableDiffusionImageWorker implements ImageGenerationSession {
   final Isolate _isolate;
-  final ReceivePort _replies;
-  final StreamIterator<Object?> _replyIterator;
+  final _Replies _replies;
   final SendPort _commands;
   final _ProgressCallback _progress;
   final Pointer<sd.sd_ctx_t> _context;
@@ -36,7 +40,6 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   StableDiffusionImageWorker._(
     this._isolate,
     this._replies,
-    this._replyIterator,
     this._commands,
     this._progress,
     this._context,
@@ -54,9 +57,8 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     final progress = _ProgressCallback.listener(
       (int step, int steps, double _, Pointer<Void> _) =>
           route?.call(step, steps),
-    );
-    final replies = ReceivePort('llamadart-image-generation-replies');
-    final iterator = StreamIterator<Object?>(replies);
+    )..keepIsolateAlive = false;
+    final replies = _Replies();
     Isolate? isolate;
     try {
       isolate = await Isolate.spawn(
@@ -66,11 +68,10 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
         onExit: replies.sendPort,
         onError: replies.sendPort,
       );
-      final loaded = _unwrap(await _next(iterator)) as _Loaded;
+      final loaded = _unwrap(await replies.next()) as _Loaded;
       final worker = StableDiffusionImageWorker._(
         isolate,
         replies,
-        iterator,
         loaded.commands,
         progress,
         Pointer.fromAddress(loaded.context),
@@ -80,7 +81,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       return worker;
     } catch (_) {
       isolate?.kill(priority: Isolate.immediate);
-      await iterator.cancel();
+      await replies.close();
       progress.close();
       rethrow;
     }
@@ -136,8 +137,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       }
     } finally {
       _isolate.kill(priority: Isolate.immediate);
-      await _replyIterator.cancel();
-      _replies.close();
+      await _replies.close();
       // The worker cleared the callback before replying, so nothing calls it.
       _progress.close();
     }
@@ -147,18 +147,11 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   /// exited, so later calls fail at once instead of waiting for a reply.
   Future<Object?> _reply() async {
     try {
-      return _unwrap(await _next(_replyIterator));
+      return _unwrap(await _replies.next());
     } on LlamaStateException {
       _stopped = true;
       rethrow;
     }
-  }
-
-  static Future<Object?> _next(StreamIterator<Object?> replies) async {
-    if (!await replies.moveNext()) {
-      throw LlamaStateException('The image-generation worker stopped.');
-    }
-    return replies.current;
   }
 
   static Object? _unwrap(Object? reply) => switch (reply) {
@@ -210,6 +203,44 @@ LlamaModelException stableDiffusionModelLoadFailure(Map<String, String> files) {
 
 const List<String> _textEncoderRoles = ['clipL', 'clipG', 't5xxl', 'llm'];
 
+/// The worker's replies, which keep the calling isolate alive only while one
+/// is awaited.
+final class _Replies {
+  _Replies() {
+    _port = RawReceivePort(_messages.add, 'llamadart-image-generation-replies')
+      ..keepIsolateAlive = false;
+  }
+
+  final StreamController<Object?> _messages = StreamController();
+  late final StreamIterator<Object?> _iterator = StreamIterator(
+    _messages.stream,
+  );
+  late final RawReceivePort _port;
+  int _waiting = 0;
+
+  SendPort get sendPort => _port.sendPort;
+
+  Future<Object?> next() async {
+    _waiting++;
+    _port.keepIsolateAlive = true;
+    try {
+      if (!await _iterator.moveNext()) {
+        throw LlamaStateException('The image-generation worker stopped.');
+      }
+      return _iterator.current;
+    } finally {
+      if (--_waiting == 0) {
+        _port.keepIsolateAlive = false;
+      }
+    }
+  }
+
+  Future<void> close() async {
+    _port.close();
+    await _iterator.cancel();
+  }
+}
+
 final class _Loaded {
   final SendPort commands;
   final int context;
@@ -260,6 +291,7 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
     return;
   }
   if (!sd.sd_ctx_supports_image_generation(context)) {
+    IsolateShutdownReleases.current.release(context);
     sd.free_sd_ctx(context);
     replies.send(
       _LoadFailure(
@@ -283,10 +315,22 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
   commands.listen((command) {
     switch (command) {
       case ImageGenerationSessionRequest():
-        replies.send(
-          _withProgress(progress, () => _generate(context, command)),
-        );
+        final _Generated generated;
+        try {
+          generated = _withProgress(
+            progress,
+            () => _generate(context, command),
+          );
+        } catch (_) {
+          // The error ends this isolate, and the calling isolate may still
+          // call `sd_cancel_generation` on the context: leak it rather than
+          // free it at shutdown.
+          IsolateShutdownReleases.current.release(context);
+          rethrow;
+        }
+        replies.send(generated);
       case _Dispose():
+        IsolateShutdownReleases.current.release(context);
         sd.free_sd_ctx(context);
         commands.close();
         replies.send(const _Disposed());
@@ -313,7 +357,15 @@ Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
     final params = arena<sd.sd_ctx_params_t>();
     sd.sd_ctx_params_init(params);
     applyStableDiffusionContextParams(params, config, arena);
-    return sd.new_sd_ctx(params);
+    final context = sd.new_sd_ctx(params);
+    IsolateShutdownReleases.current.hold(
+      ShutdownStage.model,
+      Native.addressOf<NativeFunction<Void Function(Pointer<sd.sd_ctx_t>)>>(
+        sd.free_sd_ctx,
+      ).cast(),
+      context,
+    );
+    return context;
   });
 }
 

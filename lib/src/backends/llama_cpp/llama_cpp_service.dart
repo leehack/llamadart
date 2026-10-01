@@ -9,6 +9,7 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../backend.dart';
+import '../isolate_shutdown_releases.dart';
 import '../windows_runtime_libraries.dart';
 import '../../core/decision/decision_decoder.dart';
 import '../../core/exceptions.dart';
@@ -2008,6 +2009,11 @@ class LlamaCppService {
     Pointer<llama_model> modelPointer, {
     required String sourcePath,
   }) {
+    IsolateShutdownReleases.current.hold(
+      ShutdownStage.model,
+      _llamaModelFreeAddress,
+      modelPointer,
+    );
     try {
       final vocab = llama_model_get_vocab(modelPointer);
       return _LlamaModelWrapper(
@@ -2017,6 +2023,7 @@ class LlamaCppService {
         suppressedTokens: readModelSuppressTokens(vocab),
       );
     } catch (_) {
+      IsolateShutdownReleases.current.release(modelPointer);
       llama_model_free(modelPointer);
       rethrow;
     }
@@ -3756,6 +3763,11 @@ class LlamaCppService {
     if (ctxPtr == nullptr) {
       throw Exception("Failed to create context");
     }
+    IsolateShutdownReleases.current.hold(
+      ShutdownStage.context,
+      _llamaFreeAddress,
+      ctxPtr,
+    );
 
     final handle = _getHandle();
     _contexts[handle] = _LlamaContextWrapper(ctxPtr, model);
@@ -4409,6 +4421,11 @@ class LlamaCppService {
         if (speculativeSession == nullptr) {
           throw _speculativeInitFailure(speculativeConfig);
         }
+        IsolateShutdownReleases.current.hold(
+          ShutdownStage.session,
+          speculativeApi.freeAddress,
+          speculativeSession,
+        );
         if (speculativeApi.needEmbd(speculativeSession)) {
           llama_set_embeddings(ctx.pointer, true);
         }
@@ -4524,6 +4541,7 @@ class LlamaCppService {
       }
     } finally {
       if (speculativeSession != nullptr) {
+        IsolateShutdownReleases.current.release(speculativeSession);
         speculativeApi?.free(speculativeSession);
       }
       if (sampler != nullptr) llama_sampler_free(sampler);
@@ -7400,7 +7418,16 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_init_from_file(mmProjPath, model, ctxParams);
+        final free = Native.addressOf<NativeFunction<_MtmdFreeNative>>(
+          mtmd_free,
+        ).cast<NativeFinalizerFunction>();
+        final context = mtmd_init_from_file(mmProjPath, model, ctxParams);
+        IsolateShutdownReleases.current.hold(
+          ShutdownStage.modelUser,
+          free,
+          context,
+        );
+        return context;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -7411,10 +7438,17 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_init_from_file'),
       );
     }
-    return fallback.initFromFile(mmProjPath, model, ctxParams);
+    final context = fallback.initFromFile(mmProjPath, model, ctxParams);
+    IsolateShutdownReleases.current.hold(
+      ShutdownStage.modelUser,
+      fallback.freeAddress,
+      context,
+    );
+    return context;
   }
 
   void _mtmdFree(Pointer<mtmd_context> ctx) {
+    IsolateShutdownReleases.current.release(ctx);
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         mtmd_free(ctx);
@@ -8220,6 +8254,11 @@ class LlamaCppService {
           'Failed to create the decision encoder context of $maxTokens tokens.',
         );
       }
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.context,
+        _llamaFreeAddress,
+        context,
+      );
       try {
         tokenLimit = llama_n_ubatch(context);
         checkDecisionEncoderContext(
@@ -8235,6 +8274,7 @@ class LlamaCppService {
           opOffload: device != null && ctxParams.op_offload,
         );
       } catch (_) {
+        IsolateShutdownReleases.current.release(context);
         llama_free(context);
         rethrow;
       }
@@ -8792,6 +8832,11 @@ class LlamaCppService {
         );
       }
       task = api.init(context.pointer, mtmd, initStatus);
+      IsolateShutdownReleases.current.hold(
+        ShutdownStage.session,
+        api.freeAddress,
+        task,
+      );
       if (task == nullptr) {
         _throwForTtsStatus(
           llama_dart_tts_status.fromValue(initStatus.value),
@@ -8929,6 +8974,7 @@ class LlamaCppService {
         try {
           api.reset(task);
         } catch (_) {}
+        IsolateShutdownReleases.current.release(task);
         api.free(task);
       }
       _activeTts = nullptr;
@@ -9047,6 +9093,7 @@ class _TtsApi {
   final _TtsGetInfoDart getInfo;
   final _TtsInitDart init;
   final _TtsFreeDart free;
+  final Pointer<NativeFinalizerFunction> freeAddress;
   final _TtsStartDart start;
   final _TtsStepDart step;
   final _TtsCancelDart cancel;
@@ -9063,6 +9110,7 @@ class _TtsApi {
     required this.getInfo,
     required this.init,
     required this.free,
+    required this.freeAddress,
     required this.start,
     required this.step,
     required this.cancel,
@@ -9096,6 +9144,7 @@ class _TtsApi {
         free: library.lookupFunction<_TtsFreeNative, _TtsFreeDart>(
           'llama_dart_tts_free',
         ),
+        freeAddress: library.lookup('llama_dart_tts_free'),
         start: library.lookupFunction<_TtsStartNative, _TtsStartDart>(
           'llama_dart_tts_start',
         ),
@@ -9186,6 +9235,7 @@ class _ReasoningBudgetApi {
 class _SpeculativeApi {
   final _LlamaDartSpeculativeInitDart init;
   final _LlamaDartSpeculativeFreeDart free;
+  final Pointer<NativeFinalizerFunction> freeAddress;
   final _LlamaDartSpeculativeGetDraftContextDart getDraftContext;
   final _LlamaDartSpeculativeNeedEmbdDart needEmbd;
   final _LlamaDartSpeculativeNeedEmbdDart needEmbdNextn;
@@ -9198,6 +9248,7 @@ class _SpeculativeApi {
   const _SpeculativeApi({
     required this.init,
     required this.free,
+    required this.freeAddress,
     required this.getDraftContext,
     required this.needEmbd,
     required this.needEmbdNextn,
@@ -9212,6 +9263,10 @@ class _SpeculativeApi {
     final api = _SpeculativeApi(
       init: llama_dart_speculative_init,
       free: llama_dart_speculative_free,
+      freeAddress:
+          Native.addressOf<NativeFunction<_LlamaDartSpeculativeFreeNative>>(
+            llama_dart_speculative_free,
+          ).cast(),
       getDraftContext: llama_dart_speculative_get_draft_context,
       needEmbd: llama_dart_speculative_need_embd,
       needEmbdNextn: llama_dart_speculative_need_embd_nextn,
@@ -9230,6 +9285,10 @@ class _SpeculativeApi {
     return _SpeculativeApi(
       init: _llamadartWrapperSpeculativeInit,
       free: _llamadartWrapperSpeculativeFree,
+      freeAddress:
+          Native.addressOf<NativeFunction<_LlamaDartSpeculativeFreeNative>>(
+            _llamadartWrapperSpeculativeFree,
+          ).cast(),
       getDraftContext: _llamadartWrapperSpeculativeGetDraftContext,
       needEmbd: _llamadartWrapperSpeculativeNeedEmbd,
       needEmbdNextn: _llamadartWrapperSpeculativeNeedEmbdNextn,
@@ -9288,6 +9347,7 @@ class _SpeculativeApi {
               _LlamaDartSpeculativeFreeNative,
               _LlamaDartSpeculativeFreeDart
             >('llama_dart_speculative_free'),
+        freeAddress: library.lookup('llama_dart_speculative_free'),
         getDraftContext: library
             .lookupFunction<
               _LlamaDartSpeculativeGetDraftContextNative,
@@ -9392,6 +9452,7 @@ class _MtmdApi {
   final _MtmdContextParamsDefaultDart contextParamsDefault;
   final _MtmdInitFromFileDart initFromFile;
   final _MtmdFreeDart free;
+  final Pointer<NativeFinalizerFunction> freeAddress;
   final _MtmdInputChunksInitDart inputChunksInit;
   final _MtmdInputChunksFreeDart inputChunksFree;
   final _MtmdHelperInitOptDefaultDart helperInitOptDefault;
@@ -9413,6 +9474,7 @@ class _MtmdApi {
     required this.contextParamsDefault,
     required this.initFromFile,
     required this.free,
+    required this.freeAddress,
     required this.inputChunksInit,
     required this.inputChunksFree,
     required this.helperInitOptDefault,
@@ -9473,6 +9535,7 @@ class _MtmdApi {
         free: library.lookupFunction<_MtmdFreeNative, _MtmdFreeDart>(
           'mtmd_free',
         ),
+        freeAddress: library.lookup('mtmd_free'),
         inputChunksInit: library
             .lookupFunction<
               _MtmdInputChunksInitNative,
@@ -9537,6 +9600,16 @@ class _MtmdApi {
 
 // --- Native Wrappers ---
 
+final Pointer<NativeFinalizerFunction> _llamaFreeAddress =
+    Native.addressOf<NativeFunction<Void Function(Pointer<llama_context>)>>(
+      llama_free,
+    ).cast();
+
+final Pointer<NativeFinalizerFunction> _llamaModelFreeAddress =
+    Native.addressOf<NativeFunction<Void Function(Pointer<llama_model>)>>(
+      llama_model_free,
+    ).cast();
+
 class _LlamaLoraWrapper {
   final Pointer<llama_adapter_lora> pointer;
   _LlamaLoraWrapper(this.pointer);
@@ -9573,6 +9646,7 @@ class _DecisionHead {
     try {
       runtime.dispose();
     } finally {
+      IsolateShutdownReleases.current.release(context);
       llama_free(context);
     }
   }
@@ -9612,6 +9686,7 @@ class _LlamaModelWrapper {
     required this.suppressedTokens,
   });
   void dispose() {
+    IsolateShutdownReleases.current.release(pointer);
     llama_model_free(pointer);
   }
 }
@@ -9667,6 +9742,7 @@ class _LlamaContextWrapper {
   void dispose() {
     cachedPromptTokens = null;
     kvFromStateLoad = false;
+    IsolateShutdownReleases.current.release(pointer);
     llama_free(pointer);
   }
 }

@@ -155,7 +155,10 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   all heads first.
 - Teardown order per head: sched synchronize, sched free, weights buffer free,
   `ggml_free`, backends free, then `llama_free` on the private context. A live
-  Metal buffer at process exit trips `ggml_metal_rsets_free`'s assert.
+  Metal buffer at process exit trips `ggml_metal_rsets_free`'s assert. The
+  sched, weights buffer, backends and context are also held in
+  `IsolateShutdownReleases`, which frees them if the worker isolate shuts down
+  first; each free releases its hold first.
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
 resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU
@@ -398,7 +401,8 @@ been measured on this set.
 
 On Metal, disposing the engine with a head still loaded exits cleanly; skipping
 the head frees in `freeModel` and `dispose` makes the same exit abort in
-`ggml_metal_rsets_free`.
+`ggml_metal_rsets_free` when the process exits without shutting the worker
+isolate down, as a Flutter app's AppKit quit does.
 
 ### Web check
 

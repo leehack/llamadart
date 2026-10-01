@@ -315,6 +315,47 @@ final class GgmlGraphApi {
   final void Function(ggml_backend_sched_t sched) schedFree;
 }
 
+/// The ggml functions that free a scheduler, a buffer and a backend, for
+/// `IsolateShutdownReleases`; from the same assets as [GgmlGraphApi.current].
+final ({
+  Pointer<NativeFinalizerFunction> schedFree,
+  Pointer<NativeFinalizerFunction> bufferFree,
+  Pointer<NativeFinalizerFunction> backendFree,
+})
+ggmlFreeAddresses = Platform.isWindows
+    ? (
+        schedFree:
+            Native.addressOf<
+                  NativeFunction<Void Function(ggml_backend_sched_t)>
+                >(_windowsSchedFree)
+                .cast(),
+        bufferFree:
+            Native.addressOf<
+                  NativeFunction<Void Function(ggml_backend_buffer_t)>
+                >(_windowsBufferFree)
+                .cast(),
+        backendFree:
+            Native.addressOf<NativeFunction<Void Function(ggml_backend_t)>>(
+              _windowsBackendFree,
+            ).cast(),
+      )
+    : (
+        schedFree:
+            Native.addressOf<
+                  NativeFunction<Void Function(ggml_backend_sched_t)>
+                >(ggml_backend_sched_free)
+                .cast(),
+        bufferFree:
+            Native.addressOf<
+                  NativeFunction<Void Function(ggml_backend_buffer_t)>
+                >(ggml_backend_buffer_free)
+                .cast(),
+        backendFree:
+            Native.addressOf<NativeFunction<Void Function(ggml_backend_t)>>(
+              ggml_backend_free,
+            ).cast(),
+      );
+
 final GgmlGraphApi _bindingsApi = GgmlGraphApi._(
   init: ggml_init,
   free: ggml_free,

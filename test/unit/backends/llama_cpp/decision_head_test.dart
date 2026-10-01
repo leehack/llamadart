@@ -8,6 +8,7 @@ import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
 import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
@@ -250,6 +251,37 @@ void main() {
         'free',
         'backendFree',
       ]);
+    });
+
+    test('holds what create made for isolate shutdown until dispose', () {
+      final releases = IsolateShutdownReleases.current;
+      final before = releases.debugHeldCountForTesting;
+      final runtime = DecisionHeadRuntime.create(
+        weightsOf(SyntheticDecisionHead(d: 64, layers: 1, seed: 27)),
+        cpuThreads: 1,
+        opOffload: false,
+      );
+
+      // The CPU backend, the weights buffer and the scheduler.
+      expect(releases.debugHeldCountForTesting, before + 3);
+      runtime.dispose();
+      expect(releases.debugHeldCountForTesting, before);
+    });
+
+    test('create releases what it held when the scheduler fails', () {
+      final releases = IsolateShutdownReleases.current;
+      final before = releases.debugHeldCountForTesting;
+
+      expect(
+        () => DecisionHeadRuntime.create(
+          weightsOf(SyntheticDecisionHead(d: 64, layers: 1, seed: 28)),
+          cpuThreads: 1,
+          opOffload: false,
+          api: _GgmlLedger(failSched: true).api,
+        ),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(releases.debugHeldCountForTesting, before);
     });
 
     test('create frees what it made when the scheduler fails', () {

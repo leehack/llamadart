@@ -8,6 +8,7 @@ import '../../core/decision/decision_decoder.dart';
 import '../../core/decision/decision_question.dart';
 import '../../core/exceptions.dart';
 import '../backend.dart';
+import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
 import 'ggml_graph_api.dart';
 import 'safetensors.dart';
@@ -289,6 +290,8 @@ final class DecisionHeadRuntime {
     bool opOffload,
   ) {
     final api = _api;
+    final releases = IsolateShutdownReleases.current;
+    final frees = ggmlFreeAddresses;
     final cpuDevice = api.devByType(
       ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
     );
@@ -304,9 +307,11 @@ final class DecisionHeadRuntime {
         'Could not start the ggml CPU backend for the decision head.',
       );
     }
+    releases.hold(ShutdownStage.backend, frees.backendFree, _cpuBackend);
     _setCpuThreads(cpuThreads);
     if (device != null && device != nullptr && device != cpuDevice) {
       _deviceBackend = api.devInit(device, nullptr);
+      releases.hold(ShutdownStage.backend, frees.backendFree, _deviceBackend);
       if (_deviceBackend == nullptr) {
         throw LlamaModelException(
           'Could not start the ggml backend of the model device for the '
@@ -385,6 +390,7 @@ final class DecisionHeadRuntime {
     _scorerOutBias = vector('scorer.3.bias', 1);
 
     _weightsBuffer = api.allocCtxTensors(_weightsContext, primary);
+    releases.hold(ShutdownStage.modelUser, frees.bufferFree, _weightsBuffer);
     if (_weightsBuffer == nullptr) {
       throw LlamaModelException(
         'Could not allocate decision head weights on $_deviceName.',
@@ -429,6 +435,7 @@ final class DecisionHeadRuntime {
     } finally {
       calloc.free(backends);
     }
+    releases.hold(ShutdownStage.scheduler, frees.schedFree, _sched);
     if (_sched == nullptr) {
       throw LlamaModelException(
         'Could not create the ggml scheduler for the decision head on '
@@ -701,12 +708,15 @@ final class DecisionHeadRuntime {
     if (_disposed) return;
     _disposed = true;
     final api = _api;
+    final releases = IsolateShutdownReleases.current;
     if (_sched != nullptr) {
       api.schedSynchronize(_sched);
+      releases.release(_sched);
       api.schedFree(_sched);
       _sched = nullptr;
     }
     if (_weightsBuffer != nullptr) {
+      releases.release(_weightsBuffer);
       api.bufferFree(_weightsBuffer);
       _weightsBuffer = nullptr;
     }
@@ -715,10 +725,12 @@ final class DecisionHeadRuntime {
       _weightsContext = nullptr;
     }
     if (_deviceBackend != nullptr) {
+      releases.release(_deviceBackend);
       api.backendFree(_deviceBackend);
       _deviceBackend = nullptr;
     }
     if (_cpuBackend != nullptr) {
+      releases.release(_cpuBackend);
       api.backendFree(_cpuBackend);
       _cpuBackend = nullptr;
     }

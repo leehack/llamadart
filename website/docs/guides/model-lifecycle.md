@@ -22,13 +22,22 @@ try {
 `dispose()` unloads the model and releases the backend. Call `unloadModel()`
 instead when the engine will load another model.
 
-Dispose every engine before the app quits, including `DecisionEngine` and
-`ImageGenerationEngine`. When a macOS app quits through AppKit (Cmd-Q or
-closing its last window) with a model, context, decision head or image model
-still loaded on Metal, ggml aborts the process
+On macOS Metal, ggml aborts a process that exits with a model, context,
+decision head or image model still loaded
 (`GGML_ASSERT([rsets->data count] == 0)` in `ggml_metal_rsets_free`).
-Desktop Flutter apps do not run `State.dispose` on quit, so dispose from an
-exit request instead (`AppExitResponse` comes from `dart:ui`):
+
+- A Dart program that returns from `main` or dies of an unhandled error does
+  not need to dispose first: llamadart frees what its engines still hold as
+  the program ends, after any native call still running finishes. The exit
+  still aborts when the program dies of an error during an image generation:
+  stable-diffusion.cpp reports progress through a Dart callback, which the
+  shutting-down VM rejects. `exit()` from `dart:io` skips the native teardown
+  and never aborts.
+- A Flutter app that quits through AppKit (Cmd-Q or closing its last window)
+  ends the process without that cleanup, so dispose every engine, including
+  `DecisionEngine` and `ImageGenerationEngine`, before it quits. Desktop
+  Flutter apps do not run `State.dispose` on quit, so dispose from an exit
+  request instead (`AppExitResponse` comes from `dart:ui`):
 
 ```dart
 final listener = AppLifecycleListener(
@@ -46,6 +55,10 @@ route, its listener goes with it, and the `dispose()` it started in
 app-level exit listener instead, and have that listener also await disposals
 already in progress. The example chat app does this with
 [`AppExitCoordinator`](https://github.com/leehack/llamadart/blob/main/example/chat_app/lib/services/app_exit_coordinator.dart).
+
+A Flutter hot restart (debug builds only) discards the old isolates without
+freeing their models, so quitting after one can still abort
+([#813](https://github.com/leehack/llamadart/issues/813)).
 
 `LlamaBackend()` routes by file extension: `.gguf` to llama.cpp and
 `.litertlm` to LiteRT-LM, with the same lifecycle:

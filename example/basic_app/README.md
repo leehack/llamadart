@@ -298,6 +298,16 @@ LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
 
+Another local-only test checks that a program ending with a llama.cpp or
+image model still loaded, by returning from `main` or by throwing, exits
+normally instead of aborting on macOS Metal:
+
+```bash
+LLAMADART_EXIT_GGUF=/models/stories15M.gguf \
+LLAMADART_SDXS_MODEL=/models/sdxs-512-tinySDdistilled_Q8_0.gguf \
+  dart test --run-skipped -t local-only test/end_with_model_loaded_e2e_test.dart
+```
+
 ## Options
 
 - `-m, --model`: Local path, HTTP(S) URL, or `hf://` Hugging Face source for a GGUF model.
