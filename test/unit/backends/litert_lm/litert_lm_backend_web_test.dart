@@ -296,6 +296,44 @@ void main() {
     },
   );
 
+  for (final url in const [
+    'https://alice:Pw7secret@example.com/models/model.litertlm'
+        '?X-Amz-Signature=Sig7secret#Fr7secret',
+    'https:alice:Pw7secret@example.com/models/model.litertlm',
+  ]) {
+    test('keeps $url secrets out of metadata and chunks', () async {
+      _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+      final engine = LlamaEngine(LiteRtLmBackend());
+      try {
+        await engine.loadModelFromUrl(url);
+        final chunks = await engine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList();
+        final metadata = await engine.getMetadata();
+
+        expect(
+          metadata,
+          containsPair(
+            'litert_lm.model_url',
+            'https://example.com/models/model.litertlm',
+          ),
+        );
+        expect(
+          metadata.values.join('\n'),
+          allOf(
+            isNot(contains('alice')),
+            isNot(contains('Pw7secret')),
+            isNot(contains('Sig7secret')),
+            isNot(contains('Fr7secret')),
+          ),
+        );
+        expect(chunks.map((chunk) => chunk.model).toSet(), {'model.litertlm'});
+      } finally {
+        await engine.dispose();
+      }
+    });
+  }
+
   test(
     'routes high-level single-turn text through JS conversation runtime',
     () async {

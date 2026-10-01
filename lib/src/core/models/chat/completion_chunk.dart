@@ -96,7 +96,19 @@ class LlamaCompletionChunk {
   /// The Unix timestamp (in seconds) of when the completion was created.
   final int created;
 
-  /// The model used for completion.
+  /// The name of the model used for completion.
+  ///
+  /// `LlamaEngine` reports the last path segment of the source the model was
+  /// loaded from, such as `qwen.gguf`: the file name of a local path, or the
+  /// last segment of a URL path without its query or fragment. For a
+  /// downloaded `ModelSource`, that is its `fileName`. It is `llama_model`
+  /// when that segment is empty, has an invalid percent escape or contains
+  /// one of `/ \ ? # @ ; & =` once percent-decoded, and for `data:` and
+  /// `blob:` URLs.
+  ///
+  /// The value leaves out directories, hosts, queries and fragments, but not
+  /// the segment itself: a URL whose last segment is a token reports that
+  /// token.
   final String model;
 
   /// A list of completion choices.

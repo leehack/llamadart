@@ -21,6 +21,10 @@ class ChatTemplateRenderer {
   const ChatTemplateRenderer._();
 
   /// Renders a chat template and optionally counts prompt tokens.
+  ///
+  /// A non-empty [modelTemplate] replaces the model's `tokenizer.chat_template`
+  /// and its `tool_use` variant, as llama.cpp's `--chat-template` does;
+  /// [customTemplate] still takes precedence over both.
   static Future<LlamaChatTemplateResult> render({
     required ChatTemplateMetadataLoader loadMetadata,
     required ChatTemplateTokenizer tokenize,
@@ -33,19 +37,25 @@ class ChatTemplateRenderer {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     String? customTemplate,
+    String? modelTemplate,
     String? sourceLangCode,
     String? targetLangCode,
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async {
-    String? templateSource;
     Map<String, String> metadata = {};
     try {
       metadata = await loadMetadata();
-      templateSource = metadata['tokenizer.chat_template'];
     } catch (error) {
       LlamaLogger.instance.warning('Failed to read metadata: $error');
+    }
+    final String? templateSource;
+    if (modelTemplate != null && modelTemplate.isNotEmpty) {
+      templateSource = modelTemplate;
+      metadata.remove('tokenizer.chat_template.tool_use');
+    } else {
+      templateSource = metadata['tokenizer.chat_template'];
     }
 
     if (sourceLangCode != null && sourceLangCode.isNotEmpty) {

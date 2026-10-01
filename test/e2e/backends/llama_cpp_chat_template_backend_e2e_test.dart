@@ -146,8 +146,97 @@ void main() {
         }
       },
     );
+
+    test(
+      'LlamaEngine renders, generates and parses with ModelParams.chatTemplate',
+      () async {
+        if (modelPath.isEmpty) {
+          return;
+        }
+
+        final engine = LlamaEngine(LlamaBackend());
+        final tools = [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get the current weather for a city.',
+            parameters: [ToolParam.string('city', required: true)],
+            handler: (_) async => 'sunny',
+          ),
+        ];
+        const messages = [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is the weather in Seoul?',
+          ),
+        ];
+        try {
+          await engine.setNativeLogLevel(LlamaLogLevel.warn);
+          await engine.loadModel(
+            modelPath,
+            modelParams: const ModelParams(
+              contextSize: 1024,
+              preferredBackend: GpuBackend.cpu,
+              gpuLayers: 0,
+              numberOfThreads: 2,
+              numberOfThreadsBatch: 2,
+              chatTemplate: _hermesOverrideTemplate,
+            ),
+          );
+
+          final plain = await engine.chatTemplate(messages);
+          expect(
+            plain.prompt,
+            '<|im_start|>user\nWhat is the weather in Seoul?<|im_end|>\n'
+            '<|im_start|>assistant\n',
+          );
+
+          final withTools = await engine.chatTemplate(messages, tools: tools);
+          expect(withTools.format, ChatFormat.hermes.index);
+          expect(withTools.prompt, startsWith('<|im_start|>system\n# Tools'));
+
+          final chunks = await engine
+              .create(
+                messages,
+                params: const GenerationParams(maxTokens: 64, temp: 0, seed: 1),
+                tools: tools,
+                toolChoice: ToolChoice.required,
+                enableThinking: false,
+              )
+              .toList();
+          final toolCalls = chunks
+              .expand((chunk) => chunk.choices.first.delta.toolCalls ?? [])
+              .toList();
+          expect(chunks.last.choices.first.finishReason, 'tool_calls');
+          expect(toolCalls, hasLength(1));
+          expect(toolCalls.single.function?.name, 'get_weather');
+        } finally {
+          await engine.dispose();
+        }
+      },
+    );
   });
 }
+
+const String _hermesOverrideTemplate = '''
+{%- if tools %}<|im_start|>system
+# Tools
+
+<tools>
+{%- for tool in tools %}
+{{ tool | tojson }}
+{%- endfor %}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call><|im_end|>
+{% endif %}
+{%- for message in messages %}<|im_start|>{{ message.role }}
+{{ message.content }}<|im_end|>
+{% endfor %}
+{%- if add_generation_prompt %}<|im_start|>assistant
+{% endif %}''';
 
 String? _resolveModelPath() {
   final explicit = Platform.environment[_modelPathEnv];

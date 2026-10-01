@@ -96,8 +96,9 @@ class LlamaEngine {
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
   bool _isReady = false;
-  String? _modelPath;
+  String? _completionModel;
   Map<String, String>? _cachedModelMetadata;
+  String? _modelChatTemplate;
   LlamaLogLevel _dartLogLevel = LlamaLogLevel.none;
   LlamaLogLevel _nativeLogLevel = LlamaLogLevel.none;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
@@ -228,10 +229,11 @@ class LlamaEngine {
     final redactedPath = _redactedSource(path);
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _modelPath = redactedPath;
+      _completionModel = _modelNameForSource(path);
       _cachedModelMetadata = null;
       _modelHandle = await backend.modelLoad(path, modelParams);
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedPath));
     } catch (e, stackTrace) {
@@ -350,7 +352,7 @@ class LlamaEngine {
       load,
       observers: observers,
       operation: LlamaModelLoadOperation(
-        model: _observedNameForSource(source),
+        model: _modelNameForSource(source),
         modelParams: modelParams,
       ),
     );
@@ -375,25 +377,51 @@ class LlamaEngine {
       );
     }
     _observedModel = name == null || name.isEmpty
-        ? _observedNameForSource(source)
+        ? _modelNameForSource(source)
         : name;
   }
 
-  /// The last path segment of [source], or null when it is empty, has a
-  /// percent escape that does not decode to UTF-8, or holds URL syntax that
-  /// could carry more than a file name.
-  static String? _observedNameForSource(String source) {
-    final uri = Uri.tryParse(source);
-    final List<String> segments;
+  static final RegExp _sourceScheme = RegExp(r'^([A-Za-z][A-Za-z0-9+.-]+):');
+  static final RegExp _unsafeModelName = RegExp(r'[/\\?#@;&=]');
+
+  /// The last path segment of [source], or null when it is empty, has an
+  /// invalid percent escape, holds URL syntax that could carry more than a
+  /// file name once percent-decoded, or [source] is a `data:` or `blob:` URL.
+  ///
+  /// [source] is a URL when it has a scheme of two or more characters (so a
+  /// Windows drive letter is not one), starts with `//`, or the backend loads
+  /// URLs. Otherwise it is a file path split at `/` and `\`, so `?` and `#`
+  /// in its directory names are literal.
+  String? _modelNameForSource(String source) {
+    final scheme = _sourceScheme.firstMatch(source)?[1]?.toLowerCase();
+    final isUrl =
+        scheme != null || source.startsWith('//') || backend.supportsUrlLoading;
+    var path = source.replaceAll('\\', '/');
+    if (isUrl) {
+      if (scheme == 'data' || scheme == 'blob') return null;
+      path = path.split('#').first.split('?').first;
+      if (scheme != null) path = path.substring(scheme.length + 1);
+      if (const {'http', 'https', 'ws', 'wss', 'ftp'}.contains(scheme)) {
+        // Browsers read `https:host/m` and `https:/host/m` as `https://host/m`.
+        path = '//${path.replaceFirst(RegExp('^/*'), '')}';
+      }
+      if (path.startsWith('//')) {
+        final pathStart = path.indexOf('/', 2);
+        if (pathStart < 0) return null;
+        path = path.substring(pathStart);
+      }
+    }
+    final name = path.split('/').last;
+    final String decoded;
     try {
-      segments = uri != null && uri.hasScheme
-          ? uri.pathSegments
-          : source.replaceAll('\\', '/').split('/');
+      decoded = Uri.decodeComponent(name);
+    } on ArgumentError {
+      return null;
     } on FormatException {
       return null;
     }
-    final name = segments.isEmpty ? '' : segments.last;
-    return name.isEmpty || name.contains(RegExp(r'[/\\?#@;&=]')) ? null : name;
+    if (decoded.isEmpty || decoded.contains(_unsafeModelName)) return null;
+    return isUrl ? decoded : name;
   }
 
   Future<void> _loadModelFromUrl(
@@ -414,7 +442,7 @@ class LlamaEngine {
 
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _modelPath = redactedUrl;
+      _completionModel = _modelNameForSource(url);
       _cachedModelMetadata = null;
 
       _modelHandle = await backend.modelLoadFromUrl(
@@ -423,6 +451,7 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
+      _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
 
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
@@ -669,8 +698,9 @@ class LlamaEngine {
       await backend.modelFree(_modelHandle!);
       _modelHandle = null;
     }
-    _modelPath = null;
+    _completionModel = null;
     _cachedModelMetadata = null;
+    _modelChatTemplate = null;
     _observedModel = null;
     _observedRuntime = null;
     _isReady = false;
@@ -855,7 +885,7 @@ class LlamaEngine {
           templateResult: plan.templateResult,
           parseToolCallsEnabled: plan.parseToolCallsEnabled,
           enableThinking: enableThinking,
-          modelName: _modelPath ?? 'llama_model',
+          modelName: _completionModel ?? 'llama_model',
           completionId: completionId,
           tools: effectiveTools,
           stoppedAtLimit: () => generationLimit != null,
@@ -936,7 +966,9 @@ class LlamaEngine {
   /// This is useful for preparing messages before calling [generate] directly,
   /// or for inspecting the formatted prompt for debugging purposes.
   ///
-  /// Pass [customTemplate] to override default routing.
+  /// The template is the model's own unless the model was loaded with a
+  /// non-empty [ModelParams.chatTemplate]; [create] renders with the same
+  /// template. Pass [customTemplate] to override both for this call.
   /// Pass [responseFormat] to request structured output grammar generation.
   /// Supported shapes are:
   /// - `{'type': 'json_object'}`
@@ -992,6 +1024,7 @@ class LlamaEngine {
       enableThinking: enableThinking,
       responseFormat: responseFormat,
       customTemplate: customTemplate,
+      modelTemplate: _modelChatTemplate,
       sourceLangCode: sourceLangCode,
       targetLangCode: targetLangCode,
       includeTokenCount: includeTokenCount,
@@ -2103,8 +2136,9 @@ class LlamaEngine {
       } catch (_) {}
       _modelHandle = null;
     }
-    _modelPath = null;
+    _completionModel = null;
     _cachedModelMetadata = null;
+    _modelChatTemplate = null;
     _isReady = false;
   }
 
