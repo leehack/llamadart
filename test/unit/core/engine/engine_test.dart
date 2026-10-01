@@ -1153,12 +1153,24 @@ void main() {
           (r'C:\Users\alice\models\qwen.gguf', false, 'qwen.gguf'),
           ('qwen.gguf', false, 'qwen.gguf'),
           ('/Users/alice/models/', false, 'llama_model'),
-          ('models/qwen.gguf?token=abc', false, 'qwen.gguf'),
+          ('/home/alice/C#/models/qwen.gguf', false, 'qwen.gguf'),
+          ('/Users/alice/proj?x/models/qwen.gguf', false, 'qwen.gguf'),
+          ('models/qwen.gguf?token=abc', false, 'llama_model'),
+          ('models/a%2Fb%3Ftoken%3DSecret9', false, 'llama_model'),
+          ('//host/a%2Fb%3Ftoken%3DSecret9', false, 'llama_model'),
+          ('data:,payload', false, 'llama_model'),
+          ('models/qwen.gguf?token=abc', true, 'qwen.gguf'),
+          ('models/a%2Fb%3Ftoken%3DSecret9', true, 'llama_model'),
           (
             'https://user:secret@example.com/tok123/model.gguf?token=abc#frag',
             true,
             'model.gguf',
           ),
+          ('https:alice:pw@example.com/model.gguf', true, 'model.gguf'),
+          ('https:alice:pw@example.com', true, 'llama_model'),
+          ('https://example.com?token=abc', true, 'llama_model'),
+          ('file:///model.gguf', true, 'model.gguf'),
+          ('blob:https://example.com/0f3c', true, 'llama_model'),
           ('https://example.com/a%2Fb%3Ftoken%3Dx', true, 'llama_model'),
           ('https://example.com/m.gguf;jsessionid=abc', true, 'llama_model'),
         ]) {
@@ -4398,9 +4410,11 @@ void main() {
             throwsA(isA<Exception>()),
           );
 
+          // A file path keeps its `?`, so its file name is not a safe name.
+          final isFilePathWithQuery = !urlLoading && url.startsWith('models/');
           expect(
             chunks.first.model,
-            'm.gguf',
+            isFilePathWithQuery ? 'llama_model' : 'm.gguf',
             reason: 'URL loading: $urlLoading',
           );
           expect(

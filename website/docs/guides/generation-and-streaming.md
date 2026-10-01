@@ -97,12 +97,13 @@ await for (final chunk in engine.create(
 }
 ```
 
-`chunk.model` is the loaded model's file name, such as `qwen.gguf`: the last
-segment of the path or URL it was loaded from, without URL userinfo, query or
-fragment, or `llama_model` when that segment could carry more than a file
-name. It never includes the directory or host, so chunks can be forwarded to
-clients or logs. An OpenAI-compatible server that exposes its own model id
-should set that id on its responses instead.
+`chunk.model` is the last path segment of the source the model was loaded
+from, such as `qwen.gguf`: a local path's file name, or the last segment of a
+URL path without its query or fragment. It is `llama_model` when that segment
+could carry more than a file name, and for `data:` and `blob:` URLs. It leaves
+out directories and hosts, but not the segment itself: a URL whose last
+segment is a token reports that token. An OpenAI-compatible server that
+exposes its own model id should set that id on its responses instead.
 
 ## Token usage and timings
 
@@ -177,7 +178,8 @@ final engine = LlamaEngine(LlamaBackend(), observers: [TimingObserver()]);
 - `LlamaOperation.model` is the model's `general.name` metadata, or else the
   last segment of the path or URL it was loaded from. It is null when that
   segment is empty or contains one of `/ \ ? # @ ; & =`, so the segment is
-  never a directory path, URL query, fragment or userinfo. On the built-in
+  never a directory path, URL query, fragment or userinfo, and for `data:`
+  and `blob:` URLs. On the built-in
   backends, `runtime` is `LlamaRuntime.llamaCpp` or `LlamaRuntime.liteRtLm`
   for operations after a model load, and null for the load itself.
 - Operations carry copies of the prompts and messages. Record them only when

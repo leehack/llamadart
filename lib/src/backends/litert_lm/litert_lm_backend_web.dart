@@ -305,7 +305,7 @@ class LiteRtLmBackend
       if (modelName != null && modelName.isNotEmpty) {
         metadata['general.name'] = Uri.decodeComponent(modelName);
       }
-      metadata['litert_lm.model_url'] = sourceUrlDisplay(modelUrl);
+      metadata['litert_lm.model_url'] = _modelUrlDisplay(modelUrl);
     }
     if (_modelParams case final params?) {
       metadata['llm.context_length'] = params.contextSize.toString();
@@ -1346,4 +1346,21 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
   external bool get done;
 
   external JSAny? get value;
+}
+
+/// [url] as the browser resolves it, without userinfo, query or fragment.
+///
+/// The browser parser also strips the userinfo of forms such as
+/// `https:user:pass@host/m`, which have no `//` before the authority.
+String _modelUrlDisplay(String url) {
+  try {
+    final parsed = URL(url, document.baseURI)
+      ..username = ''
+      ..password = ''
+      ..search = ''
+      ..hash = '';
+    return parsed.href;
+  } catch (_) {
+    return sourceUrlDisplay(url);
+  }
 }

@@ -276,6 +276,9 @@ void main() {
         (r'C:\models\tiny.gguf', 'tiny.gguf'),
         ('C:/models/tiny.gguf', 'tiny.gguf'),
         ('/home/alice/', null),
+        ('/home/alice/C#/tiny.gguf', 'tiny.gguf'),
+        ('models/a%2Fb%3Ftoken%3Dx', null),
+        ('data:,payload', null),
       ]) {
         await observed.loadModel(source);
         await observed.unloadModel();
