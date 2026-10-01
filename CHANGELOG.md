@@ -69,6 +69,11 @@
   skip the check on Vulkan instead of comparing with host memory, and raise
   the estimate's fixed allowance to 512 MiB so it covers measured CPU peaks
   ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Check image models on Android against the larger of `MemAvailable` and
+  half of physical memory less the app's own memory, so SD-Turbo loads on
+  8 GB phones whose `MemAvailable` leaves out memory the system frees on
+  demand; SD-Turbo is still refused on 6 GB phones
+  ([#792](https://github.com/leehack/llamadart/issues/792)).
 - Add experimental desktop image presets: SDXL-Lightning, FLUX.1-schnell,
   SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
   basic example's image CLI downloads them
