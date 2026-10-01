@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Render and parse llama.cpp chat with `ModelParams.chatTemplate`, which
+  `engine.create` and `engine.chatTemplate` ignored in favor of the GGUF
+  template; WebGPU `LlamaBackend.applyChatTemplate` now throws
+  `LlamaUnsupportedException` for a template override it cannot render
+  ([#710](https://github.com/leehack/llamadart/issues/710)).
 - Report only the last path segment of the model source, such as
   `qwen.gguf`, in `LlamaCompletionChunk.model` instead of the full local path
   or redacted URL; compare it with the file name, not the path. Like

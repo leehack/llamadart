@@ -4286,6 +4286,153 @@ void main() {
     });
   });
 
+  group('LlamaEngine ModelParams.chatTemplate', () {
+    const embeddedTemplate =
+        '{% for message in messages %}EMBEDDED:{{ message["content"] }}'
+        '{% endfor %}';
+    const hermesTemplate =
+        '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+        '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+        '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+        '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}';
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+    ];
+    final weatherTool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [ToolParam.string('location')],
+      handler: (_) async => 'ok',
+    );
+
+    MockLlamaBackend embeddedBackend() => MockLlamaBackend(
+      modelMetadataResponse: const {
+        'llm.context_length': '4096',
+        'tokenizer.chat_template': embeddedTemplate,
+        'tokenizer.chat_template.tool_use':
+            '{% for message in messages %}TOOL_USE:{{ message["content"] }}'
+            '{% endfor %}',
+      },
+    );
+
+    test('chatTemplate renders the load-time template, not GGUF metadata, '
+        'including its tool_use variant', () async {
+      final engine = LlamaEngine(embeddedBackend());
+      await engine.loadModel(
+        'model.gguf',
+        modelParams: const ModelParams(chatTemplate: hermesTemplate),
+      );
+
+      final plain = await engine.chatTemplate(messages);
+      final withTools = await engine.chatTemplate(
+        messages,
+        tools: [weatherTool],
+      );
+
+      expect(
+        plain.prompt,
+        '<|im_start|>user\nhi<|im_end|>\n'
+        '<|im_start|>assistant\n',
+      );
+      expect(withTools.prompt, contains('<tools>'));
+      expect(withTools.prompt, isNot(contains('TOOL_USE:')));
+      expect(withTools.format, ChatFormat.hermes.index);
+    });
+
+    test('create generates from the load-time template and parses tool calls '
+        'in its format', () async {
+      final backend = embeddedBackend()
+        ..generationChunks = const [
+          '<tool_call>',
+          '{"name":"get_weather","arguments":{"location":"Seoul"}}',
+          '</tool_call>',
+        ];
+      final engine = LlamaEngine(backend);
+      await engine.loadModel(
+        'model.gguf',
+        modelParams: const ModelParams(chatTemplate: hermesTemplate),
+      );
+
+      final chunks = await engine
+          .create(
+            messages,
+            tools: [weatherTool],
+            toolChoice: ToolChoice.required,
+          )
+          .toList();
+
+      expect(backend.lastGenerationPrompt, contains('<|im_start|>user\nhi'));
+      expect(backend.lastGenerationPrompt, isNot(contains('EMBEDDED:')));
+      final toolCalls = chunks.last.choices.first.delta.toolCalls;
+      expect(chunks.last.choices.first.finishReason, 'tool_calls');
+      expect(toolCalls, hasLength(1));
+      expect(toolCalls!.first.function?.name, 'get_weather');
+      expect(jsonDecode(toolCalls.first.function!.arguments!), {
+        'location': 'Seoul',
+      });
+    });
+
+    test('a per-call customTemplate takes precedence', () async {
+      final engine = LlamaEngine(embeddedBackend());
+      await engine.loadModel(
+        'model.gguf',
+        modelParams: const ModelParams(chatTemplate: hermesTemplate),
+      );
+
+      final result = await engine.chatTemplate(
+        messages,
+        customTemplate: 'PER_CALL:{{ messages[0]["content"] }}',
+      );
+
+      expect(result.prompt, 'PER_CALL:hi');
+    });
+
+    test('an empty template keeps the GGUF template', () async {
+      final engine = LlamaEngine(embeddedBackend());
+      await engine.loadModel(
+        'model.gguf',
+        modelParams: const ModelParams(chatTemplate: ''),
+      );
+
+      final result = await engine.chatTemplate(messages);
+
+      expect(result.prompt, 'EMBEDDED:hi');
+    });
+
+    test('does not carry over to a model loaded without one', () async {
+      final engine = LlamaEngine(embeddedBackend());
+      await engine.loadModel(
+        'model.gguf',
+        modelParams: const ModelParams(chatTemplate: hermesTemplate),
+      );
+      await engine.unloadModel();
+      await engine.loadModel('model.gguf');
+
+      final result = await engine.chatTemplate(messages);
+
+      expect(result.prompt, 'EMBEDDED:hi');
+    });
+
+    test('applies to models loaded from a URL', () async {
+      final engine = LlamaEngine(
+        MockLlamaBackend(
+          urlLoadingSupported: true,
+          modelMetadataResponse: const {
+            'tokenizer.chat_template': embeddedTemplate,
+          },
+        ),
+      );
+      await engine.loadModelFromUrl(
+        'https://example.com/model.gguf',
+        modelParams: const ModelParams(chatTemplate: hermesTemplate),
+      );
+
+      final result = await engine.chatTemplate(messages);
+
+      expect(result.prompt, startsWith('<|im_start|>user\nhi'));
+    });
+  });
+
   group('LlamaEngine source URL redaction', () {
     late List<String> logs;
 
