@@ -97,6 +97,13 @@ await for (final chunk in engine.create(
 }
 ```
 
+`chunk.model` is the loaded model's file name, such as `qwen.gguf`: the last
+segment of the path or URL it was loaded from, without URL userinfo, query or
+fragment, or `llama_model` when that segment could carry more than a file
+name. It never includes the directory or host, so chunks can be forwarded to
+clients or logs. An OpenAI-compatible server that exposes its own model id
+should set that id on its responses instead.
+
 ## Token usage and timings
 
 On native llama.cpp, and on WebGPU with bridge assets `v0.1.54+`, the final

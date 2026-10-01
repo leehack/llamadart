@@ -1146,27 +1146,66 @@ void main() {
     );
 
     test(
-      'loadModelFromUrl redacts completion model metadata for signed URLs',
+      'completion chunks name the model file, not its path or URL',
       () async {
-        final webBackend = MockLlamaBackend(urlLoadingSupported: true)
-          ..generationText = 'hello';
-        final webEngine = LlamaEngine(webBackend);
+        for (final (source, urlLoading, model) in const [
+          ('/Users/alice/private-project/models/qwen.gguf', false, 'qwen.gguf'),
+          (r'C:\Users\alice\models\qwen.gguf', false, 'qwen.gguf'),
+          ('qwen.gguf', false, 'qwen.gguf'),
+          ('/Users/alice/models/', false, 'llama_model'),
+          ('models/qwen.gguf?token=abc', false, 'qwen.gguf'),
+          (
+            'https://user:secret@example.com/tok123/model.gguf?token=abc#frag',
+            true,
+            'model.gguf',
+          ),
+          ('https://example.com/a%2Fb%3Ftoken%3Dx', true, 'llama_model'),
+          ('https://example.com/m.gguf;jsessionid=abc', true, 'llama_model'),
+        ]) {
+          final modelEngine = LlamaEngine(
+            MockLlamaBackend(urlLoadingSupported: urlLoading)
+              ..generationText = 'hello',
+          );
+          await modelEngine.loadModel(source);
+          final chunks = await modelEngine.create(const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ]).toList();
+          await modelEngine.dispose();
 
-        await webEngine.loadModelFromUrl(
-          'https://user:secret@example.com/model.gguf?token=abc123#fragment',
-        );
-        final chunks = await webEngine.create(const [
-          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
-        ]).toList();
-
-        expect(chunks, isNotEmpty);
-        for (final chunk in chunks) {
-          expect(chunk.model, 'https://example.com/model.gguf');
-          expect(chunk.model, isNot(contains('secret')));
-          expect(chunk.model, isNot(contains('token=abc123')));
+          expect(chunks, isNotEmpty, reason: source);
+          expect(chunks.map((chunk) => chunk.model).toSet(), {
+            model,
+          }, reason: source);
         }
       },
     );
+
+    test('completion chunks name a downloaded source by its file', () async {
+      final source = ModelSource.url(
+        Uri.parse('https://example.com/org/qwen.gguf?token=abc'),
+      );
+      final sourceEngine = LlamaEngine(
+        MockLlamaBackend()..generationText = 'hello',
+        modelDownloadManager: MockModelDownloadManager(
+          ModelCacheEntry(
+            sourceCanonicalKey: source.metadataSourceKey,
+            cacheKey: source.cacheKey,
+            fileName: source.fileName,
+            filePath: '/Users/alice/.cache/models/${source.cacheKey}/qwen.gguf',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        ),
+      );
+      addTearDown(sourceEngine.dispose);
+
+      await sourceEngine.loadModelSource(source);
+      final chunks = await sourceEngine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ]).toList();
+
+      expect(chunks.map((chunk) => chunk.model).toSet(), {'qwen.gguf'});
+    });
 
     test('loadModelSource forwards progress for remote URL targets', () async {
       final webBackend = MockLlamaBackend(urlLoadingSupported: true);
@@ -4361,7 +4400,7 @@ void main() {
 
           expect(
             chunks.first.model,
-            display,
+            'm.gguf',
             reason: 'URL loading: $urlLoading',
           );
           expect(

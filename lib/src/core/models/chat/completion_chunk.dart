@@ -96,7 +96,13 @@ class LlamaCompletionChunk {
   /// The Unix timestamp (in seconds) of when the completion was created.
   final int created;
 
-  /// The model used for completion.
+  /// The file name of the model used for completion.
+  ///
+  /// `LlamaEngine` reports the last segment of the path or URL the model was
+  /// loaded from, without URL userinfo, query or fragment; for a downloaded
+  /// `ModelSource`, that is its `fileName`. It is `llama_model` when that
+  /// segment is empty or contains one of `/ \ ? # @ ; & =` once decoded, so
+  /// the value never carries a directory, host or URL secret.
   final String model;
 
   /// A list of completion choices.

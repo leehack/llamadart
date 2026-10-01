@@ -96,7 +96,7 @@ class LlamaEngine {
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
   bool _isReady = false;
-  String? _modelPath;
+  String? _completionModel;
   Map<String, String>? _cachedModelMetadata;
   LlamaLogLevel _dartLogLevel = LlamaLogLevel.none;
   LlamaLogLevel _nativeLogLevel = LlamaLogLevel.none;
@@ -228,7 +228,7 @@ class LlamaEngine {
     final redactedPath = _redactedSource(path);
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _modelPath = redactedPath;
+      _completionModel = _observedNameForSource(redactedPath);
       _cachedModelMetadata = null;
       _modelHandle = await backend.modelLoad(path, modelParams);
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
@@ -414,7 +414,7 @@ class LlamaEngine {
 
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _modelPath = redactedUrl;
+      _completionModel = _observedNameForSource(redactedUrl);
       _cachedModelMetadata = null;
 
       _modelHandle = await backend.modelLoadFromUrl(
@@ -669,7 +669,7 @@ class LlamaEngine {
       await backend.modelFree(_modelHandle!);
       _modelHandle = null;
     }
-    _modelPath = null;
+    _completionModel = null;
     _cachedModelMetadata = null;
     _observedModel = null;
     _observedRuntime = null;
@@ -855,7 +855,7 @@ class LlamaEngine {
           templateResult: plan.templateResult,
           parseToolCallsEnabled: plan.parseToolCallsEnabled,
           enableThinking: enableThinking,
-          modelName: _modelPath ?? 'llama_model',
+          modelName: _completionModel ?? 'llama_model',
           completionId: completionId,
           tools: effectiveTools,
           stoppedAtLimit: () => generationLimit != null,
@@ -2103,7 +2103,7 @@ class LlamaEngine {
       } catch (_) {}
       _modelHandle = null;
     }
-    _modelPath = null;
+    _completionModel = null;
     _cachedModelMetadata = null;
     _isReady = false;
   }
