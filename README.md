@@ -81,6 +81,8 @@ experimental and may change, and the runtime is opt-in.
         llamadart_native_runtimes: [llama_cpp, stable_diffusion]
   ```
 
+  Keep `litert_lm` in the list if the app also loads `.litertlm` models.
+
 - **Platforms:** Android arm64 (CPU), iOS and macOS (Metal), Linux arm64/x64
   and Windows x64 (CPU or Vulkan). Not available on the web yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).

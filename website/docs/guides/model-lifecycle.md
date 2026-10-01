@@ -38,16 +38,12 @@ decision head or image model still loaded
   - rarely, while `dispose()` is freeing objects, which can leave one unfreed.
 
   `exit()` from `dart:io` skips the native teardown and never aborts.
-- A Flutter app that quits through AppKit (Cmd-Q or closing its last window)
-  got the same cleanup where checked: on macOS, quitting ran llamadart's
-  finalizers in debug and release builds, in the root isolate and in spawned
-  ones, and a `required` exit request with a chat model and SDXS loaded exited
-  cleanly. Cmd-Q itself was not re-tested, and the cleanup can still abort in
-  cases like those above, such as a quit during an image generation. Dispose every
-  engine, including `DecisionEngine` and `ImageGenerationEngine`, before the
-  app quits. Desktop Flutter apps do not run `State.dispose` on quit, so
-  dispose from an exit request instead (`AppExitResponse` comes from
-  `dart:ui`):
+- A Flutter app that quits through AppKit (Cmd-Q, closing its last window, or
+  `ServicesBinding.exitApplication`) is not guaranteed to run that cleanup,
+  so dispose every engine, including `DecisionEngine` and
+  `ImageGenerationEngine`, before it quits. Desktop Flutter apps do not run
+  `State.dispose` on quit, so dispose from an exit request instead
+  (`AppExitResponse` comes from `dart:ui`):
 
 ```dart
 final listener = AppLifecycleListener(
