@@ -23,6 +23,16 @@ String visualCppRuntimeAdvice({
     'vc_redist.${architecture.toLowerCase()}.exe or ship those DLLs next to '
     '$library.';
 
+/// Whether a `DynamicLibrary.open` failure [detail] is Windows error 126
+/// (`ERROR_MOD_NOT_FOUND`), the library or one of its imports missing.
+///
+/// The Dart VM appends ` (error code: 126)` to the system message, or reports
+/// only `error code 126` when Windows has no English message for it.
+bool isWindowsModuleNotFoundError(String detail) =>
+    _windowsModuleNotFound.hasMatch(detail);
+
+final _windowsModuleNotFound = RegExp(r'error code:? 126\b');
+
 bool _canLoadLibrary(String name) {
   try {
     DynamicLibrary.open(name);

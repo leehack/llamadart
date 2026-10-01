@@ -9795,7 +9795,7 @@ LlamaBackendInitializationException? llamaCppWindowsLoadFailure({
     _ => null,
   };
   final detail = '${error.message ?? error}';
-  if (architecture == null || !detail.contains('error code: 126')) {
+  if (architecture == null || !isWindowsModuleNotFoundError(detail)) {
     return null;
   }
   final missing = missingWindowsLibraries([

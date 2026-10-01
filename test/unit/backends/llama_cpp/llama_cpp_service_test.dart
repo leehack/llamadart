@@ -3992,6 +3992,38 @@ void main() {
       expect(failure.message, contains('vc_redist.arm64.exe'));
     });
 
+    test('recognizes error 126 without an English system message', () {
+      final failure = llamaCppWindowsLoadFailure(
+        error: ArgumentError(
+          "Couldn't resolve native function 'llama_backend_init' in "
+          "'package:llamadart/llamadart' : Failed to load dynamic library "
+          "'llamadart.dll': error code 126",
+        ),
+        abi: Abi.windowsX64,
+        missingWindowsLibraries: missingFrom({'msvcp140.dll'}),
+      );
+
+      expect(failure!.message, contains("'llamadart.dll': error code 126."));
+      expect(failure.message, contains('msvcp140.dll could not be loaded'));
+    });
+
+    test('does not treat error 1260 as error 126', () {
+      final checked = <String>[];
+
+      expect(
+        llamaCppWindowsLoadFailure(
+          error: ArgumentError(
+            "Failed to load dynamic library 'llamadart.dll': This program is "
+            'blocked by group policy.\r\n (error code: 1260).\n',
+          ),
+          abi: Abi.windowsX64,
+          missingWindowsLibraries: missingFrom({'msvcp140.dll'}, checked),
+        ),
+        isNull,
+      );
+      expect(checked, isEmpty);
+    });
+
     test('keeps the loader error when the runtime loads', () {
       expect(
         llamaCppWindowsLoadFailure(

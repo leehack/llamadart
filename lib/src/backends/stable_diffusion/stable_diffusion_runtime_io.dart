@@ -183,7 +183,7 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
     );
   }
   final firstLine = detail.split('\n').first.trimRight();
-  if (detail.contains('error code: 126')) {
+  if (isWindowsModuleNotFoundError(detail)) {
     final cause = firstLine.replaceFirst(RegExp(r'\.+$'), '');
     final missingRuntime = missingWindowsLibraries(
       _windowsVisualCppRuntimeLibraries,

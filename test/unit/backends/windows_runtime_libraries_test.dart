@@ -27,6 +27,39 @@ void main() {
     });
   });
 
+  group('isWindowsModuleNotFoundError', () {
+    test('matches both Dart VM spellings of error 126', () {
+      expect(
+        isWindowsModuleNotFoundError(
+          "Failed to load dynamic library 'a.dll': The specified module could "
+          'not be found.\r\n (error code: 126)',
+        ),
+        isTrue,
+      );
+      expect(
+        isWindowsModuleNotFoundError(
+          "Failed to load dynamic library 'a.dll': error code 126",
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects other error codes that start with 126', () {
+      expect(
+        isWindowsModuleNotFoundError(
+          "Failed to load dynamic library 'a.dll': (error code: 1260)",
+        ),
+        isFalse,
+      );
+      expect(
+        isWindowsModuleNotFoundError(
+          "Failed to load dynamic library 'a.dll': error code 1260",
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('visualCppRuntimeAdvice', () {
     test('names the redistributable, its installer and the DLLs', () {
       expect(
