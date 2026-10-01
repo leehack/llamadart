@@ -51,7 +51,10 @@ for each target.
   SD-Turbo on Android arm64 (CPU), iOS and macOS (Metal), and Linux and
   Windows (CPU or Vulkan), with progress, cancellation and PNG output;
   validated with real models on macOS, iOS, Android, Linux x64 and Windows x64
-  ([#779](https://github.com/leehack/llamadart/issues/779)). Not available on
+  ([#779](https://github.com/leehack/llamadart/issues/779)). Desktop presets
+  for SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
+  generate 1024x1024 images; they are validated on macOS Metal only
+  ([#802](https://github.com/leehack/llamadart/issues/802)). Not available on
   the web.
 - Experimental Laya-style decision models on native llama.cpp through
   `DecisionEngine`: typed choice, score, and yes/no answers from a ModernBERT

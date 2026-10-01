@@ -1,4 +1,5 @@
 import '../exceptions.dart';
+import 'image_generation_model.dart';
 
 /// A request to generate one or more images from a text prompt.
 class ImageGenerationRequest {
@@ -16,6 +17,9 @@ class ImageGenerationRequest {
 
   /// Largest accepted [count].
   static const int maxCount = 16;
+
+  /// Largest accepted [flowShift].
+  static const double maxFlowShift = 100;
 
   /// Text prompt.
   final String prompt;
@@ -47,6 +51,17 @@ class ImageGenerationRequest {
   /// Number of images, from 1 to [maxCount]. Image `i` uses seed `seed + i`.
   final int count;
 
+  /// Sampling method. `null` uses the model's default.
+  final ImageGenerationSampler? sampler;
+
+  /// Noise schedule. `null` uses the model's default.
+  final ImageGenerationScheduler? scheduler;
+
+  /// Timestep shift of flow-matching models, greater than 0 and at most
+  /// [maxFlowShift]. `null` uses the model's default; other models ignore
+  /// it.
+  final double? flowShift;
+
   /// Creates an image-generation request.
   const ImageGenerationRequest({
     required this.prompt,
@@ -57,6 +72,9 @@ class ImageGenerationRequest {
     this.guidanceScale,
     this.seed,
     this.count = 1,
+    this.sampler,
+    this.scheduler,
+    this.flowShift,
   });
 }
 
@@ -110,6 +128,17 @@ void validateImageGenerationRequest(ImageGenerationRequest request) {
     reject(
       'count must be from 1 to ${ImageGenerationRequest.maxCount}.',
       request.count,
+    );
+  }
+  final flowShift = request.flowShift;
+  if (flowShift != null &&
+      (!flowShift.isFinite ||
+          flowShift <= 0 ||
+          flowShift > ImageGenerationRequest.maxFlowShift)) {
+    reject(
+      'flowShift must be greater than 0 and at most '
+      '${ImageGenerationRequest.maxFlowShift}.',
+      flowShift,
     );
   }
 }

@@ -24,8 +24,9 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
   int? fileSize(String path) => stableDiffusionFileSize(path);
 
   @override
-  ImageGenerationMemoryBudget? memoryBudget() =>
-      readStableDiffusionMemoryBudget();
+  ImageGenerationMemoryBudget? memoryBudget(
+    ImageGenerationComputeDevice device,
+  ) => readStableDiffusionMemoryBudget(device: device);
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>

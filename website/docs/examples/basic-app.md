@@ -55,7 +55,9 @@ dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
 - Typed choice, score and yes/no answers from a decision model with
   `ChoiceKey.enumOf`, `ScoreKey.of`, `NoulKey.of` and `answerOf`
   ([Decision models](../guides/decision-models#typed-questions)).
-- Experimental image generation with SDXS or SD-Turbo: phase progress,
+- Experimental image generation with SDXS, SD-Turbo, or the desktop
+  presets (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo)
+  from pinned downloads: phase progress,
   Ctrl-C cancellation and PNG output, with the `stable_diffusion` runtime
   opted in through the example's `pubspec.yaml`
   ([Image generation](../guides/image-generation)).

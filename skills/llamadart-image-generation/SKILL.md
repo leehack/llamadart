@@ -3,7 +3,9 @@ name: llamadart-image-generation
 description: >-
   Use when generating images from text prompts in a llamadart app with the
   experimental ImageGenerationEngine: opting into the stable_diffusion
-  runtime, loading SDXS or SD-Turbo (with TAESD), showing progress, cancelling,
+  runtime, loading SDXS or SD-Turbo (with TAESD) or the desktop SDXL-Lightning,
+  FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo presets, showing
+  progress, cancelling,
   saving PNGs, or handling unsupported platforms, memory refusals and
   concurrent-generation errors.
 ---
@@ -52,17 +54,59 @@ description: >-
     step at guidance 1; up to 4 steps add detail. For TAESD use
     `madebyollin/taesd` `diffusion_pytorch_model.safetensors`, not
     `taesd_decoder.safetensors`; prefer it on phones.
+  - Desktop presets, 1024x1024, for desktop GPUs and Macs with 16 GB or
+    more (not phones); each needs a VAE or TAESD decoder where it takes one:
+    - `ImageGenerationModel.sdxlLightning(path, vaePath:, taesdPath:)`:
+      `ByteDance/SDXL-Lightning` `sdxl_lightning_4step.safetensors`; 4 steps,
+      guidance 1, Euler with `sgmUniform`. `madebyollin/taesdxl` halves the
+      time per image.
+    - `ImageGenerationModel.flux1Schnell(diffusionModelPath:, clipLPath:,
+      t5xxlPath:, vaePath: or taesdPath:)`: `second-state/FLUX.1-schnell-GGUF`
+      Q4_0, `clip_l`, `t5xxl` Q8_0, `ae.safetensors` or `madebyollin/taef1`;
+      4 steps at guidance 1.
+    - `ImageGenerationModel.sd35LargeTurbo(diffusionModelPath:, clipLPath:,
+      clipGPath:, t5xxlPath:, vaePath: or taesdPath:)`:
+      `city96/stable-diffusion-3.5-large-turbo-gguf` Q4_0 with the
+      `second-state/stable-diffusion-3.5-medium-GGUF` encoders and
+      `madebyollin/taesd3` (the SD 3.5 VAE repository is gated); 4 steps.
+    - `ImageGenerationModel.zImageTurbo(diffusionModelPath:, llmPath:,
+      vaePath:)`: `leejet/Z-Image-Turbo-GGUF` Q4_K,
+      `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M and the FLUX
+      `ae.safetensors`; 8 steps.
+    - These factories throw `ArgumentError` when a split preset has neither
+      `vaePath` nor `taesdPath`.
   - `ImageGenerationModel.custom(ImageGenerationModelFiles(...), defaults:
-    ImageGenerationDefaults(steps:, guidanceScale:))` for other SD 1.x/2.x
-    checkpoints; experimental and unvalidated.
+    ImageGenerationDefaults(steps:, guidanceScale:))` for any other family
+    stable-diffusion.cpp loads (SDXL, SD 3.5, FLUX, Z-Image, Qwen-Image);
+    experimental, for desktop GPUs and Macs. Split files: SD 3.5 takes
+    `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; FLUX
+    `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl`; Z-Image and
+    Qwen-Image `diffusionModel`, `vae`, `llm`. A single-file GGUF that
+    includes the VAE (SD 3.5 Medium) goes in `model`, not `diffusionModel`.
+    Distilled models need their own defaults, such as `steps: 4,
+    guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell.
+- `ImageGenerationDefaults` and `ImageGenerationRequest` also take
+  `sampler` (`ImageGenerationSampler`), `scheduler`
+  (`ImageGenerationScheduler`) and `flowShift` (flow-matching models only,
+  greater than 0, at most 100); a request value overrides the model default,
+  and `null` keeps the runtime's default for the model. SDXL-Lightning wants
+  `euler` with `sgmUniform`.
 - `load` checks every file exists and, unless
   `ImageGenerationOptions(checkMemory: false)`, refuses a model whose estimate
-  (file sizes plus a quarter plus 256 MiB) exceeds the device figure
-  (`MemAvailable` on Android/Linux, the app's limit on iOS, physical memory on
-  macOS; Windows is not checked) with `LlamaModelException`. SD-Turbo does not
-  fit 6 GB Android phones; offer SDXS there.
+  (file sizes plus a quarter plus 512 MiB, for the model's native size)
+  exceeds the device figure with `LlamaModelException`: `MemAvailable` on
+  Android/Linux CPU, the app's limit on iOS, physical memory on macOS, capped
+  on Metal by the GPU's recommended working set. Vulkan GPUs and Windows are
+  not checked (GPU memory is not reported). SD-Turbo does not fit 6 GB
+  Android phones; offer SDXS there.
 - `ImageGenerationOptions(device: auto | cpu | gpu, threads: 0)`. `gpu`
   without a GPU (Android, CPU builds) throws `LlamaUnsupportedException`.
+  `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
+  per device: flash attention on for the CPU and Metal, off on Vulkan; direct
+  VAE convolutions on except on Metal (about 7 times slower there) and with a
+  tiny autoencoder. Leave them `null` unless measuring. Direct VAE
+  convolutions leave the image identical; flash attention changes pixels
+  slightly.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
   first runtime probe in a process (`checkRuntime()`, `runtimeCapabilities()`
   or `load()`) compiles the Metal library on Apple (about 16 s on an M4 Max
@@ -107,7 +151,10 @@ description: >-
 - A runtime failure (for example an aborted Metal command buffer or out of
   memory) fails the task with `LlamaInferenceException`; the engine stays
   usable for the next request.
-- Runtime logs are not forwarded to `LlamaLogger`.
+- Runtime logs are not forwarded to `LlamaLogger`, so a runtime load
+  failure (`LlamaModelException`) cannot quote stable-diffusion.cpp's reason.
+  For a split checkpoint it names the missing roles (no `vae`/`taesd`, no
+  text encoder); otherwise check that each file is in its role.
 
 ## Examples
 

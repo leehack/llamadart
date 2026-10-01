@@ -207,6 +207,140 @@ void main() {
       expect(engine.capabilities.backendName, 'MTL0');
     });
 
+    test('passes the llm text encoder to the runtime', () async {
+      const llm = '/models/qwen3-4b.gguf';
+      driver.sizes[llm] = _gib;
+
+      await load(
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(
+            diffusionModel: _model,
+            vae: _taesd,
+            llm: llm,
+          ),
+        ),
+      );
+
+      expect(driver.started.single.files, {
+        'diffusionModel': _model,
+        'vae': _taesd,
+        'llm': llm,
+      });
+    });
+
+    test('a missing llm file throws LlamaModelException naming its role', () {
+      expect(
+        load(
+          ImageGenerationModel.custom(
+            const ImageGenerationModelFiles(
+              diffusionModel: _model,
+              llm: '/models/missing.gguf',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('llm'), contains('/models/missing.gguf')),
+          ),
+        ),
+      );
+    });
+
+    group('automatic attention and VAE settings', () {
+      Future<ImageGenerationSessionConfig> startedWith(
+        String devices,
+        ImageGenerationModel model, {
+        ImageGenerationOptions options = const ImageGenerationOptions(),
+      }) async {
+        driver
+          ..status = _available(devices)
+          ..started.clear();
+        await load(model, options: options);
+        return driver.started.single;
+      }
+
+      final sdTurbo = ImageGenerationModel.sdTurbo(_model);
+      const metal = 'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n';
+      const vulkan = 'Vulkan0\tNVIDIA L4\nCPU\tHost\n';
+      const cpu = 'CPU\tCortex-A78\n';
+
+      test('Metal uses flash attention and keeps the unfolded VAE', () async {
+        final config = await startedWith(metal, sdTurbo);
+
+        expect(config.flashAttention, isTrue);
+        expect(config.vaeDirectConvolution, isFalse);
+      });
+
+      test('Vulkan uses direct VAE convolutions and leaves flash attention '
+          'off', () async {
+        final config = await startedWith(vulkan, sdTurbo);
+
+        expect(config.flashAttention, isFalse);
+        expect(config.vaeDirectConvolution, isTrue);
+      });
+
+      test('the CPU uses both', () async {
+        final config = await startedWith(cpu, sdTurbo);
+
+        expect(config.flashAttention, isTrue);
+        expect(config.vaeDirectConvolution, isTrue);
+      });
+
+      test('the device auto picks decides, so cpu on a Mac uses direct VAE '
+          'convolutions', () async {
+        final config = await startedWith(
+          metal,
+          sdTurbo,
+          options: const ImageGenerationOptions(
+            device: ImageGenerationDevice.cpu,
+          ),
+        );
+
+        expect(config.flashAttention, isTrue);
+        expect(config.vaeDirectConvolution, isTrue);
+      });
+
+      test('a tiny autoencoder keeps the unfolded VAE', () async {
+        for (final model in [
+          ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd),
+          ImageGenerationModel.sdxs(_model),
+        ]) {
+          final config = await startedWith(vulkan, model);
+          expect(
+            config.vaeDirectConvolution,
+            isFalse,
+            reason: model.family.name,
+          );
+        }
+      });
+
+      test('explicit options override the automatic choice', () async {
+        final onMetal = await startedWith(
+          metal,
+          sdTurbo,
+          options: const ImageGenerationOptions(
+            flashAttention: false,
+            vaeDirectConvolution: true,
+          ),
+        );
+        expect(onMetal.flashAttention, isFalse);
+        expect(onMetal.vaeDirectConvolution, isTrue);
+
+        final onVulkan = await startedWith(
+          vulkan,
+          ImageGenerationModel.sdxs(_model),
+          options: const ImageGenerationOptions(
+            flashAttention: true,
+            vaeDirectConvolution: true,
+          ),
+        );
+        expect(onVulkan.flashAttention, isTrue);
+        expect(onVulkan.vaeDirectConvolution, isTrue);
+      });
+    });
+
     test('gpu selects the first GPU the runtime reports', () async {
       driver.status = _available('Vulkan0\tAMD Radeon\nCPU\tHost\n');
 
@@ -327,7 +461,7 @@ void main() {
             (error) => error.message,
             'message',
             allOf(
-              contains('about 2.75 GiB'),
+              contains('about 3.00 GiB'),
               contains('2.00 GiB of weights'),
               contains('only 2.00 GiB is available'),
               contains('MemAvailable in /proc/meminfo'),
@@ -367,12 +501,46 @@ void main() {
       expect(driver.started, hasLength(2));
     });
 
-    test('the estimate adds a quarter and 256 MiB to the weights', () {
-      expect(estimateImageGenerationMemoryBytes(0), 256 << 20);
+    test('the estimate adds a quarter and 512 MiB to the weights', () {
+      expect(estimateImageGenerationMemoryBytes(0), 512 << 20);
       expect(
         estimateImageGenerationMemoryBytes(4 * _gib),
-        5 * _gib + (256 << 20),
+        5 * _gib + (512 << 20),
       );
+    });
+
+    test('asks for the budget of the device the model loads on', () async {
+      for (final (devices, device, expected) in [
+        (
+          'MTL0\tApple M4\nCPU\tApple M4\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.metal,
+        ),
+        (
+          'MTL0\tApple M4\nCPU\tApple M4\n',
+          ImageGenerationDevice.cpu,
+          ImageGenerationComputeDevice.cpu,
+        ),
+        (
+          'Vulkan0\tNVIDIA L4\nCPU\tHost\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.otherGpu,
+        ),
+        (
+          'CPU\tCortex-A78\n',
+          ImageGenerationDevice.auto,
+          ImageGenerationComputeDevice.cpu,
+        ),
+      ]) {
+        driver
+          ..status = _available(devices)
+          ..budgetDevices.clear();
+        await load(
+          ImageGenerationModel.sdxs(_model),
+          options: ImageGenerationOptions(device: device),
+        );
+        expect(driver.budgetDevices, [expected], reason: devices);
+      }
     });
   });
 
@@ -468,6 +636,71 @@ void main() {
       await custom.generate(const ImageGenerationRequest(prompt: 'a')).done;
       expect(driver.session.requests.last.steps, 20);
       expect(driver.session.requests.last.guidanceScale, 7);
+    });
+
+    test('fills unset sampler, scheduler and flow shift from the model '
+        'defaults, and a request overrides them', () async {
+      final engine = await load(
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model),
+          defaults: const ImageGenerationDefaults(
+            steps: 4,
+            guidanceScale: 1,
+            sampler: ImageGenerationSampler.euler,
+            scheduler: ImageGenerationScheduler.sgmUniform,
+            flowShift: 3,
+          ),
+        ),
+      );
+
+      await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
+      var sent = driver.session.requests.last;
+      expect(sent.sampler, ImageGenerationSampler.euler);
+      expect(sent.scheduler, ImageGenerationScheduler.sgmUniform);
+      expect(sent.flowShift, 3);
+
+      await engine
+          .generate(
+            const ImageGenerationRequest(
+              prompt: 'a',
+              sampler: ImageGenerationSampler.dpmpp2m,
+              scheduler: ImageGenerationScheduler.karras,
+              flowShift: 1.5,
+            ),
+          )
+          .done;
+      sent = driver.session.requests.last;
+      expect(sent.sampler, ImageGenerationSampler.dpmpp2m);
+      expect(sent.scheduler, ImageGenerationScheduler.karras);
+      expect(sent.flowShift, 1.5);
+
+      final sdxs = await load(ImageGenerationModel.sdxs(_model));
+      await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;
+      sent = driver.session.requests.last;
+      expect(sent.sampler, isNull);
+      expect(sent.scheduler, isNull);
+      expect(sent.flowShift, isNull);
+    });
+
+    test('rejects an invalid flow shift from the model defaults', () async {
+      final engine = await load(
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model),
+          defaults: const ImageGenerationDefaults(flowShift: 0),
+        ),
+      );
+
+      expect(
+        () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+        throwsA(
+          isA<LlamaImageGenerationException>().having(
+            (error) => error.message,
+            'message',
+            contains('flowShift'),
+          ),
+        ),
+      );
+      expect(driver.session.requests, isEmpty);
     });
 
     test('reports the seed it used', () async {
@@ -897,8 +1130,15 @@ final class _FakeDriver implements ImageGenerationDriver {
   @override
   int? fileSize(String path) => sizes[path];
 
+  final List<ImageGenerationComputeDevice> budgetDevices = [];
+
   @override
-  ImageGenerationMemoryBudget? memoryBudget() => budget;
+  ImageGenerationMemoryBudget? memoryBudget(
+    ImageGenerationComputeDevice device,
+  ) {
+    budgetDevices.add(device);
+    return budget;
+  }
 
   @override
   Future<ImageGenerationSession> start(

@@ -7,6 +7,32 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
+import 'package:llamadart/src/core/image/image_generation_driver.dart';
+
+/// Whether `MTLCreateSystemDefaultDevice` returns a device, checked apart
+/// from the code under test.
+bool _hostHasMetalDevice() {
+  final metal = DynamicLibrary.open(
+    '/System/Library/Frameworks/Metal.framework/Metal',
+  );
+  final createDevice = metal
+      .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
+        'MTLCreateSystemDefaultDevice',
+      );
+  final release =
+      DynamicLibrary.open(
+        '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation',
+      ).lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('CFRelease');
+  final device = createDevice();
+  if (device == nullptr) {
+    return false;
+  }
+  release(device);
+  return true;
+}
 
 const _memInfo = '''
 MemTotal:        5750000 kB
@@ -33,11 +59,15 @@ void main() {
       String? memInfo,
       int? ios,
       int? macos,
+      int? metal,
+      ImageGenerationComputeDevice device = ImageGenerationComputeDevice.cpu,
     }) => readStableDiffusionMemoryBudget(
+      device: device,
       abi: abi,
       readMemInfo: () => memInfo,
       iosAvailableMemory: () => ios,
       macosPhysicalMemory: () => macos,
+      metalRecommendedWorkingSet: () => metal,
     );
 
     test('uses MemAvailable on Android and Linux', () {
@@ -65,6 +95,63 @@ void main() {
       ));
     });
 
+    test("caps Metal on macOS at the GPU's recommended working set", () {
+      expect(
+        read(
+          Abi.macosArm64,
+          macos: 16 << 30,
+          metal: 11 << 30,
+          device: ImageGenerationComputeDevice.metal,
+        ),
+        (bytes: 11 << 30, source: "Metal's recommended GPU working set"),
+      );
+      for (final metal in [null, 0, 20 << 30]) {
+        expect(
+          read(
+            Abi.macosArm64,
+            macos: 16 << 30,
+            metal: metal,
+            device: ImageGenerationComputeDevice.metal,
+          ),
+          (bytes: 16 << 30, source: 'physical memory'),
+          reason: 'working set $metal',
+        );
+      }
+      expect(
+        read(
+          Abi.macosArm64,
+          macos: 16 << 30,
+          metal: 11 << 30,
+          device: ImageGenerationComputeDevice.cpu,
+        ),
+        (bytes: 16 << 30, source: 'physical memory'),
+      );
+      expect(
+        read(
+          Abi.iosArm64,
+          ios: 3 << 30,
+          metal: 1 << 30,
+          device: ImageGenerationComputeDevice.metal,
+        ),
+        (bytes: 3 << 30, source: "the app's remaining iOS memory limit"),
+      );
+    });
+
+    test('reports nothing for GPUs whose device memory is unknown', () {
+      for (final abi in [Abi.linuxX64, Abi.macosArm64, Abi.windowsX64]) {
+        expect(
+          read(
+            abi,
+            memInfo: _memInfo,
+            macos: 64 << 30,
+            metal: 48 << 30,
+            device: ImageGenerationComputeDevice.otherGpu,
+          ),
+          isNull,
+        );
+      }
+    });
+
     test('reports nothing on Windows', () {
       expect(read(Abi.windowsX64, memInfo: _memInfo, ios: 1, macos: 1), isNull);
     });
@@ -75,6 +162,22 @@ void main() {
         expect(budget!.bytes, greaterThan(1 << 30));
       }
     });
+
+    test("reads the host Metal device's working set on macOS", () {
+      final physical = readStableDiffusionMemoryBudget()?.bytes;
+      final metal = readStableDiffusionMemoryBudget(
+        device: ImageGenerationComputeDevice.metal,
+      );
+      if (!Platform.isMacOS) {
+        return;
+      }
+      expect(metal!.bytes, inInclusiveRange(1 << 30, physical!));
+      if (_hostHasMetalDevice()) {
+        // Apple GPUs recommend less than physical memory, so the cap applies.
+        expect(metal.source, "Metal's recommended GPU working set");
+        expect(metal.bytes, lessThan(physical));
+      }
+    }, skip: Platform.isMacOS ? false : 'macOS only');
   });
 
   group('stableDiffusionFileSize', () {

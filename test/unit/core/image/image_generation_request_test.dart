@@ -14,6 +14,9 @@ void main() {
     expect(request.steps, isNull);
     expect(request.guidanceScale, isNull);
     expect(request.seed, isNull);
+    expect(request.sampler, isNull);
+    expect(request.scheduler, isNull);
+    expect(request.flowShift, isNull);
     validateImageGenerationRequest(request);
   });
 
@@ -27,6 +30,7 @@ void main() {
         guidanceScale: 0,
         seed: 0,
         count: 1,
+        flowShift: 0.01,
       ),
       ImageGenerationRequest(
         prompt: 'a',
@@ -36,6 +40,7 @@ void main() {
         guidanceScale: 30,
         seed: 0x7FFFFFFF,
         count: 16,
+        flowShift: 100,
       ),
     ]) {
       validateImageGenerationRequest(request);
@@ -62,6 +67,17 @@ void main() {
       ),
       (ImageGenerationRequest(prompt: 'a', seed: -1), 'seed', -1),
       (ImageGenerationRequest(prompt: 'a', count: 17), 'count', 17),
+      (ImageGenerationRequest(prompt: 'a', flowShift: 0), 'flowShift', 0.0),
+      (
+        ImageGenerationRequest(prompt: 'a', flowShift: 100.5),
+        'flowShift',
+        100.5,
+      ),
+      (
+        ImageGenerationRequest(prompt: 'a', flowShift: double.nan),
+        'flowShift',
+        isNaN,
+      ),
     ]) {
       expect(
         () => validateImageGenerationRequest(request),

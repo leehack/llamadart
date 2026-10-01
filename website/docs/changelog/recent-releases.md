@@ -64,6 +64,27 @@ For canonical full release notes, use:
   Windows GPU module does not load; the docs now list the latest Visual C++
   v14 Redistributable as a Windows requirement
   ([#788](https://github.com/leehack/llamadart/issues/788)).
+- Add desktop-model settings to experimental image generation: an `llm`
+  text-encoder file for Z-Image and Qwen-Image, sampler, scheduler and flow
+  shift on the request and model defaults, and flash attention and direct
+  VAE convolutions, which now turn on automatically where measured faster or
+  smaller, such as a 1024x1024 Vulkan decode in about 1 s instead of up to
+  56 s in stable-diffusion.cpp's native CLI
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Name the missing VAE or text-encoder role when stable-diffusion.cpp
+  rejects a split image checkpoint, instead of a generic load error
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Check image models against Metal's recommended GPU working set on macOS,
+  skip the check on Vulkan instead of comparing with host memory, and raise
+  the estimate's fixed allowance to 512 MiB so it covers measured CPU peaks
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
+- Add experimental desktop image presets: SDXL-Lightning, FLUX.1-schnell,
+  SD 3.5 Large Turbo and Z-Image-Turbo, with 1024x1024 defaults, and the
+  basic example's image CLI downloads them
+  ([#802](https://github.com/leehack/llamadart/issues/802)).
+  **Breaking:** `ImageGenerationModelFamily` gains four values before
+  `custom`, so an exhaustive `switch` over it needs new cases and
+  `ImageGenerationModelFamily.custom.index` changes from 2 to 6.
 
 ## 0.9.0
 

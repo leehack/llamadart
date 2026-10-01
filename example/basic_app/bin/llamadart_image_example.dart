@@ -37,15 +37,16 @@ Future<void> main(List<String> arguments) async {
   StreamSubscription<ProcessSignal>? interrupt;
   try {
     final modelPath = await _resolve(downloads, options.modelSource, 'model');
-    final taesdSource = options.taesdSource;
-    final taesdPath = taesdSource == null
-        ? null
-        : await _resolve(downloads, taesdSource, 'TAESD');
+    final files = <String, String>{
+      for (final MapEntry(key: role, value: source)
+          in options.fileSources.entries)
+        role: await _resolve(downloads, source, role),
+    };
 
     print('Loading ${options.preset.flag}...');
     final loadTimer = Stopwatch()..start();
     engine = await ImageGenerationEngine.load(
-      options.model(modelPath, taesdPath),
+      options.model(modelPath, files),
       options: ImageGenerationOptions(
         device: options.device,
         threads: options.threads,

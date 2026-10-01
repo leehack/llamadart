@@ -72,6 +72,13 @@ class ImageModelProfile {
     ImageGenerationModelFamily.custom => ImageGenerationModel.custom(
       ImageGenerationModelFiles(model: modelPath, taesd: taesdPath),
     ),
+    ImageGenerationModelFamily.sdxlLightning ||
+    ImageGenerationModelFamily.flux1Schnell ||
+    ImageGenerationModelFamily.sd35LargeTurbo ||
+    ImageGenerationModelFamily.zImageTurbo => throw UnsupportedError(
+      'The example app offers only single-file phone presets, not '
+      '${family.name}.',
+    ),
   };
 
   /// Sampling defaults of the library preset.
@@ -118,7 +125,7 @@ class ImageModelProfile {
           'db169d69145ec4ff064e49d99c95fa05d3eb04ee453de35824a6d0f325513549',
     ),
     memoryNote:
-        'Needs about 2.8 GB of free memory; phones with less than 8 GB of '
+        'Needs about 3.1 GB of free memory; phones with less than 8 GB of '
         'RAM usually cannot load it.',
   );
 

@@ -8,9 +8,13 @@ description: Generate images from text prompts on device with the experimental I
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) through
 the opt-in `stable_diffusion` native runtime, separately from `LlamaEngine`.
 
-The API is experimental. Two small, distilled SD 1.x/2.x-family models are
-validated: SDXS-512 and SD-Turbo. It is text-to-image only: no image-to-image,
-inpainting, LoRA or ControlNet yet.
+The API is experimental. Two small, distilled SD 1.x/2.x-family presets are
+validated on phones and desktops: SDXS-512 and SD-Turbo.
+[Desktop presets](#desktop-presets) cover SDXL-Lightning, FLUX.1-schnell,
+SD 3.5 Large Turbo and Z-Image-Turbo on desktop GPUs and Macs (validated
+on macOS Metal only), and [`.custom`](#larger-models-with-custom) loads
+other families. It is text-to-image only: no image-to-image, inpainting,
+LoRA or ControlNet yet.
 
 ## Support
 
@@ -61,7 +65,11 @@ selects Vulkan, which it does by default; set
 | --- | --- | --- |
 | `ImageGenerationModel.sdxs(path)` | `sdxs-512-tinySDdistilled_Q8_0.gguf` from [`concedo/sdxs-512-tinySDdistilled-GGUF`](https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF) (651 MB) | 1 step, guidance 1 |
 | `ImageGenerationModel.sdTurbo(path, taesdPath: ...)` | `sd_turbo-f16-q8_0.gguf` from [`Green-Sky/SD-Turbo-GGUF`](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) (1.9 GB), optionally `diffusion_pytorch_model.safetensors` from [`madebyollin/taesd`](https://huggingface.co/madebyollin/taesd) (9 MB) | 1 step, guidance 1 |
-| `ImageGenerationModel.custom(files, defaults: ...)` | Other SD 1.x/2.x checkpoints, single-file or split | 20 steps, guidance 7 |
+| `ImageGenerationModel.sdxlLightning(path, vaePath: ..., taesdPath: ...)` | `sdxl_lightning_4step.safetensors` from [`ByteDance/SDXL-Lightning`](https://huggingface.co/ByteDance/SDXL-Lightning) (6.9 GB), optionally [`madebyollin/taesdxl`](https://huggingface.co/madebyollin/taesdxl) | 4 steps, guidance 1, Euler, `sgmUniform` |
+| `ImageGenerationModel.flux1Schnell(...)` | `flux1-schnell-Q4_0.gguf` and `ae.safetensors` from [`second-state/FLUX.1-schnell-GGUF`](https://huggingface.co/second-state/FLUX.1-schnell-GGUF) (7.0 GB), `clip_l-Q8_0.gguf` and `t5xxl-Q8_0.gguf` (5.3 GB); [`madebyollin/taef1`](https://huggingface.co/madebyollin/taef1) can replace `ae` | 4 steps, guidance 1 |
+| `ImageGenerationModel.sd35LargeTurbo(...)` | `sd3.5_large_turbo-Q4_0.gguf` from [`city96/stable-diffusion-3.5-large-turbo-gguf`](https://huggingface.co/city96/stable-diffusion-3.5-large-turbo-gguf) (4.8 GB), `clip_l`, `clip_g` and `t5xxl` Q8_0 from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) (6.1 GB), and [`madebyollin/taesd3`](https://huggingface.co/madebyollin/taesd3) or an SD 3.5 VAE | 4 steps, guidance 1 |
+| `ImageGenerationModel.zImageTurbo(...)` | `z_image_turbo-Q4_K.gguf` from [`leejet/Z-Image-Turbo-GGUF`](https://huggingface.co/leejet/Z-Image-Turbo-GGUF) (3.9 GB), `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` from [`unsloth/Qwen3-4B-Instruct-2507-GGUF`](https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF) (2.5 GB) and FLUX's `ae.safetensors` | 8 steps, guidance 1 |
+| `ImageGenerationModel.custom(files, defaults: ...)` | Any other checkpoint stable-diffusion.cpp loads, single-file or split | 20 steps, guidance 7 |
 
 SDXS is distilled for exactly one step. SD-Turbo takes one to four steps; four
 add detail at about four times the sampling time. TAESD replaces the full VAE
@@ -83,8 +91,76 @@ final entry = await downloads.ensureModel(
 final model = ImageGenerationModel.sdxs(entry.filePath);
 ```
 
-`.custom` is experimental. Larger families stable-diffusion.cpp supports, such
-as SDXL or FLUX, may load but are untested and can exceed phone memory.
+### Desktop presets
+
+The SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
+presets generate at 1024x1024; pass `width: 1024, height: 1024`. They are
+for desktop GPUs and Macs, not phones. Measured from
+[#802](https://github.com/leehack/llamadart/issues/802), first image in a new
+process, automatic attention and VAE settings:
+
+| Preset | M4 Max, Metal: time, peak process memory | Memory check asks for | NVIDIA L4, Vulkan (native CLI, warm) |
+| --- | --- | --- | --- |
+| SDXL-Lightning + TAESDXL | 6.1 s, 7.8 GiB (12.1 s with the checkpoint's VAE) | 8.6 GiB | 4.4 s |
+| FLUX.1-schnell Q4_0 + TAEF1 | 61 s, 12.9 GiB | 14.5 GiB | 25.3 s with `ae` |
+| SD 3.5 Large Turbo Q4_0 + TAESD3 | 16.1 s, 12.3 GiB | 13.1 GiB | 19.4 s with the SD 3.5 VAE |
+| Z-Image-Turbo Q4_K | 91 s, 7.8 GiB | 8.3 GiB | 35.0 s (Q8_0) |
+
+The Vulkan figures come from stable-diffusion.cpp's own CLI on the same
+runtime commit with `vae_conv_direct`, which the engine now sets on Vulkan;
+llamadart itself was not run there. The tiny autoencoders (TAESDXL, TAEF1,
+TAESD3) cut 6 to 9 s from each 1024x1024 decode on the M4 Max with no visible
+quality loss in these samples. The SD 3.5 VAE repository is gated, so TAESD3
+is the ungated choice. `flux1Schnell` and `sd35LargeTurbo` throw
+`ArgumentError` without `vaePath` or `taesdPath`.
+
+### Larger models with `.custom`
+
+`.custom` is experimental. It loads any family the bundled
+stable-diffusion.cpp supports, including other SDXL, SD 3.5, FLUX, Z-Image
+and Qwen-Image checkpoints. These need several GB of memory and are meant for desktop GPUs
+and Macs. Each family takes its own files in `ImageGenerationModelFiles`:
+
+| Family | Files |
+| --- | --- |
+| SD 1.x, 2.x, SDXL | `model` (single file), optionally `vae` or `taesd` |
+| SD 3.5 | `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; a single-file GGUF that includes the VAE and encoders, such as SD 3.5 Medium, goes in `model` instead |
+| FLUX | `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl` |
+| Z-Image, Qwen-Image | `diffusionModel`, `vae`, `llm` (the language-model text encoder) |
+
+Give each model its sampling defaults. Settings run in
+[#802](https://github.com/leehack/llamadart/issues/802) (SD 3.5 Medium took
+about 3 minutes per 1024x1024 image on an M4 Max, Qwen-Image about 11):
+
+```dart
+final sd35Medium = ImageGenerationModel.custom(
+  const ImageGenerationModelFiles(
+    model: 'sd3.5_medium-Q8_0.gguf', // includes the VAE
+    clipL: 'clip_l-Q8_0.gguf',
+    clipG: 'clip_g-Q8_0.gguf',
+    t5xxl: 't5xxl-Q8_0.gguf',
+  ),
+  defaults: const ImageGenerationDefaults(steps: 28, guidanceScale: 4.5),
+);
+final qwenImage = ImageGenerationModel.custom(
+  const ImageGenerationModelFiles(
+    diffusionModel: 'Qwen_Image-Q4_0.gguf',
+    vae: 'qwen_image_vae.safetensors',
+    llm: 'Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf',
+  ),
+  defaults: const ImageGenerationDefaults(
+    steps: 20,
+    guidanceScale: 2.5,
+    flowShift: 3,
+  ),
+);
+```
+
+`sampler`, `scheduler` and `flowShift` can also be set per request. Left
+unset, the runtime picks the model's own: Euler for SD 3.5, FLUX and Z-Image,
+Euler ancestral with the discrete schedule for SD 1.x, 2.x and SDXL.
+`flowShift` applies only to flow-matching models; Qwen-Image's reference
+settings use 3.
 
 ## Generate
 
@@ -135,6 +211,22 @@ await engine.dispose();
 `load` loads every weight up front. The first image in a process can still be
 slow while the GPU compiles shaders; see
 [First-image latency and warm-up](#first-image-latency-and-warm-up).
+
+## Attention and VAE settings
+
+Two runtime settings in `ImageGenerationOptions` change speed and memory.
+Direct VAE convolutions leave the image identical; flash attention changes
+pixels slightly, by rounding. Left `null`, the engine picks them for the device it loads
+on:
+
+| Setting | Automatic choice | Measured |
+| --- | --- | --- |
+| `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GiB to 0.3 GiB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x sampling time unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. Pixels change slightly |
+| `vaeDirectConvolution` (full VAE decode) | On, except on Metal and with a tiny autoencoder (`taesd` or SDXS) | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Metal: about 7 times slower. Identical output |
+
+Vulkan flash attention has not been measured yet, so it stays off there;
+pass `flashAttention: true` to try it. The runtime falls back to regular
+attention where a device has no kernel for it.
 
 ## First-image latency and warm-up
 
@@ -242,27 +334,39 @@ avoids by loading them eagerly.
 ## Memory check
 
 Before loading, the engine estimates the model's peak memory as its file
-sizes plus a quarter, plus 256 MiB, and compares that with what the device
-reports:
+sizes plus a quarter, plus 512 MiB, and compares that with the memory of the
+device the model loads on:
 
-| Platform | Compared with |
+| Platform and device | Compared with |
 | --- | --- |
-| Android, Linux | `MemAvailable` from `/proc/meminfo` |
-| iOS | The app's remaining memory limit (`os_proc_available_memory`) |
-| macOS | Physical memory |
-| Windows | Not checked |
+| Android, Linux: CPU | `MemAvailable` from `/proc/meminfo` |
+| iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
+| macOS: CPU | Physical memory |
+| macOS: Metal | Physical memory, capped at the GPU's `recommendedMaxWorkingSetSize` (about two thirds to three quarters of it) |
+| Linux, Windows: Vulkan | Not checked: the weights live in GPU memory, which the runtime does not report yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)) |
+| Windows: CPU | Not checked |
 
 A model that does not fit throws `LlamaModelException` naming both figures,
-instead of the system killing the app. The estimate is simple and matches the
-measured SDXS peaks (1.06 to 1.55 GB of process memory); set
+instead of the system killing the app. Set
 `ImageGenerationOptions(checkMemory: false)` to load anyway.
+
+The estimate does not depend on the image size. It covers the measured peaks
+at each model's native size with the automatic attention and VAE settings:
+SDXS used 1.30 GiB and SD-Turbo on the CPU 2.66 GiB of process memory on an
+M4 Max, and 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image stayed 0.5
+to 1.6 GiB under it on Metal. SD 3.5 Medium, whose single file decodes with
+the full VAE, peaked 0.3 GiB above it (11.6 against 11.3 GiB). Larger sizes
+need more, especially on the CPU: SD-Turbo at 1024x1024
+peaked at 4.7 GiB there. On a Vulkan GPU too small for the model,
+stable-diffusion.cpp keeps some weights in host memory, which is slower but
+does not fail the load.
 
 ## Errors
 
 | Exception | When |
 | --- | --- |
 | `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, or `ImageGenerationDevice.gpu` without a GPU |
-| `LlamaModelException` | A file is missing, the model does not fit, or the runtime cannot load it as an image model |
+| `LlamaModelException` | A file is missing, the model does not fit, or the runtime cannot load it as an image model. A rejected split checkpoint names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or options |
 | `LlamaStateException` | Another generation or load is running, or the engine is disposed |
 | `LlamaInferenceException` | The runtime failed a generation, for example an aborted Metal command buffer or running out of memory; the engine runs the next request |
@@ -272,17 +376,21 @@ measured SDXS peaks (1.06 to 1.55 GB of process memory); set
 - Runtime logs are not forwarded to `LlamaLogger`: stable-diffusion.cpp's log
   text is only valid during a call made from its own threads
   ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
-  ggml's own backend messages still reach stderr.
+  ggml's own backend messages still reach stderr. The same gap keeps the
+  runtime's own reason out of a load failure; the error names missing file
+  roles instead.
 - Android runs on the CPU only: ggml Vulkan and OpenCL crashed or ran slower
   on the phones tried
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps); the task fails and the next request runs.
-- Windows is not memory-checked. Per-platform validation results, including
-  timings, are in [#779](https://github.com/leehack/llamadart/issues/779).
+- Windows and Vulkan GPUs are not memory-checked. Per-platform validation
+  results, including timings, are in
+  [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).
 
 The [basic app](../examples/basic-app) has a command-line image example, and
 the [chat app](../examples/chat-app) has an image screen that downloads SDXS
-or SD-Turbo with TAESD and generates on device.
+or SD-Turbo with TAESD and generates on device. The command-line example
+also runs the desktop presets from pinned downloads.
