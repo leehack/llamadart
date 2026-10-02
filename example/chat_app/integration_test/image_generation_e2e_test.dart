@@ -82,7 +82,7 @@ void main() {
     // cache (MTL_SHADER_CACHE_SIZE=0 on macOS); it must not stall the UI.
     expect(longestGap, lessThan(const Duration(seconds: 2)));
 
-    const profile = ImageModelProfile.sdxs;
+    final profile = ImageModelProfile.sdxs;
     if (!provider.isInstalled(profile)) {
       await tester.tap(find.byKey(ValueKey<String>('install_${profile.id}')));
       await _pumpUntil(

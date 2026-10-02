@@ -232,16 +232,18 @@ hooks:
       llamadart_native_runtimes: [llama_cpp, stable_diffusion]
 ```
 
-The first run downloads the runtime (40 to 70 MB) through the build hook and,
-unless `--model` names a local file, the pinned SDXS checkpoint (651 MB) from
-`concedo/sdxs-512-tinySDdistilled-GGUF` into the package-managed cache.
+The first run downloads the runtime (40 to 70 MB) through the build hook.
+`ImageGenerationEngine.load` then downloads the preset's pinned files
+(`ImageGenerationPresetFile`), unless a flag names a local file: for SDXS the
+683 MB checkpoint from `concedo/sdxs-512-tinySDdistilled-GGUF`, into the
+package-managed cache, which later runs reuse.
 
 ```bash
 dart run bin/llamadart_image_example.dart \
   -p "a red fox in autumn leaves" --seed 42 -o fox.png
 ```
 
-SD-Turbo (1.9 GB) with the TAESD decoder, four steps:
+SD-Turbo (2.0 GB) with the TAESD decoder, four steps:
 
 ```bash
 dart run bin/llamadart_image_example.dart --preset sd-turbo --taesd default \
@@ -257,9 +259,10 @@ dart run bin/llamadart_image_example.dart --preset sdxl-lightning \
   --taesd default -p "a red fox in autumn leaves" -o fox.png
 ```
 
-Progress prints per phase (`encodingPrompt`, `sampling 1/4`, `decoding`).
-Ctrl-C cancels the generation before its next sampling step and exits with
-code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs need AVX2,
+Progress prints the files together while they download or load from the
+cache, then per phase (`encodingPrompt`, `sampling 1/4`, `decoding`). Ctrl-C
+cancels the download, or the generation before its next sampling step, and
+exits with code 130. It runs on macOS, Linux and Windows x64 hosts (x64 CPUs need AVX2,
 FMA, F16C and BMI2); elsewhere, or when the runtime is not bundled, it exits
 with code 2 and the reason.
 
@@ -297,6 +300,10 @@ LLAMADART_SD_TURBO_MODEL=/models/sd_turbo-f16-q8_0.gguf \
 LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
+
+Set `LLAMADART_IMAGE_PRESET_CACHE` to a cache directory to also load the
+SDXS preset from its pinned Hugging Face file (683 MB on the first run) and
+check that the next load reuses the cache.
 
 Another local-only test checks that a program ending with a llama.cpp or
 image model still loaded, by returning from `main` or by throwing, exits
@@ -339,7 +346,7 @@ dart test
 - **`bin/llamadart_decision_example.dart`**: Decision model CLI example.
 - **`lib/services/decision_cli_options.dart`**: Decision CLI flags and pinned model sources.
 - **`bin/llamadart_image_example.dart`**: Image generation CLI example.
-- **`lib/services/image_cli_options.dart`**: Image CLI flags and pinned model sources.
+- **`lib/services/image_cli_options.dart`**: Image CLI flags and the library presets they build.
 - **`lib/services/decision_ticket_triage.dart`**: Typed ticket question keys and answer formatting.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.

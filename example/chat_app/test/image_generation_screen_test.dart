@@ -474,7 +474,7 @@ void main() {
       ImageGenerationModelFamily.sdTurbo,
     );
     expect(
-      generation.loadedModels.last.files.taesd,
+      generation.loadedModels.last.files.sources['taesd']?.path,
       '/models/taesd.safetensors',
     );
     provider.dispose();
@@ -890,19 +890,44 @@ void main() {
       expect(ImageModelProfile.sdxs.isRecommended, isTrue);
     });
 
+    test('reuses the library pins, keeping the URLs installs were made '
+        'from', () {
+      expect(
+        ImageModelProfile.sdxs.modelSource.url,
+        'https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF/resolve/'
+        '3144d898d61492f8382ffcabec055733fc5b2a0e/'
+        'sdxs-512-tinySDdistilled_Q8_0.gguf?download=true',
+      );
+      for (final (source, file) in [
+        (ImageModelProfile.sdxs.modelSource, ImageGenerationPresetFile.sdxs),
+        (
+          ImageModelProfile.sdTurbo.modelSource,
+          ImageGenerationPresetFile.sdTurbo,
+        ),
+        (
+          ImageModelProfile.sdTurbo.taesdSource!,
+          ImageGenerationPresetFile.taesd,
+        ),
+      ]) {
+        expect(source.url, file.source.resolvedUri.toString());
+        expect(source.sizeBytes, file.sizeBytes);
+        expect(source.sha256, file.sha256);
+      }
+    });
+
     test('builds the library presets and their defaults', () {
       final sdxs = ImageModelProfile.sdxs.buildModel(modelPath: '/m.gguf');
       expect(sdxs.family, ImageGenerationModelFamily.sdxs);
-      expect(sdxs.files.model, '/m.gguf');
+      expect(sdxs.files.sources['model']?.path, '/m.gguf');
       expect(ImageModelProfile.sdxs.defaults.steps, 1);
 
-      final turbo = const InstalledImageModel(
+      final turbo = InstalledImageModel(
         profile: ImageModelProfile.sdTurbo,
         modelPath: '/turbo.gguf',
         taesdPath: '/taesd.safetensors',
       ).toGenerationModel();
       expect(turbo.family, ImageGenerationModelFamily.sdTurbo);
-      expect(turbo.files.taesd, '/taesd.safetensors');
+      expect(turbo.files.sources['taesd']?.path, '/taesd.safetensors');
       expect(turbo.defaults.guidanceScale, 1);
     });
   });

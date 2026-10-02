@@ -12,21 +12,36 @@ const _model = '/models/sdxs.gguf';
 const _taesd = '/models/taesd.safetensors';
 const _gib = 1 << 30;
 
+ModelSource _local(String path) => ModelSource.path(path);
+
 void main() {
   late _FakeDriver driver;
   final engines = <ImageGenerationEngine>[];
 
+  late _FakeDownloads downloads;
+
   Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageGenerationOptions options = const ImageGenerationOptions(),
+    ModelLoadOptions loadOptions = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelResolver? modelResolver,
   }) async {
-    final engine = await ImageGenerationEngine.load(model, options: options);
+    final engine = await ImageGenerationEngine.load(
+      model,
+      options: options,
+      loadOptions: loadOptions,
+      onProgress: onProgress,
+      modelResolver: modelResolver,
+      modelDownloadManager: downloads,
+    );
     engines.add(engine);
     return engine;
   }
 
   setUp(() {
     driver = _FakeDriver();
+    downloads = _FakeDownloads(driver);
     debugImageGenerationDriverOverride = driver;
   });
 
@@ -150,7 +165,9 @@ void main() {
       final gate = driver.probeGate = Completer<void>();
 
       final check = ImageGenerationEngine.checkRuntime();
-      final loading = load(ImageGenerationModel.sdxs(_model));
+      final loading = load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       await pumpEventQueue();
       expect(driver.started, isEmpty);
       gate.complete();
@@ -169,7 +186,7 @@ void main() {
       );
 
       await expectLater(
-        load(ImageGenerationModel.sdxs(_model)),
+        load(ImageGenerationModel.sdxsPreset(model: _local(_model))),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -183,7 +200,10 @@ void main() {
 
     test('passes every file and the device choice to the runtime', () async {
       final engine = await load(
-        ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd),
+        ImageGenerationModel.sdTurboPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
+        ),
         options: const ImageGenerationOptions(
           device: ImageGenerationDevice.cpu,
           threads: 4,
@@ -201,7 +221,9 @@ void main() {
     });
 
     test('auto leaves the device to the runtime and reports its GPU', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       expect(driver.started.single.backend, isNull);
       expect(engine.capabilities.backendName, 'MTL0');
@@ -213,10 +235,10 @@ void main() {
 
       await load(
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(
-            diffusionModel: _model,
-            vae: _taesd,
-            llm: llm,
+          ImageGenerationModelFiles.fromSources(
+            diffusionModel: _local(_model),
+            vae: _local(_taesd),
+            llm: _local(llm),
           ),
         ),
       );
@@ -232,9 +254,9 @@ void main() {
       expect(
         load(
           ImageGenerationModel.custom(
-            const ImageGenerationModelFiles(
-              diffusionModel: _model,
-              llm: '/models/missing.gguf',
+            ImageGenerationModelFiles.fromSources(
+              diffusionModel: _local(_model),
+              llm: _local('/models/missing.gguf'),
             ),
           ),
         ),
@@ -261,7 +283,7 @@ void main() {
         return driver.started.single;
       }
 
-      final sdTurbo = ImageGenerationModel.sdTurbo(_model);
+      final sdTurbo = ImageGenerationModel.sdTurboPreset(model: _local(_model));
       const metal = 'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n';
       const vulkan = 'Vulkan0\tNVIDIA L4\nCPU\tHost\n';
       const cpu = 'CPU\tCortex-A78\n';
@@ -304,8 +326,11 @@ void main() {
 
       test('a tiny autoencoder keeps the unfolded VAE', () async {
         for (final model in [
-          ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd),
-          ImageGenerationModel.sdxs(_model),
+          ImageGenerationModel.sdTurboPreset(
+            model: _local(_model),
+            taesd: _local(_taesd),
+          ),
+          ImageGenerationModel.sdxsPreset(model: _local(_model)),
         ]) {
           final config = await startedWith(vulkan, model);
           expect(
@@ -330,7 +355,7 @@ void main() {
 
         final onVulkan = await startedWith(
           vulkan,
-          ImageGenerationModel.sdxs(_model),
+          ImageGenerationModel.sdxsPreset(model: _local(_model)),
           options: const ImageGenerationOptions(
             flashAttention: true,
             vaeDirectConvolution: true,
@@ -345,7 +370,7 @@ void main() {
       driver.status = _available('Vulkan0\tAMD Radeon\nCPU\tHost\n');
 
       final engine = await load(
-        ImageGenerationModel.sdxs(_model),
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
         options: const ImageGenerationOptions(
           device: ImageGenerationDevice.gpu,
         ),
@@ -360,7 +385,7 @@ void main() {
 
       await expectLater(
         load(
-          ImageGenerationModel.sdxs(_model),
+          ImageGenerationModel.sdxsPreset(model: _local(_model)),
           options: const ImageGenerationOptions(
             device: ImageGenerationDevice.gpu,
           ),
@@ -379,7 +404,9 @@ void main() {
       );
       expect(driver.started, isEmpty);
 
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       expect(engine.capabilities.backendName, 'CPU');
     });
 
@@ -387,7 +414,12 @@ void main() {
       driver.sizes.remove(_taesd);
 
       await expectLater(
-        load(ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd)),
+        load(
+          ImageGenerationModel.sdTurboPreset(
+            model: _local(_model),
+            taesd: _local(_taesd),
+          ),
+        ),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
@@ -407,7 +439,9 @@ void main() {
       await expectLater(
         load(
           ImageGenerationModel.custom(
-            const ImageGenerationModelFiles(vae: '/models/vae.safetensors'),
+            ImageGenerationModelFiles.fromSources(
+              vae: _local('/models/vae.safetensors'),
+            ),
           ),
         ),
         throwsA(
@@ -423,7 +457,7 @@ void main() {
     test('negative threads are rejected', () async {
       await expectLater(
         load(
-          ImageGenerationModel.sdxs(_model),
+          ImageGenerationModel.sdxsPreset(model: _local(_model)),
           options: const ImageGenerationOptions(threads: -1),
         ),
         throwsA(isA<LlamaImageGenerationException>()),
@@ -436,14 +470,418 @@ void main() {
         driver.startError = LlamaModelException('not an image model');
 
         await expectLater(
-          load(ImageGenerationModel.sdxs(_model)),
+          load(ImageGenerationModel.sdxsPreset(model: _local(_model))),
           throwsA(isA<LlamaModelException>()),
         );
 
         driver.startError = null;
-        await load(ImageGenerationModel.sdxs(_model));
+        await load(ImageGenerationModel.sdxsPreset(model: _local(_model)));
       },
     );
+  });
+
+  group('model sources', () {
+    test('each preset downloads its pinned files by default', () async {
+      final presets =
+          <ImageGenerationModel, Map<String, ImageGenerationPresetFile>>{
+            ImageGenerationModel.sdxsPreset(): {
+              'model': ImageGenerationPresetFile.sdxs,
+            },
+            ImageGenerationModel.sdTurboPreset(): {
+              'model': ImageGenerationPresetFile.sdTurbo,
+            },
+            ImageGenerationModel.sdxlLightningPreset(): {
+              'model': ImageGenerationPresetFile.sdxlLightning,
+            },
+            ImageGenerationModel.flux1SchnellPreset(): {
+              'diffusionModel': ImageGenerationPresetFile.flux1Schnell,
+              'vae': ImageGenerationPresetFile.fluxVae,
+              'clipL': ImageGenerationPresetFile.clipL,
+              't5xxl': ImageGenerationPresetFile.t5xxl,
+            },
+            ImageGenerationModel.sd35LargeTurboPreset(): {
+              'diffusionModel': ImageGenerationPresetFile.sd35LargeTurbo,
+              'taesd': ImageGenerationPresetFile.taesd3,
+              'clipL': ImageGenerationPresetFile.clipL,
+              'clipG': ImageGenerationPresetFile.clipG,
+              't5xxl': ImageGenerationPresetFile.t5xxl,
+            },
+            ImageGenerationModel.zImageTurboPreset(): {
+              'diffusionModel': ImageGenerationPresetFile.zImageTurbo,
+              'vae': ImageGenerationPresetFile.fluxVae,
+              'llm': ImageGenerationPresetFile.zImageTurboLlm,
+            },
+          };
+
+      for (final MapEntry(key: model, value: expected) in presets.entries) {
+        downloads.calls.clear();
+        final engine = await load(model);
+        await engine.dispose();
+
+        expect(
+          [for (final (source, _) in downloads.calls) source.canonicalKey],
+          [for (final file in expected.values) file.source.canonicalKey],
+          reason: model.family.name,
+        );
+        expect(
+          downloads.calls.first.$1.resolvedUri.toString(),
+          startsWith(
+            'https://huggingface.co/${expected.values.first.repoId}/resolve/'
+            '${expected.values.first.revision}/',
+          ),
+        );
+        expect(driver.started.last.files, {
+          for (final MapEntry(key: role, value: file) in expected.entries)
+            role: _FakeDownloads.cachePath(file.source),
+        }, reason: model.family.name);
+      }
+    });
+
+    test('an override replaces only its file, and remote-only options reach '
+        'only remote files', () async {
+      const t5xxl = '/models/t5xxl.gguf';
+      driver.sizes[t5xxl] = _gib;
+      final cacheDirectory = '/models/cache';
+
+      await load(
+        ImageGenerationModel.flux1SchnellPreset(
+          t5xxl: _local(t5xxl),
+          taesd: ImageGenerationPresetFile.taef1.source,
+        ),
+        loadOptions: ModelLoadOptions(
+          bearerToken: 'hf_secret',
+          cacheDirectory: cacheDirectory,
+        ),
+      );
+
+      expect(driver.started.single.files, {
+        'diffusionModel': _FakeDownloads.cachePath(
+          ImageGenerationPresetFile.flux1Schnell.source,
+        ),
+        'taesd': _FakeDownloads.cachePath(
+          ImageGenerationPresetFile.taef1.source,
+        ),
+        'clipL': _FakeDownloads.cachePath(
+          ImageGenerationPresetFile.clipL.source,
+        ),
+        't5xxl': t5xxl,
+      });
+      for (final (source, options) in downloads.calls) {
+        expect(
+          options.bearerToken,
+          source.isLocal ? isNull : 'hf_secret',
+          reason: source.fileName,
+        );
+        expect(
+          options.cacheDirectory,
+          source.isLocal ? isNull : cacheDirectory,
+          reason: source.fileName,
+        );
+      }
+    });
+
+    test('reports progress across files, counting cached ones as '
+        'received', () async {
+      final model = ImageGenerationModel.sdTurboPreset(
+        taesd: ImageGenerationPresetFile.taesd.source,
+      );
+      final total =
+          ImageGenerationPresetFile.sdTurbo.sizeBytes +
+          ImageGenerationPresetFile.taesd.sizeBytes;
+      downloads.cached.add(
+        ImageGenerationPresetFile.sdTurbo.source.canonicalKey,
+      );
+      final events = <ModelDownloadProgress>[];
+
+      await load(model, onProgress: events.add);
+
+      expect(downloads.downloaded, ['diffusion_pytorch_model.safetensors']);
+      expect(events.map((e) => e.totalBytes), everyElement(total));
+      expect(events.map((e) => e.receivedBytes), [
+        ImageGenerationPresetFile.sdTurbo.sizeBytes,
+        ImageGenerationPresetFile.sdTurbo.sizeBytes +
+            ImageGenerationPresetFile.taesd.sizeBytes ~/ 2,
+        total,
+        total,
+      ]);
+    });
+
+    test('the total stays unknown until every file size is known', () async {
+      downloads.remoteSizes['custom.gguf'] = 8192;
+      final events = <ModelDownloadProgress>[];
+
+      await load(
+        ImageGenerationModel.sdTurboPreset(
+          model: ModelSource.url(Uri.parse('https://example.com/custom.gguf')),
+          taesd: _local(_taesd),
+        ),
+        onProgress: events.add,
+      );
+
+      expect(events.first.totalBytes, 8192 + (9 << 20));
+      expect(events.last.receivedBytes, 8192 + (9 << 20));
+
+      events.clear();
+      downloads.remoteSizes['late.gguf'] = 1024;
+      await load(
+        ImageGenerationModel.sdTurboPreset(
+          model: _local(_model),
+          taesd: ModelSource.url(Uri.parse('https://example.com/late.gguf')),
+        ),
+        onProgress: events.add,
+      );
+      expect(events.first.totalBytes, isNull);
+      expect(events.first.receivedBytes, 651 << 20);
+      expect(events.last.totalBytes, (651 << 20) + 1024);
+    });
+
+    test('a cancelled load stops downloading, starts nothing and frees the '
+        'slot', () async {
+      final cancelToken = ModelDownloadCancelToken();
+      final gate = downloads.gate = Completer<void>();
+
+      final loading = load(
+        ImageGenerationModel.flux1SchnellPreset(),
+        loadOptions: ModelLoadOptions(cancelToken: cancelToken),
+      );
+      await pumpEventQueue();
+      cancelToken.cancel();
+      gate.complete();
+
+      await expectLater(loading, throwsA(isA<LlamaStateException>()));
+      expect(downloads.calls, hasLength(1));
+      expect(driver.started, isEmpty);
+
+      downloads.gate = null;
+      await load(ImageGenerationModel.sdxsPreset(model: _local(_model)));
+    });
+
+    test('a cancel after the last file resolves stops before the runtime '
+        'loads', () async {
+      final cancelToken = ModelDownloadCancelToken();
+      final size = ImageGenerationPresetFile.sdxs.sizeBytes;
+
+      await expectLater(
+        load(
+          ImageGenerationModel.sdxsPreset(),
+          loadOptions: ModelLoadOptions(cancelToken: cancelToken),
+          onProgress: (progress) {
+            if (progress.receivedBytes == size) {
+              cancelToken.cancel();
+            }
+          },
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('cancelled'),
+          ),
+        ),
+      );
+      expect(driver.started, isEmpty);
+    });
+
+    test('a download failure surfaces as the download manager threw '
+        'it', () async {
+      final failure = LlamaModelException('Failed to download sdxs.gguf.');
+      downloads.error = failure;
+
+      await expectLater(
+        load(ImageGenerationModel.sdxsPreset()),
+        throwsA(same(failure)),
+      );
+      expect(driver.started, isEmpty);
+    });
+
+    test('a missing local file fails before anything downloads', () async {
+      await expectLater(
+        load(
+          ImageGenerationModel.flux1SchnellPreset(
+            t5xxl: _local('/models/missing.gguf'),
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('t5xxl'), contains('/models/missing.gguf')),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+    });
+
+    test('an unavailable runtime throws before anything downloads', () async {
+      driver.status = StableDiffusionRuntimeStatus.unavailable(
+        LlamaUnsupportedException('not published for android-x64'),
+      );
+
+      await expectLater(
+        load(ImageGenerationModel.sdxsPreset()),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(downloads.calls, isEmpty);
+    });
+
+    test('a checksum in the load options is rejected before anything '
+        'downloads', () async {
+      await expectLater(
+        load(
+          ImageGenerationModel.sdxsPreset(),
+          loadOptions: ModelLoadOptions(
+            sha256: ImageGenerationPresetFile.sdxs.sha256,
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('ModelLoadOptions.sha256'),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+    });
+
+    test('resolves through the given resolver, and keeps a signed URL out of '
+        'its errors', () async {
+      final signed = Uri.parse(
+        'https://example.com/sdxs.gguf?X-Amz-Signature=supersecret',
+      );
+
+      await expectLater(
+        load(
+          ImageGenerationModel.sdxsPreset(),
+          modelResolver: _RemoteTargetResolver(signed, useBrowserCache: false),
+          loadOptions: ModelLoadOptions(bearerToken: 'hf_secret'),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => '${error.message} ${error.details}',
+            'message',
+            allOf(
+              contains('image model'),
+              isNot(contains('supersecret')),
+              isNot(contains('hf_secret')),
+            ),
+          ),
+        ),
+      );
+
+      await load(
+        ImageGenerationModel.sdxsPreset(),
+        modelResolver: _RemoteTargetResolver(signed, useBrowserCache: true),
+      );
+      final (source, _) = downloads.calls.single;
+      expect(source.resolvedUri, signed);
+      expect(
+        source.canonicalKey,
+        ImageGenerationPresetFile.sdxs.source.canonicalKey,
+      );
+    });
+
+    test('the memory check counts downloaded files', () async {
+      driver.budget = (bytes: _gib, source: 'test budget');
+
+      await expectLater(
+        load(ImageGenerationModel.sdTurboPreset()),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('1.88 GiB of weights'),
+          ),
+        ),
+      );
+      expect(downloads.downloaded, ['sd_turbo-f16-q8_0.gguf']);
+      expect(driver.started, isEmpty);
+    });
+  });
+
+  group('deprecated path factories', () {
+    test('load the same local files as before', () async {
+      const files = '/models/';
+      for (final name in ['clip_l', 'clip_g', 't5xxl', 'vae', 'llm']) {
+        driver.sizes['$files$name'] = _gib;
+      }
+      final models = <ImageGenerationModel, Map<String, String>>{
+        ImageGenerationModel.sdxs(_model): {'model': _model},
+        ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd): {
+          'model': _model,
+          'taesd': _taesd,
+        },
+        ImageGenerationModel.sdxlLightning(
+          _model,
+          vaePath: '${files}vae',
+          taesdPath: _taesd,
+        ): {
+          'model': _model,
+          'vae': '${files}vae',
+          'taesd': _taesd,
+        },
+        ImageGenerationModel.flux1Schnell(
+          diffusionModelPath: _model,
+          clipLPath: '${files}clip_l',
+          t5xxlPath: '${files}t5xxl',
+          vaePath: '${files}vae',
+        ): {
+          'diffusionModel': _model,
+          'vae': '${files}vae',
+          'clipL': '${files}clip_l',
+          't5xxl': '${files}t5xxl',
+        },
+        ImageGenerationModel.sd35LargeTurbo(
+          diffusionModelPath: _model,
+          clipLPath: '${files}clip_l',
+          clipGPath: '${files}clip_g',
+          t5xxlPath: '${files}t5xxl',
+          taesdPath: _taesd,
+        ): {
+          'diffusionModel': _model,
+          'taesd': _taesd,
+          'clipL': '${files}clip_l',
+          'clipG': '${files}clip_g',
+          't5xxl': '${files}t5xxl',
+        },
+        ImageGenerationModel.zImageTurbo(
+          diffusionModelPath: _model,
+          llmPath: '${files}llm',
+          vaePath: '${files}vae',
+        ): {
+          'diffusionModel': _model,
+          'vae': '${files}vae',
+          'llm': '${files}llm',
+        },
+        ImageGenerationModel.custom(
+          const ImageGenerationModelFiles(model: _model, taesd: _taesd),
+        ): {
+          'model': _model,
+          'taesd': _taesd,
+        },
+      };
+
+      for (final MapEntry(key: model, value: expected) in models.entries) {
+        final engine = await load(model);
+        await engine.dispose();
+        expect(driver.started.last.files, expected, reason: model.family.name);
+      }
+      expect(downloads.calls.every((call) => call.$1.isLocal), isTrue);
+    });
+
+    test('an empty path throws LlamaModelException naming its role', () async {
+      await expectLater(
+        load(ImageGenerationModel.sdTurbo(_model, taesdPath: '')),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('taesd'),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+    });
   });
 
   group('memory preflight', () {
@@ -455,7 +893,7 @@ void main() {
       );
 
       await expectLater(
-        load(ImageGenerationModel.sdxs(_model)),
+        load(ImageGenerationModel.sdxsPreset(model: _local(_model))),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
@@ -480,22 +918,32 @@ void main() {
       driver.budget = (bytes: required - 1, source: 'physical memory');
 
       await expectLater(
-        load(ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd)),
+        load(
+          ImageGenerationModel.sdTurboPreset(
+            model: _local(_model),
+            taesd: _local(_taesd),
+          ),
+        ),
         throwsA(isA<LlamaModelException>()),
       );
 
       driver.budget = (bytes: required, source: 'physical memory');
-      await load(ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd));
+      await load(
+        ImageGenerationModel.sdTurboPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
+        ),
+      );
     });
 
     test('is skipped without a budget or when checkMemory is false', () async {
       driver.sizes[_model] = 64 * _gib;
 
-      await load(ImageGenerationModel.sdxs(_model));
+      await load(ImageGenerationModel.sdxsPreset(model: _local(_model)));
 
       driver.budget = (bytes: _gib, source: 'physical memory');
       await load(
-        ImageGenerationModel.sdxs(_model),
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
         options: const ImageGenerationOptions(checkMemory: false),
       );
       expect(driver.started, hasLength(2));
@@ -536,7 +984,7 @@ void main() {
           ..status = _available(devices)
           ..budgetDevices.clear();
         await load(
-          ImageGenerationModel.sdxs(_model),
+          ImageGenerationModel.sdxsPreset(model: _local(_model)),
           options: ImageGenerationOptions(device: device),
         );
         expect(driver.budgetDevices, [expected], reason: devices);
@@ -546,7 +994,9 @@ void main() {
 
   group('generate', () {
     test('rejects invalid requests before starting', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       for (final request in [
         const ImageGenerationRequest(prompt: ' '),
@@ -581,7 +1031,7 @@ void main() {
       ]) {
         final engine = await load(
           ImageGenerationModel.custom(
-            const ImageGenerationModelFiles(model: _model),
+            ImageGenerationModelFiles.fromSources(model: _local(_model)),
             defaults: defaults,
           ),
         );
@@ -611,7 +1061,9 @@ void main() {
     });
 
     test('fills unset steps and guidance from the model defaults', () async {
-      final sdxs = await load(ImageGenerationModel.sdxs(_model));
+      final sdxs = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;
       expect(driver.session.requests.last.steps, 1);
       expect(driver.session.requests.last.guidanceScale, 1);
@@ -630,7 +1082,7 @@ void main() {
 
       final custom = await load(
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
         ),
       );
       await custom.generate(const ImageGenerationRequest(prompt: 'a')).done;
@@ -641,32 +1093,38 @@ void main() {
     test('fills an unset size from the model defaults, and a request '
         'overrides each side', () async {
       final presets = <ImageGenerationModel>[
-        ImageGenerationModel.sdxs(_model),
-        ImageGenerationModel.sdTurbo(_model, taesdPath: _taesd),
-        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
-        ImageGenerationModel.flux1Schnell(
-          diffusionModelPath: _model,
-          clipLPath: _taesd,
-          t5xxlPath: _taesd,
-          taesdPath: _taesd,
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+        ImageGenerationModel.sdTurboPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
         ),
-        ImageGenerationModel.sd35LargeTurbo(
-          diffusionModelPath: _model,
-          clipLPath: _taesd,
-          clipGPath: _taesd,
-          t5xxlPath: _taesd,
-          taesdPath: _taesd,
+        ImageGenerationModel.sdxlLightningPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
         ),
-        ImageGenerationModel.zImageTurbo(
-          diffusionModelPath: _model,
-          llmPath: _taesd,
-          vaePath: _taesd,
+        ImageGenerationModel.flux1SchnellPreset(
+          diffusionModel: _local(_model),
+          clipL: _local(_taesd),
+          t5xxl: _local(_taesd),
+          taesd: _local(_taesd),
+        ),
+        ImageGenerationModel.sd35LargeTurboPreset(
+          diffusionModel: _local(_model),
+          clipL: _local(_taesd),
+          clipG: _local(_taesd),
+          t5xxl: _local(_taesd),
+          taesd: _local(_taesd),
+        ),
+        ImageGenerationModel.zImageTurboPreset(
+          diffusionModel: _local(_model),
+          llm: _local(_taesd),
+          vae: _local(_taesd),
         ),
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
         ),
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
           defaults: const ImageGenerationDefaults(width: 1024, height: 768),
         ),
       ];
@@ -690,7 +1148,10 @@ void main() {
       ]);
 
       final lightning = await load(
-        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
+        ImageGenerationModel.sdxlLightningPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
+        ),
       );
       for (final request in const [
         ImageGenerationRequest(prompt: 'a', width: 512, height: 512),
@@ -716,7 +1177,7 @@ void main() {
       ]) {
         final engine = await load(
           ImageGenerationModel.custom(
-            const ImageGenerationModelFiles(model: _model),
+            ImageGenerationModelFiles.fromSources(model: _local(_model)),
             defaults: defaults,
           ),
         );
@@ -749,7 +1210,7 @@ void main() {
         'defaults, and a request overrides them', () async {
       final engine = await load(
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
           defaults: const ImageGenerationDefaults(
             steps: 4,
             guidanceScale: 1,
@@ -781,7 +1242,9 @@ void main() {
       expect(sent.scheduler, ImageGenerationScheduler.karras);
       expect(sent.flowShift, 1.5);
 
-      final sdxs = await load(ImageGenerationModel.sdxs(_model));
+      final sdxs = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;
       sent = driver.session.requests.last;
       expect(sent.sampler, isNull);
@@ -792,7 +1255,7 @@ void main() {
     test('rejects an invalid flow shift from the model defaults', () async {
       final engine = await load(
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
           defaults: const ImageGenerationDefaults(flowShift: 0),
         ),
       );
@@ -811,7 +1274,9 @@ void main() {
     });
 
     test('reports the seed it used', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       final fixed = await engine.generateImage(
         const ImageGenerationRequest(prompt: 'a', seed: 42),
@@ -827,7 +1292,9 @@ void main() {
     });
 
     test('emits phases in order and one final event', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       final task = engine.generate(
         const ImageGenerationRequest(
@@ -864,8 +1331,12 @@ void main() {
     });
 
     test('allows one generation at a time across engines and loads', () async {
-      final first = await load(ImageGenerationModel.sdxs(_model));
-      final second = await load(ImageGenerationModel.sdxs(_model));
+      final first = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
+      final second = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
 
       final running = first.generate(const ImageGenerationRequest(prompt: 'a'));
@@ -886,7 +1357,7 @@ void main() {
         );
       }
       await expectLater(
-        load(ImageGenerationModel.sdxs(_model)),
+        load(ImageGenerationModel.sdxsPreset(model: _local(_model))),
         throwsA(isA<LlamaStateException>()),
       );
 
@@ -905,7 +1376,9 @@ void main() {
 
     test('a cancel before the runtime starts is re-applied on its first '
         'progress callback', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
 
       final task = engine.generate(
@@ -926,7 +1399,9 @@ void main() {
     });
 
     test('cancel during sampling stops the runtime', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final task = engine.generate(
         const ImageGenerationRequest(prompt: 'a', steps: 8),
       );
@@ -951,7 +1426,9 @@ void main() {
 
     test('a runtime failure fails the task with LlamaInferenceException and '
         'the engine runs the next request', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       driver.session.failNext = true;
 
       final task = engine.generate(const ImageGenerationRequest(prompt: 'a'));
@@ -978,7 +1455,9 @@ void main() {
 
     test('maps unexpected errors to LlamaInferenceException and keeps typed '
         'ones', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       driver.session.error = StateError('worker bug');
       await expectLater(
@@ -1001,7 +1480,9 @@ void main() {
 
     test('dispose cancels a running generation before freeing the '
         'model', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
       final result = engine.generateImage(
         const ImageGenerationRequest(prompt: 'a', steps: 4),
@@ -1039,7 +1520,9 @@ void main() {
   group('warmUp', () {
     test('runs one discarded single-step generation at the given size with '
         'the model guidance', () async {
-      final sdxs = await load(ImageGenerationModel.sdxs(_model));
+      final sdxs = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       await sdxs.warmUp();
       await sdxs.warmUp(width: 256, height: 384);
 
@@ -1052,7 +1535,7 @@ void main() {
 
       final custom = await load(
         ImageGenerationModel.custom(
-          const ImageGenerationModelFiles(model: _model),
+          ImageGenerationModelFiles.fromSources(model: _local(_model)),
         ),
       );
       await custom.warmUp();
@@ -1062,7 +1545,10 @@ void main() {
 
     test('defaults to the model size, and a given side overrides it', () async {
       final lightning = await load(
-        ImageGenerationModel.sdxlLightning(_model, taesdPath: _taesd),
+        ImageGenerationModel.sdxlLightningPreset(
+          model: _local(_model),
+          taesd: _local(_taesd),
+        ),
       );
       await lightning.warmUp();
       await lightning.warmUp(width: 512, height: 512);
@@ -1078,7 +1564,9 @@ void main() {
     test('runs nothing on the CPU but still checks the size and the engine '
         'state', () async {
       driver.status = _available('CPU\tCortex-A78\n');
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       await engine.warmUp();
       expect(driver.session.requests, isEmpty);
@@ -1101,7 +1589,9 @@ void main() {
     });
 
     test('rejects an invalid size before running anything', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       for (final (width, height) in [(500, 512), (512, 56), (4096, 512)]) {
         await expectLater(
@@ -1113,7 +1603,9 @@ void main() {
     });
 
     test('holds the one-operation slot until it finishes', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
 
       final warmUp = engine.warmUp();
@@ -1123,7 +1615,7 @@ void main() {
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(
-        load(ImageGenerationModel.sdxs(_model)),
+        load(ImageGenerationModel.sdxsPreset(model: _local(_model))),
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
@@ -1140,7 +1632,9 @@ void main() {
     });
 
     test('throws LlamaStateException while a generation runs', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
       final running = engine.generate(
         const ImageGenerationRequest(prompt: 'a'),
@@ -1158,7 +1652,9 @@ void main() {
 
     test('dispose cancels a running warm-up, which completes normally, and '
         'later warm-ups throw', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
       final gate = driver.session.gate = Completer<void>();
 
       final warmUp = engine.warmUp();
@@ -1182,7 +1678,9 @@ void main() {
     });
 
     test('throws a runtime failure and leaves the engine usable', () async {
-      final engine = await load(ImageGenerationModel.sdxs(_model));
+      final engine = await load(
+        ImageGenerationModel.sdxsPreset(model: _local(_model)),
+      );
 
       driver.session.failNext = true;
       await expectLater(
@@ -1352,4 +1850,100 @@ final class _FakeSession implements ImageGenerationSession {
     disposed = true;
     disposedAfterGenerate = !_generating;
   }
+}
+
+/// Passes local files through and "downloads" remote ones into a fake cache,
+/// registering their sizes with the driver.
+final class _FakeDownloads implements ModelDownloadManager {
+  _FakeDownloads(this.driver);
+
+  final _FakeDriver driver;
+  final List<(ModelSource, ModelLoadOptions)> calls = [];
+  final Set<String> cached = {};
+  final List<String> downloaded = [];
+  final Map<String, int> remoteSizes = {};
+  Object? error;
+  Completer<void>? gate;
+
+  static String cachePath(ModelSource source) =>
+      '/cache/${source.cacheDirectoryName}/${source.fileName}';
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    calls.add((source, options));
+    final path = source.isLocal ? source.path! : cachePath(source);
+    if (!source.isLocal) {
+      final failure = error;
+      if (failure != null) {
+        throw failure;
+      }
+      final size =
+          ImageGenerationPresetFile.of(source)?.sizeBytes ??
+          remoteSizes[source.fileName] ??
+          4096;
+      if (cached.add(source.canonicalKey)) {
+        onProgress?.call(
+          ModelDownloadProgress(receivedBytes: size ~/ 2, totalBytes: size),
+        );
+        await gate?.future;
+        if (options.cancelToken?.isCancelled ?? false) {
+          throw LlamaStateException('Model download was cancelled.');
+        }
+        onProgress?.call(
+          ModelDownloadProgress(receivedBytes: size, totalBytes: size),
+        );
+        downloaded.add(source.fileName);
+      }
+      driver.sizes[path] = size;
+    }
+    final now = DateTime.utc(2026);
+    return ModelCacheEntry(
+      sourceCanonicalKey: source.canonicalKey,
+      cacheKey: source.cacheKey,
+      fileName: source.fileName,
+      filePath: path,
+      createdAt: now,
+      updatedAt: now,
+      bytes: driver.sizes[path],
+    );
+  }
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async => [];
+
+  @override
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async => null;
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
+
+  @override
+  Future<void> clear({String? cacheDirectory}) async {}
+
+  @override
+  Future<List<ModelCacheEntry>> prune({
+    Duration? maxAge,
+    int? maxBytes,
+    String? cacheDirectory,
+  }) async => [];
+}
+
+final class _RemoteTargetResolver implements ModelResolver {
+  _RemoteTargetResolver(this.url, {required this.useBrowserCache});
+
+  final Uri url;
+  final bool useBrowserCache;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async => RemoteModelUrl(url, useBrowserCache: useBrowserCache);
 }

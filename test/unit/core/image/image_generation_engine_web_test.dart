@@ -23,16 +23,39 @@ void main() {
     );
   });
 
-  test('load throws LlamaUnsupportedException on the web', () async {
-    await expectLater(
-      ImageGenerationEngine.load(ImageGenerationModel.sdxs('sdxs.gguf')),
-      throwsA(
-        isA<LlamaUnsupportedException>().having(
-          (error) => error.message,
-          'message',
-          contains('not available on the web'),
+  test('load throws LlamaUnsupportedException on the web before anything '
+      'downloads', () async {
+    final downloads = _RecordingDownloads();
+
+    for (final model in [
+      ImageGenerationModel.sdxsPreset(),
+      ImageGenerationModel.sdxs('sdxs.gguf'),
+    ]) {
+      await expectLater(
+        ImageGenerationEngine.load(model, modelDownloadManager: downloads),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('not available on the web'),
+          ),
         ),
-      ),
-    );
+      );
+    }
+    expect(downloads.requested, isEmpty);
   });
+}
+
+final class _RecordingDownloads extends ThrowingModelDownloadManager {
+  final List<ModelSource> requested = [];
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) {
+    requested.add(source);
+    return super.ensureModel(source, options: options, onProgress: onProgress);
+  }
 }

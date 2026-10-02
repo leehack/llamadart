@@ -32,39 +32,35 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
-  final downloads = DefaultModelDownloadManager();
   ImageGenerationEngine? engine;
-  StreamSubscription<ProcessSignal>? interrupt;
+  ImageGenerationTask? task;
+  final cancelLoad = ModelDownloadCancelToken();
+  final interrupt = ProcessSignal.sigint.watch().listen((_) {
+    stdout.writeln('\nCancelling...');
+    cancelLoad.cancel();
+    task?.cancel();
+  });
   try {
-    final modelPath = await _resolve(downloads, options.modelSource, 'model');
-    final files = <String, String>{
-      for (final MapEntry(key: role, value: source)
-          in options.fileSources.entries)
-        role: await _resolve(downloads, source, role),
-    };
-
     print('Loading ${options.preset.flag}...');
     final loadTimer = Stopwatch()..start();
     engine = await ImageGenerationEngine.load(
-      options.model(modelPath, files),
+      options.model,
       options: ImageGenerationOptions(
         device: options.device,
         threads: options.threads,
       ),
+      loadOptions: ModelLoadOptions(cancelToken: cancelLoad),
+      onProgress: _printProgress,
     );
+    stdout.writeln();
     final capabilities = engine.capabilities;
     print(
       'Loaded ${capabilities.modelVersion} on ${capabilities.backendName} '
       'in ${loadTimer.elapsedMilliseconds} ms.',
     );
 
-    final task = engine.generate(options.request);
-    interrupt = ProcessSignal.sigint.watch().listen((_) {
-      stdout.writeln('\nCancelling...');
-      task.cancel();
-    });
-
-    await for (final event in task.events) {
+    final running = task = engine.generate(options.request);
+    await for (final event in running.events) {
       switch (event) {
         case ImageGenerationProgressEvent(
           :final phase,
@@ -88,13 +84,22 @@ Future<void> main(List<String> arguments) async {
           print('Generated in ${result.elapsed.inMilliseconds} ms.');
       }
     }
-    if ((await task.done).state == ImageGenerationCompletionState.cancelled) {
+    if ((await running.done).state ==
+        ImageGenerationCompletionState.cancelled) {
       print('Cancelled.');
       exitCode = 130;
     }
   } on LlamaUnsupportedException catch (error) {
     stderr.writeln('\nCannot generate images here: ${error.message}');
     exitCode = 2;
+  } on LlamaStateException catch (error) {
+    if (cancelLoad.isCancelled) {
+      print('Cancelled.');
+      exitCode = 130;
+    } else {
+      stderr.writeln('\nError: ${error.message}');
+      exitCode = 1;
+    }
   } on LlamaException catch (error) {
     stderr.writeln('\nError: ${error.message}');
     exitCode = 1;
@@ -102,31 +107,17 @@ Future<void> main(List<String> arguments) async {
     stderr.writeln('\nError: $error');
     exitCode = 1;
   } finally {
-    await interrupt?.cancel();
+    await interrupt.cancel();
     await engine?.dispose();
   }
 }
 
-Future<String> _resolve(
-  DefaultModelDownloadManager downloads,
-  ModelSource source,
-  String label,
-) async {
-  if (source.isLocal) {
-    return source.path!;
-  }
-  print('Fetching $label ${source.displayName}...');
-  final entry = await downloads.ensureModel(
-    source,
-    onProgress: (progress) {
-      final fraction = progress.fraction;
-      stdout.write(
-        fraction == null
-            ? '\r${progress.receivedBytes ~/ 1048576} MB'
-            : '\r${(fraction * 100).toStringAsFixed(0)}%',
-      );
-    },
+void _printProgress(ModelDownloadProgress progress) {
+  final received = progress.receivedBytes ~/ 1048576;
+  final total = progress.totalBytes;
+  stdout.write(
+    total == null
+        ? '\rFiles: $received MB\x1B[K'
+        : '\rFiles: $received / ${total ~/ 1048576} MB\x1B[K',
   );
-  stdout.writeln();
-  return entry.filePath;
 }

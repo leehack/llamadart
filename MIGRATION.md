@@ -2,6 +2,70 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.10.x` -> next release: image generation model sources
+
+Image generation is a Preview. The path-based model API still works in the
+next release but is deprecated, and a later release removes it.
+
+1. **Presets take `ModelSource`s and download pinned files by default.**
+   Each path factory has a `*Preset` replacement whose parameters are
+   `ModelSource`s named after the file roles. Omit a file to use the
+   preset's `ImageGenerationPresetFile`, which `ImageGenerationEngine.load`
+   downloads into the model cache. Wrap a local path in `ModelSource.path`:
+
+   ```dart
+   // Before
+   final entry = await DefaultModelDownloadManager().ensureModel(
+     ModelSource.parse(
+       'hf://concedo/sdxs-512-tinySDdistilled-GGUF/'
+       'sdxs-512-tinySDdistilled_Q8_0.gguf',
+     ),
+   );
+   final engine = await ImageGenerationEngine.load(
+     ImageGenerationModel.sdxs(entry.filePath),
+   );
+   // After
+   final engine = await ImageGenerationEngine.load(
+     ImageGenerationModel.sdxsPreset(),
+     onProgress: (progress) => print(progress.fraction),
+   );
+   // After, keeping a local file
+   final engine = await ImageGenerationEngine.load(
+     ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath)),
+   );
+   ```
+
+   | Deprecated | Replacement |
+   | --- | --- |
+   | `sdxs(modelPath)` | `sdxsPreset(model:)` |
+   | `sdTurbo(modelPath, taesdPath:)` | `sdTurboPreset(model:, taesd:)` |
+   | `sdxlLightning(modelPath, vaePath:, taesdPath:)` | `sdxlLightningPreset(model:, vae:, taesd:)` |
+   | `flux1Schnell(diffusionModelPath:, clipLPath:, t5xxlPath:, vaePath:, taesdPath:)` | `flux1SchnellPreset(diffusionModel:, clipL:, t5xxl:, vae:, taesd:)` |
+   | `sd35LargeTurbo(diffusionModelPath:, clipLPath:, clipGPath:, t5xxlPath:, vaePath:, taesdPath:)` | `sd35LargeTurboPreset(diffusionModel:, clipL:, clipG:, t5xxl:, vae:, taesd:)` |
+   | `zImageTurbo(diffusionModelPath:, llmPath:, vaePath:)` | `zImageTurboPreset(diffusionModel:, llm:, vae:)` |
+
+   An optional file that the old factory left out stays out: `sdTurboPreset`
+   and `sdxlLightningPreset` add no TAESD unless given one, such as
+   `ImageGenerationPresetFile.taesd.source`. `flux1SchnellPreset` and
+   `sd35LargeTurboPreset` no longer throw `ArgumentError` without a
+   decoder: they use the pinned FLUX `ae` and TAESD3, and any `vae` or
+   `taesd` you pass replaces that default.
+
+2. **`ImageGenerationModelFiles` takes sources.** Replace
+   `ImageGenerationModelFiles(model: path, ...)` with
+   `ImageGenerationModelFiles.fromSources(model: ModelSource.path(path),
+   ...)`; `ImageGenerationModel.custom` is unchanged. The `String` fields
+   (`model`, `vae`, ...) and `paths` are deprecated: read
+   `files.sources['vae']` instead. For a file from a URL or Hugging Face
+   they are `null`, and `paths` leaves it out.
+
+3. **`ImageGenerationEngine.load` resolves every file.** It now checks local
+   files through the model download manager, like
+   `LlamaEngine.loadModelSource`, and takes `loadOptions`, `onProgress`,
+   `modelResolver` and `modelDownloadManager`. `ModelLoadOptions.sha256`
+   throws `LlamaUnsupportedException`, since one checksum cannot cover
+   several files. Loading only local files behaves as before.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Image generation presets load their files from `ModelSource`s and default
+  to pinned Hugging Face files: `ImageGenerationModel.sdxsPreset()` and the
+  other `*Preset` factories download into the model cache when
+  `ImageGenerationEngine.load` runs, with combined progress, cancellation
+  and cache reuse. The path factories such as
+  `ImageGenerationModel.sdxs(path)` are deprecated; see `MIGRATION.md`.
+
 ## 0.10.0
 
 - Add the `llamadart_stable_diffusion_flutter` `0.0.1` companion package:

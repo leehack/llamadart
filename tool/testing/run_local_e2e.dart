@@ -592,8 +592,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       description:
           'Run experimental ImageGenerationEngine on SDXS through the opt-in '
           'stable_diffusion runtime; SD-Turbo too when '
-          'LLAMADART_SD_TURBO_MODEL is set, and SDXL-Lightning when '
-          'LLAMADART_SDXL_LIGHTNING_MODEL is set.',
+          'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
+          'LLAMADART_SDXL_LIGHTNING_MODEL is set, and the SDXS preset from '
+          'its pinned Hugging Face file when LLAMADART_IMAGE_PRESET_CACHE '
+          'names a model cache directory.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(

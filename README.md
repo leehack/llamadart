@@ -109,8 +109,10 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
+  // Downloads the pinned SDXS file (683 MB) into the model cache once.
   final engine = await ImageGenerationEngine.load(
-    ImageGenerationModel.sdxs('sdxs-512-tinySDdistilled_Q8_0.gguf'),
+    ImageGenerationModel.sdxsPreset(),
+    onProgress: (progress) => print('${progress.receivedBytes} bytes'),
   );
   try {
     final result = await engine.generateImage(
@@ -123,8 +125,11 @@ Future<void> main() async {
 }
 ```
 
-See the [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
-for downloads, presets, memory checks and known limits.
+Each preset downloads files pinned to a Hugging Face commit, resolved like
+`LlamaEngine.loadModelSource`; pass a `ModelSource` to use a local copy or
+another file, such as `sdxsPreset(model: ModelSource.path(path))`. See the
+[image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
+for presets, download options, memory checks and known limits.
 
 ## Requirements
 

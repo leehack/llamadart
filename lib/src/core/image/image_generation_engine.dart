@@ -3,6 +3,11 @@ import 'dart:math';
 
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../exceptions.dart';
+import '../models/download/model_download_manager.dart';
+import '../models/model_load_options.dart';
+import '../models/model_resolver.dart';
+import '../models/model_source.dart';
+import '../models/model_target_file.dart';
 import 'generated_image.dart';
 import 'image_generation_driver.dart';
 import 'image_generation_driver_stub.dart'
@@ -130,7 +135,8 @@ class ImageGenerationTask {
 ///
 /// ```dart
 /// final engine = await ImageGenerationEngine.load(
-///   ImageGenerationModel.sdxs('sdxs-512-tinySDdistilled_Q8_0.gguf'),
+///   ImageGenerationModel.sdxsPreset(),
+///   onProgress: (progress) => print(progress.fraction),
 /// );
 /// final result = await engine.generateImage(
 ///   const ImageGenerationRequest(prompt: 'a red fox in autumn leaves'),
@@ -230,12 +236,29 @@ class ImageGenerationEngine {
 
   /// Loads [model] and returns a ready engine.
   ///
+  /// Each file of [model] comes from its `ModelSource`, resolved like
+  /// `LlamaEngine.loadModelSource`: [modelResolver] (by default
+  /// [DefaultModelResolver]) resolves it, and [modelDownloadManager] (by
+  /// default [DefaultModelDownloadManager]) checks a local file, or
+  /// downloads a remote one into the model cache, resuming an interrupted
+  /// download and reusing a cached file. Files resolve one at a time, in
+  /// role order. [loadOptions] applies to every remote file: cache policy
+  /// and directory, authentication, resume, retries and the cancel token.
+  /// Local files take only the cancel token.
+  ///
+  /// [onProgress] reports the files together: `receivedBytes` counts every
+  /// file resolved so far, including cached and local ones, plus the bytes
+  /// of the current download; `totalBytes` is the combined size of all files
+  /// once every size is known (from the start for local files and
+  /// [ImageGenerationPresetFile]s), and `null` before.
+  ///
   /// Weights load eagerly, so the first [generate] does not pay for them. The
   /// first GPU generation in a process still compiles GPU pipelines; see
   /// [warmUp].
   ///
   /// The runtime probe that comes first runs off the calling isolate, as in
-  /// [checkRuntime].
+  /// [checkRuntime]. It, the [options] checks and a check that every local
+  /// file exists run before anything downloads.
   ///
   /// Before loading, when [ImageGenerationOptions.checkMemory] is set and the
   /// device's memory is known, the model's estimated memory (a quarter more
@@ -250,14 +273,22 @@ class ImageGenerationEngine {
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see
-  ///   [runtimeCapabilities]), or when [ImageGenerationDevice.gpu] is
-  ///   requested and the runtime reports no GPU.
+  ///   [runtimeCapabilities]), including on the web; when
+  ///   [ImageGenerationDevice.gpu] is requested and the runtime reports no
+  ///   GPU; and when [loadOptions] sets [ModelLoadOptions.sha256], which
+  ///   cannot apply to several files.
   /// - [LlamaModelException] when a file is missing, the model does not fit,
-  ///   or the runtime cannot load it as an image model.
-  /// - [LlamaStateException] while another generation or load is running.
+  ///   or the runtime cannot load it as an image model; and what
+  ///   [modelDownloadManager] throws for a failed download.
+  /// - [LlamaStateException] when [loadOptions]' cancel token cancels the
+  ///   load, and while another generation or load is running.
   static Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageGenerationOptions options = const ImageGenerationOptions(),
+    ModelLoadOptions loadOptions = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelResolver? modelResolver,
+    ModelDownloadManager? modelDownloadManager,
   }) async {
     final driver = _driver;
     final runtime = await _probeRuntime(driver)
@@ -269,21 +300,41 @@ class ImageGenerationEngine {
         options.threads,
       );
     }
-    final files = model.files.paths;
-    if (files['model'] == null && files['diffusionModel'] == null) {
+    if (loadOptions.sha256 != null) {
+      throw LlamaUnsupportedException(
+        'ImageGenerationEngine.load loads several files, so '
+        'ModelLoadOptions.sha256 cannot apply to them. Leave it unset.',
+      );
+    }
+    final sources = model.files.sources;
+    if (sources['model'] == null && sources['diffusionModel'] == null) {
       throw LlamaModelException(
         'An image-generation model needs a model or diffusionModel file.',
       );
     }
+    final knownSizes = <String, int>{};
+    for (final MapEntry(key: role, value: source) in sources.entries) {
+      if (source.isLocal) {
+        knownSizes[role] = _fileSize(driver, role, source.path!);
+      } else if (ImageGenerationPresetFile.of(source) case final pinned?) {
+        knownSizes[role] = pinned.sizeBytes;
+      }
+    }
+
+    final files = await _resolveFiles(
+      sources,
+      knownSizes,
+      loadOptions,
+      onProgress,
+      modelResolver ?? const DefaultModelResolver(),
+      modelDownloadManager ?? DefaultModelDownloadManager(),
+    );
+    if (loadOptions.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('Image model loading was cancelled.');
+    }
     var weightBytes = 0;
     for (final MapEntry(key: role, value: path) in files.entries) {
-      final size = path.trim().isEmpty ? null : driver.fileSize(path);
-      if (size == null) {
-        throw LlamaModelException(
-          'Image-generation $role file not found: "$path".',
-        );
-      }
-      weightBytes += size;
+      weightBytes += _fileSize(driver, role, path);
     }
     if (options.checkMemory) {
       _checkMemory(
@@ -311,7 +362,11 @@ class ImageGenerationEngine {
               options.flashAttention ?? _flashAttentionByDefault(backendName),
           vaeDirectConvolution:
               options.vaeDirectConvolution ??
-              _vaeDirectConvolutionByDefault(backendName, model),
+              _vaeDirectConvolutionByDefault(
+                backendName,
+                model.family,
+                hasTaesd: files.containsKey('taesd'),
+              ),
         ),
       );
       return ImageGenerationEngine._(
@@ -549,6 +604,77 @@ class ImageGenerationEngine {
     }
   }
 
+  static int _fileSize(ImageGenerationDriver driver, String role, String path) {
+    final size = path.trim().isEmpty ? null : driver.fileSize(path);
+    if (size == null) {
+      throw LlamaModelException(
+        'Image-generation $role file not found: "$path".',
+      );
+    }
+    return size;
+  }
+
+  /// Local paths of [sources], keyed by role, resolved one at a time.
+  static Future<Map<String, String>> _resolveFiles(
+    Map<String, ModelSource> sources,
+    Map<String, int> knownSizes,
+    ModelLoadOptions loadOptions,
+    ModelDownloadProgressCallback? onProgress,
+    ModelResolver resolver,
+    ModelDownloadManager manager,
+  ) async {
+    final sizes = Map<String, int>.of(knownSizes);
+    var resolvedBytes = 0;
+    void report(int currentBytes) {
+      if (onProgress == null) {
+        return;
+      }
+      final total = sizes.length == sources.length
+          ? sizes.values.fold<int>(0, (sum, size) => sum + size)
+          : null;
+      onProgress(
+        ModelDownloadProgress(
+          receivedBytes: resolvedBytes + currentBytes,
+          totalBytes: total,
+        ),
+      );
+    }
+
+    final localOptions = ModelLoadOptions(cancelToken: loadOptions.cancelToken);
+    final files = <String, String>{};
+    for (final MapEntry(key: role, value: source) in sources.entries) {
+      final fileOptions = source.isLocal ? localOptions : loadOptions;
+      final fileProgress = onProgress == null
+          ? null
+          : (ModelDownloadProgress progress) {
+              if (progress.totalBytes case final total?) {
+                sizes.putIfAbsent(role, () => total);
+              }
+              report(progress.receivedBytes);
+            };
+      final target = await resolver.resolve(
+        source,
+        ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
+      );
+      final entry = await ensureModelTargetFile(
+        manager,
+        source,
+        target,
+        options: fileOptions,
+        onProgress: fileProgress,
+        assetType: 'image model',
+      );
+      files[role] = entry.filePath;
+      final bytes = entry.bytes ?? sizes[role];
+      if (bytes != null) {
+        sizes[role] = bytes;
+      }
+      resolvedBytes += bytes ?? 0;
+      report(0);
+    }
+    return files;
+  }
+
   static ImageGenerationDriver get _driver =>
       debugImageGenerationDriverOverride ?? createImageGenerationDriver();
 
@@ -638,11 +764,12 @@ class ImageGenerationEngine {
   /// a tiny autoencoder, which SDXS embeds.
   static bool _vaeDirectConvolutionByDefault(
     String backendName,
-    ImageGenerationModel model,
-  ) =>
+    ImageGenerationModelFamily family, {
+    required bool hasTaesd,
+  }) =>
       !_isMetal(backendName) &&
-      model.files.taesd == null &&
-      model.family != ImageGenerationModelFamily.sdxs;
+      !hasTaesd &&
+      family != ImageGenerationModelFamily.sdxs;
 
   /// ggml registry names of GPU devices. The published runtimes use Metal
   /// (`MTL0`) and Vulkan (`Vulkan0`).
