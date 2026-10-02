@@ -168,9 +168,8 @@ class RuntimeStatusPanel extends StatelessWidget {
     );
     add(Icons.repeat_rounded, 'Reused graphs', status.nativeReusedGraphs);
 
-    final isLiteRtLmModel = status.activeModelName.toLowerCase().endsWith(
-      '.litertlm',
-    );
+    final isLiteRtLmModel =
+        ModelFormat.fromPath(status.activeModelName) == ModelFormat.liteRtLm;
     add(
       Icons.layers_rounded,
       'GPU layers',

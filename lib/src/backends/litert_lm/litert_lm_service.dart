@@ -14,11 +14,14 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/model_format.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
+import '../native/model_format_probe.dart';
 import 'litert_lm_cache.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
+import 'litert_lm_model_link.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 import 'litert_lm_sampler_params.dart';
@@ -38,13 +41,31 @@ class LiteRtLmService {
   ///
   /// The service's own log records go through [LlamaLogger.instance] of the
   /// isolate it runs in; [setLogLevel] controls only the native runtime.
-  LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
-    : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
+  /// [linkParentDirectory] holds the private directories of
+  /// [LiteRtLmModelLink]s, the system temp directory by default.
+  /// [useTempCacheDir] says whether caches go to a llamadart temp directory
+  /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
+  /// and Android. [createLink] replaces [Link.create] for those links in
+  /// tests.
+  LiteRtLmService({
+    LiteRtLmRuntimeClient Function()? clientFactory,
+    Directory? linkParentDirectory,
+    bool? useTempCacheDir,
+    LiteRtLmLinkCreator? createLink,
+  }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _linkParentDirectory = linkParentDirectory,
+       _createLink = createLink,
+       _useTempCacheDir =
+           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
+  final Directory? _linkParentDirectory;
+  final LiteRtLmLinkCreator? _createLink;
+  final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
+  LiteRtLmModelLink? _modelLink;
   String? _activeBackend;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
@@ -67,7 +88,8 @@ class LiteRtLmService {
     _client?.setMinLogLevel(_liteRtLmMinLogLevel(level));
   }
 
-  /// Loads a local `.litertlm` model bundle.
+  /// Loads a local LiteRT-LM model bundle, recognized by its header or, when
+  /// the header is unreadable, its `.litertlm` extension.
   Future<int> loadModel(
     String path,
     ModelParams params, {
@@ -77,9 +99,12 @@ class LiteRtLmService {
     if (!await file.exists()) {
       throw ArgumentError('LiteRT-LM model does not exist: $path');
     }
-    if (!path.toLowerCase().endsWith('.litertlm')) {
+    final format =
+        await readModelFormatHeader(path) ?? ModelFormat.fromPath(path);
+    if (format != ModelFormat.liteRtLm) {
       throw ArgumentError(
-        'LiteRtLmBackend expects a .litertlm model bundle; got $path',
+        'LiteRtLmBackend expects a LiteRT-LM (.litertlm) model bundle; '
+        'got $path',
       );
     }
     _validateModelParams(params);
@@ -87,10 +112,17 @@ class LiteRtLmService {
       params,
       backendOverride: backendOverride,
     );
+    final modelLink = await LiteRtLmModelLink.create(
+      path,
+      parent: _linkParentDirectory,
+      createLink: _createLink,
+    );
 
     _client?.dispose();
     _client = null;
+    _modelLink?.dispose();
     _modelPath = path;
+    _modelLink = modelLink;
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
@@ -109,6 +141,8 @@ class LiteRtLmService {
     _checkModelHandle(modelHandle);
     _client?.dispose();
     _client = null;
+    _modelLink?.dispose();
+    _modelLink = null;
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
@@ -550,6 +584,8 @@ class LiteRtLmService {
   /// Releases all service-owned native resources.
   void dispose() {
     _disposeContextRuntimeState();
+    _modelLink?.dispose();
+    _modelLink = null;
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
@@ -629,6 +665,7 @@ class LiteRtLmService {
         : null;
 
     final cacheDir = _effectiveCacheDir(modelParams);
+    final runtimeCacheDir = cacheDir ?? _modelLink?.cacheDirectory;
 
     Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
       _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
@@ -639,13 +676,13 @@ class LiteRtLmService {
       );
       try {
         await client.initialize(
-          modelPath: modelPath,
+          modelPath: _modelLink?.path ?? modelPath,
           backend: backend,
           visionBackend: visionBackend,
           audioBackend: audioBackend,
           maxTokens: modelParams.contextSize,
           maxNumImages: resolvedMaxNumImages,
-          cacheDir: cacheDir,
+          cacheDir: runtimeCacheDir,
           speculativeDecoding: resolvedSpeculativeDecoding,
           minLogLevel: _liteRtLmMinLogLevel(_logLevel),
           activationDataType: modelParams.liteRtLmActivationDataType,
@@ -1374,7 +1411,7 @@ class LiteRtLmService {
 
   String? _effectiveCacheDir(ModelParams params) {
     final configured = params.liteRtLmCacheDir;
-    if (configured == null && !Platform.isMacOS && !Platform.isAndroid) {
+    if (configured == null && !_useTempCacheDir) {
       return null;
     }
     final dir = Directory(

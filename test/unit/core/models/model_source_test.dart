@@ -464,5 +464,39 @@ void main() {
       expect(resolved.cacheKey, source.cacheKey);
       expect(resolved.cacheDirectoryName, source.cacheDirectoryName);
     });
+
+    test('carries an explicit format without changing the cache key', () {
+      final url = Uri.parse('https://host/download?id=42');
+      final plain = ModelSource.url(url);
+      final declared = ModelSource.url(url, format: ModelFormat.liteRtLm);
+
+      expect(plain.format, isNull);
+      expect(declared.format, ModelFormat.liteRtLm);
+      expect(declared.fileName, 'download');
+      expect(declared.cacheKey, plain.cacheKey);
+      expect(
+        declared.withResolvedUri(Uri.parse('https://cdn/x')).format,
+        ModelFormat.liteRtLm,
+      );
+      expect(
+        ModelSource.path('/m/blob', format: ModelFormat.gguf).format,
+        ModelFormat.gguf,
+      );
+      expect(
+        ModelSource.huggingFace(
+          repoId: 'o/r',
+          filePath: 'model',
+          format: ModelFormat.liteRtLm,
+        ).format,
+        ModelFormat.liteRtLm,
+      );
+      for (final value in ['/m/blob', 'https://host/download', 'hf://o/r/m']) {
+        expect(
+          ModelSource.parse(value, format: ModelFormat.liteRtLm).format,
+          ModelFormat.liteRtLm,
+          reason: value,
+        );
+      }
+    });
   });
 }

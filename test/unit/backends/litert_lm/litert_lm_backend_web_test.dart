@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart';
@@ -111,6 +112,42 @@ void main() {
       0.2,
     );
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
+  });
+
+  test('loads an extensionless URL only when declared LiteRT-LM', () async {
+    const url = 'https://example.com/download?id=42';
+    JSObject? lastEngineSettings;
+    _installFakeEngine(
+      onCreate: (settings) {
+        lastEngineSettings = settings;
+      },
+      chunks: const <JSAny?>[],
+    );
+    final backend = LiteRtLmBackend();
+
+    try {
+      await expectLater(
+        backend.modelLoadFromUrl(url, const ModelParams()),
+        throwsArgumentError,
+      );
+      await expectLater(
+        backend.modelLoadFromUrlAs(url, const ModelParams(), ModelFormat.gguf),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(lastEngineSettings, isNull);
+
+      await backend.modelLoadFromUrlAs(
+        url,
+        const ModelParams(),
+        ModelFormat.liteRtLm,
+      );
+      expect(
+        (lastEngineSettings!.getProperty('model'.toJS) as JSString).toDart,
+        url,
+      );
+    } finally {
+      await backend.dispose();
+    }
   });
 
   test('sends greedy top-k 1 to the JS sampler at temperature 0', () async {

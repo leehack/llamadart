@@ -66,8 +66,10 @@ A Flutter hot restart (debug builds only) discards the old isolates without
 freeing their models, so quitting after one can still abort
 ([#813](https://github.com/leehack/llamadart/issues/813)).
 
-`LlamaBackend()` routes by file extension: `.gguf` to llama.cpp and
-`.litertlm` to LiteRT-LM, with the same lifecycle:
+`LlamaBackend()` routes GGUF to llama.cpp and `.litertlm` bundles to
+LiteRT-LM, by file header on native targets and by URL extension on web
+([How routing works](./backend-selection#how-routing-works)), with the same
+lifecycle:
 
 ```dart
 await engine.loadModel(

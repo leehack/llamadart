@@ -1,3 +1,5 @@
+import 'models/model_format.dart';
+
 /// Base class for all Llama-related exceptions.
 abstract class LlamaException implements Exception {
   /// A human-readable error message.
@@ -18,6 +20,26 @@ abstract class LlamaException implements Exception {
 class LlamaModelException extends LlamaException {
   /// Creates a new [LlamaModelException].
   LlamaModelException(super.message, [super.details]);
+}
+
+/// Exception thrown when a model file's content is in one format but its file
+/// extension or an explicit `format:` names another.
+///
+/// The model is not handed to either runtime.
+class LlamaModelFormatException extends LlamaModelException {
+  /// The format read from the file header.
+  final ModelFormat detected;
+
+  /// The format named by the file extension or the explicit `format:`.
+  final ModelFormat declared;
+
+  /// Creates a new [LlamaModelFormatException].
+  LlamaModelFormatException({required this.detected, required this.declared})
+    : super(
+        'The model file is ${detected.name} but was declared '
+        '${declared.name}. Fix the file name or pass '
+        'format: ModelFormat.${detected.name}.',
+      );
 }
 
 /// Exception thrown when a context operation fails.

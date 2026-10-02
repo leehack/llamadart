@@ -720,6 +720,209 @@ void main() {
     }
   });
 
+  test('loads a bundle by its header whatever its file name', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final links = await Directory('${tempDir.path}/links').create();
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      linkParentDirectory: links,
+    );
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    final extensionless = File('${tempDir.path}/download');
+    await extensionless.writeAsString('LITERTLM fake model');
+    final ggufContent = File('${tempDir.path}/mislabelled.litertlm');
+    await ggufContent.writeAsString('GGUF fake model');
+    final unknownContent = File('${tempDir.path}/blob');
+    await unknownContent.writeAsString('fake model');
+
+    try {
+      await expectLater(
+        service.loadModel(ggufContent.path, params),
+        throwsArgumentError,
+      );
+      await expectLater(
+        service.loadModel(unknownContent.path, params),
+        throwsArgumentError,
+      );
+      expect(links.listSync(), isEmpty);
+
+      final model = await service.loadModel(extensionless.path, params);
+      expect(service.getMetadata(model)['general.name'], 'download');
+      final context = service.createContext(model, params);
+      final pending = service.generateChat(context, const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ], const GenerationParams(maxTokens: 8)).toList();
+      await client.generateStarted.future;
+      await client.generated.close();
+      await pending;
+
+      final runtimePath = client.lastModelPath!;
+      expect(runtimePath, endsWith('.litertlm'));
+      expect(File(runtimePath).parent.parent.path, links.path);
+      expect(await Link(runtimePath).target(), extensionless.absolute.path);
+
+      final reloaded = await service.loadModel(extensionless.path, params);
+      expect(Link(runtimePath).existsSync(), isFalse);
+      expect(links.listSync(), hasLength(1));
+
+      service.freeModel(reloaded);
+      expect(links.listSync(), isEmpty);
+
+      await service.loadModel(extensionless.path, params);
+      expect(links.listSync(), hasLength(1));
+      await service.loadModel(modelFile.path, params);
+      expect(links.listSync(), isEmpty);
+
+      await service.loadModel(extensionless.path, params);
+      service.dispose();
+      expect(links.listSync(), isEmpty);
+      expect(extensionless.existsSync(), isTrue);
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
+  Future<void> startEngine(
+    LiteRtLmService service,
+    _FakeLiteRtLmRuntimeClient client,
+    int model,
+    ModelParams params,
+  ) async {
+    final context = service.createContext(model, params);
+    final pending = service.generateChat(context, const [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+    ], const GenerationParams(maxTokens: 8)).toList();
+    await client.generateStarted.future;
+    await client.generated.close();
+    await pending;
+  }
+
+  for (final (useTempCacheDir, configured) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
+    test('linked bundle cache directory, temp default $useTempCacheDir, '
+        'configured $configured', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        linkParentDirectory: await Directory('${tempDir.path}/links').create(),
+        useTempCacheDir: useTempCacheDir,
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final extensionless = File('${models.path}/download');
+      await extensionless.writeAsString('LITERTLM fake model');
+      final configuredDir = '${tempDir.path}/cache';
+      final params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        liteRtLmCacheDir: configured ? configuredDir : null,
+      );
+
+      try {
+        final model = await service.loadModel(extensionless.path, params);
+        await startEngine(service, client, model, params);
+
+        expect(client.lastModelPath, isNot(extensionless.path));
+        expect(
+          client.lastCacheDir,
+          configured
+              ? configuredDir
+              : useTempCacheDir
+              ? '${Directory.systemTemp.path}/llamadart_litert_lm'
+              : models.absolute.path,
+        );
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
+  }
+
+  test('keeps no cache directory for an unlinked bundle by default', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      useTempCacheDir: false,
+    );
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+
+    try {
+      final model = await service.loadModel(modelFile.path, params);
+      await startEngine(service, client, model, params);
+
+      expect(client.lastModelPath, modelFile.path);
+      expect(client.lastCacheDir, isNull);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('a failed link keeps the previous model loaded', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final blocker = File('${tempDir.path}/blocker');
+    await blocker.writeAsString('not a directory');
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      linkParentDirectory: Directory(blocker.path),
+    );
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    final extensionless = File('${tempDir.path}/download');
+    await extensionless.writeAsString('LITERTLM fake model');
+
+    try {
+      final model = await service.loadModel(modelFile.path, params);
+      await expectLater(
+        service.loadModel(extensionless.path, params),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(service.getMetadata(model)['general.name'], 'model.litertlm');
+      await startEngine(service, client, model, params);
+      expect(client.lastModelPath, modelFile.path);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('a failed link keeps a previous linked model', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final links = await Directory('${tempDir.path}/links').create();
+    var linksCreated = 0;
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      linkParentDirectory: links,
+      createLink: (link, target) {
+        if (linksCreated++ > 0) {
+          throw FileSystemException('no more links', link.path);
+        }
+        return link.create(target);
+      },
+    );
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    final first = File('${tempDir.path}/first');
+    await first.writeAsString('LITERTLM first');
+    final second = File('${tempDir.path}/second');
+    await second.writeAsString('LITERTLM second');
+
+    try {
+      final model = await service.loadModel(first.path, params);
+      await startEngine(service, client, model, params);
+      final firstLink = client.lastModelPath!;
+
+      await expectLater(
+        service.loadModel(second.path, params),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+
+      expect(service.getMetadata(model)['general.name'], 'first');
+      expect(await Link(firstLink).target(), first.absolute.path);
+      expect(await File(firstLink).readAsString(), 'LITERTLM first');
+      expect(links.listSync(), hasLength(1));
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {

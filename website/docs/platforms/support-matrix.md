@@ -5,9 +5,11 @@ description: Check which runtimes, backends and features llamadart supports on e
 ---
 
 Use this page to check whether a runtime or feature works on a platform.
-`LlamaBackend()` picks the runtime from the model file: `.litertlm` models run
-on LiteRT-LM, and `.gguf` and every other extension run on llama.cpp natively
-or on the WebGPU bridge in a browser. To choose backend modules or leave a
+`LlamaBackend()` picks the runtime from the model format: LiteRT-LM bundles run
+on LiteRT-LM, and GGUF files run on llama.cpp natively or on the WebGPU bridge
+in a browser. Native targets read the file header; web targets use the URL's
+extension or `ModelSource.format`
+([How routing works](../guides/backend-selection#how-routing-works)). To choose backend modules or leave a
 runtime out of the app, see [Native runtime configuration](./native-build-hooks).
 
 ## At a glance

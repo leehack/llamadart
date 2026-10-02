@@ -62,13 +62,8 @@ class SettingsService {
     if (kIsWeb || modelPath == null) {
       return false;
     }
-    final normalized = modelPath
-        .split('?')
-        .first
-        .split('#')
-        .first
-        .toLowerCase();
-    return normalized.endsWith('.litertlm') &&
+    final normalized = modelPath.toLowerCase();
+    return ModelFormat.fromPath(modelPath) == ModelFormat.liteRtLm &&
         (normalized.contains('gemma-4') || normalized.contains('gemma4'));
   }
 

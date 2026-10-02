@@ -27,9 +27,37 @@ description: Decide when to use GGUF with llama.cpp or .litertlm bundles with Li
 
 ## How routing works
 
-`LlamaBackend()` picks the runtime from the file extension: `.litertlm` runs on
-LiteRT-LM; `.gguf` and any other file run on llama.cpp. The `LlamaEngine` API
-is the same for both, including `ChatSession` on native.
+`LlamaBackend()` picks the runtime from the model format: LiteRT-LM bundles run
+on LiteRT-LM, and GGUF files run on llama.cpp. The `LlamaEngine` API is the
+same for both, including `ChatSession` on native.
+
+Native targets read the file header (`GGUF` or `LITERTLM`), so a file named
+without a model extension, such as a download cached as `download`, still
+loads in the right runtime. Only when the header is unrecognized do they fall
+back to the extension: `.litertlm` runs on LiteRT-LM and anything else on
+llama.cpp. A header that contradicts the extension, such as a GGUF file named
+`model.litertlm`, throws `LlamaModelFormatException` instead of loading in
+either runtime.
+
+Web targets hand the URL to the runtime, which fetches it, so nothing reads the
+content first: a `.litertlm` URL path runs on LiteRT-LM and anything else on
+the llama.cpp WebGPU bridge. For a URL without a model extension, name the
+format:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.url(
+    Uri.parse('https://example.com/download?id=42'),
+    format: ModelFormat.liteRtLm,
+  ),
+);
+```
+
+On native targets, `format:` names the format of a file whose header is
+unrecognized; a recognized header that contradicts it throws
+`LlamaModelFormatException`. LiteRT-LM still picks its Gemma 4 and Qwen
+chat-template defaults from the file name, so pass a `fileName:` such as
+`gemma-4-E2B-it.litertlm` when the URL does not name the model.
 
 ```dart
 final engine = LlamaEngine(LlamaBackend());

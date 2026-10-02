@@ -8,7 +8,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
-import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
@@ -25,6 +26,7 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
+import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -399,6 +401,119 @@ void main() {
       }
     },
   );
+
+  group('routes by file header', () {
+    late Directory tempDir;
+    late _FakeBackend llama;
+    late _FakeBackend litert;
+    late NativeAutoBackend backend;
+
+    Future<String> writeModel(String name, String header) async {
+      final file = File('${tempDir.path}/$name');
+      await file.writeAsString('${header}rest of the model');
+      return file.path;
+    }
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp('llamadart_route_');
+      llama = _FakeBackend(handle: 11);
+      litert = _FakeBackend(handle: 22);
+      backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+    });
+
+    tearDown(() async {
+      await backend.dispose();
+      await tempDir.delete(recursive: true);
+    });
+
+    test('loads an extensionless LiteRT-LM bundle in LiteRT-LM', () async {
+      final path = await writeModel('download', 'LITERTLM');
+
+      expect(await backend.modelLoad(path, const ModelParams()), 22);
+      expect(litert.loadedPaths, [path]);
+      expect(llama.loadedPaths, isEmpty);
+    });
+
+    test('loads an extensionless GGUF file in llama.cpp', () async {
+      final path = await writeModel('blob', 'GGUF');
+
+      expect(await backend.modelLoad(path, const ModelParams()), 11);
+      expect(llama.loadedPaths, [path]);
+      expect(litert.loadedPaths, isEmpty);
+    });
+
+    for (final (name, header, detected, declared) in [
+      ('model.gguf', 'LITERTLM', ModelFormat.liteRtLm, ModelFormat.gguf),
+      ('model.litertlm', 'GGUF', ModelFormat.gguf, ModelFormat.liteRtLm),
+    ]) {
+      test('rejects $name whose header is ${detected.name}', () async {
+        final path = await writeModel(name, header);
+
+        await expectLater(
+          backend.modelLoad(path, const ModelParams()),
+          throwsA(
+            isA<LlamaModelFormatException>()
+                .having((e) => e.detected, 'detected', detected)
+                .having((e) => e.declared, 'declared', declared),
+          ),
+        );
+        expect(llama.loadedPaths, isEmpty);
+        expect(litert.loadedPaths, isEmpty);
+      });
+    }
+
+    test('an explicit format overrides a contradicting extension', () async {
+      final path = await writeModel('model.gguf', 'LITERTLM');
+
+      expect(
+        await backend.modelLoadAs(
+          path,
+          const ModelParams(),
+          ModelFormat.liteRtLm,
+        ),
+        22,
+      );
+      expect(litert.loadedPaths, [path]);
+    });
+
+    test('an explicit format routes an unrecognized header', () async {
+      final path = await writeModel('download', 'fake');
+
+      expect(
+        await backend.modelLoadAs(
+          path,
+          const ModelParams(),
+          ModelFormat.liteRtLm,
+        ),
+        22,
+      );
+      expect(await backend.modelLoad(path, const ModelParams()), 11);
+    });
+
+    test('rejects an explicit format the header contradicts', () async {
+      final path = await writeModel('download', 'GGUF');
+
+      await expectLater(
+        backend.modelLoadAs(path, const ModelParams(), ModelFormat.liteRtLm),
+        throwsA(isA<LlamaModelFormatException>()),
+      );
+      expect(litert.loadedPaths, isEmpty);
+    });
+
+    test('rejects URL loads with an explicit format', () {
+      expect(
+        () => backend.modelLoadFromUrlAs(
+          'https://example.test/download',
+          const ModelParams(),
+          ModelFormat.liteRtLm,
+        ),
+        throwsUnsupportedError,
+      );
+    });
+  });
 
   test('forwards LiteRT-LM backend preference through the router', () async {
     final llama = _FakeBackend(handle: 11);
@@ -923,6 +1038,53 @@ void main() {
     },
   );
 
+  for (final format in [null, ModelFormat.liteRtLm]) {
+    test(
+      'high-level engine loads an extensionless URL download, format $format',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'llamadart_native_auto_download_',
+        );
+        final modelFile = File('${tempDir.path}/download');
+        await modelFile.writeAsString('LITERTLM fake model');
+        final source = ModelSource.url(
+          Uri.parse('https://host.test/download?id=42'),
+          format: format,
+        );
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: modelFile.path,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final downloadManager = _FakeModelDownloadManager(entry);
+        final llama = _FakeBackend(handle: 11);
+        final litert = _FakeBackend(handle: 22);
+        final engine = LlamaEngine(
+          NativeAutoBackend(
+            llamaCppFactory: () => llama,
+            liteRtLmFactory: () => litert,
+          ),
+          modelDownloadManager: downloadManager,
+        );
+
+        try {
+          await engine.loadModelSource(source);
+
+          expect(downloadManager.lastSource?.fileName, 'download');
+          expect(downloadManager.lastSource?.format, format);
+          expect(litert.loadedPaths, [modelFile.path]);
+          expect(llama.loadedPaths, isEmpty);
+        } finally {
+          await engine.dispose();
+          await tempDir.delete(recursive: true);
+        }
+      },
+    );
+  }
+
   test('high-level engine loads litertlm with the default backend', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'llamadart_native_auto_litert_',
@@ -939,6 +1101,64 @@ void main() {
 
       expect(await engine.getBackendName(), 'LiteRT-LM cpu');
       expect(engine.isReady, isTrue);
+    } finally {
+      await engine.dispose();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
+  test(
+    'high-level engine loads an extensionless LiteRT-LM bundle from a source',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_litert_extensionless_',
+      );
+      final modelFile = File('${tempDir.path}/download');
+      await modelFile.writeAsString('LITERTLM fake model');
+      final links = await Directory('${tempDir.path}/links').create();
+      final engine = LlamaEngine(_routerWithLinkDirectory(links.path));
+
+      try {
+        await engine.loadModelSource(
+          ModelSource.path(modelFile.path),
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        expect(await engine.getBackendName(), 'LiteRT-LM cpu');
+        expect((await engine.getMetadata())['general.name'], 'download');
+        expect(links.listSync(), hasLength(1));
+        await engine.unloadModel();
+        expect(links.listSync(), isEmpty);
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test('high-level engine reports a mislabelled model file', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'llamadart_native_auto_mislabelled_',
+    );
+    final modelFile = File('${tempDir.path}/model.gguf');
+    await modelFile.writeAsString('LITERTLM fake model');
+    final links = await Directory('${tempDir.path}/links').create();
+    final engine = LlamaEngine(_routerWithLinkDirectory(links.path));
+
+    try {
+      await expectLater(
+        engine.loadModel(modelFile.path),
+        throwsA(isA<LlamaModelFormatException>()),
+      );
+      expect(engine.isReady, isFalse);
+      await engine.loadModelSource(
+        ModelSource.path(modelFile.path, format: ModelFormat.liteRtLm),
+        modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      expect(await engine.getBackendName(), 'LiteRT-LM cpu');
+      expect(links.listSync(), hasLength(1));
+      await engine.dispose();
+      expect(links.listSync(), isEmpty);
     } finally {
       await engine.dispose();
       await tempDir.delete(recursive: true);
@@ -1275,6 +1495,17 @@ class _LimitReportingFakeBackend extends _FakeBackend
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       limits[generation];
+}
+
+NativeAutoBackend _routerWithLinkDirectory(String links) {
+  return NativeAutoBackend(
+    liteRtLmFactory: () => LiteRtLmBackend(
+      workerEntryPoint: (sendPort) => runLiteRtLmWorkerForTesting(
+        sendPort,
+        LiteRtLmService(linkParentDirectory: Directory(links)),
+      ),
+    ),
+  );
 }
 
 class _FakeBackend

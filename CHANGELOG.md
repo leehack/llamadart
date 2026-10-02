@@ -21,6 +21,11 @@
   directory, which Android empties on every app update and iOS purges; add
   `DefaultModelDownloadManager.globalCacheDirectory` to move every default
   download ([#838](https://github.com/leehack/llamadart/issues/838)).
+- Native `LlamaBackend()` picks llama.cpp or LiteRT-LM from the model file's
+  header, not its extension, so extensionless downloads load in the right
+  runtime and mislabelled files throw `LlamaModelFormatException`; name a Web
+  URL's format with `ModelSource.url(..., format: ModelFormat.liteRtLm)`
+  ([#837](https://github.com/leehack/llamadart/issues/837)).
 
 ## 0.10.0
 

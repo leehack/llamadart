@@ -113,6 +113,7 @@ export 'src/core/models/inference/structured_output.dart';
 export 'src/core/models/inference/tool_choice.dart';
 
 // Models - Sources, resolution, and downloads
+export 'src/core/models/model_format.dart';
 export 'src/core/models/model_source.dart';
 export 'src/core/models/model_resolver.dart';
 export 'src/core/models/model_file_store.dart';

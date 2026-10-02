@@ -108,7 +108,11 @@ final source = ModelSource.huggingFace(
 );
 ```
 
-Keep the real file extension in the path: `LlamaBackend()` routes by it.
+Native targets pick the runtime from the downloaded file's header, so a URL
+without a model extension, such as `https://example.com/download?id=42`, still
+loads. Web targets route by the URL's extension: pass
+`format: ModelFormat.liteRtLm` for a LiteRT-LM URL without one. See
+[How routing works](./backend-selection#how-routing-works).
 
 ### Private and gated repositories
 

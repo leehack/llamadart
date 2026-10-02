@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
+import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_resolver.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
@@ -64,6 +65,44 @@ void main() {
     expect(downloaded.resolvedUri, url);
     expect(downloaded.fileName, 'vae.safetensors');
   });
+
+  test(
+    'keeps the source format on local, remote and re-sourced targets',
+    () async {
+      final hf = ModelSource.parse(
+        'hf://owner/repo@main/download',
+        format: ModelFormat.liteRtLm,
+      );
+      final local = ModelSource.path(
+        '/models/download',
+        format: ModelFormat.liteRtLm,
+      );
+
+      await ensureModelTargetFile(
+        manager,
+        local,
+        const LocalModelFile('/models/download'),
+        options: ModelLoadOptions.defaults,
+      );
+      await ensureModelTargetFile(
+        manager,
+        hf,
+        RemoteModelUrl(Uri.parse('https://mirror.example.com/download')),
+        options: ModelLoadOptions.defaults,
+      );
+      await ensureModelTargetFile(
+        manager,
+        local,
+        RemoteModelUrl(Uri.parse('https://example.com/download?id=1')),
+        options: ModelLoadOptions.defaults,
+      );
+
+      expect([
+        for (final (source, _, _) in manager.calls) source.format,
+      ], everyElement(ModelFormat.liteRtLm));
+      expect(manager.calls, hasLength(3));
+    },
+  );
 
   test('a remote target without the backend cache is unsupported and names '
       'the asset type', () async {

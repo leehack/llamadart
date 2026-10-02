@@ -5,6 +5,7 @@ import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
 import '../models/download/model_download_manager.dart';
+import '../models/model_format.dart';
 import '../models/model_load_options.dart';
 import '../models/model_resolver.dart';
 import '../models/model_source.dart';
@@ -310,8 +311,11 @@ class ImageGenerationEngine {
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see
   ///   [runtimeCapabilities]), including on the web; when
   ///   [ComputeDevice.gpu] is requested and the runtime reports no GPU, or
-  ///   [ComputeDevice.npu] is requested; and when [download] sets
-  ///   [ModelLoadOptions.sha256], which cannot apply to several files.
+  ///   [ComputeDevice.npu] is requested; when [download] sets
+  ///   [ModelLoadOptions.sha256], which cannot apply to several files; and
+  ///   when a source sets [ModelSource.format] to [ModelFormat.liteRtLm].
+  ///   Image files are classified by their headers, so [ModelSource.format]
+  ///   is otherwise unused here.
   /// - [LlamaModelException] when a file is missing, is not an image-model
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
@@ -347,6 +351,12 @@ class ImageGenerationEngine {
       model.source,
       for (final component in model.components) component.source,
     ];
+    if (sources.any((source) => source.format == ModelFormat.liteRtLm)) {
+      throw LlamaUnsupportedException(
+        'ImageGenerationEngine.load cannot load ModelFormat.liteRtLm files. '
+        'Leave ModelSource.format unset for image models.',
+      );
+    }
     final explicitRoles = [
       model.role,
       for (final component in model.components) component.role,
