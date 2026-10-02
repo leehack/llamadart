@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:llamadart/llamadart.dart';
+
 import '../models/downloadable_model.dart';
 import '../services/model_service_base.dart';
 
@@ -849,7 +851,8 @@ class ModelCard extends StatelessWidget {
   }
 
   bool _isLiteRtLmModel(DownloadableModel model) {
-    return model.filenameFor(web: true).toLowerCase().endsWith('.litertlm');
+    return ModelFormat.fromPath(model.filenameFor(web: true)) ==
+        ModelFormat.liteRtLm;
   }
 
   String? _partialCacheMessage(

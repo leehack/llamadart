@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import 'model_format.dart';
+
 /// The kind of model source represented by a [ModelSource].
 enum ModelSourceKind {
   /// A local filesystem path supplied explicitly by the caller.
@@ -18,9 +20,13 @@ enum ModelSourceKind {
 ///
 /// [ModelSource] is a value object only; creating one does not perform network
 /// or filesystem access.
+///
+/// Every factory takes an optional `format` that names the model's
+/// [ModelFormat] when neither its file content nor its name can: see
+/// [format].
 class ModelSource {
   /// Creates a local filesystem path model source.
-  factory ModelSource.path(String path) {
+  factory ModelSource.path(String path, {ModelFormat? format}) {
     if (path.isEmpty) {
       throw ArgumentError.value(path, 'path', 'Path must not be empty.');
     }
@@ -29,11 +35,12 @@ class ModelSource {
       path: path,
       fileName: _fileNameFromPath(path),
       canonicalKey: 'path:$path',
+      format: format,
     );
   }
 
   /// Creates an HTTP(S) URL model source.
-  factory ModelSource.url(Uri url, {String? fileName}) {
+  factory ModelSource.url(Uri url, {String? fileName, ModelFormat? format}) {
     if (url.scheme != 'http' && url.scheme != 'https') {
       throw ArgumentError.value(
         url,
@@ -58,6 +65,7 @@ class ModelSource {
       canonicalKey: fileName == null
           ? url.toString()
           : 'url:${url.toString()}\nfileName:$inferredFileName',
+      format: format,
     );
   }
 
@@ -71,6 +79,7 @@ class ModelSource {
     required String filePath,
     String revision = 'main',
     String? fileName,
+    ModelFormat? format,
   }) {
     final normalizedRepoId = _validateRepoId(repoId);
     final normalizedRevision = _validateRevision(revision);
@@ -95,6 +104,7 @@ class ModelSource {
         normalizedRevision,
         normalizedFilePath,
       ),
+      format: format,
     );
   }
 
@@ -103,22 +113,22 @@ class ModelSource {
   /// Hugging Face references use `hf://owner/repo/path/to/model-file`. A simple
   /// branch or tag can be written as `hf://owner/repo@revision/model-file`; use
   /// `?revision=refs/pr/12` when the revision itself contains `/`.
-  factory ModelSource.parse(String value) {
+  factory ModelSource.parse(String value, {ModelFormat? format}) {
     if (value.isEmpty) {
       throw ArgumentError.value(value, 'value', 'Source must not be empty.');
     }
 
     if (value.startsWith('hf://')) {
-      return _parseHuggingFaceUri(value);
+      return _parseHuggingFaceUri(value, format);
     }
 
     final parsedUri = Uri.tryParse(value);
     if (parsedUri != null && parsedUri.hasScheme) {
       if (parsedUri.scheme == 'http' || parsedUri.scheme == 'https') {
-        return ModelSource.url(parsedUri);
+        return ModelSource.url(parsedUri, format: format);
       }
       if (_looksLikeWindowsPath(value, parsedUri.scheme)) {
-        return ModelSource.path(value);
+        return ModelSource.path(value, format: format);
       }
       throw ArgumentError.value(
         value,
@@ -127,7 +137,7 @@ class ModelSource {
       );
     }
 
-    return ModelSource.path(value);
+    return ModelSource.path(value, format: format);
   }
 
   const ModelSource._({
@@ -139,6 +149,7 @@ class ModelSource {
     this.repoId,
     this.revision,
     this.filePath,
+    this.format,
   });
 
   /// The source kind.
@@ -164,6 +175,15 @@ class ModelSource {
 
   /// A canonical identity string used for deterministic cache keys.
   final String canonicalKey;
+
+  /// The model's format, or null to detect it.
+  ///
+  /// Null by default: a native load reads the file header and a Web URL load
+  /// uses the URL's extension. Set it for a Web URL without a model
+  /// extension, such as `https://host/download?id=42`; a native load then
+  /// rejects a file whose header names another format with
+  /// `LlamaModelFormatException`. It does not change [cacheKey].
+  final ModelFormat? format;
 
   /// Whether this source is a local filesystem path.
   bool get isLocal => kind == ModelSourceKind.path;
@@ -228,6 +248,7 @@ class ModelSource {
       filePath: filePath,
       fileName: fileName,
       canonicalKey: canonicalKey,
+      format: format,
     );
   }
 }
@@ -249,7 +270,7 @@ void _validateRemoteUri(Uri url, String name) {
   }
 }
 
-ModelSource _parseHuggingFaceUri(String value) {
+ModelSource _parseHuggingFaceUri(String value, ModelFormat? format) {
   final reference = value.substring('hf://'.length);
   if (reference.isEmpty || reference.contains('#')) {
     throw ArgumentError.value(
@@ -335,6 +356,7 @@ ModelSource _parseHuggingFaceUri(String value) {
     repoId: repoId,
     revision: revision,
     filePath: decodedFileSegments.join('/'),
+    format: format,
   );
 }
 

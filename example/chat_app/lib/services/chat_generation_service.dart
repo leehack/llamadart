@@ -81,13 +81,7 @@ class ChatGenerationService {
   }
 
   bool _isLiteRtLmModel(String? modelPath) {
-    final normalized = (modelPath ?? '')
-        .split('?')
-        .first
-        .split('#')
-        .first
-        .toLowerCase();
-    return normalized.endsWith('.litertlm');
+    return ModelFormat.fromPath(modelPath ?? '') == ModelFormat.liteRtLm;
   }
 
   List<LlamaContentPart> buildChatParts({

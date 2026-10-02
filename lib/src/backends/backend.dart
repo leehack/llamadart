@@ -13,6 +13,7 @@ import '../core/models/config/gpu_backend.dart';
 import '../core/models/config/gpu_device_info.dart';
 import '../core/models/config/log_level.dart';
 import '../core/models/diagnostics/model_file_type.dart';
+import '../core/models/model_format.dart';
 import '../core/models/tools/tool_definition.dart';
 
 import 'web/web_backend.dart' if (dart.library.io) 'native/native_backend.dart';
@@ -269,6 +270,21 @@ abstract class BackendRuntimeIdentity {
   /// The runtime that runs this backend's model, or null when the backend
   /// cannot tell, as for an auto backend with no model loaded.
   LlamaRuntime? get runtime;
+}
+
+/// Internal backend capability for loading a model in an explicitly chosen
+/// [ModelFormat] instead of the format the backend would detect.
+abstract class BackendModelFormatRouting {
+  /// Loads the local model at [path] as [format].
+  Future<int> modelLoadAs(String path, ModelParams params, ModelFormat format);
+
+  /// Loads the model at [url] as [format].
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  });
 }
 
 /// Internal backend probe for the usage of a finished generation stream.

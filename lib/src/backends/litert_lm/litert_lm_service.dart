@@ -14,11 +14,14 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/model_format.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
+import '../native/model_format_probe.dart';
 import 'litert_lm_cache.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
+import 'litert_lm_model_link.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 import 'litert_lm_sampler_params.dart';
@@ -45,6 +48,7 @@ class LiteRtLmService {
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
+  String? _runtimeModelPath;
   String? _activeBackend;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
@@ -67,7 +71,8 @@ class LiteRtLmService {
     _client?.setMinLogLevel(_liteRtLmMinLogLevel(level));
   }
 
-  /// Loads a local `.litertlm` model bundle.
+  /// Loads a local LiteRT-LM model bundle, recognized by its header or, when
+  /// the header is unreadable, its `.litertlm` extension.
   Future<int> loadModel(
     String path,
     ModelParams params, {
@@ -77,9 +82,12 @@ class LiteRtLmService {
     if (!await file.exists()) {
       throw ArgumentError('LiteRT-LM model does not exist: $path');
     }
-    if (!path.toLowerCase().endsWith('.litertlm')) {
+    final format =
+        await readModelFormatHeader(path) ?? ModelFormat.fromPath(path);
+    if (format != ModelFormat.liteRtLm) {
       throw ArgumentError(
-        'LiteRtLmBackend expects a .litertlm model bundle; got $path',
+        'LiteRtLmBackend expects a LiteRT-LM (.litertlm) model bundle; '
+        'got $path',
       );
     }
     _validateModelParams(params);
@@ -87,10 +95,12 @@ class LiteRtLmService {
       params,
       backendOverride: backendOverride,
     );
+    final runtimeModelPath = await liteRtLmRuntimeModelPath(path);
 
     _client?.dispose();
     _client = null;
     _modelPath = path;
+    _runtimeModelPath = runtimeModelPath;
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
@@ -110,6 +120,7 @@ class LiteRtLmService {
     _client?.dispose();
     _client = null;
     _modelPath = null;
+    _runtimeModelPath = null;
     _modelParams = null;
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
@@ -551,6 +562,7 @@ class LiteRtLmService {
   void dispose() {
     _disposeContextRuntimeState();
     _modelPath = null;
+    _runtimeModelPath = null;
     _modelParams = null;
     _activeBackend = null;
     _workingAudioBackend = null;
@@ -639,7 +651,7 @@ class LiteRtLmService {
       );
       try {
         await client.initialize(
-          modelPath: modelPath,
+          modelPath: _runtimeModelPath ?? modelPath,
           backend: backend,
           visionBackend: visionBackend,
           audioBackend: audioBackend,

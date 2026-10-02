@@ -720,6 +720,46 @@ void main() {
     }
   });
 
+  test('loads a bundle by its header whatever its file name', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => client);
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    final extensionless = File('${tempDir.path}/download');
+    await extensionless.writeAsString('LITERTLM fake model');
+    final ggufContent = File('${tempDir.path}/mislabelled.litertlm');
+    await ggufContent.writeAsString('GGUF fake model');
+    final unknownContent = File('${tempDir.path}/blob');
+    await unknownContent.writeAsString('fake model');
+
+    try {
+      await expectLater(
+        service.loadModel(ggufContent.path, params),
+        throwsArgumentError,
+      );
+      await expectLater(
+        service.loadModel(unknownContent.path, params),
+        throwsArgumentError,
+      );
+
+      final model = await service.loadModel(extensionless.path, params);
+      expect(service.getMetadata(model)['general.name'], 'download');
+      final context = service.createContext(model, params);
+      final pending = service.generateChat(context, const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+      ], const GenerationParams(maxTokens: 8)).toList();
+      await client.generateStarted.future;
+      await client.generated.close();
+      await pending;
+
+      final runtimePath = client.lastModelPath!;
+      expect(runtimePath, endsWith('.litertlm'));
+      expect(await Link(runtimePath).target(), extensionless.absolute.path);
+      await Link(runtimePath).delete();
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {

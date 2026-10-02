@@ -6,6 +6,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
+import '../../core/models/model_format.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
@@ -14,9 +15,15 @@ import '../webgpu/webgpu_backend.dart';
 LlamaBackend createBackend() => WebAutoBackend();
 
 /// Uses the unified web backend implementation.
+///
+/// The runtime fetches a model URL itself, so the URL picks the runtime before
+/// any content is read: an explicit [ModelFormat], then a `.litertlm` path
+/// extension, select LiteRT-LM, and anything else uses the llama.cpp WebGPU
+/// bridge.
 class WebAutoBackend
     implements
         BackendRuntimeIdentity,
+        BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
         BackendEmbeddingsSupport,
@@ -41,7 +48,7 @@ class WebAutoBackend
   final LlamaBackend Function() _liteRtLmFactory;
 
   LlamaBackend? _delegate;
-  _WebBackendKind? _delegateKind;
+  LlamaRuntime? _delegateKind;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a web backend router.
@@ -57,7 +64,7 @@ class WebAutoBackend
        _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend()) {
     if (webBackend != null) {
       _delegate = webBackend;
-      _delegateKind = _WebBackendKind.llamaCpp;
+      _delegateKind = LlamaRuntime.llamaCpp;
     }
   }
 
@@ -168,7 +175,7 @@ class WebAutoBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
-    final delegate = await _delegateForSource(path);
+    final delegate = await _delegateFor(_runtimeForSource(path));
     return delegate.modelLoad(path, params);
   }
 
@@ -178,7 +185,43 @@ class WebAutoBackend
     ModelParams params, {
     Function(double p1)? onProgress,
   }) async {
-    final delegate = await _delegateForSource(url);
+    final delegate = await _delegateFor(_runtimeForSource(url));
+    return delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }
+
+  @override
+  Future<int> modelLoadAs(
+    String path,
+    ModelParams params,
+    ModelFormat format,
+  ) async {
+    final delegate = await _delegateFor(format.runtime);
+    if (delegate is BackendModelFormatRouting) {
+      return (delegate as BackendModelFormatRouting).modelLoadAs(
+        path,
+        params,
+        format,
+      );
+    }
+    return delegate.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) async {
+    final delegate = await _delegateFor(format.runtime);
+    if (delegate is BackendModelFormatRouting) {
+      return (delegate as BackendModelFormatRouting).modelLoadFromUrlAs(
+        url,
+        params,
+        format,
+        onProgress: onProgress,
+      );
+    }
     return delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
   }
 
@@ -583,8 +626,7 @@ class WebAutoBackend
     );
   }
 
-  Future<LlamaBackend> _delegateForSource(String source) async {
-    final kind = _kindForSource(source);
+  Future<LlamaBackend> _delegateFor(LlamaRuntime kind) async {
     if (_delegate != null && _delegateKind == kind) {
       return _delegate!;
     }
@@ -595,8 +637,8 @@ class WebAutoBackend
     await oldDelegate?.dispose();
 
     final delegate = switch (kind) {
-      _WebBackendKind.liteRtLm => _liteRtLmFactory(),
-      _WebBackendKind.llamaCpp => _webGpuFactory(),
+      LlamaRuntime.liteRtLm => _liteRtLmFactory(),
+      LlamaRuntime.llamaCpp => _webGpuFactory(),
     };
     await delegate.setLogLevel(_currentLogLevel);
     _delegate = delegate;
@@ -604,12 +646,9 @@ class WebAutoBackend
     return delegate;
   }
 
-  _WebBackendKind _kindForSource(String source) {
-    final path = _sourcePath(source).toLowerCase();
-    if (path.endsWith('.litertlm')) {
-      return _WebBackendKind.liteRtLm;
-    }
-    return _WebBackendKind.llamaCpp;
+  LlamaRuntime _runtimeForSource(String source) {
+    return ModelFormat.fromPath(_sourcePath(source))?.runtime ??
+        LlamaRuntime.llamaCpp;
   }
 
   String _sourcePath(String source) {
@@ -629,5 +668,3 @@ class WebAutoBackend
     return delegate;
   }
 }
-
-enum _WebBackendKind { llamaCpp, liteRtLm }

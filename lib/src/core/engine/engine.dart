@@ -24,6 +24,7 @@ import '../models/inference/generation_usage.dart';
 import '../models/inference/next_token_scores.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
+import '../models/model_format.dart';
 import '../models/model_load_options.dart';
 import '../models/model_resolver.dart';
 import '../models/model_source.dart';
@@ -197,15 +198,30 @@ class LlamaEngine {
   ///
   /// Optionally provide [ModelParams] to configure context size, GPU offloading,
   /// and more.
+  ///
+  /// The default native backend reads the file header to choose llama.cpp for
+  /// GGUF or LiteRT-LM for a `.litertlm` bundle, so the file name needs no
+  /// model extension. Throws [LlamaModelFormatException] when a recognized
+  /// header contradicts the file extension. To name the format of a file whose
+  /// header cannot be read, load it with [loadModelSource] and a
+  /// [ModelSource.format].
   Future<void> loadModel(
     String path, {
     ModelParams modelParams = const ModelParams(),
   }) {
+    return _loadModelAs(path, modelParams, null);
+  }
+
+  Future<void> _loadModelAs(
+    String path,
+    ModelParams modelParams,
+    ModelFormat? format,
+  ) {
     return _observeModelLoad(
       path,
       modelParams,
       () => _withModelLifecycle('load a model', () async {
-        await _loadModel(path, modelParams: modelParams);
+        await _loadModel(path, modelParams: modelParams, format: format);
         await _captureObservedModel(path);
       }),
     );
@@ -214,6 +230,7 @@ class LlamaEngine {
   Future<void> _loadModel(
     String path, {
     ModelParams modelParams = const ModelParams(),
+    ModelFormat? format,
   }) async {
     _ensureNotReady();
     final modelName = _displayNameForSource(path);
@@ -223,7 +240,7 @@ class LlamaEngine {
       LlamaLogger.instance.info(
         'Backend supports URL loading, attempting loadModelFromUrl.',
       );
-      return _loadModelFromUrl(path, modelParams: modelParams);
+      return _loadModelFromUrl(path, modelParams: modelParams, format: format);
     }
 
     final redactedPath = _redactedSource(path);
@@ -231,7 +248,12 @@ class LlamaEngine {
       await backend.setLogLevel(_nativeLogLevel);
       _completionModel = _modelNameForSource(path);
       _cachedModelMetadata = null;
-      _modelHandle = await backend.modelLoad(path, modelParams);
+      _modelHandle = await _backendModelLoad(
+        path,
+        modelParams,
+        format,
+        fromUrl: false,
+      );
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
@@ -243,7 +265,7 @@ class LlamaEngine {
         _redactedErrorDetails(e, path),
         stackTrace,
       );
-      if (e is LlamaUnsupportedException) {
+      if (e is LlamaUnsupportedException || e is LlamaModelFormatException) {
         rethrow;
       }
       if (e is UnsupportedError) {
@@ -288,7 +310,7 @@ class LlamaEngine {
           onProgress: onProgress,
         );
         _throwIfSourceLoadCancelled(options);
-        return loadModel(entry.filePath, modelParams: modelParams);
+        return _loadSourceFile(entry.filePath, modelParams, source.format);
       case RemoteModelUrl(:final url, :final useBrowserCache):
         if (!useBrowserCache) {
           throw LlamaUnsupportedException(
@@ -298,23 +320,37 @@ class LlamaEngine {
         if (!backend.supportsUrlLoading) {
           final downloadSource = source.isRemote
               ? source.withResolvedUri(url)
-              : ModelSource.url(url, fileName: source.fileName);
+              : ModelSource.url(
+                  url,
+                  fileName: source.fileName,
+                  format: source.format,
+                );
           final entry = await modelDownloadManager.ensureModel(
             downloadSource,
             options: options,
             onProgress: onProgress,
           );
           _throwIfSourceLoadCancelled(options);
-          return loadModel(entry.filePath, modelParams: modelParams);
+          return _loadSourceFile(entry.filePath, modelParams, source.format);
         }
         _rejectUnsupportedUrlBackendOptions(options);
-        return loadModelFromUrl(
+        final urlProgress = onProgress == null
+            ? null
+            : (double progress) =>
+                  onProgress(ModelDownloadProgress.fraction(progress));
+        final format = source.format;
+        if (format == null) {
+          return loadModelFromUrl(
+            url.toString(),
+            modelParams: modelParams,
+            onProgress: urlProgress,
+          );
+        }
+        return _loadModelFromUrlAs(
           url.toString(),
-          modelParams: modelParams,
-          onProgress: onProgress == null
-              ? null
-              : (progress) =>
-                    onProgress(ModelDownloadProgress.fraction(progress)),
+          modelParams,
+          urlProgress,
+          format,
         );
     }
   }
@@ -323,11 +359,25 @@ class LlamaEngine {
   ///
   /// This is typically used on the Web platform. Use [ModelParams] to
   /// configure loading options.
+  ///
+  /// The runtime fetches [url] itself, so its content cannot pick the
+  /// runtime: the URL path's extension does, and a URL without a model
+  /// extension loads as GGUF. For such a URL, load it with [loadModelSource]
+  /// and a [ModelSource.format].
   Future<void> loadModelFromUrl(
     String url, {
     ModelParams modelParams = const ModelParams(),
     Function(double progress)? onProgress,
   }) {
+    return _loadModelFromUrlAs(url, modelParams, onProgress, null);
+  }
+
+  Future<void> _loadModelFromUrlAs(
+    String url,
+    ModelParams modelParams,
+    Function(double progress)? onProgress,
+    ModelFormat? format,
+  ) {
     return _observeModelLoad(
       url,
       modelParams,
@@ -336,10 +386,22 @@ class LlamaEngine {
           url,
           modelParams: modelParams,
           onProgress: onProgress,
+          format: format,
         );
         await _captureObservedModel(url);
       }),
     );
+  }
+
+  // Calls the public loader when there is no format, so a subclass that
+  // overrides loadModel keeps receiving source loads.
+  Future<void> _loadSourceFile(
+    String path,
+    ModelParams modelParams,
+    ModelFormat? format,
+  ) {
+    if (format == null) return loadModel(path, modelParams: modelParams);
+    return _loadModelAs(path, modelParams, format);
   }
 
   Future<void> _observeModelLoad(
@@ -431,6 +493,7 @@ class LlamaEngine {
     String url, {
     ModelParams modelParams = const ModelParams(),
     Function(double progress)? onProgress,
+    ModelFormat? format,
   }) async {
     _ensureNotReady();
     final modelName = _displayNameForSource(url);
@@ -448,9 +511,11 @@ class LlamaEngine {
       _completionModel = _modelNameForSource(url);
       _cachedModelMetadata = null;
 
-      _modelHandle = await backend.modelLoadFromUrl(
+      _modelHandle = await _backendModelLoad(
         url,
         modelParams,
+        format,
+        fromUrl: true,
         onProgress: onProgress,
       );
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
@@ -477,6 +542,46 @@ class LlamaEngine {
         _redactedErrorDetails(e, url),
       );
     }
+  }
+
+  Future<int> _backendModelLoad(
+    String source,
+    ModelParams modelParams,
+    ModelFormat? format, {
+    required bool fromUrl,
+    Function(double progress)? onProgress,
+  }) {
+    final candidate = backend;
+    if (format != null) {
+      if (candidate is BackendModelFormatRouting) {
+        final router = candidate as BackendModelFormatRouting;
+        return fromUrl
+            ? router.modelLoadFromUrlAs(
+                source,
+                modelParams,
+                format,
+                onProgress: onProgress,
+              )
+            : router.modelLoadAs(source, modelParams, format);
+      }
+      final runtime = candidate is BackendRuntimeIdentity
+          ? (candidate as BackendRuntimeIdentity).runtime
+          : null;
+      if (runtime != format.runtime) {
+        throw LlamaUnsupportedException(
+          'This backend cannot load ModelFormat.${format.name}: '
+          '${runtime == null ? 'it cannot choose a runtime by model format' : 'it runs only ${runtime.name}'}. '
+          'Use LlamaBackend(), which picks the runtime per model.',
+        );
+      }
+    }
+    return fromUrl
+        ? candidate.modelLoadFromUrl(
+            source,
+            modelParams,
+            onProgress: onProgress,
+          )
+        : candidate.modelLoad(source, modelParams);
   }
 
   // Runs [action] after any in-flight multimodal lifecycle operation, so

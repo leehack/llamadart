@@ -19,6 +19,7 @@ import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/model_format.dart';
 import '../../core/url_redaction.dart';
 import '../backend.dart';
 import 'litert_lm_sampler_params.dart';
@@ -32,6 +33,7 @@ import 'litert_lm_sampler_params.dart';
 class LiteRtLmBackend
     implements
         BackendRuntimeIdentity,
+        BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
         BackendGrammarConstraintsSupport,
@@ -115,6 +117,37 @@ class LiteRtLmBackend
     Function(double progress)? onProgress,
   }) async {
     _validateLiteRtLmSource(url);
+    return _load(url, params, onProgress: onProgress);
+  }
+
+  @override
+  Future<int> modelLoadAs(String path, ModelParams params, ModelFormat format) {
+    return modelLoadFromUrlAs(path, params, format);
+  }
+
+  /// Loads [url] without requiring a `.litertlm` extension, for a URL the
+  /// caller declared a LiteRT-LM bundle.
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) async {
+    if (format != ModelFormat.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'The Web LiteRT-LM backend cannot load ModelFormat.${format.name}. '
+        'Use LlamaBackend(), which picks the runtime per model.',
+      );
+    }
+    return _load(url, params, onProgress: onProgress);
+  }
+
+  Future<int> _load(
+    String url,
+    ModelParams params, {
+    Function(double progress)? onProgress,
+  }) async {
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
 

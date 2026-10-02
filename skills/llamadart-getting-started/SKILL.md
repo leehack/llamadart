@@ -18,9 +18,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `await engine.dispose()` when its owner goes away, in a `finally` block for
   scripts. In Flutter, create it in a long-lived owner (service, provider or
   `State`), never in `build()`.
-- `LlamaBackend()` routes by file extension: `.litertlm` runs on LiteRT-LM;
-  `.gguf` and anything else run on llama.cpp. The formats are not
-  interchangeable.
+- `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
+  and GGUF on llama.cpp. Native targets read the file header, so extensionless
+  files load; a header contradicting the extension throws
+  `LlamaModelFormatException`. Web routes by URL extension: for a URL without
+  one, pass `ModelSource.url(uri, format: ModelFormat.liteRtLm)`. The formats
+  are not interchangeable.
 - Prefer GGUF / llama.cpp unless the model only ships as `.litertlm`. Only
   llama.cpp supports embeddings, grammar-constrained and structured JSON output,
   runtime LoRA, KV-cache state persistence, next-token scores and external

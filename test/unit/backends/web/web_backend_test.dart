@@ -19,6 +19,8 @@ import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/models/model_format.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -402,6 +404,129 @@ void main() {
     expect(webGpu.disposeCalls, 1);
     expect(await backend.getBackendName(), 'litert');
   });
+
+  group('extensionless URLs', () {
+    const url = 'https://example.com/download?id=42';
+
+    test(
+      'WebAutoBackend loads extensionless URLs as GGUF by default',
+      () async {
+        final webGpu = _RecordingBackend('webgpu');
+        final liteRtLm = _RecordingBackend('litert');
+        final backend = WebAutoBackend(
+          webGpuFactory: () => webGpu,
+          liteRtLmFactory: () => liteRtLm,
+        );
+
+        await backend.modelLoadFromUrl(url, const ModelParams());
+
+        expect(webGpu.loadedUrls, [url]);
+        expect(liteRtLm.loadedUrls, isEmpty);
+      },
+    );
+
+    test('WebAutoBackend routes an explicit format past the URL', () async {
+      final webGpu = _RecordingBackend('webgpu');
+      final liteRtLm = _FormatRecordingBackend('litert');
+      final backend = WebAutoBackend(
+        webGpuFactory: () => webGpu,
+        liteRtLmFactory: () => liteRtLm,
+      );
+
+      await backend.modelLoadFromUrlAs(
+        url,
+        const ModelParams(),
+        ModelFormat.liteRtLm,
+      );
+      expect(liteRtLm.loadedAs, [(url, ModelFormat.liteRtLm)]);
+      expect(webGpu.loadedUrls, isEmpty);
+
+      await backend.modelLoadAs(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+        ModelFormat.gguf,
+      );
+      expect(webGpu.loadedUrls, ['https://example.com/model.litertlm']);
+      expect(liteRtLm.disposeCalls, 1);
+    });
+
+    test('engine threads ModelSource.format to the Web router', () async {
+      final liteRtLm = _FormatRecordingBackend('litert');
+      final engine = LlamaEngine(
+        WebAutoBackend(
+          webGpuFactory: () => _RecordingBackend('webgpu'),
+          liteRtLmFactory: () => liteRtLm,
+        ),
+      );
+
+      try {
+        await engine.loadModelSource(
+          ModelSource.url(Uri.parse(url), format: ModelFormat.liteRtLm),
+        );
+
+        expect(liteRtLm.loadedAs, [(url, ModelFormat.liteRtLm)]);
+      } finally {
+        await engine.dispose();
+      }
+    });
+
+    test(
+      'engine rejects a format a single-runtime backend cannot run',
+      () async {
+        final engine = LlamaEngine(_RuntimeBackend(LlamaRuntime.llamaCpp));
+
+        try {
+          await expectLater(
+            engine.loadModelSource(
+              ModelSource.url(Uri.parse(url), format: ModelFormat.liteRtLm),
+            ),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(engine.isReady, isFalse);
+        } finally {
+          await engine.dispose();
+        }
+      },
+    );
+  });
+}
+
+class _FormatRecordingBackend extends _RecordingBackend
+    implements BackendModelFormatRouting {
+  final loadedAs = <(String, ModelFormat)>[];
+
+  _FormatRecordingBackend(super.name);
+
+  @override
+  Future<int> modelLoadAs(
+    String path,
+    ModelParams params,
+    ModelFormat format,
+  ) async {
+    loadedAs.add((path, format));
+    loadedUrls.add(path);
+    return 1;
+  }
+
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) => modelLoadAs(url, params, format);
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async => 1;
+
+  @override
+  Future<void> contextFree(int contextHandle) async {}
+
+  @override
+  Future<void> modelFree(int modelHandle) async {}
+
+  @override
+  void cancelGeneration() {}
 }
 
 class _NoStateBackend implements LlamaBackend {

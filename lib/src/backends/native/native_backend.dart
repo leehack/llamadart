@@ -11,21 +11,26 @@ import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/model_format.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend.dart';
 import '../llama_cpp/llama_cpp_backend.dart';
+import 'model_format_probe.dart';
 
 /// Creates the native backend for the current platform.
 LlamaBackend createBackend() => NativeAutoBackend();
 
 /// Native backend router that chooses an engine from the model format.
 ///
-/// GGUF and all unknown file extensions stay on the existing llama.cpp backend.
-/// `.litertlm` model bundles use the LiteRT-LM backend.
+/// The file header picks the runtime: GGUF files use llama.cpp and LiteRT-LM
+/// bundles use LiteRT-LM. When the header is unreadable or unrecognized, an
+/// explicit format, then the `.litertlm` extension, select LiteRT-LM, and
+/// anything else stays on llama.cpp.
 class NativeAutoBackend
     implements
         BackendRuntimeIdentity,
+        BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
@@ -52,7 +57,7 @@ class NativeAutoBackend
   final LlamaBackend Function() _liteRtLmFactory;
 
   LlamaBackend? _delegate;
-  _NativeBackendKind? _delegateKind;
+  LlamaRuntime? _delegateKind;
   LlamaBackend? _diagnosticDelegate;
   Future<LlamaBackend>? _diagnosticDelegateStart;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -104,8 +109,30 @@ class NativeAutoBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
-    final delegate = await _delegateForPath(path);
+    final format = await resolveLocalModelFormat(path);
+    final delegate = await _delegateFor(format.runtime);
     return delegate.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadAs(
+    String path,
+    ModelParams params,
+    ModelFormat format,
+  ) async {
+    await resolveLocalModelFormat(path, requested: format);
+    final delegate = await _delegateFor(format.runtime);
+    return delegate.modelLoad(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrlAs(
+    String url,
+    ModelParams params,
+    ModelFormat format, {
+    Function(double progress)? onProgress,
+  }) {
+    return modelLoadFromUrl(url, params, onProgress: onProgress);
   }
 
   @override
@@ -692,8 +719,7 @@ class NativeAutoBackend
     );
   }
 
-  Future<LlamaBackend> _delegateForPath(String path) async {
-    final kind = _kindForPath(path);
+  Future<LlamaBackend> _delegateFor(LlamaRuntime kind) async {
     if (_delegate != null && _delegateKind == kind) {
       return _delegate!;
     }
@@ -701,7 +727,7 @@ class NativeAutoBackend
     final diagnosticDelegate = await _takeDiagnosticDelegate();
     if (_delegate == null &&
         diagnosticDelegate != null &&
-        kind == _NativeBackendKind.llamaCpp) {
+        kind == LlamaRuntime.llamaCpp) {
       await diagnosticDelegate.setLogLevel(_currentLogLevel);
       _delegate = diagnosticDelegate;
       _delegateKind = kind;
@@ -715,8 +741,8 @@ class NativeAutoBackend
     await diagnosticDelegate?.dispose();
 
     final delegate = switch (kind) {
-      _NativeBackendKind.liteRtLm => _liteRtLmFactory(),
-      _NativeBackendKind.llamaCpp => _llamaCppFactory(),
+      LlamaRuntime.liteRtLm => _liteRtLmFactory(),
+      LlamaRuntime.llamaCpp => _llamaCppFactory(),
     };
     await delegate.setLogLevel(_currentLogLevel);
     _delegate = delegate;
@@ -771,14 +797,6 @@ class NativeAutoBackend
     return delegate;
   }
 
-  _NativeBackendKind _kindForPath(String path) {
-    final lower = path.toLowerCase();
-    if (lower.endsWith('.litertlm')) {
-      return _NativeBackendKind.liteRtLm;
-    }
-    return _NativeBackendKind.llamaCpp;
-  }
-
   static const String _decisionUnsupportedMessage =
       'The selected native backend does not run decision models. Load a '
       'ModernBERT encoder GGUF, which uses the llama.cpp backend.';
@@ -793,5 +811,3 @@ class NativeAutoBackend
     return delegate;
   }
 }
-
-enum _NativeBackendKind { llamaCpp, liteRtLm }

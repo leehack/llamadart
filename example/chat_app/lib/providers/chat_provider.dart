@@ -927,8 +927,7 @@ class ChatProvider extends ChangeNotifier {
     if (value == null || value.isEmpty) {
       return false;
     }
-    final withoutQuery = value.split('?').first.split('#').first;
-    return withoutQuery.toLowerCase().endsWith('.litertlm');
+    return ModelFormat.fromPath(value) == ModelFormat.liteRtLm;
   }
 
   bool _webCachePrefetchWouldPersistSensitiveUrl() {

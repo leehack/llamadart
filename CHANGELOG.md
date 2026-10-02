@@ -1,3 +1,11 @@
+## Unreleased
+
+- Native `LlamaBackend()` picks llama.cpp or LiteRT-LM from the model file's
+  header, not its extension, so extensionless downloads load in the right
+  runtime and mislabelled files throw `LlamaModelFormatException`; name a Web
+  URL's format with `ModelSource.url(..., format: ModelFormat.liteRtLm)`
+  ([#837](https://github.com/leehack/llamadart/issues/837)).
+
 ## 0.10.0
 
 - Add the `llamadart_stable_diffusion_flutter` `0.0.1` companion package:

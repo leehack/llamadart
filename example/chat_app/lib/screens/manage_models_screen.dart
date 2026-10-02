@@ -1329,7 +1329,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   bool _isLiteRtLmWebModel(DownloadableModel model) {
-    return model.filenameFor(web: true).toLowerCase().endsWith('.litertlm');
+    return ModelFormat.fromPath(model.filenameFor(web: true)) ==
+        ModelFormat.liteRtLm;
   }
 
   String _resolveAssetLoadReference(ModelAssetSource source) {
@@ -1461,13 +1462,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final contextOptions = _buildContextSizeOptions(provider.contextSize);
         final hasModelPath =
             provider.modelPath != null && provider.modelPath!.isNotEmpty;
+        final modelPath = provider.modelPath;
         final usesLiteRtLmModel =
-            provider.modelPath
-                ?.split('?')
-                .first
-                .toLowerCase()
-                .endsWith('.litertlm') ??
-            false;
+            modelPath != null &&
+            ModelFormat.fromPath(modelPath) == ModelFormat.liteRtLm;
         final hasMmprojPath = (provider.settings.mmprojPath ?? '')
             .trim()
             .isNotEmpty;
