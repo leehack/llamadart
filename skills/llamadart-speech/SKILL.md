@@ -16,27 +16,50 @@ description: >-
 - Speech uses the experimental typed `SpeechToTextEngine` and
   `TextToSpeechEngine`, not chat. `LlamaAudioContent` in `engine.create` is
   plain audio chat with no transcript contract (see the multimodal guide).
-- Pick the path by model family:
-  - Qwen3-ASR (whole file, one final transcript):
-    `SpeechToTextEngine(engine, modelProfile: SpeechToTextModelProfile.qwen3Asr)`
-    over a `LlamaEngine` with the Qwen3-ASR GGUF and its mmproj loaded. Native
+- Create a speech engine with `load` or `attach`:
+  - `SpeechToTextEngine.load(SpeechToTextModel(source, projector:,
+    tokenizer:, adapter:), params:, download:, onProgress:, store:,
+    backend:)` and `TextToSpeechEngine.load(TextToSpeechModel(source,
+    projector:, adapter:), ...)` download each `ModelSource` (path, URL or
+    `hf://owner/repo/file`) into the model cache, load it, check
+    `capabilities`, and own what they load. They throw
+    `LlamaUnsupportedException` when the model cannot do the task; when they
+    throw, nothing stays loaded. `ModelLoadOptions.sha256` is rejected for
+    multi-file models.
+  - `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())` and
+    `TextToSpeechEngine.attach(engine, adapter: const Qwen3TtsAdapter())`
+    borrow a `LlamaEngine` you loaded; check `capabilities` yourself.
+  - Always `await dispose()`. It cancels a running task or stream and
+    disposes the engine `load` created; an attached engine stays loaded.
+  - The `SpeechToTextEngine(engine, modelProfile:)`,
+    `SpeechToTextEngine.liteRtLm` and `TextToSpeechEngine(engine,
+    modelProfile:)` constructors and the `*ModelProfile` enums are
+    deprecated; do not use them.
+- Pick the adapter by model family. The adapter is a required declaration;
+  audio support alone never makes a model ASR:
+  - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the
+    Qwen3-ASR GGUF as `source` and its mmproj as `projector`. Native
     llama.cpp, or WebGPU with bridge assets `v0.1.30+`.
+  - Another audio chat model on `LlamaEngine`: extend
+    `SpeechToTextPromptAdapter` with `name`, `promptFor(request)` (the text
+    sent before the audio) and `parseTranscript(output)` (returns a
+    `SpeechToTextTranscript`); override `supportsLanguageHints`,
+    `supportsContextPrompt` or `supportsLanguageDetection` as needed.
   - LiteRT-LM ASR (live partials, then a final transcript):
-    `SpeechToTextEngine.liteRtLm(LiteRtLmAsrRuntimeConfig(...))` with a local
-    `.tflite` model and tokenizer JSON. Native only, CPU only
-    (`LiteRtLmAsrBackend.cpu`). Presets: `parakeetTdt0_6bV3`,
-    `parakeetCtc0_6b`, `moonshineTiny`, `whisperTiny`, `qwen3Asr0_6b`; the
-    files must match the preset. It does not use any loaded chat model.
-  - Qwen3-TTS: `TextToSpeechEngine(engine, modelProfile:
-    TextToSpeechModelProfile.qwen3Tts)` with the Qwen3-TTS GGUF and its
+    `LiteRtLmAsrAdapter(preset)` with the `.tflite` model as `source` and its
+    tokenizer JSON as `tokenizer`. Native only, CPU only
+    (`LiteRtLmAsrBackend.cpu`); runtime settings go on the adapter, and
+    `params`/`backend` must be null. `load` throws
+    `LlamaUnsupportedException` where the runtime is unavailable, including
+    Web. Presets: `parakeetTdt0_6bV3`, `parakeetCtc0_6b`, `moonshineTiny`,
+    `whisperTiny`, `qwen3Asr0_6b`; the files must match the preset.
+  - Qwen3-TTS: `Qwen3TtsAdapter` with the Qwen3-TTS GGUF and its
     audio-generation mmproj. Native llama.cpp, or WebGPU with bridge assets
-    `v0.1.33+`. LiteRT-LM (native and Web) has no TTS.
-- The `modelProfile` is a required declaration; audio support alone never
-  makes a model ASR. `SpeechToTextModelProfile.liteRtLmDedicated` is only
-  valid through `SpeechToTextEngine.liteRtLm` (the default constructor throws
-  `ArgumentError`).
-- Always `await recognizer.capabilities` / `synthesizer.capabilities` after
-  both model and projector load, and gate on `isSupported`, showing
+    `v0.1.33+`. LiteRT-LM (native and Web) has no TTS. Synthesis is
+    runtime-native, so a custom `TextToSpeechAdapter` can target only a model
+    the runtime reports as a `BackendTextToSpeechModel`.
+- After `attach`, `await recognizer.capabilities` /
+  `synthesizer.capabilities` and gate on `isSupported`, showing
   `unsupportedReason`. A loaded projector does not prove audio support or a
   matching model. A chat-model LiteRT-LM engine reports unsupported for STT.
 - Use the capability fields instead of assuming: `inputKinds`,
@@ -60,7 +83,9 @@ description: >-
   is already active). After a task starts, failures arrive as an error on the
   single-subscription `task.events` stream and as
   `SpeechToTextCompletionState.failed` / `TextToSpeechCompletionState.failed`
-  with `error` on `task.done`.
+  with `error` on `task.done`. `transcribeOnce` / `synthesizeOnce` return the
+  final result, or throw the task's failure, or `LlamaStateException` when
+  cancelled. After `dispose()`, starting a task throws `LlamaStateException`.
 - Qwen3-ASR limits:
   - It is validated only up to 30 seconds per input; longer audio can
     silently drop or repeat sentences. Split recordings into windows of 30
@@ -88,11 +113,12 @@ description: >-
   and must stay off a Flutter UI isolate.
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
   `done` then reports `cancelled`. Cancelling or pausing the `events`
-  subscription does not stop or throttle inference. `unloadModel()` and
-  `dispose()` cancel an active Qwen3 speech task.
+  subscription does not stop or throttle inference. The speech engine's
+  `dispose()`, and `unloadModel()` and `dispose()` on its `LlamaEngine`,
+  cancel an active task.
 - One typed speech task per `LlamaEngine`: all STT and TTS wrappers over an
-  engine share a lease. Do not start chat generation on that engine until
-  `task.done` completes. A LiteRT-LM recognizer allows one task per instance.
+  engine share a lease. Do not start chat generation on an attached engine
+  until `task.done` completes. A LiteRT-LM recognizer allows one task per instance.
 - TTS returns one complete buffer of interleaved float32 PCM (24 kHz mono for
   Qwen3-TTS; read `result.sampleRateHz` and `channelCount` rather than
   hard-coding). There are no playable chunks (`supportsIncrementalAudio` is
@@ -117,46 +143,80 @@ description: >-
 
 ## Examples
 
-Transcribe a file with Qwen3-ASR and handle truncation:
+Load Qwen3-ASR, transcribe a file and handle truncation:
 
 ```dart
 import 'package:llamadart/llamadart.dart';
 
-Future<String> transcribeFile(LlamaEngine engine, String wavPath) async {
-  final SpeechToTextEngine recognizer = SpeechToTextEngine(
-    engine,
-    modelProfile: SpeechToTextModelProfile.qwen3Asr,
-  );
-  final SpeechToTextCapabilities capabilities = await recognizer.capabilities;
-  if (!capabilities.isSupported) {
-    throw LlamaUnsupportedException(capabilities.unsupportedReason!);
-  }
-
-  final SpeechToTextTask task = await recognizer.transcribe(
-    SpeechToTextRequest(
-      audio: SpeechAudioFileInput(wavPath),
-      contextPrompt: 'llamadart, Qwen3-ASR',
+Future<String> transcribeFile(
+  String modelPath,
+  String projectorPath,
+  String wavPath,
+) async {
+  final SpeechToTextEngine recognizer = await SpeechToTextEngine.load(
+    SpeechToTextModel(
+      ModelSource.path(modelPath),
+      projector: ModelSource.path(projectorPath),
+      adapter: const Qwen3AsrAdapter(),
     ),
   );
-
-  String transcript = '';
   try {
-    await for (final SpeechToTextEvent event in task.events) {
-      if (event is SpeechToTextFinalEvent) {
-        transcript = event.result.text;
-      }
-    }
+    final SpeechToTextResult result = await recognizer.transcribeOnce(
+      SpeechToTextRequest(
+        audio: SpeechAudioFileInput(wavPath),
+        contextPrompt: 'llamadart, Qwen3-ASR',
+      ),
+    );
+    return result.text;
   } on LlamaSpeechTranscriptTruncatedException catch (error) {
     print('Stopped at ${error.limit.name}; split the audio into shorter windows.');
     return error.partialTranscript;
   } on LlamaAudioFormatException catch (error) {
     print('Unsupported audio: $error');
     rethrow;
+  } finally {
+    await recognizer.dispose();
   }
+}
+```
 
-  final SpeechToTextCompletion completion = await task.done;
-  print(completion.state);
-  return transcript;
+A custom prompt adapter on an engine the caller loaded and keeps:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+class MyAsrAdapter extends SpeechToTextPromptAdapter {
+  const MyAsrAdapter();
+
+  @override
+  String get name => 'My-ASR';
+
+  @override
+  String promptFor(SpeechToTextRequest request) => 'Transcribe the audio.';
+
+  @override
+  SpeechToTextTranscript parseTranscript(String output) =>
+      SpeechToTextTranscript(output.trim());
+}
+
+Future<String> transcribeWith(LlamaEngine engine, String wavPath) async {
+  final SpeechToTextEngine recognizer = SpeechToTextEngine.attach(
+    engine,
+    adapter: const MyAsrAdapter(),
+  );
+  try {
+    final SpeechToTextCapabilities capabilities =
+        await recognizer.capabilities;
+    if (!capabilities.isSupported) {
+      throw LlamaUnsupportedException(capabilities.unsupportedReason!);
+    }
+    final SpeechToTextResult result = await recognizer.transcribeOnce(
+      SpeechToTextRequest(audio: SpeechAudioFileInput(wavPath)),
+    );
+    return result.text;
+  } finally {
+    await recognizer.dispose(); // The engine stays loaded.
+  }
 }
 ```
 
@@ -169,17 +229,14 @@ import 'dart:typed_data';
 import 'package:llamadart/llamadart.dart';
 
 Future<String?> dictate(Stream<Float32List> mono16KhzChunks) async {
-  final SpeechToTextEngine recognizer = SpeechToTextEngine.liteRtLm(
-    const LiteRtLmAsrRuntimeConfig(
-      modelPath: '/models/moonshine_tiny.tflite',
-      tokenizerPath: '/models/tokenizer.json',
-      modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+  // Throws LlamaUnsupportedException where the runtime is unavailable.
+  final SpeechToTextEngine recognizer = await SpeechToTextEngine.load(
+    SpeechToTextModel(
+      ModelSource.path('/models/moonshine_tiny.tflite'),
+      tokenizer: ModelSource.path('/models/tokenizer.json'),
+      adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
     ),
   );
-  final SpeechToTextCapabilities capabilities = await recognizer.capabilities;
-  if (!capabilities.isSupported) {
-    throw LlamaUnsupportedException(capabilities.unsupportedReason!);
-  }
 
   final SpeechToTextStreamingSession session = await recognizer.startStream();
   final StreamSubscription<SpeechToTextEvent> events = session.events.listen(
@@ -202,6 +259,7 @@ Future<String?> dictate(Stream<Float32List> mono16KhzChunks) async {
 
   final SpeechToTextCompletion completion = await session.done;
   await events.cancel();
+  await recognizer.dispose();
   print(completion.state);
   return completion.result?.text;
 }
@@ -215,21 +273,26 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 
-Future<void> speak(LlamaEngine engine, String text, String outPath) async {
-  final TextToSpeechEngine synthesizer = TextToSpeechEngine(
-    engine,
-    modelProfile: TextToSpeechModelProfile.qwen3Tts,
-  );
-  final TextToSpeechCapabilities capabilities = await synthesizer.capabilities;
-  if (!capabilities.isSupported) {
-    throw LlamaUnsupportedException(capabilities.unsupportedReason!);
-  }
-
-  final TextToSpeechTask task = await synthesizer.synthesize(
-    TextToSpeechRequest(text: text, language: 'English', maxFrames: 1024),
+Future<void> speak(
+  ModelSource model,
+  ModelSource projector,
+  String text,
+  String outPath,
+) async {
+  final TextToSpeechEngine synthesizer = await TextToSpeechEngine.load(
+    TextToSpeechModel(
+      model,
+      projector: projector,
+      adapter: const Qwen3TtsAdapter(),
+    ),
+    onProgress: (ModelDownloadProgress progress) =>
+        print('Downloading: ${progress.fraction}'),
   );
 
   try {
+    final TextToSpeechTask task = await synthesizer.synthesize(
+      TextToSpeechRequest(text: text, language: 'English', maxFrames: 1024),
+    );
     await for (final TextToSpeechEvent event in task.events) {
       if (event is TextToSpeechProgressEvent) {
         print('${event.phase.name}: ${event.framesGenerated} frames');
@@ -243,12 +306,13 @@ Future<void> speak(LlamaEngine engine, String text, String outPath) async {
         print('Wrote ${result.duration} at ${result.sampleRateHz} Hz');
       }
     }
+    final TextToSpeechCompletion completion = await task.done;
+    print(completion.state);
   } on LlamaException catch (error) {
     print('Synthesis failed: $error');
+  } finally {
+    await synthesizer.dispose();
   }
-
-  final TextToSpeechCompletion completion = await task.done;
-  print(completion.state);
 }
 ```
 

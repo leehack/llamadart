@@ -29,31 +29,59 @@ Use a matching model and projector pair. The chat example pins the Q4_K_M base
 model and Q8_0 projector from
 [`ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF`](https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF).
 
-The structured model-source APIs keep the loading flow portable. Native
-runtimes download and cache remote sources before loading their local files;
-Web passes the same sources to the browser runtime and its cache.
+A `TextToSpeechModel` names the model and projector, each a `ModelSource`,
+and the adapter that drives them. Native runtimes download and cache remote
+sources before loading their local files; Web passes the same sources to the
+browser runtime and its cache.
 
 ```dart
-final engine = LlamaEngine(LlamaBackend());
 const revision = 'ca27d74bc954b73dadab5b71ca265d87fc861a7c';
-await engine.loadModelSource(
-  ModelSource.huggingFace(
-    repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
-    revision: revision,
-    filePath: 'Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+final synthesizer = await TextToSpeechEngine.load(
+  TextToSpeechModel(
+    ModelSource.huggingFace(
+      repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
+      revision: revision,
+      filePath: 'Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+    ),
+    projector: ModelSource.huggingFace(
+      repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
+      revision: revision,
+      filePath: 'mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+    ),
+    adapter: const Qwen3TtsAdapter(),
   ),
 );
-await engine.loadMultimodalProjectorSource(
-  ModelSource.huggingFace(
-    repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
-    revision: revision,
-    filePath: 'mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
-  ),
-);
+try {
+  final result = await synthesizer.synthesizeOnce(
+    const TextToSpeechRequest(text: 'Hello from llamadart.', language: 'en'),
+  );
+  print(result.duration);
+} finally {
+  await synthesizer.dispose();
+}
+```
 
-final synthesizer = TextToSpeechEngine(
+`load` creates a `LlamaEngine`, loads the model with `params:` and then the
+projector, checks `capabilities`, and throws `LlamaUnsupportedException` with
+the reason when they cannot synthesize speech with the adapter. Loading a
+projector alone does not prove that the active native or Web runtime exports
+the required TTS ABI or that the projector matches the model. `download:`
+takes `ModelLoadOptions` for every remote file, `onProgress:` reports both
+files together, `store:` takes a `ModelFileStore` with your own resolver or
+download manager, and `backend:` the `LlamaBackend` (by default
+`LlamaBackend()`). `ModelLoadOptions.sha256` throws
+`LlamaUnsupportedException`, since one checksum cannot cover both files. The
+load is atomic: when it throws, the engine is disposed, and downloaded files
+stay in the cache.
+
+The synthesizer owns the engine `load` created, and `dispose()` disposes it.
+To share a `LlamaEngine` you loaded yourself, attach the adapter instead and
+check `capabilities` yourself; `dispose()` then leaves your engine loaded:
+
+```dart
+final synthesizer = TextToSpeechEngine.attach(
   engine,
-  modelProfile: TextToSpeechModelProfile.qwen3Tts,
+  adapter: const Qwen3TtsAdapter(),
 );
 final capabilities = await synthesizer.capabilities;
 if (!capabilities.isSupported) {
@@ -61,9 +89,13 @@ if (!capabilities.isSupported) {
 }
 ```
 
-Always probe capabilities after both artifacts are loaded. Loading a projector
-does not prove that the active native or Web runtime exports the required TTS
-ABI or that the projector matches the model.
+The runtime generates the audio itself and reports which audio-generation
+model it loaded, so an adapter can target only a model the runtime supports.
+`Qwen3TtsAdapter` accepts Qwen3-TTS and maps request languages to its codes.
+`TextToSpeechAdapter` is open for another family once a runtime reports it:
+`supportsModel` accepts the `BackendTextToSpeechModel` it drives,
+`supportedLanguages` lists its codes, and `normalizeLanguage` maps a request
+language to one of them.
 
 ## Synthesize and save WAV
 
@@ -97,7 +129,9 @@ print(completion.state);
 `synthesize` throws typed validation, state, or unsupported errors when
 preflight fails before a task starts. After startup, failures are emitted as a
 stream error and also reported through `task.done`. The event stream is
-single-subscription.
+single-subscription. `synthesizeOnce` skips the events: it returns the final
+result, and throws the task's failure, or `LlamaStateException` when the task
+is cancelled.
 
 For models that advertise speaker-reference support, encoded bytes are the
 portable representation. In this example, `referenceWavBytes` is a
@@ -136,6 +170,12 @@ stops a Qwen3-TTS audio decode in progress at its next chunk boundary. Older
 runtimes finish the native step first, which can include the whole decode.
 `LlamaEngine.unloadModel()` and `dispose()` cancel an active synthesis the same
 way, and its task reports `cancelled`.
+
+`TextToSpeechEngine.dispose()` cancels a running task, waits for it to stop,
+and disposes the engine that `load` created; an attached engine stays loaded.
+Calling it again is safe, and `isDisposed` reports it. After `dispose()`,
+`synthesize` throws `LlamaStateException` and `capabilities` reports
+unsupported.
 
 All typed STT and TTS wrappers over one `LlamaEngine` share a one-task speech
 lease. Do not run chat generation, transcription, or another synthesis on the
