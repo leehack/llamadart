@@ -4129,8 +4129,8 @@ void main() {
       });
     }
 
-    test('ChatSession.create cancelled during prompt evaluation adds no '
-        'assistant message', () async {
+    test('ChatSession.create cancelled during prompt evaluation takes back '
+        'its user message', () async {
       final backend = PromptEvaluationBackend(nativeChat: false);
       final engine = LlamaEngine(backend);
       addTearDown(engine.dispose);
@@ -4146,9 +4146,7 @@ void main() {
       await subscription.cancel();
       await pumpEventQueue();
 
-      expect(session.history.map((message) => message.role), [
-        LlamaChatRole.user,
-      ]);
+      expect(session.history, isEmpty);
     });
   });
 
@@ -4287,7 +4285,7 @@ void main() {
     });
 
     test('ChatSession.create cancelled with a whole tool call buffered '
-        'delivers nothing and adds no assistant message', () async {
+        'delivers nothing and takes back its user message', () async {
       final backend = HeldOutputBackend(
         output: const [toolCall],
         modelMetadataResponse: toolTemplate,
@@ -4301,9 +4299,7 @@ void main() {
       );
 
       expect(events, isEmpty);
-      expect(session.history.map((message) => message.role), [
-        LlamaChatRole.user,
-      ]);
+      expect(session.history, isEmpty);
     });
 
     test('a second cancel delivers nothing', () async {

@@ -120,7 +120,7 @@ class ChatSession {
   ///
   /// If the stream ends before the engine yields its first chunk, through an
   /// error such as the backend rejecting the rendered request or through a
-  /// cancel, this call undoes its own [history] changes: it
+  /// cancelled subscription, this call undoes its own [history] changes: it
   /// removes the user message it added, and puts back the turns its context
   /// check trimmed when [history] has not changed since. A retry then does
   /// not repeat the user message. [onMessageAdded] has already reported that
@@ -208,6 +208,10 @@ class ChatSession {
       final reply = _ReplyBuilder();
       var started = false;
       var completed = false;
+      // Chunks that reach this generator after its subscription is cancelled
+      // are never delivered, so they neither start nor extend the reply.
+      var unsubscribed = false;
+      request.onSubscriptionCancel(() async => unsubscribed = true);
       try {
         // Ensure the rendered request, including tool schemas, leaves enough
         // room for the configured response rather than using a fixed small
@@ -240,6 +244,7 @@ class ChatSession {
           ),
         );
         await for (final chunk in completion) {
+          if (unsubscribed) break;
           started = true;
           reply.add(chunk);
           yield chunk;
