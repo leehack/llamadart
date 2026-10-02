@@ -7,6 +7,14 @@
   load's `details` is now the cause's message instead of a `{type, message}`
   map, and the not-ready error names `loadModelSource()`
   ([#843](https://github.com/leehack/llamadart/issues/843)).
+- **Deprecated, behavior change:** `sourceLangCode` and `targetLangCode` on
+  `LlamaEngine.create`, `createStructuredJson`, `chatTemplate` and
+  `BackendNativeChatGeneration.generateChat`; pass
+  `chatTemplateKwargs: {'source_lang_code': 'en', 'target_lang_code': 'ko'}`,
+  which TranslateGemma templates now read, as llama.cpp does. A custom
+  `BackendNativeChatGeneration` now gets the codes from `LlamaEngine` only in
+  `chatTemplateKwargs`
+  ([#853](https://github.com/leehack/llamadart/issues/853)).
 - **Deprecated:** `LlamaLogging.configure(level:, nativeLevel:, handler:)`
   replaces `LlamaEngine.configureLogging` and the engine's `setLogLevel`,
   `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so

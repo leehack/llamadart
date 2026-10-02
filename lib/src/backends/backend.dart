@@ -173,6 +173,9 @@ abstract class BackendNativeChatGeneration {
   bool get supportsNativeChatGeneration;
 
   /// Generates from structured chat state.
+  ///
+  /// The deprecated `sourceLangCode` and `targetLangCode` set the
+  /// `source_lang_code` and `target_lang_code` keys of [chatTemplateKwargs].
   Stream<List<int>> generateChat(
     int contextHandle,
     List<LlamaChatMessage> messages,
@@ -182,7 +185,9 @@ abstract class BackendNativeChatGeneration {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     DateTime? templateNow,
   });

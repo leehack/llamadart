@@ -35,9 +35,12 @@ print(result.format);
 ## Useful parameters
 
 - `customTemplate`: per-call template override.
-- `chatTemplateKwargs`: additional template globals.
+- `chatTemplateKwargs`: additional template globals, as llama.cpp's
+  `chat_template_kwargs`. TranslateGemma reads its language codes from
+  `{'source_lang_code': 'en', 'target_lang_code': 'ko'}`, defaulting to
+  `en-GB`; the `sourceLangCode` and `targetLangCode` parameters are
+  deprecated.
 - `templateNow`: deterministic time injection for tests.
-- `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
 - `responseFormat`: structured-output constraint; unrecognised shapes throw
   `LlamaUnsupportedException`.
 

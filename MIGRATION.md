@@ -88,6 +88,28 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: TranslateGemma language codes
+
+`LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
+`sourceLangCode` and `targetLangCode`. Pass the codes in
+`chatTemplateKwargs`, as llama.cpp's `chat_template_kwargs` does; the
+parameters still work for one minor release, with deprecation warnings:
+
+```dart
+// Before
+engine.create(messages, sourceLangCode: 'en', targetLangCode: 'ko');
+// After
+engine.create(
+  messages,
+  chatTemplateKwargs: const {'source_lang_code': 'en', 'target_lang_code': 'ko'},
+);
+```
+
+A code passed as a parameter replaces the same key in `chatTemplateKwargs`.
+A custom `BackendNativeChatGeneration` that read `sourceLangCode` or
+`targetLangCode` in `generateChat` gets them from `LlamaEngine` only in
+`chatTemplateKwargs` now.
+
 ## Unreleased: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,

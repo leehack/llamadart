@@ -307,6 +307,44 @@ void main() {
       expect(result.prompt, contains('hello'));
     });
 
+    test('TranslateGemma fixture reads chatTemplateKwargs language codes', () {
+      final file = templateFiles.firstWhere(
+        (f) => f.path.contains('TranslateGemma-2B-it'),
+      );
+      final source = file.readAsStringSync();
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: '안녕하세요'),
+      ];
+
+      final viaKwargs = ChatTemplateEngine.render(
+        templateSource: source,
+        messages: messages,
+        metadata: metadata,
+        chatTemplateKwargs: const {
+          'source_lang_code': 'ko-KR',
+          'target_lang_code': 'en-US',
+        },
+        addAssistant: false,
+      );
+      final viaMetadata = ChatTemplateEngine.render(
+        templateSource: source,
+        messages: messages,
+        metadata: {
+          ...metadata,
+          'source_lang_code': 'ko-KR',
+          'target_lang_code': 'en-US',
+        },
+        addAssistant: false,
+      );
+
+      expect(viaKwargs.format, equals(ChatFormat.translateGemma.index));
+      expect(
+        viaKwargs.prompt,
+        contains('[source_lang_code]ko-KR[/source_lang_code]'),
+      );
+      expect(viaKwargs.prompt, viaMetadata.prompt);
+    });
+
     test('TranslateGemma fixture respects metadata language overrides', () {
       final file = templateFiles.firstWhere(
         (f) => f.path.contains('TranslateGemma-2B-it'),
