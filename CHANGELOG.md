@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **Behavior change:** `responseFormat` maps with an unknown `type` or
+  key, such as `json_shema` or a misspelled `schma`, now throw
+  `LlamaUnsupportedException` before generation instead of generating
+  unconstrained output, and `ChatSession.create` takes `responseFormat` with a
+  new `ChatSession.createStructuredJson`
+  ([#836](https://github.com/leehack/llamadart/issues/836)).
 - Native `LlamaBackend()` picks llama.cpp or LiteRT-LM from the model file's
   header, not its extension, so extensionless downloads load in the right
   runtime and mislabelled files throw `LlamaModelFormatException`; name a Web

@@ -38,7 +38,8 @@ print(result.format);
 - `chatTemplateKwargs`: additional template globals.
 - `templateNow`: deterministic time injection for tests.
 - `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
-- `responseFormat`: structured-output schema hints.
+- `responseFormat`: structured-output constraint; unrecognised shapes throw
+  `LlamaUnsupportedException`.
 
 Structured output (`responseFormat`, `LlamaStructuredOutput`,
 `parseStructuredJson`) is covered in
