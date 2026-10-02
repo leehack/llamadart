@@ -2,6 +2,18 @@
 
 This document covers the major breaking upgrade paths.
 
+## Unreleased: mobile model cache default
+
+No source change is required. On Android and iOS, `LlamaEngine`,
+`ModelDownloadController` and `DefaultModelDownloadManager()` (and `auto()`
+without a mobile directory) now cache models in `llamadart/models` under the
+app's cache directory, the one Flutter's `getApplicationCacheDirectory()`
+returns, instead of `Directory.systemTemp/llamadart/models`. Models cached
+under the old path download once more; the old copies are left for the OS to
+clear. Apps that already pass a directory are unaffected. To pick another
+directory for every default download, set
+`DefaultModelDownloadManager.globalCacheDirectory` before the first load.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

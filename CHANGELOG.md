@@ -6,6 +6,11 @@
   unconstrained output, and `ChatSession.create` takes `responseFormat` with a
   new `ChatSession.createStructuredJson`
   ([#836](https://github.com/leehack/llamadart/issues/836)).
+- **Behavior change:** on Android and iOS, the default model cache is now
+  `llamadart/models` in the app's cache directory instead of the temporary
+  directory, which Android empties on every app update and iOS purges; add
+  `DefaultModelDownloadManager.globalCacheDirectory` to move every default
+  download ([#838](https://github.com/leehack/llamadart/issues/838)).
 
 ## 0.10.0
 

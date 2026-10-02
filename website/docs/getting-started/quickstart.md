@@ -11,7 +11,10 @@ This quickstart uses the core `LlamaEngine` API.
 Start with a model source instead of a machine-specific file path. On native
 Dart/Flutter targets, `loadModelSource(...)` downloads the file on first run,
 stores it in the package-managed model cache, and reuses the cached file on
-later runs.
+later runs. The cache is a per-user directory on desktop and the app's cache
+directory on Android and iOS, so no `path_provider` setup is needed; see
+[Choose the cache location](../guides/model-downloads#choose-the-cache-location)
+to move it.
 
 ```dart
 import 'package:llamadart/llamadart.dart';
