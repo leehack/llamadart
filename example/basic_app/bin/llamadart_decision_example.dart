@@ -23,41 +23,34 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
-  final engine = LlamaEngine(LlamaBackend());
   DecisionEngine? decisions;
   try {
-    final head = await _ensureFile(engine, options.headSource, 'head');
-    final configSource = options.configSource;
-    final config = configSource == null
-        ? null
-        : await _ensureFile(engine, configSource, 'config');
-
-    final model = options.modelSource;
-    print('Loading backbone ${model.displayName}...');
-    await _withProgress(
-      'backbone',
-      (onProgress) => engine.loadModelSource(
+    final model = DecisionModel(
+      encoder: options.modelSource,
+      head: options.headSource,
+      config: options.configSource,
+    );
+    print('Loading ${model.encoder.displayName}...');
+    final loaded = await _withProgress(
+      'model files',
+      (onProgress) => DecisionEngine.load(
         model,
-        modelParams: options.modelParams,
+        params: options.params,
         onProgress: onProgress,
       ),
     );
-
-    decisions = await DecisionEngine.load(
-      engine,
-      headPath: head,
-      configPath: config,
-    );
+    decisions = loaded;
+    final capabilities = await loaded.capabilities;
     print(
-      'Backend: ${await engine.getBackendName()}, '
-      'head device: ${decisions.info.deviceName}',
+      'Backend: ${capabilities.backendName}, '
+      'head device: ${loaded.info.deviceName}',
     );
 
     final state = options.state ?? defaultTicketState;
     print('Ticket: ${decisionValueText(state)}\n');
 
     final stopwatch = Stopwatch()..start();
-    final result = await decisions.systemOne(
+    final result = await loaded.systemOne(
       state: state,
       questions: ticketTriageQuestions,
     );
@@ -77,11 +70,8 @@ Future<void> main(List<String> arguments) async {
     exitCode = 2;
   } on LlamaModelException catch (error) {
     stderr.writeln('Error: $error');
-    if (engine.isReady && decisions == null && options.configSource == null) {
-      stderr.writeln(
-        'If the head has no laya.config metadata, pass its '
-        'rl_agent_config.json with --config.',
-      );
+    if (error.message.contains('laya.config')) {
+      stderr.writeln('Pass the head\'s rl_agent_config.json with --config.');
     }
     exitCode = 1;
   } catch (error) {
@@ -89,22 +79,7 @@ Future<void> main(List<String> arguments) async {
     exitCode = 1;
   } finally {
     await decisions?.dispose();
-    await engine.dispose();
   }
-}
-
-Future<String> _ensureFile(
-  LlamaEngine engine,
-  ModelSource source,
-  String label,
-) async {
-  print('Fetching $label ${source.displayName}...');
-  final entry = await _withProgress(
-    label,
-    (onProgress) =>
-        engine.modelDownloadManager.ensureModel(source, onProgress: onProgress),
-  );
-  return entry.filePath;
 }
 
 Future<T> _withProgress<T>(

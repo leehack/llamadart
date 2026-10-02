@@ -131,11 +131,49 @@ void main() {
     );
     expect(manager.calls, isEmpty);
   });
+
+  group('ensureModelTargetFiles', () {
+    test('resolves in order, giving local files only the cancel token, and '
+        'reports combined progress', () async {
+      manager.remoteSize = 100;
+      final cancelToken = ModelDownloadCancelToken();
+      final options = ModelLoadOptions(
+        cancelToken: cancelToken,
+        bearerToken: 'secret',
+        maxRetries: 1,
+      );
+      final progress = <(int, int?)>[];
+
+      final paths = await ensureModelTargetFiles(
+        [
+          ModelSource.path('/models/a.gguf'),
+          ModelSource.parse('https://example.com/b.safetensors'),
+        ],
+        resolver: const DefaultModelResolver(),
+        manager: manager,
+        options: options,
+        onProgress: (p) => progress.add((p.receivedBytes, p.totalBytes)),
+        knownSizes: const {0: 10},
+      );
+
+      expect(paths, ['/cache/a.gguf', '/cache/b.safetensors']);
+      final [(_, localOptions, _), (_, remoteOptions, _)] = manager.calls;
+      expect(localOptions.cancelToken, same(cancelToken));
+      expect(localOptions.bearerToken, isNull);
+      expect(localOptions.maxRetries, ModelLoadOptions.defaults.maxRetries);
+      expect(remoteOptions, same(options));
+      expect(progress, [(10, null), (60, 110), (110, 110), (110, 110)]);
+    });
+  });
 }
 
 final class _RecordingManager extends ThrowingModelDownloadManager {
   final List<(ModelSource, ModelLoadOptions, ModelDownloadProgressCallback?)>
   calls = [];
+
+  /// Size of every remote file, reported as two progress events; `null`
+  /// reports none.
+  int? remoteSize;
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -144,12 +182,22 @@ final class _RecordingManager extends ThrowingModelDownloadManager {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     calls.add((source, options, onProgress));
+    final size = source.isRemote ? remoteSize : null;
+    if (size != null) {
+      onProgress?.call(
+        ModelDownloadProgress(receivedBytes: size ~/ 2, totalBytes: size),
+      );
+      onProgress?.call(
+        ModelDownloadProgress(receivedBytes: size, totalBytes: size),
+      );
+    }
     final now = DateTime.utc(2026);
     return ModelCacheEntry(
       sourceCanonicalKey: source.canonicalKey,
       cacheKey: source.cacheKey,
       fileName: source.fileName,
       filePath: '/cache/${source.fileName}',
+      bytes: size,
       createdAt: now,
       updatedAt: now,
     );

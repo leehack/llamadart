@@ -106,24 +106,19 @@ void main() {
     });
   });
 
-  group('modelParams', () {
-    test('uses a 512-token context on the default GPU backend', () {
-      final params = _parse(const []).modelParams;
+  group('params', () {
+    test('runs on the default device with default threads', () {
+      final params = _parse(const []).params;
 
-      expect(params.contextSize, 512);
-      expect(params.preferredBackend, GpuBackend.auto);
-      expect(params.gpuLayers, ModelParams.maxGpuLayers);
-      expect(params.numberOfThreadsBatch, 0);
+      expect(params.device, ComputeDevice.auto);
+      expect(params.threads, 0);
     });
 
-    test('maps --cpu and --threads to the CPU backend and batch threads', () {
-      final params = _parse(const ['--cpu', '--threads', '6']).modelParams;
+    test('maps --cpu and --threads to the CPU and threads', () {
+      final params = _parse(const ['--cpu', '--threads', '6']).params;
 
-      expect(params.contextSize, 512);
-      expect(params.preferredBackend, GpuBackend.cpu);
-      expect(params.gpuLayers, 0);
-      expect(params.numberOfThreadsBatch, 6);
-      expect(params.numberOfThreads, 0);
+      expect(params.device, ComputeDevice.cpu);
+      expect(params.threads, 6);
     });
   });
 

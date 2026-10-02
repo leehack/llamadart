@@ -29,8 +29,9 @@ or on Android in the app's external files directory
 The **Backbone** picker also offers `laya-F16.gguf` (791 MB), downloaded when
 first selected.
 
-One `LlamaEngine` holds the backbone (`ModelParams(contextSize: 512)`); the
-base head and the Tetris-tuned head are two `DecisionEngine`s on it.
+One `LlamaEngine` holds the backbone, loaded with
+`DecisionModelParams.encoderModelParams`; the base head and the Tetris-tuned
+head are two `DecisionEngine`s attached to it with `DecisionEngine.attach`.
 
 The Apple projects target iOS `16.4` and macOS `14.0`. The macOS app is
 sandboxed with the network client entitlement for the downloads. The Android

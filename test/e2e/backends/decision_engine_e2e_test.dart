@@ -233,7 +233,8 @@ void main() {
     }
   });
 
-  test('keeps the head on the CPU when the model offloads no layers', () async {
+  test('load with ComputeDevice.cpu owns an engine with the head on the '
+      'CPU', () async {
     final modelPath = _requiredFile(_modelPathKey);
     final headPath = _requiredFile(_headPathKey);
     if (modelPath == null || headPath == null) {
@@ -241,21 +242,16 @@ void main() {
     }
     final fixture = DecisionFixture.load();
     final row = fixture.rows.first;
-    final engine = LlamaEngine(LlamaBackend());
+    final configPath = _optionalFile(_configPathKey);
     DecisionEngine? decisions;
     try {
-      await engine.loadModel(
-        modelPath,
-        modelParams: ModelParams(
-          contextSize: 512,
-          preferredBackend: _backend(),
-          gpuLayers: 0,
-        ),
-      );
       decisions = await DecisionEngine.load(
-        engine,
-        headPath: headPath,
-        configPath: _optionalFile(_configPathKey),
+        DecisionModel(
+          encoder: ModelSource.path(modelPath),
+          head: ModelSource.path(headPath),
+          config: configPath == null ? null : ModelSource.path(configPath),
+        ),
+        params: const DecisionModelParams(device: ComputeDevice.cpu),
       );
 
       final result = await decisions.systemOne(
@@ -264,7 +260,7 @@ void main() {
       );
 
       print(
-        'RESULT decision_engine_cpu_placement backend=${_backend().name} '
+        'RESULT decision_engine_cpu_placement backend=cpu '
         'headDevice=${_oneWord(decisions.info.deviceName)}',
       );
       expect(decisions.info.deviceName, 'CPU');
@@ -278,9 +274,13 @@ void main() {
         failures,
       );
       expect(failures, isEmpty, reason: failures.join('\n'));
+      await decisions.dispose();
+      expect(
+        (await decisions.capabilities).unsupportedReason,
+        'The DecisionEngine is disposed.',
+      );
     } finally {
       await decisions?.dispose();
-      await engine.dispose();
     }
   });
 
@@ -400,6 +400,63 @@ void main() {
       if (!engineDisposed) await engine.dispose();
     }
   });
+
+  test(
+    'attach shares one encoder between heads and leaves it loaded',
+    () async {
+      final modelPath = _requiredFile(_modelPathKey);
+      final headPath = _requiredFile(_headPathKey);
+      if (modelPath == null || headPath == null) {
+        return;
+      }
+      final configPath = _optionalFile(_configPathKey);
+      final config = configPath == null ? null : ModelSource.path(configPath);
+      final row = DecisionFixture.load().rows.first;
+      final questions = {
+        row.questionId: DecisionQuestion.fromJson(row.question),
+      };
+      final engine = LlamaEngine(LlamaBackend());
+      try {
+        await engine.loadModel(
+          modelPath,
+          modelParams: DecisionModelParams(
+            device: _backend() == GpuBackend.cpu
+                ? ComputeDevice.cpu
+                : ComputeDevice.auto,
+          ).encoderModelParams,
+        );
+        final first = await DecisionEngine.attach(
+          engine,
+          head: ModelSource.path(headPath),
+          config: config,
+        );
+        final second = await DecisionEngine.attach(
+          engine,
+          head: ModelSource.path(headPath),
+          config: config,
+        );
+        final expected = await first.systemOne(
+          state: row.state,
+          questions: questions,
+        );
+        await first.dispose();
+
+        final answer = await second.systemOne(
+          state: row.state,
+          questions: questions,
+        );
+        expect(engine.isReady, isTrue);
+        expect(
+          answer.answers[row.questionId]!.confidence,
+          closeTo(expected.answers[row.questionId]!.confidence, 1e-6),
+        );
+        await second.dispose();
+        expect(engine.isReady, isTrue);
+      } finally {
+        await engine.dispose();
+      }
+    },
+  );
 }
 
 GpuBackend _backend() {

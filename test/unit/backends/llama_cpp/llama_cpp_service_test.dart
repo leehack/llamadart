@@ -2191,7 +2191,7 @@ void main() {
             isA<LlamaModelException>().having(
               (error) => error.message,
               'message',
-              contains('Pass configPath'),
+              contains("Pass the head's rl_agent_config.json as its config"),
             ),
           ),
         );

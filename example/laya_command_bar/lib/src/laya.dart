@@ -40,9 +40,7 @@ final ModelSource publishedCommandHead = ModelSource.huggingFace(
 
 /// A loaded backbone and head.
 class Laya {
-  Laya._(this._engine, this.decisions, this.backendName);
-
-  final LlamaEngine _engine;
+  Laya._(this.decisions, this.backendName);
 
   /// The head on the backbone.
   final DecisionEngine decisions;
@@ -56,10 +54,10 @@ class Laya {
   /// Reads intents with [decisions].
   IntentReader get reader => layaIntentReader(decisions);
 
-  /// Downloads missing files through [downloads] (the engine's own manager
-  /// when null), loads [backbone] with a 512-token context, loads [head] on
-  /// it, and runs one decision so the first typed text does not pay for
-  /// GPU pipeline setup. [cpu] keeps everything on the CPU.
+  /// Downloads missing files through [downloads] (the default manager when
+  /// null), loads [backbone] and [head], and runs one decision so the first
+  /// typed text does not pay for GPU pipeline setup. [cpu] keeps everything
+  /// on the CPU.
   static Future<Laya> load({
     ModelSource? backbone,
     ModelSource? head,
@@ -67,60 +65,36 @@ class Laya {
     bool cpu = false,
     LoadStatus? onStatus,
   }) async {
-    backbone ??= defaultBackbone;
-    head ??= defaultHead;
-    void Function(ModelDownloadProgress) progressOf(ModelSource source) =>
-        (p) => onStatus?.call(
-          'Downloading ${source.fileName}: ${_mb(p.receivedBytes)}'
-          '${p.totalBytes == null ? '' : ' of ${_mb(p.totalBytes!)}'} MB',
-          p.fraction,
-        );
-
-    final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: downloads);
-    DecisionEngine? decisions;
+    final model = DecisionModel(
+      encoder: backbone ?? defaultBackbone,
+      head: head ?? defaultHead,
+    );
+    onStatus?.call('Loading ${model.encoder.fileName}', null);
+    final decisions = await DecisionEngine.load(
+      model,
+      params: DecisionModelParams(
+        device: cpu ? ComputeDevice.cpu : ComputeDevice.auto,
+      ),
+      store: ModelFileStore(downloadManager: downloads),
+      onProgress: (p) => onStatus?.call(
+        'Downloading: ${_mb(p.receivedBytes)}'
+        '${p.totalBytes == null ? '' : ' of ${_mb(p.totalBytes!)}'} MB',
+        p.fraction,
+      ),
+    );
     try {
-      onStatus?.call('Loading ${backbone.fileName}', null);
-      await engine.loadModelSource(
-        backbone,
-        modelParams: ModelParams(
-          contextSize: 512,
-          preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
-          gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
-        ),
-        onProgress: progressOf(backbone),
-      );
-      final capabilities = await DecisionEngine.capabilitiesFor(engine);
-      if (!capabilities.isSupported) {
-        throw LlamaUnsupportedException(capabilities.unsupportedReason!);
-      }
-      onStatus?.call('Loading ${head.fileName}', null);
-      final url = head.resolvedUri;
-      final String headPath;
-      if (url != null && engine.backend.supportsUrlLoading) {
-        headPath = '$url';
-      } else {
-        headPath = (await engine.modelDownloadManager.ensureModel(
-          head,
-          onProgress: progressOf(head),
-        )).filePath;
-        onStatus?.call('Loading ${head.fileName}', null);
-      }
-      decisions = await DecisionEngine.load(engine, headPath: headPath);
       onStatus?.call('Warming up', null);
       await layaIntentReader(decisions)('remind me to call mom at 7');
-      return Laya._(engine, decisions, await engine.getBackendName());
+      final capabilities = await decisions.capabilities;
+      return Laya._(decisions, capabilities.backendName ?? 'unknown');
     } catch (_) {
-      await decisions?.dispose();
-      await engine.dispose();
+      await decisions.dispose();
       rethrow;
     }
   }
 
-  /// Frees the head, then the engine.
-  Future<void> dispose() async {
-    await decisions.dispose();
-    await _engine.dispose();
-  }
+  /// Frees the head and the backbone.
+  Future<void> dispose() => decisions.dispose();
 
   static String _mb(int bytes) => (bytes / 1e6).toStringAsFixed(0);
 }

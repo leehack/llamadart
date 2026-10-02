@@ -15,30 +15,41 @@ description: >-
 
 - `DecisionEngine` answers typed questions about a state in one encoder pass
   per question, with no text generation. It needs a ModernBERT
-  (`modern-bert`) encoder GGUF loaded in a `LlamaEngine`, such as
-  `laya-Q8_0.gguf` from `fr0stbit3/laya-gguf`, plus a head file such as
-  `laya-head.safetensors`. Loading GGUFs and downloads are covered by the
-  llamadart-getting-started skill.
-- Load the backbone with `ModelParams(contextSize: 512)`: the head creates its
-  own encoder context of `decisions.info.maxTokens` tokens, so a larger engine
-  context only wastes memory.
-- Probe `DecisionEngine.capabilitiesFor(engine)` after the backbone is loaded
-  (before that it reports that a model must be loaded) and show
-  `unsupportedReason` when `isSupported` is false.
+  (`modern-bert`) encoder GGUF, such as `laya-Q8_0.gguf` from
+  `fr0stbit3/laya-gguf`, plus a head file such as `laya-head.safetensors`.
+- Load with `DecisionEngine.load(DecisionModel(encoder: ..., head: ...),
+  params: DecisionModelParams(...), download: ModelLoadOptions(...),
+  onProgress: ...)`. Every file is a `ModelSource` (path, URL or `hf://`),
+  downloaded into the model cache when needed. `load` creates and owns the
+  `LlamaEngine`, gives it the 512-token context decisions need, and is atomic:
+  a failure leaves nothing loaded. `dispose()` frees everything.
+- To share one encoder between heads, load it into your own `LlamaEngine` with
+  `DecisionModelParams().encoderModelParams`, then call
+  `DecisionEngine.attach(engine, head: ...)` per head. An attached engine
+  borrows the `LlamaEngine`: its `dispose()` frees only the head; dispose the
+  heads before the `LlamaEngine`. `DecisionEngine.capabilitiesFor(engine)`
+  probes a loaded `LlamaEngine` before attaching.
+- `DecisionModelParams.device`: `ComputeDevice.auto` (best GPU, else CPU),
+  `cpu`, or `gpu` (throws `LlamaUnsupportedException` without GPU support);
+  `npu` is unsupported. `threads` sets the encoder and head CPU threads.
+- Read `await decisions.capabilities` for `isSupported`, `backendName` and
+  `runtime`; show `unsupportedReason` when it is false.
 - Runtimes: native llama.cpp is experimental (validated on macOS Metal and
   CPU); WebGPU needs bridge assets `v0.1.47+` (the default pin includes them);
-  LiteRT-LM, native or Web, is unsupported and `DecisionEngine.load` throws
+  LiteRT-LM, native or Web, is unsupported and `load`/`attach` throw
   `LlamaUnsupportedException`.
-- `DecisionEngine.load(engine, headPath: ...)` throws
-  `LlamaUnsupportedException` for a non-encoder model, `LlamaModelException`
-  for an unreadable or mismatched head, and `LlamaStateException` if the model
-  is unloaded meanwhile. Pass `configPath:` (Laya's `rl_agent_config.json`)
-  only for heads without `laya.config` metadata, such as the official
+- `load` and `attach` throw `LlamaUnsupportedException` for a non-encoder
+  model, `LlamaModelException` for a missing, unreadable or mismatched file,
+  and `LlamaStateException` when cancelled or when an attached engine's model
+  is unloaded meanwhile. Pass `config:` (Laya's `rl_agent_config.json`) only
+  for heads without `laya.config` metadata, such as the official
   `convaiinnovations/laya` `model.safetensors`; heads exported by the training
   notebooks carry it.
-- On Web, `headPath` and `configPath` are URLs resolved against the document
-  base URL; the model download manager is unavailable there, so pass
-  `ModelSource.resolvedUri` instead of a cached file path.
+- On Web the bridge fetches each file: a `ModelSource.path` is a URL resolved
+  against the document base URL, `download:` must keep its defaults, and
+  `onProgress` reports only the encoder fetch.
+- `DecisionEngine.load(engine, headPath:, configPath:)` with `String` paths is
+  deprecated; use `attach` with `ModelSource`s.
 - Prefer typed keys over string ids: build questions with `ChoiceKey.enumOf`,
   `ChoiceKey.of`, `ChoiceKey.labels`, `ScoreKey.of` and `NoulKey.of`, pass
   `DecisionKey.questionsOf([...])` to `systemOne`, and read each answer with
@@ -66,11 +77,9 @@ description: >-
   validated for the English Laya checkpoint.
 - Accuracy: `laya-Q8_0.gguf` can flip decisions; use an F32 backbone (or F16
   on Metal) when answers must match Laya.
-- Lifecycle: a `DecisionEngine` belongs to the model loaded when it was
-  created; unloading or replacing that model frees the head and later calls
-  throw `LlamaStateException`. Several decision engines can share one
-  backbone (for example a base and a tuned head). Dispose decision engines
-  before the `LlamaEngine`.
+- Lifecycle: an attached `DecisionEngine` belongs to the model loaded when it
+  was created; unloading or replacing that model frees the head and later
+  calls throw `LlamaStateException`.
 - Instruction-model alternative: with no trained head, put lettered options in
   a chat-templated prompt and call `engine.scoreNextToken(prompt, candidates:
   letterTokens)`. Check `engine.supportsNextTokenScoring` first (native
@@ -98,7 +107,7 @@ README):
    `"F16"`, 53 MB). MPS training is not bit-for-bit repeatable; check the
    printed validation accuracy and change the seed if it is low.
 3. The exported head embeds Laya's config as `laya.config` metadata, so load
-   it with `DecisionEngine.load(engine, headPath: ...)` and no `configPath`.
+   it as `DecisionModel.head` (or `attach(engine, head: ...)`) with no config.
    The apps prefer a head copied into their `laya/` cache folder over the
    published one; `bin/bench.dart` scores a head headlessly.
 
@@ -133,31 +142,23 @@ final NoulKey refund = NoulKey.of('refund', 'Does the user request a refund?');
 const String repoId = 'fr0stbit3/laya-gguf';
 const String revision = 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c';
 
-Future<DecisionEngine> loadDecisions(LlamaEngine engine) async {
-  await engine.loadModelSource(
-    ModelSource.huggingFace(
+Future<DecisionEngine> loadDecisions() => DecisionEngine.load(
+  DecisionModel(
+    encoder: ModelSource.huggingFace(
       repoId: repoId,
       revision: revision,
       filePath: 'laya-Q8_0.gguf',
     ),
-    modelParams: const ModelParams(contextSize: 512),
-  );
-  final DecisionCapabilities capabilities =
-      await DecisionEngine.capabilitiesFor(engine);
-  if (!capabilities.isSupported) {
-    throw LlamaUnsupportedException(
-      capabilities.unsupportedReason ?? 'Decision models are unsupported.',
-    );
-  }
-  final ModelCacheEntry head = await engine.modelDownloadManager.ensureModel(
-    ModelSource.huggingFace(
+    head: ModelSource.huggingFace(
       repoId: repoId,
       revision: revision,
       filePath: 'laya-head.safetensors',
     ),
-  );
-  return DecisionEngine.load(engine, headPath: head.filePath);
-}
+  ),
+  params: const DecisionModelParams(device: ComputeDevice.auto),
+  onProgress: (ModelDownloadProgress progress) =>
+      print('download ${progress.fraction}'),
+);
 
 Future<Department?> route(DecisionEngine decisions, String ticket) async {
   final DecisionResult result = await decisions.systemOne(
@@ -173,13 +174,11 @@ Future<Department?> route(DecisionEngine decisions, String ticket) async {
 }
 
 Future<void> main() async {
-  final LlamaEngine engine = LlamaEngine(LlamaBackend());
-  final DecisionEngine decisions = await loadDecisions(engine);
+  final DecisionEngine decisions = await loadDecisions();
   try {
     print(await route(decisions, 'We were billed twice for March.'));
   } finally {
     await decisions.dispose();
-    await engine.dispose();
   }
 }
 ```

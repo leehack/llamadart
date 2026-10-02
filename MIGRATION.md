@@ -88,6 +88,60 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: decision engine load and attach
+
+`DecisionEngine` follows the shared engine pattern. The `String`-path
+`DecisionEngine.load(engine, headPath:, configPath:)` still works for one
+minor release, with deprecation warnings.
+
+1. **Let `load` own the engine.** Describe the files as `ModelSource`s; `load`
+   downloads them, loads the encoder with the 512-token context decisions
+   need, and loads the head. `dispose()` frees everything:
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModelSource(
+     encoder,
+     modelParams: const ModelParams(contextSize: 512, gpuLayers: 0),
+   );
+   final headFile = await engine.modelDownloadManager.ensureModel(head);
+   final decisions = await DecisionEngine.load(
+     engine,
+     headPath: headFile.filePath,
+   );
+   // ...
+   await decisions.dispose();
+   await engine.dispose();
+   // After
+   final decisions = await DecisionEngine.load(
+     DecisionModel(encoder: encoder, head: head),
+     params: const DecisionModelParams(device: ComputeDevice.cpu),
+   );
+   // ...
+   await decisions.dispose();
+   ```
+
+   `configPath:` becomes `DecisionModel.config`. `download:` takes
+   `ModelLoadOptions`, `store:` a `ModelFileStore` (for example
+   `ModelFileStore(downloadManager: myManager)`), and `onProgress` reports all
+   files together. Read the backend name from `await decisions.capabilities`.
+
+2. **Or attach to your own engine.** To share one encoder between heads, keep
+   your `LlamaEngine` and replace `load(engine, headPath: path)` with
+   `DecisionEngine.attach(engine, head: ModelSource.path(path))`. The head
+   resolves through the engine's download manager, so `hf://` and URL sources
+   work, and `dispose()` still frees only the head. Load the encoder with
+   `const DecisionModelParams().encoderModelParams`.
+
+3. **Web paths.** A head or config path is still a URL resolved against the
+   document base URL: use `ModelSource.path(url)` for a relative or `blob:`
+   URL, or `ModelSource.parse` for an absolute one.
+
+4. **Missing-config hint.** The error for a head without `laya.config`
+   metadata now asks for "the head's rl_agent_config.json as its config"
+   instead of naming `configPath`; match on `laya.config` if you parse it.
+
 ## Unreleased: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,

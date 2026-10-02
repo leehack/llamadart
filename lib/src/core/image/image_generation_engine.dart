@@ -367,13 +367,14 @@ class ImageGenerationEngine {
     };
 
     final effectiveStore = store ?? ModelFileStore();
-    final paths = await _resolveFiles(
+    final paths = await ensureModelTargetFiles(
       sources,
-      knownSizes,
-      download,
-      onProgress,
-      effectiveStore.resolver,
-      effectiveStore.downloadManager,
+      resolver: effectiveStore.resolver,
+      manager: effectiveStore.downloadManager,
+      options: download,
+      onProgress: onProgress,
+      knownSizes: knownSizes,
+      assetType: 'image model',
     );
     void throwIfCancelled() {
       if (download.cancelToken?.isCancelled ?? false) {
@@ -697,67 +698,6 @@ class ImageGenerationEngine {
     ImageModelRole.t5xxl: 't5xxl',
     ImageModelRole.llm: 'llm',
   };
-
-  /// Local paths of [sources], in order, resolved one at a time.
-  static Future<List<String>> _resolveFiles(
-    List<ModelSource> sources,
-    Map<int, int> knownSizes,
-    ModelLoadOptions loadOptions,
-    ModelDownloadProgressCallback? onProgress,
-    ModelResolver resolver,
-    ModelDownloadManager manager,
-  ) async {
-    final sizes = Map<int, int>.of(knownSizes);
-    var resolvedBytes = 0;
-    void report(int currentBytes) {
-      if (onProgress == null) {
-        return;
-      }
-      final total = sizes.length == sources.length
-          ? sizes.values.fold<int>(0, (sum, size) => sum + size)
-          : null;
-      onProgress(
-        ModelDownloadProgress(
-          receivedBytes: resolvedBytes + currentBytes,
-          totalBytes: total,
-        ),
-      );
-    }
-
-    final localOptions = ModelLoadOptions(cancelToken: loadOptions.cancelToken);
-    final files = <String>[];
-    for (final (index, source) in sources.indexed) {
-      final fileOptions = source.isLocal ? localOptions : loadOptions;
-      final fileProgress = onProgress == null
-          ? null
-          : (ModelDownloadProgress progress) {
-              if (progress.totalBytes case final total?) {
-                sizes.putIfAbsent(index, () => total);
-              }
-              report(progress.receivedBytes);
-            };
-      final target = await resolver.resolve(
-        source,
-        ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
-      );
-      final entry = await ensureModelTargetFile(
-        manager,
-        source,
-        target,
-        options: fileOptions,
-        onProgress: fileProgress,
-        assetType: 'image model',
-      );
-      files.add(entry.filePath);
-      final bytes = entry.bytes ?? sizes[index];
-      if (bytes != null) {
-        sizes[index] = bytes;
-      }
-      resolvedBytes += bytes ?? 0;
-      report(0);
-    }
-    return files;
-  }
 
   static ImageGenerationDriver get _driver =>
       debugImageGenerationDriverOverride ?? createImageGenerationDriver();

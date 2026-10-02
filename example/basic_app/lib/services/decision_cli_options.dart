@@ -49,13 +49,10 @@ final class DecisionCliOptions {
   /// Whether to print the Laya response JSON.
   final bool printJson;
 
-  /// Backbone parameters: a 512-token context, the CPU backend when
-  /// [forceCpu], and [threads] as [ModelParams.numberOfThreadsBatch].
-  ModelParams get modelParams => ModelParams(
-    contextSize: 512,
-    preferredBackend: forceCpu ? GpuBackend.cpu : GpuBackend.auto,
-    gpuLayers: forceCpu ? 0 : ModelParams.maxGpuLayers,
-    numberOfThreadsBatch: threads,
+  /// Decision model parameters: the CPU when [forceCpu], and [threads].
+  DecisionModelParams get params => DecisionModelParams(
+    device: forceCpu ? ComputeDevice.cpu : ComputeDevice.auto,
+    threads: threads,
   );
 }
 

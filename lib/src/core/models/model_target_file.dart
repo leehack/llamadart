@@ -48,3 +48,72 @@ Future<ModelCacheEntry> ensureModelTargetFile(
       );
   }
 }
+
+/// Local paths of [sources], in order, resolved one at a time by [resolver]
+/// and made local files by [manager] with [ensureModelTargetFile].
+///
+/// Remote files take [options]; local files take only its cancel token.
+/// [onProgress] reports the files together: `receivedBytes` counts every file
+/// resolved so far plus the bytes of the current download, and `totalBytes`
+/// is the combined size once every size is known, from [knownSizes] (by
+/// index) or a download, and `null` before.
+Future<List<String>> ensureModelTargetFiles(
+  List<ModelSource> sources, {
+  required ModelResolver resolver,
+  required ModelDownloadManager manager,
+  ModelLoadOptions options = ModelLoadOptions.defaults,
+  ModelDownloadProgressCallback? onProgress,
+  Map<int, int> knownSizes = const <int, int>{},
+  String assetType = 'model',
+}) async {
+  final sizes = Map<int, int>.of(knownSizes);
+  var resolvedBytes = 0;
+  void report(int currentBytes) {
+    if (onProgress == null) {
+      return;
+    }
+    final total = sizes.length == sources.length
+        ? sizes.values.fold<int>(0, (sum, size) => sum + size)
+        : null;
+    onProgress(
+      ModelDownloadProgress(
+        receivedBytes: resolvedBytes + currentBytes,
+        totalBytes: total,
+      ),
+    );
+  }
+
+  final localOptions = ModelLoadOptions(cancelToken: options.cancelToken);
+  final files = <String>[];
+  for (final (index, source) in sources.indexed) {
+    final fileOptions = source.isLocal ? localOptions : options;
+    final fileProgress = onProgress == null
+        ? null
+        : (ModelDownloadProgress progress) {
+            if (progress.totalBytes case final total?) {
+              sizes.putIfAbsent(index, () => total);
+            }
+            report(progress.receivedBytes);
+          };
+    final target = await resolver.resolve(
+      source,
+      ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
+    );
+    final entry = await ensureModelTargetFile(
+      manager,
+      source,
+      target,
+      options: fileOptions,
+      onProgress: fileProgress,
+      assetType: assetType,
+    );
+    files.add(entry.filePath);
+    final bytes = entry.bytes ?? sizes[index];
+    if (bytes != null) {
+      sizes[index] = bytes;
+    }
+    resolvedBytes += bytes ?? 0;
+    report(0);
+  }
+  return files;
+}

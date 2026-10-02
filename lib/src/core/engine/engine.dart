@@ -420,7 +420,7 @@ class LlamaEngine {
             'Remote model loading without browser/backend cache is not supported yet.',
           );
         }
-        _rejectUnsupportedUrlBackendOptions(options);
+        rejectUnsupportedUrlBackendOptions(options);
         final urlProgress = onProgress == null
             ? null
             : (double progress) =>
@@ -802,7 +802,7 @@ class LlamaEngine {
               'Remote multimodal projector loading without browser/backend cache is not supported yet.',
             );
           }
-          _rejectUnsupportedUrlBackendOptions(
+          rejectUnsupportedUrlBackendOptions(
             options,
             assetType: 'multimodal projector',
           );
@@ -2388,58 +2388,6 @@ class LlamaEngine {
     _isReady = false;
   }
 
-  void _rejectUnsupportedUrlBackendOptions(
-    ModelLoadOptions options, {
-    String assetType = 'model',
-  }) {
-    final isModel = assetType == 'model';
-    if (options.cachePolicy != ModelCachePolicy.preferCached) {
-      throw LlamaUnsupportedException(
-        '${options.cachePolicy.name} $assetType loading requires the native download/cache manager.',
-      );
-    }
-    if (options.bearerToken != null || options.headers.isNotEmpty) {
-      throw LlamaUnsupportedException(
-        'Authenticated $assetType URL loading requires the native download/cache manager.',
-      );
-    }
-    if (options.cancelToken != null) {
-      throw LlamaUnsupportedException(
-        isModel
-            ? 'Cancellation tokens require the native download/cache manager.'
-            : 'Cancellation tokens for $assetType loading require the native download/cache manager.',
-      );
-    }
-    if (options.sha256 != null) {
-      throw LlamaUnsupportedException(
-        isModel
-            ? 'Checksum verification requires the native download/cache manager.'
-            : 'Checksum verification for $assetType loading requires the native download/cache manager.',
-      );
-    }
-    if (options.cacheDirectory != null) {
-      throw LlamaUnsupportedException(
-        isModel
-            ? 'cacheDirectory is not supported by URL-loading backends.'
-            : 'cacheDirectory is not supported for $assetType loading by URL-loading backends.',
-      );
-    }
-    if (!options.resume) {
-      throw LlamaUnsupportedException(
-        isModel
-            ? 'Disabling resume is not supported by URL-loading backends.'
-            : 'Disabling resume is not supported for $assetType loading by URL-loading backends.',
-      );
-    }
-    if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
-      throw LlamaUnsupportedException(
-        isModel
-            ? 'Custom maxRetries is not supported by URL-loading backends.'
-            : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
-      );
-    }
-  }
-
   void _throwIfSourceLoadCancelled(ModelLoadOptions options) {
     if (options.cancelToken?.isCancelled ?? false) {
       throw LlamaStateException('Model source loading was cancelled.');
@@ -2517,6 +2465,61 @@ BackendGenerationLimit? completionGenerationLimit(LlamaCompletionChunk chunk) =>
 /// taken while another model was loaded sees a greater value, even under the
 /// same backend handle.
 int modelUnloadEpoch(LlamaEngine engine) => engine._decisionHeadEpoch;
+
+/// Throws [LlamaUnsupportedException] when [options] asks for what only the
+/// package download manager provides, for an [assetType] that a URL-loading
+/// backend fetches itself.
+void rejectUnsupportedUrlBackendOptions(
+  ModelLoadOptions options, {
+  String assetType = 'model',
+}) {
+  final isModel = assetType == 'model';
+  if (options.cachePolicy != ModelCachePolicy.preferCached) {
+    throw LlamaUnsupportedException(
+      '${options.cachePolicy.name} $assetType loading requires the native download/cache manager.',
+    );
+  }
+  if (options.bearerToken != null || options.headers.isNotEmpty) {
+    throw LlamaUnsupportedException(
+      'Authenticated $assetType URL loading requires the native download/cache manager.',
+    );
+  }
+  if (options.cancelToken != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Cancellation tokens require the native download/cache manager.'
+          : 'Cancellation tokens for $assetType loading require the native download/cache manager.',
+    );
+  }
+  if (options.sha256 != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Checksum verification requires the native download/cache manager.'
+          : 'Checksum verification for $assetType loading requires the native download/cache manager.',
+    );
+  }
+  if (options.cacheDirectory != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'cacheDirectory is not supported by URL-loading backends.'
+          : 'cacheDirectory is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
+  if (!options.resume) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Disabling resume is not supported by URL-loading backends.'
+          : 'Disabling resume is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
+  if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Custom maxRetries is not supported by URL-loading backends.'
+          : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
+}
 
 /// One-shot completions for [LlamaEngine].
 extension LlamaEngineCompletionExtension on LlamaEngine {

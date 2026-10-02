@@ -8388,7 +8388,7 @@ class LlamaCppService {
     if (text == null) {
       throw LlamaModelException(
         'The decision head at $headPath has no "laya.config" metadata. Pass '
-        'configPath with the head\'s rl_agent_config.json.',
+        'the head\'s rl_agent_config.json as its config.',
       );
     }
     return text;

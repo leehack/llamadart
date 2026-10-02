@@ -19,15 +19,15 @@ Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 | --- | --- | --- |
 | Backbone GGUF | `fr0stbit3/laya-gguf@ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c`, `laya-Q8_0.gguf` (421 MB) or `laya-F16.gguf` (791 MB) | `modern-bert` architecture, 1024 hidden |
 | Head | same repo, `laya-head.safetensors` (106 MB, F32) | 36 tensors under the PyTorch names; `__metadata__["laya.config"]` holds `rl_agent_config.json` |
-| Official checkpoint | `convaiinnovations/laya/model.safetensors` + `rl_agent_config.json` | also accepted as a head file: `encoder.*` tensors are ignored, config comes from `configPath` |
+| Official checkpoint | `convaiinnovations/laya/model.safetensors` + `rl_agent_config.json` | also accepted as a head file: `encoder.*` tensors are ignored, config comes from `DecisionModel.config` |
 
 Measured error and speed per backbone, head file and device are under
 [Measured](#measured).
 
 ## Public API
 
-`lib/llamadart.dart` exports `DecisionEngine`, `DecisionCapabilities` and
-`DecisionModelInfo`; the questions (`DecisionQuestion` with `ChoiceQuestion`,
+`lib/llamadart.dart` exports `DecisionEngine`, `DecisionModel`,
+`DecisionModelParams`, `DecisionCapabilities` and `DecisionModelInfo`; the questions (`DecisionQuestion` with `ChoiceQuestion`,
 `ScoreQuestion` and `NoulQuestion`, `DecisionQuestionType` and
 `DecisionRequest`); the answers (`DecisionAnswer` with `ChoiceAnswer`,
 `ScoreAnswer` and `NoulAnswer`, `DecisionUsage` and `DecisionResult`); and the
@@ -36,6 +36,38 @@ typed keys (`DecisionKey` with `ChoiceKey`, `ScoreKey` and `NoulKey`,
 `LlamaDecisionException`. The
 [Decision Models guide](../website/docs/guides/decision-models.md) documents
 their use.
+
+Loading follows the shared engine pattern
+([#835](https://github.com/leehack/llamadart/issues/835)):
+
+- `DecisionEngine.load(DecisionModel(encoder:, head:, config:), params:,
+  download:, onProgress:, store:)` creates a `LlamaEngine` (backend from
+  `LlamaBackend()`, resolver and download manager from `store`), resolves
+  every file through `ensureModelTargetFiles` before loading anything, loads
+  the encoder with `DecisionModelParams.encoderModelParams` (context 512, the
+  device and threads), and attaches the head. It owns the engine: a failure
+  disposes it, and `dispose()` frees the head and then the engine. Settings it
+  cannot apply (`ComputeDevice.npu`, negative threads, `sha256` over several
+  files, a `.litertlm` encoder) throw before the engine is created;
+  `ComputeDevice.gpu` checks `isGpuSupported` before any download.
+- `DecisionEngine.attach(engine, head:, config:, download:, onProgress:)`
+  probes the loaded model first, resolves the files through the engine's
+  `modelResolver` and `modelDownloadManager`, then loads the head. It borrows
+  the engine: `dispose()` frees only the head.
+- On URL-loading backends (Web), files are not downloaded: a local target
+  (`ModelSource.path`) passes through as a document-relative URL and a remote
+  one as its resolved URL, and `rejectUnsupportedUrlBackendOptions` rejects
+  `download` options the browser fetch cannot apply, as for projectors.
+- `capabilities` is an instance `Future<DecisionCapabilities>` with
+  `isSupported`, `unsupportedReason`, `backendName` and `runtime`, the shape
+  the shared `EngineCapabilities` of
+  [#851](https://github.com/leehack/llamadart/issues/851) will take; it turns
+  unsupported after `dispose` or a model unload. `capabilitiesFor(engine)`
+  stays as the pre-attach probe.
+- `load(engine, headPath:, configPath:)` with `String` paths is deprecated:
+  `load`'s first parameter is `Object` for one release, so the old call
+  compiles, routes to the former head load unchanged, and rejects the new
+  arguments with `LlamaArgumentException`.
 
 ## Architecture
 
@@ -65,7 +97,9 @@ hidden states across the isolate boundary; only logits cross it.
 | `decision_key.dart` | typed keys, `ChoiceOf`, the `answerOf` extension |
 | `decision_sequence.dart` | option rendering, tokenizer input texts, sequence assembly |
 | `decision_decoder.dart` | temperature selection and clamping, softmax, confidence, act features, answer decoding |
-| `decision_engine.dart` | facade, `DecisionCapabilities` and `DecisionModelInfo` |
+| `decision_model.dart` | `DecisionModel`: encoder, head and config sources |
+| `decision_model_params.dart` | `DecisionModelParams` and the encoder's `ModelParams` |
+| `decision_engine.dart` | facade with `load`/`attach`, `DecisionCapabilities` and `DecisionModelInfo` |
 
 The core must not import `dart:io`/`dart:ffi`, directly or transitively.
 
@@ -112,12 +146,12 @@ DecisionEngine again") and a free does nothing, so a stale `DecisionEngine`
 can reach neither a later head nor its backend handle. No engine lease: the
 head uses its own llama context, and the worker serializes native work.
 
-`DecisionEngine` also checks, before tokenizing and after `load`'s capability
-probe, that the engine is ready and its unload epoch (`modelUnloadEpoch`, which
-`_unloadModel` bumps as each attempt starts, unless nothing is loaded) is the
-one `load` started with; a model loaded later fails the check even under a
-reused backend handle.
-If the model is unloaded while a call or `load` is in flight, the failure it
+`DecisionEngine` also checks, before tokenizing, after the capability probe
+and after `attach` resolves its files, that the engine is ready and its unload
+epoch (`modelUnloadEpoch`, which `_unloadModel` bumps as each attempt starts,
+unless nothing is loaded) is the one the load started with; a model loaded
+later fails the check even under a reused backend handle.
+If the model is unloaded while a call or a load is in flight, the failure it
 causes, such as `LlamaContextException` from tokenization, is rethrown as
 `LlamaStateException`.
 
@@ -226,14 +260,14 @@ and reports which as `deviceName`.
   API.
 - Paths are URLs, resolved in Dart against `document.baseURI` before any
   fetch, so a page's `<base href>` applies to both in both bridge modes. The
-  bridge fetches `headPath`. It takes the config only as text, so `configPath`
+  bridge fetches the head. It takes the config only as text, so the config
   is fetched in the page with `fetch`, before the head, and passed as
   `configJson`; with both a missing config and a bad head, Web reports the
   config where native reports the head. A failed fetch or an HTTP error is
   `LlamaModelException` "Cannot read the decision head config at <url>." with
   the status or error in `details`. The head and config URLs that messages
   and details show drop user info, query and fragment. Browser and bridge
-  error text loses these parts of `headPath` and `configPath`, as written,
+  error text loses these parts of the head and config URLs, as written,
   JSON-escaped, percent-encoded or percent-decoded: the user info and
   password, as whole tokens of any length; the `?query` and `#fragment`,
   where they directly follow a non-space character; the query and each
@@ -258,8 +292,8 @@ and reports which as `deviceName`.
   context" to `LlamaContextException`; anything else to unsupported for the
   probe, `LlamaModelException` for a load (head URL in `details`),
   `LlamaInferenceException` for a run and `LlamaStateException` for a free.
-  Load errors that ask bridge callers to pass `configJson` name `configPath`
-  or the config URL instead. Without an active bridge, the probe reports
+  Load errors that ask bridge callers to pass `configJson` ask for the head's
+  config, or name the config URL, instead. Without an active bridge, the probe reports
   unsupported and a load throws `LlamaStateException`, as native does for an
   unloaded model. A malformed head description or output is
   `LlamaDecisionException`, like native's unexpected worker responses.
@@ -271,7 +305,7 @@ and reports which as `deviceName`.
 - The bridge serializes decision calls with its other operations and cannot
   cancel a run. When its worker fails during a run, it reloads the model on the
   main thread and rejects the run; the engine keeps its model, and the
-  `DecisionEngine` must be loaded again. If that reload also fails, the bridge
+  `DecisionEngine` must be loaded or attached again. If that reload also fails, the bridge
   forgets the model: later decision calls throw `LlamaStateException` ("No model
   loaded"), and the model must be unloaded and loaded again.
 
@@ -465,7 +499,11 @@ guide.
   order; the service's load-time check helpers, head device choice, sequence
   validation, and run order through a substituted encoder; worker,
   backend-client and router routing with fakes; engine hooks and facade with a
-  fake backend.
+  fake backend, including `load` (downloads before loading, encoder params,
+  combined progress, ownership, atomic failure at each step, cancellation,
+  rejected settings, URL-loading backends), `attach` (engine store, borrowing,
+  several heads, probe before download, `sha256`, unload during download) and
+  the deprecated form's argument checks.
 - Unit (Chrome): `WebGpuDecisionHeads` against a fake bridge
   (`test/support/fake_webgpu_decision_bridge.dart`): the capability probe for
   old assets, API version skew, bridge reasons and state rejections; head
@@ -479,14 +517,16 @@ guide.
 - Integration (Chrome, fake bridge): `DecisionEngine` through `LlamaEngine`,
   `WebAutoBackend` and `WebGpuLlamaBackend`: answers, typed key reads with the
   question identity check, sequence layout, page-fetched config, old assets,
-  API version skew, a cancelled capability probe, and a model unload.
+  API version skew, a cancelled capability probe, and a model unload; `attach`
+  with document-relative and `blob:` sources, and an owned `load`.
 - Integration (VM, CI's `stories15M.gguf`): a llama-architecture model is
-  reported unsupported and `DecisionEngine.load` fails before reading the head.
+  reported unsupported and the head load fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
   and head, the 24 fixture rows, exact token ids and markers from the engine
   tokenizer, raw logits and `systemOne` answers within tolerance (see
-  `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
-  the model offloads no layers, and off it for a model on a GPU backend; the
+  `doc/testing_matrix.md` for the tolerance rules); an owned `load` with
+  `ComputeDevice.cpu`, whose head runs on the CPU, and off it for a model on a
+  GPU backend; two heads attached to one encoder; the
   requested backend itself, not a CPU fallback; a config longer than the
   encoder was trained for, which load rejects; and an engine disposed with a
   head still loaded, whose process must then exit cleanly (on Metal a leaked

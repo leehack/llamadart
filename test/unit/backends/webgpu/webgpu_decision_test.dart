@@ -806,7 +806,7 @@ void main() {
       }
     });
 
-    test('names configPath in bridge config errors', () async {
+    test('names the config in bridge config errors', () async {
       final config = blobUrl('{"max_len": "long"}');
       addTearDown(() => URL.revokeObjectURL(config));
       fake.loadError =
@@ -818,7 +818,7 @@ void main() {
         heads.load(fake.bridge, 'model.safetensors'),
         throwsTyped<LlamaModelException>(
           'The decision head at "model.safetensors" has no "laya.config" '
-          "metadata. Pass configPath with the head's rl_agent_config.json.",
+          "metadata. Pass the head's rl_agent_config.json as its config.",
         ),
       );
       fake.loadError =

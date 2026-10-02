@@ -27,8 +27,8 @@ in a Flutter app.
 | --- | --- |
 | Native llama.cpp / GGUF | Experimental: ModernBERT (`modern-bert`) encoder GGUF plus a Laya decision head; validated on macOS (Metal, CPU), other native platforms untested |
 | WebGPU / GGUF | Experimental, with bridge assets `v0.1.47+` (apiVersion 1), which the default pin includes; checked only in headless Chromium on macOS. Older assets report unsupported. See [Web](#web) |
-| Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
-| LiteRT-LM Web | Unsupported: `DecisionEngine.load` throws `LlamaUnsupportedException` |
+| Native LiteRT-LM / `.litertlm` | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
+| LiteRT-LM Web | Unsupported: `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException` |
 
 The head runs on CPU when the model is loaded on CPU, and on the model's GPU
 when a device of its backend is available, otherwise on CPU.
@@ -40,45 +40,75 @@ the bridge reports its own device name.
 The reference assets are the community GGUF conversion
 [`fr0stbit3/laya-gguf`](https://huggingface.co/fr0stbit3/laya-gguf): the
 `laya-Q8_0.gguf` backbone (421 MB) and the `laya-head.safetensors` head
-(106 MB, F32). Load the backbone into a `LlamaEngine`, fetch the head through
-the engine's model download manager (native only; on Web, pass a URL as shown
-in [Web](#web)), then load the head with `DecisionEngine.load`:
+(106 MB, F32). `DecisionEngine.load` takes both as `ModelSource`s in a
+`DecisionModel`, downloads them into the model cache when needed, loads the
+encoder into a `LlamaEngine` it creates, and loads the head on it:
 
 ```dart
-final engine = LlamaEngine(LlamaBackend());
 const repoId = 'fr0stbit3/laya-gguf';
 const revision = 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c';
-await engine.loadModelSource(
-  ModelSource.huggingFace(
-    repoId: repoId,
-    revision: revision,
-    filePath: 'laya-Q8_0.gguf',
+final decisions = await DecisionEngine.load(
+  DecisionModel(
+    encoder: ModelSource.huggingFace(
+      repoId: repoId,
+      revision: revision,
+      filePath: 'laya-Q8_0.gguf',
+    ),
+    head: ModelSource.huggingFace(
+      repoId: repoId,
+      revision: revision,
+      filePath: 'laya-head.safetensors',
+    ),
   ),
-  modelParams: const ModelParams(contextSize: 512),
+  params: const DecisionModelParams(device: ComputeDevice.auto, threads: 4),
+  onProgress: (progress) => print(progress.fraction),
 );
-final head = await engine.modelDownloadManager.ensureModel(
-  ModelSource.huggingFace(
-    repoId: repoId,
-    revision: revision,
-    filePath: 'laya-head.safetensors',
-  ),
-);
-
-final decisions = await DecisionEngine.load(engine, headPath: head.filePath);
 ```
 
-The head runs its own encoder context of `decisions.info.maxTokens` tokens and
-does not use the engine's context, so a small `contextSize` saves memory. On
-the CPU, `ModelParams.numberOfThreadsBatch` sets the threads of both the
-encoder and the head (llama.cpp uses 4 when it is 0); `numberOfThreads` does
-not affect decisions.
+- `params:` holds runtime settings. `device` is `ComputeDevice.auto` (the
+  best GPU the backend reports, otherwise the CPU), `cpu`, or `gpu`, which
+  throws `LlamaUnsupportedException` without GPU support; `npu` is not
+  supported. `threads` sets the CPU threads of the encoder and head; `0` keeps
+  the runtime default (llama.cpp uses 4).
+- `download:` takes `ModelLoadOptions` for every remote file: cache policy and
+  directory, authentication, resume, retries and a cancel token.
+  `ModelLoadOptions.sha256` cannot apply to several files and throws.
+  `store:` replaces the resolver and download manager, for example to keep
+  weights in a directory the app chooses.
+- `onProgress` reports every file together, as one byte count.
+- The head runs its own encoder context of `decisions.info.maxTokens` tokens,
+  so `load` gives the engine a 512-token context;
+  `DecisionModelParams.encoderModelParams` shows the exact `ModelParams`.
+- The load is atomic: when it throws, nothing stays loaded. Downloaded files
+  stay in the cache.
 
-`DecisionEngine.load` checks that the model is a `modern-bert` encoder with
-CLS, SEP and MASK tokens, that its hidden size matches the head, and that
-every head tensor has the expected shape. Another kind of model fails with
+`load` checks that the model is a `modern-bert` encoder with CLS, SEP and MASK
+tokens, that its hidden size matches the head, and that every head tensor has
+the expected shape. Another kind of model fails with
 `LlamaUnsupportedException`; a head file or config that cannot be read, is
 malformed, or does not fit the encoder fails with `LlamaModelException` naming
 the problem.
+
+### Attach a head to a loaded engine
+
+`DecisionEngine.attach` loads a head on a `LlamaEngine` that already holds the
+encoder, for example to share one encoder between a base head and a
+fine-tuned one. Load the encoder with `encoderModelParams`; the head and
+config resolve through the engine's own resolver and download manager:
+
+```dart
+final engine = LlamaEngine(LlamaBackend());
+await engine.loadModelSource(
+  encoder,
+  modelParams: const DecisionModelParams().encoderModelParams,
+);
+final base = await DecisionEngine.attach(engine, head: baseHead);
+final tuned = await DecisionEngine.attach(engine, head: tunedHead);
+```
+
+`attach` probes the loaded model before downloading anything, and applies
+`ModelLoadOptions.sha256` to the head when no config is passed.
+`DecisionEngine.capabilitiesFor(engine)` runs the same probe without loading.
 
 ## Ask questions
 
@@ -357,11 +387,15 @@ for (final MapEntry(key: id, value: answer) in result.answers.entries) {
 
 ## Capabilities and model info
 
-`DecisionEngine.capabilitiesFor(engine)` reports whether a head can load on the
-engine now. Probe it after the backbone is loaded: without a model, it reports
-that a model must be loaded first. With a model on Web, bridge assets without
-the decision API, or with another decision API version, report unsupported and
-name the assets needed.
+`await decisions.capabilities` reports whether the engine can answer now,
+with the active `backendName` and `runtime`. It turns unsupported once the
+engine is disposed or its model is unloaded.
+
+`DecisionEngine.capabilitiesFor(engine)` reports whether a head can be
+attached to a `LlamaEngine` now. Probe it after the backbone is loaded:
+without a model, it reports that a model must be loaded first. With a model on
+Web, bridge assets without the decision API, or with another decision API
+version, report unsupported and name the assets needed.
 
 `decisions.info` describes the loaded model: `hiddenSize`, the sequence limit
 `maxTokens`, the question-and-options budget `headMaxTokens`, and the
@@ -369,22 +403,25 @@ name the assets needed.
 
 ## Lifecycle
 
-- A `DecisionEngine` belongs to the model that was loaded when it was created.
-  Unloading or replacing that model, or disposing the engine, frees the head.
-  Later calls throw `LlamaStateException`, and so do calls running at the time
-  unless their sequences already reached the backend; those finish on the old
-  model. Load a new `DecisionEngine` after loading a model.
-- `dispose()` frees the head once in-flight calls finish. It is idempotent,
-  keeps the `LlamaEngine` and its model loaded, and later calls throw
-  `LlamaStateException`.
-- Several `DecisionEngine`s can share one model, for example the base head and
-  a fine-tuned one.
-- Dispose decision engines before the `LlamaEngine`:
+- An engine from `load` owns its `LlamaEngine`: `dispose()` frees the head and
+  then the engine.
+- An engine from `attach` borrows its `LlamaEngine`: `dispose()` frees only
+  the head, and the `LlamaEngine` keeps its model. Several heads can share one
+  model; dispose them before the `LlamaEngine`:
 
-```dart
-await decisions.dispose();
-await engine.dispose();
-```
+  ```dart
+  await tuned.dispose();
+  await base.dispose();
+  await engine.dispose();
+  ```
+
+- An attached head belongs to the model that was loaded when it was created.
+  Unloading or replacing that model, or disposing the `LlamaEngine`, frees the
+  head. Later calls throw `LlamaStateException`, and so do calls running at
+  the time unless their sequences already reached the backend; those finish on
+  the old model. Attach a new head after loading a model.
+- `dispose()` waits for in-flight calls and is idempotent; later calls throw
+  `LlamaStateException`.
 
 ## Official checkpoint
 
@@ -392,14 +429,16 @@ The official checkpoint
 [`convaiinnovations/laya`](https://huggingface.co/convaiinnovations/laya)
 ships `model.safetensors` with the encoder and head together, F16 head
 tensors, and no `laya.config` metadata. It works as a head file when its
-`rl_agent_config.json` is passed as `configPath`; the `encoder.*` tensors are
+`rl_agent_config.json` is passed as the config; the `encoder.*` tensors are
 ignored, and the backbone still comes from a GGUF such as `laya-Q8_0.gguf`:
 
 ```dart
 final official = await DecisionEngine.load(
-  engine,
-  headPath: '/models/laya/model.safetensors',
-  configPath: '/models/laya/rl_agent_config.json',
+  DecisionModel(
+    encoder: ModelSource.path('/models/laya-Q8_0.gguf'),
+    head: ModelSource.path('/models/laya/model.safetensors'),
+    config: ModelSource.path('/models/laya/rl_agent_config.json'),
+  ),
 );
 ```
 
@@ -408,27 +447,17 @@ final official = await DecisionEngine.load(
 On Web, `DecisionEngine` runs through the decision API (apiVersion 1) of the
 llama.cpp WebGPU bridge, which `llama-web-bridge-assets` `v0.1.47+` and the
 default pin include. With older assets, `capabilitiesFor` reports unsupported
-and `DecisionEngine.load` throws `LlamaUnsupportedException`. LiteRT-LM Web
-models report unsupported too.
+and `DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`.
+LiteRT-LM Web models report unsupported too.
 
-- `headPath` and `configPath` are URLs, resolved against the document base
-  URL, so a `<base href>` applies. The engine's model download manager is not
-  available on Web; pass the head's URL instead:
-
-  ```dart
-  final head = ModelSource.huggingFace(
-    repoId: 'fr0stbit3/laya-gguf',
-    revision: 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c',
-    filePath: 'laya-head.safetensors',
-  );
-  final decisions = await DecisionEngine.load(
-    engine,
-    headPath: head.resolvedUri!.toString(),
-  );
-  ```
-
+- The same `ModelSource`s work: the bridge fetches each file itself instead of
+  the model download manager. A `ModelSource.path` is a URL resolved against
+  the document base URL, so a `<base href>` applies; a `blob:` URL also goes
+  in `ModelSource.path`. `download:` must keep every option at its default,
+  since the browser owns the fetch and cache, and `onProgress` reports only the
+  encoder fetch, as a fraction (`attach` reports none).
 - The bridge downloads the head into its in-memory file system, so peak memory
-  includes the whole head file. The page fetches `configPath` and passes its
+  includes the whole head file. The page fetches the config and passes its
   text to the bridge; a config that cannot be fetched throws
   `LlamaModelException`.
 - The head runs on WebGPU when the model loaded with GPU layers and on the
@@ -440,8 +469,8 @@ models report unsupported too.
   answers can differ from native. When that matters, pass the value as a
   `String` you encode yourself.
 - A bridge that restarts its runtime, for example when its worker fails during
-  a call, frees its heads. Calls then throw `LlamaStateException`; load the
-  `DecisionEngine` again.
+  a call, frees its heads. Calls then throw `LlamaStateException`; load or
+  attach the `DecisionEngine` again.
 - On the bridge CPU (no GPU layers), `laya-Q8_0.gguf` misses the parity
   tolerances on one of Laya's 24 fixture questions, with the same top option;
   the drift comes from the bridge's WASM CPU Q8_0 path. An F16 backbone, or GPU
