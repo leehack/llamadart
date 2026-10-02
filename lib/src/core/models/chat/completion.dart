@@ -27,10 +27,12 @@ class LlamaCompletion {
 
   /// Why generation stopped, from the stream's final chunk.
   ///
-  /// It does not report a cancel: a generation stopped by
-  /// `LlamaEngine.cancelGeneration`, before or during generation, usually
-  /// still ends with [LlamaFinishReason.stop] and the text generated so far.
-  /// The code that cancels knows it did; a `LlamaEngineObserver` sees the
+  /// It does not report a cancel. On native llama.cpp and LiteRT-LM, a
+  /// generation stopped by `LlamaEngine.cancelGeneration`, before or during
+  /// generation, usually still ends with [LlamaFinishReason.stop] and the
+  /// text generated so far. On WebGPU, `cancelGeneration` can instead fail
+  /// the stream with a generation error. The code that cancels knows it did;
+  /// on native llama.cpp and LiteRT-LM a `LlamaEngineObserver` also sees the
   /// cancel as `LlamaOperationResult.cancelled`.
   ///
   /// Null when the stream ended without a final chunk, or when its

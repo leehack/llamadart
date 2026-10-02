@@ -24,8 +24,9 @@ description: >-
   `chunk.thinking` for reasoning (empty strings when a chunk has none), and
   render the channels separately. `chunk.finishReason` is a typed
   `LlamaFinishReason` (`stop`, `length`, `toolCalls`) on the final chunk only.
-  A cancelled generation usually still ends with `stop`, so track cancels in
-  the code that issues them.
+  On native llama.cpp and LiteRT-LM a cancelled generation usually still ends
+  with `stop`; on WebGPU `cancelGeneration()` can surface as a generation
+  error. Track cancels in the code that issues them.
 - To wait for the whole reply, use `await stream.text()`, or
   `await stream.collect()` for a `LlamaCompletion` with `text`, `thinking`,
   assembled `toolCalls`, `finishReason`, `usage` and an assistant `message`.

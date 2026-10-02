@@ -119,11 +119,14 @@ messages.add(completion.message); // Assistant turn for the next request.
 and `session.send('...')` sends one text turn through a `ChatSession` and
 collects the reply.
 
-`finishReason` does not tell you that a generation was cancelled. A stream
-stopped by `engine.cancelGeneration()`, before or during generation, usually
-still ends with `LlamaFinishReason.stop` and whatever text it produced. Track
-cancels in the code that issues them, or read `LlamaOperationResult.cancelled`
-from an [operation observer](#observing-operations).
+`finishReason` does not tell you that a generation was cancelled. On native
+llama.cpp and LiteRT-LM, a stream stopped by `engine.cancelGeneration()`,
+before or during generation, usually still ends with `LlamaFinishReason.stop`
+and whatever text it produced. On WebGPU, `cancelGeneration()` can instead
+fail the stream with a generation error. Track cancels in the code that issues
+them; on native llama.cpp and LiteRT-LM you can also read
+`LlamaOperationResult.cancelled` from an
+[operation observer](#observing-operations).
 
 `chunk.model` is the last path segment of the source the model was loaded
 from, such as `qwen.gguf`: a local path's file name, or the last segment of a
@@ -339,10 +342,12 @@ engine.cancelGeneration();
 
 This cancels every `create`, `generate` and `ChatSession.create` stream that has
 been listened to, including one still rendering its template or checking its
-input: that stream ends without generating. The stream ends normally, and its
-final chunk's `finishReason` is usually `stop`, so it does not mark the
-cancel. A stream listened to after the call is not affected. How quickly a running generation stops depends on the
-backend.
+input: that stream ends without generating. On native llama.cpp and
+LiteRT-LM the stream ends normally, and its final chunk's `finishReason` is
+usually `stop`, so it does not mark the cancel. On WebGPU, the cancel can
+instead surface as a generation error on the stream. A stream listened to
+after the call is not affected. How quickly a running generation stops
+depends on the backend.
 
 Cancelling a stream's subscription also sends the cancel to its backend at
 once, even before the first token.
