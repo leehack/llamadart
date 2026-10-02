@@ -40,8 +40,12 @@ description: >-
   last segment is a token reports that token.
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding with a grammar and
-  validates the final output. Runtimes without grammar support (LiteRT-LM)
-  throw `LlamaUnsupportedException` before generating. Do not parse partial
+  validates the final output; `session.createStructuredJson(parts, output:)`
+  does the same within a `ChatSession`. Runtimes without grammar support
+  (LiteRT-LM) throw `LlamaUnsupportedException` before generating. A raw
+  `responseFormat` map must be `{'type': 'json_object'}`,
+  `{'type': 'json_schema', 'json_schema': {'schema': ...}}` or
+  `{'type': 'text'}`; any other type or key throws. Do not parse partial
   stream chunks as JSON.
 - `session.reset()` clears history (`keepSystemPrompt: false` also clears the
   system prompt). `session.addMessage(...)` restores saved history.

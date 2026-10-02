@@ -274,7 +274,12 @@ final classification = await engine.createStructuredJson(
 
 Without the helper, pass `responseFormat: {'type': 'json_object'}` or
 `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}` to
-`engine.create(...)`. For live rendering, keep the stream returned by
+`engine.create(...)`; `json_schema` may also carry `name`, `description` and
+`strict`, and `{'type': 'text'}` requests unconstrained text. Any other type or
+key, such as a misspelled `json_shema` or `schma`, throws
+`LlamaUnsupportedException` before generation on every backend.
+
+For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
 `await stream.parseStructuredJson(output)`. Validation is a final-output step
 because partial stream chunks are often not valid JSON yet.
@@ -288,6 +293,10 @@ generation. Annotation metadata such as `title`, `description`, and `default`
 is preserved but not enforced as a decoding constraint. Backends without
 grammar constraints, including current LiteRT-LM native and web paths, still
 fail early for strict structured output.
+
+`ChatSession` takes the same `responseFormat` on `session.create(...)` and has
+`session.createStructuredJson(parts, output: output)` for multi-turn structured
+output; the JSON reply is kept in the session history like any other turn.
 
 ## `create(...)` flow at a glance
 

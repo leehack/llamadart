@@ -640,6 +640,86 @@ void main() {
       expect(backend.lastParams?.grammar, contains('test_tool'));
     });
 
+    test('responseFormat constrains the turn', () async {
+      backend.queueResponse('{"ok":true}');
+
+      await session
+          .create(
+            [const LlamaTextContent('status')],
+            responseFormat: const {
+              'type': 'json_schema',
+              'json_schema': {
+                'schema': {
+                  'type': 'object',
+                  'properties': {
+                    'ok': {'type': 'boolean'},
+                  },
+                  'required': ['ok'],
+                },
+              },
+            },
+          )
+          .drain();
+
+      expect(backend.lastParams?.grammar, contains('ok'));
+      expect(session.history.last.content, '{"ok":true}');
+    });
+
+    test('unrecognised responseFormat throws before history changes', () async {
+      backend.queueResponse('unused');
+
+      await expectLater(
+        session
+            .create(
+              [const LlamaTextContent('status')],
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schma': {'type': 'object'},
+                },
+              },
+            )
+            .drain(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains("responseFormat.json_schema key 'schma'"),
+          ),
+        ),
+      );
+      expect(session.history, isEmpty);
+      expect(backend.generateCalls, 0);
+    });
+
+    test('createStructuredJson decodes across turns', () async {
+      final output = LlamaStructuredOutput<int>.jsonSchema(
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'n': {'type': 'integer'},
+          },
+          'required': ['n'],
+          'additionalProperties': false,
+        },
+        decoder: (json) => json['n'] as int,
+      );
+      backend.queueResponse('{"n":1}');
+      backend.queueResponse('{"n":2}');
+
+      final first = await session.createStructuredJson([
+        const LlamaTextContent('one'),
+      ], output: output);
+      final second = await session.createStructuredJson([
+        const LlamaTextContent('two'),
+      ], output: output);
+
+      expect((first, second), (1, 2));
+      expect(backend.lastParams?.grammar, contains('n'));
+      expect(backend.lastPrompt, contains('{"n":1}'));
+      expect(session.history, hasLength(4));
+    });
+
     test('honours a cancel issued before the context check ends', () async {
       final gate = Completer<void>();
       backend.contextSizeGate = gate.future;

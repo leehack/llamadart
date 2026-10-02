@@ -9,8 +9,10 @@ import '../models/chat/completion_chunk.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
+import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
+import '../template/response_format.dart';
 
 /// Convenience wrapper for multi-turn chat with automatic history management.
 ///
@@ -108,6 +110,12 @@ class ChatSession {
   /// turn. This keeps text-based tool-result prompts attached to the original
   /// turn when older context is trimmed.
   ///
+  /// Pass [responseFormat] to request strict structured output for this turn,
+  /// with the same shapes and backend checks as [LlamaEngine.create]. An
+  /// unrecognised shape throws `LlamaUnsupportedException` before the user
+  /// message is added to [history]. Use [createStructuredJson] to also
+  /// validate and decode the reply.
+  ///
   /// Example with tools:
   /// ```dart
   /// final response = StringBuffer();
@@ -146,6 +154,7 @@ class ChatSession {
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
     void Function(LlamaChatMessage message)? onMessageAdded,
     bool continuesPreviousTurn = false,
@@ -153,6 +162,8 @@ class ChatSession {
     final cancellation = GenerationCancellation.forEngine(_engine);
     final zone = Zone.current;
     return cancellation.request((request) async* {
+      responseFormatSchema(responseFormat);
+
       // Add user message if parts provided
       if (parts.isNotEmpty) {
         final userMsg = parts.length == 1 && parts.first is LlamaTextContent
@@ -178,6 +189,7 @@ class ChatSession {
         toolChoice: toolChoice,
         parallelToolCalls: parallelToolCalls,
         enableThinking: enableThinking,
+        responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
       );
 
@@ -199,6 +211,7 @@ class ChatSession {
             toolChoice: toolChoice,
             parallelToolCalls: parallelToolCalls,
             enableThinking: enableThinking,
+            responseFormat: responseFormat,
             chatTemplateKwargs: chatTemplateKwargs,
           ),
         ),
@@ -273,6 +286,38 @@ class ChatSession {
     });
   }
 
+  /// Sends a user message, generates strict structured JSON, and decodes it.
+  ///
+  /// This is [create] with `output.responseFormat`, followed by
+  /// [LlamaStructuredOutput.parse] on the completed reply, matching
+  /// [LlamaEngine.createStructuredJson]. The raw JSON reply is added to
+  /// [history] like any other assistant turn.
+  Future<T> createStructuredJson<T>(
+    List<LlamaContentPart> parts, {
+    required LlamaStructuredOutput<T> output,
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    void Function(LlamaChatMessage message)? onMessageAdded,
+    bool continuesPreviousTurn = false,
+  }) {
+    return create(
+      parts,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: output.responseFormat,
+      chatTemplateKwargs: chatTemplateKwargs,
+      onMessageAdded: onMessageAdded,
+      continuesPreviousTurn: continuesPreviousTurn,
+    ).parseStructuredJson(output);
+  }
+
   /// Builds the message list for the engine, including system prompt.
   List<LlamaChatMessage> _buildMessages() {
     final messages = <LlamaChatMessage>[];
@@ -299,6 +344,7 @@ class ChatSession {
     ToolChoice? toolChoice,
     required bool parallelToolCalls,
     required bool enableThinking,
+    Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
   }) async {
     final limit = maxContextTokens ?? await _engine.getContextSize();
@@ -327,6 +373,7 @@ class ChatSession {
       toolChoice: toolChoice,
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
+      responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
     );
     if (fullTokenCount <= targetLimit) return true;
@@ -345,6 +392,7 @@ class ChatSession {
           toolChoice: toolChoice,
           parallelToolCalls: parallelToolCalls,
           enableThinking: enableThinking,
+          responseFormat: responseFormat,
           chatTemplateKwargs: chatTemplateKwargs,
         );
 
@@ -372,6 +420,7 @@ class ChatSession {
       toolChoice: toolChoice,
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
+      responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
     );
     if (!compacted) {
@@ -394,6 +443,7 @@ class ChatSession {
     ToolChoice? toolChoice,
     required bool parallelToolCalls,
     required bool enableThinking,
+    Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
   }) async {
     final anchorIndex = _history.indexWhere(
@@ -433,6 +483,7 @@ class ChatSession {
         toolChoice: toolChoice,
         parallelToolCalls: parallelToolCalls,
         enableThinking: enableThinking,
+        responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
       );
       if (tokenCount <= targetLimit) {
@@ -454,6 +505,7 @@ class ChatSession {
     ToolChoice? toolChoice,
     required bool parallelToolCalls,
     required bool enableThinking,
+    Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
   }) async {
     final template = await _engine.chatTemplate(
@@ -462,6 +514,7 @@ class ChatSession {
       toolChoice: toolChoice ?? ToolChoice.auto,
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
+      responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
       includeTokenCount: true,
     );

@@ -3117,6 +3117,160 @@ void main() {
       },
     );
 
+    group('create rejects unrecognised responseFormat shapes', () {
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'status'),
+      ];
+      const schema = {
+        'type': 'object',
+        'properties': {
+          'ok': {'type': 'boolean'},
+        },
+        'required': ['ok'],
+      };
+      final cases = <String, (Map<String, dynamic>, String)>{
+        'misspelled type': (
+          const {
+            'type': 'json_shema',
+            'json_schema': {'schema': schema},
+          },
+          "responseFormat.type 'json_shema'",
+        ),
+        'missing type': (const {'json_object': true}, 'responseFormat.type'),
+        'non-string type': (const {'type': 1}, 'responseFormat.type'),
+        'misspelled schema key': (
+          const {
+            'type': 'json_schema',
+            'json_schema': {'schma': schema},
+          },
+          "responseFormat.json_schema key 'schma'",
+        ),
+        'missing json_schema': (
+          const {'type': 'json_schema'},
+          'responseFormat.json_schema',
+        ),
+        'missing schema': (
+          const {'type': 'json_schema', 'json_schema': <String, dynamic>{}},
+          'responseFormat.json_schema.schema',
+        ),
+        'non-object schema': (
+          const {
+            'type': 'json_schema',
+            'json_schema': {'schema': 'object'},
+          },
+          'responseFormat.json_schema.schema',
+        ),
+        'misspelled json_schema key': (
+          const {
+            'type': 'json_schema',
+            'jsonSchema': {'schema': schema},
+          },
+          "responseFormat key 'jsonSchema'",
+        ),
+        'schema on json_object': (
+          const {'type': 'json_object', 'schema': schema},
+          "responseFormat key 'schema'",
+        ),
+        'non-bool strict': (
+          const {
+            'type': 'json_schema',
+            'json_schema': {'schema': schema, 'strict': 'yes'},
+          },
+          'responseFormat.json_schema.strict',
+        ),
+      };
+
+      for (final MapEntry(key: name, value: (format, detail))
+          in cases.entries) {
+        for (final (label, makeBackend)
+            in <(String, MockLlamaBackend Function())>[
+              ('grammar-capable backend', MockLlamaBackend.new),
+              ('no-grammar backend', NoGrammarMockLlamaBackend.new),
+              ('native-chat backend', NativeChatMockBackend.new),
+            ]) {
+          test('$name on $label', () async {
+            final testBackend = makeBackend();
+            final testEngine = LlamaEngine(testBackend);
+            await testEngine.loadModel('gemma4-test.litertlm');
+
+            await expectLater(
+              testEngine.create(messages, responseFormat: format).drain(),
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'message',
+                  contains(detail),
+                ),
+              ),
+            );
+            expect(testBackend.lastGenerationPrompt, isNull);
+            if (testBackend is NativeChatMockBackend) {
+              expect(testBackend.nativeGenerateChatCalls, 0);
+            }
+            await testEngine.dispose();
+          });
+        }
+      }
+
+      test('chatTemplate rejects the same shapes', () async {
+        await engine.loadModel('test-model.bin');
+
+        await expectLater(
+          engine.chatTemplate(
+            messages,
+            responseFormat: const {'type': 'json_shema'},
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      });
+
+      test(
+        'accepts every supported shape on a grammar-capable backend',
+        () async {
+          await engine.loadModel('test-model.bin');
+
+          for (final format in <Map<String, dynamic>>[
+            const {'type': 'text'},
+            const {'type': 'json_object'},
+            const {
+              'type': 'json_schema',
+              'json_schema': {
+                'schema': schema,
+                'name': 'status',
+                'description': 'Status flag',
+                'strict': false,
+              },
+            },
+            LlamaStructuredOutput<Object?>.jsonValueSchema(
+              schema: const {'type': 'string'},
+              decoder: (value) => value,
+            ).responseFormat,
+          ]) {
+            await engine.create(messages, responseFormat: format).drain();
+            expect(
+              backend.lastGenerationParams?.grammar,
+              format['type'] == 'text' ? isNull : isNotNull,
+              reason: '$format',
+            );
+          }
+        },
+      );
+
+      test('text type stays unconstrained on a no-grammar backend', () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend();
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        await noGrammarEngine
+            .create(messages, responseFormat: const {'type': 'text'})
+            .drain();
+
+        expect(noGrammarBackend.lastGenerationPrompt, isNotNull);
+        expect(noGrammarBackend.lastGenerationParams?.grammar, isNull);
+        await noGrammarEngine.dispose();
+      });
+    });
+
     test('create does not stream raw tool-call JSON as content', () async {
       backend.generationText =
           '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}';

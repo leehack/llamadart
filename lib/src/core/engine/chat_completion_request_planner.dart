@@ -10,6 +10,7 @@ import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
+import '../template/response_format.dart';
 
 /// Prepared generation inputs for a chat-completion request.
 ///
@@ -62,6 +63,7 @@ class ChatCompletionRequestPlanner {
     List<ToolDefinition>? tools,
     Map<String, dynamic>? responseFormat,
   }) {
+    final strictResponseFormat = responseFormatSchema(responseFormat) != null;
     final stops = {
       ...templateResult.stopSequences,
       ...?params?.stopSequences,
@@ -80,8 +82,7 @@ class ChatCompletionRequestPlanner {
         '  Template grammar skipped: backend does not support grammar constraints',
       );
     }
-    if (!backendSupportsGrammarConstraints &&
-        _hasStrictResponseFormat(responseFormat)) {
+    if (!backendSupportsGrammarConstraints && strictResponseFormat) {
       throw LlamaUnsupportedException(
         'Strict responseFormat output requires '
         'grammar-constrained decoding, but the active backend does not '
@@ -113,7 +114,7 @@ class ChatCompletionRequestPlanner {
         templateResult.grammarLazy &&
         !_supportsLazyGrammar(backend);
     if (skipsLazyTemplateGrammar) {
-      if (_hasStrictResponseFormat(responseFormat)) {
+      if (strictResponseFormat) {
         throw LlamaUnsupportedException(
           'Strict responseFormat output with tools needs a lazy grammar, but '
           'the active backend applies grammars from the first token (for '
@@ -244,14 +245,6 @@ class ChatCompletionRequestPlanner {
       return (backend as BackendLazyGrammarSupport).supportsLazyGrammar;
     }
     return true;
-  }
-
-  static bool _hasStrictResponseFormat(Map<String, dynamic>? responseFormat) {
-    if (responseFormat == null) {
-      return false;
-    }
-    final type = responseFormat['type'] as String?;
-    return type == 'json_schema' || type == 'json_object';
   }
 
   static BackendNativeChatGeneration? _nativeChatBackendFor(
