@@ -226,7 +226,7 @@ const _features = [
     'Image generation',
     'Generate images from text prompts on native platforms with the opt-in '
         'stable-diffusion.cpp runtime.',
-    '/docs/next/guides/image-generation',
+    '/docs/guides/image-generation',
     'preview',
   ),
 ];
