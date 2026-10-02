@@ -130,7 +130,8 @@ class ChatSession {
   /// generated so far is added as the assistant turn, so roles keep
   /// alternating.
   ///
-  /// Example with tools:
+  /// To run the tools' handlers until the model answers, use
+  /// `sendWithTools`. Running the calls yourself:
   /// ```dart
   /// final reply = await session.create(
   ///   [LlamaTextContent('What time is it?')],

@@ -6,10 +6,13 @@ description: Define tools with ToolDefinition, control them with ToolChoice, and
 
 Pass `ToolDefinition`s to `engine.create` or `ChatSession.create`. The model's
 chat template renders them, and the parser returns the model's calls as
-`chunk.toolCalls`. Your code runs the tools: nothing in `llamadart`, including
-`ChatSession`, invokes a handler for you.
+`chunk.toolCalls`. `session.sendWithTools` runs the calls with each tool's
+`handler` until the model answers; `create` and `engine.create` only return
+the calls, and your code runs them.
 
 ## Define a tool
+
+`handler` is optional: leave it out for a tool your app runs itself.
 
 ```dart
 final weatherTool = ToolDefinition(
@@ -32,37 +35,77 @@ final weatherTool = ToolDefinition(
 ```dart
 final engine = LlamaEngine(LlamaBackend());
 await engine.loadModel('model.gguf');
-final tools = [weatherTool];
 final session = ChatSession(engine);
 
-var parts = <LlamaContentPart>[
-  const LlamaTextContent('What is the weather in Seoul?'),
-];
-for (var round = 0; round < 5; round++) {
-  final reply = await session.create(parts, tools: tools).collect();
-  if (reply.text.isNotEmpty) print(reply.text);
-  if (reply.toolCalls.isEmpty) break;
-
-  for (final call in reply.toolCalls) {
-    Object? result;
-    try {
-      final tool = tools.firstWhere((tool) => tool.name == call.name);
-      result = await tool.invoke(call.arguments);
-    } catch (error) {
-      result = 'Error: $error';
-    }
-    session.addMessage(
-      LlamaChatMessage.withContent(
-        role: LlamaChatRole.tool,
-        content: [
-          LlamaToolResultContent(id: call.id, name: call.name, result: result),
-        ],
-      ),
-    );
-  }
-  parts = const [];
+final result = await session.sendWithTools(
+  'What is the weather in Seoul?',
+  tools: [weatherTool],
+  maxRounds: 5,
+);
+switch (result.stopReason) {
+  case LlamaToolLoopStopReason.completed:
+    print(result.text);
+  case LlamaToolLoopStopReason.unhandledToolCalls:
+  case LlamaToolLoopStopReason.maxRounds:
+  case LlamaToolLoopStopReason.contextExceeded:
+  case LlamaToolLoopStopReason.cancelled:
+    print('Stopped (${result.stopReason.name}): ${result.pendingToolCalls}');
 }
 await engine.dispose();
+```
+
+Each round collects a reply. When it calls tools, `sendWithTools` runs the
+calls concurrently and adds one tool message per call, in call order, with a
+`LlamaToolResultContent` carrying the call's `id` and `name`; the next round
+continues the turn without a new user message. `completeWithTools(parts)`
+does the same for multimodal parts, and `completeWithTools(const [])`
+continues the current turn.
+
+- **No handler:** a call to a tool without a `handler` runs `onToolCall`.
+  Without `onToolCall`, the loop stops before running any call of that reply,
+  with `unhandledToolCalls`; `result.pendingToolCalls` lists them. Add a tool
+  message per call with `session.addMessage(...)`, then call
+  `completeWithTools(const [], tools: ...)` to continue.
+- **Errors:** an exception from a tool, a call to an unknown tool name, or
+  arguments that are not a JSON object become the tool result
+  `{'error': message}`, so the model can recover. Pass `onToolError` to
+  choose the result, or rethrow from it to fail the loop; that round's
+  results are then not added.
+- **Bounds:** after `maxRounds` tool rounds, further calls are returned
+  unrun with `maxRounds`. Calls proposed from a prompt that did not fit the
+  context budget (`session.lastRequestFitContext == false`) are not run
+  (`contextExceeded`).
+- **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
+  Running tools finish and their results are added first.
+- `toolChoice` applies to the first request only, so `ToolChoice.required`
+  forces one call and later rounds can answer.
+
+### Run the calls yourself
+
+To stream each reply or control every call, collect the reply and add the
+results yourself:
+
+```dart
+final tools = [weatherTool];
+final reply = await session.create(
+  [const LlamaTextContent('What is the weather in Seoul?')],
+  tools: tools,
+).collect();
+for (final call in reply.toolCalls) {
+  session.addMessage(
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.tool,
+      content: [
+        LlamaToolResultContent(
+          id: call.id,
+          name: call.name,
+          result: await weatherTool.invoke(call.arguments),
+        ),
+      ],
+    ),
+  );
+}
+final answer = await session.create(const [], tools: tools).text();
 ```
 
 - Tool calls arrive complete, with JSON `arguments`, in the final chunk, whose
