@@ -4,15 +4,22 @@ import 'dart:typed_data';
 import '../../backends/backend.dart';
 import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
+import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
+import '../models/download/model_download_manager.dart';
 import '../models/inference/generation_params.dart';
+import '../models/inference/model_params.dart';
+import '../models/model_file_store.dart';
+import '../models/model_load_options.dart';
 import 'litert_lm_speech_to_text_driver.dart';
 import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
 import 'speech_engine_lease.dart';
+import 'speech_model_loader.dart';
+import 'speech_to_text_model.dart';
 import 'speech_platform_stub.dart'
     if (dart.library.js_interop) 'speech_platform_web.dart';
 
@@ -32,6 +39,10 @@ enum SpeechAudioInputKind {
 ///
 /// A profile is an explicit caller declaration. Generic multimodal audio
 /// support alone does not prove that a loaded model is an ASR model.
+@Deprecated(
+  'Use a SpeechToTextAdapter: Qwen3AsrAdapter or LiteRtLmAsrAdapter. '
+  'This enum will be removed in a future release.',
+)
 enum SpeechToTextModelProfile {
   /// Qwen3-ASR with its matching llama.cpp multimodal projector.
   qwen3Asr,
@@ -140,8 +151,10 @@ class SpeechToTextRequest {
 
   /// Optional BCP-47 language hint, such as `en` or `fr-CA`.
   ///
-  /// The field is reserved for recognizers with a validated language-hint
-  /// contract. The first Qwen3-ASR adapter rejects nonempty hints.
+  /// Only a [SpeechToTextPromptAdapter] whose
+  /// [SpeechToTextPromptAdapter.supportsLanguageHints] is true takes it; the
+  /// engine rejects a nonempty hint otherwise. [Qwen3AsrAdapter] and
+  /// [LiteRtLmAsrAdapter] take none.
   final String? languageHint;
 
   /// Optional vocabulary or surrounding-text guidance for the recognizer.
@@ -163,14 +176,17 @@ class SpeechToTextRequest {
 }
 
 /// Runtime speech-to-text capabilities for the loaded engine.
-class SpeechToTextCapabilities {
+class SpeechToTextCapabilities implements EngineCapabilities {
   /// Whether recognition can be started with the configured engine.
+  @override
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
+  @override
   final String? unsupportedReason;
 
   /// Active runtime backend label.
+  @override
   final String? backendName;
 
   /// Whether recognition uses a prompt adapter or a dedicated backend API.
@@ -495,9 +511,30 @@ abstract interface class SpeechToTextStreamingSession {
 
 /// Typed speech-to-text API for prompt-adapted and dedicated ASR runtimes.
 ///
-/// The default constructor adapts a loaded llama.cpp Qwen3-ASR model and its
-/// audio projector. [SpeechToTextEngine.liteRtLm] creates a dedicated native
-/// LiteRT-LM recognizer with incremental PCM input and partial transcripts.
+/// [load] loads a [SpeechToTextModel] and owns what it loads; [attach] runs
+/// a [SpeechToTextPromptAdapter] on a `LlamaEngine` the caller loaded and
+/// keeps owning. The model's adapter picks the runtime: a prompt adapter,
+/// such as [Qwen3AsrAdapter], sends encoded audio through multimodal chat on
+/// a `LlamaEngine`; [LiteRtLmAsrAdapter] runs a dedicated native LiteRT-LM
+/// recognizer with incremental PCM input and partial transcripts.
+///
+/// ```dart
+/// final recognizer = await SpeechToTextEngine.load(
+///   SpeechToTextModel(
+///     ModelSource.parse('hf://owner/repo/asr-model.gguf'),
+///     projector: ModelSource.parse('hf://owner/repo/mmproj-asr-model.gguf'),
+///     adapter: const Qwen3AsrAdapter(),
+///   ),
+/// );
+/// try {
+///   final result = await recognizer.transcribeOnce(
+///     const SpeechToTextRequest(audio: SpeechAudioFileInput('speech.wav')),
+///   );
+///   print(result.text);
+/// } finally {
+///   await recognizer.dispose();
+/// }
+/// ```
 class SpeechToTextEngine {
   static const String _leaseOwner = 'speech-to-text';
   static const SpeechAudioFormat _liteRtLmPcmFormat = SpeechAudioFormat(
@@ -507,35 +544,70 @@ class SpeechToTextEngine {
   );
 
   final LlamaEngine? _engine;
+  final bool _ownsEngine;
   final SpeechEngineLease? _engineLease;
   final LiteRtLmAsrRuntimeConfig? _liteRtLmConfig;
   final LiteRtLmSpeechToTextDriver? _liteRtLmDriver;
   final String? _liteRtLmLibraryPath;
   Future<LiteRtLmSpeechToTextSupport>? _liteRtLmSupportFuture;
   bool _liteRtLmTaskActive = false;
+  SpeechToTextStreamingSession? _activeStream;
+  SpeechToTextTask? _activeTask;
+  Future<void>? _disposal;
 
-  /// Model-specific adapter selected by the caller.
-  final SpeechToTextModelProfile modelProfile;
+  /// What drives the model: a [SpeechToTextPromptAdapter] or a
+  /// [LiteRtLmAsrAdapter].
+  final SpeechToTextAdapter adapter;
+
+  SpeechToTextEngine._prompt(
+    LlamaEngine engine,
+    SpeechToTextPromptAdapter this.adapter, {
+    required bool ownsEngine,
+  }) : _engine = engine,
+       _ownsEngine = ownsEngine,
+       _engineLease = SpeechEngineLease.forEngine(engine),
+       _liteRtLmConfig = null,
+       _liteRtLmDriver = null,
+       _liteRtLmLibraryPath = null;
+
+  SpeechToTextEngine._liteRtLm(
+    LiteRtLmAsrRuntimeConfig config,
+    LiteRtLmSpeechToTextDriver driver,
+    this.adapter, {
+    String? libraryPath,
+    Future<LiteRtLmSpeechToTextSupport>? support,
+  }) : _engine = null,
+       _ownsEngine = false,
+       _engineLease = null,
+       _liteRtLmConfig = config,
+       _liteRtLmDriver = driver,
+       _liteRtLmLibraryPath = libraryPath,
+       _liteRtLmSupportFuture = support;
 
   /// Creates a Qwen3-ASR prompt adapter over an existing loaded engine.
   ///
   /// The engine must be used exclusively until [SpeechToTextTask.done]
   /// completes. Separate speech wrappers over the same engine share a lease,
   /// but direct [LlamaEngine.create] calls remain caller-owned.
-  SpeechToTextEngine(LlamaEngine engine, {required this.modelProfile})
-    : _engine = engine,
-      _engineLease = SpeechEngineLease.forEngine(engine),
-      _liteRtLmConfig = null,
-      _liteRtLmDriver = null,
-      _liteRtLmLibraryPath = null {
-    if (modelProfile == SpeechToTextModelProfile.liteRtLmDedicated) {
-      throw ArgumentError.value(
-        modelProfile,
-        'modelProfile',
-        'Use SpeechToTextEngine.liteRtLm for dedicated LiteRT-LM ASR.',
-      );
-    }
-  }
+  @Deprecated(
+    'Use SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter()), '
+    'or SpeechToTextEngine.load. This constructor will be removed in a '
+    'future release.',
+  )
+  SpeechToTextEngine(
+    LlamaEngine engine, {
+    required SpeechToTextModelProfile modelProfile,
+  }) : this._prompt(
+         engine,
+         modelProfile == SpeechToTextModelProfile.liteRtLmDedicated
+             ? throw ArgumentError.value(
+                 modelProfile,
+                 'modelProfile',
+                 'Use SpeechToTextEngine.liteRtLm for dedicated LiteRT-LM ASR.',
+               )
+             : const Qwen3AsrAdapter(),
+         ownsEngine: false,
+       );
 
   /// Creates a dedicated native LiteRT-LM recognizer.
   ///
@@ -544,22 +616,215 @@ class SpeechToTextEngine {
   /// float PCM and supports one active task per recognizer instance.
   /// [libraryPath] is an advanced local-validation override; packaged apps
   /// should omit it and use the runtime resolved by native assets.
+  @Deprecated(
+    'Use SpeechToTextEngine.load(SpeechToTextModel(model, tokenizer: '
+    'tokenizer, adapter: LiteRtLmAsrAdapter(preset))). This constructor will '
+    'be removed in a future release.',
+  )
   SpeechToTextEngine.liteRtLm(
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
-  }) : _engine = null,
-       _engineLease = null,
-       _liteRtLmConfig = config,
-       _liteRtLmDriver =
-           debugLiteRtLmSpeechToTextDriverOverride ??
-           createLiteRtLmSpeechToTextDriver(),
-       _liteRtLmLibraryPath = libraryPath,
-       modelProfile = SpeechToTextModelProfile.liteRtLmDedicated;
+  }) : this._liteRtLm(
+         config,
+         debugLiteRtLmSpeechToTextDriverOverride ??
+             createLiteRtLmSpeechToTextDriver(),
+         LiteRtLmAsrAdapter(
+           config.modelPreset,
+           backend: config.backend,
+           numberOfThreads: config.numberOfThreads,
+           maxBufferedAudio: config.maxBufferedAudio,
+           overlapRatio: config.overlapRatio,
+           libraryPath: libraryPath,
+         ),
+         libraryPath: libraryPath,
+       );
+
+  /// Loads [model] and returns a recognizer that owns what it loaded.
+  ///
+  /// Every file of [model] comes from its `ModelSource`, resolved by
+  /// [store]'s resolver and download manager (by default
+  /// [DefaultModelResolver] and [DefaultModelDownloadManager]), one at a
+  /// time, main file first. [download] applies to every remote file: cache
+  /// policy and directory, authentication, resume, retries and the cancel
+  /// token. [onProgress] reports the files together: `receivedBytes` counts
+  /// the files resolved so far plus the current download, and `totalBytes`
+  /// is known once the last file's size and every earlier one's is.
+  ///
+  /// With a [SpeechToTextPromptAdapter], [load] creates a [LlamaEngine] on
+  /// [backend] (by default `LlamaBackend()`), loads [SpeechToTextModel.source]
+  /// with [params] (by default `ModelParams()`) and then
+  /// [SpeechToTextModel.projector], as `LlamaEngine.loadModelSource` and
+  /// `LlamaEngine.loadMultimodalProjectorSource` do, and checks [capabilities].
+  /// [dispose] disposes that engine.
+  ///
+  /// With a [LiteRtLmAsrAdapter], [load] probes the LiteRT-LM ASR runtime
+  /// before any download and then resolves [SpeechToTextModel.source] and
+  /// [SpeechToTextModel.tokenizer] to local files. Each [transcribe] or
+  /// [startStream] starts its own native session on them in a worker
+  /// isolate. The adapter carries the runtime settings, so [params] and
+  /// [backend] must be null.
+  ///
+  /// The load is atomic: when it throws, nothing stays loaded. Downloaded
+  /// files stay in the model cache.
+  ///
+  /// Throws:
+  /// - [LlamaArgumentException] when [model] lacks a file its adapter needs
+  ///   or has one it cannot use, or when [params] or [backend] is set for a
+  ///   [LiteRtLmAsrAdapter].
+  /// - [LlamaUnsupportedException] when the loaded model cannot recognize
+  ///   speech (see [capabilities]), when the LiteRT-LM ASR runtime is
+  ///   unavailable, including on the web, and when [download] sets
+  ///   [ModelLoadOptions.sha256] for a model of more than one file.
+  /// - [LlamaStateException] when [download]'s cancel token cancels the load.
+  /// - What `LlamaEngine.loadModelSource`, the resolver and the download
+  ///   manager throw for a file that fails to download or load.
+  static Future<SpeechToTextEngine> load(
+    SpeechToTextModel model, {
+    ModelParams? params,
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelFileStore? store,
+    LlamaBackend? backend,
+  }) async {
+    switch (model.adapter) {
+      case final SpeechToTextPromptAdapter adapter:
+        if (model.tokenizer != null) {
+          throw LlamaArgumentException(
+            'A ${adapter.name} model takes no tokenizer file; the tokenizer '
+            'is part of the model. Leave SpeechToTextModel.tokenizer unset.',
+            name: 'model.tokenizer',
+          );
+        }
+        late final SpeechToTextEngine recognizer;
+        await loadSpeechLlamaEngine(
+          engineName: 'SpeechToTextEngine',
+          source: model.source,
+          projector: model.projector,
+          params: params ?? const ModelParams(),
+          download: download,
+          onProgress: onProgress,
+          store: store,
+          backend: backend,
+          verify: (engine) async {
+            recognizer = SpeechToTextEngine._prompt(
+              engine,
+              adapter,
+              ownsEngine: true,
+            );
+            final capabilities = await recognizer.capabilities;
+            if (!capabilities.isSupported) {
+              throw LlamaUnsupportedException(
+                capabilities.unsupportedReason ??
+                    'The loaded model cannot recognize speech.',
+              );
+            }
+          },
+        );
+        return recognizer;
+      case final LiteRtLmAsrAdapter adapter:
+        final tokenizer = model.tokenizer;
+        if (tokenizer == null) {
+          throw LlamaArgumentException(
+            'Dedicated LiteRT-LM ASR needs the model\'s tokenizer JSON. Set '
+            'SpeechToTextModel.tokenizer.',
+            name: 'model.tokenizer',
+          );
+        }
+        if (model.projector != null) {
+          throw LlamaArgumentException(
+            'Dedicated LiteRT-LM ASR takes no multimodal projector. Leave '
+            'SpeechToTextModel.projector unset.',
+            name: 'model.projector',
+          );
+        }
+        if (params != null || backend != null) {
+          throw LlamaArgumentException(
+            'params and backend apply to models that run on LlamaEngine. Set '
+            'dedicated LiteRT-LM ASR settings on LiteRtLmAsrAdapter.',
+            name: params != null ? 'params' : 'backend',
+          );
+        }
+        final driver =
+            debugLiteRtLmSpeechToTextDriverOverride ??
+            createLiteRtLmSpeechToTextDriver();
+        final support = await driver.probeSupport(
+          libraryPath: adapter.libraryPath,
+        );
+        if (!support.isSupported) {
+          throw LlamaUnsupportedException(
+            support.unsupportedReason ??
+                'Dedicated LiteRT-LM speech recognition is unavailable.',
+          );
+        }
+        final paths = await resolveSpeechModelFiles(
+          engineName: 'SpeechToTextEngine',
+          sources: [model.source, tokenizer],
+          download: download,
+          onProgress: onProgress,
+          store: store ?? ModelFileStore(),
+          assetType: 'speech model',
+        );
+        return SpeechToTextEngine._liteRtLm(
+          LiteRtLmAsrRuntimeConfig(
+            modelPath: paths[0],
+            tokenizerPath: paths[1],
+            modelPreset: adapter.preset,
+            backend: adapter.backend,
+            numberOfThreads: adapter.numberOfThreads,
+            maxBufferedAudio: adapter.maxBufferedAudio,
+            overlapRatio: adapter.overlapRatio,
+          ),
+          driver,
+          adapter,
+          libraryPath: adapter.libraryPath,
+          support: Future<LiteRtLmSpeechToTextSupport>.value(support),
+        );
+    }
+  }
+
+  /// Runs [adapter] on [engine], which the caller loaded and keeps owning.
+  ///
+  /// The engine needs a loaded model and, on llama.cpp, its audio projector;
+  /// read [capabilities] to check. [dispose] cancels this recognizer's task
+  /// but leaves [engine] loaded. Typed speech wrappers over the same engine
+  /// share one task at a time; direct [LlamaEngine.create] calls stay
+  /// caller-owned and must not run during a task.
+  static SpeechToTextEngine attach(
+    LlamaEngine engine, {
+    required SpeechToTextPromptAdapter adapter,
+  }) => SpeechToTextEngine._prompt(engine, adapter, ownsEngine: false);
+
+  /// Model-specific adapter selected by the caller.
+  ///
+  /// Throws [LlamaStateException] for an adapter other than
+  /// [Qwen3AsrAdapter] and [LiteRtLmAsrAdapter], which have no profile.
+  @Deprecated('Read adapter instead.')
+  SpeechToTextModelProfile get modelProfile => switch (adapter) {
+    LiteRtLmAsrAdapter() => SpeechToTextModelProfile.liteRtLmDedicated,
+    Qwen3AsrAdapter() => SpeechToTextModelProfile.qwen3Asr,
+    _ => throw LlamaStateException(
+      'This SpeechToTextEngine runs ${adapter.name}, which has no '
+      'SpeechToTextModelProfile. Read adapter instead.',
+    ),
+  };
 
   bool get _usesLiteRtLm => _liteRtLmConfig != null;
 
-  /// Discovers speech recognition support for the configured runtime and model.
+  SpeechToTextPromptAdapter get _promptAdapter =>
+      adapter as SpeechToTextPromptAdapter;
+
+  /// Whether [dispose] has been called.
+  bool get isDisposed => _disposal != null;
+
+  /// Discovers speech recognition support for the configured runtime and
+  /// model; unsupported once disposed.
   Future<SpeechToTextCapabilities> get capabilities async {
+    if (_disposal != null) {
+      return const SpeechToTextCapabilities(
+        isSupported: false,
+        unsupportedReason: 'The SpeechToTextEngine is disposed.',
+      );
+    }
     if (_usesLiteRtLm) {
       final support = await (_liteRtLmSupportFuture ??= _liteRtLmDriver!
           .probeSupport(libraryPath: _liteRtLmLibraryPath));
@@ -618,7 +883,8 @@ class SpeechToTextEngine {
         isSupported: false,
         unsupportedReason:
             'A chat-model LiteRT-LM engine is not a dedicated ASR session. '
-            'Use SpeechToTextEngine.liteRtLm with an ASR model and tokenizer.',
+            'Use SpeechToTextEngine.load with a LiteRtLmAsrAdapter, an ASR '
+            'model and its tokenizer.',
         backendName: backendName,
       );
     }
@@ -644,6 +910,7 @@ class SpeechToTextEngine {
       );
     }
 
+    final promptAdapter = _promptAdapter;
     return SpeechToTextCapabilities(
       isSupported: true,
       backendName: backendName,
@@ -653,6 +920,8 @@ class SpeechToTextEngine {
         SpeechAudioInputKind.encodedBytes,
       },
       encodedAudioFormats: speechToTextEncodedAudioFormats,
+      supportsLanguageDetection: promptAdapter.supportsLanguageDetection,
+      supportsLanguageHints: promptAdapter.supportsLanguageHints,
       supportsCancellation: true,
       maxConcurrentTasks: 1,
     );
@@ -660,19 +929,22 @@ class SpeechToTextEngine {
 
   /// Starts recognition for one complete audio input.
   ///
-  /// Qwen3-ASR accepts encoded files or bytes. Dedicated LiteRT-LM ASR accepts
-  /// [SpeechAudioPcmInput] and emits any intermediate partial events before its
-  /// final result. Invalid input and unsupported preflight checks throw before
-  /// a task is returned; failures after startup are reported by the task.
+  /// A [SpeechToTextPromptAdapter] accepts encoded files or bytes. Dedicated
+  /// LiteRT-LM ASR accepts [SpeechAudioPcmInput] and emits any intermediate
+  /// partial events before its final result. Invalid input and unsupported
+  /// preflight checks throw before a task is returned; failures after
+  /// startup are reported by the task. Throws [LlamaStateException] after
+  /// [dispose].
   ///
-  /// On native llama.cpp, a Qwen3-ASR task that reaches the context size or
-  /// [SpeechToTextRequest.maxOutputTokens] before the transcript ends fails
-  /// with [LlamaSpeechTranscriptTruncatedException].
+  /// On native llama.cpp, a prompt-adapted task that reaches the context
+  /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
+  /// fails with [LlamaSpeechTranscriptTruncatedException].
   ///
-  /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an active
-  /// Qwen3-ASR task, which then reports
+  /// [dispose], [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an
+  /// active prompt-adapted task, which then reports
   /// [SpeechToTextCompletionState.cancelled] with no result.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
+    _throwIfDisposed();
     _validateRequest(request);
     if (_usesLiteRtLm) {
       return _transcribeLiteRtLm(request);
@@ -688,6 +960,7 @@ class SpeechToTextEngine {
 
     try {
       final currentCapabilities = await capabilities;
+      _throwIfDisposed();
       if (!currentCapabilities.isSupported) {
         throw LlamaUnsupportedException(
           currentCapabilities.unsupportedReason ??
@@ -698,6 +971,7 @@ class SpeechToTextEngine {
       final engine = _engine!;
       final task = SpeechToTextTask._(onCancel: engine.cancelGeneration);
       lease.onUnload(_leaseOwner, task.cancel);
+      _activeTask = task;
       unawaited(_runPromptAdapterTask(task, request));
       return task;
     } catch (_) {
@@ -706,18 +980,37 @@ class SpeechToTextEngine {
     }
   }
 
+  /// Recognizes [request]'s audio and returns the final result.
+  ///
+  /// Throws what [transcribe] throws, the failure of the task, or
+  /// [LlamaStateException] when the task is cancelled, as [dispose] and
+  /// [LlamaEngine.unloadModel] do.
+  Future<SpeechToTextResult> transcribeOnce(SpeechToTextRequest request) async {
+    final completion = await (await transcribe(request)).done;
+    return switch (completion.state) {
+      SpeechToTextCompletionState.completed => completion.result!,
+      SpeechToTextCompletionState.failed => throw completion.error!,
+      SpeechToTextCompletionState.cancelled => throw LlamaStateException(
+        'Speech recognition was cancelled.',
+      ),
+    };
+  }
+
   /// Starts an incremental dedicated-ASR session.
   ///
-  /// This is currently available only for [SpeechToTextEngine.liteRtLm]. The
-  /// accepted [format] is mono 16 kHz `pcm-f32le`. Await every
-  /// [SpeechToTextStreamingSession.addPcm] call so bounded native backpressure
-  /// can throttle the producer.
+  /// This is available only with a [LiteRtLmAsrAdapter]. The accepted
+  /// [format] is mono 16 kHz `pcm-f32le`. Await every
+  /// [SpeechToTextStreamingSession.addPcm] call so bounded native
+  /// backpressure can throttle the producer. [dispose] cancels the session.
+  /// Throws [LlamaStateException] after [dispose].
   Future<SpeechToTextStreamingSession> startStream({
     SpeechAudioFormat format = _liteRtLmPcmFormat,
   }) async {
+    _throwIfDisposed();
     if (!_usesLiteRtLm) {
       throw LlamaUnsupportedException(
-        'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+        'The ${adapter.name} prompt adapter accepts complete encoded audio '
+        'only.',
       );
     }
     _validateLiteRtLmPcmFormat(format);
@@ -739,14 +1032,55 @@ class SpeechToTextEngine {
         _liteRtLmConfig!,
         libraryPath: _liteRtLmLibraryPath,
       );
-      return _LiteRtLmStreamingSession(
+      late final _LiteRtLmStreamingSession session;
+      session = _LiteRtLmStreamingSession(
         worker: worker,
         sourceFormat: format,
-        onClosed: () => _liteRtLmTaskActive = false,
+        onClosed: () {
+          _liteRtLmTaskActive = false;
+          if (identical(_activeStream, session)) {
+            _activeStream = null;
+          }
+        },
       );
+      if (_disposal != null) {
+        await session.cancel();
+        _throwIfDisposed();
+      }
+      return _activeStream = session;
     } catch (_) {
       _liteRtLmTaskActive = false;
       rethrow;
+    }
+  }
+
+  /// Cancels a running task or stream, waits for it to stop, and disposes
+  /// the [LlamaEngine] that [load] created. An engine passed to [attach]
+  /// stays loaded. Calling this more than once is safe.
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    final task = _activeTask;
+    final stream = _activeStream;
+    task?.cancel();
+    if (stream != null) {
+      try {
+        await stream.cancel();
+      } catch (_) {
+        // The stream reports its own failure; disposal still completes.
+      }
+    }
+    if (task != null) {
+      await task.done;
+    }
+    if (_ownsEngine) {
+      await _engine!.dispose();
+    }
+  }
+
+  void _throwIfDisposed() {
+    if (_disposal != null) {
+      throw LlamaStateException('The SpeechToTextEngine is disposed.');
     }
   }
 
@@ -757,6 +1091,7 @@ class SpeechToTextEngine {
     final session = await startStream(format: audio.format!);
     late final SpeechToTextTask task;
     task = SpeechToTextTask._(onCancel: () => unawaited(session.cancel()));
+    _activeTask = task;
     unawaited(_pipeLiteRtLmTask(task, session, audio.samples));
     return task;
   }
@@ -801,6 +1136,9 @@ class SpeechToTextEngine {
       if (!task._eventsController.isClosed) {
         await task._eventsController.close();
       }
+      if (identical(_activeTask, task)) {
+        _activeTask = null;
+      }
     }
   }
 
@@ -809,13 +1147,16 @@ class SpeechToTextEngine {
       throw LlamaSpeechException('maxOutputTokens must be greater than 0.');
     }
     final languageHint = request.languageHint?.trim();
-    if (languageHint != null && languageHint.isNotEmpty) {
+    final contextPrompt = request.contextPrompt?.trim();
+    final promptAdapter = _usesLiteRtLm ? null : _promptAdapter;
+    if (languageHint != null &&
+        languageHint.isNotEmpty &&
+        !(promptAdapter?.supportsLanguageHints ?? false)) {
       throw LlamaUnsupportedException(
         'The selected speech recognizer does not expose validated language hints.',
       );
     }
     if (_usesLiteRtLm) {
-      final contextPrompt = request.contextPrompt?.trim();
       if (contextPrompt != null && contextPrompt.isNotEmpty) {
         throw LlamaUnsupportedException(
           'Dedicated LiteRT-LM ASR does not expose context prompting.',
@@ -838,6 +1179,13 @@ class SpeechToTextEngine {
       }
       _validateLiteRtLmPcmFormat(format);
       return;
+    }
+    if (contextPrompt != null &&
+        contextPrompt.isNotEmpty &&
+        !promptAdapter!.supportsContextPrompt) {
+      throw LlamaUnsupportedException(
+        'The ${adapter.name} prompt adapter does not take a context prompt.',
+      );
     }
 
     switch (request.audio) {
@@ -891,7 +1239,7 @@ class SpeechToTextEngine {
         }
       case SpeechAudioPcmInput():
         throw LlamaUnsupportedException(
-          'The Qwen3-ASR prompt adapter accepts encoded audio only.',
+          'The ${adapter.name} prompt adapter accepts encoded audio only.',
         );
     }
   }
@@ -1012,7 +1360,7 @@ class SpeechToTextEngine {
         return;
       }
 
-      final normalized = _normalizeTranscript(output.toString());
+      final normalized = _promptAdapter.parseTranscript(output.toString());
       final limit = generationLimit;
       if (limit != null) {
         throw _truncatedTranscript(limit, normalized.text);
@@ -1042,6 +1390,9 @@ class SpeechToTextEngine {
       task._doneCompleter.complete(SpeechToTextCompletion.failed(speechError));
     } finally {
       _engineLease!.release(_leaseOwner);
+      if (identical(_activeTask, task)) {
+        _activeTask = null;
+      }
     }
   }
 
@@ -1054,7 +1405,7 @@ class SpeechToTextEngine {
     }
   }
 
-  /// Streams transcript text for the prompt-adapted profile.
+  /// Streams transcript text for the prompt adapter.
   ///
   /// Native Qwen3-ASR needs the audio turn wrapped by the model chat template,
   /// so it goes through [LlamaEngine.create]. The Web bridge speech contract is
@@ -1075,7 +1426,7 @@ class SpeechToTextEngine {
     );
     if (!speechToTextUsesChatTemplate) {
       return engine.generate(
-        _promptFor(request),
+        _promptAdapter.promptFor(request),
         parts: <LlamaContentPart>[_contentFor(request.audio)],
         params: params,
       );
@@ -1086,7 +1437,7 @@ class SpeechToTextEngine {
             LlamaChatMessage.withContent(
               role: LlamaChatRole.user,
               content: <LlamaContentPart>[
-                LlamaTextContent(_promptFor(request)),
+                LlamaTextContent(_promptAdapter.promptFor(request)),
                 _contentFor(request.audio),
               ],
             ),
@@ -1130,21 +1481,12 @@ class SpeechToTextEngine {
     };
   }
 
-  String _promptFor(SpeechToTextRequest request) {
-    final prompt = StringBuffer('Transcribe this audio accurately.');
-    final contextPrompt = request.contextPrompt?.trim();
-    if (contextPrompt != null && contextPrompt.isNotEmpty) {
-      prompt.write(' Context: $contextPrompt');
-    }
-    return prompt.toString();
-  }
-
   LlamaAudioContent _contentFor(SpeechAudioInput audio) {
     return switch (audio) {
       SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
       SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
       SpeechAudioPcmInput() => throw LlamaUnsupportedException(
-        'The Qwen3-ASR prompt adapter accepts encoded audio only.',
+        'The ${adapter.name} prompt adapter accepts encoded audio only.',
       ),
     };
   }
@@ -1157,25 +1499,6 @@ class SpeechToTextEngine {
       return '';
     }
     return filename.substring(separator + 1).toLowerCase();
-  }
-
-  ({String text, String? language}) _normalizeTranscript(String raw) {
-    final languagePrefix = RegExp(
-      r'^\s*language\s+([^<\r\n]+?)\s*<asr_text>\s*',
-      caseSensitive: false,
-    ).firstMatch(raw);
-    if (languagePrefix != null) {
-      return (text: raw.substring(languagePrefix.end).trim(), language: null);
-    }
-
-    final marker = RegExp(
-      r'^\s*<asr_text>\s*',
-      caseSensitive: false,
-    ).firstMatch(raw);
-    return (
-      text: marker == null ? raw.trim() : raw.substring(marker.end).trim(),
-      language: null,
-    );
   }
 }
 

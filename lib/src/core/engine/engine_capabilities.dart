@@ -1,6 +1,22 @@
 import '../models/inference/generation_params.dart';
 import 'engine_observer.dart';
 
+/// What every llamadart engine reports about its support: whether it can
+/// run, why not, and the backend it runs on.
+///
+/// Each engine's `capabilities` returns a subtype with its own fields, such
+/// as `SpeechToTextCapabilities` or `TextToSpeechCapabilities`.
+abstract interface class EngineCapabilities {
+  /// Whether the engine can run requests now.
+  bool get isSupported;
+
+  /// Why [isSupported] is false, or null when it is true.
+  String? get unsupportedReason;
+
+  /// The backend the engine runs on, or null when it reports none.
+  String? get backendName;
+}
+
 /// What a `LlamaEngine` and its loaded model support, as the loaded model's
 /// runtime reports it.
 ///
@@ -12,16 +28,19 @@ import 'engine_observer.dart';
 /// `LlamaUnsupportedException` only if the runtime cannot run it. The
 /// snapshot does not change when the engine later loads or unloads a model
 /// or multimodal projector.
-class LlamaEngineCapabilities {
+class LlamaEngineCapabilities implements EngineCapabilities {
   /// Whether a model is loaded. When false, every other field is false, empty
   /// or null.
+  @override
   final bool isSupported;
 
   /// Why [isSupported] is false, or null when it is true.
+  @override
   final String? unsupportedReason;
 
   /// The active backend's name, as `LlamaEngine.getBackendName` reports it,
   /// or null when the backend could not report one.
+  @override
   final String? backendName;
 
   /// The runtime that runs the loaded model, or null when no model is loaded

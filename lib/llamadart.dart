@@ -40,7 +40,9 @@ export 'src/core/engine/chat_session.dart'
 
 // Speech
 export 'src/core/speech/speech_to_text.dart';
+export 'src/core/speech/speech_to_text_model.dart';
 export 'src/core/speech/text_to_speech.dart';
+export 'src/core/speech/text_to_speech_model.dart';
 
 // Image generation (experimental)
 export 'src/core/image/generated_image.dart';
