@@ -63,13 +63,15 @@ or shipping runtimes the app does not use.
   cancellation: call `controller.cancel()` and never put a `cancelToken` in
   the options you pass to `start` (it throws `ArgumentError`). Then
   `engine.loadModel(entry.filePath)`.
-- On Android and iOS, give the cache an app-private directory:
-  `DefaultModelDownloadManager.auto(appPrivateCacheDirectory: ...)` with
-  `getApplicationCacheDirectory()` from `path_provider`. Without one, mobile
-  falls back to `Directory.systemTemp/llamadart/models`, which the OS may
-  clear. Pass the same manager to `LlamaEngine(..., modelDownloadManager:)`
-  so loads and cache inspection agree. On web the default manager's
-  operations throw `LlamaUnsupportedException`.
+- On Android and iOS the default cache is already `llamadart/models` in the
+  app's cache directory (what `getApplicationCacheDirectory()` returns), which
+  survives app updates; no `path_provider` setup is needed. To move every
+  default download, for example to `getApplicationSupportDirectory()`, set
+  `DefaultModelDownloadManager.globalCacheDirectory` at startup before the
+  first load. A manager you build yourself goes to
+  `LlamaEngine(..., modelDownloadManager:)` too, so loads and cache inspection
+  agree. On web the default manager's operations throw
+  `LlamaUnsupportedException`.
 - Do not cancel downloads on every app pause or screen lock. Downloads are
   foreground Dart HTTP requests; a later session resumes from the `.part`
   file when the server allows it. Background downloads need a custom

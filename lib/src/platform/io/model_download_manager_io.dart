@@ -10,6 +10,7 @@ import '../../core/models/download/model_download_manager_base.dart';
 import '../../core/models/model_load_options.dart';
 import '../../core/models/model_source.dart';
 import '../../core/url_redaction.dart';
+import 'mobile_app_cache_directory.dart';
 
 const String _metadataFileName = 'metadata.json';
 const int _metadataSchemaVersion = 1;
@@ -18,23 +19,28 @@ const int _metadataSchemaVersion = 1;
 class DefaultModelDownloadManager implements ModelDownloadManager {
   /// Creates a native model download/cache manager.
   ///
-  /// When [defaultCacheDirectory] is omitted, desktop/server platforms use the
-  /// same per-user shared model cache as [DefaultModelDownloadManager.auto].
-  /// Android and iOS use an app-private temporary/cache directory so constructing
-  /// the manager stays non-throwing; apps that need durable mobile storage should
-  /// pass an explicit directory or use [DefaultModelDownloadManager.appPrivate].
+  /// When [defaultCacheDirectory] is omitted, the manager uses
+  /// [globalCacheDirectory] if set, else the platform default:
+  /// desktop/server platforms use the same per-user shared model cache as
+  /// [DefaultModelDownloadManager.auto], and Android and iOS use
+  /// `llamadart/models` in the app's cache directory (the one Flutter's
+  /// `getApplicationCacheDirectory()` returns). The default is resolved the
+  /// first time the manager needs it.
   DefaultModelDownloadManager({String? defaultCacheDirectory})
-    : defaultCacheDirectory =
-          defaultCacheDirectory ?? _defaultImplicitCacheDirectory();
+    : _explicitDefaultCacheDirectory = defaultCacheDirectory;
 
   /// Creates a manager using the recommended cache root for the current platform.
   ///
   /// Pass [cacheDirectory] to force a specific root on every platform,
   /// including an OS-granted mobile model library directory. Otherwise,
-  /// desktop/server platforms use [defaultSharedCacheDirectory] with
-  /// [namespace], [environment], and [homeDirectory]. Android and iOS use, in
-  /// order, their platform-specific app-private directory argument,
-  /// [appPrivateCacheDirectory], or an app-private temporary/cache fallback.
+  /// desktop/server platforms use [globalCacheDirectory] when set, else
+  /// [defaultSharedCacheDirectory] with [namespace], [environment], and
+  /// [homeDirectory]. Android and iOS use, in order, their platform-specific
+  /// app-private directory argument, [appPrivateCacheDirectory],
+  /// [globalCacheDirectory], or `<namespace>/models` in the running app's
+  /// cache directory. Only when that directory cannot be found (or [platform]
+  /// is not the host) do they fall back to the temporary directory, with a
+  /// one-time warning through `LlamaLogger`.
   ///
   /// Use [androidAppPrivateCacheDirectory] and [iosAppPrivateCacheDirectory]
   /// when an app resolves both platform directories up front and wants one
@@ -65,6 +71,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     final effectivePlatform =
         platform ?? ModelCachePlatform.parse(Platform.operatingSystem);
     if (effectivePlatform.supportsImplicitSharedModelCache) {
+      final globalCacheDirectory = _globalCacheDirectory();
+      if (globalCacheDirectory != null) {
+        return DefaultModelDownloadManager(
+          defaultCacheDirectory: globalCacheDirectory,
+        );
+      }
       return DefaultModelDownloadManager.sharedCache(
         namespace: namespace,
         platform: effectivePlatform,
@@ -169,8 +181,23 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return DefaultModelDownloadManager(defaultCacheDirectory: cacheDirectory);
   }
 
+  /// Cache root for every manager whose directory would otherwise be the
+  /// platform default: the default constructor without
+  /// `defaultCacheDirectory`, and [DefaultModelDownloadManager.auto] without
+  /// an explicit or mobile directory. Engines build such a manager unless you
+  /// pass one, so setting this once at startup moves every default model
+  /// download, for example to Flutter's `getApplicationSupportDirectory()`.
+  ///
+  /// Set it before the first model load; a manager keeps the directory it
+  /// resolved first. `null` (the default) or a blank value means the platform
+  /// default.
+  static String? globalCacheDirectory;
+
+  final String? _explicitDefaultCacheDirectory;
+
   /// Default cache root used when [ModelLoadOptions.cacheDirectory] is absent.
-  final String defaultCacheDirectory;
+  late final String defaultCacheDirectory =
+      _explicitDefaultCacheDirectory ?? _defaultImplicitCacheDirectory();
 
   static final Map<String, Future<void>> _cacheLocks = <String, Future<void>>{};
 
@@ -1491,14 +1518,34 @@ String _defaultImplicitCacheDirectoryFor(
   ModelCachePlatform platform, {
   String namespace = 'llamadart',
 }) {
+  final globalCacheDirectory = _globalCacheDirectory();
+  if (globalCacheDirectory != null) {
+    return globalCacheDirectory;
+  }
   if (platform.supportsImplicitSharedModelCache) {
     return DefaultModelDownloadManager.defaultSharedCacheDirectory(
       platform: platform,
       namespace: namespace,
     );
   }
+  if (platform.isMobile) {
+    final appCacheDirectory = hostMobileAppCacheDirectory(platform);
+    if (appCacheDirectory != null) {
+      return path.join(
+        appCacheDirectory,
+        _validateCacheNamespace(namespace),
+        'models',
+      );
+    }
+    final fallback = _temporaryCacheDirectory(namespace: namespace);
+    warnMobileTemporaryCacheOnce(platform, fallback);
+    return fallback;
+  }
   return _temporaryCacheDirectory(namespace: namespace);
 }
+
+String? _globalCacheDirectory() =>
+    _nonEmpty(DefaultModelDownloadManager.globalCacheDirectory);
 
 String _temporaryCacheDirectory({String namespace = 'llamadart'}) {
   return path.join(
