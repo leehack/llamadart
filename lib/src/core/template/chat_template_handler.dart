@@ -11,7 +11,6 @@ import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
 import 'thinking_utils.dart';
-import 'tool_call_parsing_utils.dart';
 
 export 'template_render_context.dart' show TemplateToolCallSerialization;
 
@@ -155,7 +154,7 @@ abstract class ChatTemplateHandler {
     required Map<String, dynamic> context,
   }) {
     return template.render(<String, dynamic>{
-      ..._templateContextFromMetadata(metadata),
+      ...chatTemplateKwargsFromMetadata(metadata),
       ...context,
     });
   }
@@ -220,27 +219,6 @@ abstract class ChatTemplateHandler {
       ),
       thinkingForcedOpen: thinkingForcedOpen,
     );
-  }
-
-  Map<String, dynamic> _templateContextFromMetadata(
-    Map<String, String> metadata,
-  ) {
-    final context = <String, dynamic>{};
-
-    final rawKwargs = metadata[internalChatTemplateKwargsMetadataKey];
-    if (rawKwargs != null && rawKwargs.trim().isNotEmpty) {
-      try {
-        final decoded = ToolCallParsingUtils.decodeJsonValue(rawKwargs);
-        final kwargs = ToolCallParsingUtils.coerceMap(decoded);
-        if (kwargs != null) {
-          context.addAll(kwargs);
-        }
-      } catch (_) {
-        // Ignore invalid internal metadata payloads and render without extras.
-      }
-    }
-
-    return context;
   }
 
   /// Resolves a caller-provided template `now` value or falls back to current

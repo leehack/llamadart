@@ -4982,6 +4982,151 @@ void main() {
       );
     });
   });
+
+  group('LlamaEngine TranslateGemma language codes', () {
+    const translateGemmaTemplate =
+        '[source_lang_code]\n'
+        '[target_lang_code]\n'
+        '{%- for message in messages -%}'
+        '{%- if message["role"] == "user" -%}'
+        '{{- message["content"][0]["source_lang_code"] + "->" + '
+        'message["content"][0]["target_lang_code"] + ":" + '
+        'message["content"][0]["text"] -}}'
+        '{%- endif -%}'
+        '{%- endfor -%}';
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+    ];
+    const kwargs = {'source_lang_code': 'en', 'target_lang_code': 'ko'};
+
+    Future<LlamaEngine> loadEngine(MockLlamaBackend backend) async {
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('translategemma.gguf');
+      return engine;
+    }
+
+    MockLlamaBackend templateBackend() => MockLlamaBackend(
+      modelMetadataResponse: const {
+        'llm.context_length': '4096',
+        'tokenizer.chat_template': translateGemmaTemplate,
+      },
+    );
+
+    test('chatTemplate reads the codes from chatTemplateKwargs', () async {
+      final engine = await loadEngine(templateBackend());
+
+      final result = await engine.chatTemplate(
+        messages,
+        chatTemplateKwargs: kwargs,
+        includeTokenCount: false,
+      );
+
+      expect(result.format, ChatFormat.translateGemma.index);
+      expect(result.prompt, contains('en->ko:hello'));
+    });
+
+    test('deprecated parameters render the same prompt as kwargs', () async {
+      final engine = await loadEngine(templateBackend());
+
+      final viaKwargs = await engine.chatTemplate(
+        messages,
+        chatTemplateKwargs: kwargs,
+        includeTokenCount: false,
+      );
+      final viaParameters = await engine.chatTemplate(
+        messages,
+        // ignore: deprecated_member_use_from_same_package
+        sourceLangCode: 'en',
+        // ignore: deprecated_member_use_from_same_package
+        targetLangCode: 'ko',
+        includeTokenCount: false,
+      );
+
+      expect(viaParameters.prompt, viaKwargs.prompt);
+    });
+
+    test(
+      'a deprecated parameter replaces its chatTemplateKwargs key',
+      () async {
+        final engine = await loadEngine(templateBackend());
+
+        final result = await engine.chatTemplate(
+          messages,
+          chatTemplateKwargs: kwargs,
+          // ignore: deprecated_member_use_from_same_package
+          targetLangCode: 'fr',
+          includeTokenCount: false,
+        );
+
+        expect(result.prompt, contains('en->fr:hello'));
+      },
+    );
+
+    test('create renders the deprecated parameters as kwargs', () async {
+      final backend = templateBackend();
+      final engine = await loadEngine(backend);
+
+      await engine.create(messages, chatTemplateKwargs: kwargs).drain<void>();
+      final viaKwargs = backend.lastGenerationPrompt;
+      await engine
+          .create(
+            messages,
+            // ignore: deprecated_member_use_from_same_package
+            sourceLangCode: 'en',
+            // ignore: deprecated_member_use_from_same_package
+            targetLangCode: 'ko',
+          )
+          .drain<void>();
+
+      expect(viaKwargs, contains('en->ko:hello'));
+      expect(backend.lastGenerationPrompt, viaKwargs);
+    });
+
+    test('createStructuredJson forwards the deprecated parameters', () async {
+      final backend = templateBackend()..generationText = '{"ok": true}';
+      final engine = await loadEngine(backend);
+
+      final value = await engine.createStructuredJson(
+        messages,
+        output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
+        // ignore: deprecated_member_use_from_same_package
+        sourceLangCode: 'en',
+        // ignore: deprecated_member_use_from_same_package
+        targetLangCode: 'ko',
+      );
+
+      expect(value, {'ok': true});
+      expect(backend.lastGenerationPrompt, contains('en->ko:hello'));
+    });
+
+    test(
+      'native chat backends receive the codes in chatTemplateKwargs',
+      () async {
+        final backend = NativeChatMockBackend();
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('gemma-4-E2B-it.litertlm');
+
+        await engine
+            .create(
+              messages,
+              chatTemplateKwargs: const {'locale': 'en_CA'},
+              // ignore: deprecated_member_use_from_same_package
+              sourceLangCode: 'en',
+              // ignore: deprecated_member_use_from_same_package
+              targetLangCode: 'ko',
+            )
+            .drain<void>();
+
+        expect(backend.lastNativeChatTemplateKwargs, {
+          'locale': 'en_CA',
+          'source_lang_code': 'en',
+          'target_lang_code': 'ko',
+        });
+      },
+    );
+  });
 }
 
 /// A backend whose failures echo the source path or URL, as native file

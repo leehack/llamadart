@@ -35,6 +35,7 @@ import '../models/model_target_file.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
+import '../template/handlers/translate_gemma_handler.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -956,12 +957,12 @@ class LlamaEngine {
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
-  /// For TranslateGemma-style templates, set [sourceLangCode] and
-  /// [targetLangCode] to control language metadata injected into user
-  /// content blocks.
-  ///
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
-  /// to llama.cpp `chat_template_kwargs`).
+  /// to llama.cpp `chat_template_kwargs`). TranslateGemma templates read their
+  /// language codes from it, as llama.cpp does:
+  /// `chatTemplateKwargs: {'source_lang_code': 'en', 'target_lang_code': 'ko'}`.
+  /// The deprecated [sourceLangCode] and [targetLangCode] set those keys,
+  /// replacing any in [chatTemplateKwargs].
   /// Use [templateNow] to set deterministic template time context.
   ///
   /// Pass [responseFormat] to request strict structured output through
@@ -1029,12 +1030,19 @@ class LlamaEngine {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
     final zone = Zone.current;
+    final templateKwargs = chatTemplateKwargsWithLanguageCodes(
+      chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+    );
     final operation = observers.isEmpty
         ? null
         : LlamaChatOperation(
@@ -1066,9 +1074,7 @@ class LlamaEngine {
           parallelToolCalls: parallelToolCalls,
           enableThinking: enableThinking,
           responseFormat: responseFormat,
-          sourceLangCode: sourceLangCode,
-          targetLangCode: targetLangCode,
-          chatTemplateKwargs: chatTemplateKwargs,
+          chatTemplateKwargs: templateKwargs,
           templateNow: templateNow,
           includeTokenCount: false,
         );
@@ -1101,9 +1107,7 @@ class LlamaEngine {
                 toolChoice: effectiveToolChoice,
                 parallelToolCalls: parallelToolCalls,
                 enableThinking: enableThinking,
-                chatTemplateKwargs: chatTemplateKwargs,
-                sourceLangCode: sourceLangCode,
-                targetLangCode: targetLangCode,
+                chatTemplateKwargs: templateKwargs,
                 templateNow: templateNow,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
@@ -1172,6 +1176,9 @@ class LlamaEngine {
   /// value produced by [output]'s decoder. Use [create] directly when you need
   /// to render tokens live; the returned stream can still be finalized with
   /// `await stream.parseStructuredJson(output)`.
+  ///
+  /// The deprecated [sourceLangCode] and [targetLangCode] behave as in
+  /// [create]; pass the codes in [chatTemplateKwargs] instead.
   Future<T> createStructuredJson<T>(
     List<LlamaChatMessage> messages, {
     required LlamaStructuredOutput<T> output,
@@ -1180,7 +1187,9 @@ class LlamaEngine {
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
@@ -1193,9 +1202,11 @@ class LlamaEngine {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       responseFormat: output.responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
-      chatTemplateKwargs: chatTemplateKwargs,
+      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+        chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+      ),
       templateNow: templateNow,
     ).parseStructuredJson(output);
   }
@@ -1219,14 +1230,13 @@ class LlamaEngine {
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
   /// wins.
   ///
-  /// For TranslateGemma-style templates, [sourceLangCode] and
-  /// [targetLangCode] are forwarded to the template renderer.
-  ///
   /// Set [includeTokenCount] to false to skip the prompt tokenization pass
   /// and reduce per-request overhead when token count is not needed.
   ///
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
-  /// to llama.cpp `chat_template_kwargs`).
+  /// to llama.cpp `chat_template_kwargs`), including TranslateGemma's
+  /// `source_lang_code` and `target_lang_code`; the deprecated
+  /// [sourceLangCode] and [targetLangCode] behave as in [create].
   /// Use [templateNow] to set deterministic template time context.
   ///
   Future<LlamaChatTemplateResult> chatTemplate(
@@ -1243,7 +1253,9 @@ class LlamaEngine {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     String? customTemplate,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1263,10 +1275,12 @@ class LlamaEngine {
       responseFormat: responseFormat,
       customTemplate: customTemplate,
       modelTemplate: _modelChatTemplate,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       includeTokenCount: includeTokenCount,
-      chatTemplateKwargs: chatTemplateKwargs,
+      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+        chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+      ),
       templateNow: templateNow,
     );
   }
@@ -1389,8 +1403,6 @@ class LlamaEngine {
     required bool parallelToolCalls,
     required bool enableThinking,
     Map<String, dynamic>? chatTemplateKwargs,
-    String? sourceLangCode,
-    String? targetLangCode,
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
@@ -1409,8 +1421,6 @@ class LlamaEngine {
         parallelToolCalls: parallelToolCalls,
         enableThinking: enableThinking,
         chatTemplateKwargs: chatTemplateKwargs,
-        sourceLangCode: sourceLangCode,
-        targetLangCode: targetLangCode,
         templateNow: templateNow,
       );
 
@@ -2534,8 +2544,6 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
-    String? sourceLangCode,
-    String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
@@ -2547,8 +2555,6 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       responseFormat: responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
     ).collect();

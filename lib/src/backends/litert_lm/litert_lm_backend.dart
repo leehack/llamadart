@@ -12,6 +12,7 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/tools/tool_definition.dart';
+import '../../core/template/handlers/translate_gemma_handler.dart';
 import '../backend.dart';
 import 'litert_lm_platform.dart';
 import 'worker.dart';
@@ -286,7 +287,9 @@ class LiteRtLmBackend
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     DateTime? templateNow,
   }) {
@@ -359,9 +362,11 @@ class LiteRtLmBackend
                 toolChoice: toolChoice,
                 parallelToolCalls: parallelToolCalls,
                 enableThinking: enableThinking,
-                chatTemplateKwargs: chatTemplateKwargs,
-                sourceLangCode: sourceLangCode,
-                targetLangCode: targetLangCode,
+                chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+                  chatTemplateKwargs,
+                  sourceLangCode: sourceLangCode,
+                  targetLangCode: targetLangCode,
+                ),
                 templateNow: templateNow,
               ),
             );
