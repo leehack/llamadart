@@ -563,9 +563,9 @@ await engine.warmUp(width: 1024, height: 1024, guidanceScale: 1);
   M4 Max a 64x64 warm-up left about 0.1 s of the 512x512 compile, while a
   512x512 warm-up left none.
 - For the desktop models a warm-up is one sampling step and a decode at
-  1024x1024: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on the
-  M4 Max, with or without the Metal shader cache, and the same peak memory
-  as an image, which the [memory check](#memory-check) already covers.
+  1024x1024: about 2 to 4 s for SDXL-Lightning with TAESDXL on the
+  M4 Max, and the same peak memory as an image, which the
+  [memory check](#memory-check) covers where it runs.
 - It moves the cost, it does not remove it. Call it while the user is not
   waiting, such as right after `load` while they type; `load`, `warmUp` and
   `generate` back to back take no less time than `load` and `generate`.
