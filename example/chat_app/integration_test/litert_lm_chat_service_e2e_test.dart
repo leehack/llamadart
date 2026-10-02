@@ -74,9 +74,7 @@ void main() {
             enableThinking: true,
           )
           .toList();
-      final thinkingText = thinkingChunks.map((chunk) {
-        return chunk.choices.first.delta.thinking ?? '';
-      }).join();
+      final thinkingText = thinkingChunks.map((chunk) => chunk.thinking).join();
 
       expect(thinkingText.trim(), isNotEmpty);
 
@@ -104,10 +102,8 @@ void main() {
           )
           .toList();
 
-      final toolCalls = [
-        for (final chunk in toolChunks) ...?chunk.choices.first.delta.toolCalls,
-      ];
-      expect(toolChunks.last.choices.first.finishReason, equals('tool_calls'));
+      final toolCalls = [for (final chunk in toolChunks) ...chunk.toolCalls];
+      expect(toolChunks.last.finishReason, LlamaFinishReason.toolCalls);
       expect(toolCalls, hasLength(1));
       expect(toolCalls.first.function?.name, equals('get_weather'));
       expect(

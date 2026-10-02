@@ -44,9 +44,7 @@ Future<void> main(List<String> args) async {
             text: 'Say hello in one short sentence.',
           ),
         ], params: const GenerationParams(maxTokens: 64))) {
-          for (final choice in chunk.choices) {
-            stdout.write(choice.delta.content ?? '');
-          }
+          stdout.write(chunk.text);
         }
       });
     } catch (_) {

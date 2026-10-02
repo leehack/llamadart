@@ -91,13 +91,14 @@ Future<void> main(List<String> args) async {
     ];
 
     stdout.write('Answer: ');
-    await for (final LlamaCompletionChunk chunk in generator.create(
-      messages,
-      params: const GenerationParams(maxTokens: 128, temp: 0.2),
-      enableThinking: false,
-    )) {
-      stdout.write(chunk.choices.first.delta.content ?? '');
-    }
+    await generator
+        .create(
+          messages,
+          params: const GenerationParams(maxTokens: 128, temp: 0.2),
+          enableThinking: false,
+        )
+        .textDeltas()
+        .forEach(stdout.write);
     stdout.writeln();
   } finally {
     await generator.dispose();

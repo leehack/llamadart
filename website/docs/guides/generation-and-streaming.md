@@ -85,17 +85,40 @@ await for (final chunk in engine.create(
   messages,
   params: const GenerationParams(maxTokens: 128, topP: 0.95),
 )) {
-  final thinking = chunk.choices.first.delta.thinking;
-  if (thinking != null) {
-    print('[thinking] $thinking');
-  }
-
-  final text = chunk.choices.first.delta.content;
-  if (text != null) {
-    print(text);
-  }
+  if (chunk.thinking.isNotEmpty) stdout.write('[thinking] ${chunk.thinking}');
+  stdout.write(chunk.text);
 }
 ```
+
+`chunk.text` and `chunk.thinking` are the first choice's answer and reasoning
+deltas, or empty strings. `chunk.toolCalls` lists its tool-call deltas, and
+`chunk.finishReason` is a `LlamaFinishReason` (`stop`, `length` or
+`toolCalls`) on the final chunk and null on every other one. The raw
+OpenAI-style fields stay available under `chunk.choices`.
+
+### Collect a whole reply
+
+When you do not need to render tokens as they arrive, collect the stream:
+
+```dart
+// Just the answer text.
+final answer = await engine.create(messages).text();
+
+// Only the non-empty text deltas, for a sink that takes strings.
+await engine.create(messages).textDeltas().forEach(stdout.write);
+
+// Text, reasoning, assembled tool calls, finish reason and usage.
+final completion = await engine.create(messages).collect();
+if (completion.finishReason == LlamaFinishReason.length) {
+  print('Reply was cut off at maxTokens.');
+}
+messages.add(completion.message); // Assistant turn for the next request.
+```
+
+`engine.complete(messages, ...)` is `engine.create(messages, ...).collect()`,
+and `session.send('...')` sends one text turn through a `ChatSession` and
+collects the reply. A stream that ends without a final chunk, such as one
+cancelled before generation starts, collects with a null `finishReason`.
 
 `chunk.model` is the last path segment of the source the model was loaded
 from, such as `qwen.gguf`: a local path's file name, or the last segment of a
@@ -116,8 +139,7 @@ earlier chunk. On WebGPU, `completionTokens` can include tokens generated after
 a stop sequence, before the stop reached the bridge.
 
 ```dart
-final chunks = await engine.create(messages).toList();
-final usage = chunks.last.usage;
+final usage = (await engine.complete(messages)).usage;
 if (usage != null) {
   print('prompt ${usage.promptTokens} '
       '(cached ${usage.cachedPromptTokens}), '
@@ -211,9 +233,7 @@ await for (final chunk in engine.create(
     thinkingBudget: ThinkingBudget(maxTokens: 128),
   ),
 )) {
-  final thinking = chunk.choices.first.delta.thinking;
-  final text = chunk.choices.first.delta.content;
-  // Render each channel independently.
+  // Render chunk.thinking and chunk.text independently.
 }
 ```
 

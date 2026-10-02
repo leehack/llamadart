@@ -2801,6 +2801,51 @@ void main() {
       expect(toolCalls.first.function?.name, equals('get_weather'));
     });
 
+    test('complete collects tool calls and their finish reason', () async {
+      backend.generationText =
+          '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}';
+      await engine.loadModel('qwen-test.gguf');
+      final messages = [
+        const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ];
+
+      final completion = await engine.complete(
+        messages,
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: (_) async => 'ok',
+          ),
+        ],
+      );
+
+      expect(completion.finishReason, LlamaFinishReason.toolCalls);
+      expect(completion.text, isEmpty);
+      final call = completion.toolCalls.single;
+      expect(call.id, 'call_0');
+      expect(call.name, 'get_weather');
+      expect(call.arguments, {'city': 'Seoul'});
+      final message = completion.message;
+      expect(message.role, LlamaChatRole.assistant);
+      expect(message.parts.single, same(call));
+    });
+
+    test('create streams text through the stream helpers', () async {
+      backend.generationText = 'Hello there';
+      await engine.loadModel('qwen-test.gguf');
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ];
+
+      expect(await engine.create(messages).text(), 'Hello there');
+      expect(
+        (await engine.create(messages).textDeltas().toList()).join(),
+        'Hello there',
+      );
+    });
+
     test(
       'create does not stream raw Hermes bare tool-call JSON as content',
       () async {
@@ -4412,6 +4457,26 @@ void main() {
           expect(chunks.last.choices.first.finishReason, 'stop');
         },
       );
+
+      test('complete reports length at a limit on the $path path', () async {
+        limitBackend
+          ..nativeChat = nativeChat
+          ..nextLimit = BackendGenerationLimit.values.first;
+
+        final completion = await limitEngine.complete(messages);
+
+        expect(completion.text, 'partial');
+        expect(completion.finishReason, LlamaFinishReason.length);
+      });
+
+      test('complete reports stop without a limit on the $path path', () async {
+        limitBackend.nativeChat = nativeChat;
+
+        final completion = await limitEngine.complete(messages);
+
+        expect(completion.text, 'partial');
+        expect(completion.finishReason, LlamaFinishReason.stop);
+      });
     }
 
     for (final limit in BackendGenerationLimit.values) {

@@ -640,6 +640,48 @@ void main() {
       expect(backend.lastParams?.grammar, contains('test_tool'));
     });
 
+    test('send returns the reply and records both turns', () async {
+      backend.queueResponse('<think>\nPlan.\n</think>\n\nSure.');
+
+      final reply = await session.send('Hi');
+
+      expect(reply.text, 'Sure.');
+      expect(reply.thinking, 'Plan.');
+      expect(reply.finishReason, LlamaFinishReason.stop);
+      expect(session.history, hasLength(2));
+      expect(session.history.first.role, LlamaChatRole.user);
+      expect(session.history.first.content, 'Hi');
+      expect(session.history.last.content, 'Sure.');
+    });
+
+    test('send records the tool calls of the reply', () async {
+      final tools = [
+        ToolDefinition(
+          name: 'test_tool',
+          description: 'A test tool',
+          handler: (p) async => 'result',
+          parameters: [ToolParam.integer('n', description: 'A number')],
+        ),
+      ];
+      backend.queueResponse(
+        '{"tool_call":{"name":"test_tool","arguments":{"n":2}}}',
+      );
+
+      final reply = await session.send('use the tool', tools: tools);
+
+      expect(reply.finishReason, LlamaFinishReason.toolCalls);
+      expect(reply.text, isEmpty);
+      final call = reply.toolCalls.single;
+      expect(call.name, 'test_tool');
+      expect(call.arguments, {'n': 2});
+      final recorded = session.history.last.parts
+          .whereType<LlamaToolCallContent>()
+          .single;
+      expect(recorded.id, call.id);
+      expect(recorded.name, 'test_tool');
+      expect(recorded.arguments, {'n': 2});
+    });
+
     test('responseFormat constrains the turn', () async {
       backend.queueResponse('{"ok":true}');
 
@@ -728,7 +770,7 @@ void main() {
 
       session.create([const LlamaTextContent('Hi')]).listen((chunk) {
         if (chunk.choices.isNotEmpty) {
-          content.write(chunk.choices.first.delta.content ?? '');
+          content.write(chunk.text);
         }
       }, onDone: done.complete);
       await Future<void>.delayed(Duration.zero);
@@ -751,10 +793,7 @@ void main() {
       ]).toList();
 
       expect(backend.generateCalls, 2);
-      expect(
-        chunks.map((chunk) => chunk.choices.first.delta.content ?? '').join(),
-        'Second',
-      );
+      expect(chunks.map((chunk) => chunk.text).join(), 'Second');
     });
   });
 }

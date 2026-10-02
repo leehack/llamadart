@@ -20,6 +20,8 @@ code without first inventing a local model path. The first run downloads and
 caches the model; later runs reuse the cached GGUF.
 
 ```dart
+import 'dart:io';
+
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
@@ -35,14 +37,17 @@ Future<void> main() async {
 
     final session = ChatSession(engine, systemPrompt: 'You are concise.');
 
+    // Stream a reply as it is generated.
     await for (final chunk in session.create([
       const LlamaTextContent('What is quantization in one sentence?'),
     ])) {
-      final text = chunk.choices.first.delta.content;
-      if (text != null) {
-        print(text);
-      }
+      stdout.write(chunk.text);
     }
+    stdout.writeln();
+
+    // Or wait for the whole reply. Both turns are kept in session.history.
+    final reply = await session.send('Give one downside of it.');
+    print(reply.text);
   } finally {
     await engine.dispose();
   }

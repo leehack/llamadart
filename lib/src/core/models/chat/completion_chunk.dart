@@ -264,3 +264,69 @@ class LlamaCompletionChunkDelta {
   String toString() =>
       'LlamaCompletionChunkDelta(content: $content, toolCalls: $toolCalls, thinking: $thinking, role: $role)';
 }
+
+/// Why a completion stopped, typed from the `finish_reason` wire value of a
+/// [LlamaCompletionChunkChoice].
+enum LlamaFinishReason {
+  /// The model ended its output or hit a stop sequence. Wire value `stop`.
+  stop('stop'),
+
+  /// Generation stopped at `GenerationParams.maxTokens` or a full context
+  /// before the model ended its output. Wire value `length`.
+  length('length'),
+
+  /// The final chunk carries tool calls. Wire value `tool_calls`.
+  toolCalls('tool_calls');
+
+  const LlamaFinishReason(this.wireValue);
+
+  /// The `finish_reason` string this value is reported as.
+  final String wireValue;
+
+  /// Returns the value whose [wireValue] is [value].
+  ///
+  /// Returns null for null and for a value this enum does not know, such as
+  /// one read by [LlamaCompletionChunk.fromJson]; the raw string stays on
+  /// [LlamaCompletionChunkChoice.finishReason].
+  static LlamaFinishReason? fromWireValue(String? value) {
+    for (final reason in values) {
+      if (reason.wireValue == value) return reason;
+    }
+    return null;
+  }
+}
+
+/// Shortcuts for the first choice of a [LlamaCompletionChunk].
+///
+/// `LlamaEngine` and `ChatSession` stream one choice per chunk, so these
+/// replace `chunk.choices.first.delta` lookups:
+///
+/// ```dart
+/// await for (final chunk in engine.create(messages)) {
+///   stdout.write(chunk.text);
+/// }
+/// ```
+extension LlamaCompletionChunkExtension on LlamaCompletionChunk {
+  /// The content delta of the first choice, or an empty string when the
+  /// chunk has no choice or no content.
+  String get text => choices.firstOrNull?.delta.content ?? '';
+
+  /// The reasoning delta of the first choice, or an empty string when the
+  /// chunk has no choice or no reasoning.
+  String get thinking => choices.firstOrNull?.delta.thinking ?? '';
+
+  /// The tool-call deltas of the first choice, or an empty list.
+  ///
+  /// Each entry is a fragment to accumulate by
+  /// [LlamaCompletionChunkToolCall.index]; collect the stream with
+  /// `collect()` to get complete tool calls.
+  List<LlamaCompletionChunkToolCall> get toolCalls =>
+      choices.firstOrNull?.delta.toolCalls ?? const [];
+
+  /// The typed finish reason of the first choice.
+  ///
+  /// Null on every chunk but the final one, and for a `finish_reason` that
+  /// [LlamaFinishReason] does not know.
+  LlamaFinishReason? get finishReason =>
+      LlamaFinishReason.fromWireValue(choices.firstOrNull?.finishReason);
+}

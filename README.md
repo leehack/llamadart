@@ -231,8 +231,7 @@ Future<void> main() async {
       ),
     );
 
-    final output = StringBuffer();
-    await for (final chunk in engine.create(
+    final reply = await engine.create(
       const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.user,
@@ -240,13 +239,8 @@ Future<void> main() async {
         ),
       ],
       params: const GenerationParams(maxTokens: 48),
-    )) {
-      final text = chunk.choices.first.delta.content;
-      if (text != null) {
-        output.write(text);
-      }
-    }
-    print(output.toString());
+    ).text();
+    print(reply);
   } finally {
     await engine.dispose();
   }

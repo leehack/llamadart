@@ -41,10 +41,34 @@ void main() {
       expect(plan.generationParams.stopSequences, ['</s>', 'STOP']);
       expect(plan.generationParams.grammar, 'template ::= "ok"');
       expect(plan.generationParams.grammarLazy, isTrue);
-      expect(plan.generationParams.grammarTriggers.single.value, '<tool>');
+      final trigger = plan.generationParams.grammarTriggers.single;
+      expect(trigger.value, '<tool>');
+      expect(trigger.triggerType, GrammarTriggerType.word);
+      expect(trigger.type, 0);
       expect(plan.generationParams.preservedTokens, ['<tool>', '<caller>']);
       expect(plan.nativeChatBackend, same(backend));
       expect(plan.parseToolCallsEnabled, isTrue);
+    });
+
+    test('rejects a template grammar trigger of an unknown type', () {
+      expect(
+        () => ChatCompletionRequestPlanner.build(
+          backend: _NativeChatBackend(),
+          templateResult: const LlamaChatTemplateResult(
+            prompt: 'prompt',
+            grammar: 'template ::= "ok"',
+            grammarLazy: true,
+            grammarTriggers: [GrammarTrigger(type: 7, value: '<tool>')],
+          ),
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+          ],
+          tools: [_weatherTool],
+          toolChoice: ToolChoice.auto,
+          parallelToolCalls: false,
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
     });
 
     test('rejects strict response format when backend cannot use grammar', () {

@@ -28,7 +28,7 @@ Future<void> main() async {
   await for (final chunk in chat.create([
     const LlamaTextContent('What is quantization?'),
   ])) {
-    stdout.write(chunk.choices.first.delta.content ?? '');
+    stdout.write(chunk.text);
   }
   await engine.dispose();
 }''';

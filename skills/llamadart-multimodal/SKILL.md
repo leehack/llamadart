@@ -104,15 +104,11 @@ Future<void> main() async {
       ],
     );
 
-    await for (final chunk in engine.create(
+    final String answer = await engine.create(
       [message],
       params: const GenerationParams(maxTokens: 128),
-    )) {
-      final String? text = chunk.choices.first.delta.content;
-      if (text != null) {
-        print(text);
-      }
-    }
+    ).text();
+    print(answer);
   } finally {
     await engine.dispose();
   }
@@ -155,9 +151,7 @@ Future<String> describeClip(
 
   final Uint8List imageBytes = await File(imagePath).readAsBytes();
   final Uint8List audioBytes = await File(wavPath).readAsBytes();
-  final StringBuffer answer = StringBuffer();
-
-  await for (final chunk in engine.create(
+  return engine.create(
     [
       LlamaChatMessage.withContent(
         role: LlamaChatRole.user,
@@ -169,13 +163,7 @@ Future<String> describeClip(
       ),
     ],
     params: const GenerationParams(maxTokens: 160),
-  )) {
-    final String? text = chunk.choices.first.delta.content;
-    if (text != null) {
-      answer.write(text);
-    }
-  }
-  return answer.toString();
+  ).text();
 }
 ```
 
