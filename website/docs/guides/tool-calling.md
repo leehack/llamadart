@@ -100,8 +100,10 @@ which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot
 render before a new user turn. `completeWithTools(const [], ...)` continues
 the open turn, so its rollback also removes that turn's earlier messages,
 including the tool results you added. Messages that other code added during
-the loop stay, and older turns that context trimming dropped for the turn
-come back unless you reset the session.
+the loop stay. Older turns that context trimming dropped stay dropped, as
+after `create`. A rollback edits the history without calling `addMessage` or
+`reset`, so a `ChatSession` subclass that mirrors the history should check
+`result.rolledBack`.
 
 `result.rolledBack` tells whether the turn was removed. Tools that ran keep
 their side effects: `result.messages` holds every message of the turn,

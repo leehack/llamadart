@@ -24,6 +24,9 @@ class ScriptedChatEngine extends LlamaEngine {
   final List<List<LlamaChatMessage>> requests = [];
   final List<ToolChoice?> toolChoices = [];
   int promptTokens = 0;
+
+  /// The prompt token count of a request; [promptTokens] when unset.
+  int Function(List<LlamaChatMessage> messages)? countFor;
   void Function(List<LlamaChatMessage> messages, List<ToolDefinition>? tools)?
   onRequest;
 
@@ -68,7 +71,10 @@ class ScriptedChatEngine extends LlamaEngine {
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-  }) async => LlamaChatTemplateResult(prompt: '', tokenCount: promptTokens);
+  }) async => LlamaChatTemplateResult(
+    prompt: '',
+    tokenCount: countFor?.call(messages) ?? promptTokens,
+  );
 }
 
 LlamaCompletionChunk scriptedChunk({
