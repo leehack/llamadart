@@ -91,10 +91,8 @@ void main() {
 
     test('setLoraSource stops at a cancelled download token', () async {
       final backend = _RecordingBackend();
-      final engine = LlamaEngine(
-        backend,
-        modelDownloadManager: _CacheManager({hfAdapter: '/cache/a.gguf'}),
-      );
+      final manager = _CacheManager({hfAdapter: '/cache/a.gguf'});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
       await engine.loadModel('/models/model.gguf');
       final token = ModelDownloadCancelToken()..cancel();
 
@@ -107,6 +105,25 @@ void main() {
       );
       expect(backend.lastLoraPath, isNull);
     });
+
+    test("the caller's token stops an adapter download in progress", () async {
+      final backend = _RecordingBackend();
+      final manager = _BlockingManager();
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.loadModel('/models/model.gguf');
+      final token = ModelDownloadCancelToken();
+
+      final setting = engine.setLoraSource(
+        hfAdapter,
+        download: ModelLoadOptions(cancelToken: token),
+      );
+      await manager.started.future;
+      token.cancel();
+
+      await expectLater(setting, throwsA(isA<LlamaStateException>()));
+      expect(manager.sawCancel, isTrue);
+      expect(backend.setLoraPaths, isEmpty);
+    }, timeout: const Timeout(Duration(seconds: 10)));
 
     test('URL-loading backends get a remote adapter URL and reject a local '
         'adapter', () async {
@@ -278,6 +295,25 @@ void main() {
       expect(options.cachePolicy, ModelCachePolicy.preferCached);
       expect(options.cacheDirectory, isNull);
       expect(options.cancelToken, isNull);
+
+      await engine.removeLoraSource(hfAdapter);
+      expect(backend.removedLoraPaths, ['/cache/style.gguf']);
+    });
+
+    test('loadModel on a URL-loading backend records its adapters, so '
+        'removeLoraSource removes them', () async {
+      final backend = _RecordingBackend(urlLoadingSupported: true);
+      final engine = LlamaEngine(backend);
+
+      await engine.loadModel(
+        'https://example.com/model.gguf',
+        modelParams: ModelParams(loras: [LoraAdapterConfig.source(urlAdapter)]),
+      );
+      await engine.removeLoraSource(urlAdapter);
+
+      expect(backend.removedLoraPaths, [
+        'https://example.com/adapters/tone.gguf',
+      ]);
     });
 
     test('a failed adapter download fails the load before the model loads, '
@@ -883,6 +919,52 @@ void main() {
       await engine.generate('hi', params: draftParams()).drain<void>();
       expect(manager.calls, hasLength(2));
       expect(backend.lastGenerationParams, isNotNull);
+    });
+
+    test("backends never receive a config's download options, whatever its "
+        'strategy', () async {
+      final backend = _RecordingBackend();
+      final manager = _CacheManager({});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.loadModel('/models/model.gguf');
+      final download = ModelLoadOptions(
+        bearerToken: 'secret-token',
+        cancelToken: ModelDownloadCancelToken(),
+      );
+
+      for (final config in [
+        SpeculativeDecodingConfig.mtp(draftModelDownload: download),
+        SpeculativeDecodingConfig(
+          strategies: const [SpeculativeDecodingStrategy.ngramSimple],
+          ngramSizeN: 3,
+          draftModelDownload: download,
+        ),
+        SpeculativeDecodingConfig.draftSimple(
+          draftModelPath: '/models/draft.gguf',
+          draftTokenMax: 4,
+          draftModelDownload: download,
+        ),
+      ]) {
+        await engine
+            .generate(
+              'hi',
+              params: GenerationParams(speculativeDecodingConfig: config),
+            )
+            .drain<void>();
+        final sent = backend.lastGenerationParams!.speculativeDecodingConfig!;
+        expect(sent.draftModelDownload, same(ModelLoadOptions.defaults));
+        expect(sent.strategies, config.strategies);
+        expect(sent.draftModelPath, config.draftModelPath);
+        expect(sent.ngramSizeN, config.ngramSizeN);
+        expect(sent.draftTokenMax, config.draftTokenMax);
+      }
+      expect(manager.calls, isEmpty);
+
+      const plain = GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMod(),
+      );
+      await engine.generate('hi', params: plain).drain<void>();
+      expect(backend.lastGenerationParams, same(plain));
     });
 
     test('LiteRT-LM rejects a draft model before it downloads', () async {

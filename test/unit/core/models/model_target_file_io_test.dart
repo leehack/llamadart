@@ -14,7 +14,8 @@ void main() {
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('llamadart_files_');
-    file = File('${directory.path}/model.gguf')..writeAsBytesSync([1, 2, 3]);
+    file = File(p.join(directory.path, 'model.gguf'))
+      ..writeAsBytesSync([1, 2, 3]);
   });
 
   tearDown(() => directory.delete(recursive: true));
@@ -25,7 +26,7 @@ void main() {
     [ModelSource.path(p.join(directory.path, 'sub', '..', 'model.gguf'))],
     store: ModelFileStore(
       downloadManager: DefaultModelDownloadManager.appPrivate(
-        cacheDirectory: '${directory.path}/cache',
+        cacheDirectory: p.join(directory.path, 'cache'),
       ),
     ),
     download: ModelLoadOptions(sha256: sha256),

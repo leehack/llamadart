@@ -214,8 +214,8 @@ final config = LiteRtLmAsrRuntimeConfig.source(
 - A local path, relative ones included, stays `ModelSource.path(path)`. On
   WebGPU, where these paths were URLs, use `ModelSource.parse(url)`; a local
   path there throws `LlamaUnsupportedException`.
-- A page-relative URL on the web (such as `models/adapter.gguf`) has no
-  `ModelSource` form yet; keep the deprecated `String` forms for those.
+- For a page-relative URL on the web (such as `models/adapter.gguf`),
+  resolve it against the page: `ModelSource.url(Uri.base.resolve(path))`.
 - `ModelSource` and `const`: `ModelSource.path` is not a `const`
   constructor, so drop `const` from a `ModelParams`, `GenerationParams` or
   `LiteRtLmAsrRuntimeConfig` that now holds one.

@@ -221,7 +221,10 @@ class SpeculativeDecodingConfig {
   /// [draftModel] takes only [ModelLoadOptions.sha256] and the cancel token,
   /// as [ModelLoadOptions] describes. [ModelCachePolicy.noCache] and
   /// [ModelCachePolicy.refresh] throw `LlamaUnsupportedException`, since the
-  /// draft model resolves once per loaded model.
+  /// draft model resolves once per loaded model. They apply only to the
+  /// download `LlamaEngine` runs: backends receive the configuration with
+  /// default options, so credentials and the cancel token stay in the
+  /// calling isolate.
   final ModelLoadOptions draftModelDownload;
 
   /// The draft model file that backends load: the deprecated path a caller
@@ -732,32 +735,49 @@ class SpeculativeDecodingConfig {
   SpeculativeDecodingConfig withDraftModel(
     ModelSource draftModel, {
     ModelLoadOptions draftModelDownload = ModelLoadOptions.defaults,
-  }) => SpeculativeDecodingConfig._withDraftModel(
+  }) => SpeculativeDecodingConfig._copy(
     this,
-    draftModel,
-    draftModelDownload,
+    draftModel: draftModel,
+    draftModelPath: null,
+    draftModelDownload: draftModelDownload,
   );
 
-  SpeculativeDecodingConfig._withDraftModel(
-    SpeculativeDecodingConfig config,
-    ModelSource this.draftModel,
-    this.draftModelDownload,
-  ) : strategy = config.strategy,
-      strategies = config.strategies,
-      draftTokenMax = config.draftTokenMax,
-      draftTokenMin = config.draftTokenMin,
-      minProbability = config.minProbability,
-      draftSplitProbability = config.draftSplitProbability,
-      _draftModelPath = null,
-      ngramSize = config.ngramSize,
-      ngramSizeN = config.ngramSizeN,
-      ngramSizeM = config.ngramSizeM,
-      ngramMinHits = config.ngramMinHits,
-      ngramMatch = config.ngramMatch,
-      ngramTokenMin = config.ngramTokenMin,
-      ngramTokenMax = config.ngramTokenMax,
-      ngramCacheStaticPath = config.ngramCacheStaticPath,
-      ngramCacheDynamicPath = config.ngramCacheDynamicPath;
+  /// A copy of this configuration with [draftModelDownload] in place of its
+  /// download options, keeping every other setting.
+  ///
+  /// `LlamaEngine` sends backends a copy with the default options: the
+  /// caller's options, which can hold credentials and a cancel token, only
+  /// apply to the download the engine runs.
+  SpeculativeDecodingConfig withDraftModelDownload(
+    ModelLoadOptions draftModelDownload,
+  ) => SpeculativeDecodingConfig._copy(
+    this,
+    draftModel: draftModel,
+    draftModelPath: _draftModelPath,
+    draftModelDownload: draftModelDownload,
+  );
+
+  SpeculativeDecodingConfig._copy(
+    SpeculativeDecodingConfig config, {
+    required this.draftModel,
+    required String? draftModelPath,
+    required this.draftModelDownload,
+  }) : strategy = config.strategy,
+       strategies = config.strategies,
+       draftTokenMax = config.draftTokenMax,
+       draftTokenMin = config.draftTokenMin,
+       minProbability = config.minProbability,
+       draftSplitProbability = config.draftSplitProbability,
+       _draftModelPath = draftModelPath,
+       ngramSize = config.ngramSize,
+       ngramSizeN = config.ngramSizeN,
+       ngramSizeM = config.ngramSizeM,
+       ngramMinHits = config.ngramMinHits,
+       ngramMatch = config.ngramMatch,
+       ngramTokenMin = config.ngramTokenMin,
+       ngramTokenMax = config.ngramTokenMax,
+       ngramCacheStaticPath = config.ngramCacheStaticPath,
+       ngramCacheDynamicPath = config.ngramCacheDynamicPath;
 
   /// Effective strategy list for backends that support upstream-style mixing.
   List<SpeculativeDecodingStrategy> get effectiveStrategies =>

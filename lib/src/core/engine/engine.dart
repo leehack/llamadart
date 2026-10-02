@@ -339,12 +339,6 @@ class LlamaEngine {
     ModelFormat? format,
   }) async {
     _ensureNotReady();
-    final loraLocations = <String, String>{};
-    modelParams = await _resolveLoraSources(
-      modelParams,
-      ModelLoadOptions.defaults,
-      loraLocations,
-    );
     final modelName = _displayNameForSource(path);
     LlamaLogger.instance.info('Loading model: $modelName');
 
@@ -352,8 +346,16 @@ class LlamaEngine {
       LlamaLogger.instance.info(
         'Backend supports URL loading, attempting loadModelFromUrl.',
       );
+      // Resolves and records the adapters of modelParams itself.
       return _loadModelFromUrl(path, modelParams: modelParams, format: format);
     }
+
+    final loraLocations = <String, String>{};
+    modelParams = await _resolveLoraSources(
+      modelParams,
+      ModelLoadOptions.defaults,
+      loraLocations,
+    );
 
     final redactedPath = _redactedSource(path);
     try {
@@ -2469,8 +2471,20 @@ class LlamaEngine {
     GenerationRequest request,
   ) async {
     final config = params.speculativeDecodingConfig;
-    final source = config?.draftModel;
-    if (config == null || source == null) return params;
+    if (config == null) return params;
+    final source = config.draftModel;
+    if (source == null) {
+      // Download options apply only to the engine's own download; they can
+      // hold credentials and a cancel token that must not reach a backend
+      // or its worker isolate.
+      return identical(config.draftModelDownload, ModelLoadOptions.defaults)
+          ? params
+          : params.copyWith(
+              speculativeDecodingConfig: config.withDraftModelDownload(
+                ModelLoadOptions.defaults,
+              ),
+            );
+    }
     final download = config.draftModelDownload;
     final policy = download.cachePolicy;
     if (policy == ModelCachePolicy.noCache ||

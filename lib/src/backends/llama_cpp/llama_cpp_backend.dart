@@ -533,16 +533,29 @@ class NativeLlamaBackend
 
     _activeGenerationCleanup = detachAndClose;
 
-    _sendPort!.send(
-      GenerateRequest(
-        contextHandle,
-        prompt,
-        params,
-        cancelToken.address,
-        rp.sendPort,
-        parts: parts,
-      ),
-    );
+    try {
+      _sendPort!.send(
+        GenerateRequest(
+          contextHandle,
+          prompt,
+          params,
+          cancelToken.address,
+          rp.sendPort,
+          parts: parts,
+        ),
+      );
+    } catch (error, stackTrace) {
+      // The worker never received the request, such as for a parameter that
+      // cannot cross an isolate, so this generation fails alone and the
+      // backend stays usable.
+      if (!controller.isClosed) {
+        controller.addError(error, stackTrace);
+      }
+      detachAndClose();
+      freeToken();
+      _startQueuedGeneration();
+      return () {};
+    }
 
     rp.listen((msg) {
       if (msg is TokenResponse) {

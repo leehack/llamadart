@@ -34,9 +34,9 @@ Future<void> main(List<String> args) async {
   final libraryPath = Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']
       ?.trim();
   final recognizer = SpeechToTextEngine.liteRtLm(
-    LiteRtLmAsrRuntimeConfig.source(
-      model: ModelSource.path(modelPath),
-      tokenizer: ModelSource.path(tokenizerPath),
+    LiteRtLmAsrRuntimeConfig(
+      modelPath: modelPath,
+      tokenizerPath: tokenizerPath,
       modelPreset: preset,
     ),
     libraryPath: libraryPath == null || libraryPath.isEmpty

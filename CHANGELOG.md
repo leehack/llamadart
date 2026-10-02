@@ -87,7 +87,8 @@
   ignored ([#844](https://github.com/leehack/llamadart/issues/844)).
 - **Deprecated:** LoRA adapters (`setLoraSource`, `removeLoraSource`,
   `LoraAdapterConfig.source`), speculative draft models
-  (`SpeculativeDecodingConfig.draftModel`, `withDraftModel`) and LiteRT-LM
+  (`SpeculativeDecodingConfig.draftModel`, `withDraftModel`,
+  `withDraftModelDownload`) and LiteRT-LM
   ASR files (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they
   download and cache like models; the `String` path forms are deprecated
   ([#852](https://github.com/leehack/llamadart/issues/852)).

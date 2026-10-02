@@ -1,10 +1,12 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'engine_test.dart' show MockLlamaBackend;
@@ -97,13 +99,13 @@ void main() {
 
   test('the resolved draft config crosses an isolate without the caller\'s '
       'download options', () async {
-    final draft = File('${cache.path}/draft.gguf')..writeAsBytesSync([1]);
+    final draft = File(p.join(cache.path, 'draft.gguf'))..writeAsBytesSync([1]);
     final token = _PortCancelToken();
     addTearDown(token.port.close);
     final backend = _IsolateBackend();
     final engine = LlamaEngine(backend);
     addTearDown(engine.dispose);
-    await engine.loadModel('${cache.path}/model.gguf');
+    await engine.loadModel(p.join(cache.path, 'model.gguf'));
 
     await engine
         .generate(
@@ -117,7 +119,34 @@ void main() {
         )
         .drain<void>();
 
-    expect(backend.draftPathInIsolate, draft.path);
+    expect(backend.draftPathInIsolate, p.normalize(p.absolute(draft.path)));
+  });
+
+  test('a config without a draft model crosses an isolate without the '
+      "caller's download options", () async {
+    final backend = _IsolateBackend();
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModel(p.join(cache.path, 'model.gguf'));
+
+    for (final config in [
+      SpeculativeDecodingConfig.mtp(
+        draftModelDownload: ModelLoadOptions(cancelToken: _CompleterToken()),
+      ),
+      SpeculativeDecodingConfig(
+        strategies: const [SpeculativeDecodingStrategy.ngramSimple],
+        draftModelDownload: ModelLoadOptions(cancelToken: _CompleterToken()),
+      ),
+    ]) {
+      await engine
+          .generate(
+            'hi',
+            params: GenerationParams(speculativeDecodingConfig: config),
+          )
+          .drain<void>();
+      expect(backend.crossedIsolate, isTrue);
+      backend.crossedIsolate = false;
+    }
   });
 }
 
@@ -129,6 +158,7 @@ class _PortCancelToken extends ModelDownloadCancelToken {
 /// Copies the request into another isolate, as the llama.cpp worker does.
 class _IsolateBackend extends MockLlamaBackend {
   String? draftPathInIsolate;
+  bool crossedIsolate = false;
 
   @override
   Stream<List<int>> generate(
@@ -140,6 +170,12 @@ class _IsolateBackend extends MockLlamaBackend {
     draftPathInIsolate = await Isolate.run(
       () => params.speculativeDecodingConfig!.draftModelPath,
     );
+    crossedIsolate = true;
     yield* super.generate(contextHandle, prompt, params, parts: parts);
   }
+}
+
+/// A caller token holding a completer, which cannot cross an isolate.
+class _CompleterToken extends ModelDownloadCancelToken {
+  final Completer<void> done = Completer<void>();
 }

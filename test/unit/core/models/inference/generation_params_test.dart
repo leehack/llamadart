@@ -260,6 +260,28 @@ void main() {
     expect(fromRemote.strategy, SpeculativeDecodingStrategy.draftSimple);
   });
 
+  test('SpeculativeDecodingConfig.withDraftModelDownload keeps the draft '
+      'model or path', () {
+    final options = ModelLoadOptions(bearerToken: 'token');
+    final source = ModelSource.path('/models/draft.gguf');
+    final withSource = SpeculativeDecodingConfig.draftSimple(
+      draftModel: source,
+      draftModelDownload: options,
+      draftTokenMax: 3,
+    ).withDraftModelDownload(ModelLoadOptions.defaults);
+    final withPath = const SpeculativeDecodingConfig.mtp(
+      draftModelPath: 'relative/mtp.gguf',
+    ).withDraftModelDownload(options);
+
+    expect(withSource.draftModel, same(source));
+    expect(withSource.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(withSource.draftTokenMax, 3);
+    expect(withPath.draftModel, isNull);
+    expect(withPath.draftModelPath, 'relative/mtp.gguf');
+    expect(withPath.draftModelDownload, same(options));
+    expect(withPath.strategy, SpeculativeDecodingStrategy.mtp);
+  });
+
   test('SpeculativeDecodingConfig stores ngram-mod and cache controls', () {
     const mod = SpeculativeDecodingConfig.ngramMod(
       draftTokenMax: 32,
