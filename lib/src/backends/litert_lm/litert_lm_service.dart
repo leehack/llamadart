@@ -45,18 +45,22 @@ class LiteRtLmService {
   /// [LiteRtLmModelLink]s, the system temp directory by default.
   /// [useTempCacheDir] says whether caches go to a llamadart temp directory
   /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
-  /// and Android.
+  /// and Android. [createLink] replaces [Link.create] for those links in
+  /// tests.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
+    LiteRtLmLinkCreator? createLink,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _linkParentDirectory = linkParentDirectory,
+       _createLink = createLink,
        _useTempCacheDir =
            useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
   final Directory? _linkParentDirectory;
+  final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
@@ -111,6 +115,7 @@ class LiteRtLmService {
     final modelLink = await LiteRtLmModelLink.create(
       path,
       parent: _linkParentDirectory,
+      createLink: _createLink,
     );
 
     _client?.dispose();

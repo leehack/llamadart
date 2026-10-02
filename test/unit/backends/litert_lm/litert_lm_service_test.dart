@@ -887,34 +887,37 @@ void main() {
   test('a failed link keeps a previous linked model', () async {
     final client = _FakeLiteRtLmRuntimeClient();
     final links = await Directory('${tempDir.path}/links').create();
+    var linksCreated = 0;
     final service = LiteRtLmService(
       clientFactory: () => client,
       linkParentDirectory: links,
+      createLink: (link, target) {
+        if (linksCreated++ > 0) {
+          throw FileSystemException('no more links', link.path);
+        }
+        return link.create(target);
+      },
     );
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
     final first = File('${tempDir.path}/first');
-    await first.writeAsString('LITERTLM fake model');
+    await first.writeAsString('LITERTLM first');
     final second = File('${tempDir.path}/second');
-    await second.writeAsString('LITERTLM fake model');
-    final moved = '${tempDir.path}/links-moved';
+    await second.writeAsString('LITERTLM second');
 
     try {
       final model = await service.loadModel(first.path, params);
       await startEngine(service, client, model, params);
       final firstLink = client.lastModelPath!;
 
-      await links.rename(moved);
-      final blocker = await File(links.path).writeAsString('not a directory');
       await expectLater(
         service.loadModel(second.path, params),
-        throwsA(isA<LlamaModelException>()),
+        throwsA(isA<LlamaUnsupportedException>()),
       );
-      await blocker.delete();
-      await Directory(moved).rename(links.path);
 
       expect(service.getMetadata(model)['general.name'], 'first');
-      expect(Link(firstLink).existsSync(), isTrue);
       expect(await Link(firstLink).target(), first.absolute.path);
+      expect(await File(firstLink).readAsString(), 'LITERTLM first');
+      expect(links.listSync(), hasLength(1));
     } finally {
       service.dispose();
     }

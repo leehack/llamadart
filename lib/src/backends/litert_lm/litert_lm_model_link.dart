@@ -96,10 +96,18 @@ class LiteRtLmModelLink {
   static Future<Directory> _createPrivateDirectory(Directory parent) async {
     if (Platform.isWindows) return parent.createTemp(_directoryPrefix);
 
+    final mkdtemp = _mkdtemp;
+    if (mkdtemp == null) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM needs a .litertlm file name, and this platform has no '
+        'mkdtemp to create a private directory for a link to a model file '
+        'named without it. Rename the file to end in .litertlm.',
+      );
+    }
     final template = '${parent.path}/${_directoryPrefix}XXXXXX'.toNativeUtf8();
     final Directory directory;
     try {
-      final created = _mkdtemp(template);
+      final created = mkdtemp(template);
       if (created == nullptr) {
         throw FileSystemException(
           'Cannot create a private directory',
@@ -152,11 +160,14 @@ class LiteRtLmModelLink {
   }
 }
 
-final Pointer<Utf8> Function(Pointer<Utf8>) _mkdtemp = DynamicLibrary.process()
-    .lookupFunction<
-      Pointer<Utf8> Function(Pointer<Utf8>),
-      Pointer<Utf8> Function(Pointer<Utf8>)
-    >('mkdtemp');
+final Pointer<Utf8> Function(Pointer<Utf8>)? _mkdtemp = () {
+  final libc = DynamicLibrary.process();
+  if (!libc.providesSymbol('mkdtemp')) return null;
+  return libc.lookupFunction<
+    Pointer<Utf8> Function(Pointer<Utf8>),
+    Pointer<Utf8> Function(Pointer<Utf8>)
+  >('mkdtemp');
+}();
 
 OSError? _lastOsError() {
   final libc = DynamicLibrary.process();
