@@ -155,7 +155,7 @@ description: >-
   `load`, while the user writes the prompt, moves the pipeline compile off
   the first real image. Pass the size and guidance the app generates with,
   since another size can compile more. At a desktop model's
-  1024x1024 it costs one step and a decode (3 to 4 s for SDXL-Lightning
+  1024x1024 it costs one step and a decode (about 2 to 4 s for SDXL-Lightning
   with TAESDXL on an M4 Max). It runs one discarded single-step image,
   returns at once on the CPU, holds the one-operation slot (await it before
   `generate`), and completes normally when `dispose()` cancels it.

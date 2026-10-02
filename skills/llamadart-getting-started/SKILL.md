@@ -81,7 +81,7 @@ Future<void> main() async {
         }
       },
     );
-    print('runtime: ${engine.getBackendName()}');
+    print('runtime: ${await engine.getBackendName()}');
 
     final String output = await engine.create(const [
       LlamaChatMessage.fromText(

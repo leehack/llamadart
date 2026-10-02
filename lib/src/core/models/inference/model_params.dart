@@ -378,10 +378,9 @@ class ModelParams {
 
   /// Validates the parameter combination. Throws [ArgumentError] when the
   /// combination is incompatible with llama.cpp (currently: non-F16 KV
-  /// cache requires flashAttention != disabled). Called automatically by
-  /// `LlamaCppService.loadModel` before the native call so callers don't
-  /// have to remember it; exposed publicly so callers who construct
-  /// `ModelParams` defensively can validate up-front.
+  /// cache requires flashAttention != disabled). Model loads through
+  /// `LlamaEngine` call it before the native call, so callers don't have to
+  /// remember it; call it directly to validate a `ModelParams` up front.
   void validate() {
     if (liteRtLmPrefillChunkSize != null && liteRtLmPrefillChunkSize! <= 0) {
       throw ArgumentError.value(

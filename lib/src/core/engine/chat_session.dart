@@ -124,6 +124,7 @@ class ChatSession {
   ///   [LlamaTextContent('What time is it?')],
   ///   tools: [getTimeTool],
   /// ).collect();
+  /// if (reply.text.isNotEmpty) print(reply.text);
   ///
   /// for (final call in reply.toolCalls) {
   ///   final result = await getTimeTool.invoke(call.arguments);
@@ -131,7 +132,11 @@ class ChatSession {
   ///     LlamaChatMessage.withContent(
   ///       role: LlamaChatRole.tool,
   ///       content: [
-  ///         LlamaToolResultContent(id: call.id, name: call.name, result: result),
+  ///         LlamaToolResultContent(
+  ///           id: call.id,
+  ///           name: call.name,
+  ///           result: result,
+  ///         ),
   ///       ],
   ///     ),
   ///   );

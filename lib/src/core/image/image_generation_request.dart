@@ -38,9 +38,9 @@ class ImageGenerationRequest {
   final String negativePrompt;
 
   /// Output width in pixels: a multiple of 8 from [minDimension] to
-  /// [maxDimension]. `null` uses [defaultDimension]. Use the model's native size: 512 for
-  /// SD 1.x and 2.x models such as SDXS and SD-Turbo, 1024 for SDXL and
-  /// newer families. The runtime rounds SD 1.x and 2.x sizes up to a
+  /// [maxDimension]. `null` uses [defaultDimension]. Use the model's native
+  /// size: 512 for SD 1.x and 2.x models such as SDXS and SD-Turbo, 1024 for
+  /// SDXL and newer families. The runtime rounds SD 1.x and 2.x sizes up to a
   /// multiple of 64; `GeneratedImage.width` reports the size produced.
   final int? width;
 
@@ -48,14 +48,14 @@ class ImageGenerationRequest {
   /// [width].
   final int? height;
 
-  /// Sampling steps from 1 to [maxSteps]. `null` uses [defaultSteps], which suits
-  /// undistilled SD 1.x and 2.x models; distilled models such as SDXS,
+  /// Sampling steps from 1 to [maxSteps]. `null` uses [defaultSteps], which
+  /// suits undistilled SD 1.x and 2.x models; distilled models such as SDXS,
   /// SD-Turbo or FLUX.1-schnell need 1 to 8.
   final int? steps;
 
   /// Classifier-free guidance scale from 0 to [maxGuidanceScale]. `null` uses
-  /// [defaultGuidanceScale]; distilled models use 1, which also skips the negative prompt and
-  /// halves the work per step.
+  /// [defaultGuidanceScale]; distilled models use 1, which also skips the
+  /// negative prompt and halves the work per step.
   final double? guidanceScale;
 
   /// Random seed, 0 or greater. `null` picks a random seed; the result
