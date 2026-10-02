@@ -360,7 +360,7 @@ void main() {
 
     test('warns when a single oversized turn cannot be trimmed', () async {
       final warnings = <String>[];
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.warn,
         handler: (record) {
           if (record.level == LlamaLogLevel.warn) {
@@ -393,7 +393,7 @@ void main() {
               'tokenizeCalls=${backend.tokenizeCalls}',
         );
       } finally {
-        LlamaEngine.configureLogging(level: LlamaLogLevel.none);
+        await LlamaLogging.configure();
       }
     });
 
@@ -770,6 +770,67 @@ void main() {
       expect(backend.lastParams?.grammar, contains('test_tool'));
     });
 
+    test('send returns the reply and records both turns', () async {
+      backend.queueResponse('<think>\nPlan.\n</think>\n\nSure.');
+
+      final reply = await session.send('Hi');
+
+      expect(reply.text, 'Sure.');
+      expect(reply.thinking, 'Plan.');
+      expect(reply.finishReason, LlamaFinishReason.stop);
+      expect(session.history, hasLength(2));
+      expect(session.history.first.role, LlamaChatRole.user);
+      expect(session.history.first.content, 'Hi');
+      expect(session.history.last.content, 'Sure.');
+    });
+
+    test('send forwards params and onMessageAdded to create', () async {
+      final added = <LlamaChatMessage>[];
+      backend.queueResponse('Resp');
+
+      final reply = await session.send(
+        'Hi',
+        params: const GenerationParams(maxTokens: 7),
+        onMessageAdded: added.add,
+      );
+
+      expect(backend.lastParams?.maxTokens, 7);
+      expect(added.map((message) => message.role), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
+      expect(added.first.content, 'Hi');
+      expect(added.last.content, reply.text);
+    });
+
+    test('send records the tool calls of the reply', () async {
+      final tools = [
+        ToolDefinition(
+          name: 'test_tool',
+          description: 'A test tool',
+          handler: (p) async => 'result',
+          parameters: [ToolParam.integer('n', description: 'A number')],
+        ),
+      ];
+      backend.queueResponse(
+        '{"tool_call":{"name":"test_tool","arguments":{"n":2}}}',
+      );
+
+      final reply = await session.send('use the tool', tools: tools);
+
+      expect(reply.finishReason, LlamaFinishReason.toolCalls);
+      expect(reply.text, isEmpty);
+      final call = reply.toolCalls.single;
+      expect(call.name, 'test_tool');
+      expect(call.arguments, {'n': 2});
+      final recorded = session.history.last.parts
+          .whereType<LlamaToolCallContent>()
+          .single;
+      expect(recorded.id, call.id);
+      expect(recorded.name, 'test_tool');
+      expect(recorded.arguments, {'n': 2});
+    });
+
     test('responseFormat constrains the turn', () async {
       backend.queueResponse('{"ok":true}');
 
@@ -947,6 +1008,14 @@ void main() {
           ),
           unsupported,
         );
+        await expectLater(
+          noGrammarSession.send(
+            'status',
+            responseFormat: _statusFormat,
+            onMessageAdded: added.add,
+          ),
+          unsupported,
+        );
         expect(noGrammarSession.history, hasLength(2));
         expect(added, isEmpty);
         expect(noGrammarBackend.generateCalls, 0);
@@ -1084,6 +1153,20 @@ void main() {
         ]);
       });
 
+      test('send takes back its user message', () async {
+        final added = <LlamaChatMessage>[];
+        final done = expectLater(
+          scriptedSession.send('new', onMessageAdded: added.add),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        await pumpEventQueue();
+        await failPending();
+
+        await done;
+        expect(added.map((message) => message.content), ['new']);
+        expect(scriptedSession.history, older);
+      });
+
       test('undoes its turn when its subscription is cancelled', () async {
         scriptedSession.maxContextTokens = 60;
         final subscription = scriptedSession
@@ -1141,6 +1224,28 @@ void main() {
           (LlamaChatRole.assistant, 'Hello'),
         ]);
         expect(scriptedSession.history, added);
+        await expectNextTurnAlternates();
+      });
+
+      test('send records the partial reply on an error', () async {
+        final controller = StreamController<LlamaCompletionChunk>();
+        scripted.completions.add(controller.stream);
+        controller
+          ..add(_contentChunk('Hel'))
+          ..addError(LlamaInferenceException('lost'));
+        unawaited(controller.close());
+
+        await expectLater(
+          scriptedSession.send('hi'),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+
+        expect(
+          scriptedSession.history.map(
+            (message) => (message.role, message.content),
+          ),
+          [(LlamaChatRole.user, 'hi'), (LlamaChatRole.assistant, 'Hel')],
+        );
         await expectNextTurnAlternates();
       });
 
@@ -1215,7 +1320,7 @@ void main() {
 
       session.create([const LlamaTextContent('Hi')]).listen((chunk) {
         if (chunk.choices.isNotEmpty) {
-          content.write(chunk.choices.first.delta.content ?? '');
+          content.write(chunk.text);
         }
       }, onDone: done.complete);
       await Future<void>.delayed(Duration.zero);
@@ -1242,10 +1347,7 @@ void main() {
       ]).toList();
 
       expect(backend.generateCalls, 2);
-      expect(
-        chunks.map((chunk) => chunk.choices.first.delta.content ?? '').join(),
-        'Second',
-      );
+      expect(chunks.map((chunk) => chunk.text).join(), 'Second');
     });
   });
 }

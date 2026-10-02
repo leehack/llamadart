@@ -42,6 +42,20 @@ class LlamaModelFormatException extends LlamaModelException {
       );
 }
 
+/// Exception thrown when an argument or a combination of parameters is
+/// invalid, such as by `ModelParams.validate`.
+class LlamaArgumentException extends LlamaException {
+  /// The name of the rejected argument, or `null` when a combination of
+  /// arguments is at fault.
+  final String? name;
+
+  /// The rejected value of [name].
+  final Object? invalidValue;
+
+  /// Creates a new [LlamaArgumentException].
+  LlamaArgumentException(super.message, {this.name, this.invalidValue});
+}
+
 /// Exception thrown when a context operation fails.
 class LlamaContextException extends LlamaException {
   /// Creates a new [LlamaContextException].

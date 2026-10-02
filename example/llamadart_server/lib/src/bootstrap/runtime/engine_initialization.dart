@@ -21,7 +21,10 @@ Future<LlamaApiServerEngine> createInitializedServerEngine(
   final serverEngine = LlamaApiServerEngine(engine);
 
   try {
-    await _configureEngineLogs(engine, enableDartLogs: config.enableDartLogs);
+    await LlamaLogging.configure(
+      level: config.enableDartLogs ? LlamaLogLevel.info : LlamaLogLevel.none,
+      nativeLevel: LlamaLogLevel.error,
+    );
 
     await loadServerModelSource(
       config,
@@ -76,15 +79,4 @@ void _writeModelLoadProgress(ModelDownloadProgress progress) {
 
   final megabytes = (progress.receivedBytes / 1024 / 1024).toStringAsFixed(1);
   stdout.write('\rDownloaded: $megabytes MB');
-}
-
-Future<void> _configureEngineLogs(
-  LlamaEngine engine, {
-  required bool enableDartLogs,
-}) async {
-  await engine.setNativeLogLevel(LlamaLogLevel.error);
-
-  if (enableDartLogs) {
-    await engine.setDartLogLevel(LlamaLogLevel.info);
-  }
 }

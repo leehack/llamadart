@@ -223,7 +223,7 @@ class PublicSpeechValidationAdapter
   }
 
   Future<void> _loadInto(LlamaEngine engine, {int contextSize = 4096}) async {
-    await engine.setLogLevel(LlamaLogLevel.info);
+    await LlamaLogging.configure(level: LlamaLogLevel.info);
     await engine.loadModel(
       model,
       modelParams: ModelParams(

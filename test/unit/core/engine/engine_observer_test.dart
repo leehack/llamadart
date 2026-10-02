@@ -428,6 +428,16 @@ void main() {
       expect(recorder.results.single.finishReason, isNull);
     });
 
+    test('reports a cancel that complete() does not mark', () async {
+      final completion = engine.complete(const [_user]);
+      engine.cancelGeneration();
+      final result = await completion;
+
+      expect(result.text, isEmpty);
+      expect(result.finishReason, LlamaFinishReason.stop);
+      expect(recorder.results.single.cancelled, isTrue);
+    });
+
     test('reports a backend failure with its error', () async {
       backend.generateError = StateError('boom');
 

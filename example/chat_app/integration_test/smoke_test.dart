@@ -101,21 +101,24 @@ void main() {
             String prompt,
             RegExp expected,
           ) async {
-            final out = StringBuffer();
-            await for (final chunk in engine.create(
-              [
-                LlamaChatMessage.fromText(
-                  role: LlamaChatRole.user,
-                  text: prompt,
-                ),
-              ],
-              enableThinking: false,
-              params: const GenerationParams(maxTokens: 64, temp: 0, seed: 1),
-            )) {
-              out.write(chunk.choices.first.delta.content ?? '');
-            }
-            debugPrint(jsonEncode({'case': name, 'output': out.toString()}));
-            expect(out.toString().trim(), matches(expected));
+            final out = await engine
+                .create(
+                  [
+                    LlamaChatMessage.fromText(
+                      role: LlamaChatRole.user,
+                      text: prompt,
+                    ),
+                  ],
+                  enableThinking: false,
+                  params: const GenerationParams(
+                    maxTokens: 64,
+                    temp: 0,
+                    seed: 1,
+                  ),
+                )
+                .text();
+            debugPrint(jsonEncode({'case': name, 'output': out}));
+            expect(out.trim(), matches(expected));
           }
 
           final math = RegExp(r'^(?:2\s*\+\s*2\s*=\s*)?4[.!]?$');
@@ -140,8 +143,7 @@ void main() {
             enableThinking: false,
             params: const GenerationParams(maxTokens: 256, temp: 0),
           )) {
-            if (!cancelled &&
-                (chunk.choices.first.delta.content?.isNotEmpty ?? false)) {
+            if (!cancelled && chunk.text.isNotEmpty) {
               cancelled = true;
               engine.cancelGeneration();
             }

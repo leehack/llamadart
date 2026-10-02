@@ -36,6 +36,8 @@ class MockLlamaBackend
     this.videoProbeError,
   });
 
+  Object? modelLoadError;
+  final List<LlamaLogLevel> nativeLogLevels = <LlamaLogLevel>[];
   bool _isReady = false;
   String? lastModelPath;
   String? lastLoraPath;
@@ -86,6 +88,8 @@ class MockLlamaBackend
     if (failModelLoad) {
       throw Exception('model load failed');
     }
+    final loadError = modelLoadError;
+    if (loadError != null) throw loadError;
     await modelLoadDelay;
     _isReady = true;
     return 1;
@@ -223,7 +227,9 @@ class MockLlamaBackend
   Future<bool> isGpuSupported() async => false;
 
   @override
-  Future<void> setLogLevel(LlamaLogLevel level) async {}
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    nativeLogLevels.add(level);
+  }
 
   @override
   Future<void> dispose() async {
@@ -831,16 +837,6 @@ class MockBatchEmbeddingBackend extends MockLlamaBackend
   }
 }
 
-class DartLogLevelMockBackend extends MockLlamaBackend
-    implements BackendDartLogLevel {
-  final List<LlamaLogLevel> dartLogLevels = <LlamaLogLevel>[];
-
-  @override
-  Future<void> setDartLogLevel(LlamaLogLevel level) async {
-    dartLogLevels.add(level);
-  }
-}
-
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -850,29 +846,28 @@ void main() {
     engine = LlamaEngine(backend);
   });
 
-  group('LlamaEngine Dart log level', () {
-    tearDown(() => LlamaLogger.instance.setLevel(LlamaLogLevel.none));
+  group('LlamaEngine log levels', () {
+    tearDown(LlamaLogging.configure);
 
-    test(
-      'setDartLogLevel and setLogLevel reach a BackendDartLogLevel',
-      () async {
-        final logBackend = DartLogLevelMockBackend();
-        final logEngine = LlamaEngine(logBackend);
-        await logEngine.setDartLogLevel(LlamaLogLevel.info);
-        await logEngine.setLogLevel(LlamaLogLevel.warn);
-        expect(logBackend.dartLogLevels, [
-          LlamaLogLevel.info,
-          LlamaLogLevel.warn,
-        ]);
-        expect(LlamaLogger.instance.level, LlamaLogLevel.warn);
-        expect(logEngine.dartLogLevel, LlamaLogLevel.warn);
-      },
-    );
+    test('loadModel applies the configured native level', () async {
+      await LlamaLogging.configure(nativeLevel: LlamaLogLevel.error);
+      backend.nativeLogLevels.clear();
 
-    test('setDartLogLevel skips a backend without the capability', () async {
-      await engine.setDartLogLevel(LlamaLogLevel.info);
-      expect(LlamaLogger.instance.level, LlamaLogLevel.info);
-      expect(engine.dartLogLevel, LlamaLogLevel.info);
+      await engine.loadModel('qwen-test.gguf');
+
+      expect(backend.nativeLogLevels, [LlamaLogLevel.error]);
+    });
+
+    test('loadModelFromUrl applies the configured native level', () async {
+      final urlBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final urlEngine = LlamaEngine(urlBackend);
+      addTearDown(urlEngine.dispose);
+      await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
+      urlBackend.nativeLogLevels.clear();
+
+      await urlEngine.loadModelFromUrl('https://example.com/model.gguf');
+
+      expect(urlBackend.nativeLogLevels, [LlamaLogLevel.warn]);
     });
   });
 
@@ -884,11 +879,11 @@ void main() {
 
     test('loadModel log states whether engine creation is deferred', () async {
       final records = <LlamaLogRecord>[];
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.info,
         handler: records.add,
       );
-      addTearDown(LlamaEngine.configureLogging);
+      addTearDown(LlamaLogging.configure);
 
       await engine.loadModel('qwen-test.gguf');
       expect(
@@ -1868,25 +1863,54 @@ void main() {
         final exception = thrown as LlamaModelException;
         expect(
           exception.details,
-          isA<Map<String, Object?>>()
-              .having(
-                (details) => details['type'].toString(),
-                'type',
-                contains('Exception'),
-              )
-              .having(
-                (details) => details['message'].toString(),
-                'message',
-                contains('url model load failed'),
-              )
-              .having(
-                (details) => details['message'].toString(),
-                'redacted message',
-                isNot(anyOf(contains('secret'), contains('token=abc123'))),
-              ),
+          allOf(
+            startsWith('url model load failed'),
+            isNot(anyOf(contains('secret'), contains('token=abc123'))),
+          ),
         );
       },
     );
+
+    test('loadModel reports the load failure cause as plain text', () async {
+      final cases = <Object, String>{
+        Exception('Model file not found: /m/model.gguf'):
+            'Model file not found: /m/model.gguf',
+        LlamaModelException('Model file not found: /m/model.gguf'):
+            'Model file not found: /m/model.gguf',
+        Exception('LlamaException: ModelParams.x must be non-negative.'):
+            'ModelParams.x must be non-negative.',
+        ArgumentError('LiteRT-LM model does not exist: /m/a.litertlm'):
+            'LiteRT-LM model does not exist: /m/a.litertlm',
+        StateError('worker gone'): 'worker gone',
+      };
+      for (final MapEntry(key: cause, value: expected) in cases.entries) {
+        final failingEngine = LlamaEngine(
+          MockLlamaBackend()..modelLoadError = cause,
+        );
+        await expectLater(
+          failingEngine.loadModel('/m/model.gguf'),
+          throwsA(
+            isA<LlamaModelException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Failed to load model from /m/model.gguf',
+                )
+                .having((e) => e.details, 'details', expected)
+                .having(
+                  (e) => '$e',
+                  'toString',
+                  allOf(
+                    isNot(contains('_Exception')),
+                    isNot(contains('{type:')),
+                  ),
+                ),
+          ),
+          reason: '$cause',
+        );
+        await failingEngine.dispose();
+      }
+    });
 
     test(
       'loadModelFromUrl cleans up partial state when context creation fails',
@@ -2005,7 +2029,13 @@ void main() {
         () => engine.create([
           const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
         ]).first,
-        throwsA(isA<LlamaContextException>()),
+        throwsA(
+          isA<LlamaContextException>().having(
+            (e) => e.message,
+            'message',
+            contains('Call loadModelSource() first'),
+          ),
+        ),
       );
     });
 
@@ -2552,6 +2582,37 @@ void main() {
       expect(backend.modelMetadataCalls, 1);
     });
 
+    test('complete forwards its arguments to create', () async {
+      final nativeBackend = NativeChatMockBackend()..generationText = 'done';
+      final nativeEngine = LlamaEngine(nativeBackend);
+      addTearDown(nativeEngine.dispose);
+      await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+      final completion = await nativeEngine.complete(
+        const [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi')],
+        params: const GenerationParams(maxTokens: 12),
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: const [],
+            handler: (_) async => 'sunny',
+          ),
+        ],
+        toolChoice: ToolChoice.none,
+        enableThinking: false,
+        chatTemplateKwargs: const {'locale': 'en_CA'},
+      );
+
+      expect(completion.text, 'done');
+      expect(nativeBackend.nativeGenerateChatCalls, 1);
+      expect(nativeBackend.lastNativeParams?.maxTokens, 12);
+      expect(nativeBackend.lastNativeTools?.single.name, 'get_weather');
+      expect(nativeBackend.lastNativeToolChoice, ToolChoice.none);
+      expect(nativeBackend.lastNativeEnableThinking, isFalse);
+      expect(nativeBackend.lastNativeChatTemplateKwargs, {'locale': 'en_CA'});
+    });
+
     test(
       'create uses native structured chat generation when supported',
       () async {
@@ -2847,6 +2908,51 @@ void main() {
       expect(toolCalls, hasLength(1));
       expect(toolCalls!.first.id, equals('call_0'));
       expect(toolCalls.first.function?.name, equals('get_weather'));
+    });
+
+    test('complete collects tool calls and their finish reason', () async {
+      backend.generationText =
+          '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}';
+      await engine.loadModel('qwen-test.gguf');
+      final messages = [
+        const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ];
+
+      final completion = await engine.complete(
+        messages,
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: (_) async => 'ok',
+          ),
+        ],
+      );
+
+      expect(completion.finishReason, LlamaFinishReason.toolCalls);
+      expect(completion.text, isEmpty);
+      final call = completion.toolCalls.single;
+      expect(call.id, 'call_0');
+      expect(call.name, 'get_weather');
+      expect(call.arguments, {'city': 'Seoul'});
+      final message = completion.message;
+      expect(message.role, LlamaChatRole.assistant);
+      expect(message.parts.single, same(call));
+    });
+
+    test('create streams text through the stream helpers', () async {
+      backend.generationText = 'Hello there';
+      await engine.loadModel('qwen-test.gguf');
+      const messages = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ];
+
+      expect(await engine.create(messages).text(), 'Hello there');
+      expect(
+        (await engine.create(messages).textDeltas().toList()).join(),
+        'Hello there',
+      );
     });
 
     test(
@@ -4456,6 +4562,26 @@ void main() {
           expect(chunks.last.choices.first.finishReason, 'stop');
         },
       );
+
+      test('complete reports length at a limit on the $path path', () async {
+        limitBackend
+          ..nativeChat = nativeChat
+          ..nextLimit = BackendGenerationLimit.values.first;
+
+        final completion = await limitEngine.complete(messages);
+
+        expect(completion.text, 'partial');
+        expect(completion.finishReason, LlamaFinishReason.length);
+      });
+
+      test('complete reports stop without a limit on the $path path', () async {
+        limitBackend.nativeChat = nativeChat;
+
+        final completion = await limitEngine.complete(messages);
+
+        expect(completion.text, 'partial');
+        expect(completion.finishReason, LlamaFinishReason.stop);
+      });
     }
 
     for (final limit in BackendGenerationLimit.values) {

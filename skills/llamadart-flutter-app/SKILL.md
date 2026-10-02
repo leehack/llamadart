@@ -61,7 +61,7 @@ or shipping runtimes the app does not use.
 - For a download screen with stages, cancel and retry, use
   `ModelDownloadController`, which has no Flutter dependency. It owns
   cancellation: call `controller.cancel()` and never put a `cancelToken` in
-  the options you pass to `start` (it throws `ArgumentError`). Then
+  the options you pass to `start` (it throws `LlamaArgumentException`). Then
   `engine.loadModel(entry.filePath)`.
 - On Android and iOS the default cache is already `llamadart/models` in the
   app's cache directory (what `getApplicationCacheDirectory()` returns), which
@@ -237,9 +237,8 @@ class ChatController {
         )
         .listen(
           (LlamaCompletionChunk chunk) {
-            final String? delta = chunk.choices.first.delta.content;
-            if (delta == null) return;
-            _pending.write(delta);
+            if (chunk.text.isEmpty) return;
+            _pending.write(chunk.text);
             _flushTimer ??= Timer(const Duration(milliseconds: 32), _flush);
           },
           onError: (Object error) {

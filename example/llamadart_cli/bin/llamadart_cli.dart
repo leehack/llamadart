@@ -5,7 +5,7 @@ import 'package:llamadart_cli_example/llamadart_cli.dart';
 
 Future<void> main(List<String> arguments) async {
   _configureNativeLogLevel();
-  LlamaEngine.configureLogging(level: LlamaLogLevel.none);
+  await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
 
   final parser = LlamaCliArgParser();
   LlamaCliConfig config;

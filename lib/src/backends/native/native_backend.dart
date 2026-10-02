@@ -52,7 +52,8 @@ class NativeAutoBackend
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
         BackendGenerationLimitReporting,
-        BackendGenerationUsageReporting {
+        BackendGenerationUsageReporting,
+        BackendDartLogLevel {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -351,6 +352,15 @@ class NativeAutoBackend
     return _ensureDiagnosticDelegate().then(
       (diagnosticDelegate) => diagnosticDelegate.isGpuSupported(),
     );
+  }
+
+  @override
+  Future<void> setDartLogLevel(LlamaLogLevel level) async {
+    for (final delegate in {?_delegate, ?_diagnosticDelegate}) {
+      if (delegate is BackendDartLogLevel) {
+        await (delegate as BackendDartLogLevel).setDartLogLevel(level);
+      }
+    }
   }
 
   @override

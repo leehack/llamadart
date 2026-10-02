@@ -85,17 +85,48 @@ await for (final chunk in engine.create(
   messages,
   params: const GenerationParams(maxTokens: 128, topP: 0.95),
 )) {
-  final thinking = chunk.choices.first.delta.thinking;
-  if (thinking != null) {
-    print('[thinking] $thinking');
-  }
-
-  final text = chunk.choices.first.delta.content;
-  if (text != null) {
-    print(text);
-  }
+  if (chunk.thinking.isNotEmpty) stdout.write('[thinking] ${chunk.thinking}');
+  stdout.write(chunk.text);
 }
 ```
+
+`chunk.text` and `chunk.thinking` are the first choice's answer and reasoning
+deltas, or empty strings. `chunk.toolCalls` lists its tool-call deltas, and
+`chunk.finishReason` is a `LlamaFinishReason` (`stop`, `length` or
+`toolCalls`) on the final chunk and null on every other one. The raw
+OpenAI-style fields stay available under `chunk.choices`.
+
+### Collect a whole reply
+
+When you do not need to render tokens as they arrive, collect the stream:
+
+```dart
+// Just the answer text.
+final answer = await engine.create(messages).text();
+
+// Only the non-empty text deltas, for a sink that takes strings.
+await engine.create(messages).textDeltas().forEach(stdout.write);
+
+// Text, reasoning, assembled tool calls, finish reason and usage.
+final completion = await engine.create(messages).collect();
+if (completion.finishReason == LlamaFinishReason.length) {
+  print('Reply was cut off at maxTokens.');
+}
+messages.add(completion.message); // Assistant turn for the next request.
+```
+
+`engine.complete(messages, ...)` is `engine.create(messages, ...).collect()`,
+and `session.send('...')` sends one text turn through a `ChatSession` and
+collects the reply.
+
+`finishReason` does not tell you that a generation was cancelled. On native
+llama.cpp and LiteRT-LM, a stream stopped by `engine.cancelGeneration()`,
+before or during generation, usually still ends with `LlamaFinishReason.stop`
+and whatever text it produced. On WebGPU, `cancelGeneration()` can instead
+fail the stream with a generation error. Track cancels in the code that issues
+them; on native llama.cpp and LiteRT-LM you can also read
+`LlamaOperationResult.cancelled` from an
+[operation observer](#observing-operations).
 
 `chunk.model` is the last path segment of the source the model was loaded
 from, such as `qwen.gguf`: a local path's file name, or the last segment of a
@@ -117,8 +148,7 @@ earlier chunk. On WebGPU, `completionTokens` can include tokens generated after
 a stop sequence, before the stop reached the bridge.
 
 ```dart
-final chunks = await engine.create(messages).toList();
-final usage = chunks.last.usage;
+final usage = (await engine.complete(messages)).usage;
 if (usage != null) {
   print('prompt ${usage.promptTokens} '
       '(cached ${usage.cachedPromptTokens}), '
@@ -212,9 +242,7 @@ await for (final chunk in engine.create(
     thinkingBudget: ThinkingBudget(maxTokens: 128),
   ),
 )) {
-  final thinking = chunk.choices.first.delta.thinking;
-  final text = chunk.choices.first.delta.content;
-  // Render each channel independently.
+  // Render chunk.thinking and chunk.text independently.
 }
 ```
 
@@ -323,9 +351,12 @@ engine.cancelGeneration();
 
 This cancels every `create`, `generate` and `ChatSession.create` stream that has
 been listened to, including one still rendering its template or checking its
-input: that stream ends without generating. A stream listened to after the
-call is not affected. How quickly a running generation stops depends on the
-backend.
+input: that stream ends without generating. On native llama.cpp and
+LiteRT-LM the stream ends normally, and its final chunk's `finishReason` is
+usually `stop`, so it does not mark the cancel. On WebGPU, the cancel can
+instead surface as a generation error on the stream. A stream listened to
+after the call is not affected. How quickly a running generation stops
+depends on the backend.
 
 Cancelling a stream's subscription also sends the cancel to its backend at
 once, even before the first token.

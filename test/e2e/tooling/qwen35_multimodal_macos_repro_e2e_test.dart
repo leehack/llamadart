@@ -94,8 +94,7 @@ Future<void> _runScenario({
   stdout.writeln('=== Qwen multimodal repro: $backendLabel ===');
 
   try {
-    await engine.setDartLogLevel(LlamaLogLevel.info);
-    await engine.setNativeLogLevel(LlamaLogLevel.info);
+    await LlamaLogging.configure(level: LlamaLogLevel.info);
 
     final int gpuLayers = backend == GpuBackend.cpu
         ? 0

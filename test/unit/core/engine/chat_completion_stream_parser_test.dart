@@ -7,6 +7,8 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/completion.dart';
+import 'package:llamadart/src/core/models/chat/completion_chunk.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -36,6 +38,7 @@ void main() {
 
       expect(content, 'hello');
       expect(chunks.last.choices.single.finishReason, 'stop');
+      expect(chunks.last.finishReason, LlamaFinishReason.stop);
       expect(chunks.last.model, 'test-model');
     });
 
@@ -62,6 +65,7 @@ void main() {
           .join();
       expect(content, 'partial');
       expect(chunks.last.choices.single.finishReason, 'length');
+      expect(chunks.last.finishReason, LlamaFinishReason.length);
     });
 
     test('finishes with stop when the stream ended without a limit', () async {
@@ -154,6 +158,14 @@ void main() {
           'get_weather',
         );
         expect(chunks.last.choices.single.finishReason, 'tool_calls');
+        expect(chunks.last.finishReason, LlamaFinishReason.toolCalls);
+
+        final completion = await Stream.fromIterable(chunks).collect();
+        expect(completion.thinking, 'I should look this up.');
+        expect(completion.text, isEmpty);
+        expect(completion.finishReason, LlamaFinishReason.toolCalls);
+        expect(completion.toolCalls.single.name, 'get_weather');
+        expect(completion.toolCalls.single.arguments, {'location': 'Seoul'});
       },
     );
 

@@ -8,6 +8,7 @@ import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/chat_role.dart';
+import '../models/chat/completion.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/structured_output.dart';
@@ -29,11 +30,12 @@ import '../models/tools/tool_definition.dart';
 /// session.systemPrompt = 'You are a helpful assistant.';
 ///
 /// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
-///   final text = chunk.choices.first.delta.content;
-///   if (text != null) {
-///     print(text);
-///   }
+///   stdout.write(chunk.text);
 /// }
+///
+/// // Or wait for the whole reply.
+/// final reply = await session.send('And in one word?');
+/// print(reply.text);
 /// ```
 class ChatSession {
   final LlamaEngine _engine;
@@ -130,41 +132,29 @@ class ChatSession {
   ///
   /// Example with tools:
   /// ```dart
-  /// final calls = <LlamaCompletionChunkToolCall>[];
-  /// await for (final chunk in session.create(
+  /// final reply = await session.create(
   ///   [LlamaTextContent('What time is it?')],
   ///   tools: [getTimeTool],
-  /// )) {
-  ///   final delta = chunk.choices.first.delta;
-  ///   if (delta.content != null) print(delta.content);
-  ///   calls.addAll(delta.toolCalls ?? const []);
-  /// }
+  /// ).collect();
+  /// if (reply.text.isNotEmpty) print(reply.text);
   ///
-  /// for (final call in calls) {
-  ///   final arguments = call.function?.arguments ?? '';
-  ///   final result = await getTimeTool.invoke(
-  ///     arguments.isEmpty
-  ///         ? const {}
-  ///         : jsonDecode(arguments) as Map<String, dynamic>,
-  ///   );
+  /// for (final call in reply.toolCalls) {
+  ///   final result = await getTimeTool.invoke(call.arguments);
   ///   session.addMessage(
   ///     LlamaChatMessage.withContent(
   ///       role: LlamaChatRole.tool,
   ///       content: [
   ///         LlamaToolResultContent(
   ///           id: call.id,
-  ///           name: getTimeTool.name,
+  ///           name: call.name,
   ///           result: result,
   ///         ),
   ///       ],
   ///     ),
   ///   );
   /// }
-  /// if (calls.isNotEmpty) {
-  ///   await for (final chunk in session.create([])) {
-  ///     final text = chunk.choices.first.delta.content;
-  ///     if (text != null) print(text);
-  ///   }
+  /// if (reply.toolCalls.isNotEmpty) {
+  ///   await session.create([]).textDeltas().forEach(stdout.write);
   /// }
   /// ```
   Stream<LlamaCompletionChunk> create(
@@ -205,7 +195,7 @@ class ChatSession {
         onMessageAdded?.call(userMsg);
       }
 
-      final reply = _ReplyBuilder();
+      final reply = LlamaCompletionAccumulator();
       var started = false;
       var completed = false;
       // Chunks that reach this generator after its subscription is cancelled
@@ -253,7 +243,7 @@ class ChatSession {
       } finally {
         // Runs on completion, on an error and on a cancelled subscription.
         if (started || (completed && !request.isCancelled())) {
-          final assistantMsg = reply.build();
+          final assistantMsg = reply.build().message;
           _history.add(assistantMsg);
           onMessageAdded?.call(assistantMsg);
         } else {
@@ -629,65 +619,35 @@ class _TurnEdits {
   }
 }
 
-/// Accumulates streamed chunks into the assistant message they form.
-class _ReplyBuilder {
-  final StringBuffer _content = StringBuffer();
-  final StringBuffer _thinking = StringBuffer();
-  final Map<int, _ToolCallBuilder> _toolCalls = {};
-
-  void add(LlamaCompletionChunk chunk) {
-    // An empty-choices chunk (e.g. a keep-alive) carries no delta.
-    if (chunk.choices.isEmpty) return;
-    final delta = chunk.choices.first.delta;
-    if (delta.content != null) _content.write(delta.content!);
-    if (delta.thinking != null) _thinking.write(delta.thinking!);
-    for (final tc
-        in delta.toolCalls ?? const <LlamaCompletionChunkToolCall>[]) {
-      final builder = _toolCalls.putIfAbsent(tc.index, _ToolCallBuilder.new);
-      if (tc.id != null) builder.id = tc.id;
-      if (tc.type != null) builder.type = tc.type;
-      if (tc.function?.name != null) builder.name = tc.function!.name;
-      if (tc.function?.arguments != null) {
-        builder.arguments.write(tc.function!.arguments!);
-      }
-    }
+/// One-shot replies for [ChatSession].
+extension ChatSessionCompletionExtension on ChatSession {
+  /// Sends [text] as a user message and returns the whole reply.
+  ///
+  /// This is [ChatSession.create] with a single [LlamaTextContent], collected
+  /// with `collect()`. The user message and the reply are added to
+  /// [ChatSession.history] as they are with [ChatSession.create]. Use
+  /// [ChatSession.create] to stream the reply or to send media parts.
+  Future<LlamaCompletion> send(
+    String text, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    Map<String, dynamic>? chatTemplateKwargs,
+    void Function(LlamaChatMessage message)? onMessageAdded,
+  }) {
+    return create(
+      [LlamaTextContent(text)],
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      chatTemplateKwargs: chatTemplateKwargs,
+      onMessageAdded: onMessageAdded,
+    ).collect();
   }
-
-  LlamaChatMessage build() {
-    final contentParts = <LlamaContentPart>[
-      if (_thinking.isNotEmpty) LlamaThinkingContent(_thinking.toString()),
-      if (_content.isNotEmpty) LlamaTextContent(_content.toString()),
-    ];
-    final sortedIndices = _toolCalls.keys.toList()..sort();
-    for (final index in sortedIndices) {
-      final b = _toolCalls[index]!;
-      Map<String, dynamic> args = {};
-      try {
-        if (b.arguments.isNotEmpty) {
-          args = jsonDecode(b.arguments.toString());
-        }
-      } catch (_) {
-        // Keep empty if parse fails
-      }
-      contentParts.add(
-        LlamaToolCallContent(
-          id: b.id,
-          name: b.name ?? "",
-          arguments: args,
-          rawJson: b.arguments.toString(),
-        ),
-      );
-    }
-    return LlamaChatMessage.withContent(
-      role: LlamaChatRole.assistant,
-      content: contentParts,
-    );
-  }
-}
-
-class _ToolCallBuilder {
-  String? id;
-  String? type;
-  String? name;
-  final StringBuffer arguments = StringBuffer();
 }

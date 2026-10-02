@@ -9,6 +9,18 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- **Breaking:** `ModelParams.validate()` throws `LlamaArgumentException`,
+  `ModelDownloadController` throws `LlamaArgumentException` or
+  `LlamaStateException`, and Web backend calls before a model load throw
+  `LlamaStateException`, instead of `ArgumentError` or `StateError`; a failed
+  load's `details` is now the cause's message instead of a `{type, message}`
+  map, and the not-ready error names `loadModelSource()`
+  ([#843](https://github.com/leehack/llamadart/issues/843)).
+- **Deprecated:** `LlamaLogging.configure(level:, nativeLevel:, handler:)`
+  replaces `LlamaEngine.configureLogging` and the engine's `setLogLevel`,
+  `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so
+  the last call wins and reaches every running engine's worker, including the
+  default native backend's ([#845](https://github.com/leehack/llamadart/issues/845)).
 - **Breaking (Preview):** image generation follows the shared engine
   pattern: `ImageGenerationEngine.load(ImageGenerationModel(source,
   components: [...]), params:, download:, onProgress:)` downloads every
@@ -52,6 +64,17 @@ For canonical full release notes, use:
   runtime and mislabelled files throw `LlamaModelFormatException`; name a Web
   URL's format with `ModelSource.url(..., format: ModelFormat.liteRtLm)`
   ([#837](https://github.com/leehack/llamadart/issues/837)).
+- Read completions without `choices.first.delta`: `chunk.text`,
+  `chunk.thinking`, `chunk.toolCalls` and a typed `chunk.finishReason`
+  (`LlamaFinishReason`); `stream.text()`, `stream.textDeltas()` and
+  `stream.collect()` (a `LlamaCompletion` with assembled tool calls and an
+  assistant `message`); and the one-shot `engine.complete(messages)` and
+  `session.send('...')`
+  ([#840](https://github.com/leehack/llamadart/issues/840)).
+- `GenerationGrammarTrigger.typed(type: GrammarTriggerType.word, ...)`
+  replaces the raw-`int` constructor, now deprecated; an unknown raw trigger
+  type throws `LlamaUnsupportedException` on llama.cpp instead of being
+  ignored ([#844](https://github.com/leehack/llamadart/issues/844)).
 
 ## 0.10.0
 

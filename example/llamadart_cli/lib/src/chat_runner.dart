@@ -48,8 +48,7 @@ class LlamaCliRunner {
     final engine = LlamaEngine(backend);
     _engine = engine;
 
-    await engine.setDartLogLevel(LlamaLogLevel.none);
-    await engine.setNativeLogLevel(LlamaLogLevel.warn);
+    await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
     await engine.loadModel(
       modelPath,
       modelParams: ModelParams(
@@ -268,10 +267,8 @@ class LlamaCliRunner {
     var printedThinkingStart = false;
     try {
       await for (final chunk in engine.create(messages, params: turnParams)) {
-        final delta = chunk.choices.first.delta;
-
-        final thinking = delta.thinking;
-        if (thinking != null && thinking.isNotEmpty) {
+        final thinking = chunk.thinking;
+        if (thinking.isNotEmpty) {
           if (!printedThinkingStart) {
             stdout.writeln('[Start thinking]');
             printedThinkingStart = true;
@@ -280,8 +277,8 @@ class LlamaCliRunner {
           stdout.write(thinking);
         }
 
-        final content = delta.content;
-        if (content != null && content.isNotEmpty) {
+        final content = chunk.text;
+        if (content.isNotEmpty) {
           assistantText.write(content);
           stdout.write(content);
         }

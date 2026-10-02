@@ -100,6 +100,60 @@ clear. Apps that already pass a directory are unaffected. To pick another
 directory for every default download, set
 `DefaultModelDownloadManager.globalCacheDirectory` before the first load.
 
+## Unreleased: typed argument errors and one logging API
+
+1. **Argument and state errors join the `LlamaException` hierarchy.** Catch
+   the new types, or `LlamaException` for all of them:
+
+   | Call | Before | After |
+   | --- | --- | --- |
+   | `ModelParams.validate()` | `ArgumentError` | `LlamaArgumentException` |
+   | A backend's own model load or context create with invalid `ModelParams` | `ArgumentError` or `Exception` | `LlamaArgumentException` |
+   | `ModelDownloadController.start` with `options.cancelToken` | `ArgumentError` | `LlamaArgumentException` |
+   | `ModelDownloadController.start` while a task runs, `retry` before `start`, either after `dispose` | `StateError` | `LlamaStateException` |
+   | Web `LlamaBackend()` or `WebGpuLlamaBackend` calls before a model load | `StateError` | `LlamaStateException` |
+
+   ```dart
+   // Before
+   try {
+     params.validate();
+   } on ArgumentError catch (e) {
+     print(e.name);
+   }
+   // After
+   try {
+     params.validate();
+   } on LlamaArgumentException catch (e) {
+     print(e.name); // also e.invalidValue and e.message
+   }
+   ```
+
+   Model loads already reported invalid `ModelParams` as
+   `LlamaModelException`, and still do.
+
+2. **A failed load's `details` is a `String`.** `LlamaModelException.details`
+   from `loadModel`, `loadModelFromUrl`, `loadModelSource` and
+   `loadMultimodalProjector` was a `{type, message}` map; it is now the cause's
+   message, such as `Model file not found: /models/m.gguf`, with URL secrets
+   still redacted.
+
+3. **One logging API.** `LlamaLogging.configure` sets the Dart-side level,
+   the native level (defaulting to the Dart-side level) and the handler for
+   the whole library. The old calls still work for one minor release, with
+   deprecation warnings:
+
+   | Before | After |
+   | --- | --- |
+   | `LlamaEngine.configureLogging(level: l, handler: h)` | `LlamaLogging.configure(level: l, nativeLevel: n, handler: h)` |
+   | `engine.setLogLevel(l)` | `LlamaLogging.configure(level: l)` |
+   | `engine.setDartLogLevel(d)` + `engine.setNativeLogLevel(n)` | `LlamaLogging.configure(level: d, nativeLevel: n)` |
+   | `engine.dartLogLevel`, `engine.nativeLogLevel` | `LlamaLogging.level`, `LlamaLogging.nativeLevel` |
+
+   `configure` replaces the handler too, so pass it on every call that should
+   keep it. Levels are now library-wide: `engine.setNativeLogLevel` on one
+   engine changes every engine, and `LlamaEngine.configureLogging` also updates
+   running worker isolates.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

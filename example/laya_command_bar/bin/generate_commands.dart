@@ -90,37 +90,36 @@ Future<void> main(List<String> arguments) async {
                 'mean "${intent.name}". Return JSON {"commands": [...]}.',
           ),
         ];
-        final buffer = StringBuffer();
-        await for (final chunk in engine.create(
-          messages,
-          params: GenerationParams(
-            maxTokens: 1024,
-            temp: 1.0,
-            topP: 0.95,
-            seed: seed * 1000 + prompt,
-          ),
-          enableThinking: false,
-          responseFormat: const {
-            'type': 'json_schema',
-            'json_schema': {
-              'schema': {
-                'type': 'object',
-                'properties': {
-                  'commands': {
-                    'type': 'array',
-                    'items': {'type': 'string'},
+        final reply = await engine
+            .create(
+              messages,
+              params: GenerationParams(
+                maxTokens: 1024,
+                temp: 1.0,
+                topP: 0.95,
+                seed: seed * 1000 + prompt,
+              ),
+              enableThinking: false,
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schema': {
+                    'type': 'object',
+                    'properties': {
+                      'commands': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                      },
+                    },
+                    'required': ['commands'],
                   },
                 },
-                'required': ['commands'],
               },
-            },
-          },
-        )) {
-          buffer.write(chunk.choices.first.delta.content ?? '');
-        }
+            )
+            .text();
         final List<Object?> commands;
         try {
-          commands = (jsonDecode(buffer.toString()) as Map)['commands'] as List;
+          commands = (jsonDecode(reply) as Map)['commands'] as List;
         } on FormatException {
           stderr.writeln('prompt $prompt: unparsable output, skipped');
           continue;

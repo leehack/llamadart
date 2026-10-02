@@ -20,9 +20,18 @@ description: >-
     every call and append the assistant reply yourself.
   - `engine.generate(prompt)` only for an already-rendered raw prompt; it skips
     the chat template.
-- Every API returns a `Stream`. Read `chunk.choices.first.delta.content` for
-  answer text and `delta.thinking` for reasoning; both are nullable. Render the
-  channels separately.
+- Every API returns a `Stream`. Read `chunk.text` for answer text and
+  `chunk.thinking` for reasoning (empty strings when a chunk has none), and
+  render the channels separately. `chunk.finishReason` is a typed
+  `LlamaFinishReason` (`stop`, `length`, `toolCalls`) on the final chunk only.
+  On native llama.cpp and LiteRT-LM a cancelled generation usually still ends
+  with `stop`; on WebGPU `cancelGeneration()` can surface as a generation
+  error. Track cancels in the code that issues them.
+- To wait for the whole reply, use `await stream.text()`, or
+  `await stream.collect()` for a `LlamaCompletion` with `text`, `thinking`,
+  assembled `toolCalls`, `finishReason`, `usage` and an assistant `message`.
+  `engine.complete(messages)` and `session.send('...')` are one-shot
+  shorthands; `stream.textDeltas()` yields only non-empty text deltas.
 - Only one generation runs at a time per engine. Starting another while one is
   running (and not cancelled) throws `LlamaStateException`; queue requests in
   app code.
@@ -59,7 +68,7 @@ description: >-
 
 ## Examples
 
-Multi-turn chat with streaming and cancellation:
+Multi-turn chat with cancellation:
 
 ```dart
 import 'dart:async';
@@ -67,17 +76,11 @@ import 'dart:async';
 import 'package:llamadart/llamadart.dart';
 
 Future<String> ask(ChatSession session, String question) async {
-  final StringBuffer answer = StringBuffer();
-  await for (final chunk in session.create(
-    [LlamaTextContent(question)],
+  final LlamaCompletion reply = await session.send(
+    question,
     params: const GenerationParams(maxTokens: 256, temp: 0.7),
-  )) {
-    final String? text = chunk.choices.first.delta.content;
-    if (text != null) {
-      answer.write(text);
-    }
-  }
-  return answer.toString();
+  );
+  return reply.text;
 }
 
 Future<void> chat(LlamaEngine engine) async {
@@ -122,10 +125,8 @@ Future<void> explain(LlamaEngine engine) async {
     messages,
     params: const GenerationParams(maxTokens: 512, topP: 0.95),
   )) {
-    final String? thinking = chunk.choices.first.delta.thinking;
-    final String? text = chunk.choices.first.delta.content;
-    if (thinking != null) print('[thinking] $thinking');
-    if (text != null) print(text);
+    if (chunk.thinking.isNotEmpty) print('[thinking] ${chunk.thinking}');
+    if (chunk.text.isNotEmpty) print(chunk.text);
     last = chunk;
   }
 
