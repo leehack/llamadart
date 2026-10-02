@@ -2465,11 +2465,11 @@ class LlamaEngine {
       if (abandoned()) return null;
       _draftLocations[key] = location;
     }
+    final resolved = backend.supportsUrlLoading
+        ? ModelSource.url(Uri.parse(location), fileName: source.fileName)
+        : ModelSource.path(location);
     return params.copyWith(
-      speculativeDecodingConfig: speculativeConfigWithDraftLocation(
-        config,
-        location,
-      ),
+      speculativeDecodingConfig: config.withDraftModel(resolved),
     );
   }
 

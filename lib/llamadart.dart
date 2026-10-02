@@ -108,8 +108,7 @@ export 'src/backends/backend.dart'
 // Models - Inference
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/next_token_scores.dart';
-export 'src/core/models/inference/generation_params.dart'
-    hide speculativeConfigWithDraftLocation;
+export 'src/core/models/inference/generation_params.dart';
 export 'src/core/models/inference/generation_usage.dart';
 export 'src/core/models/inference/structured_output.dart';
 export 'src/core/models/inference/tool_choice.dart';

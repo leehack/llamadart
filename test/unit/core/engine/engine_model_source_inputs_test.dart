@@ -349,7 +349,7 @@ void main() {
 
       final sent = backend.lastGenerationParams!.speculativeDecodingConfig!;
       expect(sent.draftModelPath, '/cache/draft.gguf');
-      expect(sent.draftModel, isNull);
+      expect(sent.draftModel!.isLocal, isTrue);
       expect(sent.strategy, SpeculativeDecodingStrategy.draftSimple);
       expect(sent.strategies, [SpeculativeDecodingStrategy.draftSimple]);
       expect(sent.draftTokenMax, 8);
@@ -840,7 +840,7 @@ void main() {
           sent.minProbability,
           sent.draftSplitProbability,
           sent.draftModelPath,
-          sent.draftModel,
+          sent.draftModel!.kind,
         ),
         (
           config.strategy,
@@ -850,7 +850,7 @@ void main() {
           0.3,
           0.2,
           '/cache/draft.gguf',
-          null,
+          ModelSourceKind.path,
         ),
       );
       expect(

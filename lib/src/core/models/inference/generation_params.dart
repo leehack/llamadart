@@ -726,20 +726,22 @@ class SpeculativeDecodingConfig {
              (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
 
-  /// A copy of [config] that loads the draft model at [location] instead of
-  /// its [draftModel] or deprecated path.
-  SpeculativeDecodingConfig._withDraftLocation(
+  /// A copy of this configuration with [draftModel] in place of its draft
+  /// model or deprecated path, keeping every other setting.
+  SpeculativeDecodingConfig withDraftModel(ModelSource draftModel) =>
+      SpeculativeDecodingConfig._withDraftModel(this, draftModel);
+
+  SpeculativeDecodingConfig._withDraftModel(
     SpeculativeDecodingConfig config,
-    String location,
+    ModelSource this.draftModel,
   ) : strategy = config.strategy,
       strategies = config.strategies,
       draftTokenMax = config.draftTokenMax,
       draftTokenMin = config.draftTokenMin,
       minProbability = config.minProbability,
       draftSplitProbability = config.draftSplitProbability,
-      _draftModelPath = location,
-      draftModel = null,
-      draftModelDownload = ModelLoadOptions.defaults,
+      _draftModelPath = null,
+      draftModelDownload = config.draftModelDownload,
       ngramSize = config.ngramSize,
       ngramSizeN = config.ngramSizeN,
       ngramSizeM = config.ngramSizeM,
@@ -1017,10 +1019,3 @@ class GenerationParams {
     );
   }
 }
-
-/// A copy of [config] whose draft model is the resolved file or URL
-/// [location]. Internal to the engine; not exported.
-SpeculativeDecodingConfig speculativeConfigWithDraftLocation(
-  SpeculativeDecodingConfig config,
-  String location,
-) => SpeculativeDecodingConfig._withDraftLocation(config, location);

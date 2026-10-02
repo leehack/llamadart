@@ -223,6 +223,37 @@ void main() {
     );
   });
 
+  test('SpeculativeDecodingConfig.withDraftModel replaces only the draft '
+      'model', () {
+    final options = ModelLoadOptions(cacheDirectory: '/cache');
+    const legacy = SpeculativeDecodingConfig.mixed(
+      strategies: [
+        SpeculativeDecodingStrategy.ngramMod,
+        SpeculativeDecodingStrategy.draftSimple,
+      ],
+      draftTokenMax: 6,
+      draftModelPath: 'old.gguf',
+      ngramMatch: 3,
+    );
+    final remote = SpeculativeDecodingConfig.draftSimple(
+      draftModel: ModelSource.parse('hf://owner/repo/draft.gguf'),
+      draftModelDownload: options,
+    );
+    final local = ModelSource.path('/models/new.gguf');
+
+    final fromLegacy = legacy.withDraftModel(local);
+    final fromRemote = remote.withDraftModel(local);
+
+    expect(fromLegacy.draftModel, same(local));
+    expect(fromLegacy.draftModelPath, '/models/new.gguf');
+    expect(fromLegacy.strategies, legacy.strategies);
+    expect(fromLegacy.draftTokenMax, 6);
+    expect(fromLegacy.ngramMatch, 3);
+    expect(fromRemote.draftModelPath, '/models/new.gguf');
+    expect(fromRemote.draftModelDownload, same(options));
+    expect(fromRemote.strategy, SpeculativeDecodingStrategy.draftSimple);
+  });
+
   test('SpeculativeDecodingConfig stores ngram-mod and cache controls', () {
     const mod = SpeculativeDecodingConfig.ngramMod(
       draftTokenMax: 32,
