@@ -46,16 +46,21 @@ description: >-
 - `chunk.model` is the last path segment of the model source (`qwen.gguf`),
   without directories or hosts, or `llama_model`. Compare it with the file
   name, and set your own model id on OpenAI-compatible responses: a URL whose
-  last segment is a token reports that token.
+  last segment is a token reports that token (unless it repeats the URL's
+  userinfo credential).
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding with a grammar and
   validates the final output; `session.createStructuredJson(parts, output:)`
   does the same within a `ChatSession`. Runtimes without grammar support
   (LiteRT-LM) throw `LlamaUnsupportedException` before generating. A raw
   `responseFormat` map must be `{'type': 'json_object'}`,
-  `{'type': 'json_schema', 'json_schema': {'schema': ...}}` or
-  `{'type': 'text'}`; any other type or key throws. Do not parse partial
-  stream chunks as JSON.
+  `{'type': 'json_schema', 'json_schema': {'schema': ...}}`, where
+  `json_schema` may also hold `name`, `description` and `strict`, or
+  `{'type': 'text'}`; a `null`-valued key counts as absent, and any other type
+  or key throws. A `ChatSession` turn that throws this way, or fails or has
+  its subscription cancelled before its first chunk, removes its user
+  message from `session.history`; one stopped later keeps the partial reply
+  as the assistant turn. Do not parse partial stream chunks as JSON.
 - `session.reset()` clears history (`keepSystemPrompt: false` also clears the
   system prompt). `session.addMessage(...)` restores saved history.
 - Use `engine.getTokenCount(text)` for context budgeting instead of estimating

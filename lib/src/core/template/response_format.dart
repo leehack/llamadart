@@ -9,8 +9,10 @@ const _jsonSchemaKeys = {'schema', 'name', 'description', 'strict'};
 /// (`{'type': 'text'}`). `{'type': 'json_object'}` maps to an object schema and
 /// `{'type': 'json_schema', 'json_schema': {'schema': ...}}` to its schema.
 ///
-/// Every other shape, including unknown types and misspelled keys, throws
-/// [LlamaUnsupportedException] so a typo cannot silently drop the constraint.
+/// A key whose value is null counts as absent, as JSON serializers that emit
+/// null fields write it. Every other shape, including unknown types and
+/// misspelled keys, throws [LlamaUnsupportedException] so a typo cannot
+/// silently drop the constraint.
 Map<String, dynamic>? responseFormatSchema(
   Map<String, dynamic>? responseFormat,
 ) {
@@ -65,8 +67,9 @@ Map<String, dynamic> _jsonSchemaSchema(Object? jsonSchema) {
   final schema = jsonSchema['schema'];
   if (schema is! Map<String, dynamic>) {
     throw LlamaUnsupportedException(
-      'responseFormat.json_schema.schema must be a JSON object with string '
-      'keys.',
+      'responseFormat.json_schema.schema must be a JSON object typed '
+      'Map<String, dynamic>, as jsonDecode returns or a <String, dynamic>{} '
+      'literal declares; got ${schema == null ? 'none' : schema.runtimeType}.',
     );
   }
   for (final key in const ['name', 'description']) {
@@ -92,8 +95,8 @@ void _rejectUnknownKeys(
   String path,
   String type,
 ) {
-  for (final key in map.keys) {
-    if (!allowed.contains(key)) {
+  for (final MapEntry(:key, :value) in map.entries) {
+    if (value != null && !allowed.contains(key)) {
       throw LlamaUnsupportedException(
         "Unsupported $path key '$key' for type '$type'; supported keys: "
         '${allowed.join(', ')}.',

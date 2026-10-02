@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'chat_completion_request_planner.dart';
 import 'engine.dart';
 import 'generation_cancellation.dart';
 import '../llama_logger.dart';
@@ -13,7 +14,6 @@ import '../models/inference/generation_params.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
-import '../template/response_format.dart';
 
 /// Convenience wrapper for multi-turn chat with automatic history management.
 ///
@@ -114,9 +114,21 @@ class ChatSession {
   ///
   /// Pass [responseFormat] to request strict structured output for this turn,
   /// with the same shapes and backend checks as [LlamaEngine.create]. An
-  /// unrecognised shape throws `LlamaUnsupportedException` before the user
-  /// message is added to [history]. Use [createStructuredJson] to also
-  /// validate and decode the reply.
+  /// unrecognised shape, or a strict format on a backend without
+  /// grammar-constrained decoding such as LiteRT-LM, throws
+  /// `LlamaUnsupportedException` before the user message is added to
+  /// [history]. Use [createStructuredJson] to also validate and decode the
+  /// reply.
+  ///
+  /// If the stream ends before the engine yields its first chunk, through an
+  /// error such as the backend rejecting the rendered request or through a
+  /// cancelled subscription, this call undoes its own [history] changes: it
+  /// removes the user message it added, and puts back the turns its context
+  /// check trimmed when [history] has not changed since. A retry then does
+  /// not repeat the user message. [onMessageAdded] has already reported that
+  /// message. If the stream ends that way after the first chunk, the reply
+  /// generated so far is added as the assistant turn, so roles keep
+  /// alternating.
   ///
   /// Example with tools:
   /// ```dart
@@ -160,7 +172,11 @@ class ChatSession {
     final cancellation = GenerationCancellation.forEngine(_engine);
     final zone = Zone.current;
     return cancellation.request((request) async* {
-      responseFormatSchema(responseFormat);
+      ChatCompletionRequestPlanner.rejectUnsupportedResponseFormat(
+        _engine.backend,
+        responseFormat,
+      );
+      final edits = _TurnEdits(this);
 
       // Add user message if parts provided
       if (parts.isNotEmpty) {
@@ -175,49 +191,65 @@ class ChatSession {
                 content: parts,
                 continuesPreviousTurn: continuesPreviousTurn,
               );
-        _history.add(userMsg);
+        edits.add(userMsg);
         onMessageAdded?.call(userMsg);
       }
 
-      // Ensure the rendered request, including tool schemas, leaves enough room
-      // for the configured response rather than using a fixed small reserve.
-      _lastRequestFitContext = await _enforceContextLimit(
-        params: params,
-        tools: tools,
-        toolChoice: toolChoice,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-        responseFormat: responseFormat,
-        chatTemplateKwargs: chatTemplateKwargs,
-      );
-
-      // Build messages for engine
-      final messages = _buildMessages();
-
       final reply = LlamaCompletionAccumulator();
-      final completion = zone.run(
-        () => cancellation.inherit(
-          request,
-          () => _engine.create(
-            messages,
-            params: params,
-            tools: tools,
-            toolChoice: toolChoice,
-            parallelToolCalls: parallelToolCalls,
-            enableThinking: enableThinking,
-            responseFormat: responseFormat,
-            chatTemplateKwargs: chatTemplateKwargs,
-          ),
-        ),
-      );
-      await for (final chunk in completion) {
-        reply.add(chunk);
-        yield chunk;
-      }
+      var started = false;
+      var completed = false;
+      // Chunks that reach this generator after its subscription is cancelled
+      // are never delivered, so they neither start nor extend the reply.
+      var unsubscribed = false;
+      request.onSubscriptionCancel(() async => unsubscribed = true);
+      try {
+        // Ensure the rendered request, including tool schemas, leaves enough
+        // room for the configured response rather than using a fixed small
+        // reserve.
+        _lastRequestFitContext = await _enforceContextLimit(
+          edits,
+          params: params,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          responseFormat: responseFormat,
+          chatTemplateKwargs: chatTemplateKwargs,
+        );
 
-      final assistantMsg = reply.build().message;
-      _history.add(assistantMsg);
-      onMessageAdded?.call(assistantMsg);
+        final messages = _buildMessages();
+        final completion = zone.run(
+          () => cancellation.inherit(
+            request,
+            () => _engine.create(
+              messages,
+              params: params,
+              tools: tools,
+              toolChoice: toolChoice,
+              parallelToolCalls: parallelToolCalls,
+              enableThinking: enableThinking,
+              responseFormat: responseFormat,
+              chatTemplateKwargs: chatTemplateKwargs,
+            ),
+          ),
+        );
+        await for (final chunk in completion) {
+          if (unsubscribed) break;
+          started = true;
+          reply.add(chunk);
+          yield chunk;
+        }
+        completed = true;
+      } finally {
+        // Runs on completion, on an error and on a cancelled subscription.
+        if (started || (completed && !request.isCancelled())) {
+          final assistantMsg = reply.build().message;
+          _history.add(assistantMsg);
+          onMessageAdded?.call(assistantMsg);
+        } else {
+          edits.undo();
+        }
+      }
     });
   }
 
@@ -273,7 +305,8 @@ class ChatSession {
   }
 
   /// Truncates history if it exceeds the context limit.
-  Future<bool> _enforceContextLimit({
+  Future<bool> _enforceContextLimit(
+    _TurnEdits edits, {
     GenerationParams? params,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
@@ -342,7 +375,7 @@ class ChatSession {
 
       final removeUntil = turnOffsets[bestDropCount];
       if (removeUntil > 0) {
-        _history.removeRange(0, removeUntil);
+        edits.removeRange(0, removeUntil);
       }
       if (foundFit) {
         return true;
@@ -350,6 +383,7 @@ class ChatSession {
     }
 
     final compacted = await _trimCompletedProtocolExchanges(
+      edits,
       targetLimit: targetLimit,
       tools: tools,
       toolChoice: toolChoice,
@@ -372,7 +406,8 @@ class ChatSession {
     return compacted;
   }
 
-  Future<bool> _trimCompletedProtocolExchanges({
+  Future<bool> _trimCompletedProtocolExchanges(
+    _TurnEdits edits, {
     required int targetLimit,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
@@ -430,7 +465,7 @@ class ChatSession {
       }
     }
 
-    _history.removeRange(anchorIndex + 1, bestBoundary);
+    edits.removeRange(anchorIndex + 1, bestBoundary);
     return foundFit;
   }
 
@@ -535,6 +570,52 @@ class ChatSession {
     }
 
     return offsets;
+  }
+}
+
+/// The [ChatSession.history] changes one [ChatSession.create] call made, so
+/// it can undo them without discarding changes made by anyone else.
+class _TurnEdits {
+  _TurnEdits(this._session) : _historyAfter = List.of(_session._history);
+
+  final ChatSession _session;
+  final List<(int, List<LlamaChatMessage>)> _removals = [];
+  LlamaChatMessage? _added;
+  List<LlamaChatMessage> _historyAfter;
+
+  List<LlamaChatMessage> get _history => _session._history;
+
+  void add(LlamaChatMessage message) {
+    _history.add(message);
+    _added = message;
+    _historyAfter = List.of(_history);
+  }
+
+  void removeRange(int start, int end) {
+    _removals.add((start, _history.sublist(start, end)));
+    _history.removeRange(start, end);
+    _historyAfter = List.of(_history);
+  }
+
+  /// Puts back the removed turns when no one else changed the history since,
+  /// then removes the added message wherever it now is.
+  void undo() {
+    final unchanged =
+        _history.length == _historyAfter.length &&
+        Iterable<int>.generate(
+          _history.length,
+        ).every((i) => identical(_history[i], _historyAfter[i]));
+    if (unchanged) {
+      for (final (start, removed) in _removals.reversed) {
+        _history.insertAll(start, removed);
+      }
+    }
+    final added = _added;
+    if (added == null) return;
+    final index = _history.lastIndexWhere(
+      (message) => identical(message, added),
+    );
+    if (index >= 0) _history.removeAt(index);
   }
 }
 

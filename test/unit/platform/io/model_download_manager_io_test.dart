@@ -1387,6 +1387,36 @@ void main() {
       );
     });
 
+    test(
+      'local paths with escaped path syntax throw LlamaUnsupportedException',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        for (final segments in const [
+          ['a%2Fb.gguf'],
+          ['a%5cb.gguf'],
+          ['%2e', 'model.gguf'],
+          ['%2E%2e', 'model.gguf'],
+        ]) {
+          final file = File(path.joinAll([tempDir.path, ...segments]));
+          await file.create(recursive: true);
+
+          await expectLater(
+            manager.ensureModel(ModelSource.path(file.path)),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                allOf(contains(file.path), contains('loadModel')),
+              ),
+            ),
+            reason: file.path,
+          );
+        }
+      },
+    );
+
     test('normalizes local paths before returning metadata', () async {
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: tempDir.path,

@@ -295,6 +295,60 @@ void main() {
   });
 
   test(
+    'shows a model URL without resolving it or keeping credentials',
+    () async {
+      for (final (url, name, display) in const [
+        (
+          'https://alice:Pw7secret@example.com/m/Pw7secret.litertlm',
+          null,
+          'https://',
+        ),
+        (
+          'https://Pw7secret@example.com/m/Pw7secret.litertlm',
+          null,
+          'https://',
+        ),
+        (
+          'https:alice:Pw7secret@example.com/m/Pw7secret.litertlm',
+          null,
+          'https://',
+        ),
+        (
+          'https://alice:Pw7secret@example.com/m/model.litertlm',
+          'model.litertlm',
+          'https://example.com/m/model.litertlm',
+        ),
+        (
+          'models/model.litertlm?sig=Sig7secret',
+          'model.litertlm',
+          'models/model.litertlm',
+        ),
+        (
+          'blob:https://alice:Pw7secret@example.com/0f3c.litertlm',
+          '0f3c.litertlm',
+          'blob:',
+        ),
+        ('foo:alice:Pw7secret@example.com/m.litertlm', 'm.litertlm', 'foo:'),
+        ('https://user:p%40ss@example.com/m/p@ss.litertlm', null, 'https://'),
+        ('//user:Pw7secret@example.com/m/Pw7secret.litertlm', null, '//'),
+      ]) {
+        _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+        final backend = LiteRtLmBackend();
+        final modelHandle = await backend.modelLoadFromUrl(
+          url,
+          const ModelParams(),
+        );
+
+        final metadata = await backend.modelMetadata(modelHandle);
+        await backend.dispose();
+
+        expect(metadata['general.name'], name, reason: url);
+        expect(metadata['litert_lm.model_url'], display, reason: url);
+      }
+    },
+  );
+
+  test(
     'exposes single-turn latest-message template for JS conversation runtime',
     () async {
       _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);

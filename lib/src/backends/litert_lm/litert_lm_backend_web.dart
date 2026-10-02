@@ -1382,28 +1382,76 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 
 /// The percent-decoded last path segment of [url], or null when it is empty
 /// or not valid UTF-8 once decoded.
+/// The last path segment of [url], or null when it is empty or repeats a
+/// userinfo credential of [url].
 String? _modelUrlName(String url) {
+  final String? name;
   try {
-    final name = Uri.tryParse(url)?.pathSegments.lastOrNull;
-    return name == null || name.isEmpty ? null : name;
+    name = Uri.tryParse(url)?.pathSegments.lastOrNull;
+  } on FormatException {
+    return null;
+  }
+  if (name == null || name.isEmpty) return null;
+  return _urlCredentials(url).any(name.contains) ? null : name;
+}
+
+/// The userinfo and password of [url] as the browser parses it, as written
+/// and percent-decoded. A protocol-relative [url] is read with an `https:`
+/// scheme.
+Set<String> _urlCredentials(String url) {
+  final parsed = _parsedUrl(url.startsWith('//') ? 'https:$url' : url);
+  if (parsed == null) return const <String>{};
+  final password = parsed.password;
+  return <String>{
+    for (final secret in <String>[
+      password.isEmpty ? parsed.username : '${parsed.username}:$password',
+      password,
+    ])
+      if (secret.isNotEmpty) ...<String>{
+        secret,
+        ?_percentDecodedOrNull(secret),
+      },
+  };
+}
+
+// `URL.parse` is missing from Safari before 18.
+URL? _parsedUrl(String url) {
+  try {
+    return URL(url);
+  } catch (_) {
+    return null;
+  }
+}
+
+String? _percentDecodedOrNull(String text) {
+  try {
+    return Uri.decodeComponent(text);
+  } on ArgumentError {
+    return null;
   } on FormatException {
     return null;
   }
 }
 
-/// [url] as the browser resolves it, without userinfo, query or fragment.
+/// [url] without userinfo, query or fragment.
 ///
-/// The browser parser also strips the userinfo of forms such as
-/// `https:user:pass@host/m`, which have no `//` before the authority.
+/// An absolute [url] is shown as the browser parses it, which also strips the
+/// userinfo of forms such as `https:user:pass@host/m` that have no `//`
+/// before the authority, and without its host and path when they repeat a
+/// userinfo credential. An opaque URL such as `blob:` or `data:` shows only
+/// its scheme, since its path can hold a whole URL. A relative [url] is shown
+/// as given, not resolved against the page.
 String _modelUrlDisplay(String url) {
-  try {
-    final parsed = URL(url, document.baseURI)
-      ..username = ''
-      ..password = ''
-      ..search = ''
-      ..hash = '';
-    return parsed.href;
-  } catch (_) {
-    return sourceUrlDisplay(url);
-  }
+  final parsed = _parsedUrl(url);
+  if (parsed == null) return sourceUrlDisplay(url);
+  final protocol = parsed.protocol;
+  if (!parsed.href.startsWith('$protocol//')) return protocol;
+  final credentials = _urlCredentials(url);
+  parsed
+    ..username = ''
+    ..password = ''
+    ..search = ''
+    ..hash = '';
+  final display = parsed.href;
+  return credentials.any(display.contains) ? '$protocol//' : display;
 }

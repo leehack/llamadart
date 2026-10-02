@@ -120,7 +120,10 @@ dart run tool/gguf_chat_features_smoke.dart \
 For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` requires a
 non-empty ordinary response with thinking disabled, a system/history turn that
 recalls a code from an earlier message, plus both a thinking
-channel and visible answer with thinking enabled. For Gemma 4 it also validates
+channel and visible answer with thinking enabled. It also requires
+`ChatSession.createStructuredJson` to throw the grammar-constraints
+`LlamaUnsupportedException` without recording the user turn, and the next
+`ChatSession` turn to answer with alternating history. For Gemma 4 it also validates
 native `auto` tool history and requires exactly one schema-valid
 `ToolChoice.required` call. For Hermes/Qwen it instead requires the planner's
 actionable unsupported error before generation; empty output or a normal
