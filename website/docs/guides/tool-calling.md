@@ -65,20 +65,44 @@ continues the current turn.
   Without `onToolCall`, the loop stops before running any call of that reply,
   with `unhandledToolCalls`; `result.pendingToolCalls` lists them. Add a tool
   message per call with `session.addMessage(...)`, then call
-  `completeWithTools(const [], tools: ...)` to continue.
+  `completeWithTools(const [], tools: ...)` to continue. Answer every call,
+  even to decline it: until then the history ends with the calls, and
+  templates such as Ministral 3's reject a new user turn.
 - **Errors:** an exception from a tool, a call to an unknown tool name, or
   arguments that are not a JSON object become the tool result
-  `{'error': message}`, so the model can recover. Pass `onToolError` to
-  choose the result, or rethrow from it to fail the loop; that round's
-  results are then not added.
+  `{'error': message}`, so the model can recover. That puts the exception's
+  text into the prompt and the session history; pass `onToolError` to choose
+  the result, for example to redact secrets, or rethrow from it to fail the
+  loop.
 - **Bounds:** after `maxRounds` tool rounds, further calls are returned
   unrun with `maxRounds`. Calls proposed from a prompt that did not fit the
   context budget (`session.lastRequestFitContext == false`) are not run
   (`contextExceeded`).
 - **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
-  Running tools finish and their results are added first.
+  Running tools finish first. A partial answer stays as the turn's reply.
 - `toolChoice` applies to the first request only, so `ToolChoice.required`
   forces one call and later rounds can answer.
+
+### History after a stop
+
+Every stop leaves the session ready for a new user turn, except
+`unhandledToolCalls`, which waits for your tool messages:
+
+| Stop | `session.history` |
+| --- | --- |
+| `completed` | Keeps the turn, ending with the answer. |
+| `cancelled` during the answer | Keeps the turn, ending with the partial answer. |
+| `unhandledToolCalls` | Keeps the turn, ending with the calls to answer. |
+| `maxRounds`, `contextExceeded`, other `cancelled` stops, or an error | Rolls the turn back to the history before the call. |
+
+A rolled-back turn would otherwise end with unanswered calls or tool results,
+which some templates, such as Ministral 3's, cannot render before a new user
+turn. If your app called `addMessage` or `reset` during the loop, only the
+loop's own messages are removed. Tools that ran keep their side effects:
+`result.messages` holds every message of the turn, including their results,
+and `onMessageAdded` has already reported them. To resume a rolled-back turn,
+add `result.messages` back, answer `result.pendingToolCalls`, and call
+`completeWithTools(const [], tools: ...)`.
 
 ### Run the calls yourself
 

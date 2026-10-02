@@ -19,14 +19,24 @@ description: >-
   `maxRounds`, `unhandledToolCalls`, `contextExceeded` and `cancelled` leave
   `result.pendingToolCalls` unrun. `completeWithTools(parts)` takes media
   parts; `completeWithTools(const [])` continues the turn.
+- After a stop, the history is ready for a new user turn, except after
+  `unhandledToolCalls`. `maxRounds`, `contextExceeded`, a cancel before an
+  answer started, and any thrown error roll the turn back to the history
+  before the call, because templates such as Ministral 3's reject a user turn
+  after unanswered calls or tool results. `result.messages` keeps the turn's
+  messages, including results of tools that ran; to resume, add them back,
+  answer `pendingToolCalls` and call `completeWithTools(const [])`. A cancel
+  during the answer keeps the partial answer.
 - `handler` is optional. Leave it out for a tool the app runs itself (user
   approval, remote execution): give `onToolCall`, or let the loop stop with
-  `unhandledToolCalls`, add the results with `session.addMessage(...)` and
-  call `completeWithTools(const [], tools: ...)`.
+  `unhandledToolCalls`, add a result for every pending call with
+  `session.addMessage(...)` (even to decline it) and call
+  `completeWithTools(const [], tools: ...)`. The turn stays open until then.
 - In the loop, a throwing tool, an unknown tool name or non-object arguments
-  become the tool result `{'error': message}` so the model can recover.
-  Pass `onToolError` to shape that result, or rethrow from it to fail the
-  loop. `toolChoice` applies only to the first request.
+  become the tool result `{'error': message}` so the model can recover. That
+  puts the exception text into the prompt and history: pass `onToolError` to
+  shape or redact that result, or rethrow from it to fail the loop.
+  `toolChoice` applies only to the first request.
 - `ChatSession.create` and `engine.create` only return calls in
   `chunk.toolCalls`; use them by hand to stream replies or to run tools
   outside the loop.
