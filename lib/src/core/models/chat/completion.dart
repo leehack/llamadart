@@ -25,11 +25,16 @@ class LlamaCompletion {
   /// generated.
   final List<LlamaToolCallContent> toolCalls;
 
-  /// Why generation stopped.
+  /// Why generation stopped, from the stream's final chunk.
   ///
-  /// Null when the stream ended without a final chunk, as when the
-  /// generation is cancelled before it starts, or when its `finish_reason`
-  /// is not a [LlamaFinishReason].
+  /// It does not report a cancel: a generation stopped by
+  /// `LlamaEngine.cancelGeneration`, before or during generation, usually
+  /// still ends with [LlamaFinishReason.stop] and the text generated so far.
+  /// The code that cancels knows it did; a `LlamaEngineObserver` sees the
+  /// cancel as `LlamaOperationResult.cancelled`.
+  ///
+  /// Null when the stream ended without a final chunk, or when its
+  /// `finish_reason` is not a [LlamaFinishReason].
   final LlamaFinishReason? finishReason;
 
   /// Token counts and timings, when the backend reports them.

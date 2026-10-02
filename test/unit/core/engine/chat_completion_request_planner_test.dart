@@ -50,6 +50,44 @@ void main() {
       expect(plan.parseToolCallsEnabled, isTrue);
     });
 
+    test('maps each template grammar trigger to its typed trigger', () {
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NativeChatBackend(),
+        templateResult: const LlamaChatTemplateResult(
+          prompt: 'prompt',
+          grammar: 'template ::= "ok"',
+          grammarLazy: true,
+          grammarTriggers: [
+            GrammarTrigger(type: 0, value: '<tool>'),
+            GrammarTrigger(type: 1, value: '<t>', token: 9),
+            GrammarTrigger(type: 2, value: r'\{"name"'),
+            GrammarTrigger(type: 3, value: r'[\s\S]*<call>'),
+          ],
+        ),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        tools: [_weatherTool],
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+      );
+
+      final triggers = plan.generationParams.grammarTriggers;
+      expect(triggers.map((trigger) => trigger.triggerType), [
+        GrammarTriggerType.word,
+        GrammarTriggerType.token,
+        GrammarTriggerType.pattern,
+        GrammarTriggerType.patternFull,
+      ]);
+      expect(triggers.map((trigger) => trigger.value), [
+        '<tool>',
+        '<t>',
+        r'\{"name"',
+        r'[\s\S]*<call>',
+      ]);
+      expect(triggers[1].token, 9);
+    });
+
     test('rejects a template grammar trigger of an unknown type', () {
       expect(
         () => ChatCompletionRequestPlanner.build(

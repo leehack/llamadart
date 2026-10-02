@@ -117,8 +117,13 @@ messages.add(completion.message); // Assistant turn for the next request.
 
 `engine.complete(messages, ...)` is `engine.create(messages, ...).collect()`,
 and `session.send('...')` sends one text turn through a `ChatSession` and
-collects the reply. A stream that ends without a final chunk, such as one
-cancelled before generation starts, collects with a null `finishReason`.
+collects the reply.
+
+`finishReason` does not tell you that a generation was cancelled. A stream
+stopped by `engine.cancelGeneration()`, before or during generation, usually
+still ends with `LlamaFinishReason.stop` and whatever text it produced. Track
+cancels in the code that issues them, or read `LlamaOperationResult.cancelled`
+from an [operation observer](#observing-operations).
 
 `chunk.model` is the last path segment of the source the model was loaded
 from, such as `qwen.gguf`: a local path's file name, or the last segment of a
@@ -334,8 +339,9 @@ engine.cancelGeneration();
 
 This cancels every `create`, `generate` and `ChatSession.create` stream that has
 been listened to, including one still rendering its template or checking its
-input: that stream ends without generating. A stream listened to after the
-call is not affected. How quickly a running generation stops depends on the
+input: that stream ends without generating. The stream ends normally, and its
+final chunk's `finishReason` is usually `stop`, so it does not mark the
+cancel. A stream listened to after the call is not affected. How quickly a running generation stops depends on the
 backend.
 
 Cancelling a stream's subscription also sends the cancel to its backend at

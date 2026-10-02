@@ -2504,6 +2504,37 @@ void main() {
       expect(backend.modelMetadataCalls, 1);
     });
 
+    test('complete forwards its arguments to create', () async {
+      final nativeBackend = NativeChatMockBackend()..generationText = 'done';
+      final nativeEngine = LlamaEngine(nativeBackend);
+      addTearDown(nativeEngine.dispose);
+      await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+      final completion = await nativeEngine.complete(
+        const [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi')],
+        params: const GenerationParams(maxTokens: 12),
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: const [],
+            handler: (_) async => 'sunny',
+          ),
+        ],
+        toolChoice: ToolChoice.none,
+        enableThinking: false,
+        chatTemplateKwargs: const {'locale': 'en_CA'},
+      );
+
+      expect(completion.text, 'done');
+      expect(nativeBackend.nativeGenerateChatCalls, 1);
+      expect(nativeBackend.lastNativeParams?.maxTokens, 12);
+      expect(nativeBackend.lastNativeTools?.single.name, 'get_weather');
+      expect(nativeBackend.lastNativeToolChoice, ToolChoice.none);
+      expect(nativeBackend.lastNativeEnableThinking, isFalse);
+      expect(nativeBackend.lastNativeChatTemplateKwargs, {'locale': 'en_CA'});
+    });
+
     test(
       'create uses native structured chat generation when supported',
       () async {

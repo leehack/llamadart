@@ -654,6 +654,25 @@ void main() {
       expect(session.history.last.content, 'Sure.');
     });
 
+    test('send forwards params and onMessageAdded to create', () async {
+      final added = <LlamaChatMessage>[];
+      backend.queueResponse('Resp');
+
+      final reply = await session.send(
+        'Hi',
+        params: const GenerationParams(maxTokens: 7),
+        onMessageAdded: added.add,
+      );
+
+      expect(backend.lastParams?.maxTokens, 7);
+      expect(added.map((message) => message.role), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
+      expect(added.first.content, 'Hi');
+      expect(added.last.content, reply.text);
+    });
+
     test('send records the tool calls of the reply', () async {
       final tools = [
         ToolDefinition(
