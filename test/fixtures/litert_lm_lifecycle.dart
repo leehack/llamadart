@@ -53,7 +53,7 @@ Future<void> main(List<String> args) async {
   }
 
   try {
-    await engine.setLogLevel(LlamaLogLevel.info);
+    await LlamaLogging.configure(level: LlamaLogLevel.info);
     await engine.loadModel(model, modelParams: params);
     event('loaded', {
       'requested_backend': backend.name,

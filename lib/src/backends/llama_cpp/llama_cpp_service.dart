@@ -1875,14 +1875,14 @@ class LlamaCppService {
   int _validateGgufModelFile(String modelPath, String label) {
     final modelFile = File(modelPath);
     if (!modelFile.existsSync()) {
-      throw Exception("$label file not found: $modelPath");
+      throw LlamaModelException("$label file not found: $modelPath");
     }
     final modelFileSize = modelFile.lengthSync();
     if (modelFileSize <= 0) {
-      throw Exception("$label file is empty: $modelPath");
+      throw LlamaModelException("$label file is empty: $modelPath");
     }
     if (!_looksLikeGguf(modelFile)) {
-      throw Exception(
+      throw LlamaModelException(
         "$label file does not appear to be GGUF: $modelPath. "
         "Please verify the download completed correctly.",
       );

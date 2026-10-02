@@ -23,7 +23,7 @@ class LlamaCliService {
     List<ToolDefinition>? tools,
   }) async {
     // Set log level
-    await _engine.setLogLevel(logLevel);
+    await LlamaLogging.configure(level: logLevel);
 
     await _engine.loadModel(modelPath, modelParams: ModelParams(gpuLayers: 99));
 

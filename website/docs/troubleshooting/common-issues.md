@@ -8,8 +8,7 @@ Find the symptom, then apply the fix. Both log levels default to `none`, so
 turn logging on first to see the native reason behind a failure:
 
 ```dart
-await engine.setDartLogLevel(LlamaLogLevel.info);
-await engine.setNativeLogLevel(LlamaLogLevel.info);
+await LlamaLogging.configure(level: LlamaLogLevel.info);
 ```
 
 To quiet logs again, see [Logging](../configuration/logging).
@@ -189,11 +188,11 @@ files before each create; see
 
 ## API usage errors
 
-### `Engine not ready. Call loadModel first.`
+### `Engine not ready: no model is loaded. Call loadModelSource() first.`
 
 `LlamaContextException`: generation, tokenization or another model call ran
-before `loadModel` finished, or after `unloadModel`. Await `loadModel` before
-using the engine.
+before `loadModelSource` or `loadModel` finished, or after `unloadModel`.
+Await the load before using the engine.
 
 ### `Model is already loaded. Call unloadModel() first.`
 

@@ -170,7 +170,7 @@ void main() {
           ),
         ];
         try {
-          await engine.setNativeLogLevel(LlamaLogLevel.warn);
+          await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
           await engine.loadModel(
             modelPath,
             modelParams: const ModelParams(

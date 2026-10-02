@@ -36,6 +36,8 @@ class MockLlamaBackend
     this.videoProbeError,
   });
 
+  Object? modelLoadError;
+  final List<LlamaLogLevel> nativeLogLevels = <LlamaLogLevel>[];
   bool _isReady = false;
   String? lastModelPath;
   String? lastLoraPath;
@@ -86,6 +88,8 @@ class MockLlamaBackend
     if (failModelLoad) {
       throw Exception('model load failed');
     }
+    final loadError = modelLoadError;
+    if (loadError != null) throw loadError;
     await modelLoadDelay;
     _isReady = true;
     return 1;
@@ -223,7 +227,9 @@ class MockLlamaBackend
   Future<bool> isGpuSupported() async => false;
 
   @override
-  Future<void> setLogLevel(LlamaLogLevel level) async {}
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    nativeLogLevels.add(level);
+  }
 
   @override
   Future<void> dispose() async {
@@ -831,16 +837,6 @@ class MockBatchEmbeddingBackend extends MockLlamaBackend
   }
 }
 
-class DartLogLevelMockBackend extends MockLlamaBackend
-    implements BackendDartLogLevel {
-  final List<LlamaLogLevel> dartLogLevels = <LlamaLogLevel>[];
-
-  @override
-  Future<void> setDartLogLevel(LlamaLogLevel level) async {
-    dartLogLevels.add(level);
-  }
-}
-
 void main() {
   late MockLlamaBackend backend;
   late LlamaEngine engine;
@@ -850,29 +846,28 @@ void main() {
     engine = LlamaEngine(backend);
   });
 
-  group('LlamaEngine Dart log level', () {
-    tearDown(() => LlamaLogger.instance.setLevel(LlamaLogLevel.none));
+  group('LlamaEngine log levels', () {
+    tearDown(LlamaLogging.configure);
 
-    test(
-      'setDartLogLevel and setLogLevel reach a BackendDartLogLevel',
-      () async {
-        final logBackend = DartLogLevelMockBackend();
-        final logEngine = LlamaEngine(logBackend);
-        await logEngine.setDartLogLevel(LlamaLogLevel.info);
-        await logEngine.setLogLevel(LlamaLogLevel.warn);
-        expect(logBackend.dartLogLevels, [
-          LlamaLogLevel.info,
-          LlamaLogLevel.warn,
-        ]);
-        expect(LlamaLogger.instance.level, LlamaLogLevel.warn);
-        expect(logEngine.dartLogLevel, LlamaLogLevel.warn);
-      },
-    );
+    test('loadModel applies the configured native level', () async {
+      await LlamaLogging.configure(nativeLevel: LlamaLogLevel.error);
+      backend.nativeLogLevels.clear();
 
-    test('setDartLogLevel skips a backend without the capability', () async {
-      await engine.setDartLogLevel(LlamaLogLevel.info);
-      expect(LlamaLogger.instance.level, LlamaLogLevel.info);
-      expect(engine.dartLogLevel, LlamaLogLevel.info);
+      await engine.loadModel('qwen-test.gguf');
+
+      expect(backend.nativeLogLevels, [LlamaLogLevel.error]);
+    });
+
+    test('loadModelFromUrl applies the configured native level', () async {
+      final urlBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final urlEngine = LlamaEngine(urlBackend);
+      addTearDown(urlEngine.dispose);
+      await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
+      urlBackend.nativeLogLevels.clear();
+
+      await urlEngine.loadModelFromUrl('https://example.com/model.gguf');
+
+      expect(urlBackend.nativeLogLevels, [LlamaLogLevel.warn]);
     });
   });
 
@@ -884,11 +879,11 @@ void main() {
 
     test('loadModel log states whether engine creation is deferred', () async {
       final records = <LlamaLogRecord>[];
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.info,
         handler: records.add,
       );
-      addTearDown(LlamaEngine.configureLogging);
+      addTearDown(LlamaLogging.configure);
 
       await engine.loadModel('qwen-test.gguf');
       expect(
@@ -1820,25 +1815,54 @@ void main() {
         final exception = thrown as LlamaModelException;
         expect(
           exception.details,
-          isA<Map<String, Object?>>()
-              .having(
-                (details) => details['type'].toString(),
-                'type',
-                contains('Exception'),
-              )
-              .having(
-                (details) => details['message'].toString(),
-                'message',
-                contains('url model load failed'),
-              )
-              .having(
-                (details) => details['message'].toString(),
-                'redacted message',
-                isNot(anyOf(contains('secret'), contains('token=abc123'))),
-              ),
+          allOf(
+            startsWith('url model load failed'),
+            isNot(anyOf(contains('secret'), contains('token=abc123'))),
+          ),
         );
       },
     );
+
+    test('loadModel reports the load failure cause as plain text', () async {
+      final cases = <Object, String>{
+        Exception('Model file not found: /m/model.gguf'):
+            'Model file not found: /m/model.gguf',
+        LlamaModelException('Model file not found: /m/model.gguf'):
+            'Model file not found: /m/model.gguf',
+        Exception('LlamaException: ModelParams.x must be non-negative.'):
+            'ModelParams.x must be non-negative.',
+        ArgumentError('LiteRT-LM model does not exist: /m/a.litertlm'):
+            'LiteRT-LM model does not exist: /m/a.litertlm',
+        StateError('worker gone'): 'worker gone',
+      };
+      for (final MapEntry(key: cause, value: expected) in cases.entries) {
+        final failingEngine = LlamaEngine(
+          MockLlamaBackend()..modelLoadError = cause,
+        );
+        await expectLater(
+          failingEngine.loadModel('/m/model.gguf'),
+          throwsA(
+            isA<LlamaModelException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'Failed to load model from /m/model.gguf',
+                )
+                .having((e) => e.details, 'details', expected)
+                .having(
+                  (e) => '$e',
+                  'toString',
+                  allOf(
+                    isNot(contains('_Exception')),
+                    isNot(contains('{type:')),
+                  ),
+                ),
+          ),
+          reason: '$cause',
+        );
+        await failingEngine.dispose();
+      }
+    });
 
     test(
       'loadModelFromUrl cleans up partial state when context creation fails',
@@ -1957,7 +1981,13 @@ void main() {
         () => engine.create([
           const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
         ]).first,
-        throwsA(isA<LlamaContextException>()),
+        throwsA(
+          isA<LlamaContextException>().having(
+            (e) => e.message,
+            'message',
+            contains('Call loadModelSource() first'),
+          ),
+        ),
       );
     });
 

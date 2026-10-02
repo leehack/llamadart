@@ -244,7 +244,69 @@ void main() {
           source,
           options: ModelLoadOptions(cancelToken: ModelDownloadCancelToken()),
         ),
-        throwsA(isA<ArgumentError>()),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (e) => e.name,
+            'name',
+            'options.cancelToken',
+          ),
+        ),
+      );
+    });
+
+    test('rejects a second start while a task runs', () async {
+      final source = ModelSource.url(
+        Uri.parse('https://example.com/model.gguf'),
+      );
+      final gate = Completer<void>();
+      final manager = _FakeDownloadManager()..ensureGate = gate;
+      final controller = ModelDownloadController(manager: manager);
+      addTearDown(controller.dispose);
+
+      final first = controller.start(source);
+      expect(
+        () => controller.start(source),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (e) => e.message,
+            'message',
+            'A model download task is already running.',
+          ),
+        ),
+      );
+      gate.complete();
+      await first;
+    });
+
+    test('rejects retry before any start', () {
+      final controller = ModelDownloadController(
+        manager: _FakeDownloadManager(),
+      );
+      addTearDown(controller.dispose);
+
+      expect(
+        controller.retry,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (e) => e.message,
+            'message',
+            contains('Call start() first'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects start after dispose', () async {
+      final controller = ModelDownloadController(
+        manager: _FakeDownloadManager(),
+      );
+      await controller.dispose();
+
+      expect(
+        () => controller.start(
+          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+        ),
+        throwsA(isA<LlamaStateException>()),
       );
     });
 
