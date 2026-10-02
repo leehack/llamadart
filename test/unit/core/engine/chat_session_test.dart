@@ -230,7 +230,7 @@ void main() {
 
     test('warns when a single oversized turn cannot be trimmed', () async {
       final warnings = <String>[];
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.warn,
         handler: (record) {
           if (record.level == LlamaLogLevel.warn) {
@@ -263,7 +263,7 @@ void main() {
               'tokenizeCalls=${backend.tokenizeCalls}',
         );
       } finally {
-        LlamaEngine.configureLogging(level: LlamaLogLevel.none);
+        await LlamaLogging.configure();
       }
     });
 

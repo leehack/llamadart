@@ -18,7 +18,7 @@ void main() {
     final backend = GpuBackend.values.byName(backendName);
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);
-    await engine.setNativeLogLevel(LlamaLogLevel.info);
+    await LlamaLogging.configure(nativeLevel: LlamaLogLevel.info);
     final checksum = await sha256.bind(File(model!).openRead()).first;
     print(
       jsonEncode({

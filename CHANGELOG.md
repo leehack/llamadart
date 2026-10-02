@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **Behavior change:** `ModelParams.validate()` throws
+  `LlamaArgumentException` and `ModelDownloadController` throws
+  `LlamaArgumentException` or `LlamaStateException` instead of `ArgumentError`
+  or `StateError`; a failed load's `details` is now the cause's message instead
+  of a `{type, message}` map, and the not-ready error names
+  `loadModelSource()` ([#843](https://github.com/leehack/llamadart/issues/843)).
+- **Deprecated:** `LlamaLogging.configure(level:, nativeLevel:, handler:)`
+  replaces `LlamaEngine.configureLogging` and the engine's `setLogLevel`,
+  `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so
+  the last call wins and reaches every running engine's worker, including the
+  default native backend's ([#845](https://github.com/leehack/llamadart/issues/845)).
 - **Breaking (Preview):** image generation follows the shared engine
   pattern: `ImageGenerationEngine.load(ImageGenerationModel(source,
   components: [...]), params:, download:, onProgress:)` downloads every

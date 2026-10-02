@@ -135,6 +135,7 @@ export 'src/core/models/tools/tool_params.dart';
 // Models - Config
 // Logging
 export 'src/core/llama_logger.dart';
+export 'src/core/llama_logging.dart' show LlamaLogging;
 export 'src/core/models/config/log_level.dart';
 export 'src/core/models/config/compute_device.dart';
 export 'src/core/models/config/gpu_backend.dart';

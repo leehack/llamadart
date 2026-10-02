@@ -17,6 +17,7 @@ import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/llama_logging.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -1321,13 +1322,10 @@ void main() {
 
     setUp(records.clear);
 
-    tearDown(() {
-      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
-      LlamaLogger.instance.setHandler(null);
-    });
+    tearDown(LlamaLogging.configure);
 
-    test('a worker warning reaches the configureLogging handler', () async {
-      LlamaEngine.configureLogging(
+    test('a worker warning reaches the LlamaLogging handler', () async {
+      await LlamaLogging.configure(
         level: LlamaLogLevel.warn,
         handler: records.add,
       );
@@ -1347,7 +1345,7 @@ void main() {
     });
 
     test('nothing is forwarded at level none', () async {
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.none,
         handler: records.add,
       );
@@ -1364,9 +1362,9 @@ void main() {
     });
 
     test(
-      'engine.setDartLogLevel changes what a running worker forwards',
+      'LlamaLogging.configure changes what a running worker forwards',
       () async {
-        LlamaEngine.configureLogging(
+        await LlamaLogging.configure(
           level: LlamaLogLevel.none,
           handler: records.add,
         );
@@ -1376,14 +1374,15 @@ void main() {
         final engine = LlamaEngine(backend);
         try {
           await backend.getBackendName().timeout(const Duration(seconds: 5));
-          await engine
-              .setDartLogLevel(LlamaLogLevel.warn)
-              .timeout(const Duration(seconds: 5));
+          await LlamaLogging.configure(
+            level: LlamaLogLevel.warn,
+            handler: records.add,
+          ).timeout(const Duration(seconds: 5));
           await backend.getBackendName().timeout(const Duration(seconds: 5));
           await _waitForRecords(records, 1);
           expect(records.single.message, 'worker warning');
         } finally {
-          await backend.dispose().timeout(const Duration(seconds: 2));
+          await engine.dispose().timeout(const Duration(seconds: 2));
         }
       },
     );

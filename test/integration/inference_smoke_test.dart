@@ -113,8 +113,8 @@ void main() {
         expect(ctxSize, greaterThan(0));
 
         // 7. Log level test (Silencer)
-        await engine.setLogLevel(LlamaLogLevel.none);
-        await engine.setLogLevel(LlamaLogLevel.warn);
+        await LlamaLogging.configure();
+        await LlamaLogging.configure(level: LlamaLogLevel.warn);
 
         // 8. LoRA (a missing adapter file must surface as a typed error)
         await expectLater(

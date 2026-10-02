@@ -1071,8 +1071,8 @@ class WebGpuLlamaBackend
   LlamaWebGpuBridge _requireBridge() {
     final bridge = _bridge;
     if (!_usingBridge || bridge == null) {
-      throw StateError(
-        'Web bridge is not active. Call loadModelFromUrl first.',
+      throw LlamaStateException(
+        'Web bridge is not active. Load a model with loadModelSource() first.',
       );
     }
     return bridge;
