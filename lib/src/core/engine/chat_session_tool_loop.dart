@@ -38,7 +38,7 @@ typedef LlamaToolErrorCallback =
 ///
 /// Only [completed], [unhandledToolCalls] and a [cancelled] stop that kept a
 /// partial answer leave the turn in `ChatSession.history`. Every other stop
-/// rolls the turn back; see [LlamaToolLoopResult.messages].
+/// rolls the turn back; see [LlamaToolLoopResult.rolledBack].
 enum LlamaToolLoopStopReason {
   /// The model replied without calling a tool. The turn stays in the
   /// history.
@@ -86,15 +86,20 @@ class LlamaToolLoopResult {
   /// `completeWithTools(const [], ...)`.
   final List<LlamaToolCallContent> pendingToolCalls;
 
-  /// Every message the loop added to `ChatSession.history`, in order: the
-  /// user message, each reply and each tool result.
+  /// The messages of the turn, in order: its user message, each reply and
+  /// each tool result, including those of an open turn that
+  /// `completeWithTools(const [], ...)` continued.
   ///
-  /// When the turn was rolled back (see [LlamaToolLoopStopReason]), none of
-  /// them is in the history any more, but tools that ran keep their effects
-  /// and their results are here. To resume such a turn, add these messages
-  /// back with `ChatSession.addMessage`, answer [pendingToolCalls], and call
-  /// `completeWithTools(const [], ...)`.
+  /// When [rolledBack] is `true`, none of them is in the history any more,
+  /// but tools that ran keep their effects and their results are here.
   final List<LlamaChatMessage> messages;
+
+  /// Whether the turn was removed from `ChatSession.history`.
+  ///
+  /// To resume a rolled-back turn, add [messages] back with
+  /// `ChatSession.addMessage`, answer [pendingToolCalls], and call
+  /// `completeWithTools(const [], ...)`.
+  final bool rolledBack;
 
   /// Creates a tool loop result.
   const LlamaToolLoopResult({
@@ -103,6 +108,7 @@ class LlamaToolLoopResult {
     required this.rounds,
     this.pendingToolCalls = const [],
     this.messages = const [],
+    this.rolledBack = false,
   });
 
   /// The text of the last reply.
@@ -112,6 +118,7 @@ class LlamaToolLoopResult {
   String toString() =>
       'LlamaToolLoopResult(stopReason: ${stopReason.name}, rounds: $rounds, '
       'pendingToolCalls: ${pendingToolCalls.length}, '
+      'rolledBack: $rolledBack, '
       'completion: $completion)';
 }
 
@@ -202,11 +209,17 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// reject a user turn that follows unanswered calls or tool results. So
   /// the other stops that end without an answer (`maxRounds`,
   /// `contextExceeded`, a cancel before an answer started) and any error
-  /// this call throws roll the turn back: the history returns to what it
-  /// was before this call. If the app changed the history meanwhile with
-  /// [ChatSession.addMessage] or [ChatSession.reset], only the loop's own
-  /// messages are removed. [LlamaToolLoopResult.messages] keeps the
-  /// rolled-back messages, and [onMessageAdded] has already reported them.
+  /// this call throws roll the whole turn back, from its user message on.
+  /// For empty [parts] that is the open turn being continued, including the
+  /// messages added before this call, such as the app's tool results.
+  /// Messages that other callers added meanwhile stay, and older turns that
+  /// context trimming dropped for this turn come back unless the history
+  /// was reset. [LlamaToolLoopResult.rolledBack] reports a rollback,
+  /// [LlamaToolLoopResult.messages] keeps the turn, and [onMessageAdded] has
+  /// already reported the messages this call added.
+  ///
+  /// A cancel that a backend reports as a stream error, as WebGPU does,
+  /// also stops the loop with [LlamaToolLoopStopReason.cancelled].
   ///
   /// [toolChoice] applies to the first request only; later rounds use
   /// [ToolChoice.auto] so the model can answer. The other arguments have the
@@ -237,37 +250,55 @@ extension ChatSessionToolLoopExtension on ChatSession {
     }
     final cancellation = GenerationCancellation.forEngine(engine);
     return cancellation.request<LlamaToolLoopResult>((request) async* {
-      final turn = _ToolLoopTurn(this, onMessageAdded);
+      final turn = _ToolLoopTurn(
+        this,
+        onMessageAdded,
+        continuesTurn: parts.isEmpty,
+      );
       try {
         var rounds = 0;
         var nextParts = parts;
         while (true) {
-          final reply = await cancellation
-              .inherit(
-                request,
-                () => create(
-                  nextParts,
-                  params: params,
-                  tools: tools,
-                  toolChoice: rounds == 0 ? toolChoice : null,
-                  parallelToolCalls: parallelToolCalls,
-                  enableThinking: enableThinking,
-                  chatTemplateKwargs: chatTemplateKwargs,
-                  onMessageAdded: turn.report,
-                ),
-              )
-              .collect();
+          final accumulator = LlamaCompletionAccumulator();
+          final historyBefore = history;
+          try {
+            final stream = cancellation.inherit(
+              request,
+              () => create(
+                nextParts,
+                params: params,
+                tools: tools,
+                toolChoice: rounds == 0 ? toolChoice : null,
+                parallelToolCalls: parallelToolCalls,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+                onMessageAdded: turn.report,
+              ),
+            );
+            await for (final chunk in stream) {
+              accumulator.add(chunk);
+            }
+          } catch (_) {
+            // Some backends, such as WebGPU, end a cancelled generation with
+            // an error instead of closing the stream.
+            if (!request.isCancelled()) rethrow;
+          } finally {
+            turn.noteTrimmed(historyBefore);
+          }
+          final reply = accumulator.build();
           LlamaToolLoopResult stop(
             LlamaToolLoopStopReason reason, {
             bool rollBack = true,
+            List<LlamaToolCallContent>? pendingToolCalls,
           }) {
             if (rollBack) turn.rollBack();
             return LlamaToolLoopResult(
               completion: reply,
               stopReason: reason,
               rounds: rounds,
-              pendingToolCalls: reply.toolCalls,
-              messages: List.unmodifiable(turn.added),
+              pendingToolCalls: pendingToolCalls ?? reply.toolCalls,
+              messages: List.unmodifiable(turn.messages),
+              rolledBack: rollBack,
             );
           }
 
@@ -319,17 +350,15 @@ extension ChatSessionToolLoopExtension on ChatSession {
                 ),
               ],
             );
-            turn.add(message);
+            addMessage(message);
+            turn.report(message);
           }
           rounds += 1;
 
           if (request.isCancelled()) {
-            turn.rollBack();
-            yield LlamaToolLoopResult(
-              completion: reply,
-              stopReason: LlamaToolLoopStopReason.cancelled,
-              rounds: rounds,
-              messages: List.unmodifiable(turn.added),
+            yield stop(
+              LlamaToolLoopStopReason.cancelled,
+              pendingToolCalls: const [],
             );
             return;
           }
@@ -343,45 +372,82 @@ extension ChatSessionToolLoopExtension on ChatSession {
   }
 }
 
-/// The [ChatSession.history] changes of one tool loop, so an abandoned turn
-/// can be rolled back without discarding changes made by the app.
+/// The turn one tool loop works on, so it can be rolled back without
+/// removing messages that other callers added meanwhile.
 class _ToolLoopTurn {
-  _ToolLoopTurn(this._session, this._onMessageAdded)
-    : _before = _session.history,
-      _editCount = _session.historyEditCount;
+  _ToolLoopTurn(
+    this._session,
+    this._onMessageAdded, {
+    required bool continuesTurn,
+  }) {
+    if (continuesTurn) {
+      final history = _session.history;
+      messages.addAll(history.skip(_openTurnStart(history)));
+    }
+  }
 
   final ChatSession _session;
   final void Function(LlamaChatMessage message)? _onMessageAdded;
-  final List<LlamaChatMessage> _before;
-  final int _editCount;
 
-  final List<LlamaChatMessage> added = [];
+  /// The open turn a continuation picks up, then every message the loop
+  /// added.
+  final List<LlamaChatMessage> messages = [];
+
+  /// Older turns that context trimming dropped while the loop ran.
+  final List<LlamaChatMessage> _trimmed = [];
+  LlamaChatMessage? _lastAdded;
 
   /// Whether the latest message the loop added is a reply.
-  bool get endsWithReply => added.lastOrNull?.role == LlamaChatRole.assistant;
-
-  void add(LlamaChatMessage message) {
-    _session.addToolLoopMessage(message);
-    report(message);
-  }
+  bool get endsWithReply => _lastAdded?.role == LlamaChatRole.assistant;
 
   void report(LlamaChatMessage message) {
-    added.add(message);
+    messages.add(message);
+    _lastAdded = message;
     _onMessageAdded?.call(message);
   }
 
-  /// Restores the history from before the loop when the app did not change
-  /// it since; otherwise removes only the loop's messages.
-  void rollBack() {
-    _session.replaceHistory(
-      _session.historyEditCount == _editCount
-          ? _before
-          : [
-              for (final message in _session.history)
-                if (!added.any((own) => identical(own, message))) message,
-            ],
+  /// Records the messages of [before] that a request dropped to fit the
+  /// context, unless the turn itself is gone because the history was reset.
+  void noteTrimmed(List<LlamaChatMessage> before) {
+    final anchor = messages.firstOrNull;
+    final now = Set<LlamaChatMessage>.identity()..addAll(_session.history);
+    if (anchor == null || !now.contains(anchor)) return;
+    final turn = Set<LlamaChatMessage>.identity()..addAll(messages);
+    _trimmed.addAll(
+      before.where(
+        (message) => !now.contains(message) && !turn.contains(message),
+      ),
     );
   }
+
+  /// Removes the turn's messages and puts back the turns trimmed for it.
+  void rollBack() {
+    final history = _session.history;
+    final present = Set<LlamaChatMessage>.identity()..addAll(history);
+    final turn = Set<LlamaChatMessage>.identity()..addAll(messages);
+    final restored = [
+      ..._trimmed.where((message) => !present.contains(message)),
+      ...history.where((message) => !turn.contains(message)),
+    ];
+    _session.reset();
+    restored.forEach(_session.addMessage);
+  }
+}
+
+/// The index where the turn that ends [history] starts, or `history.length`
+/// when that turn already has an answer: a reply without tool calls.
+int _openTurnStart(List<LlamaChatMessage> history) {
+  for (var index = history.length - 1; index >= 0; index--) {
+    final message = history[index];
+    if (message.role == LlamaChatRole.assistant &&
+        !message.parts.any((part) => part is LlamaToolCallContent)) {
+      break;
+    }
+    if (message.role == LlamaChatRole.user && !message.continuesPreviousTurn) {
+      return index;
+    }
+  }
+  return history.length;
 }
 
 /// Returns how to run [call], or `null` when the app must run it itself.

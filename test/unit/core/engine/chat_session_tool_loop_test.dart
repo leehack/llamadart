@@ -27,6 +27,58 @@ List<LlamaChatRole> _roles(Iterable<LlamaChatMessage> messages) => [
   for (final message in messages) message.role,
 ];
 
+/// A `ChatSession` that only forwards its public members.
+class _DelegatingSession implements ChatSession {
+  _DelegatingSession(this._inner);
+
+  final ChatSession _inner;
+
+  @override
+  LlamaEngine get engine => _inner.engine;
+
+  @override
+  List<LlamaChatMessage> get history => _inner.history;
+
+  @override
+  bool get lastRequestFitContext => _inner.lastRequestFitContext;
+
+  @override
+  void addMessage(LlamaChatMessage message) => _inner.addMessage(message);
+
+  @override
+  void reset({bool keepSystemPrompt = true}) =>
+      _inner.reset(keepSystemPrompt: keepSystemPrompt);
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaContentPart> parts, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    Map<String, dynamic>? chatTemplateKwargs,
+    void Function(LlamaChatMessage message)? onMessageAdded,
+    bool continuesPreviousTurn = false,
+  }) => _inner.create(
+    parts,
+    params: params,
+    tools: tools,
+    toolChoice: toolChoice,
+    parallelToolCalls: parallelToolCalls,
+    enableThinking: enableThinking,
+    responseFormat: responseFormat,
+    chatTemplateKwargs: chatTemplateKwargs,
+    onMessageAdded: onMessageAdded,
+    continuesPreviousTurn: continuesPreviousTurn,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName}');
+}
+
 List<LlamaToolResultContent> _toolResults(ChatSession session) => [
   for (final message in session.history)
     if (message.role == LlamaChatRole.tool)
@@ -136,6 +188,7 @@ void main() {
     expect(runs, 1);
     expect(result.pendingToolCalls.single.id, '2');
     expect(engine.requests, hasLength(2));
+    expect(result.rolledBack, isTrue);
     expect(session.history, isEmpty);
     expect(_roles(result.messages), [
       LlamaChatRole.user,
@@ -170,6 +223,7 @@ void main() {
     final resumed = await session.completeWithTools(const [], tools: tools);
 
     expect(resumed.stopReason, LlamaToolLoopStopReason.completed);
+    expect(resumed.rolledBack, isFalse);
     expect(resumed.text, 'Sunny.');
     expect(_roles(session.history), [
       LlamaChatRole.user,
@@ -178,6 +232,100 @@ void main() {
       LlamaChatRole.assistant,
       LlamaChatRole.tool,
       LlamaChatRole.assistant,
+    ]);
+    expect(resumed.messages, orderedEquals(session.history.skip(2)));
+  });
+
+  group('a continuation', () {
+    final earlier = [
+      _text(LlamaChatRole.user, 'Hi'),
+      _text(LlamaChatRole.assistant, 'Hello'),
+    ];
+
+    Future<List<LlamaChatMessage>> openTurn(List<ToolDefinition> tools) async {
+      earlier.forEach(session.addMessage);
+      engine.replies.add(scriptedCalls([('1', 'approve', '{}')]));
+      final first = await session.sendWithTools('Delete it', tools: tools);
+      expect(first.stopReason, LlamaToolLoopStopReason.unhandledToolCalls);
+      expect(first.rolledBack, isFalse);
+      session.addMessage(_result(first.pendingToolCalls.single, 'approved'));
+      return session.history.skip(2).toList();
+    }
+
+    test('that stops early rolls back the whole open turn', () async {
+      final tools = [_tool('approve'), _tool('weather', (_) async => 'x')];
+      final open = await openTurn(tools);
+      engine.replies.add(scriptedCalls([('2', 'weather', '{}')]));
+
+      final result = await session.completeWithTools(
+        const [],
+        tools: tools,
+        maxRounds: 0,
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+      expect(result.rolledBack, isTrue);
+      expect(session.history, orderedEquals(earlier));
+      expect(result.messages.take(3), orderedEquals(open));
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('that throws rolls back the whole open turn', () async {
+      final tools = [_tool('approve')];
+      await openTurn(tools);
+      engine.replies.add(() => Stream.error(LlamaInferenceException('boom')));
+
+      await expectLater(
+        session.completeWithTools(const [], tools: tools),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      expect(session.history, orderedEquals(earlier));
+    });
+
+    test('of an answered turn rolls back only its own messages', () async {
+      earlier.forEach(session.addMessage);
+      engine.replies.add(scriptedCalls([('1', 'weather', '{}')]));
+
+      final result = await session.completeWithTools(
+        const [],
+        tools: [_tool('weather', (_) async => 'x')],
+        maxRounds: 0,
+      );
+
+      expect(result.rolledBack, isTrue);
+      expect(session.history, orderedEquals(earlier));
+      expect(_roles(result.messages), [LlamaChatRole.assistant]);
+    });
+  });
+
+  test('a rollback keeps a turn another caller completed meanwhile', () async {
+    engine.replies
+      ..add(scriptedCalls([('1', 'weather', '{}')]))
+      ..add(scriptedAnswer('Side answer'))
+      ..add(scriptedCalls([('2', 'weather', '{}')]));
+    var runs = 0;
+
+    final result = await session.sendWithTools(
+      'Weather',
+      maxRounds: 1,
+      tools: [
+        _tool('weather', (_) async {
+          runs += 1;
+          if (runs == 1) await session.send('Side question');
+          return 'sunny';
+        }),
+      ],
+    );
+
+    expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+    expect(session.history.map((message) => message.content), [
+      'Side question',
+      'Side answer',
     ]);
   });
 
@@ -438,6 +586,28 @@ void main() {
     expect(session.history, orderedEquals(earlier));
   });
 
+  test('a rollback puts back trimmed turns after an app edit', () async {
+    session = ChatSession(engine, maxContextTokens: 256);
+    final earlier = [
+      _text(LlamaChatRole.user, 'Hi'),
+      _text(LlamaChatRole.assistant, 'Hello'),
+    ];
+    earlier.forEach(session.addMessage);
+    final note = _text(LlamaChatRole.system, 'note');
+    engine.promptTokens = 10000;
+    engine.replies.add(scriptedCalls([('a', 'weather', '{}')]));
+
+    await session.sendWithTools(
+      'Weather',
+      tools: [_tool('weather', (_) async => fail('ran'))],
+      onMessageAdded: (message) {
+        if (message.role == LlamaChatRole.user) session.addMessage(note);
+      },
+    );
+
+    expect(session.history, orderedEquals([...earlier, note]));
+  });
+
   group('cancelGeneration', () {
     test('during a tool rolls the turn back and returns its results', () async {
       engine.replies.add(scriptedCalls([('a', 'weather', '{}')]));
@@ -477,6 +647,7 @@ void main() {
       );
 
       expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+      expect(result.rolledBack, isFalse);
       expect(result.text, 'Sunny');
       expect(_roles(session.history), [
         LlamaChatRole.user,
@@ -485,6 +656,44 @@ void main() {
         LlamaChatRole.assistant,
       ]);
       expect(session.history.last.content, 'Sunny');
+    });
+
+    test('reported as a stream error keeps a partial answer', () async {
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(() async* {
+          yield scriptedChunk(content: 'Sun');
+          engine.cancelGeneration();
+          throw LlamaInferenceException('aborted');
+        });
+
+      final result = await session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+      expect(result.rolledBack, isFalse);
+      expect(result.text, 'Sun');
+      expect(session.history.last.content, 'Sun');
+    });
+
+    test('reported as a stream error before a reply rolls back', () async {
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(() async* {
+          engine.cancelGeneration();
+          throw LlamaInferenceException('aborted');
+        });
+
+      final result = await session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+      expect(result.rolledBack, isTrue);
+      expect(session.history, isEmpty);
     });
 
     test('before the next reply starts rolls the turn back', () async {
@@ -522,6 +731,25 @@ void main() {
       );
 
       expect(session.history, orderedEquals([kept]));
+    });
+
+    test('after an app reset during generation keeps the reset', () async {
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(session.addMessage);
+      engine.replies.add(() async* {
+        session.reset();
+        engine.cancelGeneration();
+        yield* scriptedCalls([('a', 'weather', '{}')])();
+      });
+
+      await session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => fail('ran'))],
+      );
+
+      expect(session.history, isEmpty);
     });
 
     test('during generation stops without running calls', () async {
@@ -586,6 +814,22 @@ void main() {
       LlamaChatRole.tool,
       LlamaChatRole.assistant,
     ]);
+  });
+
+  test('runs on a class that implements ChatSession', () async {
+    engine.replies
+      ..add(scriptedCalls([('a', 'weather', '{}')]))
+      ..add(scriptedCalls([('b', 'weather', '{}')]));
+    final delegate = _DelegatingSession(session);
+
+    final result = await delegate.sendWithTools(
+      'Weather',
+      tools: [_tool('weather', (_) async => 'sunny')],
+      maxRounds: 1,
+    );
+
+    expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+    expect(session.history, isEmpty);
   });
 
   test('completeWithTools sends media parts as the user turn', () async {

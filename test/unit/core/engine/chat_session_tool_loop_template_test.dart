@@ -10,10 +10,34 @@ import '../../../support/scripted_chat_engine.dart';
 
 /// Templates that reject a user turn unless every earlier user turn has an
 /// assistant reply without tool calls.
-const _strictTemplates = <String>[
+const _vendoredTemplates = <String>[
   'test/fixtures/templates/Ministral-3-3B-Reasoning.jinja',
   'test/fixtures/llama_cpp_templates/mistralai-Ministral-3-14B-Reasoning-2512.jinja',
 ];
+
+/// Strict templates from the full llama.cpp set; see
+/// `test/fixtures/llama_cpp_templates/README.md`.
+const _upstreamTemplates = <String>[
+  'Mistral-Small-3.2-24B-Instruct-2506.jinja',
+  'mistralai-Mistral-Nemo-Instruct-2407.jinja',
+];
+
+Directory _upstreamTemplatesDir() {
+  final path = Platform.environment['LLAMA_CPP_TEMPLATES_DIR']?.trim();
+  return Directory(
+    path == null || path.isEmpty
+        ? '.dart_tool/llama_cpp/models/templates'
+        : path,
+  );
+}
+
+LlamaChatMessage _result(LlamaToolCallContent call, Object? result) =>
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.tool,
+      content: [
+        LlamaToolResultContent(id: call.id, name: call.name, result: result),
+      ],
+    );
 
 ToolDefinition _tool(String name, [ToolHandler? handler]) => ToolDefinition(
   name: name,
@@ -23,8 +47,20 @@ ToolDefinition _tool(String name, [ToolHandler? handler]) => ToolDefinition(
 );
 
 void main() {
-  for (final path in _strictTemplates) {
-    group(path.split('/').last, () {
+  final upstreamDir = _upstreamTemplatesDir();
+  final upstreamSkip =
+      upstreamDir.existsSync() ||
+          Platform.environment['REQUIRE_LLAMA_CPP_TEMPLATES']?.trim() == '1'
+      ? null
+      : 'Requires llama.cpp template fixtures (run '
+            'tool/testing/prepare_llama_cpp_source.sh).';
+  final templates = <(String, String?)>[
+    for (final path in _vendoredTemplates) (path, null),
+    for (final name in _upstreamTemplates)
+      ('${upstreamDir.path}/$name', upstreamSkip),
+  ];
+  for (final (path, skip) in templates) {
+    group(path.split('/').last, skip: skip, () {
       late ScriptedChatEngine engine;
       late ChatSession session;
 
@@ -185,6 +221,130 @@ void main() {
           throwsA(isA<LlamaInferenceException>()),
         );
         await expectNextTurnRenders();
+      });
+
+      group('a continuation that stops early', () {
+        final approve = _tool('approve');
+
+        Future<void> answerApproval(List<ToolDefinition> tools) async {
+          engine.replies.add(scriptedCalls([('call00001', 'approve', '{}')]));
+          final first = await session.sendWithTools('Hi', tools: tools);
+          expect(first.stopReason, LlamaToolLoopStopReason.unhandledToolCalls);
+          session.addMessage(_result(first.pendingToolCalls.single, 'ok'));
+        }
+
+        test('maxRounds', () async {
+          final tools = [approve, weather];
+          await answerApproval(tools);
+          engine.replies.add(scriptedCalls([('call00002', 'weather', '{}')]));
+          final result = await session.completeWithTools(
+            const [],
+            tools: tools,
+            maxRounds: 0,
+          );
+          expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+          await expectNextTurnRenders();
+        });
+
+        test('contextExceeded', () async {
+          final tools = [approve, weather];
+          await answerApproval(tools);
+          session.maxContextTokens = 256;
+          engine
+            ..promptTokens = 10000
+            ..replies.add(scriptedCalls([('call00002', 'weather', '{}')]));
+          final result = await session.completeWithTools(
+            const [],
+            tools: tools,
+          );
+          expect(result.stopReason, LlamaToolLoopStopReason.contextExceeded);
+          engine.promptTokens = 0;
+          await expectNextTurnRenders();
+        });
+
+        test('cancelled during a tool', () async {
+          final tools = [
+            approve,
+            _tool('weather', (_) async {
+              engine.cancelGeneration();
+              return 'sunny';
+            }),
+          ];
+          await answerApproval(tools);
+          engine.replies.add(scriptedCalls([('call00002', 'weather', '{}')]));
+          final result = await session.completeWithTools(
+            const [],
+            tools: tools,
+          );
+          expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+          await expectNextTurnRenders();
+        });
+
+        test('cancelled before the answer starts', () async {
+          final tools = [approve];
+          await answerApproval(tools);
+          engine.replies.add(() async* {
+            engine.cancelGeneration();
+          });
+          final result = await session.completeWithTools(
+            const [],
+            tools: tools,
+          );
+          expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+          await expectNextTurnRenders();
+        });
+
+        test('a rethrow from onToolError', () async {
+          final tools = [
+            approve,
+            _tool('weather', (_) async => throw StateError('down')),
+          ];
+          await answerApproval(tools);
+          engine.replies.add(scriptedCalls([('call00002', 'weather', '{}')]));
+          await expectLater(
+            session.completeWithTools(
+              const [],
+              tools: tools,
+              onToolError: (call, error, stackTrace) =>
+                  Error.throwWithStackTrace(error, stackTrace),
+            ),
+            throwsStateError,
+          );
+          await expectNextTurnRenders();
+        });
+
+        test('an error', () async {
+          final tools = [approve];
+          await answerApproval(tools);
+          engine.replies.add(
+            () => Stream.error(LlamaInferenceException('boom')),
+          );
+          await expectLater(
+            session.completeWithTools(const [], tools: tools),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          await expectNextTurnRenders();
+        });
+
+        test('resumed from a rolled-back turn', () async {
+          engine.replies.add(scriptedCalls([('call00001', 'weather', '{}')]));
+          final stopped = await session.sendWithTools(
+            'Hi',
+            tools: [weather],
+            maxRounds: 0,
+          );
+          expect(stopped.rolledBack, isTrue);
+          stopped.messages.forEach(session.addMessage);
+          session.addMessage(_result(stopped.pendingToolCalls.single, 'ok'));
+          engine.replies.add(scriptedCalls([('call00002', 'weather', '{}')]));
+          final resumed = await session.completeWithTools(
+            const [],
+            tools: [weather],
+            maxRounds: 0,
+          );
+          expect(resumed.stopReason, LlamaToolLoopStopReason.maxRounds);
+          await expectNextTurnRenders();
+        });
       });
     });
   }

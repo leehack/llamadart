@@ -41,7 +41,6 @@ class ChatSession {
   final LlamaEngine _engine;
   final List<LlamaChatMessage> _history = [];
   bool _lastRequestFitContext = true;
-  int _historyEditCount = 0;
 
   /// The maximum number of tokens allowed in the context window.
   ///
@@ -80,7 +79,6 @@ class ChatSession {
   /// - Restoring a previous session state
   void addMessage(LlamaChatMessage message) {
     _history.add(message);
-    _historyEditCount += 1;
   }
 
   /// Resets the session state.
@@ -89,7 +87,6 @@ class ChatSession {
   /// is cleared.
   void reset({bool keepSystemPrompt = true}) {
     _history.clear();
-    _historyEditCount += 1;
     if (!keepSystemPrompt) {
       systemPrompt = null;
     }
@@ -621,21 +618,6 @@ class _TurnEdits {
     );
     if (index >= 0) _history.removeAt(index);
   }
-}
-
-/// Package-internal [ChatSession.history] access for `completeWithTools`.
-extension ChatSessionToolLoopHistory on ChatSession {
-  /// Counts [ChatSession.addMessage] and [ChatSession.reset] calls, so the
-  /// tool loop can tell whether the app changed the history during a turn.
-  int get historyEditCount => _historyEditCount;
-
-  /// Adds [message] without counting it as an app edit.
-  void addToolLoopMessage(LlamaChatMessage message) => _history.add(message);
-
-  /// Replaces the history without counting it as an app edit.
-  void replaceHistory(List<LlamaChatMessage> messages) => _history
-    ..clear()
-    ..addAll(messages);
 }
 
 /// One-shot replies for [ChatSession].

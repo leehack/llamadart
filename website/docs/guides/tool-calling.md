@@ -93,16 +93,25 @@ Every stop leaves the session ready for a new user turn, except
 | `completed` | Keeps the turn, ending with the answer. |
 | `cancelled` during the answer | Keeps the turn, ending with the partial answer. |
 | `unhandledToolCalls` | Keeps the turn, ending with the calls to answer. |
-| `maxRounds`, `contextExceeded`, other `cancelled` stops, or an error | Rolls the turn back to the history before the call. |
+| `maxRounds`, `contextExceeded`, other `cancelled` stops, or an error | Rolls the whole turn back, from its user message on. |
 
 A rolled-back turn would otherwise end with unanswered calls or tool results,
-which some templates, such as Ministral 3's, cannot render before a new user
-turn. If your app called `addMessage` or `reset` during the loop, only the
-loop's own messages are removed. Tools that ran keep their side effects:
-`result.messages` holds every message of the turn, including their results,
-and `onMessageAdded` has already reported them. To resume a rolled-back turn,
-add `result.messages` back, answer `result.pendingToolCalls`, and call
+which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot
+render before a new user turn. `completeWithTools(const [], ...)` continues
+the open turn, so its rollback also removes that turn's earlier messages,
+including the tool results you added. Messages that other code added during
+the loop stay, and older turns that context trimming dropped for the turn
+come back unless you reset the session.
+
+`result.rolledBack` tells whether the turn was removed. Tools that ran keep
+their side effects: `result.messages` holds every message of the turn,
+including their results, and `onMessageAdded` has already reported the ones
+the call added. To resume a rolled-back turn, add `result.messages` back,
+answer `result.pendingToolCalls`, and call
 `completeWithTools(const [], tools: ...)`.
+
+On WebGPU a cancel ends generation with a stream error; the loop still
+reports it as `cancelled`.
 
 ### Run the calls yourself
 
@@ -129,7 +138,11 @@ for (final call in reply.toolCalls) {
     ),
   );
 }
-final answer = await session.create(const [], tools: tools).text();
+if (reply.toolCalls.isNotEmpty) {
+  print(await session.create(const [], tools: tools).text());
+} else {
+  print(reply.text);
+}
 ```
 
 - Tool calls arrive complete, with JSON `arguments`, in the final chunk, whose

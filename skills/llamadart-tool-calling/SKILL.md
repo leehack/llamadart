@@ -21,12 +21,14 @@ description: >-
   parts; `completeWithTools(const [])` continues the turn.
 - After a stop, the history is ready for a new user turn, except after
   `unhandledToolCalls`. `maxRounds`, `contextExceeded`, a cancel before an
-  answer started, and any thrown error roll the turn back to the history
-  before the call, because templates such as Ministral 3's reject a user turn
-  after unanswered calls or tool results. `result.messages` keeps the turn's
-  messages, including results of tools that ran; to resume, add them back,
-  answer `pendingToolCalls` and call `completeWithTools(const [])`. A cancel
-  during the answer keeps the partial answer.
+  answer started, and any thrown error roll the whole turn back from its
+  user message, because templates such as Ministral 3's reject a user turn
+  after unanswered calls or tool results. For `completeWithTools(const [])`
+  that includes the open turn's earlier messages, such as your tool results.
+  Check `result.rolledBack`; `result.messages` keeps the turn's messages,
+  including results of tools that ran. To resume, add them back, answer
+  `pendingToolCalls` and call `completeWithTools(const [])`. A cancel during
+  the answer keeps the partial answer, on WebGPU too.
 - `handler` is optional. Leave it out for a tool the app runs itself (user
   approval, remote execution): give `onToolCall`, or let the loop stop with
   `unhandledToolCalls`, add a result for every pending call with
