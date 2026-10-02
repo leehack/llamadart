@@ -50,6 +50,7 @@ export 'src/core/image/image_generation_engine.dart'
         ImageGenerationTask;
 export 'src/core/image/image_generation_events.dart';
 export 'src/core/image/image_generation_model.dart';
+export 'src/core/image/image_model_params.dart';
 export 'src/core/image/image_generation_request.dart'
     show ImageGenerationRequest;
 
@@ -114,6 +115,7 @@ export 'src/core/models/inference/tool_choice.dart';
 // Models - Sources, resolution, and downloads
 export 'src/core/models/model_source.dart';
 export 'src/core/models/model_resolver.dart';
+export 'src/core/models/model_file_store.dart';
 export 'src/core/models/model_load_options.dart';
 export 'src/core/models/download/model_download_manager.dart';
 
@@ -133,6 +135,7 @@ export 'src/core/models/tools/tool_params.dart';
 // Logging
 export 'src/core/llama_logger.dart';
 export 'src/core/models/config/log_level.dart';
+export 'src/core/models/config/compute_device.dart';
 export 'src/core/models/config/gpu_backend.dart';
 export 'src/core/models/config/gpu_device_info.dart';
 export 'src/core/models/config/flash_attention.dart';

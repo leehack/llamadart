@@ -11,7 +11,9 @@ import 'package:llamadart/llamadart.dart';
 Future<void> main(List<String> args) async {
   final [runtime, ending, model] = args;
   if (runtime == 'image') {
-    await ImageGenerationEngine.load(ImageGenerationModel.sdxs(model));
+    await ImageGenerationEngine.load(
+      ImageGenerationModel(ModelSource.path(model)),
+    );
   } else {
     await LlamaEngine(LlamaBackend()).loadModel(model);
   }

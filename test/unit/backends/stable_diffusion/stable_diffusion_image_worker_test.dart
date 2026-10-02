@@ -45,8 +45,8 @@ void main() {
         't5xxl': '/m/t5xxl.gguf',
       });
 
-      expect(error.message, contains('needs a vae or taesd file'));
-      expect(error.message, contains('goes in model instead'));
+      expect(error.message, contains('need a vae or taesd file'));
+      expect(error.message, contains('is an ImageModelRole.checkpoint'));
       expect(error.message, isNot(contains('text encoders')));
       expect(error.details, 'files: diffusionModel, clipL, clipG, t5xxl');
       expect('$error', isNot(contains('/m/')));
@@ -93,10 +93,13 @@ void main() {
         'model': '/m/sd_turbo.gguf',
       });
 
-      expect(error.message, contains('a single-file checkpoint goes in model'));
+      expect(
+        error.message,
+        contains('ImageModelRole.checkpoint for a single file'),
+      );
       expect(error.message, contains('enough memory'));
       expect(error.message, contains('does not report its reason'));
-      expect(error.details, 'files: model');
+      expect(error.details, 'files: checkpoint');
     });
   });
 }

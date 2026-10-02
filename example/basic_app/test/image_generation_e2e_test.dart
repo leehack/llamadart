@@ -9,9 +9,14 @@ import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 // Real image generation through the stable_diffusion runtime this example
-// opts into. Downloads nothing: set LLAMADART_SDXS_MODEL, and optionally
+// opts into. Set LLAMADART_SDXS_MODEL, and optionally
 // LLAMADART_SD_TURBO_MODEL, LLAMADART_TAESD, LLAMADART_SDXL_LIGHTNING_MODEL,
-// LLAMADART_TAESDXL and LLAMADART_IMAGE_OUTPUT_DIR.
+// LLAMADART_TAESDXL and LLAMADART_IMAGE_OUTPUT_DIR. Downloads nothing unless
+// LLAMADART_IMAGE_HF_CACHE names a model cache directory: then SDXS loads
+// from its pinned Hugging Face file through it (683 MB once).
+// LLAMADART_IMAGE_SPLIT_MODEL lists a split model's local files, comma
+// separated in any order, such as FLUX.1-schnell's transformer, ae, CLIP-L
+// and T5-XXL; the engine assigns their roles and generates 4 steps at 512.
 void main() {
   final sdxsPath = Platform.environment['LLAMADART_SDXS_MODEL'];
   final sdTurboPath = Platform.environment['LLAMADART_SD_TURBO_MODEL'];
@@ -19,6 +24,8 @@ void main() {
   final sdxlLightningPath =
       Platform.environment['LLAMADART_SDXL_LIGHTNING_MODEL'];
   final taesdxlPath = Platform.environment['LLAMADART_TAESDXL'];
+  final hfCache = Platform.environment['LLAMADART_IMAGE_HF_CACHE'];
+  final splitModel = Platform.environment['LLAMADART_IMAGE_SPLIT_MODEL'];
   final outputDir = Platform.environment['LLAMADART_IMAGE_OUTPUT_DIR'];
   if (outputDir != null) {
     Directory(outputDir).createSync(recursive: true);
@@ -47,18 +54,20 @@ void main() {
   // pipeline yet.
   test('after warmUp the first image is about as fast as a warm one', () async {
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdxs(sdxsPath!),
+      _sdxs(ModelSource.path(sdxsPath!)),
     );
     addTearDown(engine.dispose);
     const request = ImageGenerationRequest(
       prompt: 'a red fox in autumn leaves',
       width: 256,
       height: 256,
+      steps: 1,
+      guidanceScale: 1,
       seed: 42,
     );
 
     final warmUp = Stopwatch()..start();
-    await engine.warmUp(width: 256, height: 256);
+    await engine.warmUp(width: 256, height: 256, guidanceScale: 1);
     warmUp.stop();
     final first = (await engine.generateImage(request)).elapsed;
     final second = (await engine.generateImage(request)).elapsed;
@@ -75,12 +84,13 @@ void main() {
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 
   test('a rejected split checkpoint names the roles it lacks', () async {
-    // SDXS is a single-file checkpoint; as diffusionModel alone it has no VAE
-    // or text encoder, so the runtime rejects it.
+    // SDXS is a single-file checkpoint; given the diffusionModel role it has
+    // no VAE or text encoder, so the runtime rejects it.
     await expectLater(
       ImageGenerationEngine.load(
-        ImageGenerationModel.custom(
-          ImageGenerationModelFiles(diffusionModel: sdxsPath!),
+        ImageGenerationModel(
+          ModelSource.path(sdxsPath!),
+          role: ImageModelRole.diffusionModel,
         ),
       ),
       throwsA(
@@ -89,8 +99,8 @@ void main() {
               (error) => error.message,
               'message',
               allOf(
-                contains('needs a vae or taesd file'),
-                contains('needs its text encoders'),
+                contains('need a vae or taesd file'),
+                contains('need their text encoders'),
               ),
             )
             .having(
@@ -108,7 +118,7 @@ void main() {
 
     setUpAll(() async {
       engine = await ImageGenerationEngine.load(
-        ImageGenerationModel.sdxs(sdxsPath!),
+        _sdxs(ModelSource.path(sdxsPath!)),
       );
     });
 
@@ -122,6 +132,8 @@ void main() {
             prompt: 'a red fox in autumn leaves',
             width: 256,
             height: 256,
+            steps: 1,
+            guidanceScale: 1,
             seed: 42,
           ),
         );
@@ -161,6 +173,8 @@ void main() {
           prompt: 'a lighthouse on a cliff',
           width: 256,
           height: 256,
+          steps: 1,
+          guidanceScale: 1,
           seed: seed,
         ),
       )).images.single.pixels;
@@ -206,6 +220,8 @@ void main() {
           prompt: 'a forest',
           width: 256,
           height: 256,
+          steps: 1,
+          guidanceScale: 1,
           seed: 1,
         ),
       );
@@ -222,7 +238,7 @@ void main() {
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(
-        ImageGenerationEngine.load(ImageGenerationModel.sdxs(sdxsPath!)),
+        ImageGenerationEngine.load(_sdxs(ModelSource.path(sdxsPath!))),
         throwsA(isA<LlamaStateException>()),
       );
       expect(
@@ -239,7 +255,13 @@ void main() {
       return;
     }
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdTurbo(sdTurboPath, taesdPath: taesdPath),
+      ImageGenerationModel(
+        ModelSource.path(sdTurboPath),
+        components: [
+          if (taesdPath != null)
+            ImageModelComponent.auto(ModelSource.path(taesdPath)),
+        ],
+      ),
     );
     addTearDown(engine.dispose);
 
@@ -248,6 +270,8 @@ void main() {
         prompt: 'a bowl of ramen, studio photo',
         width: 256,
         height: 256,
+        steps: 1,
+        guidanceScale: 1,
         seed: 42,
       ),
     );
@@ -261,48 +285,161 @@ void main() {
     }
   });
 
+  test('SDXL-Lightning warms up and generates at 1024x1024', () async {
+    // A skip: argument would not apply: the scenario passes --run-skipped.
+    if (sdxlLightningPath == null) {
+      markTestSkipped('Set LLAMADART_SDXL_LIGHTNING_MODEL');
+      return;
+    }
+    final engine = await ImageGenerationEngine.load(
+      ImageGenerationModel(
+        ModelSource.path(sdxlLightningPath),
+        components: [
+          if (taesdxlPath != null)
+            ImageModelComponent.auto(ModelSource.path(taesdxlPath)),
+        ],
+      ),
+    );
+    addTearDown(engine.dispose);
+
+    final warmUp = Stopwatch()..start();
+    await engine.warmUp(width: 1024, height: 1024, guidanceScale: 1);
+    warmUp.stop();
+    final result = await engine.generateImage(
+      const ImageGenerationRequest(
+        prompt: 'a lighthouse at dusk',
+        width: 1024,
+        height: 1024,
+        steps: 4,
+        guidanceScale: 1,
+        sampler: ImageGenerationSampler.euler,
+        scheduler: ImageGenerationScheduler.sgmUniform,
+        seed: 42,
+      ),
+    );
+
+    final image = result.images.single;
+    print(
+      'SDXL-Lightning on ${engine.capabilities.backendName}: warm-up '
+      '${warmUp.elapsedMilliseconds} ms; ${image.width}x${image.height} '
+      'image ${result.elapsed.inMilliseconds} ms',
+    );
+    expect((image.width, image.height), (1024, 1024));
+    expect(image.pixels.toSet().length, greaterThan(64));
+    if (outputDir != null) {
+      File(
+        '$outputDir/sdxl-lightning-default-seed42.png',
+      ).writeAsBytesSync(image.toPng());
+    }
+  });
+
   test(
-    'SDXL-Lightning warms up and generates at 1024x1024 by default',
+    'SDXS loads from its pinned Hugging Face file through the model cache, then '
+    'reuses it',
     () async {
       // A skip: argument would not apply: the scenario passes --run-skipped.
-      if (sdxlLightningPath == null) {
-        markTestSkipped('Set LLAMADART_SDXL_LIGHTNING_MODEL');
+      if (hfCache == null) {
+        markTestSkipped('Set LLAMADART_IMAGE_HF_CACHE');
         return;
       }
-      final engine = await ImageGenerationEngine.load(
-        ImageGenerationModel.sdxlLightning(
-          sdxlLightningPath,
-          taesdPath: taesdxlPath,
-        ),
+      final downloads = DefaultModelDownloadManager(
+        defaultCacheDirectory: hfCache,
       );
-      addTearDown(engine.dispose);
+      const total = 682847200;
 
-      final warmUp = Stopwatch()..start();
-      await engine.warmUp();
-      warmUp.stop();
-      final result = await engine.generateImage(
-        const ImageGenerationRequest(prompt: 'a lighthouse at dusk', seed: 42),
-      );
-
-      final image = result.images.single;
-      print(
-        'SDXL-Lightning on ${engine.capabilities.backendName}: warm-up '
-        '${warmUp.elapsedMilliseconds} ms; ${image.width}x${image.height} '
-        'image ${result.elapsed.inMilliseconds} ms',
-      );
-      expect((image.width, image.height), (1024, 1024));
-      expect(image.pixels.toSet().length, greaterThan(64));
-      if (outputDir != null) {
-        File(
-          '$outputDir/sdxl-lightning-default-seed42.png',
-        ).writeAsBytesSync(image.toPng());
+      Future<List<ModelDownloadProgress>> loadAndGenerate() async {
+        final events = <ModelDownloadProgress>[];
+        final timer = Stopwatch()..start();
+        final engine = await ImageGenerationEngine.load(
+          ImageGenerationModel(_pinnedSdxs),
+          store: ModelFileStore(downloadManager: downloads),
+          onProgress: events.add,
+        );
+        final loaded = timer.elapsedMilliseconds;
+        try {
+          final result = await engine.generateImage(
+            const ImageGenerationRequest(
+              prompt: 'a red fox in autumn leaves',
+              width: 256,
+              height: 256,
+              steps: 1,
+              guidanceScale: 1,
+              seed: 42,
+            ),
+          );
+          expect(result.images.single.pixels.toSet().length, greaterThan(64));
+          print(
+            'SDXS from Hugging Face: ${events.length} progress events, loaded in '
+            '$loaded ms, image ${result.elapsed.inMilliseconds} ms',
+          );
+        } finally {
+          await engine.dispose();
+        }
+        return events;
       }
+
+      final first = await loadAndGenerate();
+      expect(first.last.receivedBytes, total);
+      expect(first.last.totalBytes, total);
+
+      final cached = await loadAndGenerate();
+      expect(cached.map((event) => event.receivedBytes), [total]);
+      final entry = await downloads.get(_pinnedSdxs.cacheKey);
+      expect(entry?.bytes, total);
     },
   );
 
+  test('a split model loads from files in any order', () async {
+    // A skip: argument would not apply: the scenario passes --run-skipped.
+    if (splitModel == null) {
+      markTestSkipped('Set LLAMADART_IMAGE_SPLIT_MODEL');
+      return;
+    }
+    final [main, ...components] = [
+      for (final path in splitModel.split(',')) ModelSource.path(path.trim()),
+    ];
+    final timer = Stopwatch()..start();
+    final engine = await ImageGenerationEngine.load(
+      ImageGenerationModel(
+        main,
+        components: [
+          for (final source in components) ImageModelComponent.auto(source),
+        ],
+      ),
+    );
+    addTearDown(engine.dispose);
+    final loaded = timer.elapsedMilliseconds;
+
+    final result = await engine.generateImage(
+      const ImageGenerationRequest(
+        prompt: 'a red fox in autumn leaves',
+        steps: 4,
+        guidanceScale: 1,
+        seed: 42,
+      ),
+    );
+
+    print(
+      'Split model ${engine.capabilities.modelVersion}: roles '
+      '${engine.roles.map((role, source) => MapEntry(role.name, source.fileName))}, '
+      'loaded in $loaded ms, image ${result.elapsed.inMilliseconds} ms',
+    );
+    expect(
+      engine.roles.keys,
+      contains(anyOf(ImageModelRole.diffusionModel, ImageModelRole.checkpoint)),
+    );
+    expect(engine.roles, hasLength(components.length + 1));
+    expect(result.images.single.pixels.toSet().length, greaterThan(64));
+    if (outputDir != null) {
+      File(
+        '$outputDir/split-model-seed42.png',
+      ).writeAsBytesSync(result.images.single.toPng());
+    }
+  });
+
   test('dispose during a generation cancels it', () async {
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdxs(sdxsPath!),
+      _sdxs(ModelSource.path(sdxsPath!)),
     );
     final result = engine.generateImage(
       const ImageGenerationRequest(prompt: 'a castle', steps: 20),
@@ -316,6 +453,14 @@ void main() {
     expect(engine.capabilities.isSupported, isFalse);
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 }
+
+final _pinnedSdxs = ModelSource.huggingFace(
+  repoId: 'concedo/sdxs-512-tinySDdistilled-GGUF',
+  revision: '3144d898d61492f8382ffcabec055733fc5b2a0e',
+  filePath: 'sdxs-512-tinySDdistilled_Q8_0.gguf',
+);
+
+ImageGenerationModel _sdxs(ModelSource model) => ImageGenerationModel(model);
 
 /// Runs [body] while a 10 ms periodic timer measures the longest time the
 /// event loop went without running it.

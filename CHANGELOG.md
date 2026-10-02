@@ -1,5 +1,15 @@
 ## Unreleased
 
+- **Breaking (Preview):** image generation follows the shared engine
+  pattern: `ImageGenerationEngine.load(ImageGenerationModel(source,
+  components: [...]), params:, download:, onProgress:)` downloads every
+  `ModelSource` into the model cache, with combined progress, cancellation
+  and cache reuse, and detects each file's role from its header. Generation
+  settings move to `ImageGenerationRequest`. The model presets,
+  `ImageGenerationModelFiles`, `ImageGenerationDefaults`,
+  `ImageGenerationOptions` (now `ImageModelParams`) and `String` paths are
+  removed; `MIGRATION.md` maps each former preset to its files and request
+  settings.
 - **Behavior change:** `responseFormat` maps with an unknown `type` or
   key, such as `json_shema` or a misspelled `schma`, now throw
   `LlamaUnsupportedException` before generation instead of generating

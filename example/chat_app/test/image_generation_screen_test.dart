@@ -200,6 +200,7 @@ void main() {
     final run = generation.generator!.runs.single;
     expect(run.request.seed, isNull);
     expect(run.request.steps, 1);
+    expect(run.request.guidanceScale, 1);
     expect(run.request.width, 512);
 
     run.progress(ImageGenerationPhase.encodingPrompt, 0, 1);
@@ -268,7 +269,7 @@ void main() {
         'The image model needs about 2.62 GiB (1.89 GiB of weights plus '
         'working memory), but only 1.50 GiB is available (MemAvailable). Use '
         'a smaller or more quantized model, free memory, or set '
-        'ImageGenerationOptions.checkMemory to false to try anyway.';
+        'ImageModelParams.checkMemory to false to try anyway.';
     generation.loadError = LlamaModelException(refusal);
     await pumpScreen(tester);
 
@@ -470,11 +471,7 @@ void main() {
     await pumpEventQueue();
     final turboEngine = generation.generator!;
     expect(
-      generation.loadedModels.last.family,
-      ImageGenerationModelFamily.sdTurbo,
-    );
-    expect(
-      generation.loadedModels.last.files.taesd,
+      generation.loadedModels.last.components.single.source.path,
       '/models/taesd.safetensors',
     );
     provider.dispose();
@@ -890,20 +887,23 @@ void main() {
       expect(ImageModelProfile.sdxs.isRecommended, isTrue);
     });
 
-    test('builds the library presets and their defaults', () {
+    test('builds library models with the settings of each profile', () {
       final sdxs = ImageModelProfile.sdxs.buildModel(modelPath: '/m.gguf');
-      expect(sdxs.family, ImageGenerationModelFamily.sdxs);
-      expect(sdxs.files.model, '/m.gguf');
-      expect(ImageModelProfile.sdxs.defaults.steps, 1);
+      expect(sdxs.source.path, '/m.gguf');
+      expect(sdxs.components, isEmpty);
+      expect(
+        (ImageModelProfile.sdxs.steps, ImageModelProfile.sdxs.guidanceScale),
+        (1, 1.0),
+      );
 
       final turbo = const InstalledImageModel(
         profile: ImageModelProfile.sdTurbo,
         modelPath: '/turbo.gguf',
         taesdPath: '/taesd.safetensors',
       ).toGenerationModel();
-      expect(turbo.family, ImageGenerationModelFamily.sdTurbo);
-      expect(turbo.files.taesd, '/taesd.safetensors');
-      expect(turbo.defaults.guidanceScale, 1);
+      expect(turbo.source.path, '/turbo.gguf');
+      expect(turbo.components.single.source.path, '/taesd.safetensors');
+      expect(turbo.components.single.role, isNull);
     });
   });
 }

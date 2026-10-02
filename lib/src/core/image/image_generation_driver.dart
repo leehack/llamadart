@@ -1,10 +1,13 @@
+import 'dart:typed_data';
+
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import 'generated_image.dart';
 import 'image_generation_model.dart';
 
 /// Model files and runtime settings for one native image-generation context.
 final class ImageGenerationSessionConfig {
-  /// Weight files keyed by role, as in `ImageGenerationModelFiles.paths`.
+  /// Local weight files keyed by runtime role: `model` (a checkpoint),
+  /// `diffusionModel`, `vae`, `taesd`, `clipL`, `clipG`, `t5xxl` or `llm`.
   final Map<String, String> files;
 
   /// stable-diffusion.cpp backend name (`cpu`, `gpu`), or `null` for the
@@ -133,6 +136,10 @@ abstract interface class ImageGenerationDriver {
 
   /// Size of the file at [path] in bytes, or `null` when it does not exist.
   int? fileSize(String path);
+
+  /// Up to [length] bytes of the file at [path] from [offset], for reading
+  /// model file headers; fewer at the end of the file.
+  Future<Uint8List> readFileRange(String path, int offset, int length);
 
   /// Memory available to a new model on [device], or `null` when it is not
   /// known.

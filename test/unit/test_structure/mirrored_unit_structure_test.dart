@@ -11,6 +11,9 @@ import 'package:test/test.dart';
 const Set<String> behaviorlessSources = <String>{
   'backends/webgpu/interop.dart',
   'core/image/image_generation_driver.dart',
+  'core/image/image_generation_model.dart',
+  'core/image/image_model_params.dart',
+  'core/models/config/compute_device.dart',
   'core/models/config/flash_attention.dart',
   'core/models/config/kv_cache_type.dart',
 };

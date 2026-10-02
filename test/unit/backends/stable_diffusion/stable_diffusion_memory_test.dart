@@ -282,6 +282,18 @@ void main() {
     }, skip: Platform.isMacOS ? false : 'macOS only');
   });
 
+  test('readStableDiffusionFileRange reads a range and stops at the end of '
+      'the file', () async {
+    final directory = await Directory.systemTemp.createTemp('llamadart-sd-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/header.gguf')
+      ..writeAsBytesSync(List.generate(10, (i) => i));
+
+    expect(await readStableDiffusionFileRange(file.path, 2, 3), [2, 3, 4]);
+    expect(await readStableDiffusionFileRange(file.path, 8, 64), [8, 9]);
+    expect(await readStableDiffusionFileRange(file.path, 20, 4), isEmpty);
+  });
+
   group('stableDiffusionFileSize', () {
     test('sizes a file and ignores directories and missing paths', () async {
       final directory = await Directory.systemTemp.createTemp('llamadart-sd-');

@@ -1,9 +1,25 @@
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 
 import '../../core/image/image_generation_driver.dart';
+
+/// Up to [length] bytes of the file at [path] from [offset]; fewer at its end.
+Future<Uint8List> readStableDiffusionFileRange(
+  String path,
+  int offset,
+  int length,
+) async {
+  final file = await File(path).open();
+  try {
+    await file.setPosition(offset);
+    return await file.read(length);
+  } finally {
+    await file.close();
+  }
+}
 
 /// Size of the regular file at [path] in bytes, or `null` when there is none.
 int? stableDiffusionFileSize(String path) {
