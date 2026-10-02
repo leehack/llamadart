@@ -12,12 +12,15 @@ description: >-
 ## Guidelines
 
 - Pass `tools:` to `ChatSession.create` or `engine.create`. The model's chat
-  template renders them and the parser returns calls in `delta.toolCalls`.
+  template renders them and the parser returns calls in `chunk.toolCalls`.
   llamadart never runs a handler for you: the app executes each call.
 - Tool calls arrive complete, with JSON-encoded `arguments`, in the final
-  chunk; its `finishReason` is `tool_calls`. Collect them over the whole
-  stream.
-- Invoke through `tool.invoke(decodedArguments)`, which wraps the arguments in
+  chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. Collect
+  the whole stream with `collect()` (or use `engine.complete` /
+  `session.send`): `LlamaCompletion.toolCalls` holds `LlamaToolCallContent`
+  entries with decoded `arguments` (empty when they are not a JSON object;
+  `rawJson` keeps the text).
+- Invoke through `tool.invoke(call.arguments)`, which wraps the arguments in
   `ToolParams` for typed access; it does not validate them. Read required
   arguments with `getRequired*`, which throws when one is missing. Catch errors
   and return them to the model as the tool result rather than crashing the
@@ -27,9 +30,9 @@ description: >-
   be any JSON-compatible value.
 - With `ChatSession`, the assistant's tool calls are already in history; add
   the tool results with `session.addMessage(...)` and continue with
-  `session.create(const [])`. With `engine.create`, append the assistant
-  message (one `LlamaToolCallContent` per call) and the tool messages to your
-  own list.
+  `session.create(const [])`. With `engine.create`, append the collected
+  `completion.message` (it carries one `LlamaToolCallContent` per call) and
+  the tool messages to your own list.
 - Always cap the number of tool rounds; a model can call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call
   and `ToolChoice.none` disables tools for one request.
@@ -49,8 +52,6 @@ description: >-
 Define a tool and run a bounded tool-call loop with `ChatSession`:
 
 ```dart
-import 'dart:convert';
-
 import 'package:llamadart/llamadart.dart';
 
 final ToolDefinition weatherTool = ToolDefinition(
@@ -73,25 +74,19 @@ Future<void> runTools(LlamaEngine engine, String question) async {
 
   List<LlamaContentPart> parts = [LlamaTextContent(question)];
   for (int round = 0; round < 5; round++) {
-    final List<LlamaCompletionChunkToolCall> calls = [];
-    await for (final chunk in session.create(parts, tools: tools)) {
-      final LlamaCompletionChunkDelta delta = chunk.choices.first.delta;
-      if (delta.content != null) print(delta.content);
-      calls.addAll(delta.toolCalls ?? const []);
-    }
-    if (calls.isEmpty) break;
+    final LlamaCompletion reply = await session
+        .create(parts, tools: tools)
+        .collect();
+    if (reply.text.isNotEmpty) print(reply.text);
+    if (reply.toolCalls.isEmpty) break;
 
-    for (final call in calls) {
-      final String name = call.function?.name ?? '';
-      final String arguments = call.function?.arguments ?? '';
+    for (final LlamaToolCallContent call in reply.toolCalls) {
       Object? result;
       try {
-        final ToolDefinition tool = tools.firstWhere((t) => t.name == name);
-        result = await tool.invoke(
-          arguments.isEmpty
-              ? const {}
-              : jsonDecode(arguments) as Map<String, dynamic>,
+        final ToolDefinition tool = tools.firstWhere(
+          (t) => t.name == call.name,
         );
+        result = await tool.invoke(call.arguments);
       } catch (error) {
         result = 'Error: $error';
       }
@@ -99,7 +94,11 @@ Future<void> runTools(LlamaEngine engine, String question) async {
         LlamaChatMessage.withContent(
           role: LlamaChatRole.tool,
           content: [
-            LlamaToolResultContent(id: call.id, name: name, result: result),
+            LlamaToolResultContent(
+              id: call.id,
+              name: call.name,
+              result: result,
+            ),
           ],
         ),
       );
@@ -114,24 +113,18 @@ Force a single tool call for one request:
 ```dart
 import 'package:llamadart/llamadart.dart';
 
-Future<LlamaCompletionChunkToolCall?> forceCall(
+Future<LlamaToolCallContent?> forceCall(
   LlamaEngine engine,
   List<ToolDefinition> tools,
   String request,
 ) async {
-  await for (final chunk in engine.create(
+  final LlamaCompletion reply = await engine.complete(
     [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: request)],
     tools: tools,
     toolChoice: ToolChoice.required,
     params: const GenerationParams(maxTokens: 256, temp: 0),
-  )) {
-    final List<LlamaCompletionChunkToolCall>? calls =
-        chunk.choices.first.delta.toolCalls;
-    if (calls != null && calls.isNotEmpty) {
-      return calls.first;
-    }
-  }
-  return null;
+  );
+  return reply.toolCalls.firstOrNull;
 }
 ```
 

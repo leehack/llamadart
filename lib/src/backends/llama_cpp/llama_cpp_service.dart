@@ -28,6 +28,7 @@ import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
 import 'decision_head.dart';
+import 'lazy_grammar_triggers.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
@@ -6453,32 +6454,8 @@ class LlamaCppService {
   }
 
   _LazyGrammarConfig? _buildLazyGrammarConfig(GenerationParams params) {
-    final triggerPatterns = <String>[];
-    final triggerTokens = <int>[];
-
-    for (final trigger in params.grammarTriggers) {
-      switch (trigger.type) {
-        case 0:
-          triggerPatterns.add(_regexEscape(trigger.value));
-          break;
-        case 1:
-          final token = trigger.token ?? int.tryParse(trigger.value);
-          if (token != null) {
-            triggerTokens.add(token);
-          }
-          break;
-        case 2:
-          triggerPatterns.add(trigger.value);
-          break;
-        case 3:
-          final pattern = trigger.value;
-          final anchored = pattern.isEmpty
-              ? r'^$'
-              : "${pattern.startsWith('^') ? '' : '^'}$pattern${pattern.endsWith(r'$') ? '' : r'$'}";
-          triggerPatterns.add(anchored);
-          break;
-      }
-    }
+    final (patterns: triggerPatterns, tokens: triggerTokens) =
+        lazyGrammarTriggerInputs(params.grammarTriggers);
 
     if (triggerPatterns.isEmpty && triggerTokens.isEmpty) {
       return null;
@@ -6587,19 +6564,6 @@ class LlamaCppService {
     return stopSequences
         .where((sequence) => !preservedSet.contains(sequence))
         .toList(growable: false);
-  }
-
-  String _regexEscape(String input) {
-    final escaped = StringBuffer();
-    const regexMeta = r'\^$.*+?()[]{}|';
-    for (var i = 0; i < input.length; i++) {
-      final char = input[i];
-      if (regexMeta.contains(char)) {
-        escaped.write('\\');
-      }
-      escaped.write(char);
-    }
-    return escaped.toString();
   }
 
   /// Tokenizes the given [text].

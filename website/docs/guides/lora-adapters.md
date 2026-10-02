@@ -32,19 +32,15 @@ Future<void> main() async {
 
     await engine.setLora('/models/lora/domain.gguf', scale: 0.7);
 
-    await for (final chunk in engine.create(
+    final answer = await engine.create(
       const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.user,
           text: 'Answer as a domain specialist in one paragraph.',
         ),
       ],
-    )) {
-      final text = chunk.choices.first.delta.content;
-      if (text != null) {
-        print(text);
-      }
-    }
+    ).text();
+    print(answer);
   } finally {
     await engine.dispose();
   }

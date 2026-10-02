@@ -67,8 +67,8 @@ Built-in handlers include newer formats such as Gemma 4. In practice that means
 - `<|tool_call>call:name{args}<tool_call|>` tool-call envelopes.
 
 Gemma 4 thought-channel output is parsed incrementally during streaming, so
-`chunk.choices.first.delta.thinking` carries reasoning text while
-`chunk.choices.first.delta.content` remains reserved for final answer content.
+`chunk.thinking` carries reasoning text while `chunk.text` remains reserved
+for final answer content.
 
 Tencent Hunyuan V3 templates are also detected directly, including their
 namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.

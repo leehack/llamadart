@@ -2441,10 +2441,9 @@ class _ImmediateChatGenerationService extends ChatGenerationService {
       if (!shouldContinue() || chunk.choices.isEmpty) {
         continue;
       }
-      final delta = chunk.choices.first.delta;
-      text.write(delta.content ?? '');
+      text.write(chunk.text);
       if (thinkingEnabled) {
-        thinking.write(delta.thinking ?? '');
+        thinking.write(chunk.thinking);
       }
       generatedTokens += 1;
     }

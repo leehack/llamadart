@@ -3386,7 +3386,10 @@ void main() {
             presencePenalty: 1.5,
             grammarLazy: true,
             grammarTriggers: [
-              GenerationGrammarTrigger(type: 0, value: '<tool_call>'),
+              GenerationGrammarTrigger.typed(
+                type: GrammarTriggerType.word,
+                value: '<tool_call>',
+              ),
             ],
             preservedTokens: ['<tool_call>'],
             grammarRoot: 'tool_call',

@@ -49,21 +49,23 @@ Future<void> main(List<String> arguments) async {
         'text': final String text,
       }) {
         total++;
-        final buffer = StringBuffer();
-        await for (final chunk in engine.create(
-          [
-            LlamaChatMessage.fromText(role: LlamaChatRole.system, text: system),
-            LlamaChatMessage.fromText(
-              role: LlamaChatRole.user,
-              text: 'Command: $text',
-            ),
-          ],
-          params: params,
-          enableThinking: false,
-        )) {
-          buffer.write(chunk.choices.first.delta.content ?? '');
-        }
-        final answer = buffer.toString().trim();
+        final reply = await engine
+            .create(
+              [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.system,
+                  text: system,
+                ),
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'Command: $text',
+                ),
+              ],
+              params: params,
+              enableThinking: false,
+            )
+            .text();
+        final answer = reply.trim();
         if (answer == intent) {
           out.writeln(line);
           kept++;

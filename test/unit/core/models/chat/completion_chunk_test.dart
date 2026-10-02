@@ -75,4 +75,102 @@ void main() {
     expect(chunk.usage!.completionTokens, 2);
     expect(chunk.usage!.duration, isNull);
   });
+
+  group('LlamaFinishReason', () {
+    test('maps every finish_reason wire value', () {
+      expect(LlamaFinishReason.fromWireValue('stop'), LlamaFinishReason.stop);
+      expect(
+        LlamaFinishReason.fromWireValue('length'),
+        LlamaFinishReason.length,
+      );
+      expect(
+        LlamaFinishReason.fromWireValue('tool_calls'),
+        LlamaFinishReason.toolCalls,
+      );
+      expect(LlamaFinishReason.values.map((reason) => reason.wireValue), [
+        'stop',
+        'length',
+        'tool_calls',
+      ]);
+    });
+
+    test('returns null for a missing or unknown value', () {
+      expect(LlamaFinishReason.fromWireValue(null), isNull);
+      expect(LlamaFinishReason.fromWireValue('content_filter'), isNull);
+    });
+  });
+
+  group('LlamaCompletionChunkExtension', () {
+    LlamaCompletionChunk chunk(List<Map<String, Object?>> choices) =>
+        LlamaCompletionChunk.fromJson({
+          'id': 'c',
+          'object': 'chat.completion.chunk',
+          'created': 1,
+          'model': 'm',
+          'choices': choices,
+        });
+
+    test('reads the deltas of the first choice', () {
+      final value = chunk([
+        {
+          'index': 0,
+          'delta': {
+            'content': 'hi',
+            'thinking': 'hmm',
+            'tool_calls': [
+              {
+                'index': 0,
+                'id': 'call_0',
+                'function': {'name': 'f', 'arguments': '{'},
+              },
+            ],
+          },
+          'finish_reason': 'tool_calls',
+        },
+        {
+          'index': 1,
+          'delta': {'content': 'other'},
+          'finish_reason': 'stop',
+        },
+      ]);
+
+      expect(value.text, 'hi');
+      expect(value.thinking, 'hmm');
+      expect(value.toolCalls.single.function!.name, 'f');
+      expect(value.finishReason, LlamaFinishReason.toolCalls);
+    });
+
+    test('returns empty values for an empty delta', () {
+      final value = chunk([
+        {'index': 0, 'delta': <String, Object?>{}},
+      ]);
+
+      expect(value.text, isEmpty);
+      expect(value.thinking, isEmpty);
+      expect(value.toolCalls, isEmpty);
+      expect(value.finishReason, isNull);
+    });
+
+    test('returns empty values for a chunk without choices', () {
+      final value = chunk([]);
+
+      expect(value.text, isEmpty);
+      expect(value.thinking, isEmpty);
+      expect(value.toolCalls, isEmpty);
+      expect(value.finishReason, isNull);
+    });
+
+    test('leaves an unknown finish_reason untyped', () {
+      final value = chunk([
+        {
+          'index': 0,
+          'delta': <String, Object?>{},
+          'finish_reason': 'content_filter',
+        },
+      ]);
+
+      expect(value.finishReason, isNull);
+      expect(value.choices.single.finishReason, 'content_filter');
+    });
+  });
 }

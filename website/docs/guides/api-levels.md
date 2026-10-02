@@ -42,14 +42,10 @@ Future<void> main() async {
     final ChatSession session = ChatSession(engine)
       ..systemPrompt = 'You are a concise assistant.';
 
-    await for (final LlamaCompletionChunk chunk in session.create([
-      LlamaTextContent('Hello! Give me one sentence about local inference.'),
-    ])) {
-      final String? text = chunk.choices.first.delta.content;
-      if (text != null) {
-        print(text);
-      }
-    }
+    final LlamaCompletion reply = await session.send(
+      'Hello! Give me one sentence about local inference.',
+    );
+    print(reply.text);
   } finally {
     await engine.dispose();
   }

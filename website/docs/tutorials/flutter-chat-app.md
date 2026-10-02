@@ -148,9 +148,8 @@ class _ChatScreenState extends State<ChatScreen> {
         <LlamaContentPart>[LlamaTextContent(text)],
         params: const GenerationParams(maxTokens: 256, temp: 0.7),
       )) {
-        final String? delta = chunk.choices.first.delta.content;
-        if (delta != null && mounted) {
-          setState(() => reply.text += delta);
+        if (chunk.text.isNotEmpty && mounted) {
+          setState(() => reply.text += chunk.text);
         }
       }
     } on LlamaException catch (error) {
@@ -273,7 +272,7 @@ package cache; later launches load it from there.
   native targets.
 - **Multi-turn chat.** `ChatSession` keeps the conversation history and
   applies the model's chat template. Each `create` call streams
-  `LlamaCompletionChunk`s; the app appends `delta.content` to the last message.
+  `LlamaCompletionChunk`s; the app appends `chunk.text` to the last message.
 - **Stop.** `cancelGeneration()` ends the stream normally, without an
   exception. The partial reply stays in the session history, so the next turn
   continues the conversation.
@@ -285,7 +284,7 @@ package cache; later launches load it from there.
 - The model here, SmolLM2 135M, is only good for checking the pipeline. Pick a
   real model in [Finding models](../getting-started/finding-models) and
   [Model families](../getting-started/model-families).
-- Reasoning models also stream `delta.thinking`; see
+- Reasoning models also stream `chunk.thinking`; see
   [Text generation and streaming](../guides/generation-and-streaming).
 - For a richer download UI with retry and cache inspection, use
   `ModelDownloadController`; see

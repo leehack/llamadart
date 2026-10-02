@@ -440,7 +440,7 @@ final stream = engine.create(
 );
 
 await for (final chunk in stream) {
-  stdout.write(chunk.choices.first.delta.content ?? '');
+  stdout.write(chunk.text);
 }
 ```
 
