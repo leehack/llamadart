@@ -857,6 +857,18 @@ void main() {
 
       expect(backend.nativeLogLevels, [LlamaLogLevel.error]);
     });
+
+    test('loadModelFromUrl applies the configured native level', () async {
+      final urlBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final urlEngine = LlamaEngine(urlBackend);
+      addTearDown(urlEngine.dispose);
+      await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
+      urlBackend.nativeLogLevels.clear();
+
+      await urlEngine.loadModelFromUrl('https://example.com/model.gguf');
+
+      expect(urlBackend.nativeLogLevels, [LlamaLogLevel.warn]);
+    });
   });
 
   group('LlamaEngine Mock Tests', () {

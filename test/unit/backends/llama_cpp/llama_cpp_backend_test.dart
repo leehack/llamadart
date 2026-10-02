@@ -1388,6 +1388,53 @@ void main() {
     );
   });
 
+  group('worker error types', () {
+    test('a missing GGUF file is a LlamaModelException', () async {
+      final backend = NativeLlamaBackend(workerEntrypoint: _loggingWorkerEntry);
+      try {
+        await expectLater(
+          backend
+              .modelLoad('/nonexistent/model.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 5)),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (e) => e.message,
+              'message',
+              'Model file not found: /nonexistent/model.gguf',
+            ),
+          ),
+        );
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('invalid ModelParams stay a LlamaArgumentException', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _validatingWorkerEntry,
+      );
+      try {
+        await expectLater(
+          backend
+              .modelLoad(
+                '/models/model.gguf',
+                const ModelParams(speculativeRollbackTokenMax: -1),
+              )
+              .timeout(const Duration(seconds: 5)),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (e) => e.message,
+              'message',
+              contains('speculativeRollbackTokenMax'),
+            ),
+          ),
+        );
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+  });
+
   group('worker startup handshake', () {
     test(
       'init failure is typed, diagnostic, retryable, and cleaned up',
@@ -1739,6 +1786,18 @@ Future<void> _waitForRecords(List<LlamaLogRecord> records, int count) async {
   final deadline = DateTime.now().add(const Duration(seconds: 5));
   while (records.length < count && DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
+void _validatingWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(initialSendPort, _ValidatingLlamaCppService());
+}
+
+class _ValidatingLlamaCppService extends _LoggingLlamaCppService {
+  @override
+  int loadModel(String modelPath, ModelParams modelParams) {
+    modelParams.validate();
+    return 1;
   }
 }
 

@@ -1,5 +1,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package
 
+import 'dart:async';
+
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
@@ -45,6 +47,39 @@ void main() {
     expect(first.nativeLevels, [LlamaLogLevel.warn, LlamaLogLevel.error]);
     expect(second.dartLevels, [LlamaLogLevel.info]);
     expect(second.nativeLevels, [LlamaLogLevel.warn]);
+  });
+
+  test('a backend that never answers does not block configure', () async {
+    final warnings = <LlamaLogRecord>[];
+    final gate = Completer<void>();
+    final stuck = _LogLevelBackend()..gate = gate;
+    final healthy = _LogLevelBackend();
+    final stuckEngine = LlamaEngine(stuck);
+    final healthyEngine = LlamaEngine(healthy);
+    addTearDown(() async {
+      if (!gate.isCompleted) gate.complete();
+      await stuckEngine.dispose();
+      await healthyEngine.dispose();
+    });
+
+    final stopwatch = Stopwatch()..start();
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.warn,
+      handler: warnings.add,
+    ).timeout(const Duration(seconds: 5));
+
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+    expect(healthy.dartLevels, [LlamaLogLevel.warn]);
+    expect(stuck.dartLevels, isEmpty);
+    expect(
+      warnings.single.message,
+      contains('did not take the new log levels'),
+    );
+
+    gate.complete();
+    await pumpEventQueue();
+    expect(stuck.dartLevels, [LlamaLogLevel.warn]);
+    expect(stuck.nativeLevels, [LlamaLogLevel.warn]);
   });
 
   test('a failing backend warns and does not stop the others', () async {
@@ -151,6 +186,7 @@ class _LogLevelBackend implements LlamaBackend, BackendDartLogLevel {
   final List<LlamaLogLevel> dartLevels = <LlamaLogLevel>[];
   final List<LlamaLogLevel> nativeLevels = <LlamaLogLevel>[];
   Object? failure;
+  Completer<void>? gate;
 
   @override
   bool get isReady => false;
@@ -159,6 +195,7 @@ class _LogLevelBackend implements LlamaBackend, BackendDartLogLevel {
   Future<void> setDartLogLevel(LlamaLogLevel level) async {
     final error = failure;
     if (error != null) throw error;
+    await gate?.future;
     dartLevels.add(level);
   }
 

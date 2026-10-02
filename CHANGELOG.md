@@ -1,11 +1,12 @@
 ## Unreleased
 
-- **Behavior change:** `ModelParams.validate()` throws
-  `LlamaArgumentException` and `ModelDownloadController` throws
-  `LlamaArgumentException` or `LlamaStateException` instead of `ArgumentError`
-  or `StateError`; a failed load's `details` is now the cause's message instead
-  of a `{type, message}` map, and the not-ready error names
-  `loadModelSource()` ([#843](https://github.com/leehack/llamadart/issues/843)).
+- **Breaking:** `ModelParams.validate()` throws `LlamaArgumentException`,
+  `ModelDownloadController` throws `LlamaArgumentException` or
+  `LlamaStateException`, and Web backend calls before a model load throw
+  `LlamaStateException`, instead of `ArgumentError` or `StateError`; a failed
+  load's `details` is now the cause's message instead of a `{type, message}`
+  map, and the not-ready error names `loadModelSource()`
+  ([#843](https://github.com/leehack/llamadart/issues/843)).
 - **Deprecated:** `LlamaLogging.configure(level:, nativeLevel:, handler:)`
   replaces `LlamaEngine.configureLogging` and the engine's `setLogLevel`,
   `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so

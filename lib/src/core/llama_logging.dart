@@ -23,9 +23,12 @@ abstract final class LlamaLogging {
   /// above [level] are printed. Both levels default to [LlamaLogLevel.none].
   ///
   /// The new levels apply immediately on this isolate and to every engine
-  /// created later. The returned future completes once they also reach the
-  /// worker isolates and native runtimes of live engines; an engine that
-  /// cannot take them logs a warning and takes them on its next model load.
+  /// created later, and are sent to the worker isolates and native runtimes
+  /// of live engines. The returned future completes when every live engine
+  /// has taken them, or after at most one second. An engine that fails or
+  /// does not answer in time logs a warning; a busy worker takes the levels
+  /// when its current operation finishes, a new worker starts with them, and
+  /// every model load applies the native level again.
   ///
   /// Native llama.cpp and LiteRT-LM backends log from a worker isolate that
   /// forwards records at or above [level] to this isolate, where [handler]
@@ -45,6 +48,10 @@ abstract final class LlamaLogging {
 }
 
 LlamaLogLevel _nativeLevel = LlamaLogLevel.none;
+
+// A worker answers only between operations, so a long generation or a wedged
+// worker must not block `configure`.
+const Duration _pushTimeout = Duration(seconds: 1);
 
 // Weak so an engine dropped without `dispose()` can still be collected.
 final List<WeakReference<LlamaBackend>> _liveBackends =
@@ -85,17 +92,28 @@ Future<void> _pushLogLevels(
   LlamaLogLevel dart,
   LlamaLogLevel native,
 ) async {
-  try {
-    if (backend is BackendDartLogLevel) {
-      await (backend as BackendDartLogLevel).setDartLogLevel(dart);
+  Future<void> push() async {
+    try {
+      if (backend is BackendDartLogLevel) {
+        await (backend as BackendDartLogLevel).setDartLogLevel(dart);
+      }
+      await backend.setLogLevel(native);
+    } catch (error, stackTrace) {
+      LlamaLogger.instance.warn(
+        'Could not apply log levels to a running backend; a new worker starts '
+        'with them and the next model load applies the native level.',
+        error,
+        stackTrace,
+      );
     }
-    await backend.setLogLevel(native);
-  } catch (error, stackTrace) {
-    LlamaLogger.instance.warn(
-      'Could not apply log levels to a running backend; they apply on its '
-      'next model load.',
-      error,
-      stackTrace,
-    );
   }
+
+  await push().timeout(
+    _pushTimeout,
+    onTimeout: () => LlamaLogger.instance.warn(
+      'A running backend did not take the new log levels within '
+      '${_pushTimeout.inSeconds} s; it takes them when its current operation '
+      'finishes.',
+    ),
+  );
 }

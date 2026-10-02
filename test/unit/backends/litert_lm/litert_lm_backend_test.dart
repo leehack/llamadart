@@ -190,6 +190,28 @@ void main() {
     }
   });
 
+  test('direct modelLoad keeps invalid ModelParams typed', () async {
+    final backend = LiteRtLmBackend();
+
+    try {
+      await expectLater(
+        backend.modelLoad(
+          modelFile.path,
+          const ModelParams(speculativeRollbackTokenMax: -1),
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            contains('speculativeRollbackTokenMax'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('public engine rejects unsupported model params and recovers', () async {
     final engine = LlamaEngine(LiteRtLmBackend());
 

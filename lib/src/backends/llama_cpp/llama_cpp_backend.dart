@@ -127,6 +127,8 @@ class NativeLlamaBackend
         return Exception(message);
       case WorkerErrorKind.backendInitialization:
         return LlamaBackendInitializationException(response.message);
+      case WorkerErrorKind.argument:
+        return LlamaArgumentException(response.message);
       case WorkerErrorKind.range:
         return _WorkerRangeError(response.message);
     }

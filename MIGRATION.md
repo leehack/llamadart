@@ -108,9 +108,10 @@ directory for every default download, set
    | Call | Before | After |
    | --- | --- | --- |
    | `ModelParams.validate()` | `ArgumentError` | `LlamaArgumentException` |
+   | A backend's own model load or context create with invalid `ModelParams` | `ArgumentError` or `Exception` | `LlamaArgumentException` |
    | `ModelDownloadController.start` with `options.cancelToken` | `ArgumentError` | `LlamaArgumentException` |
    | `ModelDownloadController.start` while a task runs, `retry` before `start`, either after `dispose` | `StateError` | `LlamaStateException` |
-   | WebGPU backend calls with no model loaded | `StateError` | `LlamaStateException` |
+   | Web `LlamaBackend()` or `WebGpuLlamaBackend` calls before a model load | `StateError` | `LlamaStateException` |
 
    ```dart
    // Before

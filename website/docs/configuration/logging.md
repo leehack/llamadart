@@ -24,11 +24,15 @@ await LlamaLogging.configure(
 
 Every engine shares this configuration, so the last `configure` call wins,
 whatever the order of calls or the engine they came from. The new levels apply
-at once on the calling isolate and to engines loaded later; await the returned
-future to know they also reached the worker isolates and native runtimes of
-running engines. Without a `handler`, records are printed. Configure logging
-before loading a model to capture load-time output; `LlamaLogging.level` and
-`LlamaLogging.nativeLevel` read the current levels.
+at once on the calling isolate and to engines loaded later, and are sent to
+the worker isolates and native runtimes of running engines. The returned
+future completes when they have taken them, or after at most one second. A
+worker that does not answer in time, such as one busy with a generation, logs
+a warning and takes them when its current operation finishes; a backend that
+fails logs a warning too. Without a `handler`, records are
+printed. Configure logging before loading a model to capture load-time
+output; `LlamaLogging.level` and `LlamaLogging.nativeLevel` read the current
+levels.
 
 `LlamaEngine.configureLogging`, `engine.setLogLevel`,
 `engine.setDartLogLevel`, `engine.setNativeLogLevel`, `engine.dartLogLevel`
