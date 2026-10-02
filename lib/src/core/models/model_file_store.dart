@@ -6,7 +6,7 @@ import 'model_resolver.dart';
 /// and caches remote files.
 ///
 /// Pass one as `store:` to replace the defaults, for example to keep weights
-/// in an app-private directory on Android and iOS:
+/// in a directory the app chooses:
 ///
 /// ```dart
 /// final store = ModelFileStore(

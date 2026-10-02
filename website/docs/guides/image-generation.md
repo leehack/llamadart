@@ -189,10 +189,12 @@ wrong file costs its download; it stays in the cache.
   nothing.
 - A load is atomic: when it throws, nothing stays loaded.
 - `store: ModelFileStore(resolver: ..., downloadManager: ...)` replaces the
-  defaults, as for `LlamaEngine`. On Android and iOS the default download
-  manager uses a temporary cache directory; pass
+  defaults, as for `LlamaEngine`. The default download manager caches in the
+  same place as `LlamaEngine`'s: on Android and iOS, `llamadart/models` in the
+  app's cache directory, or `DefaultModelDownloadManager.globalCacheDirectory`
+  when set. Pass
   `ModelFileStore(downloadManager: DefaultModelDownloadManager.appPrivate(cacheDirectory: ...))`
-  to keep the weights.
+  to keep the weights somewhere else.
 
 `engine.roles` reports the file in each role.
 

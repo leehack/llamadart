@@ -106,10 +106,12 @@ description: >-
   failed download throws what the download manager throws (usually
   `LlamaModelException`). The runtime check, `params` checks and local-file
   checks run before anything downloads, so the web and unsupported devices
-  download nothing. Loads are atomic: on failure nothing stays loaded. On
-  Android and iOS pass `store: ModelFileStore(downloadManager:
-  DefaultModelDownloadManager.appPrivate(cacheDirectory: ...))` for durable
-  storage; the default uses a temporary cache there.
+  download nothing. Loads are atomic: on failure nothing stays loaded. The
+  default download manager caches where `LlamaEngine`'s does (on Android and
+  iOS, `llamadart/models` in the app's cache directory, or
+  `DefaultModelDownloadManager.globalCacheDirectory`); pass `store:
+  ModelFileStore(downloadManager: DefaultModelDownloadManager.appPrivate(
+  cacheDirectory: ...))` for another directory.
 - Model licenses differ by model, including on commercial use (Stability AI
   Community License for SD-Turbo and SD 3.5 Large Turbo, CreativeML Open
   RAIL++-M for SDXS and SDXL-Lightning, Apache 2.0 for FLUX.1-schnell and
