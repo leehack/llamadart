@@ -297,6 +297,11 @@ class ImageGenerationEngine {
   /// not checked. A model that does not fit throws [LlamaModelException]
   /// naming both figures, instead of letting the system kill the app.
   ///
+  /// [download]'s cancel token stops a download at once and is checked again
+  /// after classification and after the native load; the native load itself
+  /// cannot be interrupted, so a cancel during it takes effect when it
+  /// returns, and the model it loaded is freed.
+  ///
   /// The load is atomic: when it throws, no model stays loaded. Downloaded
   /// files stay in the model cache. Errors name files by position (the main
   /// file, component 1, ...) and role, not by path.
@@ -360,9 +365,13 @@ class ImageGenerationEngine {
       effectiveStore.resolver,
       effectiveStore.downloadManager,
     );
-    if (download.cancelToken?.isCancelled ?? false) {
-      throw LlamaStateException('Image model loading was cancelled.');
+    void throwIfCancelled() {
+      if (download.cancelToken?.isCancelled ?? false) {
+        throw LlamaStateException('Image model loading was cancelled.');
+      }
     }
+
+    throwIfCancelled();
     final assignment = await assignImageModelRoles([
       for (final (index, path) in paths.indexed)
         ImageModelFileInput(
@@ -370,6 +379,7 @@ class ImageGenerationEngine {
           read: (offset, length) => driver.readFileRange(path, offset, length),
         ),
     ]);
+    throwIfCancelled();
     var weightBytes = 0;
     for (final (index, path) in paths.indexed) {
       weightBytes += _fileSize(driver, index, path);
@@ -410,6 +420,12 @@ class ImageGenerationEngine {
               ),
         ),
       );
+      if (download.cancelToken?.isCancelled ?? false) {
+        // The native load cannot be interrupted; free what it allocated so
+        // a cancelled load leaves nothing loaded.
+        await session.dispose();
+        throwIfCancelled();
+      }
       return ImageGenerationEngine._(
         model,
         params,

@@ -179,9 +179,11 @@ wrong file costs its download; it stays in the cache.
   cancel token. Local files take only the cancel token.
   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since it
   cannot name one of several files.
-- A cancelled load throws `LlamaStateException`. A failed download throws
-  what the download manager throws, usually `LlamaModelException`, with
-  URL secrets redacted.
+- A cancelled load throws `LlamaStateException`. Cancelling stops a
+  download at once; the native load cannot be interrupted, so a cancel
+  during it takes effect when it returns, and the model it loaded is freed.
+  A failed download throws what the download manager throws, usually
+  `LlamaModelException`, with URL secrets redacted.
 - The runtime check, `params:` checks and the check that every local file
   exists run first, so an unsupported platform, including the web, downloads
   nothing.

@@ -99,8 +99,8 @@ void main() {
               (error) => error.message,
               'message',
               allOf(
-                contains('needs a vae or taesd file'),
-                contains('needs its text encoders'),
+                contains('need a vae or taesd file'),
+                contains('need their text encoders'),
               ),
             )
             .having(

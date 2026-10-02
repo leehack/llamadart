@@ -16,6 +16,31 @@ ImageModelFileReader _reader(Uint8List bytes, {List<int>? fetched}) =>
       return Uint8List.sublistView(bytes, start, end);
     };
 
+/// A sparse GGUF of two `uint64` arrays: 4194304 items (32 MiB of zeros),
+/// then [secondCount] items whose data ends the header 64 MiB minus 6 bytes
+/// in at 4194294 items.
+ImageModelFileReader _twoArrays(int secondCount) {
+  final first = ggufHeader(metadata: {'a': const GgufArray(10, 4194304)})
+    ..buffer.asByteData().setUint32(16, 2, Endian.little);
+  final second = Uint8List.sublistView(
+    ggufHeader(metadata: {'b': GgufArray(10, secondCount)}),
+    24,
+  );
+  final secondOffset = first.length + 4194304 * 8;
+  return (offset, length) async {
+    final bytes = Uint8List(length);
+    for (final (start, segment) in [(0, first), (secondOffset, second)]) {
+      for (var i = 0; i < segment.length; i++) {
+        final at = start + i - offset;
+        if (at >= 0 && at < length) {
+          bytes[at] = segment[i];
+        }
+      }
+    }
+    return bytes;
+  };
+}
+
 Future<ImageModelFileClassification> _classify(Uint8List bytes) async =>
     classifyImageModelFile(await readImageModelFileHeader(_reader(bytes)));
 
@@ -192,6 +217,139 @@ void main() {
     });
   });
 
+  group('header bounds', () {
+    Future<Object?> read(Uint8List bytes, {List<int>? fetched}) async {
+      try {
+        return await readImageModelFileHeader(_reader(bytes, fetched: fetched));
+      } on FormatException catch (error) {
+        return error;
+      }
+    }
+
+    test('accepts the largest counts it allows', () async {
+      final tensors = await read(
+        ggufHeader(
+          tensors: [
+            for (var i = 0; i < 65536; i++) ('t$i', [1]),
+          ],
+        ),
+      );
+      expect((tensors as ImageModelFileHeader).tensors, hasLength(65536));
+
+      final keys = await read(
+        ggufHeader(metadata: {for (var i = 0; i < 65536; i++) 'k$i': i}),
+      );
+      expect((keys as ImageModelFileHeader).metadata, hasLength(65536));
+
+      final array = await read(
+        ggufHeader(metadata: {'a': const GgufArray(0, 4194304)}),
+      );
+      expect(array, isA<ImageModelFileHeader>());
+
+      final string = await read(ggufHeader(metadata: {'s': 'x' * 1048576}));
+      expect(
+        ((string as ImageModelFileHeader).metadata['s'] as String).length,
+        1048576,
+      );
+
+      expect(
+        await readImageModelFileHeader(_twoArrays(4194294)),
+        isA<ImageModelFileHeader>(),
+      );
+
+      final json = '{"__metadata__":{"pad":"';
+      final padding = (16 << 20) - json.length - 3;
+      final safetensors = await read(
+        Uint8List.fromList([
+          ...(ByteData(
+            8,
+          )..setUint32(0, 16 << 20, Endian.little)).buffer.asUint8List(),
+          ...'$json${'x' * padding}"}}'.codeUnits,
+        ]),
+      );
+      expect(safetensors, isA<ImageModelFileHeader>());
+    });
+
+    test('rejects a count, string or header beyond its bound without reading '
+        'it', () async {
+      const count = 'Implausible GGUF header count.';
+      final cases = <String, (Uint8List, String)>{
+        'tensors': (
+          ggufHeader(
+            tensors: [
+              ('t', [1]),
+            ],
+          )..buffer.asByteData().setUint32(8, 65537, Endian.little),
+          count,
+        ),
+        'keys': (
+          ggufHeader(metadata: {'k': 1})
+            ..buffer.asByteData().setUint32(16, 65537, Endian.little),
+          count,
+        ),
+        'array items': (
+          ggufHeader(metadata: {'a': const GgufArray(0, 4194305)}),
+          count,
+        ),
+        'string bytes': (
+          ggufHeader(metadata: {'s': 'x'})
+            ..buffer.asByteData().setUint32(37, 1048577, Endian.little),
+          'Implausible GGUF string length.',
+        ),
+        'safetensors header': (
+          Uint8List.fromList([
+            ...(ByteData(8)..setUint32(0, (16 << 20) + 1, Endian.little)).buffer
+                .asUint8List(),
+            ...'{}'.codeUnits,
+          ]),
+          'Not a GGUF or safetensors file.',
+        ),
+      };
+      for (final MapEntry(key: name, value: (bytes, message))
+          in cases.entries) {
+        final fetched = <int>[];
+        final stopwatch = Stopwatch()..start();
+
+        expect(
+          await read(bytes, fetched: fetched),
+          isA<FormatException>().having((e) => e.message, 'message', message),
+          reason: name,
+        );
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(seconds: 1)),
+          reason: name,
+        );
+        expect(
+          fetched.fold<int>(0, (sum, length) => sum + length),
+          lessThanOrEqualTo(bytes.length),
+          reason: name,
+        );
+      }
+    });
+
+    test('rejects a header that would pass 64 MiB', () async {
+      await expectLater(
+        readImageModelFileHeader(_twoArrays(4194295)),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            'Model file header is too large.',
+          ),
+        ),
+      );
+    });
+
+    test('reads both halves of 64-bit values', () async {
+      final header = await readImageModelFileHeader(
+        _reader(ggufHeader(metadata: {'size': const GgufU64(0x100000005)})),
+      );
+
+      expect(header.metadata['size'], 0x100000005);
+    });
+  });
+
   group('assignImageModelRoles', () {
     test('assigns roles whatever the order of the files', () async {
       final assignment = await _assign([
@@ -352,6 +510,25 @@ void main() {
         _assign([ImageModelHeaders.sdTurboCheckpoint, ImageModelHeaders.taef1]),
         _modelError(contains('16-channel latents')),
       );
+
+      final inpainting = await _assign([
+        ImageModelHeaders.inpaintingCheckpoint,
+        ImageModelHeaders.sdxlVae,
+      ]);
+      expect(inpainting.roles[ImageModelRole.vae], 1);
+      await expectLater(
+        _assign([
+          ImageModelHeaders.inpaintingCheckpoint,
+          ImageModelHeaders.taef1,
+        ]),
+        _modelError(contains('produce 4-channel latents')),
+      );
+
+      final unknownChannels = await _assign([
+        ImageModelHeaders.wideTransformer,
+        ImageModelHeaders.taesd,
+      ]);
+      expect(unknownChannels.roles[ImageModelRole.taesd], 1);
 
       final matched = await _assign([
         ImageModelHeaders.zImageDiffusion,

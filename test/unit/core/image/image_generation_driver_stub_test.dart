@@ -14,6 +14,10 @@ void main() {
       contains('not available on the web'),
     );
     expect(driver.fileSize('/models/sdxs.gguf'), isNull);
+    await expectLater(
+      driver.readFileRange('/models/sdxs.gguf', 0, 8),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
     for (final device in ImageGenerationComputeDevice.values) {
       expect(driver.memoryBudget(device), isNull);
     }

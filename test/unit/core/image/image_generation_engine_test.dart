@@ -551,8 +551,56 @@ void main() {
       },
     );
 
-    test('a load is atomic: a runtime failure leaves nothing loaded, and the '
-        'next load starts from scratch', () async {
+    test('a cancel during the native load frees what it loaded and leaves '
+        'nothing loaded', () async {
+      final cancelToken = ModelDownloadCancelToken();
+      final gate = driver.startGate = Completer<void>();
+
+      final loading = load(
+        _fluxModel(),
+        download: ModelLoadOptions(cancelToken: cancelToken),
+      );
+      await pumpEventQueue();
+      expect(driver.started, hasLength(1));
+      cancelToken.cancel();
+      gate.complete();
+
+      await expectLater(
+        loading,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Image model loading was cancelled.',
+          ),
+        ),
+      );
+      expect(driver.session.disposeCalls, 1);
+
+      driver.startGate = null;
+      final engine = await load(_sdxs());
+      expect(engine.capabilities.isSupported, isTrue);
+    });
+
+    test('a cancel during header classification starts nothing', () async {
+      final cancelToken = ModelDownloadCancelToken();
+      final gate = driver.readGate = Completer<void>();
+
+      final loading = load(
+        _fluxModel(),
+        download: ModelLoadOptions(cancelToken: cancelToken),
+      );
+      await pumpEventQueue();
+      cancelToken.cancel();
+      gate.complete();
+
+      await expectLater(loading, throwsA(isA<LlamaStateException>()));
+      expect(driver.started, isEmpty);
+      expect(driver.session.disposeCalls, 0);
+    });
+
+    test('a runtime failure leaves nothing loaded, and the next load starts '
+        'from scratch', () async {
       driver.startError = LlamaModelException('not an image model');
 
       await expectLater(
@@ -560,12 +608,67 @@ void main() {
         throwsA(isA<LlamaModelException>()),
       );
       expect(driver.started, isEmpty);
-      expect(driver.session.disposeCalls, 0);
 
       driver.startError = null;
       final engine = await load(_sdxs());
       expect(driver.started.single.files, {'model': _model});
       expect(engine.capabilities.isSupported, isTrue);
+    });
+
+    test('passes each role to the runtime under its runtime name', () async {
+      const sd35 = '/models/sd35.gguf';
+      const clipG = '/models/clip_g.gguf';
+      const taesd3 = '/models/taesd3.safetensors';
+      const zImage = '/models/z_image.gguf';
+      const qwen = '/models/qwen3.gguf';
+      driver
+        ..sizes.addAll({
+          sd35: _gib,
+          clipG: _gib,
+          taesd3: 1 << 20,
+          zImage: _gib,
+          qwen: _gib,
+        })
+        ..headers.addAll({
+          sd35: ImageModelHeaders.sd35Diffusion,
+          clipG: ImageModelHeaders.clipG,
+          taesd3: ImageModelHeaders.taef1,
+          zImage: ImageModelHeaders.zImageDiffusion,
+          qwen: ImageModelHeaders.qwen3Llm,
+        });
+      ImageGenerationModel split(String main, List<String> components) =>
+          ImageGenerationModel(
+            _local(main),
+            components: [
+              for (final path in components)
+                ImageModelComponent.auto(_local(path)),
+            ],
+          );
+
+      for (final (model, files) in [
+        (
+          _sdxs(_local(_model), _local(_taesd)),
+          {'model': _model, 'taesd': _taesd},
+        ),
+        (
+          split(sd35, [clipG, _t5xxl, taesd3, _clipL]),
+          {
+            'diffusionModel': sd35,
+            'taesd': taesd3,
+            'clipL': _clipL,
+            'clipG': clipG,
+            't5xxl': _t5xxl,
+          },
+        ),
+        (
+          split(qwen, [_ae, zImage]),
+          {'diffusionModel': zImage, 'vae': _ae, 'llm': qwen},
+        ),
+      ]) {
+        final engine = await load(model);
+        await engine.dispose();
+        expect(driver.started.last.files, files);
+      }
     });
 
     test('dispose is idempotent', () async {
@@ -1492,6 +1595,7 @@ final class _FakeDriver implements ImageGenerationDriver {
 
   @override
   Future<Uint8List> readFileRange(String path, int offset, int length) async {
+    await readGate?.future;
     final bytes = headers[path] ?? Uint8List(0);
     final start = offset.clamp(0, bytes.length);
     return Uint8List.sublistView(
@@ -1520,8 +1624,15 @@ final class _FakeDriver implements ImageGenerationDriver {
       throw error;
     }
     started.add(config);
+    await startGate?.future;
     return session;
   }
+
+  /// Holds header reads until completed.
+  Completer<void>? readGate;
+
+  /// Holds the native load, after it allocated the session, until completed.
+  Completer<void>? startGate;
 }
 
 /// Behaves like stable-diffusion.cpp: a generation clears the cancel flag

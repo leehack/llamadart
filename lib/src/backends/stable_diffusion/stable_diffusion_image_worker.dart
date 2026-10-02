@@ -168,8 +168,8 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
 }
 
 /// The error for stable-diffusion.cpp rejecting [files], keyed by runtime
-/// role as in `ImageGenerationSessionConfig.files`. Its details list the
-/// roles, never the paths.
+/// role as in `ImageGenerationSessionConfig.files`. Its message and details
+/// name the files by their `ImageModelRole`, never by path.
 ///
 /// The runtime logs its reason only through a callback whose text is gone by
 /// the time Dart can read it (stable-diffusion-native#3), so the message
@@ -178,27 +178,31 @@ LlamaModelException stableDiffusionModelLoadFailure(Map<String, String> files) {
   final hints = <String>[
     if (!files.containsKey('model')) ...[
       if (!files.containsKey('vae') && !files.containsKey('taesd'))
-        'A split checkpoint (diffusionModel) needs a vae or taesd file; a '
-            'single-file checkpoint that includes its VAE, such as an '
-            'SD 3.5 Medium GGUF, goes in model instead.',
+        'Standalone diffusion weights (ImageModelRole.diffusionModel) need a '
+            'vae or taesd file; a single file that includes its VAE, such as '
+            'an SD 3.5 Medium GGUF, is an ImageModelRole.checkpoint.',
       if (!_textEncoderRoles.any(files.containsKey))
-        'A split checkpoint needs its text encoders: clipL, clipG and t5xxl '
-            'for SD 3.5, clipL and t5xxl for FLUX, and llm for Z-Image and '
-            'Qwen-Image.',
+        'Standalone diffusion weights need their text encoders: clipL, '
+            'clipG and t5xxl for SD 3.5, clipL and t5xxl for FLUX, and llm '
+            'for Z-Image and Qwen-Image.',
     ],
   ];
   final message = [
     'stable-diffusion.cpp could not load the image model files.',
     if (hints.isEmpty)
-      'Check that they form a checkpoint the runtime supports, that each '
-          'file is in its role (a single-file checkpoint goes in model, '
-          'standalone diffusion weights in diffusionModel), and that the '
-          'device has enough memory.'
+      'Check that they form a model the runtime supports, that each file has '
+          'its role (ImageModelRole.checkpoint for a single file with '
+          'diffusion weights, ImageModelRole.diffusionModel for standalone '
+          'ones; set one with ImageModelComponent(source, role: ...)), and '
+          'that the device has enough memory.'
     else
       ...hints,
     'The runtime does not report its reason to llamadart yet.',
   ].join(' ');
-  return LlamaModelException(message, 'files: ${files.keys.join(', ')}');
+  final roles = [
+    for (final role in files.keys) role == 'model' ? 'checkpoint' : role,
+  ];
+  return LlamaModelException(message, 'files: ${roles.join(', ')}');
 }
 
 const List<String> _textEncoderRoles = ['clipL', 'clipG', 't5xxl', 'llm'];

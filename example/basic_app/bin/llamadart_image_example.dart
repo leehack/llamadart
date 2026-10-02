@@ -50,6 +50,11 @@ Future<void> main(List<String> arguments) async {
       onProgress: _printProgress,
     );
     stdout.writeln();
+    if (cancelLoad.isCancelled) {
+      print('Cancelled.');
+      exitCode = 130;
+      return;
+    }
     final capabilities = engine.capabilities;
     print(
       'Loaded ${capabilities.modelVersion} on ${capabilities.backendName} '

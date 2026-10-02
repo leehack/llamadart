@@ -5,8 +5,9 @@ import 'dart:typed_data';
 /// the innermost dimension first, safetensors the outermost).
 typedef FixtureTensor = (String name, List<int> shape);
 
-/// The header of a GGUF file holding [metadata] (string, int, bool or
-/// `List<String>` values) and [tensors], without tensor data.
+/// The header of a GGUF file holding [metadata] (string, int, bool,
+/// `List<String>`, [GgufU64] or [GgufArray] values) and [tensors], without
+/// tensor data.
 Uint8List ggufHeader({
   Map<String, Object> metadata = const {},
   List<FixtureTensor> tensors = const [],
@@ -43,6 +44,14 @@ Uint8List ggufHeader({
         u32(8);
         u64(value.length);
         value.forEach(string);
+      case GgufU64(:final value):
+        u32(10);
+        u64(value);
+      case GgufArray(:final itemType, :final count, :final itemBytes):
+        u32(9);
+        u32(itemType);
+        u64(count);
+        out.add(Uint8List(itemBytes));
       default:
         throw ArgumentError.value(value, key);
     }
@@ -55,6 +64,31 @@ Uint8List ggufHeader({
     u64(0);
   }
   return out.takeBytes();
+}
+
+/// A GGUF `uint64` metadata value.
+final class GgufU64 {
+  /// Creates a value.
+  const GgufU64(this.value);
+
+  /// The value.
+  final int value;
+}
+
+/// A GGUF array of [count] items of scalar [itemType], declared with only
+/// [itemBytes] bytes of data after it.
+final class GgufArray {
+  /// Creates an array declaration.
+  const GgufArray(this.itemType, this.count, {this.itemBytes = 0});
+
+  /// GGUF value type of the items, such as 0 for `uint8`.
+  final int itemType;
+
+  /// Declared item count.
+  final int count;
+
+  /// Bytes of item data actually written.
+  final int itemBytes;
 }
 
 /// The header of a safetensors file holding [tensors], followed by
@@ -112,6 +146,7 @@ abstract final class ImageModelHeaders {
   static final Uint8List sdTurboCheckpoint = ggufHeader(
     tensors: [
       ('model.diffusion_model.input_blocks.0.0.weight', [3, 3, 4, 320]),
+      ('model.diffusion_model.out.2.weight', [3, 3, 320, 4]),
       ('first_stage_model.decoder.conv_in.weight', [3, 3, 4, 512]),
       ('first_stage_model.quant_conv.weight', [1, 1, 8, 8]),
       ('cond_stage_model.model.token_embedding.weight', [1024, 49408]),
@@ -121,12 +156,31 @@ abstract final class ImageModelHeaders {
   /// SDXL-Lightning safetensors checkpoint.
   static final Uint8List sdxlCheckpoint = safetensorsHeader([
     ('model.diffusion_model.input_blocks.0.0.weight', [320, 4, 3, 3]),
+    ('model.diffusion_model.out.2.weight', [4, 320, 3, 3]),
     ('first_stage_model.decoder.conv_in.weight', [512, 4, 3, 3]),
     (
       'conditioner.embedders.0.transformer.text_model.final_layer_norm.weight',
       [768],
     ),
   ]);
+
+  /// An SD 1.x inpainting checkpoint: its UNet takes 9 input channels
+  /// (latents, masked image and mask) and outputs 4 latent channels.
+  static final Uint8List inpaintingCheckpoint = safetensorsHeader([
+    ('model.diffusion_model.input_blocks.0.0.weight', [320, 9, 3, 3]),
+    ('model.diffusion_model.out.2.weight', [4, 320, 3, 3]),
+    ('first_stage_model.decoder.conv_in.weight', [512, 4, 3, 3]),
+    ('cond_stage_model.transformer.text_model.final_layer_norm.weight', [768]),
+  ]);
+
+  /// A diffusion transformer whose final layer outputs 128 values per
+  /// patch, which the 2x2-patch channel guess does not cover.
+  static final Uint8List wideTransformer = ggufHeader(
+    tensors: [
+      ('double_blocks.0.img_attn.qkv.weight', [3072, 9216]),
+      ('final_layer.linear.bias', [128]),
+    ],
+  );
 
   /// SD 3.5 Large Turbo GGUF diffusion transformer (16 latent channels).
   static final Uint8List sd35Diffusion = ggufHeader(

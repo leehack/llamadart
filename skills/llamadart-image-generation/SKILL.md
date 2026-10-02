@@ -101,7 +101,8 @@ description: >-
   rejected (`LlamaUnsupportedException`): there are several files.
   `onProgress` reports `ModelDownloadProgress` across all files; cached and
   local files count as received, and `totalBytes` is `null` until every
-  file size is known. A cancelled load throws `LlamaStateException`; a
+  file size is known. A cancelled load throws `LlamaStateException`
+  (during the native load, once it returns, freeing the model); a
   failed download throws what the download manager throws (usually
   `LlamaModelException`). The runtime check, `params` checks and local-file
   checks run before anything downloads, so the web and unsupported devices

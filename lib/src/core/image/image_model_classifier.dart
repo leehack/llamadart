@@ -71,9 +71,29 @@ const Set<String> imageModelLanguageModelArchitectures = <String>{
   'llada-moe',
 };
 
-const int _maxGgufEntries = 1 << 24;
-const int _maxStringBytes = 1 << 26;
-const int _maxSafetensorsHeaderBytes = 200 << 20;
+// Bounds on what a header may declare, so a crafted file fails fast instead
+// of costing seconds and gigabytes. The largest real values, from 70 GGUF and
+// safetensors files of image models and llama.cpp language models, are in
+// parentheses; each bound leaves a wide margin above them.
+
+/// GGUF tensors (1411, a Gemma 4 projector; the largest MoE models have
+/// about 3000).
+const int maxImageModelGgufTensors = 1 << 16;
+
+/// GGUF metadata keys (56).
+const int maxImageModelGgufKeys = 1 << 16;
+
+/// Items in one GGUF array (514906, Gemma 4's tokenizer merges).
+const int maxImageModelGgufArrayItems = 1 << 22;
+
+/// Bytes in one GGUF string (16982, a chat template).
+const int maxImageModelGgufStringBytes = 1 << 20;
+
+/// Bytes of a whole GGUF header (15.8 MB, Gemma 4).
+const int maxImageModelHeaderBytes = 64 << 20;
+
+/// Bytes of a safetensors JSON header (0.39 MB, an SDXL checkpoint).
+const int maxImageModelSafetensorsHeaderBytes = 16 << 20;
 const Map<int, int> _ggufScalarBytes = <int, int>{
   0: 1,
   1: 1,
@@ -103,7 +123,7 @@ Future<ImageModelFileHeader> readImageModelFileHeader(
   }
   reader.position = 0;
   final length = await reader.u64();
-  if (length < 2 || length > _maxSafetensorsHeaderBytes) {
+  if (length < 2 || length > maxImageModelSafetensorsHeaderBytes) {
     throw const FormatException('Not a GGUF or safetensors file.');
   }
   final Object? json;
@@ -136,8 +156,11 @@ Future<ImageModelFileHeader> readImageModelFileHeader(
 
 Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
   await reader.u32();
-  final tensorCount = _checkedCount(await reader.u64());
-  final keyCount = _checkedCount(await reader.u64());
+  final tensorCount = _checkedCount(
+    await reader.u64(),
+    maxImageModelGgufTensors,
+  );
+  final keyCount = _checkedCount(await reader.u64(), maxImageModelGgufKeys);
   final metadata = <String, Object?>{};
   for (var i = 0; i < keyCount; i++) {
     final key = await reader.string();
@@ -174,9 +197,9 @@ Future<ImageModelFileHeader> _readGguf(_HeaderReader reader) async {
   );
 }
 
-int _checkedCount(int count) {
-  if (count < 0 || count > _maxGgufEntries) {
-    throw const FormatException('Malformed GGUF header.');
+int _checkedCount(int count, int max) {
+  if (count < 0 || count > max) {
+    throw const FormatException('Implausible GGUF header count.');
   }
   return count;
 }
@@ -188,10 +211,13 @@ Future<Object?> _ggufValue(_HeaderReader reader, int type) async {
   }
   if (type == 9) {
     final itemType = await reader.u32();
-    final count = _checkedCount(await reader.u64());
+    final count = _checkedCount(
+      await reader.u64(),
+      maxImageModelGgufArrayItems,
+    );
     if (itemType == 8) {
       for (var i = 0; i < count; i++) {
-        await reader.skip(await reader.u64());
+        await reader.skip(_checkedStringLength(await reader.u64()));
       }
     } else {
       final size =
@@ -226,6 +252,13 @@ int _uint64(ByteData data) =>
     data.getUint32(4, Endian.little) * 0x100000000 +
     data.getUint32(0, Endian.little);
 
+int _checkedStringLength(int length) {
+  if (length < 0 || length > maxImageModelGgufStringBytes) {
+    throw const FormatException('Implausible GGUF string length.');
+  }
+  return length;
+}
+
 /// Sequential reader that fetches in growing blocks.
 class _HeaderReader {
   _HeaderReader(this._read);
@@ -237,6 +270,7 @@ class _HeaderReader {
   int position = 0;
 
   Future<Uint8List> bytes(int count) async {
+    _checkBudget(count);
     final start = position - _bufferStart;
     if (start < 0 || start + count > _buffer.length) {
       final fetchLength = count > _blockSize ? count : _blockSize;
@@ -258,7 +292,14 @@ class _HeaderReader {
     if (count < 0) {
       throw const FormatException('Malformed model file header.');
     }
+    _checkBudget(count);
     position += count;
+  }
+
+  void _checkBudget(int count) {
+    if (position + count > maxImageModelHeaderBytes) {
+      throw const FormatException('Model file header is too large.');
+    }
   }
 
   Future<int> u32() async =>
@@ -266,13 +307,10 @@ class _HeaderReader {
 
   Future<int> u64() async => _uint64(ByteData.sublistView(await bytes(8)));
 
-  Future<String> string() async {
-    final length = await u64();
-    if (length < 0 || length > _maxStringBytes) {
-      throw const FormatException('Malformed GGUF string.');
-    }
-    return utf8.decode(await bytes(length), allowMalformed: true);
-  }
+  Future<String> string() async => utf8.decode(
+    await bytes(_checkedStringLength(await u64())),
+    allowMalformed: true,
+  );
 }
 
 /// What a file's header shows it is.
@@ -527,24 +565,27 @@ int? _convInputChannels(ImageModelTensor? weight, bool isGguf) {
   return isGguf ? weight.shape[2] : weight.shape[1];
 }
 
-/// Latent channels of diffusion weights whose names start with [prefix]: the
-/// UNet's or MMDiT's input convolution, or, for transformers that unpatchify
-/// 2x2 patches (FLUX, SD 3.5, Z-Image, Qwen-Image), the final layer's output
-/// width divided by 4.
+/// Latent channels of diffusion weights whose names start with [prefix].
+///
+/// A UNet's output convolution gives them exactly; its input can take more
+/// (9 for inpainting checkpoints). Transformers that unpatchify 2x2 patches
+/// (SD 3.5, FLUX, Z-Image, Qwen-Image) output 4 values per latent channel;
+/// that guess counts only when it gives a family's 4 or 16 channels.
 int? _diffusionLatentChannels(
   Map<String, ImageModelTensor> byName,
   bool isGguf,
   String prefix,
 ) {
-  final channels =
-      _convInputChannels(byName['${prefix}input_blocks.0.0.weight'], isGguf) ??
-      _convInputChannels(byName['${prefix}conv_in.weight'], isGguf) ??
-      _convInputChannels(byName['${prefix}x_embedder.proj.weight'], isGguf) ??
-      switch (byName['${prefix}final_layer.linear.bias']?.shape) {
-        [final width] when width % 4 == 0 => width ~/ 4,
-        _ => null,
-      };
-  return channels == 4 || channels == 16 ? channels : null;
+  final unetOutput =
+      byName['${prefix}out.2.weight'] ?? byName['${prefix}conv_out.weight'];
+  if (unetOutput != null && unetOutput.shape.length == 4) {
+    return isGguf ? unetOutput.shape[3] : unetOutput.shape[0];
+  }
+  final patches = switch (byName['${prefix}final_layer.linear.bias']?.shape) {
+    [final width] when width % 4 == 0 => width ~/ 4,
+    _ => null,
+  };
+  return patches == 4 || patches == 16 ? patches : null;
 }
 
 /// One file to assign: its explicit role, if any, and a reader of its local
