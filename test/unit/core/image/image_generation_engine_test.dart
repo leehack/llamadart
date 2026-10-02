@@ -532,6 +532,18 @@ void main() {
       expect(downloads.calls, isEmpty);
     });
 
+    test('a LiteRT-LM source format is unsupported', () async {
+      await expectLater(
+        load(_sdxs(ModelSource.path(_model, format: ModelFormat.liteRtLm))),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(downloads.calls, isEmpty);
+    });
+
+    test('a GGUF source format loads like no format', () async {
+      await load(_sdxs(ModelSource.path(_model, format: ModelFormat.gguf)));
+    });
+
     test('negative threads are rejected', () async {
       await expectLater(
         load(_sdxs(), params: const ImageModelParams(threads: -1)),

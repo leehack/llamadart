@@ -23,7 +23,7 @@ Future<ModelCacheEntry> ensureModelTargetFile(
   switch (target) {
     case LocalModelFile(:final path):
       return manager.ensureModel(
-        ModelSource.path(path),
+        ModelSource.path(path, format: source.format),
         options: options,
         onProgress: onProgress,
       );
@@ -36,7 +36,11 @@ Future<ModelCacheEntry> ensureModelTargetFile(
       }
       final downloadSource = source.isRemote
           ? source.withResolvedUri(url)
-          : ModelSource.url(url, fileName: source.fileName);
+          : ModelSource.url(
+              url,
+              fileName: source.fileName,
+              format: source.format,
+            );
       return manager.ensureModel(
         downloadSource,
         options: options,
