@@ -66,6 +66,48 @@ void main() {
       );
     });
 
+    test('rejects an unrecognised response format on every backend', () {
+      for (final backend in [_BaseBackend(), _NoGrammarBackend()]) {
+        expect(
+          () => ChatCompletionRequestPlanner.build(
+            backend: backend,
+            templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'hello',
+              ),
+            ],
+            toolChoice: ToolChoice.auto,
+            parallelToolCalls: false,
+            responseFormat: const {'type': 'json_shema'},
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains("responseFormat.type 'json_shema'"),
+            ),
+          ),
+        );
+      }
+    });
+
+    test('keeps text response format unconstrained without grammar', () {
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NoGrammarBackend(),
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+        responseFormat: const {'type': 'text'},
+      );
+
+      expect(plan.generationParams.grammar, isNull);
+    });
+
     test('rejects required Hermes tools on every no-grammar route', () {
       for (final backend in <LlamaBackend>[
         _NoGrammarBackend(),

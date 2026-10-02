@@ -47,6 +47,7 @@ import 'handlers/seed_oss_handler.dart';
 import 'handlers/solar_open_handler.dart';
 import 'handlers/translate_gemma_handler.dart';
 import 'handlers/xiaomi_mimo_handler.dart';
+import 'response_format.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
@@ -119,6 +120,8 @@ class ChatTemplateEngine {
   /// Full rendering pipeline: detect format → get handler → render.
   ///
   /// If the template source is null/empty, uses the ChatML fallback.
+  /// [responseFormat] takes the shapes documented on `LlamaEngine.create`;
+  /// any other shape throws `LlamaUnsupportedException`.
   static LlamaChatTemplateResult render({
     required String? templateSource,
     required List<LlamaChatMessage> messages,
@@ -133,6 +136,8 @@ class ChatTemplateEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? now,
   }) {
+    final responseSchema = responseFormatSchema(responseFormat);
+
     // 1. Select template source (default vs tool_use variant)
     final hasTools = tools != null && tools.isNotEmpty;
     final allowToolCalls = hasTools && toolChoice != ToolChoice.none;
@@ -156,7 +161,7 @@ class ChatTemplateEngine {
       effectiveTemplate = metadataTemplate;
     }
 
-    final hasSchemaResponseFormat = _hasSchemaResponseFormat(responseFormat);
+    final hasSchemaResponseFormat = responseSchema != null;
 
     final format = detectFormat(effectiveTemplate);
     LlamaLogger.instance.debug(
@@ -279,7 +284,7 @@ class ChatTemplateEngine {
         rendered,
         effectiveTools,
         toolChoice,
-        responseFormat,
+        responseSchema,
       );
       return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
     }
@@ -322,7 +327,7 @@ class ChatTemplateEngine {
       baseResult,
       effectiveTools,
       toolChoice,
-      responseFormat,
+      responseSchema,
     );
     return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
   }
@@ -332,48 +337,21 @@ class ChatTemplateEngine {
     LlamaChatTemplateResult result,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice,
-    Map<String, dynamic>? responseFormat,
+    Map<String, dynamic>? responseSchema,
   ) {
-    // If response_format is json_object/json_schema, generate grammar for it
-    if (responseFormat != null) {
-      final type = responseFormat['type'] as String?;
-      if (type == 'json_schema') {
-        final schema =
-            responseFormat['json_schema']?['schema'] as Map<String, dynamic>?;
-        if (schema != null) {
-          final grammarText = grammar.ToolGrammarGenerator.generateForSchema(
-            schema,
-          );
-          return LlamaChatTemplateResult(
-            prompt: result.prompt,
-            format: result.format,
-            grammar: grammarText,
-            grammarLazy: result.grammarLazy,
-            additionalStops: result.additionalStops,
-            preservedTokens: result.preservedTokens,
-            grammarTriggers: result.grammarTriggers,
-            thinkingForcedOpen: result.thinkingForcedOpen,
-            parser: result.parser,
-            tokenCount: result.tokenCount,
-          );
-        }
-      } else if (type == 'json_object') {
-        final grammarText = grammar.ToolGrammarGenerator.generateForSchema({
-          'type': 'object',
-        });
-        return LlamaChatTemplateResult(
-          prompt: result.prompt,
-          format: result.format,
-          grammar: grammarText,
-          grammarLazy: result.grammarLazy,
-          additionalStops: result.additionalStops,
-          preservedTokens: result.preservedTokens,
-          grammarTriggers: result.grammarTriggers,
-          thinkingForcedOpen: result.thinkingForcedOpen,
-          parser: result.parser,
-          tokenCount: result.tokenCount,
-        );
-      }
+    if (responseSchema != null) {
+      return LlamaChatTemplateResult(
+        prompt: result.prompt,
+        format: result.format,
+        grammar: grammar.ToolGrammarGenerator.generateForSchema(responseSchema),
+        grammarLazy: result.grammarLazy,
+        additionalStops: result.additionalStops,
+        preservedTokens: result.preservedTokens,
+        grammarTriggers: result.grammarTriggers,
+        thinkingForcedOpen: result.thinkingForcedOpen,
+        parser: result.parser,
+        tokenCount: result.tokenCount,
+      );
     }
 
     final resultFormat = result.format < ChatFormat.values.length
@@ -629,15 +607,6 @@ class ChatTemplateEngine {
           toolCallSerialization: TemplateToolCallSerialization.none,
         );
     }
-  }
-
-  static bool _hasSchemaResponseFormat(Map<String, dynamic>? responseFormat) {
-    if (responseFormat == null) {
-      return false;
-    }
-
-    final type = responseFormat['type'] as String?;
-    return type == 'json_schema' || type == 'json_object';
   }
 
   static LlamaChatTemplateResult _withFormat(

@@ -739,7 +739,11 @@ class LlamaEngine {
   /// Pass [responseFormat] to request strict structured output through
   /// grammar-constrained decoding on compatible backends. Supported shapes are:
   /// - `{'type': 'json_object'}`
-  /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`,
+  ///   optionally with `name`, `description` and `strict` beside `schema`
+  /// - `{'type': 'text'}`, which requests unconstrained text
+  /// Any other type or key throws [LlamaUnsupportedException] before
+  /// generation on every backend.
   /// Use [LlamaStructuredOutput.responseFormat] or [createStructuredJson] for a
   /// typed helper that also validates and decodes the final JSON output.
   ///
@@ -973,9 +977,8 @@ class LlamaEngine {
   /// non-empty [ModelParams.chatTemplate]; [create] renders with the same
   /// template. Pass [customTemplate] to override both for this call.
   /// Pass [responseFormat] to request structured output grammar generation.
-  /// Supported shapes are:
-  /// - `{'type': 'json_object'}`
-  /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  /// It takes the same shapes as [create] and throws
+  /// [LlamaUnsupportedException] for any other.
   /// Use [LlamaStructuredOutput.responseFormat] to avoid hand-writing these
   /// maps in application code.
   ///

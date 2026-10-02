@@ -1,3 +1,12 @@
+## Unreleased
+
+- **Behavior change:** `responseFormat` maps with an unknown `type` or
+  key, such as `json_shema` or a misspelled `schma`, now throw
+  `LlamaUnsupportedException` before generation instead of generating
+  unconstrained output, and `ChatSession.create` takes `responseFormat` with a
+  new `ChatSession.createStructuredJson`
+  ([#836](https://github.com/leehack/llamadart/issues/836)).
+
 ## 0.10.0
 
 - Add the `llamadart_stable_diffusion_flutter` `0.0.1` companion package:
