@@ -311,39 +311,128 @@ void main() {
       });
     });
 
-    test('warns once when a mobile default falls back to temp', () {
-      final records = <LlamaLogRecord>[];
-      final logger = LlamaLogger.instance;
-      final previousLevel = logger.level;
-      logger
-        ..setLevel(LlamaLogLevel.warn)
-        ..setHandler(records.add);
-      addTearDown(() {
-        logger
-          ..setLevel(previousLevel)
-          ..setHandler(null);
+    group('mobile app cache default', () {
+      tearDown(
+        () => mobileAppCacheDirectoryResolver = hostMobileAppCacheDirectory,
+      );
+
+      test('is <app cache>/<namespace>/models on Android and iOS', () {
+        final asked = <ModelCachePlatform>[];
+        mobileAppCacheDirectoryResolver = (platform) {
+          asked.add(platform);
+          return '/app/${platform.name}/cache';
+        };
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          '/app/android/cache/llamadart/models',
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.ios,
+          ).defaultCacheDirectory,
+          '/app/ios/cache/llamadart/models',
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            namespace: 'com.example.app',
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          '/app/android/cache/com.example.app/models',
+        );
+        expect(asked, <ModelCachePlatform>[
+          ModelCachePlatform.android,
+          ModelCachePlatform.ios,
+          ModelCachePlatform.android,
+        ]);
+        expect(
+          () => DefaultModelDownloadManager.auto(
+            namespace: '../bad',
+            platform: ModelCachePlatform.ios,
+          ),
+          throwsArgumentError,
+        );
       });
-      resetMobileTemporaryCacheWarningForTesting();
 
-      DefaultModelDownloadManager.auto(
-        platform: ModelCachePlatform.android,
-        appPrivateCacheDirectory: path.join(tempDir.path, 'explicit'),
-      );
-      expect(records, isEmpty);
+      test('yields to explicit and global directories', () {
+        mobileAppCacheDirectoryResolver = (_) => '/app/cache';
+        final explicit = path.join(tempDir.path, 'explicit');
 
-      DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
-      DefaultModelDownloadManager.auto(platform: ModelCachePlatform.ios);
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+            appPrivateCacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+        DefaultModelDownloadManager.globalCacheDirectory = explicit;
+        addTearDown(
+          () => DefaultModelDownloadManager.globalCacheDirectory = null,
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.ios,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+      });
 
-      expect(records, hasLength(1));
-      expect(records.single.level, LlamaLogLevel.warn);
-      expect(
-        records.single.message,
-        allOf(
-          contains(path.join(Directory.systemTemp.path, 'llamadart', 'models')),
-          contains('DefaultModelDownloadManager.globalCacheDirectory'),
-        ),
-      );
+      test('falls back to temp only when the resolver finds nothing', () {
+        mobileAppCacheDirectoryResolver = (_) => null;
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          path.join(Directory.systemTemp.path, 'llamadart', 'models'),
+        );
+      });
     });
+
+    test(
+      'warns once, when warnings are enabled, if a mobile default falls back to temp',
+      () {
+        final records = <LlamaLogRecord>[];
+        final logger = LlamaLogger.instance;
+        final previousLevel = logger.level;
+        logger
+          ..setLevel(LlamaLogLevel.none)
+          ..setHandler(records.add);
+        addTearDown(() {
+          logger
+            ..setLevel(previousLevel)
+            ..setHandler(null);
+        });
+        resetMobileTemporaryCacheWarningForTesting();
+
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        logger.setLevel(LlamaLogLevel.error);
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        logger.setLevel(LlamaLogLevel.warn);
+        DefaultModelDownloadManager.auto(
+          platform: ModelCachePlatform.android,
+          appPrivateCacheDirectory: path.join(tempDir.path, 'explicit'),
+        );
+        expect(records, isEmpty);
+
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.ios);
+
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(
+          records.single.message,
+          allOf(
+            contains(
+              path.join(Directory.systemTemp.path, 'llamadart', 'models'),
+            ),
+            contains('DefaultModelDownloadManager.globalCacheDirectory'),
+          ),
+        );
+      },
+    );
 
     test(
       'auto uses generic mobile directory when specific directory is blank',

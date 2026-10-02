@@ -66,6 +66,27 @@ void main() {
       );
     });
 
+    test('uses /data/data only for the primary user', () {
+      expect(
+        androidAppCacheDirectory(
+          cmdline: _package,
+          status: _secondaryUserStatus,
+          runtimeDirectories: const <String?>[],
+          directoryExists: _existing(<String>{'/data/data/$_package'}),
+        ),
+        isNull,
+      );
+      expect(
+        androidAppCacheDirectory(
+          cmdline: _package,
+          status: _status,
+          runtimeDirectories: const <String?>[],
+          directoryExists: _existing(<String>{'/data/data/$_package'}),
+        ),
+        '/data/data/$_package/cache',
+      );
+    });
+
     test('returns null for a process that is not an app package', () {
       for (final cmdline in <String?>[
         null,
@@ -126,6 +147,40 @@ void main() {
         isNull,
       );
     });
+  });
+
+  group('environmentVariable', () {
+    test('prefers the given environment', () {
+      expect(
+        environmentVariable(
+          'HOME',
+          environment: const <String, String>{'HOME': '/given'},
+        ),
+        '/given',
+      );
+    });
+
+    test(
+      'reads libc getenv when the Dart environment lacks the name, as on iOS',
+      () {
+        expect(
+          environmentVariable('HOME', environment: const <String, String>{}),
+          Platform.environment['HOME'],
+        );
+        expect(
+          environmentVariable(
+            'LLAMADART_UNSET_VARIABLE_838',
+            environment: const <String, String>{},
+          ),
+          isNull,
+        );
+      },
+      skip: Platform.isWindows ? 'libc getenv is POSIX-only here' : false,
+    );
+  });
+
+  test('the default resolver is the host probe', () {
+    expect(mobileAppCacheDirectoryResolver, same(hostMobileAppCacheDirectory));
   });
 
   test('hostMobileAppCacheDirectory only probes the host platform', () {

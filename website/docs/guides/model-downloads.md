@@ -191,7 +191,8 @@ storage pressure. llamadart finds it without Flutter, so no `path_provider`
 setup is needed.
 
 To put every default download somewhere else, set a global directory once at
-startup, before the first model load:
+startup, before the first model load. It is a static, so set it in each
+isolate that creates engines or managers:
 
 ```dart
 // For example, Flutter's application support directory, which the OS never

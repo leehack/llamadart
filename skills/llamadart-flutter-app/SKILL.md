@@ -68,7 +68,7 @@ or shipping runtimes the app does not use.
   survives app updates; no `path_provider` setup is needed. To move every
   default download, for example to `getApplicationSupportDirectory()`, set
   `DefaultModelDownloadManager.globalCacheDirectory` at startup before the
-  first load. A manager you build yourself goes to
+  first load, in every isolate that creates engines. A manager you build yourself goes to
   `LlamaEngine(..., modelDownloadManager:)` too, so loads and cache inspection
   agree. On web the default manager's operations throw
   `LlamaUnsupportedException`.

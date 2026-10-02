@@ -190,7 +190,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   ///
   /// Set it before the first model load; a manager keeps the directory it
   /// resolved first. `null` (the default) or a blank value means the platform
-  /// default.
+  /// default. Like any static, it is per isolate: set it in each isolate that
+  /// creates engines or managers.
   static String? globalCacheDirectory;
 
   final String? _explicitDefaultCacheDirectory;
@@ -1529,9 +1530,9 @@ String _defaultImplicitCacheDirectoryFor(
     );
   }
   if (platform.isMobile) {
-    final appCacheDirectory = hostMobileAppCacheDirectory(platform);
+    final appCacheDirectory = mobileAppCacheDirectoryResolver(platform);
     if (appCacheDirectory != null) {
-      return path.join(
+      return path.posix.join(
         appCacheDirectory,
         _validateCacheNamespace(namespace),
         'models',
