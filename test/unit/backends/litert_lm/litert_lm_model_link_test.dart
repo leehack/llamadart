@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_model_link.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
@@ -116,19 +117,80 @@ void main() {
     expect(await File(link.path).readAsString(), 'LITERTLM');
   }, testOn: '!windows');
 
-  test('reports a link it cannot create as unsupported', () async {
+  test('reports a parent it cannot write as a model error', () async {
     final blocker = File('${tempDir.path}/blocker');
     await blocker.writeAsString('not a directory');
 
     await expectLater(
       LiteRtLmModelLink.create(model.path, parent: Directory(blocker.path)),
       throwsA(
-        isA<LlamaUnsupportedException>().having(
+        isA<LlamaModelException>().having(
           (e) => e.message,
           'message',
-          allOf(contains('.litertlm'), isNot(contains(tempDir.path))),
+          allOf(contains('writable'), isNot(contains(tempDir.path))),
         ),
       ),
     );
   });
+
+  test('removes its directory when the link cannot be created', () async {
+    await expectLater(
+      LiteRtLmModelLink.create(
+        model.path,
+        parent: links,
+        createLink: (link, target) =>
+            throw FileSystemException('no links', link.path),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('could not link'), isNot(contains(tempDir.path))),
+        ),
+      ),
+    );
+    expect(links.listSync(), isEmpty);
+  });
+
+  test('links a relative path to its absolute target', () async {
+    final relative = p.relative(model.path);
+    expect(p.isAbsolute(relative), isFalse);
+
+    final link = (await LiteRtLmModelLink.create(relative, parent: links))!;
+    addTearDown(link.dispose);
+
+    final target = await Link(link.path).target();
+    expect(p.isAbsolute(target), isTrue);
+    expect(p.equals(target, model.absolute.path), isTrue);
+    expect(p.equals(link.cacheDirectory, tempDir.absolute.path), isTrue);
+  }, testOn: '!windows');
+
+  test('names the link from a sanitized bundle name', () async {
+    final file = File('${tempDir.path}/my model \u00fc?.bin');
+    await file.writeAsString('LITERTLM');
+
+    final link = (await LiteRtLmModelLink.create(file.path, parent: links))!;
+    addTearDown(link.dispose);
+
+    expect(
+      nameOf(link.path),
+      matches(r'^my_model___\.bin-[0-9a-f]{12}\.litertlm$'),
+    );
+  }, testOn: '!windows');
+
+  test('truncates a long bundle name under the file name limit', () async {
+    final name = 'm' * 240;
+    final file = File('${tempDir.path}/$name');
+    await file.writeAsString('LITERTLM');
+
+    final link = (await LiteRtLmModelLink.create(file.path, parent: links))!;
+    addTearDown(link.dispose);
+
+    expect(
+      nameOf(link.path),
+      '${'m' * 100}-${nameOf(link.path).substring(101)}',
+    );
+    expect(nameOf(link.path).length, 100 + 1 + 12 + '.litertlm'.length);
+    expect(await File(link.path).readAsString(), 'LITERTLM');
+  }, testOn: '!windows');
 }

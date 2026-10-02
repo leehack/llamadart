@@ -43,14 +43,21 @@ class LiteRtLmService {
   /// isolate it runs in; [setLogLevel] controls only the native runtime.
   /// [linkParentDirectory] holds the private directories of
   /// [LiteRtLmModelLink]s, the system temp directory by default.
+  /// [useTempCacheDir] says whether caches go to a llamadart temp directory
+  /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
+  /// and Android.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
+    bool? useTempCacheDir,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
-       _linkParentDirectory = linkParentDirectory;
+       _linkParentDirectory = linkParentDirectory,
+       _useTempCacheDir =
+           useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
   final Directory? _linkParentDirectory;
+  final bool _useTempCacheDir;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -653,6 +660,7 @@ class LiteRtLmService {
         : null;
 
     final cacheDir = _effectiveCacheDir(modelParams);
+    final runtimeCacheDir = cacheDir ?? _modelLink?.cacheDirectory;
 
     Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
       _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
@@ -669,7 +677,7 @@ class LiteRtLmService {
           audioBackend: audioBackend,
           maxTokens: modelParams.contextSize,
           maxNumImages: resolvedMaxNumImages,
-          cacheDir: cacheDir,
+          cacheDir: runtimeCacheDir,
           speculativeDecoding: resolvedSpeculativeDecoding,
           minLogLevel: _liteRtLmMinLogLevel(_logLevel),
           activationDataType: modelParams.liteRtLmActivationDataType,
@@ -1398,7 +1406,7 @@ class LiteRtLmService {
 
   String? _effectiveCacheDir(ModelParams params) {
     final configured = params.liteRtLmCacheDir;
-    if (configured == null && !Platform.isMacOS && !Platform.isAndroid) {
+    if (configured == null && !_useTempCacheDir) {
       return null;
     }
     final dir = Directory(

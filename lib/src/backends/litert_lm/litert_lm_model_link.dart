@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import '../../core/exceptions.dart';
 import '../../core/models/model_format.dart';
 
+/// Creates [link] pointing at [target].
+typedef LiteRtLmLinkCreator = Future<Link> Function(Link link, String target);
+
 /// A `.litertlm` symbolic link that hands the LiteRT-LM runtime a bundle named
 /// without that extension.
 ///
@@ -17,39 +20,62 @@ import '../../core/models/model_format.dart';
 ///
 /// The runtime names weight and program caches after the path's base name and
 /// deletes same-named caches it finds stale, so the link name keeps the
-/// bundle's own name plus a digest of its absolute path: reloading one file
-/// reuses its caches, and two files with the same name do not evict each
-/// other's.
+/// bundle's own name plus a digest of its absolute path: two files with the
+/// same name do not evict each other's caches. Without a configured cache
+/// directory the runtime would write those caches next to the link, so the
+/// caller passes [cacheDirectory] instead, which keeps them next to the
+/// bundle where reloading the same file reuses them.
 class LiteRtLmModelLink {
-  LiteRtLmModelLink._(this._directory, this.path);
+  LiteRtLmModelLink._(this._directory, this.path, this.cacheDirectory);
 
   final Directory _directory;
 
   /// The `.litertlm` path to hand the runtime.
   final String path;
 
+  /// The directory of the linked bundle, where the runtime should keep its
+  /// caches when none is configured.
+  final String cacheDirectory;
+
   /// Links the bundle at [modelPath] under a new private directory in
   /// [parent] (default: the system temp directory), or returns null when
   /// [modelPath] already ends in `.litertlm`.
   ///
-  /// Throws [LlamaUnsupportedException] when the platform cannot create the
-  /// link.
+  /// Throws [LlamaModelException] when [parent] does not allow creating the
+  /// private directory, and [LlamaUnsupportedException] when the platform
+  /// cannot create the link. [createLink] replaces [Link.create] in tests.
   static Future<LiteRtLmModelLink?> create(
     String modelPath, {
     Directory? parent,
+    LiteRtLmLinkCreator? createLink,
   }) async {
     if (modelPath.endsWith(ModelFormat.liteRtLm.extension)) return null;
 
-    Directory? directory;
+    final Directory directory;
     try {
       directory = await (parent ?? Directory.systemTemp).createTemp(
         'llamadart_litert_lm_link_',
       );
-      final target = File(modelPath).absolute.path;
-      final link = await Link(
-        '${directory.path}${Platform.pathSeparator}${_linkName(target)}',
-      ).create(target);
-      return LiteRtLmModelLink._(directory, link.path);
+    } on FileSystemException catch (error) {
+      throw LlamaModelException(
+        'Could not create a private directory for the .litertlm link that '
+        'LiteRT-LM needs for a model file named without that extension '
+        '(${error.osError?.message ?? error.message}). Check that the '
+        'temporary directory is writable, or rename the file to end in '
+        '.litertlm.',
+      );
+    }
+
+    final target = File(modelPath).absolute;
+    try {
+      final link = await (createLink ?? _createLink)(
+        Link(
+          '${directory.path}${Platform.pathSeparator}'
+          '${_linkName(target.path)}',
+        ),
+        target.path,
+      );
+      return LiteRtLmModelLink._(directory, link.path, target.parent.path);
     } on FileSystemException catch (error) {
       _deleteQuietly(directory);
       throw LlamaUnsupportedException(
@@ -61,11 +87,15 @@ class LiteRtLmModelLink {
     }
   }
 
+  static Future<Link> _createLink(Link link, String target) =>
+      link.create(target);
+
   static String _linkName(String target) {
     var name = target
         .split(RegExp(r'[/\\]'))
         .last
         .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    // Keeps the name under the 255-byte file name limit.
     if (name.length > 100) name = name.substring(0, 100);
     final digest = sha256.convert(utf8.encode(target)).toString();
     return '$name-${digest.substring(0, 12)}${ModelFormat.liteRtLm.extension}';
@@ -74,11 +104,12 @@ class LiteRtLmModelLink {
   /// Deletes the link and its directory, never the linked bundle.
   void dispose() => _deleteQuietly(_directory);
 
-  static void _deleteQuietly(Directory? directory) {
+  static void _deleteQuietly(Directory directory) {
     try {
-      directory?.deleteSync(recursive: true);
+      directory.deleteSync(recursive: true);
     } on FileSystemException {
-      // A leftover private temp directory holds only a symbolic link.
+      // The private directory holds only the link; the runtime keeps its
+      // caches in [cacheDirectory].
     }
   }
 }
