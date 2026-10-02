@@ -62,6 +62,11 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
     WorkspacePackageManager.flutter,
     prepareForRootQualityGates: false,
   ),
+  WorkspacePackage(
+    'packages/llamadart_stable_diffusion_flutter',
+    WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
+  ),
 ];
 
 /// Runs one dependency-resolution command.

@@ -16,6 +16,7 @@ import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:llamadart/src/hook/native_release_pins.dart';
 
 const _nativeRepoSlug = 'leehack/llamadart-native';
+const _stableDiffusionNativeRepoSlug = 'leehack/stable-diffusion-native';
 
 const _packageName = 'llamadart';
 const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
@@ -25,6 +26,9 @@ const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
 const _appleCompanionManifestTemplateSha256 =
     '6f047f32a768fb3afd2eb4b0488768b591f254fe94e2bb472c5d70b34ff52a86';
 const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
+const _stableDiffusionFlutterPackageName = 'llamadart_stable_diffusion_flutter';
+const _stableDiffusionCompanionManifestTemplateSha256 =
+    '829188afd63eec24b16259b05c0d884725818558fed30b41fae40fa39eeef66c';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
 const _dartToolDir = '.dart_tool';
@@ -156,12 +160,14 @@ void main(List<String> args) async {
     final pkgRoot = input.packageRoot.toFilePath();
     final rawNativeRuntimeConfig =
         input.userDefines[nativeRuntimesUserDefineKey];
-    final appleSpmRuntimes = _flutterAppleCompanionRuntimes(
+    final appleCompanions = _flutterAppleCompanions(
       input: input,
       code: code,
       output: output,
       log: log,
     );
+    final appleSpmRuntimes = appleCompanions?.runtimes;
+    final stableDiffusionCompanion = appleCompanions?.stableDiffusion ?? false;
     final configuredRuntimes = selectNativeRuntimesForBundle(
       bundle: spec.bundle,
       rawUserConfig: rawNativeRuntimeConfig,
@@ -174,6 +180,10 @@ void main(List<String> args) async {
             if (configuredRuntimes.contains(nativeRuntimeStableDiffusion))
               nativeRuntimeStableDiffusion,
           ];
+    if (stableDiffusionCompanion &&
+        !selectedRuntimes.contains(nativeRuntimeStableDiffusion)) {
+      selectedRuntimes = [...selectedRuntimes, nativeRuntimeStableDiffusion];
+    }
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
         liteRtLmBundleSpec == null) {
@@ -248,13 +258,44 @@ void main(List<String> args) async {
           input.userDefines[nativeBackendUserDefineKey] != null,
       log: log,
     );
+    if (selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
+        appleCompanions != null) {
+      if (stableDiffusionCompanion) {
+        output.assets.code.add(
+          CodeAsset(
+            package: _packageName,
+            name: _stableDiffusionAssetName,
+            linkMode: LookupInProcess(),
+          ),
+        );
+        log.info(
+          'Reporting package:$_packageName/$_stableDiffusionAssetName as an '
+          'in-process code asset for the SPM-linked stable_diffusion runtime '
+          'from $_stableDiffusionFlutterPackageName.',
+        );
+        selectedRuntimes = selectedRuntimes
+            .where((runtime) => runtime != nativeRuntimeStableDiffusion)
+            .toList(growable: false);
+      } else if (code.targetOS == OS.iOS) {
+        // Flutter keeps hook log records in the hooks_runner stdout.txt, but
+        // it relays hook stderr into the Xcode build, where a `warning:` line
+        // becomes an Xcode build warning.
+        stderr.writeln(
+          'warning: llamadart bundles stable_diffusion through native assets. '
+          'Flutter writes MinimumOSVersion 13.0 into the framework it wraps '
+          'the library in, while the library requires iOS 16.4, so App Store '
+          'Connect rejects the upload. Add $_stableDiffusionFlutterPackageName '
+          "to the app's dependencies to link the SwiftPM framework instead.",
+        );
+      }
+    }
     if (appleSpmHandledRuntimes != null) {
       selectedRuntimes = selectedRuntimes
           .where((runtime) => !appleSpmHandledRuntimes.contains(runtime))
           .toList(growable: false);
-      if (selectedRuntimes.isEmpty) {
-        return;
-      }
+    }
+    if (selectedRuntimes.isEmpty) {
+      return;
     }
     final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
     final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
@@ -419,8 +460,8 @@ Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
       'dependencies ($_llamaCppFlutterPackageName and '
       '$_liteRtLmFlutterPackageName). Ignoring the llama_cpp and litert_lm '
       'selection in $nativeRuntimesUserDefineKey for this Apple build; '
-      'stable_diffusion has no companion package and is still bundled when '
-      'named there.',
+      'stable_diffusion still follows that selection unless '
+      '$_stableDiffusionFlutterPackageName is a dependency.',
     );
   }
   if (hasNativeSourceOverride) {
@@ -475,7 +516,16 @@ bool _hasNativeSourceOverride(HookInputUserDefines userDefines) {
 
 bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 
-List<String>? _flutterAppleCompanionRuntimes({
+/// Companion packages a Flutter Apple app depends on. [runtimes] holds the
+/// llama_cpp and litert_lm families they provide, or `null` when neither
+/// companion is a dependency and those families come from the hook.
+/// [stableDiffusion] is decided on its own, so adding only the
+/// stable_diffusion companion never moves llama_cpp or litert_lm off the hook.
+typedef _AppleCompanions = ({List<String>? runtimes, bool stableDiffusion});
+
+/// The companions of a Flutter iOS/macOS app build, or `null` for every other
+/// build, which bundles all runtimes through the hook.
+_AppleCompanions? _flutterAppleCompanions({
   required BuildInput input,
   required CodeConfig code,
   required BuildOutputBuilder output,
@@ -523,31 +573,72 @@ List<String>? _flutterAppleCompanionRuntimes({
   final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
-    _validateAppleLlamaCompanion(consumerRoot, output);
+    _validateAppleCompanion(_llamaCppCompanion, consumerRoot, output);
     runtimes.add(nativeRuntimeLlamaCpp);
   }
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
     runtimes.add(nativeRuntimeLiteRtLm);
   }
+  final stableDiffusion = dependencies.contains(
+    _stableDiffusionFlutterPackageName,
+  );
+  if (stableDiffusion) {
+    _validateAppleCompanion(_stableDiffusionCompanion, consumerRoot, output);
+  }
   if (runtimes.isEmpty) {
     log.info(
-      'Using bundled Apple native assets for Flutter package '
-      '${consumerRoot.path}; no Flutter Apple companion package dependency was '
-      'found.',
+      'Using bundled Apple native assets for llama_cpp and litert_lm in '
+      'Flutter package ${consumerRoot.path}; neither '
+      '$_llamaCppFlutterPackageName nor $_liteRtLmFlutterPackageName is a '
+      'dependency.',
     );
-    return null;
   }
-  return runtimes;
+  return (
+    runtimes: runtimes.isEmpty ? null : runtimes,
+    stableDiffusion: stableDiffusion,
+  );
 }
 
-void _validateAppleLlamaCompanion(
+/// What a resolved Flutter Apple companion must match before the hook trusts
+/// its SwiftPM framework: the companion pins [nativeRepository]@[nativeTag]
+/// through `let [tagVariable]` in the maintained manifest template.
+typedef _AppleCompanionContract = ({
+  String label,
+  String packageName,
+  String tagVariable,
+  String nativeRepository,
+  String nativeTag,
+  String templateSha256,
+});
+
+const _AppleCompanionContract _llamaCppCompanion = (
+  label: 'llama.cpp',
+  packageName: _llamaCppFlutterPackageName,
+  tagVariable: 'llamaCppTag',
+  nativeRepository: _nativeRepoSlug,
+  nativeTag: llamaCppTag,
+  templateSha256: _appleCompanionManifestTemplateSha256,
+);
+
+const _AppleCompanionContract _stableDiffusionCompanion = (
+  label: 'stable_diffusion',
+  packageName: _stableDiffusionFlutterPackageName,
+  tagVariable: 'stableDiffusionTag',
+  nativeRepository: _stableDiffusionNativeRepoSlug,
+  nativeTag: stableDiffusionReleaseTag,
+  templateSha256: _stableDiffusionCompanionManifestTemplateSha256,
+);
+
+void _validateAppleCompanion(
+  _AppleCompanionContract contract,
   Directory consumerRoot,
   BuildOutputBuilder output,
 ) {
   Never reject(String reason) => throw StateError(
-    'Incompatible Apple llama.cpp companion: $reason '
-    'Resolve $_llamaCppFlutterPackageName with a Package.swift pin matching '
-    '$_nativeRepoSlug@$llamaCppTag and rerun flutter pub get. '
+    'Incompatible Apple ${contract.label} companion: $reason '
+    'Resolve ${contract.packageName} with a Package.swift pin matching '
+    '${contract.nativeRepository}@${contract.nativeTag} and rerun flutter pub '
+    'get. '
     'Upgrade the core and companion together to a matching released pair; '
     'native tag/path overrides do not replace SPM frameworks. '
     'No in-process native asset was emitted.',
@@ -583,10 +674,10 @@ void _validateAppleLlamaCompanion(
       reject('Resolved package configuration contains malformed entries.');
     }
     final companions = entries
-        .where((entry) => (entry as Map)['name'] == _llamaCppFlutterPackageName)
+        .where((entry) => (entry as Map)['name'] == contract.packageName)
         .toList();
     if (companions.length != 1) {
-      reject('Expected exactly one resolved llama.cpp companion.');
+      reject('Expected exactly one resolved ${contract.label} companion.');
     }
     final root = (companions.single as Map)['rootUri'];
     if (root is! String || root.isEmpty) reject('Companion root URI missing.');
@@ -600,7 +691,7 @@ void _validateAppleLlamaCompanion(
       path.join(
         companionRoot.path,
         'darwin',
-        _llamaCppFlutterPackageName,
+        contract.packageName,
         'Package.swift',
       ),
     );
@@ -610,7 +701,7 @@ void _validateAppleLlamaCompanion(
     }
     final metadata = loadYaml(pubspec.readAsStringSync());
     if (metadata is! Map ||
-        metadata['name'] != _llamaCppFlutterPackageName ||
+        metadata['name'] != contract.packageName ||
         metadata['version'] is! String ||
         !RegExp(
           r'^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$',
@@ -618,27 +709,28 @@ void _validateAppleLlamaCompanion(
       reject('Resolved companion identity is malformed.');
     }
     final source = manifest.readAsStringSync();
+    final tagVariable = contract.tagVariable;
     final pins = RegExp(
-      r'^let llamaCppTag = "([^"\r\n]+)"\s*$',
+      '^let $tagVariable = "([^"\\r\\n]+)"\\s*\$',
       multiLine: true,
     ).allMatches(source).toList();
-    if (pins.length != 1 || pins.single.group(1) != llamaCppTag) {
+    if (pins.length != 1 || pins.single.group(1) != contract.nativeTag) {
       reject(
         'Resolved companion ${metadata['version']} does not uniquely pin '
-        'the required native runtime $llamaCppTag.',
+        'the required native runtime ${contract.nativeTag}.',
       );
     }
     final normalizedSource = source.replaceAll('\r\n', '\n');
     final checksum = RegExp(r'checksum: "[0-9a-f]{64}"');
     final template = normalizedSource
         .replaceFirst(
-          RegExp(r'^let llamaCppTag = "[^"\r\n]+"$', multiLine: true),
-          'let llamaCppTag = "PIN"',
+          RegExp('^let $tagVariable = "[^"\\r\\n]+"\$', multiLine: true),
+          'let $tagVariable = "PIN"',
         )
         .replaceFirst(checksum, 'checksum: "CHECKSUM"');
     if (checksum.allMatches(normalizedSource).length != 1 ||
         sha256.convert(utf8.encode(template)).toString() !=
-            _appleCompanionManifestTemplateSha256) {
+            contract.templateSha256) {
       reject('Companion SwiftPM target does not use the supported native pin.');
     }
     final artifacts = Directory(path.join(manifest.parent.path, 'Artifacts'));

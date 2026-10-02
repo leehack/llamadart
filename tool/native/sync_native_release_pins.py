@@ -33,6 +33,10 @@ DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
     "packages/llamadart_litert_lm_flutter/darwin/"
     "llamadart_litert_lm_flutter/Package.swift"
 )
+DEFAULT_STABLE_DIFFUSION_PACKAGE_SWIFT = (
+    "packages/llamadart_stable_diffusion_flutter/darwin/"
+    "llamadart_stable_diffusion_flutter/Package.swift"
+)
 DEFAULT_LITERT_LM_RUNTIME_DART = (
     "lib/src/backends/litert_lm/litert_lm_runtime.dart"
 )
@@ -701,6 +705,9 @@ def main() -> int:
     pins_path = repo_root / args.native_pins
     llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
     litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
+    stable_diffusion_package_swift_path = (
+        repo_root / args.stable_diffusion_package_swift
+    )
     litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
     litert_lm_macos_prepare_path = repo_root / args.litert_lm_macos_prepare_script
     changelog_path = repo_root / DEFAULT_CHANGELOG
@@ -950,11 +957,13 @@ def main() -> int:
             current_stable_diffusion_release_tag(pins_text),
             resolved_stable_diffusion_tag,
         )
-        runtime_artifacts = validate_stable_diffusion_release_manifest(
-            release,
-            repo=args.stable_diffusion_native_repo,
-            tag=resolved_stable_diffusion_tag,
-            release_json_dir=args.release_json_dir,
+        runtime_artifacts, xcframework_checksum = (
+            validate_stable_diffusion_release_manifest(
+                release,
+                repo=args.stable_diffusion_native_repo,
+                tag=resolved_stable_diffusion_tag,
+                release_json_dir=args.release_json_dir,
+            )
         )
         pinned_bundles = stable_diffusion_bundle_names(pins_text)
         missing = sorted(set(pinned_bundles) - set(runtime_artifacts))
@@ -992,6 +1001,43 @@ def main() -> int:
             checksum, library = runtime_artifacts[bundle]
             pins_text = replace_stable_diffusion_bundle(
                 pins_text, bundle, checksum, library
+            )
+        if stable_diffusion_package_swift_path.exists():
+            if xcframework_checksum is None:
+                raise ReleaseError(
+                    "stable-diffusion-native "
+                    f"{resolved_stable_diffusion_tag} publishes no Apple "
+                    "XCFramework for the Flutter companion"
+                )
+            original_swift_text = stable_diffusion_package_swift_path.read_text(
+                encoding="utf-8"
+            )
+            swift_text = replace_one(
+                original_swift_text,
+                r'let stableDiffusionTag = "[^"]+"',
+                f'let stableDiffusionTag = "{resolved_stable_diffusion_tag}"',
+                "stable_diffusion Package.swift tag",
+            )
+            swift_text = replace_swift_binary_target_checksum(
+                swift_text,
+                "stable_diffusion",
+                xcframework_checksum,
+            )
+            pending_writes[stable_diffusion_package_swift_path] = swift_text
+            package_root = companion_package_root(
+                stable_diffusion_package_swift_path
+            )
+            project_doc_dependency_versions[package_root.name] = (
+                update_companion_package_metadata(
+                    pending_writes,
+                    package_root,
+                    args.stable_diffusion_native_repo,
+                    resolved_stable_diffusion_tag,
+                    bump_version=(
+                        args.bump_companion_versions
+                        and swift_text != original_swift_text
+                    ),
+                )
             )
         summaries.append(
             "stable_diffusion -> "
@@ -1059,6 +1105,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Path to the LiteRT-LM Flutter companion Package.swift relative "
             "to repo root. Skipped if the file does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--stable-diffusion-package-swift",
+        default=DEFAULT_STABLE_DIFFUSION_PACKAGE_SWIFT,
+        help=(
+            "Path to the stable_diffusion Flutter companion Package.swift "
+            "relative to repo root. Skipped if the file does not exist."
         ),
     )
     parser.add_argument(
@@ -2698,8 +2752,10 @@ def validate_stable_diffusion_release_manifest(
     repo: str,
     tag: str,
     release_json_dir: str,
-) -> dict[str, tuple[str, str]]:
-    """Map each runtime target to its (sha256, library) from manifest.json.
+) -> tuple[dict[str, tuple[str, str]], str | None]:
+    """Map each runtime target to its (sha256, library) from manifest.json,
+    and return the Apple XCFramework zip's SHA-256 (its SwiftPM checksum), or
+    None when the release has none.
 
     Every archive digest must equal the GitHub digest of the release asset of
     the same name, so the manifest cannot vouch for bytes GitHub did not serve.
@@ -2730,9 +2786,19 @@ def validate_stable_diffusion_release_manifest(
         raise ReleaseError(f"Release {repo}@{tag} manifest artifacts must be a list")
 
     runtime: dict[str, tuple[str, str]] = {}
+    xcframework_checksum: str | None = None
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             raise ReleaseError(f"Release {repo}@{tag} manifest has an invalid artifact")
+        if artifact.get("kind") == "xcframework":
+            if xcframework_checksum is not None:
+                raise ReleaseError(
+                    f"Release {repo}@{tag} manifest lists more than one XCFramework"
+                )
+            xcframework_checksum = validate_stable_diffusion_xcframework(
+                artifact, release, repo=repo, tag=tag
+            )
+            continue
         if artifact.get("kind") != "runtime":
             continue
         target = artifact.get("target")
@@ -2766,7 +2832,33 @@ def validate_stable_diffusion_release_manifest(
         runtime[target] = (checksum, library)
     if not runtime:
         raise ReleaseError(f"Release {repo}@{tag} manifest lists no runtime archives")
-    return runtime
+    return runtime, xcframework_checksum
+
+
+def validate_stable_diffusion_xcframework(
+    artifact: dict[str, Any],
+    release: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+) -> str:
+    file_name = f"stable-diffusion-native-apple-xcframework-{tag}.zip"
+    if artifact.get("target") != "apple" or artifact.get("file") != file_name:
+        raise ReleaseError(
+            f"stable_diffusion XCFramework artifact must be apple/{file_name}"
+        )
+    checksum = artifact.get("sha256")
+    if not isinstance(checksum, str) or SHA256_RE.fullmatch(checksum) is None:
+        raise ReleaseError("stable_diffusion XCFramework sha256 is invalid")
+    asset = find_release_asset(release, file_name)
+    if asset is None:
+        raise ReleaseError(f"Release {repo}@{tag} does not contain {file_name}")
+    if require_github_sha256_digest(asset, tag, file_name) != checksum:
+        raise ReleaseError(
+            f"stable_diffusion {file_name} manifest sha256 does not match its "
+            "GitHub digest"
+        )
+    return checksum
 
 
 def stable_diffusion_bundle_names(pins_text: str) -> list[str]:

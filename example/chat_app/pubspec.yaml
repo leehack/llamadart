@@ -19,6 +19,8 @@ dependencies:
     path: ../../packages/llamadart_llama_cpp_flutter
   llamadart_litert_lm_flutter:
     path: ../../packages/llamadart_litert_lm_flutter
+  llamadart_stable_diffusion_flutter:
+    path: ../../packages/llamadart_stable_diffusion_flutter
   provider: ^6.0.5
   shared_preferences: ^2.2.0
   file_picker: ^10.3.10
@@ -56,13 +58,15 @@ hooks:
     llamadart:
       # The chat example intentionally demonstrates both GGUF and .litertlm
       # model flows, plus the opt-in stable_diffusion runtime for its image
-      # screen. android-x64 has no stable_diffusion build and skips it with a
-      # build warning; the entries below leave it out where LiteRT-LM is also
-      # missing. Smaller examples rely on the package defaults.
+      # screen. On iOS and macOS the companion packages above link these
+      # runtimes through Swift Package Manager instead. android-x64 has no
+      # stable_diffusion build and skips it with a build warning; the entries
+      # below leave out what is not published. Smaller examples rely on the
+      # package defaults.
       llamadart_native_runtimes:
         runtimes: [llama_cpp, litert_lm, stable_diffusion]
         platforms:
-          # LiteRT-LM and stable_diffusion bundles are not published for
-          # these targets.
-          ios-x86_64-sim: [llama_cpp]
+          # No LiteRT-LM bundle for these targets, nor stable_diffusion for
+          # windows-arm64.
+          ios-x86_64-sim: [llama_cpp, stable_diffusion]
           windows-arm64: [llama_cpp]

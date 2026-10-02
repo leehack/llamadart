@@ -18,6 +18,7 @@ const releaseMetadataDocs = <String>{
   'website/docs/getting-started/installation.md',
   'packages/llamadart_llama_cpp_flutter/README.md',
   'packages/llamadart_litert_lm_flutter/README.md',
+  'packages/llamadart_stable_diffusion_flutter/README.md',
 };
 const releaseMetadataLock = 'example/chat_app/pubspec.lock';
 const releaseMetadataPaths = <String>{

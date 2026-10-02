@@ -12,10 +12,10 @@ page is the single list of which repository owns which change.
 | --- | --- |
 | llama.cpp native wrapper, runtime bundles, Apple SPM-compatible artifacts | `leehack/llamadart-native` |
 | LiteRT-LM native wrapper, runtime bundles, Apple SPM-compatible artifacts | `leehack/litert-lm-native` |
-| stable-diffusion.cpp runtime bundles and exported `stable-diffusion.h` API (opt-in `stable_diffusion` runtime) | `leehack/stable-diffusion-native` |
+| stable-diffusion.cpp runtime bundles, Apple SPM-compatible artifacts and exported `stable-diffusion.h` API (opt-in `stable_diffusion` runtime) | `leehack/stable-diffusion-native` |
 | Web bridge runtime source and build | `leehack/llama-web-bridge` |
 | Published bridge assets | `leehack/llama-web-bridge-assets` |
-| Flutter Apple SPM package manifests | `packages/llamadart_llama_cpp_flutter` and `packages/llamadart_litert_lm_flutter` in this repo |
+| Flutter Apple SPM package manifests | `packages/llamadart_llama_cpp_flutter`, `packages/llamadart_litert_lm_flutter` and `packages/llamadart_stable_diffusion_flutter` in this repo |
 | Dart API, runtime selection, hook wiring, pins, docs, tests | `llamadart` (this repo) |
 
 ## Rules

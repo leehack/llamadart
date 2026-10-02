@@ -1031,6 +1031,7 @@ void main() {
         spec(OS.android, Architecture.arm64): 'android-arm64',
         spec(OS.iOS, Architecture.arm64): 'ios-arm64',
         spec(OS.iOS, Architecture.arm64, sim: true): 'ios-arm64-sim',
+        spec(OS.iOS, Architecture.x64, sim: true): 'ios-x64-sim',
         spec(OS.macOS, Architecture.arm64): 'macos-arm64',
         spec(OS.macOS, Architecture.x64): 'macos-x64',
       };
@@ -1056,7 +1057,6 @@ void main() {
     test('returns null where no archive is published', () {
       for (final nativeSpec in [
         spec(OS.android, Architecture.x64),
-        spec(OS.iOS, Architecture.x64, sim: true),
         spec(OS.windows, Architecture.arm64),
       ]) {
         expect(

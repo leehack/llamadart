@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -297,7 +298,7 @@ void main() {
   });
 
   test(
-    'Flutter Apple companion builds still bundle stable_diffusion',
+    'Flutter Apple builds without the stable_diffusion companion bundle it',
     () async {
       final consumer = await Directory.systemTemp.createTemp(
         'llamadart_sd_apple_consumer_',
@@ -343,6 +344,257 @@ dependencies:
       );
     },
   );
+
+  test('Flutter iOS hook bundling raises an Xcode warning that App Store '
+      'upload needs the companion', () async {
+    final defines = await _flutterAppleApp(
+      companions: const [],
+      defines: {
+        'llamadart_native_runtimes': ['stable_diffusion'],
+      },
+    );
+    final warnings = await _captureStderr(
+      () => testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: defines,
+        check: (_, output) {
+          expect(
+            _stableDiffusionAsset(output).linkMode,
+            isA<DynamicLoadingBundled>(),
+          );
+        },
+      ),
+    );
+    expect(
+      warnings,
+      contains(
+        allOf(
+          startsWith('warning: '),
+          contains('MinimumOSVersion 13.0'),
+          contains(_stableDiffusionCompanionName),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'the stable_diffusion companion selects and links it in process',
+    () async {
+      final defines = await _flutterAppleApp(
+        companions: const [_stableDiffusionCompanionName],
+      );
+      final warnings = await _captureStderr(
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: Architecture.arm64,
+          userDefines: defines,
+          check: (input, output) {
+            expect(_codeAssetIds(output), {
+              _primaryAssetId,
+              _stableDiffusionAssetId,
+            });
+            final asset = _stableDiffusionAsset(output);
+            expect(asset.linkMode, isA<LookupInProcess>());
+            expect(asset.file, isNull);
+            // llama.cpp has no companion here, so it stays on the hook.
+            final llama = output.assets.encodedAssets
+                .map((asset) => asset.asCodeAsset)
+                .singleWhere((asset) => asset.id == _primaryAssetId);
+            expect(llama.linkMode, isA<DynamicLoadingBundled>());
+            expect(
+              output.dependencies.any(
+                (uri) => uri.path.endsWith('Package.swift'),
+              ),
+              isTrue,
+            );
+          },
+        ),
+      );
+      expect(warnings, isEmpty);
+    },
+  );
+
+  test(
+    'both companions link llama.cpp and stable_diffusion in process',
+    () async {
+      final defines = await _flutterAppleApp(
+        companions: const [
+          _llamaCppCompanionName,
+          _stableDiffusionCompanionName,
+        ],
+        defines: {
+          'llamadart_native_runtimes': ['llama_cpp'],
+        },
+      );
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.x64,
+        targetIOSSdk: IOSSdk.iPhoneSimulator,
+        userDefines: defines,
+        check: (input, output) {
+          final assets = output.assets.encodedAssets
+              .map((asset) => asset.asCodeAsset)
+              .toList();
+          expect(assets.map((asset) => asset.id).toSet(), {
+            _primaryAssetId,
+            _stableDiffusionAssetId,
+          });
+          expect(
+            assets.every((asset) => asset.linkMode is LookupInProcess),
+            isTrue,
+          );
+          expect(
+            Directory(
+              path.join(input.outputDirectory.toFilePath(), 'llamadart_bin'),
+            ).existsSync(),
+            isFalse,
+          );
+        },
+      );
+    },
+  );
+
+  for (final scenario in [
+    'old-pin',
+    'local-artifacts',
+    'hardcoded-url',
+    'missing-resolution',
+  ]) {
+    test(
+      'the stable_diffusion companion rejects $scenario before lookup',
+      () async {
+        final defines = await _flutterAppleApp(
+          companions: const [_stableDiffusionCompanionName],
+          localArtifacts: scenario == 'local-artifacts',
+          resolve: scenario != 'missing-resolution',
+          editManifest: (manifest) => switch (scenario) {
+            'old-pin' => manifest.replaceFirst(
+              'let stableDiffusionTag = "$stableDiffusionReleaseTag"',
+              'let stableDiffusionTag = "v0.1.1"',
+            ),
+            'hardcoded-url' => manifest.replaceFirst(
+              r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
+              'url: "https://example.com/stable_diffusion.zip"',
+            ),
+            _ => manifest,
+          },
+        );
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: OS.iOS,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: IOSSdk.iPhoneOS,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple stable_diffusion companion',
+              ),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      },
+    );
+  }
+}
+
+const _llamaCppCompanionName = 'llamadart_llama_cpp_flutter';
+const _stableDiffusionCompanionName = 'llamadart_stable_diffusion_flutter';
+
+/// A Flutter app depending on [companions], each resolved in its
+/// `package_config.json` to a copy of the maintained package.
+Future<PackageUserDefines> _flutterAppleApp({
+  required List<String> companions,
+  Map<String, Object?> defines = const {},
+  String Function(String manifest)? editManifest,
+  bool localArtifacts = false,
+  bool resolve = true,
+}) async {
+  final app = await Directory.systemTemp.createTemp(
+    'llamadart_sd_flutter_app_',
+  );
+  addTearDown(() => app.delete(recursive: true));
+  final pubspec = File(path.join(app.path, 'pubspec.yaml'))
+    ..writeAsStringSync('''
+name: llamadart_sd_flutter_app
+publish_to: none
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  llamadart: ^0.9.0
+${companions.map((name) => '  $name: any').join('\n')}
+''');
+  final entries = <Map<String, String>>[];
+  for (final name in companions) {
+    final root = Directory(path.join(app.path, 'resolved', name));
+    final manifest = File(
+      path.join(root.path, 'darwin', name, 'Package.swift'),
+    );
+    await manifest.parent.create(recursive: true);
+    File(
+      path.join(root.path, 'pubspec.yaml'),
+    ).writeAsStringSync('name: $name\nversion: 0.0.1\n');
+    final source = File(
+      'packages/$name/darwin/$name/Package.swift',
+    ).readAsStringSync();
+    manifest.writeAsStringSync(
+      name == _stableDiffusionCompanionName && editManifest != null
+          ? editManifest(source)
+          : source,
+    );
+    if (localArtifacts) {
+      await Directory(path.join(manifest.parent.path, 'Artifacts')).create();
+    }
+    entries.add({'name': name, 'rootUri': '../resolved/$name'});
+  }
+  if (resolve) {
+    final config = File(
+      path.join(app.path, '.dart_tool', 'package_config.json'),
+    );
+    await config.parent.create();
+    config.writeAsStringSync(
+      jsonEncode({'configVersion': 2, 'packages': entries}),
+    );
+  }
+  return PackageUserDefines(
+    workspacePubspec: PackageUserDefinesSource(
+      defines: defines,
+      basePath: pubspec.uri,
+    ),
+  );
+}
+
+/// Lines the hook writes to stderr while [body] runs; Flutter relays them
+/// into the Xcode build, where `warning:` lines become build warnings.
+Future<List<String>> _captureStderr(Future<void> Function() body) async {
+  final sink = _LineSink();
+  await IOOverrides.runZoned(body, stderr: () => sink);
+  return sink.lines;
+}
+
+final class _LineSink implements Stdout {
+  final List<String> lines = [];
+
+  @override
+  void writeln([Object? object = '']) => lines.add('$object');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName}');
 }
 
 PackageUserDefines _userDefines(Map<String, Object?> defines) =>

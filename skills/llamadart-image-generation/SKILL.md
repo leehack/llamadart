@@ -32,10 +32,19 @@ description: >-
   `flutter clean` once after changing it. Linux and Windows bundle the Vulkan
   build when `llamadart_native_backends` selects Vulkan (the default);
   `llamadart_stable_diffusion_backends: [cpu]` picks the CPU build.
+- Flutter iOS and macOS apps should add the
+  `llamadart_stable_diffusion_flutter` companion package. It links the
+  runtime's XCFramework through Swift Package Manager and selects the runtime
+  on iOS and macOS without the entry above. Without it the hook bundles the
+  runtime, and App Store Connect rejects that iOS framework's
+  `MinimumOSVersion`; only Xcode and `xcodebuild` show the build warning about
+  it. The companion needs the first core release whose changelog lists it,
+  and adding it opts the app into the runtime (about 37 MB per Apple
+  target).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
-  CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64, the iOS x86_64
-  simulator and Windows arm64 are unsupported. Windows needs the latest
+  CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64
+  are unsupported. Windows needs the latest
   Microsoft Visual C++ v14 Redistributable (x64).
 - Gate UI on `await ImageGenerationEngine.checkRuntime()` (no model needed;
   probes on a separate isolate): show a progress indicator until it

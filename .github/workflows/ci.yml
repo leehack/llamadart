@@ -181,6 +181,15 @@ jobs:
           package_name="$(basename "$PWD")"
           swift package --package-path "darwin/$package_name" dump-package >/dev/null
 
+      # dump-package never downloads binary targets; resolving fetches each
+      # pinned XCFramework and fails if its checksum does not match.
+      - name: Resolve SwiftPM binary targets
+        working-directory: ${{ matrix.package }}
+        run: |
+          package_name="$(basename "$PWD")"
+          swift package --package-path "darwin/$package_name" \
+            --scratch-path "$RUNNER_TEMP/$package_name-spm" resolve
+
       - name: Publish dry-run
         working-directory: ${{ matrix.package }}
         run: |

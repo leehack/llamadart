@@ -2344,6 +2344,7 @@ SD_BUNDLES = {
     "android-arm64": "libstable-diffusion.so",
     "ios-arm64": "libstable-diffusion.dylib",
     "ios-arm64-sim": "libstable-diffusion.dylib",
+    "ios-x64-sim": "libstable-diffusion.dylib",
     "macos-arm64": "libstable-diffusion.dylib",
     "macos-x64": "libstable-diffusion.dylib",
     "linux-arm64": "libstable-diffusion.so",
@@ -2355,9 +2356,26 @@ SD_BUNDLES = {
 }
 
 
-def _sd_fixture(tag: str, targets: dict[str, str]) -> tuple[dict, dict]:
+def _sd_fixture(
+    tag: str, targets: dict[str, str], *, xcframework: bool = False
+) -> tuple[dict, dict]:
     artifacts = []
     assets = []
+    if xcframework:
+        name = f"stable-diffusion-native-apple-xcframework-{tag}.zip"
+        checksum = hashlib.sha256(f"xcframework-{tag}".encode()).hexdigest()
+        artifacts.append(
+            {
+                "target": "apple",
+                "kind": "xcframework",
+                "file": name,
+                "sha256": checksum,
+                "size": 77000000,
+                "library": "stable_diffusion.framework",
+                "accelerators": ["metal", "cpu"],
+            }
+        )
+        assets.append({"name": name, "digest": f"sha256:{checksum}"})
     for index, (target, library) in enumerate(sorted(targets.items())):
         for kind in ("runtime", "symbols"):
             name = f"stable-diffusion-native-{kind}-{target}-{tag}.tar.gz"
@@ -2525,6 +2543,84 @@ class StableDiffusionPinSyncTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("manifest.json does not match its GitHub digest", result.stderr)
+
+    def add_companion(self) -> Path:
+        package = "packages/llamadart_stable_diffusion_flutter"
+        source = Path(__file__).resolve().parents[2] / package
+        for relative in (
+            "pubspec.yaml",
+            "README.md",
+            "CHANGELOG.md",
+            "darwin/llamadart_stable_diffusion_flutter/Package.swift",
+        ):
+            destination = self.repo_root / package / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, destination)
+        for doc in pins.DEFAULT_LLAMA_CPP_PROJECT_DOCS:
+            path = self.repo_root / doc
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "```yaml\n  llamadart_stable_diffusion_flutter: ^0.0.1\n```\n",
+                encoding="utf-8",
+            )
+        return self.repo_root / package
+
+    def test_pins_the_companion_xcframework_from_the_manifest(self) -> None:
+        companion = self.add_companion()
+        manifest, release = _sd_fixture("v0.3.0", SD_BUNDLES, xcframework=True)
+        result = self.run_sync("v0.3.0", manifest, release)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checksum = hashlib.sha256(b"xcframework-v0.3.0").hexdigest()
+        swift = (
+            companion / "darwin/llamadart_stable_diffusion_flutter/Package.swift"
+        ).read_text(encoding="utf-8")
+        self.assertIn('let stableDiffusionTag = "v0.3.0"', swift)
+        self.assertIn(f'checksum: "{checksum}"', swift)
+        self.assertIn(
+            "The Apple SwiftPM manifest pins "
+            "`leehack/stable-diffusion-native@v0.3.0`.",
+            (companion / "README.md").read_text(encoding="utf-8"),
+        )
+        self.assertTrue(
+            (companion / "CHANGELOG.md")
+            .read_text(encoding="utf-8")
+            .startswith(
+                "## Unreleased\n\n* Updated Apple SwiftPM native pin to "
+                "`leehack/stable-diffusion-native@v0.3.0`."
+            )
+        )
+
+    def test_rejects_a_companion_sync_without_a_trusted_xcframework(self) -> None:
+        companion = self.add_companion()
+        swift = companion / "darwin/llamadart_stable_diffusion_flutter/Package.swift"
+
+        def drop_xcframework(manifest: dict, release: dict) -> None:
+            manifest["artifacts"] = [
+                a for a in manifest["artifacts"] if a["kind"] != "xcframework"
+            ]
+
+        def digest_mismatch(manifest: dict, release: dict) -> None:
+            release["assets"][0]["digest"] = "sha256:" + "0" * 64
+
+        def wrong_file(manifest: dict, release: dict) -> None:
+            manifest["artifacts"][0]["file"] = "other.zip"
+
+        for mutate, message in (
+            (drop_xcframework, "publishes no Apple XCFramework"),
+            (digest_mismatch, "does not match its GitHub digest"),
+            (wrong_file, "XCFramework artifact must be"),
+        ):
+            with self.subTest(message=message):
+                original = swift.read_text(encoding="utf-8")
+                manifest, release = _sd_fixture(
+                    "v0.3.0", SD_BUNDLES, xcframework=True
+                )
+                mutate(manifest, release)
+                result = self.run_sync("v0.3.0", manifest, release)
+                self.assertEqual(result.returncode, 1, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(swift.read_text(encoding="utf-8"), original)
 
     def test_rejects_rollback_and_foreign_tag_grammar(self) -> None:
         manifest, release = _sd_fixture("v0.0.9", SD_BUNDLES)
