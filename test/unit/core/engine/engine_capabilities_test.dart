@@ -335,6 +335,33 @@ void main() {
     });
   }
 
+  for (final grammar in [true, false]) {
+    test('ChatSession rejects strict responseFormat exactly when '
+        'capabilities report no structured output ($grammar)', () async {
+      final engine = await loaded(
+        _RuntimeBackend(
+          runtime: LlamaRuntime.liteRtLm,
+          generation: _liteRtLmNativeGeneration,
+          supportsGrammarConstraints: grammar,
+        ),
+      );
+
+      expect((await engine.capabilities).supportsStructuredOutput, grammar);
+      final turn = ChatSession(engine).create(
+        const [LlamaTextContent('Hi')],
+        responseFormat: const {'type': 'json_object'},
+      );
+      if (grammar) {
+        await turn.drain<void>();
+      } else {
+        await expectLater(
+          turn.drain<void>(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
+    });
+  }
+
   test('reports a failed media probe or backend name as missing', () async {
     final engine = await loaded(
       _RuntimeBackend(

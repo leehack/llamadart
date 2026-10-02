@@ -63,7 +63,10 @@ class ChatCompletionRequestPlanner {
     List<ToolDefinition>? tools,
     Map<String, dynamic>? responseFormat,
   }) {
-    final strictResponseFormat = responseFormatSchema(responseFormat) != null;
+    final strictResponseFormat = rejectUnsupportedResponseFormat(
+      backend,
+      responseFormat,
+    );
     final stops = {
       ...templateResult.stopSequences,
       ...?params?.stopSequences,
@@ -80,17 +83,6 @@ class ChatCompletionRequestPlanner {
     if (!backendSupportsGrammarConstraints && templateResult.grammar != null) {
       LlamaLogger.instance.debug(
         '  Template grammar skipped: backend does not support grammar constraints',
-      );
-    }
-    if (!backendSupportsGrammarConstraints && strictResponseFormat) {
-      throw LlamaUnsupportedException(
-        'Strict responseFormat output requires '
-        'grammar-constrained decoding, but the active backend does not '
-        'support grammar constraints. For example, LiteRT-LM native and web '
-        'currently do not expose public runtime wiring for JSON-schema/Lark '
-        'constraints; '
-        'use a grammar-capable backend such as llama.cpp, or omit '
-        'responseFormat for best-effort JSON output.',
       );
     }
     if (!backendSupportsGrammarConstraints &&
@@ -224,6 +216,31 @@ class ChatCompletionRequestPlanner {
       endTag: budget.endTag ?? tags.endTag,
       forcedMessage: budget.forcedMessage,
     );
+  }
+
+  /// Whether [responseFormat] requests strict structured output.
+  ///
+  /// Throws [LlamaUnsupportedException] for an unrecognised shape, or for a
+  /// strict format when [backend] has no grammar-constrained decoding. Both
+  /// depend only on the request and backend, so callers can check them before
+  /// rendering or changing any state.
+  static bool rejectUnsupportedResponseFormat(
+    LlamaBackend backend,
+    Map<String, dynamic>? responseFormat,
+  ) {
+    if (responseFormatSchema(responseFormat) == null) return false;
+    if (!supportsGrammarConstraints(backend)) {
+      throw LlamaUnsupportedException(
+        'Strict responseFormat output requires '
+        'grammar-constrained decoding, but the active backend does not '
+        'support grammar constraints. For example, LiteRT-LM native and web '
+        'currently do not expose public runtime wiring for JSON-schema/Lark '
+        'constraints; '
+        'use a grammar-capable backend such as llama.cpp, or omit '
+        'responseFormat for best-effort JSON output.',
+      );
+    }
+    return true;
   }
 
   /// Whether [backend] applies grammar constraints; true unless it reports

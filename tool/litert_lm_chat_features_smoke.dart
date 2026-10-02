@@ -94,6 +94,10 @@ Future<void> main(List<String> args) async {
       maxTokens: 64,
     );
 
+    final sessionStructuredOutput = await _runSessionStructuredOutputScenario(
+      engine,
+    );
+
     final requiredTemplate = await engine.chatTemplate(
       _requiredToolMessages,
       tools: [_weatherTool],
@@ -190,6 +194,7 @@ Future<void> main(List<String> args) async {
       'plain': plain.toJson(),
       'thinking': thinking.toJson(),
       'textHistory': textHistory.toJson(),
+      'sessionStructuredOutput': sessionStructuredOutput,
       'toolCall': toolCall.toJson(),
       'nativeToolHistory':
           nativeToolHistory?.toJson() ??
@@ -223,6 +228,57 @@ Future<void> main(List<String> args) async {
   } finally {
     await engine.dispose();
   }
+}
+
+/// LiteRT-LM has no grammar-constrained decoding, so a strict format must
+/// throw before [ChatSession] records the turn, leaving the next turn's roles
+/// alternating.
+Future<Map<String, Object?>> _runSessionStructuredOutputScenario(
+  LlamaEngine engine,
+) async {
+  final session = ChatSession(engine);
+  final reported = <LlamaChatMessage>[];
+  String? rejection;
+  try {
+    await session.createStructuredJson(
+      [const LlamaTextContent('Reply with {"ok": true}.')],
+      output: LlamaStructuredOutput.jsonObject(decoder: (json) => json),
+      enableThinking: false,
+      onMessageAdded: reported.add,
+    );
+  } on LlamaUnsupportedException catch (error) {
+    rejection = error.message;
+  }
+  final historyAfterRejection = session.history.length;
+  final reply = StringBuffer();
+  await for (final chunk in session.create(
+    [const LlamaTextContent('Reply with one short sentence saying hello.')],
+    params: const GenerationParams(maxTokens: 64),
+    enableThinking: false,
+  )) {
+    reply.write(chunk.choices.firstOrNull?.delta.content ?? '');
+  }
+  final roles = [for (final message in session.history) message.role.name];
+  final result = <String, Object?>{
+    'rejection': rejection,
+    'historyAfterRejection': historyAfterRejection,
+    'reportedMessages': reported.length,
+    'rolesAfterNextTurn': roles,
+    'nextReply': reply.toString(),
+  };
+  print('DIAGNOSTIC litert_lm_session_structured_output ${jsonEncode(result)}');
+  if (rejection == null ||
+      !rejection.contains('grammar-constrained decoding') ||
+      historyAfterRejection != 0 ||
+      reported.isNotEmpty ||
+      roles.join(',') != 'user,assistant' ||
+      reply.toString().trim().isEmpty) {
+    throw StateError(
+      'LiteRT-LM ChatSession did not reject a strict responseFormat before '
+      'recording the turn, or did not recover on the next turn.',
+    );
+  }
+  return result;
 }
 
 void _verifyResult({

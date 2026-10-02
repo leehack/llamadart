@@ -574,12 +574,22 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       }
       verifiedSha256 = actual;
     }
-    return _entryForFile(
-      source,
-      file,
-      DateTime.now().toUtc(),
-      sha256Digest: verifiedSha256,
-    );
+    try {
+      return await _entryForFile(
+        source,
+        file,
+        DateTime.now().toUtc(),
+        sha256Digest: verifiedSha256,
+      );
+    } on ArgumentError {
+      // ModelCacheEntry rejects names that %2e, %2f and %5c escapes would turn
+      // into traversal for a reader that percent-decodes them.
+      throw LlamaUnsupportedException(
+        'Local model path ${source.path} has a file name containing %2F or '
+        '%5C, or a directory named %2e or %2e%2e, which a ModelCacheEntry '
+        'cannot hold; load the file with LlamaEngine.loadModel instead.',
+      );
+    }
   }
 
   Future<ModelCacheEntry?> _readCompletedEntry(
