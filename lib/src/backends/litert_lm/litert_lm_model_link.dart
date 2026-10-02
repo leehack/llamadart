@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import '../../core/models/model_format.dart';
@@ -14,9 +16,13 @@ typedef LiteRtLmLinkCreator = Future<Link> Function(Link link, String target);
 ///
 /// The runtime picks a bundle's format from a path's extension, matched case
 /// sensitively, and opens the path lazily at engine creation. The link lives
-/// in its own directory made by [Directory.createTemp], which is private to the
-/// current user (mode 0700 on POSIX), so no other user can plant, swap or
-/// block it before the runtime opens it. [dispose] deletes that directory.
+/// in its own new directory, so no other user can plant, swap, list or block
+/// it before the runtime opens it. On POSIX the directory comes from
+/// `mkdtemp(3)`, which creates it atomically with mode 0700 whatever the
+/// process umask, and the link is created only after `stat` confirms no group
+/// or other permission bit is set. On Windows it comes from
+/// [Directory.createTemp] and inherits the access control list of the
+/// per-user temp directory. [dispose] deletes that directory.
 ///
 /// The runtime names weight and program caches after the path's base name and
 /// deletes same-named caches it finds stale, so the link name keeps the
@@ -53,9 +59,7 @@ class LiteRtLmModelLink {
 
     final Directory directory;
     try {
-      directory = await (parent ?? Directory.systemTemp).createTemp(
-        'llamadart_litert_lm_link_',
-      );
+      directory = await _createPrivateDirectory(parent ?? Directory.systemTemp);
     } on FileSystemException catch (error) {
       throw LlamaModelException(
         'Could not create a private directory for the .litertlm link that '
@@ -87,6 +91,40 @@ class LiteRtLmModelLink {
     }
   }
 
+  static const String _directoryPrefix = 'llamadart_litert_lm_link_';
+
+  static Future<Directory> _createPrivateDirectory(Directory parent) async {
+    if (Platform.isWindows) return parent.createTemp(_directoryPrefix);
+
+    final template = '${parent.path}/${_directoryPrefix}XXXXXX'.toNativeUtf8();
+    final Directory directory;
+    try {
+      final created = _mkdtemp(template);
+      if (created == nullptr) {
+        throw FileSystemException(
+          'Cannot create a private directory',
+          parent.path,
+          _lastOsError(),
+        );
+      }
+      directory = Directory(created.toDartString());
+    } finally {
+      malloc.free(template);
+    }
+
+    final mode = (await directory.stat()).mode;
+    if (mode & 0x3f != 0 || mode & 0x1c0 != 0x1c0) {
+      _deleteQuietly(directory);
+      throw LlamaModelException(
+        'The private directory for the .litertlm link that LiteRT-LM needs '
+        'was created with mode ${(mode & 0x1ff).toRadixString(8)} instead of '
+        '700, so other users could reach it. Rename the model file to end in '
+        '.litertlm.',
+      );
+    }
+    return directory;
+  }
+
   static Future<Link> _createLink(Link link, String target) =>
       link.create(target);
 
@@ -112,4 +150,30 @@ class LiteRtLmModelLink {
       // caches in [cacheDirectory].
     }
   }
+}
+
+final Pointer<Utf8> Function(Pointer<Utf8>) _mkdtemp = DynamicLibrary.process()
+    .lookupFunction<
+      Pointer<Utf8> Function(Pointer<Utf8>),
+      Pointer<Utf8> Function(Pointer<Utf8>)
+    >('mkdtemp');
+
+OSError? _lastOsError() {
+  final libc = DynamicLibrary.process();
+  for (final symbol in ['__errno_location', '__error', '__errno']) {
+    if (!libc.providesSymbol(symbol)) continue;
+    final code = libc
+        .lookupFunction<Pointer<Int32> Function(), Pointer<Int32> Function()>(
+          symbol,
+        )()
+        .value;
+    final message = libc
+        .lookupFunction<
+          Pointer<Utf8> Function(Int32),
+          Pointer<Utf8> Function(int)
+        >('strerror')(code)
+        .toDartString();
+    return OSError(message, code);
+  }
+  return null;
 }

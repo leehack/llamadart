@@ -884,6 +884,42 @@ void main() {
     }
   });
 
+  test('a failed link keeps a previous linked model', () async {
+    final client = _FakeLiteRtLmRuntimeClient();
+    final links = await Directory('${tempDir.path}/links').create();
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      linkParentDirectory: links,
+    );
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    final first = File('${tempDir.path}/first');
+    await first.writeAsString('LITERTLM fake model');
+    final second = File('${tempDir.path}/second');
+    await second.writeAsString('LITERTLM fake model');
+    final moved = '${tempDir.path}/links-moved';
+
+    try {
+      final model = await service.loadModel(first.path, params);
+      await startEngine(service, client, model, params);
+      final firstLink = client.lastModelPath!;
+
+      await links.rename(moved);
+      final blocker = await File(links.path).writeAsString('not a directory');
+      await expectLater(
+        service.loadModel(second.path, params),
+        throwsA(isA<LlamaModelException>()),
+      );
+      await blocker.delete();
+      await Directory(moved).rename(links.path);
+
+      expect(service.getMetadata(model)['general.name'], 'first');
+      expect(Link(firstLink).existsSync(), isTrue);
+      expect(await Link(firstLink).target(), first.absolute.path);
+    } finally {
+      service.dispose();
+    }
+  }, testOn: '!windows');
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {

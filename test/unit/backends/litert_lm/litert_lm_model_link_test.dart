@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -53,6 +54,29 @@ void main() {
       expect(directory.parent.path, links.path);
       expect(directory.statSync().modeString(), 'rwx------');
     }, testOn: '!windows');
+  }
+
+  for (final mask in [0x0, 0x12]) {
+    test(
+      'creates a 0700 directory under umask ${mask.toRadixString(8)}',
+      () async {
+        final previous = _umask(mask) & 0x1ff;
+        try {
+          final link = (await LiteRtLmModelLink.create(
+            model.path,
+            parent: links,
+          ))!;
+          addTearDown(link.dispose);
+
+          final directory = File(link.path).parent;
+          expect(directory.statSync().modeString(), 'rwx------');
+          expect(directory.listSync(), hasLength(1));
+        } finally {
+          _umask(previous);
+        }
+      },
+      testOn: '!windows',
+    );
   }
 
   test(
@@ -194,3 +218,6 @@ void main() {
     expect(await File(link.path).readAsString(), 'LITERTLM');
   }, testOn: '!windows');
 }
+
+final int Function(int) _umask = DynamicLibrary.process()
+    .lookupFunction<Uint32 Function(Uint32), int Function(int)>('umask');
