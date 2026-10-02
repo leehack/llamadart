@@ -96,6 +96,7 @@ Future<List<String>> resolveSpeechModelFiles({
       assetType: assetType,
     );
     throwIfSpeechLoadCancelled(engineName, download);
+    progress.resolved(index, entry.bytes);
     paths.add(entry.filePath);
   }
   return paths;
@@ -142,14 +143,12 @@ class SpeechFilesProgress {
   }) : _onProgress = onProgress,
        _fileCount = fileCount;
 
-  /// The callback for the file at [index], or null without a callback.
+  /// The callback for the download of the file at [index], or null without
+  /// a callback.
   ModelDownloadProgressCallback? file(int index) {
     final onProgress = _onProgress;
     if (onProgress == null) {
       return null;
-    }
-    if (_fileCount == 1) {
-      return onProgress;
     }
     return (ModelDownloadProgress progress) {
       final fraction = progress.fraction;
@@ -161,26 +160,45 @@ class SpeechFilesProgress {
         );
         return;
       }
-      _sizes[index] = progress.totalBytes ?? progress.receivedBytes;
-      var earlierBytes = 0;
-      var earlierKnown = true;
-      for (var earlier = 0; earlier < index; earlier++) {
-        final size = _sizes[earlier];
-        if (size == null) {
-          earlierKnown = false;
-        } else {
-          earlierBytes += size;
-        }
-      }
       final total = progress.totalBytes;
-      onProgress(
-        ModelDownloadProgress(
-          receivedBytes: earlierBytes + progress.receivedBytes,
-          totalBytes: index == _fileCount - 1 && earlierKnown && total != null
-              ? earlierBytes + total
-              : null,
-        ),
-      );
+      if (total != null) {
+        _sizes[index] = total;
+      }
+      _report(index, progress.receivedBytes, total);
     };
+  }
+
+  /// Reports that the file at [index], of [bytes] when known, is ready.
+  void resolved(int index, int? bytes) {
+    if (_onProgress == null) {
+      return;
+    }
+    if (bytes != null) {
+      _sizes[index] = bytes;
+    }
+    final size = _sizes[index];
+    _report(index, size ?? 0, size);
+  }
+
+  void _report(int index, int receivedBytes, int? currentTotal) {
+    var earlierBytes = 0;
+    var earlierKnown = true;
+    for (var earlier = 0; earlier < index; earlier++) {
+      final size = _sizes[earlier];
+      if (size == null) {
+        earlierKnown = false;
+      } else {
+        earlierBytes += size;
+      }
+    }
+    _onProgress!(
+      ModelDownloadProgress(
+        receivedBytes: earlierBytes + receivedBytes,
+        totalBytes:
+            index == _fileCount - 1 && earlierKnown && currentTotal != null
+            ? earlierBytes + currentTotal
+            : null,
+      ),
+    );
   }
 }

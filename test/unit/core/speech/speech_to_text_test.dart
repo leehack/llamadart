@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
@@ -19,9 +20,9 @@ void main() {
     setUp(() async {
       backend = _SpeechBackend();
       llamaEngine = _SpeechLlamaEngine(backend);
-      speechEngine = SpeechToTextEngine(
+      speechEngine = SpeechToTextEngine.attach(
         llamaEngine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
     });
 
@@ -106,8 +107,10 @@ void main() {
 
     test('rejects the dedicated LiteRT-LM profile on a LlamaEngine', () {
       expect(
+        // ignore: deprecated_member_use_from_same_package
         () => SpeechToTextEngine(
           llamaEngine,
+          // ignore: deprecated_member_use_from_same_package
           modelProfile: SpeechToTextModelProfile.liteRtLmDedicated,
         ),
         throwsA(
@@ -721,9 +724,9 @@ void main() {
     test('shares the task reservation across wrappers', () async {
       backend.blockGeneration = true;
       await _loadSpeechModel(llamaEngine);
-      final otherWrapper = SpeechToTextEngine(
+      final otherWrapper = SpeechToTextEngine.attach(
         llamaEngine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
       final first = await speechEngine.transcribe(
         const SpeechToTextRequest(
@@ -949,6 +952,336 @@ void main() {
       expect(completion.error, isA<LlamaInferenceException>());
     });
   });
+
+  group('SpeechToTextEngine.load and attach', () {
+    late _SpeechBackend backend;
+    late Directory directory;
+    late String modelPath;
+    late String projectorPath;
+
+    setUp(() async {
+      backend = _SpeechBackend();
+      directory = await Directory.systemTemp.createTemp('llamadart_stt_');
+      modelPath = '${directory.path}/asr.gguf';
+      projectorPath = '${directory.path}/mmproj-asr.gguf';
+      await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+      await File(projectorPath).writeAsBytes(<int>[4, 5]);
+    });
+
+    tearDown(() => directory.delete(recursive: true));
+
+    SpeechToTextModel model({
+      SpeechToTextPromptAdapter adapter = const Qwen3AsrAdapter(),
+      bool withProjector = true,
+    }) => SpeechToTextModel(
+      ModelSource.path(modelPath),
+      projector: withProjector ? ModelSource.path(projectorPath) : null,
+      adapter: adapter,
+    );
+
+    test('owns the engine it loads and frees it on dispose', () async {
+      final recognizer = await SpeechToTextEngine.load(
+        model(),
+        params: const ModelParams(contextSize: 2048),
+        backend: backend,
+      );
+
+      expect(recognizer.adapter, isA<Qwen3AsrAdapter>());
+      expect(backend.lastModelParams?.contextSize, 2048);
+      expect(backend.lastProjectorPath, projectorPath);
+      final capabilities = await recognizer.capabilities;
+      expect(capabilities, isA<EngineCapabilities>());
+      expect(capabilities.isSupported, isTrue);
+      final result = await recognizer.transcribeOnce(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      expect(result.text, 'transcript');
+
+      await Future.wait<void>(<Future<void>>[
+        recognizer.dispose(),
+        recognizer.dispose(),
+      ]);
+      await recognizer.dispose();
+
+      expect(recognizer.isDisposed, isTrue);
+      expect(backend.disposeCalls, 1);
+      final disposed = await recognizer.capabilities;
+      expect(disposed.isSupported, isFalse);
+      expect(disposed.unsupportedReason, 'The SpeechToTextEngine is disposed.');
+      await expectLater(
+        recognizer.transcribe(
+          const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
+
+    test('dispose cancels a running task before freeing the engine', () async {
+      backend.blockGeneration = true;
+      final recognizer = await SpeechToTextEngine.load(
+        model(),
+        backend: backend,
+      );
+      final task = await recognizer.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      await backend.generationStarted.future;
+
+      final disposal = recognizer.dispose();
+      backend.releaseGeneration();
+      await disposal;
+
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      expect(backend.cancelGenerationCalls, greaterThanOrEqualTo(1));
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('transcribeOnce reports a cancelled task as a state error', () async {
+      backend.blockGeneration = true;
+      final recognizer = await SpeechToTextEngine.load(
+        model(),
+        backend: backend,
+      );
+      final result = recognizer.transcribeOnce(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      await backend.generationStarted.future;
+
+      final disposal = recognizer.dispose();
+      backend.releaseGeneration();
+
+      await expectLater(result, throwsA(isA<LlamaStateException>()));
+      await disposal;
+    });
+
+    test('transcribeOnce throws the task failure', () async {
+      backend.generationText = '   ';
+      final recognizer = await SpeechToTextEngine.load(
+        model(),
+        backend: backend,
+      );
+
+      await expectLater(
+        recognizer.transcribeOnce(
+          const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+        ),
+        throwsA(isA<LlamaSpeechException>()),
+      );
+      await recognizer.dispose();
+    });
+
+    test(
+      'a model that cannot recognize speech leaves nothing loaded',
+      () async {
+        backend.audioSupported = false;
+
+        await expectLater(
+          SpeechToTextEngine.load(model(), backend: backend),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              'The loaded multimodal projector does not report audio support.',
+            ),
+          ),
+        );
+        expect(backend.disposeCalls, 1);
+        expect(backend.isReady, isFalse);
+      },
+    );
+
+    test('a model without its projector leaves nothing loaded', () async {
+      await expectLater(
+        SpeechToTextEngine.load(model(withProjector: false), backend: backend),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('No multimodal projector is loaded.'),
+          ),
+        ),
+      );
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('a projector load failure leaves nothing loaded', () async {
+      backend.projectorLoadError = LlamaModelException('rejected');
+
+      await expectLater(
+        SpeechToTextEngine.load(model(), backend: backend),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(backend.disposeCalls, 1);
+      expect(backend.isReady, isFalse);
+    });
+
+    test('a missing model file fails before the backend loads', () async {
+      await File(modelPath).delete();
+
+      await expectLater(
+        SpeechToTextEngine.load(model(), backend: backend),
+        throwsA(isA<LlamaException>()),
+      );
+      expect(backend.lastModelParams, isNull);
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('a cancelled load leaves nothing loaded', () async {
+      final token = ModelDownloadCancelToken()..cancel();
+
+      await expectLater(
+        SpeechToTextEngine.load(
+          model(),
+          download: ModelLoadOptions(cancelToken: token),
+          backend: backend,
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('rejects a tokenizer and a two-file checksum up front', () async {
+      await expectLater(
+        SpeechToTextEngine.load(
+          SpeechToTextModel(
+            ModelSource.path(modelPath),
+            projector: ModelSource.path(projectorPath),
+            tokenizer: ModelSource.path(projectorPath),
+            adapter: const Qwen3AsrAdapter(),
+          ),
+          backend: backend,
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.name,
+            'name',
+            'model.tokenizer',
+          ),
+        ),
+      );
+      await expectLater(
+        SpeechToTextEngine.load(
+          model(),
+          download: ModelLoadOptions(sha256: 'a' * 64),
+          backend: backend,
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(backend.lastModelParams, isNull);
+    });
+
+    test('attach borrows the engine and dispose leaves it loaded', () async {
+      backend.blockGeneration = true;
+      final llamaEngine = LlamaEngine(backend);
+      await _loadSpeechModel(llamaEngine);
+      final recognizer = SpeechToTextEngine.attach(
+        llamaEngine,
+        adapter: const Qwen3AsrAdapter(),
+      );
+      final task = await recognizer.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      await backend.generationStarted.future;
+
+      final disposal = recognizer.dispose();
+      backend.releaseGeneration();
+      await disposal;
+
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      expect(llamaEngine.isReady, isTrue);
+      expect(backend.disposeCalls, 0);
+      final other = SpeechToTextEngine.attach(
+        llamaEngine,
+        adapter: const Qwen3AsrAdapter(),
+      );
+      backend.blockGeneration = false;
+      final next = await other.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      expect((await next.done).state, SpeechToTextCompletionState.completed);
+      await llamaEngine.dispose();
+    });
+
+    test('runs a custom prompt adapter', () async {
+      backend.generationText = '[fr] Bonjour.';
+      final recognizer = await SpeechToTextEngine.load(
+        model(adapter: const _BracketLanguageAdapter()),
+        backend: backend,
+      );
+
+      final capabilities = await recognizer.capabilities;
+      expect(capabilities.supportsLanguageHints, isTrue);
+      expect(capabilities.supportsLanguageDetection, isTrue);
+      final result = await recognizer.transcribeOnce(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/a.wav'),
+          languageHint: 'fr',
+        ),
+      );
+
+      expect(result.text, 'Bonjour.');
+      expect(result.language, 'fr');
+      expect(
+        backend.lastGenerationPrompt,
+        contains('Write down the fr audio.'),
+      );
+      await expectLater(
+        recognizer.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/a.wav'),
+            contextPrompt: 'names',
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'The Bracket-ASR prompt adapter does not take a context prompt.',
+          ),
+        ),
+      );
+      await expectLater(
+        recognizer.transcribe(
+          SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16))),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'The Bracket-ASR prompt adapter accepts encoded audio only.',
+          ),
+        ),
+      );
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        () => recognizer.modelProfile,
+        throwsA(isA<LlamaStateException>()),
+      );
+      await recognizer.dispose();
+    });
+
+    test('the deprecated constructor attaches Qwen3-ASR', () async {
+      final llamaEngine = LlamaEngine(backend);
+      await _loadSpeechModel(llamaEngine);
+      // ignore: deprecated_member_use_from_same_package
+      final recognizer = SpeechToTextEngine(
+        llamaEngine,
+        // ignore: deprecated_member_use_from_same_package
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
+
+      expect(recognizer.adapter, isA<Qwen3AsrAdapter>());
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        recognizer.modelProfile,
+        // ignore: deprecated_member_use_from_same_package
+        SpeechToTextModelProfile.qwen3Asr,
+      );
+      await recognizer.dispose();
+      expect(llamaEngine.isReady, isTrue);
+      await llamaEngine.dispose();
+    });
+  });
 }
 
 Future<void> _loadSpeechModel(LlamaEngine engine) async {
@@ -980,6 +1313,9 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
   Completer<void> generationStarted = Completer<void>();
   final Completer<void> _generationRelease = Completer<void>();
   int cancelGenerationCalls = 0;
+  int disposeCalls = 0;
+  ModelParams? lastModelParams;
+  String? lastProjectorPath;
   String? lastGenerationPrompt;
   GenerationParams? lastGenerationParams;
   List<LlamaContentPart>? lastParts;
@@ -992,6 +1328,7 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
+    lastModelParams = params;
     _ready = true;
     return 1;
   }
@@ -1004,6 +1341,7 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
     int modelHandle,
     String mmProjPath,
   ) async {
+    lastProjectorPath = mmProjPath;
     final error = projectorLoadError;
     if (error != null) {
       throw error;
@@ -1139,6 +1477,7 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
 
   @override
   Future<void> dispose() async {
+    disposeCalls++;
     _ready = false;
   }
 
@@ -1179,5 +1518,33 @@ class _SpeechLlamaEngine extends LlamaEngine {
           chatTemplateKwargs: chatTemplateKwargs,
           templateNow: templateNow,
         );
+  }
+}
+
+class _BracketLanguageAdapter extends SpeechToTextPromptAdapter {
+  const _BracketLanguageAdapter();
+
+  @override
+  String get name => 'Bracket-ASR';
+
+  @override
+  bool get supportsLanguageHints => true;
+
+  @override
+  bool get supportsContextPrompt => false;
+
+  @override
+  bool get supportsLanguageDetection => true;
+
+  @override
+  String promptFor(SpeechToTextRequest request) =>
+      'Write down the ${request.languageHint} audio.';
+
+  @override
+  SpeechToTextTranscript parseTranscript(String output) {
+    final match = RegExp(r'^\[(\w+)\]\s*(.*)$').firstMatch(output.trim());
+    return match == null
+        ? SpeechToTextTranscript(output.trim())
+        : SpeechToTextTranscript(match.group(2)!, language: match.group(1));
   }
 }

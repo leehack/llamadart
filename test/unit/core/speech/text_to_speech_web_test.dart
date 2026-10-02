@@ -15,9 +15,9 @@ void main() {
     await engine.loadMultimodalProjector(
       'https://example.com/qwen3-tts-mmproj.gguf',
     );
-    final speechEngine = TextToSpeechEngine(
+    final speechEngine = TextToSpeechEngine.attach(
       engine,
-      modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      adapter: const Qwen3TtsAdapter(),
     );
 
     final capabilities = await speechEngine.capabilities;
@@ -49,9 +49,9 @@ void main() {
   });
 
   test('typed text-to-speech rejects browser-local speaker paths', () async {
-    final speechEngine = TextToSpeechEngine(
+    final speechEngine = TextToSpeechEngine.attach(
       LlamaEngine(_WebBackend()),
-      modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      adapter: const Qwen3TtsAdapter(),
     );
 
     await expectLater(
