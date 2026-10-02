@@ -87,20 +87,26 @@ const String defaultQwen3LlmSource =
     '@a06e946bb6b655725eafa393f4a9745d460374c9/'
     'Qwen3-4B-Instruct-2507-Q4_K_M.gguf';
 
-/// Model presets the image example accepts.
+/// Model presets the image example accepts: the files each model needs and
+/// the request settings it was validated with.
 enum ImagePreset {
   /// SDXS-512: one step, guidance 1.
   sdxs('sdxs', defaultSdxsModelSource),
 
-  /// SD-Turbo: one step by default, optional TAESD.
+  /// SD-Turbo: one step by default (up to 4), optional TAESD.
   sdTurbo('sd-turbo', defaultSdTurboModelSource, taesd: defaultTaesdSource),
 
-  /// SDXL-Lightning: 4 steps at 1024x1024, optional VAE or TAESDXL.
+  /// SDXL-Lightning: 4 Euler steps on the sgm_uniform schedule at
+  /// 1024x1024, optional VAE or TAESDXL.
   sdxlLightning(
     'sdxl-lightning',
     defaultSdxlLightningModelSource,
     taesd: defaultTaesdxlSource,
     roles: {'vae'},
+    size: 1024,
+    steps: 4,
+    sampler: ImageGenerationSampler.euler,
+    scheduler: ImageGenerationScheduler.sgmUniform,
   ),
 
   /// FLUX.1-schnell: 4 steps at 1024x1024 from split files.
@@ -109,11 +115,13 @@ enum ImagePreset {
     defaultFlux1SchnellModelSource,
     taesd: defaultTaef1Source,
     roles: {'vae', 'clipL', 't5xxl'},
-    defaults: {
+    files: {
       'vae': defaultFluxVaeSource,
       'clipL': defaultClipLSource,
       't5xxl': defaultT5xxlSource,
     },
+    size: 1024,
+    steps: 4,
   ),
 
   /// SD 3.5 Large Turbo: 4 steps at 1024x1024 from split files.
@@ -122,12 +130,14 @@ enum ImagePreset {
     defaultSd35LargeTurboModelSource,
     taesd: defaultTaesd3Source,
     roles: {'vae', 'clipL', 'clipG', 't5xxl'},
-    defaults: {
+    files: {
       'taesd': defaultTaesd3Source,
       'clipL': defaultClipLSource,
       'clipG': defaultClipGSource,
       't5xxl': defaultT5xxlSource,
     },
+    size: 1024,
+    steps: 4,
   ),
 
   /// Z-Image-Turbo: 8 steps at 1024x1024 with a Qwen3 text encoder.
@@ -135,7 +145,9 @@ enum ImagePreset {
     'z-image-turbo',
     defaultZImageTurboModelSource,
     roles: {'vae', 'llm'},
-    defaults: {'vae': defaultFluxVaeSource, 'llm': defaultQwen3LlmSource},
+    files: {'vae': defaultFluxVaeSource, 'llm': defaultQwen3LlmSource},
+    size: 1024,
+    steps: 8,
   );
 
   const ImagePreset(
@@ -143,7 +155,11 @@ enum ImagePreset {
     this.modelSource, {
     this.taesd,
     this.roles = const {},
-    this.defaults = const {},
+    this.files = const {},
+    this.size = 512,
+    this.steps = 1,
+    this.sampler,
+    this.scheduler,
   });
 
   /// Value of `--preset`.
@@ -161,7 +177,19 @@ enum ImagePreset {
   final Set<String> roles;
 
   /// Pinned sources for the roles the user leaves unset.
-  final Map<String, String> defaults;
+  final Map<String, String> files;
+
+  /// Native width and height.
+  final int size;
+
+  /// Sampling steps; every preset samples at guidance 1.
+  final int steps;
+
+  /// Sampler, or `null` for the runtime's default.
+  final ImageGenerationSampler? sampler;
+
+  /// Schedule, or `null` for the runtime's default.
+  final ImageGenerationScheduler? scheduler;
 }
 
 /// Command-line flag of each file role besides the main weights.
@@ -207,46 +235,23 @@ final class ImageCliOptions {
   final String outputPath;
 
   /// Device to run on.
-  final ImageGenerationDevice device;
+  final ComputeDevice device;
 
   /// CPU threads; 0 uses the physical cores.
   final int threads;
 
-  /// The engine model for [preset] with the resolved local [modelPath] and
-  /// [files], keyed like [fileSources].
-  ImageGenerationModel model(String modelPath, Map<String, String> files) =>
-      switch (preset) {
-        ImagePreset.sdxs => ImageGenerationModel.sdxs(modelPath),
-        ImagePreset.sdTurbo => ImageGenerationModel.sdTurbo(
-          modelPath,
-          taesdPath: files['taesd'],
-        ),
-        ImagePreset.sdxlLightning => ImageGenerationModel.sdxlLightning(
-          modelPath,
-          vaePath: files['vae'],
-          taesdPath: files['taesd'],
-        ),
-        ImagePreset.flux1Schnell => ImageGenerationModel.flux1Schnell(
-          diffusionModelPath: modelPath,
-          clipLPath: files['clipL']!,
-          t5xxlPath: files['t5xxl']!,
-          vaePath: files['vae'],
-          taesdPath: files['taesd'],
-        ),
-        ImagePreset.sd35LargeTurbo => ImageGenerationModel.sd35LargeTurbo(
-          diffusionModelPath: modelPath,
-          clipLPath: files['clipL']!,
-          clipGPath: files['clipG']!,
-          t5xxlPath: files['t5xxl']!,
-          vaePath: files['vae'],
-          taesdPath: files['taesd'],
-        ),
-        ImagePreset.zImageTurbo => ImageGenerationModel.zImageTurbo(
-          diffusionModelPath: modelPath,
-          llmPath: files['llm']!,
-          vaePath: files['vae']!,
-        ),
-      };
+  /// The engine model: [modelSource] and [fileSources], each assigned its
+  /// role from its header when the engine loads it.
+  ImageGenerationModel get model => ImageGenerationModel(
+    modelSource,
+    components: [
+      for (final source in fileSources.values) ImageModelComponent.auto(source),
+    ],
+  );
+
+  /// Engine settings: [device] and [threads].
+  ImageModelParams get params =>
+      ImageModelParams(device: device, threads: threads);
 
   /// Output path of image [index].
   String outputPathFor(int index) {
@@ -307,8 +312,11 @@ ArgParser createImageArgParser() {
     ..addOption(
       'device',
       help: 'Device.',
-      allowed: [for (final device in ImageGenerationDevice.values) device.name],
-      defaultsTo: ImageGenerationDevice.auto.name,
+      allowed: [
+        for (final device in ComputeDevice.values)
+          if (device != ComputeDevice.npu) device.name,
+      ],
+      defaultsTo: ComputeDevice.auto.name,
     )
     ..addOption('threads', help: 'CPU threads (0: all cores).', defaultsTo: '0')
     ..addFlag('help', abbr: 'h', help: 'Show this help.', negatable: false);
@@ -343,7 +351,7 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
   }
   final decoderGiven = given.containsKey('vae') || given.containsKey('taesd');
   final texts = <String, String>{
-    for (final MapEntry(key: role, value: text) in preset.defaults.entries)
+    for (final MapEntry(key: role, value: text) in preset.files.entries)
       if (!decoderGiven || (role != 'vae' && role != 'taesd')) role: text,
     ...given,
   };
@@ -362,15 +370,17 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
     request: ImageGenerationRequest(
       prompt: prompt,
       negativePrompt: results['negative'] as String,
-      width: _int(results, 'width'),
-      height: _int(results, 'height'),
-      steps: _int(results, 'steps'),
-      guidanceScale: _double(results, 'guidance'),
+      width: _int(results, 'width') ?? preset.size,
+      height: _int(results, 'height') ?? preset.size,
+      steps: _int(results, 'steps') ?? preset.steps,
+      guidanceScale: _double(results, 'guidance') ?? 1,
+      sampler: preset.sampler,
+      scheduler: preset.scheduler,
       seed: _int(results, 'seed'),
       count: _int(results, 'count')!,
     ),
     outputPath: results['out'] as String,
-    device: ImageGenerationDevice.values.byName(results['device'] as String),
+    device: ComputeDevice.values.byName(results['device'] as String),
     threads: _int(results, 'threads')!,
   );
 }

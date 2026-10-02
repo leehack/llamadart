@@ -34,7 +34,7 @@ the opt-in `stable_diffusion` runtime,
 built for iOS 16.4 and macOS 13.3; x64 Linux and Windows CPUs need AVX2, FMA,
 F16C and BMI2, Windows needs the latest Microsoft Visual C++ v14
 Redistributable (x64), and Android arm64 needs dot-product and fp16. The
-desktop presets (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo,
+desktop models (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo,
 Z-Image-Turbo) need about 8 to 15 GiB and are validated on macOS Metal; NVIDIA
 Vulkan figures come from the native CLI. See
 [Image generation](../guides/image-generation#support). GGUF

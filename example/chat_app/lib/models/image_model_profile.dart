@@ -13,8 +13,11 @@ class ImageModelProfile {
   /// Short user-facing model description.
   final String description;
 
-  /// Preset family passed to `ImageGenerationModel`.
-  final ImageGenerationModelFamily family;
+  /// Sampling steps the model was validated with.
+  final int steps;
+
+  /// Guidance scale the model was validated with.
+  final double guidanceScale;
 
   /// Single-file checkpoint.
   final RemoteModelAssetSource modelSource;
@@ -34,7 +37,8 @@ class ImageModelProfile {
     required this.id,
     required this.name,
     required this.description,
-    required this.family,
+    required this.steps,
+    required this.guidanceScale,
     required this.modelSource,
     this.taesdSource,
     this.memoryNote,
@@ -63,33 +67,21 @@ class ImageModelProfile {
   ImageGenerationModel buildModel({
     required String modelPath,
     String? taesdPath,
-  }) => switch (family) {
-    ImageGenerationModelFamily.sdxs => ImageGenerationModel.sdxs(modelPath),
-    ImageGenerationModelFamily.sdTurbo => ImageGenerationModel.sdTurbo(
-      modelPath,
-      taesdPath: taesdPath,
-    ),
-    ImageGenerationModelFamily.custom => ImageGenerationModel.custom(
-      ImageGenerationModelFiles(model: modelPath, taesd: taesdPath),
-    ),
-    ImageGenerationModelFamily.sdxlLightning ||
-    ImageGenerationModelFamily.flux1Schnell ||
-    ImageGenerationModelFamily.sd35LargeTurbo ||
-    ImageGenerationModelFamily.zImageTurbo => throw UnsupportedError(
-      'The example app offers only single-file phone presets, not '
-      '${family.name}.',
-    ),
-  };
-
-  /// Sampling defaults of the library preset.
-  ImageGenerationDefaults get defaults => buildModel(modelPath: '').defaults;
+  }) => ImageGenerationModel(
+    ModelSource.path(modelPath),
+    components: [
+      if (taesdPath != null)
+        ImageModelComponent.auto(ModelSource.path(taesdPath)),
+    ],
+  );
 
   /// SDXS-512: a one-step distilled SD 1.x-size model that fits phones.
   static const ImageModelProfile sdxs = ImageModelProfile(
     id: 'sdxs-512-q8_0',
     name: 'SDXS-512',
     description: 'One-step distilled model that fits most phones.',
-    family: ImageGenerationModelFamily.sdxs,
+    steps: 1,
+    guidanceScale: 1,
     modelSource: RemoteModelAssetSource(
       url:
           'https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF/resolve/3144d898d61492f8382ffcabec055733fc5b2a0e/sdxs-512-tinySDdistilled_Q8_0.gguf?download=true',
@@ -107,7 +99,8 @@ class ImageModelProfile {
     id: 'sd-turbo-q8_0-taesd',
     name: 'SD-Turbo + TAESD',
     description: 'SD 2.1 Turbo with the tiny TAESD decoder; 1 to 4 steps.',
-    family: ImageGenerationModelFamily.sdTurbo,
+    steps: 1,
+    guidanceScale: 1,
     modelSource: RemoteModelAssetSource(
       url:
           'https://huggingface.co/Green-Sky/SD-Turbo-GGUF/resolve/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16-q8_0.gguf?download=true',

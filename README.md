@@ -98,10 +98,10 @@ experimental and may change, and the runtime is opt-in.
   Linux x64 and Windows x64
   ([#779](https://github.com/leehack/llamadart/issues/779)). The
   SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-  desktop presets generate 1024x1024 images by default and are validated on
+  desktop models generate 1024x1024 images and are validated on
   macOS Metal only ([#802](https://github.com/leehack/llamadart/issues/802)).
 - **Model licenses differ**, including for commercial use. Check each
-  model's license before shipping it; the guide lists each preset's license.
+  model's license before shipping it; the guide lists each model's license.
 
 ```dart
 import 'dart:io';
@@ -109,12 +109,24 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
+  // Downloads SDXS (683 MB) into the model cache once.
   final engine = await ImageGenerationEngine.load(
-    ImageGenerationModel.sdxs('sdxs-512-tinySDdistilled_Q8_0.gguf'),
+    ImageGenerationModel(
+      ModelSource.parse(
+        'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
+        '3144d898d61492f8382ffcabec055733fc5b2a0e/'
+        'sdxs-512-tinySDdistilled_Q8_0.gguf',
+      ),
+    ),
+    onProgress: (progress) => print('${progress.receivedBytes} bytes'),
   );
   try {
     final result = await engine.generateImage(
-      const ImageGenerationRequest(prompt: 'a red fox in autumn leaves'),
+      const ImageGenerationRequest(
+        prompt: 'a red fox in autumn leaves',
+        steps: 1,
+        guidanceScale: 1,
+      ),
     );
     await File('fox.png').writeAsBytes(result.images.first.toPng());
   } finally {
@@ -123,8 +135,12 @@ Future<void> main() async {
 }
 ```
 
-See the [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
-for downloads, presets, memory checks and known limits.
+A split model lists its other files as `components`, in any order: the
+engine downloads each `ModelSource` (local path, URL or `hf://`) like
+`LlamaEngine.loadModelSource` and gives it its role from its header. See the
+[image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
+for the files and settings of each validated model, download options, memory
+checks and known limits.
 
 ## Requirements
 

@@ -21,17 +21,26 @@ class ImageGenerationRequest {
   /// Largest accepted [flowShift].
   static const double maxFlowShift = 100;
 
+  /// Width and height used when a request leaves them unset.
+  static const int defaultDimension = 512;
+
+  /// Steps used when a request leaves them unset.
+  static const int defaultSteps = 20;
+
+  /// Guidance scale used when a request leaves it unset.
+  static const double defaultGuidanceScale = 7;
+
   /// Text prompt.
   final String prompt;
 
-  /// Negative prompt. Ignored when the guidance scale is 1, as with the SDXS
-  /// and SD-Turbo presets.
+  /// Negative prompt. Ignored when the guidance scale is 1, as distilled
+  /// models such as SDXS and SD-Turbo use.
   final String negativePrompt;
 
   /// Output width in pixels: a multiple of 8 from [minDimension] to
-  /// [maxDimension]. `null` uses the model's native width
-  /// (`ImageGenerationDefaults.width`): 512 for SDXS and SD-Turbo, 1024 for
-  /// the desktop presets. The runtime rounds SD 1.x and 2.x sizes up to a
+  /// [maxDimension]. `null` uses [defaultDimension]. Use the model's native size: 512 for
+  /// SD 1.x and 2.x models such as SDXS and SD-Turbo, 1024 for SDXL and
+  /// newer families. The runtime rounds SD 1.x and 2.x sizes up to a
   /// multiple of 64; `GeneratedImage.width` reports the size produced.
   final int? width;
 
@@ -39,11 +48,14 @@ class ImageGenerationRequest {
   /// [width].
   final int? height;
 
-  /// Sampling steps from 1 to [maxSteps]. `null` uses the model's default.
+  /// Sampling steps from 1 to [maxSteps]. `null` uses [defaultSteps], which suits
+  /// undistilled SD 1.x and 2.x models; distilled models such as SDXS,
+  /// SD-Turbo or FLUX.1-schnell need 1 to 8.
   final int? steps;
 
   /// Classifier-free guidance scale from 0 to [maxGuidanceScale]. `null` uses
-  /// the model's default.
+  /// [defaultGuidanceScale]; distilled models use 1, which also skips the negative prompt and
+  /// halves the work per step.
   final double? guidanceScale;
 
   /// Random seed, 0 or greater. `null` picks a random seed; the result
@@ -53,15 +65,16 @@ class ImageGenerationRequest {
   /// Number of images, from 1 to [maxCount]. Image `i` uses seed `seed + i`.
   final int count;
 
-  /// Sampling method. `null` uses the model's default.
+  /// Sampling method. `null` uses the runtime's default for the model.
   final ImageGenerationSampler? sampler;
 
-  /// Noise schedule. `null` uses the model's default.
+  /// Noise schedule. `null` uses the runtime's default for the model and
+  /// sampler.
   final ImageGenerationScheduler? scheduler;
 
   /// Timestep shift of flow-matching models, greater than 0 and at most
-  /// [maxFlowShift]. `null` uses the model's default; other models ignore
-  /// it.
+  /// [maxFlowShift]. `null` uses the runtime's default for the model; other
+  /// models ignore it.
   final double? flowShift;
 
   /// Creates an image-generation request.

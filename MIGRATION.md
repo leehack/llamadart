@@ -2,6 +2,92 @@
 
 This document covers the major breaking upgrade paths.
 
+## `0.10.x` -> next release: image generation engine API
+
+Image generation is a Preview, and this release changes its API with no
+deprecation period, to the pattern every llamadart engine will share: a
+model of `ModelSource` files, `params:` for runtime settings, `download:`
+for `ModelLoadOptions`, and generation settings on the request. The library
+no longer has model presets or `String` paths.
+
+1. **A model is a main file plus components, each a `ModelSource`.**
+   `ImageGenerationModel.sdxs`, `sdTurbo`, `sdxlLightning`, `flux1Schnell`,
+   `sd35LargeTurbo`, `zImageTurbo` and `custom`, `ImageGenerationModelFiles`,
+   `ImageGenerationModelFamily` and `ImageGenerationModel.family` are gone.
+   `load` downloads each file if needed and assigns its role from its
+   header, so list files in any order:
+
+   ```dart
+   // Before
+   final engine = await ImageGenerationEngine.load(
+     ImageGenerationModel.flux1Schnell(
+       diffusionModelPath: fluxPath,
+       clipLPath: clipLPath,
+       t5xxlPath: t5xxlPath,
+       vaePath: aePath,
+     ),
+     options: const ImageGenerationOptions(device: ImageGenerationDevice.gpu),
+   );
+   final result = await engine.generateImage(
+     const ImageGenerationRequest(prompt: 'a red fox'),
+   );
+   // After
+   final engine = await ImageGenerationEngine.load(
+     ImageGenerationModel(
+       ModelSource.path(fluxPath),
+       components: [
+         for (final path in [aePath, clipLPath, t5xxlPath])
+           ImageModelComponent.auto(ModelSource.path(path)),
+       ],
+     ),
+     params: const ImageModelParams(device: ComputeDevice.gpu),
+   );
+   final result = await engine.generateImage(
+     const ImageGenerationRequest(
+       prompt: 'a red fox',
+       width: 1024,
+       height: 1024,
+       steps: 4,
+       guidanceScale: 1,
+     ),
+   );
+   ```
+
+   A file the header check cannot classify, such as a `.ckpt`, takes an
+   explicit role: `ImageModelComponent(source, role: ImageModelRole.vae)`,
+   or `ImageGenerationModel(source, role: ImageModelRole.checkpoint)`.
+   `load` now refuses LoRA and ControlNet files, two files in one role, and
+   a VAE or TAESD for other latent channels than the diffusion model's.
+
+2. **Generation settings move to the request.** `ImageGenerationDefaults`
+   is gone; an unset request size is 512x512, steps 20 and guidance 7. Set
+   each former preset's values on the request, as in the
+   [image generation guide's recipes](https://llamadart.leehack.com/docs/guides/image-generation#recipes):
+
+   | 0.10.0 preset | Files | Request settings |
+   | --- | --- | --- |
+   | `sdxs(path)` | the checkpoint | `steps: 1, guidanceScale: 1` |
+   | `sdTurbo(path, taesdPath:)` | the checkpoint, optional TAESD | `steps: 1, guidanceScale: 1` |
+   | `sdxlLightning(path, vaePath:, taesdPath:)` | the checkpoint, optional VAE or TAESDXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1, sampler: euler, scheduler: sgmUniform` |
+   | `flux1Schnell(...)` | diffusion model, `ae` or TAEF1, CLIP-L, T5-XXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `sd35LargeTurbo(...)` | diffusion model, TAESD3 or VAE, CLIP-L, CLIP-G, T5-XXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `zImageTurbo(...)` | diffusion model, `ae`, Qwen3 `llm` | `width: 1024, height: 1024, steps: 8, guidanceScale: 1` |
+   | `custom(files, defaults:)` | the same files | the former `defaults` |
+
+   `warmUp` takes `guidanceScale` too, so pass the size and guidance you
+   generate with.
+
+3. **`load` takes `params:`, `download:`, `onProgress:` and `store:`.**
+   `ImageGenerationOptions` is now `ImageModelParams`, and
+   `ImageGenerationDevice` the shared `ComputeDevice`. `download:` takes
+   `ModelLoadOptions` for remote files (cache, auth, retries, cancellation);
+   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
+   checksum cannot cover several files. `store: ModelFileStore(resolver: ...,
+   downloadManager: ...)` replaces the resolver and download manager.
+
+4. **Errors name files by position, not path.** A missing or unusable file
+   is "the main file" or "component N".
+
 ## Unreleased: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,

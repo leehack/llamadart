@@ -28,6 +28,7 @@ import '../models/model_format.dart';
 import '../models/model_load_options.dart';
 import '../models/model_resolver.dart';
 import '../models/model_source.dart';
+import '../models/model_target_file.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
@@ -296,42 +297,27 @@ class LlamaEngine {
     );
     _throwIfSourceLoadCancelled(options);
 
+    if (!backend.supportsUrlLoading) {
+      final entry = await ensureModelTargetFile(
+        modelDownloadManager,
+        source,
+        target,
+        options: options,
+        onProgress: onProgress,
+      );
+      _throwIfSourceLoadCancelled(options);
+      return _loadSourceFile(entry.filePath, modelParams, source.format);
+    }
     switch (target) {
-      case LocalModelFile(:final path):
-        if (backend.supportsUrlLoading) {
-          throw LlamaUnsupportedException(
-            'Explicit local model paths are not supported by URL-loading backends.',
-          );
-        }
-        final localSource = ModelSource.path(path);
-        final entry = await modelDownloadManager.ensureModel(
-          localSource,
-          options: options,
-          onProgress: onProgress,
+      case LocalModelFile():
+        throw LlamaUnsupportedException(
+          'Explicit local model paths are not supported by URL-loading backends.',
         );
-        _throwIfSourceLoadCancelled(options);
-        return _loadSourceFile(entry.filePath, modelParams, source.format);
       case RemoteModelUrl(:final url, :final useBrowserCache):
         if (!useBrowserCache) {
           throw LlamaUnsupportedException(
             'Remote model loading without browser/backend cache is not supported yet.',
           );
-        }
-        if (!backend.supportsUrlLoading) {
-          final downloadSource = source.isRemote
-              ? source.withResolvedUri(url)
-              : ModelSource.url(
-                  url,
-                  fileName: source.fileName,
-                  format: source.format,
-                );
-          final entry = await modelDownloadManager.ensureModel(
-            downloadSource,
-            options: options,
-            onProgress: onProgress,
-          );
-          _throwIfSourceLoadCancelled(options);
-          return _loadSourceFile(entry.filePath, modelParams, source.format);
         }
         _rejectUnsupportedUrlBackendOptions(options);
         final urlProgress = onProgress == null
@@ -649,36 +635,27 @@ class LlamaEngine {
         ModelResolveRequest(options: options, onProgress: onProgress),
       );
 
+      if (!backend.supportsUrlLoading) {
+        final entry = await ensureModelTargetFile(
+          modelDownloadManager,
+          source,
+          target,
+          options: options,
+          onProgress: onProgress,
+          assetType: 'multimodal projector',
+        );
+        return _loadMultimodalProjectorLocked(entry.filePath);
+      }
       switch (target) {
-        case LocalModelFile(:final path):
-          if (backend.supportsUrlLoading) {
-            throw LlamaUnsupportedException(
-              'Explicit local multimodal projector paths are not supported by URL-loading backends.',
-            );
-          }
-          final localSource = ModelSource.path(path);
-          final entry = await modelDownloadManager.ensureModel(
-            localSource,
-            options: options,
-            onProgress: onProgress,
+        case LocalModelFile():
+          throw LlamaUnsupportedException(
+            'Explicit local multimodal projector paths are not supported by URL-loading backends.',
           );
-          return _loadMultimodalProjectorLocked(entry.filePath);
         case RemoteModelUrl(:final url, :final useBrowserCache):
           if (!useBrowserCache) {
             throw LlamaUnsupportedException(
               'Remote multimodal projector loading without browser/backend cache is not supported yet.',
             );
-          }
-          if (!backend.supportsUrlLoading) {
-            final downloadSource = source.isRemote
-                ? source.withResolvedUri(url)
-                : ModelSource.url(url, fileName: source.fileName);
-            final entry = await modelDownloadManager.ensureModel(
-              downloadSource,
-              options: options,
-              onProgress: onProgress,
-            );
-            return _loadMultimodalProjectorLocked(entry.filePath);
           }
           _rejectUnsupportedUrlBackendOptions(
             options,
