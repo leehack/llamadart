@@ -603,7 +603,9 @@ class _BenchmarkCase {
           caseType: requestedCase,
           strategies: const <String>['draft-simple'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
-            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftModel: _draftModel(
+              options.requiredDraftModelPath(requestedCase),
+            ),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -616,7 +618,9 @@ class _BenchmarkCase {
           caseType: requestedCase,
           strategies: const <String>['draft-eagle3'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.draftEagle3(
-            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftModel: _draftModel(
+              options.requiredDraftModelPath(requestedCase),
+            ),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -629,7 +633,7 @@ class _BenchmarkCase {
           caseType: requestedCase,
           strategies: const <String>['draft-mtp'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
-            draftModelPath: options.draftModelPath,
+            draftModel: _draftModel(options.draftModelPath),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -642,7 +646,9 @@ class _BenchmarkCase {
           caseType: requestedCase,
           strategies: const <String>['draft-dflash'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.draftDflash(
-            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftModel: _draftModel(
+              options.requiredDraftModelPath(requestedCase),
+            ),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -655,7 +661,9 @@ class _BenchmarkCase {
           caseType: requestedCase,
           strategies: const <String>['draft-dspark'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
-            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftModel: _draftModel(
+              options.requiredDraftModelPath(requestedCase),
+            ),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -747,7 +755,7 @@ class _BenchmarkCase {
               SpeculativeDecodingStrategy.ngramMod,
               SpeculativeDecodingStrategy.mtp,
             ],
-            draftModelPath: options.draftModelPath,
+            draftModel: _draftModel(options.draftModelPath),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -767,7 +775,9 @@ class _BenchmarkCase {
               SpeculativeDecodingStrategy.ngramMod,
               SpeculativeDecodingStrategy.draftSimple,
             ],
-            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftModel: _draftModel(
+              options.requiredDraftModelPath(requestedCase),
+            ),
             draftTokenMax: draftTokenMax,
             draftTokenMin: options.draftTokenMin,
             minProbability: options.minProbability,
@@ -1626,3 +1636,6 @@ Examples:
     --draft-token-max 1,2
 ''');
 }
+
+ModelSource? _draftModel(String? path) =>
+    path == null ? null : ModelSource.path(path);

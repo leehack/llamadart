@@ -339,9 +339,11 @@ class LlamaEngine {
     ModelFormat? format,
   }) async {
     _ensureNotReady();
+    final loraLocations = <String, String>{};
     modelParams = await _resolveLoraSources(
       modelParams,
       ModelLoadOptions.defaults,
+      loraLocations,
     );
     final modelName = _displayNameForSource(path);
     LlamaLogger.instance.info('Loading model: $modelName');
@@ -367,6 +369,7 @@ class LlamaEngine {
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
+      _loraLocations.addAll(loraLocations);
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedPath));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
@@ -420,9 +423,16 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _throwIfSourceLoadCancelled(options);
-      final resolvedParams = await _resolveLoraSources(modelParams, options);
+      final loraLocations = <String, String>{};
+      final resolvedParams = await _resolveLoraSources(
+        modelParams,
+        options,
+        loraLocations,
+      );
       _throwIfSourceLoadCancelled(options);
-      return _loadSourceFile(entry.filePath, resolvedParams, source.format);
+      await _loadSourceFile(entry.filePath, resolvedParams, source.format);
+      if (_isReady) _loraLocations.addAll(loraLocations);
+      return;
     }
     switch (target) {
       case LocalModelFile():
@@ -651,9 +661,11 @@ class LlamaEngine {
         'loadModelFromUrl requires a backend that supports URL loading.',
       );
     }
+    final loraLocations = <String, String>{};
     modelParams = await _resolveLoraSources(
       modelParams,
       ModelLoadOptions.defaults,
+      loraLocations,
     );
 
     try {
@@ -671,6 +683,7 @@ class LlamaEngine {
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
+      _loraLocations.addAll(loraLocations);
 
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
     } catch (e, stackTrace) {
@@ -2294,8 +2307,10 @@ class LlamaEngine {
   /// Throws [LlamaContextException] when no model is loaded,
   /// [LlamaUnsupportedException] when the backend has no runtime LoRA API or
   /// cannot load [source] as described above, [LlamaStateException] when
-  /// [download]'s cancel token cancels the download, and what the download
-  /// manager throws for a missing file or a failed download.
+  /// [download]'s cancel token cancels the download or the model is
+  /// unloaded before the adapter applies (unloading also stops the
+  /// download), and what the download manager throws for a missing file or
+  /// a failed download.
   Future<void> setLoraSource(
     ModelSource source, {
     double scale = 1.0,
@@ -2303,15 +2318,35 @@ class LlamaEngine {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     _ensureReady();
-    final location = await _resolveAuxiliarySource(
-      source,
-      options: download,
-      onProgress: onProgress,
-      assetType: 'LoRA adapter',
-    );
+    final epoch = _modelEpoch;
+    bool unloaded() => _modelEpoch != epoch;
+    var options = download;
+    if (!backend.supportsUrlLoading) {
+      final callerToken = download.cancelToken;
+      options = _withCancelToken(
+        download,
+        _LinkedCancelToken([
+          unloaded,
+          if (callerToken != null) () => callerToken.isCancelled,
+        ]),
+      );
+    }
+    final String location;
+    try {
+      location = await _resolveAuxiliarySource(
+        source,
+        options: options,
+        onProgress: onProgress,
+        assetType: 'LoRA adapter',
+      );
+    } on Object {
+      if (unloaded()) throw _loraModelChanged();
+      rethrow;
+    }
     if (download.cancelToken?.isCancelled ?? false) {
       throw LlamaStateException('LoRA adapter loading was cancelled.');
     }
+    if (unloaded()) throw _loraModelChanged();
     _ensureReady();
     final previous = _loraLocations[source.canonicalKey];
     try {
@@ -2324,6 +2359,11 @@ class LlamaEngine {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
   }
+
+  static LlamaStateException _loraModelChanged() => LlamaStateException(
+    'The model was unloaded while its LoRA adapter loaded, so the adapter '
+    'was not applied.',
+  );
 
   /// Removes a specific LoRA adapter from the active session.
   @Deprecated(
@@ -2357,10 +2397,12 @@ class LlamaEngine {
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
   /// resolved as [setLoraSource] resolves it, with the adapter's own
   /// [LoraAdapterConfig.download], or else only the non-secret parts of the
-  /// model load's [options].
+  /// model load's [options]. Records where each source resolved in
+  /// [locations], which the caller keeps once the model loads.
   Future<ModelParams> _resolveLoraSources(
     ModelParams params,
     ModelLoadOptions options,
+    Map<String, String> locations,
   ) async {
     if (params.loras.every((lora) => lora.source == null)) return params;
     final resolved = <LoraAdapterConfig>[];
@@ -2375,7 +2417,7 @@ class LlamaEngine {
         options: _loraDownloadOptions(source, lora.download, options),
         assetType: 'LoRA adapter',
       );
-      _loraLocations[source.canonicalKey] = location;
+      locations[source.canonicalKey] = location;
       // A path config is what backends load and is not resolved again.
       resolved.add(LoraAdapterConfig(path: location, scale: lora.scale));
     }
@@ -2478,6 +2520,9 @@ class LlamaEngine {
     final resolved = backend.supportsUrlLoading
         ? ModelSource.url(Uri.parse(location), fileName: source.fileName)
         : ModelSource.path(location);
+    // The resolved file needs no download options, and the caller's bearer
+    // token, headers and cancel token must not reach the backend or its
+    // worker isolate.
     return params.copyWith(
       speculativeDecodingConfig: config.withDraftModel(resolved),
     );
@@ -2660,6 +2705,8 @@ class LlamaEngine {
   }
 
   Future<void> _cleanupFailedLoadState() async {
+    _loraLocations.clear();
+    _draftLocations.clear();
     if (_contextHandle != null) {
       try {
         await backend.contextFree(_contextHandle!);

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
@@ -93,4 +94,52 @@ void main() {
       expect(headers.value('X-Model-Host'), isNull);
     }
   });
+
+  test('the resolved draft config crosses an isolate without the caller\'s '
+      'download options', () async {
+    final draft = File('${cache.path}/draft.gguf')..writeAsBytesSync([1]);
+    final token = _PortCancelToken();
+    addTearDown(token.port.close);
+    final backend = _IsolateBackend();
+    final engine = LlamaEngine(backend);
+    addTearDown(engine.dispose);
+    await engine.loadModel('${cache.path}/model.gguf');
+
+    await engine
+        .generate(
+          'hi',
+          params: GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+              draftModel: ModelSource.path(draft.path),
+              draftModelDownload: ModelLoadOptions(cancelToken: token),
+            ),
+          ),
+        )
+        .drain<void>();
+
+    expect(backend.draftPathInIsolate, draft.path);
+  });
+}
+
+/// A caller token that, like one built on a port, cannot cross an isolate.
+class _PortCancelToken extends ModelDownloadCancelToken {
+  final RawReceivePort port = RawReceivePort();
+}
+
+/// Copies the request into another isolate, as the llama.cpp worker does.
+class _IsolateBackend extends MockLlamaBackend {
+  String? draftPathInIsolate;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    draftPathInIsolate = await Isolate.run(
+      () => params.speculativeDecodingConfig!.draftModelPath,
+    );
+    yield* super.generate(contextHandle, prompt, params, parts: parts);
+  }
 }

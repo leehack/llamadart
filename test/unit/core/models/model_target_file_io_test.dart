@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/models/model_target_file.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -19,7 +20,9 @@ void main() {
   tearDown(() => directory.delete(recursive: true));
 
   Future<List<String>> resolve(String sha256) => resolveModelSourceFiles(
-    [ModelSource.path(file.path)],
+    // A path with a `..` segment, which the manager normalizes, as it does
+    // separators on Windows.
+    [ModelSource.path(p.join(directory.path, 'sub', '..', 'model.gguf'))],
     store: ModelFileStore(
       downloadManager: DefaultModelDownloadManager.appPrivate(
         cacheDirectory: '${directory.path}/cache',
@@ -44,7 +47,7 @@ void main() {
       await resolve(
         '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
       ),
-      [file.path],
+      [p.normalize(p.absolute(file.path))],
     );
   });
 }

@@ -64,7 +64,9 @@ Future<void> main(List<String> args) async {
           seed: 7,
           reusePromptPrefix: false,
           speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
-            draftModelPath: draftModelPath,
+            draftModel: draftModelPath == null
+                ? null
+                : ModelSource.path(draftModelPath),
             draftTokenMax: draftTokenMax,
             draftTokenMin: 0,
             minProbability: 0.0,

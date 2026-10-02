@@ -224,7 +224,7 @@ void main() {
   });
 
   test('SpeculativeDecodingConfig.withDraftModel replaces only the draft '
-      'model', () {
+      'model and its download options', () {
     final options = ModelLoadOptions(cacheDirectory: '/cache');
     const legacy = SpeculativeDecodingConfig.mixed(
       strategies: [
@@ -250,7 +250,13 @@ void main() {
     expect(fromLegacy.draftTokenMax, 6);
     expect(fromLegacy.ngramMatch, 3);
     expect(fromRemote.draftModelPath, '/models/new.gguf');
-    expect(fromRemote.draftModelDownload, same(options));
+    expect(fromRemote.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(
+      remote
+          .withDraftModel(local, draftModelDownload: options)
+          .draftModelDownload,
+      same(options),
+    );
     expect(fromRemote.strategy, SpeculativeDecodingStrategy.draftSimple);
   });
 

@@ -168,7 +168,13 @@ void main() {
 
     await expectLater(
       engine.startStream(),
-      throwsA(isA<LlamaStateException>()),
+      throwsA(
+        isA<LlamaStateException>().having(
+          (error) => error.message,
+          'message',
+          'Speech model loading was cancelled.',
+        ),
+      ),
     );
     expect(manager.calls, hasLength(1));
     expect(driver.startCalls, 0);

@@ -726,14 +726,22 @@ class SpeculativeDecodingConfig {
              (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
 
-  /// A copy of this configuration with [draftModel] in place of its draft
-  /// model or deprecated path, keeping every other setting.
-  SpeculativeDecodingConfig withDraftModel(ModelSource draftModel) =>
-      SpeculativeDecodingConfig._withDraftModel(this, draftModel);
+  /// A copy of this configuration with [draftModel] and its
+  /// [draftModelDownload] in place of its draft model, download options or
+  /// deprecated path, keeping every other setting.
+  SpeculativeDecodingConfig withDraftModel(
+    ModelSource draftModel, {
+    ModelLoadOptions draftModelDownload = ModelLoadOptions.defaults,
+  }) => SpeculativeDecodingConfig._withDraftModel(
+    this,
+    draftModel,
+    draftModelDownload,
+  );
 
   SpeculativeDecodingConfig._withDraftModel(
     SpeculativeDecodingConfig config,
     ModelSource this.draftModel,
+    this.draftModelDownload,
   ) : strategy = config.strategy,
       strategies = config.strategies,
       draftTokenMax = config.draftTokenMax,
@@ -741,7 +749,6 @@ class SpeculativeDecodingConfig {
       minProbability = config.minProbability,
       draftSplitProbability = config.draftSplitProbability,
       _draftModelPath = null,
-      draftModelDownload = config.draftModelDownload,
       ngramSize = config.ngramSize,
       ngramSizeN = config.ngramSizeN,
       ngramSizeM = config.ngramSizeM,

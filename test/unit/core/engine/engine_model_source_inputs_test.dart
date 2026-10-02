@@ -37,7 +37,7 @@ void main() {
         manager.calls.single.source.resolvedUri.toString(),
         'https://huggingface.co/owner/repo/resolve/main/adapters/style.gguf?download=true',
       );
-      expect(manager.calls.single.options, same(options));
+      expect(manager.calls.single.options.bearerToken, 'secret-token');
       expect(progress.single.fraction, 0.5);
       expect(backend.lastLoraPath, '/cache/style.gguf');
       expect(backend.lastLoraScale, 0.5);
@@ -338,6 +338,7 @@ void main() {
                 draftModel: hfDraft,
                 draftModelDownload: ModelLoadOptions(
                   bearerToken: 'secret-token',
+                  cacheDirectory: '/drafts',
                   cancelToken: userToken,
                 ),
                 draftTokenMax: 8,
@@ -350,12 +351,14 @@ void main() {
       final sent = backend.lastGenerationParams!.speculativeDecodingConfig!;
       expect(sent.draftModelPath, '/cache/draft.gguf');
       expect(sent.draftModel!.isLocal, isTrue);
+      expect(sent.draftModelDownload, same(ModelLoadOptions.defaults));
       expect(sent.strategy, SpeculativeDecodingStrategy.draftSimple);
       expect(sent.strategies, [SpeculativeDecodingStrategy.draftSimple]);
       expect(sent.draftTokenMax, 8);
       expect(sent.minProbability, 0.6);
       final options = manager.calls.single.options;
       expect(options.bearerToken, 'secret-token');
+      expect(options.cacheDirectory, '/drafts');
       expect(options.cancelToken, isNot(same(userToken)));
       expect(options.cancelToken!.isCancelled, isFalse);
       userToken.cancel();
@@ -598,6 +601,149 @@ void main() {
     );
   });
 
+  group('LoRA locations and model changes', () {
+    test('removeLoraSource forgets the location it removed', () async {
+      final backend = _RecordingBackend();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _CacheManager({urlAdapter: '/cache/tone.gguf'}),
+      );
+      await engine.loadModel('/models/model.gguf');
+
+      await engine.setLoraSource(urlAdapter);
+      await engine.removeLoraSource(urlAdapter);
+      await engine.removeLoraSource(urlAdapter);
+
+      expect(backend.removedLoraPaths, ['/cache/tone.gguf']);
+    });
+
+    test('an adapter download that finishes after the model was unloaded is '
+        'not applied, and unloading stops it', () async {
+      final backend = _RecordingBackend();
+      final manager = _BlockingManager();
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.loadModel('/models/model.gguf');
+
+      final setting = engine.setLoraSource(hfAdapter);
+      await manager.started.future;
+      await engine.unloadModel();
+      await engine.loadModel('/models/other.gguf');
+
+      await expectLater(
+        setting,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('unloaded'),
+          ),
+        ),
+      );
+      expect(manager.sawCancel, isTrue);
+      expect(backend.setLoraPaths, isEmpty);
+    });
+
+    test('an adapter download that completes after the model was reloaded '
+        'is not applied', () async {
+      final backend = _RecordingBackend();
+      final manager = _GatedManager({hfAdapter: '/cache/style.gguf'});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.loadModel('/models/model.gguf');
+
+      final setting = engine.setLoraSource(hfAdapter);
+      await manager.started.future;
+      await engine.unloadModel();
+      await engine.loadModel('/models/model.gguf');
+      manager.gate.complete();
+
+      await expectLater(setting, throwsA(isA<LlamaStateException>()));
+      expect(backend.setLoraPaths, isEmpty);
+    });
+
+    test('an adapter resolved for a load that fails is forgotten', () async {
+      final backend = _RecordingBackend()..modelLoadError = Exception('bad');
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _CacheManager({urlAdapter: '/cache/tone.gguf'}),
+      );
+
+      await expectLater(
+        engine.loadModel(
+          '/models/model.gguf',
+          modelParams: ModelParams(
+            loras: [LoraAdapterConfig.source(urlAdapter)],
+          ),
+        ),
+        throwsA(isA<LlamaModelException>()),
+      );
+      backend.modelLoadError = null;
+      await engine.loadModel('/models/model.gguf');
+      await engine.removeLoraSource(urlAdapter);
+
+      expect(backend.removedLoraPaths, isEmpty);
+    });
+
+    test('loadModelSource on a loaded engine keeps the applied adapter '
+        'locations', () async {
+      final backend = _RecordingBackend();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _DirectoryManager(),
+      );
+      await engine.loadModel('/models/model.gguf');
+      await engine.setLoraSource(
+        urlAdapter,
+        download: ModelLoadOptions(cacheDirectory: '/a'),
+      );
+
+      await expectLater(
+        engine.loadModelSource(
+          localAdapter,
+          modelParams: ModelParams(
+            loras: [
+              LoraAdapterConfig.source(
+                urlAdapter,
+                download: ModelLoadOptions(cacheDirectory: '/b'),
+              ),
+            ],
+          ),
+        ),
+        throwsA(isA<LlamaException>()),
+      );
+      await engine.removeLoraSource(urlAdapter);
+
+      expect(backend.removedLoraPaths, ['/a/tone.gguf']);
+    });
+
+    test('loadModelSource stops when its token is cancelled while an adapter '
+        'downloads', () async {
+      final backend = _RecordingBackend();
+      final token = ModelDownloadCancelToken();
+      var downloads = 0;
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _CacheManager(
+          {hfAdapter: '/cache/style.gguf'},
+          onEnsure: () {
+            if (++downloads == 2) token.cancel();
+          },
+        ),
+      );
+
+      await expectLater(
+        engine.loadModelSource(
+          localAdapter,
+          options: ModelLoadOptions(cancelToken: token),
+          modelParams: ModelParams(
+            loras: [LoraAdapterConfig.source(hfAdapter)],
+          ),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(backend.modelLoadCalls, 0);
+    });
+  });
+
   group('speculative draft model reuse', () {
     GenerationParams draftParams({
       ModelLoadOptions download = ModelLoadOptions.defaults,
@@ -714,6 +860,29 @@ void main() {
 
       expect(manager.sawCancel, isTrue);
       expect(backend.lastGenerationParams, isNull);
+    });
+
+    test('a generation cancelled as its draft model finishes downloading '
+        'stops, and the next one resolves the draft again', () async {
+      final backend = _RecordingBackend();
+      late final LlamaEngine engine;
+      var cancelNext = true;
+      final manager = _CacheManager(
+        {hfDraft: '/cache/draft.gguf'},
+        onEnsure: () {
+          if (cancelNext) engine.cancelGeneration();
+          cancelNext = false;
+        },
+      );
+      engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.loadModel('/models/model.gguf');
+
+      await engine.generate('hi', params: draftParams()).drain<void>();
+      expect(backend.lastGenerationParams, isNull);
+
+      await engine.generate('hi', params: draftParams()).drain<void>();
+      expect(manager.calls, hasLength(2));
+      expect(backend.lastGenerationParams, isNotNull);
     });
 
     test('LiteRT-LM rejects a draft model before it downloads', () async {
@@ -1043,4 +1212,26 @@ class _RuntimeBackend extends _RecordingBackend
         thinkingBudget: false,
         speculativeDecodingStrategies: strategies,
       );
+}
+
+/// Waits for [gate] and then completes the download, ignoring cancellation.
+class _GatedManager extends _CacheManager {
+  _GatedManager(super.files);
+
+  final Completer<void> started = Completer<void>();
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    started.complete();
+    await gate.future;
+    return super.ensureModel(
+      source,
+      options: ModelLoadOptions(cacheDirectory: options.cacheDirectory),
+    );
+  }
 }

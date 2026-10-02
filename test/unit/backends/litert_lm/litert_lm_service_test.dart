@@ -3590,6 +3590,7 @@ void main() {
             allOf(
               contains('speculativeDecodingConfig.strategy'),
               contains('speculativeDecodingConfig.draftModel'),
+              isNot(contains('draftModelPath')),
             ),
           ),
         ),
@@ -3662,6 +3663,7 @@ void main() {
             allOf(
               contains('speculativeDecodingConfig.draftTokenMax'),
               contains('speculativeDecodingConfig.draftModel'),
+              isNot(contains('draftModelPath')),
             ),
           ),
         ),
