@@ -125,32 +125,40 @@ class ChatSession {
   ///
   /// Example with tools:
   /// ```dart
-  /// final response = StringBuffer();
+  /// final calls = <LlamaCompletionChunkToolCall>[];
   /// await for (final chunk in session.create(
   ///   [LlamaTextContent('What time is it?')],
   ///   tools: [getTimeTool],
   /// )) {
-  ///   final text = chunk.choices.first.delta.content;
-  ///   if (text != null) {
-  ///     response.write(text);
-  ///   }
+  ///   final delta = chunk.choices.first.delta;
+  ///   if (delta.content != null) print(delta.content);
+  ///   calls.addAll(delta.toolCalls ?? const []);
   /// }
   ///
-  /// if (isToolCall(response.toString())) {
-  ///   final result = await executeMyTool(parseToolCall(response.toString()));
+  /// for (final call in calls) {
+  ///   final arguments = call.function?.arguments ?? '';
+  ///   final result = await getTimeTool.invoke(
+  ///     arguments.isEmpty
+  ///         ? const {}
+  ///         : jsonDecode(arguments) as Map<String, dynamic>,
+  ///   );
   ///   session.addMessage(
   ///     LlamaChatMessage.withContent(
   ///       role: LlamaChatRole.tool,
   ///       content: [
-  ///         LlamaToolResultContent(name: getTimeTool.name, result: result),
+  ///         LlamaToolResultContent(
+  ///           id: call.id,
+  ///           name: getTimeTool.name,
+  ///           result: result,
+  ///         ),
   ///       ],
   ///     ),
   ///   );
+  /// }
+  /// if (calls.isNotEmpty) {
   ///   await for (final chunk in session.create([])) {
   ///     final text = chunk.choices.first.delta.content;
-  ///     if (text != null) {
-  ///       print(text);
-  ///     }
+  ///     if (text != null) print(text);
   ///   }
   /// }
   /// ```
