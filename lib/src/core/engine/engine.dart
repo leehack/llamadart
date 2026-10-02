@@ -19,6 +19,7 @@ import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
 import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
+import '../llama_logging.dart';
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/generation_usage.dart';
@@ -102,8 +103,6 @@ class LlamaEngine {
   String? _completionModel;
   Map<String, String>? _cachedModelMetadata;
   String? _modelChatTemplate;
-  LlamaLogLevel _dartLogLevel = LlamaLogLevel.none;
-  LlamaLogLevel _nativeLogLevel = LlamaLogLevel.none;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
   int _nextDecisionHeadHandle = 1;
   int _decisionHeadEpoch = 0;
@@ -112,24 +111,18 @@ class LlamaEngine {
 
   /// Configures logging for the library.
   ///
-  /// [level] determines which logs are output.
-  /// [handler] is an optional custom callback. If null and level != none,
-  /// logs are printed to stdout.
-  ///
-  /// The native llama.cpp and LiteRT-LM backends log from a worker isolate.
-  /// A worker takes [level] when it starts and forwards only records at or
-  /// above it to this isolate, where [handler] receives them with the error
-  /// as its `toString` text and the stack trace rebuilt from text. A later
-  /// call changes [handler] and the level applied here, but not what a
-  /// running worker forwards; [setDartLogLevel] and [setLogLevel] change
-  /// both. An error thrown by [handler] on a forwarded record is printed, not
-  /// thrown.
+  /// Sets the Dart-side [level] and [handler] like [LlamaLogging.configure]
+  /// and keeps the current [LlamaLogging.nativeLevel].
+  @Deprecated(
+    'Use LlamaLogging.configure(level:, nativeLevel:, handler:). '
+    'This forwarder will be removed in a future release.',
+  )
   static void configureLogging({
     LlamaLogLevel level = LlamaLogLevel.none,
     LlamaLogHandler? handler,
   }) {
-    LlamaLogger.instance.setLevel(level);
     LlamaLogger.instance.setHandler(handler);
+    unawaited(applyLogLevels(dart: level, native: LlamaLogging.nativeLevel));
   }
 
   /// Creates a new [LlamaEngine] instance with the given [backend].
@@ -145,49 +138,44 @@ class LlamaEngine {
   }) : modelResolver = modelResolver ?? const DefaultModelResolver(),
        modelDownloadManager =
            modelDownloadManager ?? DefaultModelDownloadManager(),
-       observers = List<LlamaEngineObserver>.unmodifiable(observers);
-
-  /// Sets both Dart and native log levels to [level].
-  ///
-  /// For independent control, use [setDartLogLevel] and [setNativeLogLevel].
-  Future<void> setLogLevel(LlamaLogLevel level) async {
-    await setDartLogLevel(level);
-    await setNativeLogLevel(level);
+       observers = List<LlamaEngineObserver>.unmodifiable(observers) {
+    registerLoggingBackend(backend);
   }
 
-  /// Sets only the Dart-side logger level.
-  ///
-  /// Applies [level] to this isolate's logger and, when [backend] is a
-  /// [BackendDartLogLevel], to its running worker isolate.
-  Future<void> setDartLogLevel(LlamaLogLevel level) async {
-    _dartLogLevel = level;
-    LlamaLogger.instance.setLevel(level);
-    final candidate = backend;
-    if (candidate is BackendDartLogLevel) {
-      await (candidate as BackendDartLogLevel).setDartLogLevel(level);
-    }
-  }
+  /// Sets both the Dart-side and native log levels to [level], keeping the
+  /// handler.
+  @Deprecated(
+    'Use LlamaLogging.configure(level:, handler:). '
+    'This forwarder will be removed in a future release.',
+  )
+  Future<void> setLogLevel(LlamaLogLevel level) =>
+      applyLogLevels(dart: level, native: level);
 
-  /// Sets only the native backend logger level.
-  ///
-  /// On the native LiteRT-LM backend, [LlamaLogLevel.none] is passed to the
-  /// runtime as silent before each engine create and stops the runtime
-  /// library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
-  /// accelerator links its own absl and exports no logging control, so a GPU
-  /// engine create can still write `I0000` info lines to stderr that
-  /// `llamadart` cannot filter. See
-  /// https://llamadart.leehack.com/docs/configuration/logging and
-  /// https://github.com/leehack/llamadart/issues/568.
-  Future<void> setNativeLogLevel(LlamaLogLevel level) async {
-    _nativeLogLevel = level;
-    await backend.setLogLevel(level);
-  }
+  /// Sets the library-wide Dart-side log level, keeping the native level and
+  /// the handler.
+  @Deprecated(
+    'Use LlamaLogging.configure(level:, nativeLevel:, handler:). '
+    'This forwarder will be removed in a future release.',
+  )
+  Future<void> setDartLogLevel(LlamaLogLevel level) =>
+      applyLogLevels(dart: level, native: LlamaLogging.nativeLevel);
 
-  /// Current Dart-side logger level.
-  LlamaLogLevel get dartLogLevel => _dartLogLevel;
+  /// Sets the library-wide native log level, keeping the Dart-side level and
+  /// the handler.
+  @Deprecated(
+    'Use LlamaLogging.configure(level:, nativeLevel:, handler:). '
+    'This forwarder will be removed in a future release.',
+  )
+  Future<void> setNativeLogLevel(LlamaLogLevel level) =>
+      applyLogLevels(dart: LlamaLogging.level, native: level);
 
-  /// Current native backend logger level.
-  LlamaLogLevel get nativeLogLevel => _nativeLogLevel;
+  /// The library-wide Dart-side log level.
+  @Deprecated('Use LlamaLogging.level.')
+  LlamaLogLevel get dartLogLevel => LlamaLogging.level;
+
+  /// The library-wide native log level.
+  @Deprecated('Use LlamaLogging.nativeLevel.')
+  LlamaLogLevel get nativeLogLevel => LlamaLogging.nativeLevel;
 
   // ============================================================
   // MODEL LIFECYCLE
@@ -344,7 +332,7 @@ class LlamaEngine {
 
     final redactedPath = _redactedSource(path);
     try {
-      await backend.setLogLevel(_nativeLogLevel);
+      await backend.setLogLevel(LlamaLogging.nativeLevel);
       _completionModel = _modelNameForSource(path);
       _cachedModelMetadata = null;
       _modelHandle = await _backendModelLoad(
@@ -591,7 +579,7 @@ class LlamaEngine {
     }
 
     try {
-      await backend.setLogLevel(_nativeLogLevel);
+      await backend.setLogLevel(LlamaLogging.nativeLevel);
       _completionModel = _modelNameForSource(url);
       _cachedModelMetadata = null;
 
@@ -822,6 +810,7 @@ class LlamaEngine {
 
   /// Releases all allocated resources.
   Future<void> dispose() async {
+    unregisterLoggingBackend(backend);
     final activeLifecycle = _modelLifecycleOperation;
     if (activeLifecycle != null) {
       try {
@@ -2403,20 +2392,31 @@ class LlamaEngine {
   static String _redactedSource(String source) =>
       redactUrlSecrets(source, sourceUrls: <String>[source]);
 
-  static Object _redactedErrorDetails(Object error, String source) {
-    return <String, Object?>{
-      'type': error.runtimeType.toString(),
-      'message': redactUrlSecrets(
-        error.toString(),
-        sourceUrls: <String>[source],
-      ),
+  // Dart error prefixes repeat when a worker isolate re-wraps an error's
+  // `toString` text, e.g. `Exception: LlamaException: ...`.
+  static final RegExp _errorTypePrefix = RegExp(
+    r'^(?:LlamaException|Exception|Bad state|Unsupported operation|'
+    r'Invalid argument\(s\)): ',
+  );
+
+  static String _redactedErrorDetails(Object error, String source) {
+    var cause = switch (error) {
+      LlamaException(:final message, details: null) => message,
+      LlamaException(:final message, :final details) => '$message ($details)',
+      _ => error.toString(),
     };
+    while (_errorTypePrefix.hasMatch(cause)) {
+      cause = cause.replaceFirst(_errorTypePrefix, '');
+    }
+    return redactUrlSecrets(cause, sourceUrls: <String>[source]);
   }
 
   /// Validates engine is ready for inference.
   void _ensureReady({bool requireContext = true}) {
     if (!_isReady) {
-      throw LlamaContextException("Engine not ready. Call loadModel first.");
+      throw LlamaContextException(
+        'Engine not ready: no model is loaded. Call loadModelSource() first.',
+      );
     }
     if (requireContext && _contextHandle == null) {
       throw LlamaContextException("Context not initialized.");

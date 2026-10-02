@@ -453,6 +453,23 @@ class LiteRtLmErrorResponse {
     if (error is LlamaUnsupportedException) {
       return LiteRtLmErrorResponse(error.message, kind: 'llamaUnsupported');
     }
+    if (error is LlamaException) {
+      final kind = switch (error) {
+        LlamaArgumentException() => 'llamaArgument',
+        LlamaModelException() => 'llamaModel',
+        LlamaContextException() => 'llamaContext',
+        LlamaInferenceException() => 'llamaInference',
+        LlamaStateException() => 'llamaState',
+        _ => null,
+      };
+      if (kind != null) {
+        final details = error.details;
+        return LiteRtLmErrorResponse(
+          details == null ? error.message : '${error.message} ($details)',
+          kind: kind,
+        );
+      }
+    }
     if (error is UnsupportedError) {
       return LiteRtLmErrorResponse(
         _stripErrorPrefix(error.toString(), 'Unsupported operation: '),

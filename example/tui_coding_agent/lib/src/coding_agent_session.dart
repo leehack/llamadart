@@ -117,8 +117,7 @@ class CodingAgentSession {
     required void Function(String status)? onStatus,
     required void Function(ModelDownloadProgress progress)? onProgress,
   }) async {
-    await _engine.setDartLogLevel(LlamaLogLevel.none);
-    await _engine.setNativeLogLevel(LlamaLogLevel.none);
+    await LlamaLogging.configure();
     _throwIfCancelled(cancelToken);
 
     final source = ModelSource.parse(modelSource.trim());

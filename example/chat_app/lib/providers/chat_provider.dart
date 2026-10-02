@@ -1363,8 +1363,10 @@ class ChatProvider extends ChangeNotifier {
       final eagerLoadMmproj =
           (_settings.mmprojPath?.trim().isNotEmpty ?? false);
 
-      await _chatService.engine.setDartLogLevel(_settings.logLevel);
-      await _chatService.engine.setNativeLogLevel(_settings.nativeLogLevel);
+      await LlamaLogging.configure(
+        level: _settings.logLevel,
+        nativeLevel: _settings.nativeLogLevel,
+      );
       if (_chatService.engine.isReady) {
         await _chatService.unloadModel();
       }
@@ -4253,12 +4255,12 @@ class ChatProvider extends ChangeNotifier {
 
   void updateLogLevel(LlamaLogLevel value) {
     _updateSettings(_settings.copyWith(logLevel: value));
-    _chatService.engine.setDartLogLevel(value);
+    LlamaLogging.configure(level: value, nativeLevel: _settings.nativeLogLevel);
   }
 
   void updateNativeLogLevel(LlamaLogLevel value) {
     _updateSettings(_settings.copyWith(nativeLogLevel: value));
-    _chatService.engine.setNativeLogLevel(value);
+    LlamaLogging.configure(level: _settings.logLevel, nativeLevel: value);
   }
 
   void updateToolsEnabled(bool value) {

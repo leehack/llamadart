@@ -394,12 +394,24 @@ void main() {
   test('WebAutoBackend rejects decision calls before a model load', () async {
     final backend = WebAutoBackend(webGpuFactory: _DecisionBackend.new);
 
-    expect(() => backend.decisionCapabilities(1), throwsStateError);
+    expect(
+      () => backend.decisionCapabilities(1),
+      throwsA(isA<LlamaStateException>()),
+    );
     expect(
       () => backend.decisionHeadLoad(1, 'laya-head.safetensors'),
-      throwsStateError,
+      throwsA(isA<LlamaStateException>()),
     );
-    expect(() => backend.decisionRun(1, const []), throwsStateError);
+    expect(
+      () => backend.decisionRun(1, const []),
+      throwsA(
+        isA<LlamaStateException>().having(
+          (e) => e.message,
+          'message',
+          contains('loadModelSource()'),
+        ),
+      ),
+    );
     await backend.decisionHeadFree(1);
   });
 

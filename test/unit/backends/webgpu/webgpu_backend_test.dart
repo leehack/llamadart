@@ -581,6 +581,19 @@ void main() {
       expect(WebGpuLlamaBackend().runtime, LlamaRuntime.llamaCpp);
     });
 
+    test('rejects bridge calls before a model loads', () async {
+      await expectLater(
+        backend.getContextSize(1),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (e) => e.message,
+            'message',
+            contains('loadModelSource()'),
+          ),
+        ),
+      );
+    });
+
     test('uses bridge when available', () async {
       final modelHandle = await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
@@ -927,7 +940,7 @@ void main() {
             cacheTypeK: KvCacheType.q8_0,
           ),
         ),
-        throwsArgumentError,
+        throwsA(isA<LlamaArgumentException>()),
       );
     });
 

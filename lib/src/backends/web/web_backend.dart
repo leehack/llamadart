@@ -678,7 +678,10 @@ class WebAutoBackend
   LlamaBackend _requireDelegate() {
     final delegate = _delegate;
     if (delegate == null) {
-      throw StateError('No web backend has been selected. Load a model first.');
+      throw LlamaStateException(
+        'No web backend has been selected. Load a model with '
+        'loadModelSource() first.',
+      );
     }
     return delegate;
   }

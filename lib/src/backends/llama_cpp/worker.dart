@@ -17,6 +17,9 @@ ErrorResponse _toErrorResponse(Object error) {
       ? error.message
       : '${error.message} (${error.details})';
 
+  if (error is LlamaArgumentException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.argument);
+  }
   if (error is LlamaModelException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.model);
   }

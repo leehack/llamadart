@@ -1,3 +1,4 @@
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/kv_cache_type.dart';
@@ -224,27 +225,48 @@ void main() {
   });
 
   group('validate(): speculative rollback settings', () {
-    test('negative speculativeRollbackTokenMax throws ArgumentError', () {
+    test('negative speculativeRollbackTokenMax throws '
+        'LlamaArgumentException', () {
       const p = ModelParams(speculativeRollbackTokenMax: -1);
-      expect(p.validate, throwsArgumentError);
+      expect(
+        p.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', 'speculativeRollbackTokenMax')
+              .having((e) => e.invalidValue, 'invalidValue', -1)
+              .having(
+                (e) => e.message,
+                'message',
+                'ModelParams.speculativeRollbackTokenMax must be '
+                    'non-negative (got -1).',
+              ),
+        ),
+      );
     });
   });
 
   group('validate(): non-F16 KV requires flash attention', () {
-    test('q8_0 K + flashAttention disabled throws ArgumentError', () {
+    test('q8_0 K + flashAttention disabled throws LlamaArgumentException', () {
       const p = ModelParams(
         cacheTypeK: KvCacheType.q8_0,
         flashAttention: FlashAttention.disabled,
       );
-      expect(p.validate, throwsArgumentError);
+      expect(
+        p.validate,
+        throwsA(
+          isA<LlamaArgumentException>()
+              .having((e) => e.name, 'name', isNull)
+              .having((e) => e.message, 'message', contains('flashAttention')),
+        ),
+      );
     });
 
-    test('q4_0 V + flashAttention disabled throws ArgumentError', () {
+    test('q4_0 V + flashAttention disabled throws LlamaArgumentException', () {
       const p = ModelParams(
         cacheTypeV: KvCacheType.q4_0,
         flashAttention: FlashAttention.disabled,
       );
-      expect(p.validate, throwsArgumentError);
+      expect(p.validate, throwsA(isA<LlamaArgumentException>()));
     });
 
     test('q8_0 K/V + flashAttention auto is allowed', () {
@@ -288,12 +310,12 @@ void main() {
       expect(p.validate, returnsNormally);
     });
 
-    test('non-positive prefill chunk size throws ArgumentError', () {
+    test('non-positive prefill chunk size throws LlamaArgumentException', () {
       const p = ModelParams(liteRtLmPrefillChunkSize: 0);
       expect(
         p.validate,
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.name,
             'name',
             'liteRtLmPrefillChunkSize',
@@ -309,12 +331,12 @@ void main() {
       expect(p.validate, returnsNormally);
     });
 
-    test('blank cache dir throws ArgumentError', () {
+    test('blank cache dir throws LlamaArgumentException', () {
       const p = ModelParams(liteRtLmCacheDir: ' ');
       expect(
         p.validate,
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.name,
             'name',
             'liteRtLmCacheDir',
@@ -323,12 +345,12 @@ void main() {
       );
     });
 
-    test('negative program cache cap throws ArgumentError', () {
+    test('negative program cache cap throws LlamaArgumentException', () {
       const p = ModelParams(liteRtLmMaxProgramCacheBytes: -1);
       expect(
         p.validate,
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.name,
             'name',
             'liteRtLmMaxProgramCacheBytes',
@@ -342,12 +364,12 @@ void main() {
       expect(p.validate, returnsNormally);
     });
 
-    test('blank dispatch dir throws ArgumentError', () {
+    test('blank dispatch dir throws LlamaArgumentException', () {
       const p = ModelParams(liteRtLmDispatchLibDir: '  ');
       expect(
         p.validate,
         throwsA(
-          isA<ArgumentError>().having(
+          isA<LlamaArgumentException>().having(
             (error) => error.name,
             'name',
             'liteRtLmDispatchLibDir',

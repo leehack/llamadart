@@ -751,6 +751,9 @@ enum WorkerErrorKind {
 
   /// An argument was outside its valid range.
   range,
+
+  /// An argument or parameter combination was invalid.
+  argument,
 }
 
 /// Response containing an error message and category.

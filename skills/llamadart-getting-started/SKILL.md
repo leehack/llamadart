@@ -84,7 +84,7 @@ Future<void> main() async {
         }
       },
     );
-    print('runtime: ${engine.getBackendName()}');
+    print('runtime: ${await engine.getBackendName()}');
 
     final StringBuffer output = StringBuffer();
     await for (final chunk in engine.create(const [

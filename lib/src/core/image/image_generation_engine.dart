@@ -540,10 +540,11 @@ class ImageGenerationEngine {
   ///
   /// Use the size the app will generate: ggml picks some pipelines by tensor
   /// size, so another size can still compile more. Unset values fall back
-  /// as in [generate]. For a model trained at 1024x1024 the warm-up costs one sampling step and a decode
-  /// at that size: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on an
-  /// M4 Max, and the same peak memory as an image, which the memory
-  /// check in [load] covers.
+  /// as in [generate]. For a model trained at 1024x1024 the warm-up costs
+  /// one sampling step and a decode at that size: about 2 to 4 s for
+  /// SDXL-Lightning with TAESDXL on an M4 Max, and the same peak memory as
+  /// an image, which the memory check in [load] covers where it runs (not
+  /// on Vulkan or the Windows CPU).
   ///
   /// On the CPU there is nothing to compile, so this returns at once.
   ///

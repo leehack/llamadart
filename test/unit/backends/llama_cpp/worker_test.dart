@@ -296,6 +296,7 @@ void main() {
     test('preserves decision error categories', () async {
       final cases = <(Object, WorkerErrorKind)>[
         (LlamaModelException('bad head tensor'), WorkerErrorKind.model),
+        (LlamaArgumentException('bad head path'), WorkerErrorKind.argument),
         (LlamaStateException('head 9 is not loaded'), WorkerErrorKind.state),
         (
           LlamaInferenceException('sequence 0 has no markers'),

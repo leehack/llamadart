@@ -16,6 +16,7 @@ import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/llama_logging.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -126,6 +127,32 @@ void main() {
       await backend.dispose();
     }
   });
+
+  test(
+    'forwards the Dart log level to the loaded and diagnostic delegates',
+    () async {
+      final llama = _DartLogLevelFakeBackend(handle: 11)..gpuSupported = true;
+      final litert = _DartLogLevelFakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        expect(backend, isA<BackendDartLogLevel>());
+        await backend.setDartLogLevel(LlamaLogLevel.debug);
+        expect(await backend.isGpuSupported(), isTrue);
+        await backend.setDartLogLevel(LlamaLogLevel.info);
+        await backend.modelLoad('/models/model.litertlm', const ModelParams());
+        await backend.setDartLogLevel(LlamaLogLevel.warn);
+
+        expect(llama.dartLogLevels, [LlamaLogLevel.info]);
+        expect(litert.dartLogLevels, [LlamaLogLevel.warn]);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
 
   test(
     'pre-load diagnostics use a llama.cpp probe without selecting a model backend',
@@ -289,11 +316,11 @@ void main() {
     'forwards deferred engine creation and the engine logs it on load',
     () async {
       final records = <LlamaLogRecord>[];
-      LlamaEngine.configureLogging(
+      await LlamaLogging.configure(
         level: LlamaLogLevel.info,
         handler: records.add,
       );
-      addTearDown(LlamaEngine.configureLogging);
+      addTearDown(LlamaLogging.configure);
 
       final llama = _FakeBackend(handle: 11);
       final litert = _DeferredEngineFakeBackend(handle: 22);
@@ -1748,6 +1775,18 @@ class _FailingLogLevelBackend extends _FakeBackend {
   Future<void> setLogLevel(LlamaLogLevel level) async {
     logLevels.add(level);
     throw StateError('diagnostic log level failed');
+  }
+}
+
+class _DartLogLevelFakeBackend extends _FakeBackend
+    implements BackendDartLogLevel {
+  _DartLogLevelFakeBackend({required super.handle});
+
+  final List<LlamaLogLevel> dartLogLevels = <LlamaLogLevel>[];
+
+  @override
+  Future<void> setDartLogLevel(LlamaLogLevel level) async {
+    dartLogLevels.add(level);
   }
 }
 

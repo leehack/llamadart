@@ -1,3 +1,4 @@
+import '../../exceptions.dart';
 import '../config/flash_attention.dart';
 import '../config/gpu_backend.dart';
 import '../config/kv_cache_type.dart';
@@ -376,59 +377,69 @@ class ModelParams {
     this.modelBytesHint,
   });
 
-  /// Validates the parameter combination. Throws [ArgumentError] when the
-  /// combination is incompatible with llama.cpp (currently: non-F16 KV
-  /// cache requires flashAttention != disabled). Called automatically by
-  /// `LlamaCppService.loadModel` before the native call so callers don't
-  /// have to remember it; exposed publicly so callers who construct
-  /// `ModelParams` defensively can validate up-front.
+  /// Validates the parameter combination. Throws [LlamaArgumentException]
+  /// when a value is out of range or the combination is incompatible with
+  /// llama.cpp (a non-F16 KV cache requires flashAttention != disabled).
+  /// Model loads through `LlamaEngine` call it before the native call, so
+  /// callers don't have to remember it; call it directly to validate a
+  /// `ModelParams` up front.
   void validate() {
     if (liteRtLmPrefillChunkSize != null && liteRtLmPrefillChunkSize! <= 0) {
-      throw ArgumentError.value(
-        liteRtLmPrefillChunkSize,
+      throw _invalid(
         'liteRtLmPrefillChunkSize',
+        liteRtLmPrefillChunkSize,
         'must be positive when provided',
       );
     }
     if (liteRtLmDispatchLibDir != null &&
         liteRtLmDispatchLibDir!.trim().isEmpty) {
-      throw ArgumentError.value(
-        liteRtLmDispatchLibDir,
+      throw _invalid(
         'liteRtLmDispatchLibDir',
+        liteRtLmDispatchLibDir,
         'must be non-empty when provided',
       );
     }
     if (liteRtLmCacheDir != null && liteRtLmCacheDir!.trim().isEmpty) {
-      throw ArgumentError.value(
-        liteRtLmCacheDir,
+      throw _invalid(
         'liteRtLmCacheDir',
+        liteRtLmCacheDir,
         'must be non-empty when provided',
       );
     }
     if (liteRtLmMaxProgramCacheBytes != null &&
         liteRtLmMaxProgramCacheBytes! < 0) {
-      throw ArgumentError.value(
-        liteRtLmMaxProgramCacheBytes,
+      throw _invalid(
         'liteRtLmMaxProgramCacheBytes',
+        liteRtLmMaxProgramCacheBytes,
         'must be non-negative when provided',
       );
     }
     if (speculativeRollbackTokenMax < 0) {
-      throw ArgumentError.value(
-        speculativeRollbackTokenMax,
+      throw _invalid(
         'speculativeRollbackTokenMax',
+        speculativeRollbackTokenMax,
         'must be non-negative',
       );
     }
     if ((cacheTypeK != KvCacheType.f16 || cacheTypeV != KvCacheType.f16) &&
         flashAttention == FlashAttention.disabled) {
-      throw ArgumentError(
+      throw LlamaArgumentException(
         'Non-F16 KV cache (cacheTypeK=$cacheTypeK, cacheTypeV=$cacheTypeV) '
         'requires flashAttention != disabled. Either set flashAttention to '
         'auto/enabled or use KvCacheType.f16 for both.',
       );
     }
   }
+
+  static LlamaArgumentException _invalid(
+    String name,
+    Object? value,
+    String requirement,
+  ) => LlamaArgumentException(
+    'ModelParams.$name $requirement (got $value).',
+    name: name,
+    invalidValue: value,
+  );
 
   /// Creates a copy of this [ModelParams] with updated fields.
   ///

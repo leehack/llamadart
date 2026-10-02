@@ -47,8 +47,8 @@ typedef LlamaLogHandler = void Function(LlamaLogRecord record);
 
 /// A lightweight singleton logger for the llama_dart library.
 ///
-/// Users can configure the log level and provide a custom log handler via
-/// [LlamaEngine.configureLogging].
+/// Configure the log level and a custom log handler with
+/// `LlamaLogging.configure`.
 class LlamaLogger {
   static LlamaLogger? _instance;
 

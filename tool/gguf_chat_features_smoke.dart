@@ -61,7 +61,7 @@ Future<void> main(List<String> args) async {
 
   final engine = LlamaEngine(LlamaBackend());
   try {
-    engine.setLogLevel(LlamaLogLevel.warn);
+    await LlamaLogging.configure(level: LlamaLogLevel.warn);
     await engine.loadModel(
       modelPath,
       modelParams: ModelParams(
