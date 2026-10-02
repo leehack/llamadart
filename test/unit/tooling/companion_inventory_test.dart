@@ -9,6 +9,10 @@ import '../../../tool/release/companion_pub_preflight.dart';
 import '../../../tool/testing/release_metadata_readiness.dart';
 import '../../../tool/testing/verify_release_docs_versions.dart';
 
+/// Reads [path] with LF line endings, as Windows checkouts may use CRLF.
+String _read(String path) =>
+    File(path).readAsStringSync().replaceAll('\r\n', '\n');
+
 /// Every hand-maintained companion list must name each Flutter Apple companion
 /// checked out under `packages/`, so a removed or misspelled entry fails here.
 void main() {
@@ -30,12 +34,9 @@ void main() {
       });
 
       test('the release docs verifier reads its pubspec', () {
-        final pubspec = File(packagePubspecPath(companion.name));
-        expect(pubspec.path, '${companion.path}/pubspec.yaml');
-        expect(
-          pubspec.readAsStringSync(),
-          contains('name: ${companion.name}\n'),
-        );
+        final pubspec = packagePubspecPath(companion.name);
+        expect(pubspec, '${companion.path}/pubspec.yaml');
+        expect(_read(pubspec), contains('name: ${companion.name}\n'));
       });
 
       test('the release docs verifier checks its SwiftPM pin', () {
@@ -43,19 +44,12 @@ void main() {
           (pin) => pin.package == companion.name,
         );
         expect(pin.root, companion.path);
-        expect(
-          pin.swiftTag.hasMatch(File(pin.swiftPackagePath).readAsStringSync()),
-          isTrue,
-        );
+        expect(pin.swiftTag.hasMatch(_read(pin.swiftPackagePath)), isTrue);
       });
 
       test('release automation can publish it', () {
-        final release = File(
-          '.github/workflows/release_on_prep_merge.yml',
-        ).readAsStringSync();
-        final publish = File(
-          '.github/workflows/publish_companion_pubdev.yml',
-        ).readAsStringSync();
+        final release = _read('.github/workflows/release_on_prep_merge.yml');
+        final publish = _read('.github/workflows/publish_companion_pubdev.yml');
 
         expect(release, contains('            ${companion.path}\n'));
         expect(
