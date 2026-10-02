@@ -17,22 +17,6 @@ void main() {
     expect(capabilities.unsupportedReason, reason);
   });
 
-  test('load without a model throws LlamaUnsupportedException', () async {
-    final engine = LlamaEngine(LlamaBackend());
-    addTearDown(engine.dispose);
-
-    await expectLater(
-      DecisionEngine.load(engine, headPath: 'laya-head.safetensors'),
-      throwsA(
-        isA<LlamaUnsupportedException>().having(
-          (error) => error.message,
-          'message',
-          reason,
-        ),
-      ),
-    );
-  });
-
   test('attach without a model throws before fetching', () async {
     final engine = LlamaEngine(LlamaBackend());
     addTearDown(engine.dispose);

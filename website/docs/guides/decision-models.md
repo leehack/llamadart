@@ -21,6 +21,26 @@ ticket questions below from the command line, as
 [Laya Tetris example](../examples/laya-tetris) plays real-time Tetris with it
 in a Flutter app.
 
+## Glossary
+
+The API keeps the names of TypeSafe's
+[Jev API](https://docs.typesafe.ai/) and Laya's
+[`system_one`](https://huggingface.co/convaiinnovations/laya) format:
+
+| Term | Plain meaning | In the API |
+| --- | --- | --- |
+| System One | Answer typed questions about an input in one fast encoder pass per question, without generating text | `systemOne`, `systemOneBatch` |
+| state | The text or JSON being judged | `DecisionRequest.state`, `state:` |
+| instructions | The question text | `DecisionQuestion.instructions` |
+| criteria | A question's options: labels with descriptions, ordered levels, or descriptions of yes and no | `ChoiceQuestion.criteria`, `ScoreQuestion.levels`, `NoulQuestion.whenTrue`/`whenFalse` |
+| choice | Pick one option | `ChoiceQuestion`, `ChoiceAnswer.choice` |
+| score | Rate on ordered levels; the answer is the expected level, so it can fall between levels | `ScoreQuestion`, `ScoreAnswer.score` |
+| legend | A score question's level descriptions, keyed `'0'`, `'1'`, ... | `ScoreAnswer.legend` |
+| noul | Yes/no; the answer is the probability that the statement is true | `NoulQuestion`, `NoulAnswer.noul` |
+| confidence | How sure the model is of an answer, from 0 to 1 | `DecisionAnswer.confidence` |
+| act probability | Laya's action signal, which Laya documents as carrying no usable signal yet; gate on confidence instead | `DecisionAnswer.actProbability` |
+| head | The small trained network on top of the encoder that turns its output into answers | `DecisionModel.head` |
+
 ## Current support matrix
 
 | Runtime | `DecisionEngine` |

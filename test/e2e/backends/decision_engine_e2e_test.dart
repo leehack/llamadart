@@ -138,10 +138,10 @@ void main() {
         }
       }
 
-      final decisionEngine = decisions = await DecisionEngine.load(
+      final decisionEngine = decisions = await DecisionEngine.attach(
         engine,
-        headPath: headPath,
-        configPath: configPath,
+        head: ModelSource.path(headPath),
+        config: configPath == null ? null : ModelSource.path(configPath),
       );
       final cases = <String, List<DecisionFixtureRow>>{};
       for (final row in fixture.rows) {
@@ -313,10 +313,10 @@ void main() {
         ..writeAsStringSync(jsonEncode({...config, 'max_len': 1 << 20}));
 
       await expectLater(
-        DecisionEngine.load(
+        DecisionEngine.attach(
           engine,
-          headPath: headPath,
-          configPath: longConfig.path,
+          head: ModelSource.path(headPath),
+          config: ModelSource.path(longConfig.path),
         ),
         throwsA(
           isA<LlamaModelException>().having(
@@ -378,10 +378,11 @@ void main() {
           gpuLayers: backend == GpuBackend.cpu ? 0 : ModelParams.maxGpuLayers,
         ),
       );
-      final decisions = await DecisionEngine.load(
+      final configPath = _optionalFile(_configPathKey);
+      final decisions = await DecisionEngine.attach(
         engine,
-        headPath: headPath,
-        configPath: _optionalFile(_configPathKey),
+        head: ModelSource.path(headPath),
+        config: configPath == null ? null : ModelSource.path(configPath),
       );
       final questions = {
         'refund': DecisionQuestion.noul('Does the user request a refund?'),

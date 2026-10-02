@@ -9,6 +9,26 @@ so most questions written for Laya carry over unchanged; the guide's
 and [Known limits](../website/docs/guides/decision-models.md#known-limits)
 sections list the exceptions.
 
+## Glossary
+
+The public API keeps the names of TypeSafe's
+[Jev API](https://docs.typesafe.ai/) and Laya's
+[`system_one`](https://huggingface.co/convaiinnovations/laya) format:
+
+| Term | Plain meaning | In the API |
+| --- | --- | --- |
+| System One | Answer typed questions about an input in one fast encoder pass per question, without generating text | `systemOne`, `systemOneBatch` |
+| state | The text or JSON being judged | `DecisionRequest.state`, `state:` |
+| instructions | The question text | `DecisionQuestion.instructions` |
+| criteria | A question's options: labels with descriptions, ordered levels, or descriptions of yes and no | `ChoiceQuestion.criteria`, `ScoreQuestion.levels`, `NoulQuestion.whenTrue`/`whenFalse` |
+| choice | Pick one option | `ChoiceQuestion`, `ChoiceAnswer.choice` |
+| score | Rate on ordered levels; the answer is the expected level, so it can fall between levels | `ScoreQuestion`, `ScoreAnswer.score` |
+| legend | A score question's level descriptions, keyed `'0'`, `'1'`, ... | `ScoreAnswer.legend` |
+| noul | Yes/no; the answer is the probability that the statement is true | `NoulQuestion`, `NoulAnswer.noul` |
+| confidence | How sure the model is of an answer, from 0 to 1 | `DecisionAnswer.confidence` |
+| act probability | Laya's action signal, which Laya documents as carrying no usable signal yet; gate on confidence instead | `DecisionAnswer.actProbability` |
+| head | The small trained network on top of the encoder that turns its output into answers | `DecisionModel.head` |
+
 Reference implementation: `laya` 0.3.5 on PyPI, checkpoint
 `convaiinnovations/laya` at `1c5edc17a7acd8701df6fc341c0d179f1c62c982`
 (Apache-2.0). Parity with it is the acceptance bar.
@@ -64,10 +84,8 @@ Loading follows the shared engine pattern
   [#851](https://github.com/leehack/llamadart/issues/851) will take; it turns
   unsupported after `dispose` or a model unload. `capabilitiesFor(engine)`
   stays as the pre-attach probe.
-- `load(engine, headPath:, configPath:)` with `String` paths is deprecated:
-  `load`'s first parameter is `Object` for one release, so the old call
-  compiles, routes to the former head load unchanged, and rejects the new
-  arguments with `LlamaArgumentException`.
+- `load(engine, headPath:, configPath:)` with `String` paths is removed;
+  `attach(engine, head: ModelSource.path(headPath))` replaces it.
 
 ## Architecture
 
@@ -502,8 +520,7 @@ guide.
   fake backend, including `load` (downloads before loading, encoder params,
   combined progress, ownership, atomic failure at each step, cancellation,
   rejected settings, URL-loading backends), `attach` (engine store, borrowing,
-  several heads, probe before download, `sha256`, unload during download) and
-  the deprecated form's argument checks.
+  several heads, probe before download, `sha256`, unload during download).
 - Unit (Chrome): `WebGpuDecisionHeads` against a fake bridge
   (`test/support/fake_webgpu_decision_bridge.dart`): the capability probe for
   old assets, API version skew, bridge reasons and state rejections; head

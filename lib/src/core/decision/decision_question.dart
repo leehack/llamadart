@@ -1,7 +1,7 @@
 import '../exceptions.dart';
 import 'python_json.dart';
 
-/// Kind of a [DecisionQuestion].
+/// Kind of a [DecisionQuestion]: pick one, rate on a scale, or yes/no.
 ///
 /// [name] is the wire `type`, and [index] is Laya's numeric question type.
 enum DecisionQuestionType {
@@ -11,11 +11,12 @@ enum DecisionQuestionType {
   /// Rate on ordered levels; the answer is the expected level.
   score,
 
-  /// Yes or no; the answer is the probability of true.
+  /// Yes or no ("noul", from Jev); the answer is the probability of true.
   noul,
 }
 
-/// A typed question for a decision model, in Laya's `system_one` format.
+/// A question with a typed answer (pick one, rate, or yes/no), asked about
+/// a state, in Laya's `system_one` format.
 ///
 /// Instructions are text, or a JSON-like value that becomes Laya's
 /// `json.dumps(value)` text with `ensure_ascii=True`. Values in criteria,
@@ -26,19 +27,22 @@ sealed class DecisionQuestion {
   DecisionQuestion._(Object instructions)
     : instructions = _instructionText(instructions);
 
-  /// Creates a [ChoiceQuestion].
+  /// Creates a pick-one question ([ChoiceQuestion]) over the labels of
+  /// `criteria`.
   factory DecisionQuestion.choice(
     Object instructions, {
     required Map<String, Object?> criteria,
   }) = ChoiceQuestion;
 
-  /// Creates a [ScoreQuestion].
+  /// Creates a rating question ([ScoreQuestion]) on `levels`, lowest
+  /// first.
   factory DecisionQuestion.score(
     Object instructions, {
     required List<Object?> levels,
   }) = ScoreQuestion;
 
-  /// Creates a [NoulQuestion].
+  /// Creates a yes/no question ([NoulQuestion]): its answer is the
+  /// probability that `instructions` is true.
   factory DecisionQuestion.noul(
     Object instructions, {
     Object? whenTrue,
@@ -87,20 +91,21 @@ sealed class DecisionQuestion {
     };
   }
 
-  /// Instruction text shown to the model.
+  /// The question text the model reads, Laya's `instructions`.
   final String instructions;
 
   /// Kind of this question.
   DecisionQuestionType get type;
 
-  /// Number of options the model scores.
+  /// Number of options the model scores: labels, levels, or 2 for yes/no.
   int get optionCount;
 
   /// Converts this question to the wire format.
   Map<String, Object?> toJson();
 }
 
-/// A question that picks one label from [criteria].
+/// A pick-one question: the answer is the most probable label of
+/// [criteria].
 final class ChoiceQuestion extends DecisionQuestion {
   /// Creates a choice question over the labels of [criteria].
   ///
@@ -111,7 +116,8 @@ final class ChoiceQuestion extends DecisionQuestion {
     : criteria = _frozenCriteria(criteria),
       super._();
 
-  /// Option labels mapped to their descriptions, in option order.
+  /// The options ("criteria"): each label mapped to its description, in
+  /// option order.
   final Map<String, Object?> criteria;
 
   @override
@@ -128,7 +134,7 @@ final class ChoiceQuestion extends DecisionQuestion {
   };
 }
 
-/// A question rated on ordered [levels].
+/// A rating question: the answer places the state on ordered [levels].
 final class ScoreQuestion extends DecisionQuestion {
   /// Creates a score question with [levels] from lowest to highest.
   ///
@@ -155,9 +161,10 @@ final class ScoreQuestion extends DecisionQuestion {
   };
 }
 
-/// A yes-or-no question.
+/// A yes/no question, Jev's "noul": the answer is the probability that the
+/// statement in [instructions] is true.
 final class NoulQuestion extends DecisionQuestion {
-  /// Creates a noul question with optional descriptions of each answer.
+  /// Creates a yes/no question with optional descriptions of each answer.
   ///
   /// A `null` or empty-string description uses Laya's default text. Throws
   /// [LlamaDecisionException] when [instructions] or a description is not
@@ -188,7 +195,7 @@ final class NoulQuestion extends DecisionQuestion {
   };
 }
 
-/// A state and the questions to answer about it.
+/// The input to judge (the "state") and the questions to answer about it.
 final class DecisionRequest {
   /// Creates a request.
   ///
@@ -202,7 +209,7 @@ final class DecisionRequest {
   }) : state = _frozenJson(state, 'state'),
        questions = _frozenQuestions(questions);
 
-  /// The state the questions are about.
+  /// The text or JSON-like value the questions are about, Laya's `state`.
   final Object? state;
 
   /// Questions by id, in answer order.

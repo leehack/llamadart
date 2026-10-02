@@ -31,18 +31,20 @@ void main() {
   );
 
   late _DecisionBackend backend;
+  late _Downloads engineDownloads;
   late LlamaEngine engine;
 
   setUp(() {
     backend = _DecisionBackend(fixture);
-    engine = LlamaEngine(backend);
+    engineDownloads = _Downloads();
+    engine = LlamaEngine(backend, modelDownloadManager: engineDownloads);
   });
 
   tearDown(() => engine.dispose());
 
   Future<DecisionEngine> loadDecisions() async {
     await engine.loadModel('laya-Q8_0.gguf');
-    return DecisionEngine.load(engine, headPath: _headPath);
+    return DecisionEngine.attach(engine, head: ModelSource.path(_headPath));
   }
 
   group('end to end on the Laya reference fixture', () {
@@ -134,10 +136,10 @@ void main() {
       backend.config = {'max_len': 256, 'head_max_len': 96};
       await engine.loadModel('laya-Q8_0.gguf');
 
-      final decisions = await DecisionEngine.load(
+      final decisions = await DecisionEngine.attach(
         engine,
-        headPath: 'model.safetensors',
-        configPath: 'rl_agent_config.json',
+        head: ModelSource.path('model.safetensors'),
+        config: ModelSource.path('rl_agent_config.json'),
       );
 
       expect(backend.headLoads, [
@@ -211,7 +213,7 @@ void main() {
       await engine.loadModel('laya-Q8_0.gguf');
 
       await expectLater(
-        DecisionEngine.load(engine, headPath: _headPath),
+        DecisionEngine.attach(engine, head: ModelSource.path(_headPath)),
         throwsA(
           isA<LlamaDecisionException>().having(
             (error) => error.message,
@@ -225,7 +227,7 @@ void main() {
 
     test('rejects an unloaded engine without probing the backend', () async {
       await expectLater(
-        DecisionEngine.load(engine, headPath: _headPath),
+        DecisionEngine.attach(engine, head: ModelSource.path(_headPath)),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -246,7 +248,7 @@ void main() {
       await engine.loadModel('gemma.gguf');
 
       await expectLater(
-        DecisionEngine.load(engine, headPath: _headPath),
+        DecisionEngine.attach(engine, head: ModelSource.path(_headPath)),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -269,7 +271,7 @@ void main() {
         await engine.loadModel('laya-Q8_0.gguf');
 
         await expectLater(
-          DecisionEngine.load(engine, headPath: _headPath),
+          DecisionEngine.attach(engine, head: ModelSource.path(_headPath)),
           throwsA(
             isA<LlamaDecisionException>().having(
               (error) => error.message,
@@ -286,7 +288,10 @@ void main() {
       await engine.loadModel('laya-Q8_0.gguf');
       final gate = backend.headLoadGate = Completer<void>();
 
-      final loading = DecisionEngine.load(engine, headPath: _headPath);
+      final loading = DecisionEngine.attach(
+        engine,
+        head: ModelSource.path(_headPath),
+      );
       await backend.headLoadStarted.future;
       await engine.unloadModel();
       gate.complete();
@@ -310,7 +315,10 @@ void main() {
         await engine.loadModel('laya-Q8_0.gguf');
         final gate = backend.capabilityGate = Completer<void>();
 
-        final loading = DecisionEngine.load(engine, headPath: _headPath);
+        final loading = DecisionEngine.attach(
+          engine,
+          head: ModelSource.path(_headPath),
+        );
         await backend.capabilityStarted.future;
         await engine.unloadModel();
         gate.complete();
@@ -340,7 +348,10 @@ void main() {
         final loadedHandle = engine.modelHandle;
         final gate = backend.capabilityGate = Completer<void>();
 
-        final loading = DecisionEngine.load(engine, headPath: _headPath);
+        final loading = DecisionEngine.attach(
+          engine,
+          head: ModelSource.path(_headPath),
+        );
         await backend.capabilityStarted.future;
         await engine.unloadModel();
         await engine.loadModel('laya-F16.gguf');
@@ -431,7 +442,7 @@ void main() {
       plain.calls.clear();
 
       await expectLater(
-        DecisionEngine.load(plainEngine, headPath: _headPath),
+        DecisionEngine.attach(plainEngine, head: ModelSource.path(_headPath)),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -826,7 +837,10 @@ void main() {
         final stale = await loadDecisions();
         await engine.unloadModel();
         await engine.loadModel('laya-Q8_0.gguf');
-        final current = await DecisionEngine.load(engine, headPath: _headPath);
+        final current = await DecisionEngine.attach(
+          engine,
+          head: ModelSource.path(_headPath),
+        );
         expect(backend.headLoads.map((load) => load.$1), [1, 1]);
 
         await expectLater(
@@ -1185,38 +1199,12 @@ void main() {
         expect(owned.disposeCalls, 1);
       },
     );
-
-    test('rejects arguments that fit neither form', () async {
-      await engine.loadModel('laya-Q8_0.gguf');
-      for (final load in [
-        () => DecisionEngine.load(engine),
-        () => DecisionEngine.load(
-          engine,
-          params: const DecisionModelParams(threads: 2),
-          headPath: _headPath,
-        ),
-        () => DecisionEngine.load(
-          engine,
-          store: ModelFileStore(downloadManager: downloads),
-          headPath: _headPath,
-        ),
-        () => DecisionEngine.load(laya, headPath: _headPath),
-        () => DecisionEngine.load('laya-Q8_0.gguf'),
-      ]) {
-        await expectLater(load(), throwsA(isA<LlamaArgumentException>()));
-      }
-      expect(backend.headLoads, isEmpty);
-      expect(backendsCreated, 0);
-    });
   });
 
   group('attach', () {
     late _Downloads downloads;
 
-    setUp(() {
-      downloads = _Downloads();
-      engine = LlamaEngine(backend, modelDownloadManager: downloads);
-    });
+    setUp(() => downloads = engineDownloads);
 
     test('resolves the head and config through the engine store', () async {
       await engine.loadModel('laya-Q8_0.gguf');
@@ -1264,8 +1252,8 @@ void main() {
       await first.dispose();
 
       expect(backend.headLoads.map((load) => load.$2), [
-        '/cache/a.safetensors',
-        '/cache/b.safetensors',
+        'a.safetensors',
+        'b.safetensors',
       ]);
       expect((await second.capabilities).isSupported, isTrue);
     });
@@ -1616,9 +1604,7 @@ final class _Downloads extends ThrowingModelDownloadManager {
       sourceCanonicalKey: source.canonicalKey,
       cacheKey: source.cacheKey,
       fileName: source.fileName,
-      filePath: source.isLocal && source.path!.startsWith('/')
-          ? source.path!
-          : '/cache/${source.fileName}',
+      filePath: source.isLocal ? source.path! : '/cache/${source.fileName}',
       bytes: size,
       createdAt: now,
       updatedAt: now,

@@ -50,7 +50,7 @@ void main() {
       );
 
       await expectLater(
-        DecisionEngine.load(engine, headPath: headPath),
+        DecisionEngine.attach(engine, head: ModelSource.path(headPath)),
         unsupported(),
       );
       await expectLater(

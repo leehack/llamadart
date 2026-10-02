@@ -11,6 +11,21 @@ description: >-
 
 # Decision models with llamadart
 
+## Glossary
+
+The API keeps the names of TypeSafe's Jev API (https://docs.typesafe.ai/) and
+Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
+
+- System One (`systemOne`): answer typed questions about an input in one fast
+  encoder pass per question, without generating text.
+- state: the text or JSON being judged. instructions: the question text.
+- criteria: a question's options (labels, ordered levels, or yes/no
+  descriptions).
+- choice: pick one option. score: rate on ordered levels; the answer is the
+  expected level. noul: yes/no; the answer is the probability of true.
+- confidence: how sure the model is, 0 to 1. actProbability: Laya's action
+  signal, documented as carrying no usable signal yet.
+
 ## Guidelines
 
 - `DecisionEngine` answers typed questions about a state in one encoder pass
@@ -48,8 +63,6 @@ description: >-
 - On Web the bridge fetches each file: a `ModelSource.path` is a URL resolved
   against the document base URL, `download:` must keep its defaults, and
   `onProgress` reports only the encoder fetch.
-- `DecisionEngine.load(engine, headPath:, configPath:)` with `String` paths is
-  deprecated; use `attach` with `ModelSource`s.
 - Prefer typed keys over string ids: build questions with `ChoiceKey.enumOf`,
   `ChoiceKey.of`, `ChoiceKey.labels`, `ScoreKey.of` and `NoulKey.of`, pass
   `DecisionKey.questionsOf([...])` to `systemOne`, and read each answer with

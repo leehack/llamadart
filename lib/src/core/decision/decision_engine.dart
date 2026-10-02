@@ -52,7 +52,8 @@ class DecisionCapabilities {
   final LlamaRuntime? runtime;
 }
 
-/// Limits and placement of a loaded decision model.
+/// Sequence limits of a loaded decision model and the device its head runs
+/// on.
 class DecisionModelInfo {
   /// Creates a model description.
   const DecisionModelInfo({
@@ -85,6 +86,26 @@ class DecisionModelInfo {
 /// [dispose] frees everything. [attach] loads a head on an engine that
 /// already holds the encoder, for example to share one encoder between
 /// several heads, and borrows it: [dispose] frees only the head.
+///
+/// The API keeps the names of TypeSafe's Jev API
+/// (<https://docs.typesafe.ai/>) and Laya's `system_one` format
+/// (<https://huggingface.co/convaiinnovations/laya>):
+///
+/// - *System One* ([systemOne]): answer typed questions about an input in one
+///   fast encoder pass per question, without generating text.
+/// - *state*: the text or JSON being judged ([DecisionRequest.state]).
+/// - *instructions*: the question text ([DecisionQuestion.instructions]).
+/// - *criteria*: a question's options: labels with descriptions, ordered
+///   levels, or descriptions of yes and no.
+/// - *choice*: pick one option ([ChoiceQuestion], [ChoiceAnswer]).
+/// - *score*: rate on ordered levels; the answer is the expected level, so it
+///   can fall between levels ([ScoreQuestion], [ScoreAnswer]).
+/// - *noul*: yes/no; the answer is the probability that the statement is
+///   true ([NoulQuestion], [NoulAnswer.noul]).
+/// - *confidence*: how sure the model is of an answer, from 0 to 1
+///   ([DecisionAnswer.confidence]).
+/// - *act probability*: Laya's action signal, which Laya documents as
+///   carrying no usable signal yet ([DecisionAnswer.actProbability]).
 ///
 /// Supported on native llama.cpp backends, and on Web with llama-web-bridge
 /// assets that include the decision API (apiVersion 1). With bridge assets
@@ -172,12 +193,6 @@ class DecisionEngine {
 
   /// Loads [model] into a new [LlamaEngine] that the returned engine owns.
   ///
-  /// [model] is a [DecisionModel]. Passing a [LlamaEngine] with [headPath]
-  /// and an optional [configPath] instead is the deprecated `String`-path
-  /// form of [attach]: it loads the head on that engine as before this API
-  /// and borrows the engine. It takes none of the other arguments and will be
-  /// removed in a future release.
-  ///
   /// Every file of [model] comes from its `ModelSource`, resolved like
   /// `LlamaEngine.loadModelSource`: [store]'s resolver (by default
   /// [DefaultModelResolver]) resolves it, and its download manager (by
@@ -212,8 +227,7 @@ class DecisionEngine {
   ///   [ModelFormat.liteRtLm]; on Web for a [download] option the backend
   ///   fetch cannot apply; and when the backend or encoder cannot run
   ///   decision heads.
-  /// - [LlamaArgumentException] for a negative [DecisionModelParams.threads],
-  ///   and for arguments that do not fit either form.
+  /// - [LlamaArgumentException] for a negative [DecisionModelParams.threads].
   /// - [LlamaModelException] when a file is missing or cannot be downloaded,
   ///   when the encoder cannot load, and when the head or its config cannot
   ///   be read, is malformed, or does not fit the encoder.
@@ -223,78 +237,13 @@ class DecisionEngine {
   ///   load.
   /// - [LlamaDecisionException] when the head's config or mask text fails
   ///   validation.
-  ///
-  /// The deprecated form throws like [attach].
   static Future<DecisionEngine> load(
-    Object model, {
+    DecisionModel model, {
     DecisionModelParams params = const DecisionModelParams(),
     ModelLoadOptions download = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
     ModelFileStore? store,
-    @Deprecated(
-      'Pass a DecisionModel, or use DecisionEngine.attach(engine, head: '
-      'ModelSource.path(headPath)). This form will be removed in a future '
-      'release.',
-    )
-    String? headPath,
-    @Deprecated(
-      'Set DecisionModel.config, or pass config: to DecisionEngine.attach. '
-      'This form will be removed in a future release.',
-    )
-    String? configPath,
   }) async {
-    if (model is LlamaEngine) {
-      if (headPath == null) {
-        throw LlamaArgumentException(
-          'DecisionEngine.load with a LlamaEngine needs headPath. Use '
-          'DecisionEngine.attach(engine, head: ...) instead.',
-          name: 'headPath',
-        );
-      }
-      if (params.device != ComputeDevice.auto ||
-          params.threads != 0 ||
-          !identical(download, ModelLoadOptions.defaults) ||
-          onProgress != null ||
-          store != null) {
-        throw LlamaArgumentException(
-          'params, download, onProgress and store apply only to a '
-          'DecisionModel. To load a head from a ModelSource on a loaded '
-          'engine, use DecisionEngine.attach.',
-        );
-      }
-      final modelEpoch = model.isReady ? modelUnloadEpoch(model) : null;
-      await _probe(model, modelEpoch);
-      return _loadHead(
-        model,
-        headPath,
-        configPath,
-        modelEpoch,
-        ownsEngine: false,
-      );
-    }
-    if (model is! DecisionModel) {
-      throw LlamaArgumentException(
-        'DecisionEngine.load takes a DecisionModel, not a '
-        '${model.runtimeType}.',
-        name: 'model',
-      );
-    }
-    if (headPath != null || configPath != null) {
-      throw LlamaArgumentException(
-        'headPath and configPath apply only with a LlamaEngine. Set '
-        'DecisionModel.head and DecisionModel.config instead.',
-      );
-    }
-    return _load(model, params, download, onProgress, store);
-  }
-
-  static Future<DecisionEngine> _load(
-    DecisionModel model,
-    DecisionModelParams params,
-    ModelLoadOptions download,
-    ModelDownloadProgressCallback? onProgress,
-    ModelFileStore? store,
-  ) async {
     if (params.device == ComputeDevice.npu) {
       throw LlamaUnsupportedException(
         'DecisionEngine runs on the CPU or a GPU; ComputeDevice.npu is not '
@@ -584,7 +533,8 @@ class DecisionEngine {
   /// Whether [dispose] has been called.
   bool get isDisposed => _disposal != null;
 
-  /// Answers [questions] about [state], as Laya's `system_one`.
+  /// Answers each question about [state] in one fast encoder pass per
+  /// question, without generating text (Laya's `system_one`).
   ///
   /// [state] is text, or a JSON-like value encoded as JSON text. Throws
   /// [LlamaDecisionException] for invalid questions and for text that
@@ -594,8 +544,8 @@ class DecisionEngine {
   /// engine's model is unloaded. A call running during an unload throws it
   /// too, unless its sequences already reached the backend; that call returns
   /// answers from the unloaded model. On Web it is also thrown once the bridge
-  /// restarts its runtime, which frees the head; load the DecisionEngine
-  /// again.
+  /// restarts its runtime, which frees the head; load or attach the
+  /// DecisionEngine again.
   ///
   /// To read answers as typed values, build [questions] with
   /// [DecisionKey.questionsOf] and read them with
@@ -610,7 +560,8 @@ class DecisionEngine {
     return results.single;
   });
 
-  /// Answers every request in [requests], in order.
+  /// Answers the questions of several states at once, in one backend call,
+  /// in order.
   ///
   /// All questions are validated and tokenized before the model runs, and
   /// all sequences run in one backend call. The call answers [requests] as

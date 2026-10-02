@@ -10,11 +10,18 @@ sealed class DecisionAnswer {
   /// Kind of the question this answers.
   DecisionQuestionType get type;
 
-  /// Confidence in the answer, from 0 to 1.
+  /// How sure the model is of this answer, from 0 (unsure) to 1 (certain).
+  ///
+  /// For choice and score answers it is one minus the entropy of the
+  /// probabilities over its maximum; for yes/no answers, `max(noul,
+  /// 1 - noul)`. Gate on it before acting on an answer.
   final double confidence;
 
-  /// Probability of the act head's first action, Laya's
-  /// `action.act_probability`.
+  /// Laya's action signal (`action.act_probability`): the probability of the
+  /// act head's first action.
+  ///
+  /// Laya documents that it carries no usable signal yet; gate on
+  /// [confidence] instead.
   final double actProbability;
 
   /// Converts this answer to Laya's response format.
@@ -23,7 +30,8 @@ sealed class DecisionAnswer {
   Map<String, Object?> get _action => {'act_probability': actProbability};
 }
 
-/// Answer to a [ChoiceQuestion].
+/// Pick-one answer to a [ChoiceQuestion]: the chosen label and the
+/// probability of each.
 final class ChoiceAnswer extends DecisionAnswer {
   /// Creates a choice answer.
   ChoiceAnswer({
@@ -53,7 +61,8 @@ final class ChoiceAnswer extends DecisionAnswer {
   };
 }
 
-/// Answer to a [ScoreQuestion].
+/// Rating answer to a [ScoreQuestion]: the expected level and the
+/// probability of each.
 final class ScoreAnswer extends DecisionAnswer {
   /// Creates a score answer.
   ScoreAnswer({
@@ -66,10 +75,11 @@ final class ScoreAnswer extends DecisionAnswer {
        probabilities = Map.unmodifiable(probabilities),
        super._();
 
-  /// Expected level, the probability-weighted mean of the level indices.
+  /// The rating: the expected level, the probability-weighted mean of the
+  /// level indices, so it can fall between levels.
   final double score;
 
-  /// Level descriptions keyed `'0'`, `'1'`, and so on.
+  /// The level descriptions ("legend") keyed `'0'`, `'1'`, and so on.
   final Map<String, Object?> legend;
 
   /// Probability of each level, keyed like [legend].
@@ -104,16 +114,18 @@ final class ScoreAnswer extends DecisionAnswer {
   };
 }
 
-/// Answer to a [NoulQuestion].
+/// Yes/no answer to a [NoulQuestion]: the probability that its statement is
+/// true.
 final class NoulAnswer extends DecisionAnswer {
-  /// Creates a noul answer.
+  /// Creates a yes/no answer.
   NoulAnswer({
     required this.noul,
     required super.confidence,
     required super.actProbability,
   }) : super._();
 
-  /// Probability that the statement is true.
+  /// Yes/no probability: how likely the statement is true, from 0 to 1
+  /// (Jev's "noul").
   final double noul;
 
   @override
@@ -146,7 +158,7 @@ class DecisionUsage {
   };
 }
 
-/// Answers to a decision request.
+/// Answers to the questions of one [DecisionRequest], by question id.
 class DecisionResult {
   /// Creates a result.
   ///
@@ -177,13 +189,14 @@ class DecisionResult {
   /// answer: its kind, and its option labels or level keys.
   final Map<String, DecisionQuestion>? questions;
 
-  /// The [ChoiceAnswer]s in [answers], in question order.
+  /// The pick-one answers ([ChoiceAnswer]s) in [answers], in question
+  /// order.
   Map<String, ChoiceAnswer> get choices => _answersOf<ChoiceAnswer>();
 
-  /// The [ScoreAnswer]s in [answers], in question order.
+  /// The rating answers ([ScoreAnswer]s) in [answers], in question order.
   Map<String, ScoreAnswer> get scores => _answersOf<ScoreAnswer>();
 
-  /// The [NoulAnswer]s in [answers], in question order.
+  /// The yes/no answers ([NoulAnswer]s) in [answers], in question order.
   Map<String, NoulAnswer> get nouls => _answersOf<NoulAnswer>();
 
   /// Converts this result to Laya's `{model, answers, usage}` response format.

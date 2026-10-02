@@ -90,13 +90,35 @@ no longer has model presets or `String` paths.
 
 ## Unreleased: decision engine load and attach
 
-`DecisionEngine` follows the shared engine pattern. The `String`-path
-`DecisionEngine.load(engine, headPath:, configPath:)` still works for one
-minor release, with deprecation warnings.
+`DecisionEngine` follows the shared engine pattern, and the `String`-path
+`DecisionEngine.load(engine, headPath:, configPath:)` is removed.
 
-1. **Let `load` own the engine.** Describe the files as `ModelSource`s; `load`
-   downloads them, loads the encoder with the 512-token context decisions
-   need, and loads the head. `dispose()` frees everything:
+1. **Keep your engine: switch to `attach`.** The one-line change:
+
+   ```dart
+   // Before
+   final decisions = await DecisionEngine.load(
+     engine,
+     headPath: headPath,
+     configPath: configPath,
+   );
+   // After
+   final decisions = await DecisionEngine.attach(
+     engine,
+     head: ModelSource.path(headPath),
+     config: configPath == null ? null : ModelSource.path(configPath),
+   );
+   ```
+
+   The head and config now resolve through the engine's download manager,
+   so `hf://` and URL sources work too, and a missing local file throws
+   `LlamaModelException` before the head loads. `dispose()` still frees only
+   the head. On Web a path is still a URL resolved against the document base
+   URL; a `blob:` URL goes in `ModelSource.path` too.
+
+2. **Or let `load` own the engine.** Describe the files as `ModelSource`s;
+   `load` downloads them, loads the encoder with the 512-token context
+   decisions need, and loads the head. `dispose()` frees everything:
 
    ```dart
    // Before
@@ -126,19 +148,10 @@ minor release, with deprecation warnings.
    `ModelLoadOptions`, `store:` a `ModelFileStore` (for example
    `ModelFileStore(downloadManager: myManager)`), and `onProgress` reports all
    files together. Read the backend name from `await decisions.capabilities`.
-
-2. **Or attach to your own engine.** To share one encoder between heads, keep
-   your `LlamaEngine` and replace `load(engine, headPath: path)` with
-   `DecisionEngine.attach(engine, head: ModelSource.path(path))`. The head
-   resolves through the engine's download manager, so `hf://` and URL sources
-   work, and `dispose()` still frees only the head. Load the encoder with
+   To load an encoder yourself for `attach`, use
    `const DecisionModelParams().encoderModelParams`.
 
-3. **Web paths.** A head or config path is still a URL resolved against the
-   document base URL: use `ModelSource.path(url)` for a relative or `blob:`
-   URL, or `ModelSource.parse` for an absolute one.
-
-4. **Missing-config hint.** The error for a head without `laya.config`
+3. **Missing-config hint.** The error for a head without `laya.config`
    metadata now asks for "the head's rl_agent_config.json as its config"
    instead of naming `configPath`; match on `laya.config` if you parse it.
 
