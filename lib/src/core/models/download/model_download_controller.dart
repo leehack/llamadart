@@ -132,7 +132,8 @@ class ModelDownloadController {
 
   /// Starts resolving [source] with [options].
   ///
-  /// Throws [StateError] when another task is already running. The returned
+  /// Throws [LlamaArgumentException] when [options] carries a cancel token and
+  /// [LlamaStateException] when another task is already running. The returned
   /// future completes with the ready [ModelCacheEntry] or rethrows the manager's
   /// failure after emitting a failed/cancelled snapshot.
   Future<ModelCacheEntry> start(
@@ -141,14 +142,15 @@ class ModelDownloadController {
   }) {
     _throwIfDisposed();
     if (options.cancelToken != null) {
-      throw ArgumentError.value(
-        options.cancelToken,
-        'options.cancelToken',
-        'ModelDownloadController owns cancellation; call cancel() on the controller instead.',
+      throw LlamaArgumentException(
+        'ModelDownloadController owns cancellation; call cancel() on the '
+        'controller instead of passing options.cancelToken.',
+        name: 'options.cancelToken',
+        invalidValue: options.cancelToken,
       );
     }
     if (_snapshot.isRunning) {
-      throw StateError('A model download task is already running.');
+      throw LlamaStateException('A model download task is already running.');
     }
     _lastSource = source;
     _lastOptions = options;
@@ -164,7 +166,9 @@ class ModelDownloadController {
   Future<ModelCacheEntry> retry() {
     final source = _lastSource;
     if (source == null) {
-      throw StateError('No model download task is available to retry.');
+      throw LlamaStateException(
+        'No model download task is available to retry. Call start() first.',
+      );
     }
     return start(source, options: _lastOptions);
   }
@@ -324,7 +328,7 @@ class ModelDownloadController {
 
   void _throwIfDisposed() {
     if (_isDisposed) {
-      throw StateError('ModelDownloadController has been disposed.');
+      throw LlamaStateException('ModelDownloadController has been disposed.');
     }
   }
 }

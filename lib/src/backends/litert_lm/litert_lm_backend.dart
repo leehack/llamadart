@@ -919,6 +919,16 @@ class LiteRtLmBackend
     switch (response.kind) {
       case 'llamaUnsupported':
         return LlamaUnsupportedException(response.message);
+      case 'llamaArgument':
+        return LlamaArgumentException(response.message);
+      case 'llamaModel':
+        return LlamaModelException(response.message);
+      case 'llamaContext':
+        return LlamaContextException(response.message);
+      case 'llamaInference':
+        return LlamaInferenceException(response.message);
+      case 'llamaState':
+        return LlamaStateException(response.message);
       case 'unsupported':
         return UnsupportedError(response.message);
       case 'argument':

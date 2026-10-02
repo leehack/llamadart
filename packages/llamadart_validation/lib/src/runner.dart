@@ -90,7 +90,7 @@ class PublicValidationEngine
       _engine = _engineFactory();
       _disposed = false;
     }
-    await _engine.setLogLevel(LlamaLogLevel.info);
+    await LlamaLogging.configure(level: LlamaLogLevel.info);
     await _engine.loadModel(
       location,
       modelParams: profile.loadParams.copyWith(

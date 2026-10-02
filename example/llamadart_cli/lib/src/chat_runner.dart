@@ -48,8 +48,7 @@ class LlamaCliRunner {
     final engine = LlamaEngine(backend);
     _engine = engine;
 
-    await engine.setDartLogLevel(LlamaLogLevel.none);
-    await engine.setNativeLogLevel(LlamaLogLevel.warn);
+    await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
     await engine.loadModel(
       modelPath,
       modelParams: ModelParams(

@@ -1,48 +1,49 @@
 ---
 title: Logging
-description: Control Dart-side and native log levels separately, configure logging in worker isolates, and quiet noisy runtime output.
+description: Configure Dart-side and native log levels and a log handler with LlamaLogging.configure, and quiet noisy runtime output.
 ---
 
-`llamadart` has separate log levels for Dart-side records and the native
-runtime. Both default to `none`.
+`llamadart` has one logging configuration for the whole library: a level for
+Dart-side records, a level for the native runtime and a handler. Both levels
+default to `none`.
 
 For distributed traces, token metrics and exporter setup, see
 [Observability](../guides/observability).
 
-## Engine log controls
+## Configure logging
 
 ```dart
-await engine.setDartLogLevel(LlamaLogLevel.info);
-await engine.setNativeLogLevel(LlamaLogLevel.warn);
-
-// or set both to the same value
-await engine.setLogLevel(LlamaLogLevel.error);
-```
-
-`setDartLogLevel` and `setLogLevel` also apply the Dart level to a running
-native backend worker (see [Backend worker isolates](#backend-worker-isolates)).
-Set levels before `loadModel` to capture load-time output.
-
-## Global Dart logger configuration
-
-```dart
-LlamaEngine.configureLogging(
+await LlamaLogging.configure(
   level: LlamaLogLevel.info,
+  nativeLevel: LlamaLogLevel.warn, // defaults to level
   handler: (record) {
     print('[${record.level}] ${record.message}');
   },
 );
 ```
 
+Every engine shares this configuration, so the last `configure` call wins,
+whatever the order of calls or the engine they came from. The new levels apply
+at once on the calling isolate and to engines loaded later, and are sent to
+the worker isolates and native runtimes of running engines. The returned
+future completes when they have taken them, or after at most one second. A
+worker that does not answer in time, such as one busy with a generation, logs
+a warning and takes them when its current operation finishes; a backend that
+fails logs a warning too. Without a `handler`, records are
+printed. Configure logging before loading a model to capture load-time
+output; `LlamaLogging.level` and `LlamaLogging.nativeLevel` read the current
+levels.
+
+`LlamaEngine.configureLogging`, `engine.setLogLevel`,
+`engine.setDartLogLevel`, `engine.setNativeLogLevel`, `engine.dartLogLevel`
+and `engine.nativeLogLevel` are deprecated forwarders to this configuration.
+
 ## Backend worker isolates
 
 The native llama.cpp and LiteRT-LM backends run in a worker isolate. A worker
-takes the Dart logger level when it starts and forwards only records at or
-above that level to the main isolate, where the `configureLogging` handler
-receives them after the main-isolate level is applied again.
-`engine.setDartLogLevel` and `engine.setLogLevel` change the level of a
-running worker too; a later `configureLogging` call changes only the handler
-and the main-isolate level. At the default `none` nothing is forwarded.
+forwards only records at or above `level` to the main isolate, where the
+handler receives them after the main-isolate level is applied again. At the
+default `none` nothing is forwarded.
 
 A forwarded record carries its error as `toString` text and its stack trace
 rebuilt from text. A worker forwards at most 1000 `debug` records; records
@@ -52,17 +53,16 @@ unaffected.
 
 ## Recommended profiles
 
-- Local debugging: Dart `info`, native `warn`.
-- Performance testing: Dart `warn`, native `error`.
+- Local debugging: `level: info`, `nativeLevel: warn`.
+- Performance testing: `level: warn`, `nativeLevel: error`.
 - Production: both `error` or `none`.
 
 If output stays noisy, check that app startup or model reload paths do not
-raise the levels again, and that a custom `configureLogging` handler filters
-as intended.
+raise the levels again, and that a custom handler filters as intended.
 
 ## Native output outside llamadart's control
 
-On the native LiteRT-LM backend, `setNativeLogLevel(LlamaLogLevel.none)` is
+On the native LiteRT-LM backend, a `nativeLevel` of `LlamaLogLevel.none` is
 passed to the runtime as silent before each engine create and stops the
 runtime library's own absl, LiteRT and TFLite loggers. The prebuilt WebGPU
 accelerator (`libLiteRtWebGpuAccelerator`) links its own absl and exports no
