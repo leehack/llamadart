@@ -562,10 +562,11 @@ class SpeechToTextEngine {
   /// `ImageGenerationEngine.load` resolves its files: [store]'s resolver and
   /// download manager (by default [ModelFileStore]'s) check a local file, or
   /// download a remote one with [download] into the model cache, or reuse
-  /// the cached file. [download] applies to both remote files: both hosts
-  /// receive its bearer token and headers, so set them only when both files
-  /// need them. [ModelLoadOptions.sha256] cannot name two files, so a task
-  /// throws [LlamaUnsupportedException] when it is set. A local file takes
+  /// the cached file. [download] applies to both remote files, but its
+  /// bearer token and headers are never sent across hosts: with them set, a
+  /// task throws [LlamaArgumentException] when the two remote files are on
+  /// different origins. [ModelLoadOptions.sha256] cannot name two files, so
+  /// a task throws [LlamaUnsupportedException] when it is set. A local file takes
   /// only [download]'s cancel token. [onProgress] reports both files
   /// together. A failed resolution fails that task, and the next task tries
   /// again; once [download]'s cancel token is cancelled, every task fails

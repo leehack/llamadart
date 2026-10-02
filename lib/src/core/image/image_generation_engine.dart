@@ -265,7 +265,11 @@ class ImageGenerationEngine {
   /// download and reusing a cached file. Files resolve one at a time, main
   /// file first. [download] applies to every remote file: cache policy and
   /// directory, authentication, resume, retries and the cancel token. Local
-  /// files take only the cancel token.
+  /// files take only the cancel token. Its bearer token and headers are never
+  /// sent across hosts: when they are set and the remote files span more than
+  /// one origin (scheme, host and port), the load throws
+  /// [LlamaArgumentException] naming the origins before downloading from a
+  /// second host.
   ///
   /// Each file's role then comes from its header (GGUF metadata and tensor
   /// names, or the safetensors header), unless the model sets it, so files
@@ -324,6 +328,8 @@ class ImageGenerationEngine {
   ///   download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
+  /// - [LlamaArgumentException] when [download] sets a bearer token or
+  ///   headers for remote files on more than one origin.
   static Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageModelParams params = const ImageModelParams(),

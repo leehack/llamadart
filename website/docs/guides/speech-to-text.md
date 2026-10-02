@@ -132,10 +132,10 @@ URL or a Hugging Face file. Before the first task the recognizer checks local
 files, or downloads remote ones into the model cache, model first, with the
 optional `download` options of `SpeechToTextEngine.liteRtLm`; `onProgress`
 reports both files together and `store` overrides the default
-`ModelFileStore`. `download` applies to both remote files, so both hosts
-receive its bearer token and headers; set them only when both files need
-them. Its `sha256` cannot name two files and throws
-`LlamaUnsupportedException`. A failed download fails that task and the next
+`ModelFileStore`. `download` applies to both remote files, but its bearer
+token and headers never cross hosts: with them set, files on two different
+hosts throw `LlamaArgumentException`. Its `sha256` cannot name two files and
+throws `LlamaUnsupportedException`. A failed download fails that task and the next
 task tries again; once the cancel token is cancelled every task fails.
 Later tasks reuse the resolved files. The deprecated
 `LiteRtLmAsrRuntimeConfig(modelPath: ..., tokenizerPath: ...)` constructor

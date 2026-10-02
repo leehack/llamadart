@@ -83,6 +83,10 @@
   ASR files (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they
   download and cache like models; the `String` path forms are deprecated
   ([#852](https://github.com/leehack/llamadart/issues/852)).
+- **Fixed:** `ImageGenerationEngine.load` no longer sends `download`'s
+  `bearerToken` and headers to every host: remote files on more than one host
+  with them set throw `LlamaArgumentException`
+  ([#883](https://github.com/leehack/llamadart/issues/883)).
 
 ## 0.10.0
 

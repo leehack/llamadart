@@ -193,6 +193,69 @@ void main() {
       expect(manager.calls.single.$2, same(download));
     });
 
+    test('verifies a single local file against the checksum', () async {
+      final download = ModelLoadOptions(sha256: 'a' * 64);
+
+      await resolve([local], download: download);
+
+      expect(manager.calls.single.$2.sha256, 'a' * 64);
+    });
+
+    test('rejects credentials for remote files on more than one host before '
+        'downloading, naming the hosts but not the credentials', () async {
+      final other = ModelSource.url(
+        Uri.parse('https://other.example.com/vae.gguf'),
+      );
+      for (final download in [
+        ModelLoadOptions(bearerToken: 'hf_secret'),
+        ModelLoadOptions(headers: const {'X-Key': 'hf_secret'}),
+      ]) {
+        await expectLater(
+          resolve([remote, local, other], download: download),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('https://huggingface.co:443'),
+                contains('https://other.example.com:443'),
+                isNot(contains('hf_secret')),
+              ),
+            ),
+          ),
+        );
+      }
+      expect(manager.calls, isEmpty);
+    });
+
+    test('sends credentials to remote files on one host, and to none when a '
+        'resolver moves a file to another host', () async {
+      final sibling = ModelSource.parse('hf://owner/repo/tokenizer.json');
+      final download = ModelLoadOptions(bearerToken: 'hf_secret');
+
+      await resolve([remote, local, sibling], download: download);
+      expect(manager.calls.map((call) => call.$2.bearerToken), [
+        'hf_secret',
+        null,
+        'hf_secret',
+      ]);
+      manager.calls.clear();
+
+      await expectLater(
+        resolveModelSourceFiles(
+          [remote, sibling],
+          store: ModelFileStore(
+            resolver: _MirrorSecondResolver(),
+            downloadManager: manager,
+          ),
+          download: download,
+          operation: 'Test loading',
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(manager.calls, hasLength(1));
+    });
+
     test('stops after a file when the cancel token is cancelled', () async {
       final token = ModelDownloadCancelToken();
       manager.onEnsure = token.cancel;
@@ -305,6 +368,25 @@ final class _RecordingManager extends ThrowingModelDownloadManager {
       bytes: bytes[source.fileName],
       createdAt: now,
       updatedAt: now,
+    );
+  }
+}
+
+/// Resolves the second remote source it sees to another host.
+final class _MirrorSecondResolver implements ModelResolver {
+  int _remotes = 0;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async {
+    if (source.isLocal) return LocalModelFile(source.path!);
+    _remotes += 1;
+    return RemoteModelUrl(
+      _remotes == 1
+          ? source.resolvedUri!
+          : Uri.parse('https://mirror.example.com/${source.fileName}'),
     );
   }
 }

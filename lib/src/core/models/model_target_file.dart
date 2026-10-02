@@ -54,10 +54,13 @@ Future<ModelCacheEntry> ensureModelTargetFile(
 /// [store]'s resolver and download manager, for a load of several files
 /// named [operation] (such as `Image model loading`).
 ///
-/// [download] applies to every remote file, its bearer token and headers
-/// included, so callers must document that every file's host receives them.
-/// A local file takes only its cancel token, since [ModelLoadOptions]
-/// rejects download options for local files.
+/// [download] applies to every remote file. Its bearer token and headers are
+/// never sent across hosts: when they are set and the remote sources, or the
+/// URLs the resolver returns for them, span more than one origin (scheme,
+/// host and port), this throws [LlamaArgumentException] naming the origins,
+/// never the credentials, before downloading from another host. A local
+/// file takes only the cancel token and, for a single file, the checksum,
+/// since [ModelLoadOptions] rejects download options for local files.
 ///
 /// [onProgress] reports the files together. Byte progress counts every file
 /// resolved so far plus the bytes of the current one; `totalBytes` is their
@@ -67,7 +70,8 @@ Future<ModelCacheEntry> ensureModelTargetFile(
 /// fraction of all the files.
 ///
 /// Throws [LlamaUnsupportedException] before resolving anything when
-/// [download] sets [ModelLoadOptions.sha256] for more than one file, and
+/// [download] sets [ModelLoadOptions.sha256] for more than one file; a
+/// single file, local or remote, is verified against it. Throws
 /// [LlamaStateException] when [download]'s cancel token is cancelled after a
 /// file resolves.
 Future<List<String>> resolveModelSourceFiles(
@@ -85,8 +89,32 @@ Future<List<String>> resolveModelSourceFiles(
       'cannot apply to them. Leave it unset.',
     );
   }
+  final sendsCredentials =
+      download.bearerToken != null || download.headers.isNotEmpty;
+  void checkOrigins(Set<String> origins, Uri url) {
+    if (!sendsCredentials) return;
+    origins.add('${url.scheme}://${url.host}:${url.port}');
+    if (origins.length > 1) {
+      throw LlamaArgumentException(
+        '$operation would send ModelLoadOptions.bearerToken or headers to '
+        'more than one host (${origins.join(', ')}). Credentials are never '
+        'forwarded across hosts: load these files from one host, or leave '
+        'bearerToken and headers unset.',
+        name: 'download',
+      );
+    }
+  }
+
+  final sourceOrigins = <String>{};
+  for (final source in sources) {
+    if (source.resolvedUri case final url?) checkOrigins(sourceOrigins, url);
+  }
+  final targetOrigins = <String>{};
   final progress = _FilesProgress(onProgress, sources.length, knownSizes);
-  final localOptions = ModelLoadOptions(cancelToken: download.cancelToken);
+  final localOptions = ModelLoadOptions(
+    sha256: download.sha256,
+    cancelToken: download.cancelToken,
+  );
   final files = <String>[];
   for (final (index, source) in sources.indexed) {
     final fileOptions = source.isLocal ? localOptions : download;
@@ -95,6 +123,9 @@ Future<List<String>> resolveModelSourceFiles(
       source,
       ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
     );
+    if (source.isRemote && target is RemoteModelUrl) {
+      checkOrigins(targetOrigins, target.url);
+    }
     final entry = await ensureModelTargetFile(
       store.downloadManager,
       source,
