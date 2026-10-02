@@ -31,7 +31,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
   llama.cpp-only options; do not catch and ignore it.
 - Load remote models with `engine.loadModelSource(ModelSource.parse(...))`
   (`hf://owner/repo/file.gguf`, an HTTP(S) URL, or a local path). Native
-  targets download once into a cache and reuse it. Web rejects local paths.
+  targets download once into a cache and reuse it: a per-user cache on
+  desktop, the app's cache directory on Android and iOS (no `path_provider`
+  needed). Web rejects local paths.
 - `loadModel`, `loadModelSource` and `unloadModel` do not queue. Calling one
   while another runs, or loading while a model is loaded, throws
   `LlamaStateException`. Serialize model switches in app code and call

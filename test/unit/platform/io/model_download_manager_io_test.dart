@@ -7,8 +7,12 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/download/model_download_controller.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
+import 'package:llamadart/src/platform/io/mobile_app_cache_directory.dart';
 import 'package:llamadart/src/platform/io/model_download_manager_io.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:path/path.dart' as path;
@@ -207,6 +211,228 @@ void main() {
         throwsArgumentError,
       );
     });
+
+    group('globalCacheDirectory', () {
+      tearDown(() => DefaultModelDownloadManager.globalCacheDirectory = null);
+
+      test('replaces the platform default on every platform', () {
+        final global = path.join(tempDir.path, 'global');
+        DefaultModelDownloadManager.globalCacheDirectory = global;
+
+        expect(DefaultModelDownloadManager().defaultCacheDirectory, global);
+        for (final platform in <ModelCachePlatform>[
+          ModelCachePlatform.android,
+          ModelCachePlatform.ios,
+          ModelCachePlatform.linux,
+          ModelCachePlatform.macos,
+          ModelCachePlatform.windows,
+        ]) {
+          expect(
+            DefaultModelDownloadManager.auto(
+              platform: platform,
+              environment: const <String, String>{},
+              homeDirectory: '/home/alice',
+            ).defaultCacheDirectory,
+            global,
+            reason: platform.name,
+          );
+        }
+      });
+
+      test('is read when a default-constructed manager first needs it', () {
+        final manager = DefaultModelDownloadManager();
+        final global = path.join(tempDir.path, 'set-after-construction');
+        DefaultModelDownloadManager.globalCacheDirectory = global;
+
+        expect(manager.defaultCacheDirectory, global);
+        DefaultModelDownloadManager.globalCacheDirectory = null;
+        expect(manager.defaultCacheDirectory, global);
+      });
+
+      test('never overrides an explicit directory', () {
+        DefaultModelDownloadManager.globalCacheDirectory = path.join(
+          tempDir.path,
+          'global',
+        );
+        final explicit = path.join(tempDir.path, 'explicit');
+
+        expect(
+          DefaultModelDownloadManager(
+            defaultCacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            cacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+            appPrivateCacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.ios,
+            iosAppPrivateCacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+      });
+
+      test('treats a blank value as unset', () {
+        DefaultModelDownloadManager.globalCacheDirectory = '  ';
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.macos,
+            environment: const <String, String>{},
+            homeDirectory: '/Users/alice',
+          ).defaultCacheDirectory,
+          '/Users/alice/Library/Caches/llamadart/models',
+        );
+      });
+
+      test('receives downloads from default-constructed managers', () async {
+        final global = path.join(tempDir.path, 'global');
+        DefaultModelDownloadManager.globalCacheDirectory = global;
+        server.payload = utf8.encode('global-cache-bytes');
+
+        final entry = await ModelDownloadController().manager.ensureModel(
+          ModelSource.url(server.modelUri, fileName: 'tiny.gguf'),
+        );
+
+        expect(path.isWithin(global, entry.filePath), isTrue);
+        expect(File(entry.filePath).readAsBytesSync(), server.payload);
+      });
+    });
+
+    group('mobile app cache default', () {
+      tearDown(
+        () => mobileAppCacheDirectoryResolver = hostMobileAppCacheDirectory,
+      );
+
+      test('is <app cache>/<namespace>/models on Android and iOS', () {
+        final asked = <ModelCachePlatform>[];
+        mobileAppCacheDirectoryResolver = (platform) {
+          asked.add(platform);
+          return '/app/${platform.name}/cache';
+        };
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          '/app/android/cache/llamadart/models',
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.ios,
+          ).defaultCacheDirectory,
+          '/app/ios/cache/llamadart/models',
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            namespace: 'com.example.app',
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          '/app/android/cache/com.example.app/models',
+        );
+        expect(asked, <ModelCachePlatform>[
+          ModelCachePlatform.android,
+          ModelCachePlatform.ios,
+          ModelCachePlatform.android,
+        ]);
+        expect(
+          () => DefaultModelDownloadManager.auto(
+            namespace: '../bad',
+            platform: ModelCachePlatform.ios,
+          ),
+          throwsArgumentError,
+        );
+      });
+
+      test('yields to explicit and global directories', () {
+        mobileAppCacheDirectoryResolver = (_) => '/app/cache';
+        final explicit = path.join(tempDir.path, 'explicit');
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+            appPrivateCacheDirectory: explicit,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+        DefaultModelDownloadManager.globalCacheDirectory = explicit;
+        addTearDown(
+          () => DefaultModelDownloadManager.globalCacheDirectory = null,
+        );
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.ios,
+          ).defaultCacheDirectory,
+          explicit,
+        );
+      });
+
+      test('falls back to temp only when the resolver finds nothing', () {
+        mobileAppCacheDirectoryResolver = (_) => null;
+
+        expect(
+          DefaultModelDownloadManager.auto(
+            platform: ModelCachePlatform.android,
+          ).defaultCacheDirectory,
+          path.join(Directory.systemTemp.path, 'llamadart', 'models'),
+        );
+      });
+    });
+
+    test(
+      'warns once, when warnings are enabled, if a mobile default falls back to temp',
+      () {
+        final records = <LlamaLogRecord>[];
+        final logger = LlamaLogger.instance;
+        final previousLevel = logger.level;
+        logger
+          ..setLevel(LlamaLogLevel.none)
+          ..setHandler(records.add);
+        addTearDown(() {
+          logger
+            ..setLevel(previousLevel)
+            ..setHandler(null);
+        });
+        resetMobileTemporaryCacheWarningForTesting();
+
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        logger.setLevel(LlamaLogLevel.error);
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        logger.setLevel(LlamaLogLevel.warn);
+        DefaultModelDownloadManager.auto(
+          platform: ModelCachePlatform.android,
+          appPrivateCacheDirectory: path.join(tempDir.path, 'explicit'),
+        );
+        expect(records, isEmpty);
+
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.android);
+        DefaultModelDownloadManager.auto(platform: ModelCachePlatform.ios);
+
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(
+          records.single.message,
+          allOf(
+            contains(
+              path.join(Directory.systemTemp.path, 'llamadart', 'models'),
+            ),
+            contains('DefaultModelDownloadManager.globalCacheDirectory'),
+          ),
+        );
+      },
+    );
 
     test(
       'auto uses generic mobile directory when specific directory is blank',

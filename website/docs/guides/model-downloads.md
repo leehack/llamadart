@@ -186,9 +186,30 @@ source with a non-default cache policy, `cacheDirectory`, auth headers,
 
 ## Choose the cache location
 
+Without configuration, `LlamaEngine`, `ModelDownloadController` and
+`DefaultModelDownloadManager()` cache models in a per-user shared cache on
+desktop and server, and in the app's cache directory on Android and iOS: the
+directory Flutter's `getApplicationCacheDirectory()` returns. It survives app
+updates and restarts, is not backed up, and the OS clears it only under
+storage pressure. llamadart finds it without Flutter, so no `path_provider`
+setup is needed.
+
+To put every default download somewhere else, set a global directory once at
+startup, before the first model load. It is a static, so set it in each
+isolate that creates engines or managers:
+
+```dart
+// For example, Flutter's application support directory, which the OS never
+// clears. Exclude it from backups yourself: models are large.
+DefaultModelDownloadManager.globalCacheDirectory = p.join(
+  (await getApplicationSupportDirectory()).path,
+  'models',
+);
+```
+
 `DefaultModelDownloadManager.auto(...)` keeps one call site for every
 platform: desktop and server use a per-user shared cache; Android and iOS use
-the app-private directory you pass.
+the app-private directory you pass, else the app cache directory.
 
 ```dart
 // Desktop/server shared cache; app-private directory on Android/iOS.
@@ -215,20 +236,24 @@ final appGroupLibrary = DefaultModelDownloadManager.appGroup(
 );
 ```
 
-In Flutter, resolve the mobile directory with `path_provider`:
-`getApplicationCacheDirectory()` for re-downloadable models, or
-`getApplicationSupportDirectory()` only when the app manages its backup
-policy. Pass the result as `appPrivateCacheDirectory`, or pass
+To choose a different mobile directory in Flutter, resolve it with
+`path_provider` (`getApplicationSupportDirectory()` only when the app manages
+its backup policy) and pass it as `appPrivateCacheDirectory`, or pass
 `androidAppPrivateCacheDirectory` and `iosAppPrivateCacheDirectory` to resolve
-both up front. Without one, `auto(...)` falls back to
-`Directory.systemTemp/llamadart/models`, which the OS may clear.
+both up front. Only if the app cache directory cannot be found does the
+default fall back to `Directory.systemTemp/llamadart/models`, which the OS may
+clear, and log a one-time `LlamaLogger` warning.
 
 | Platform | Default root |
 | --- | --- |
 | Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
 | macOS | `$HOME/Library/Caches/llamadart/models` |
 | Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
-| Android/iOS | the supplied app-private directory, else `Directory.systemTemp/llamadart/models` |
+| Android | the supplied app-private directory, else `<app data dir>/cache/llamadart/models` (for example `/data/user/0/<package>/cache/llamadart/models`) |
+| iOS | the supplied app-private directory, else `<app container>/Library/Caches/llamadart/models` |
+
+`DefaultModelDownloadManager.globalCacheDirectory`, when set, replaces the
+default root on every platform; an explicit directory still wins over it.
 
 - Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
   replace the `llamadart` segment, or `cacheDirectory` to force a root.
