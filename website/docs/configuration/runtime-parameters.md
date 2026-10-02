@@ -66,7 +66,7 @@ Important fields:
 - `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the
   target GGUF. Defaults to `false` because the tensors cost memory; set it to
   `true` when `SpeculativeDecodingConfig.mtp(...)` runs without a
-  `draftModelPath`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
+  `draftModel`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
   the bridge only when set; bridge assets without speculative decoding ignore
   both.
 - `chatTemplate`: Jinja chat template that replaces the model's own. On GGUF
@@ -211,8 +211,10 @@ Important fields:
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
   draft tuning, on bundles that carry a speculative drafter; native llama.cpp takes any `SpeculativeDecodingConfig`
-  strategy. WebGPU takes the strategies its bridge assets report, with URLs
-  for `draftModelPath` and the n-gram cache paths. LiteRT-LM web rejects both.
+  strategy. `draftModel` is a `ModelSource` that native backends download
+  and cache when a generation starts, with `draftModelDownload`. WebGPU takes
+  the strategies its bridge assets report, with a remote `draftModel` whose
+  URL the runtime fetches, and URLs for the n-gram cache paths. LiteRT-LM web rejects both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.

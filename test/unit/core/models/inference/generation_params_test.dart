@@ -1,5 +1,7 @@
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
+import 'package:llamadart/src/core/models/model_load_options.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -188,6 +190,37 @@ void main() {
     expect(dspark.minProbability, 0.25);
     expect(dspark.draftSplitProbability, 0.1);
     expect(dspark.draftModelPath, 'dspark.gguf');
+  });
+
+  test('SpeculativeDecodingConfig names a draftModel source as the path '
+      'backends load', () {
+    final local = SpeculativeDecodingConfig.draftSimple(
+      draftModel: ModelSource.path('/models/draft.gguf'),
+    );
+    final options = ModelLoadOptions(bearerToken: 'token');
+    final remote = SpeculativeDecodingConfig.draftEagle3(
+      draftModel: ModelSource.parse('hf://owner/repo/eagle.gguf'),
+      draftModelDownload: options,
+    );
+    const legacy = SpeculativeDecodingConfig.mtp(
+      draftModelPath: 'relative/mtp.gguf',
+    );
+
+    expect(local.draftModelPath, '/models/draft.gguf');
+    expect(local.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(
+      remote.draftModelPath,
+      'https://huggingface.co/owner/repo/resolve/main/eagle.gguf'
+      '?download=true',
+    );
+    expect(remote.draftModelDownload, same(options));
+    expect(legacy.draftModelPath, 'relative/mtp.gguf');
+    expect(legacy.draftModel, isNull);
+    expect(const SpeculativeDecodingConfig.ngramMod().draftModel, isNull);
+    expect(
+      const SpeculativeDecodingConfig.ngramMod().draftModelDownload,
+      same(ModelLoadOptions.defaults),
+    );
   });
 
   test('SpeculativeDecodingConfig stores ngram-mod and cache controls', () {

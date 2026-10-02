@@ -86,6 +86,12 @@ For canonical full release notes, use:
   replaces the raw-`int` constructor, now deprecated; an unknown raw trigger
   type throws `LlamaUnsupportedException` on llama.cpp instead of being
   ignored ([#844](https://github.com/leehack/llamadart/issues/844)).
+- **Deprecated:** LoRA adapters (`setLoraSource`, `removeLoraSource`,
+  `LoraAdapterConfig.source`), speculative draft models
+  (`SpeculativeDecodingConfig.draftModel`) and LiteRT-LM ASR files
+  (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they download
+  and cache like models; the `String` path forms are deprecated
+  ([#852](https://github.com/leehack/llamadart/issues/852)).
 
 ## 0.10.0
 

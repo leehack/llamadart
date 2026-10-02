@@ -3,8 +3,9 @@ name: llamadart-lora
 description: >-
   Use when applying LoRA adapters with llamadart: training an adapter
   elsewhere and converting it to GGUF for a base model, loading, stacking,
-  scaling or removing adapters at runtime with setLora, removeLora and
-  clearLoras, passing ModelParams.loras, or checking LoRA support on native
+  scaling or removing adapters at runtime with setLoraSource,
+  removeLoraSource and clearLoras, downloading adapters from a URL or Hugging
+  Face, passing ModelParams.loras, or checking LoRA support on native
   llama.cpp, WebGPU and LiteRT-LM.
 ---
 
@@ -27,41 +28,53 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   llamadart-getting-started and llamadart-chat-streaming skills.
 - Runtime API on `LlamaEngine`, all `Future<void>`, all needing a loaded model
   (otherwise `LlamaContextException`):
-  - `setLora(path, scale: 1.0)` loads the adapter on first use and activates
-    it; calling it again with the same path only changes the scale.
-  - `removeLora(path)` deactivates one adapter.
+  - `setLoraSource(source, scale: 1.0)` loads the adapter on first use and
+    activates it; calling it again with the same source only changes the
+    scale.
+  - `removeLoraSource(source)` deactivates one adapter.
   - `clearLoras()` returns to base-model behavior.
-- Adapters stack: each distinct path passed to `setLora` stays active with its
-  own scale until removed. Start tuning scales around `0.4`-`0.8`; lower
+- An adapter is a `ModelSource`: `ModelSource.path` for a local file, or an
+  HTTP(S) URL or `hf://owner/repo/file.gguf` through `ModelSource.parse`. On
+  native backends `setLoraSource` downloads a remote adapter into the model
+  cache (or reuses it) with its `download` options and reports `onProgress`;
+  the cancel token stops it with `LlamaStateException`. `setLora(path)`,
+  `removeLora(path)` and `LoraAdapterConfig(path: ...)` are deprecated.
+- Adapters stack: each distinct source passed to `setLoraSource` stays active
+  with its own scale until removed. Start tuning scales around `0.4`-`0.8`; lower
   (`0.1`-`0.3`) preserves more base behavior, higher can over-steer.
-- Adapters you know at load time go in `ModelParams.loras`. On llama.cpp
-  (native and WebGPU) each is applied in list order at its scale, as `setLora`
-  would, once the model loads; `setLora`, `removeLora` and `clearLoras` can
-  change them afterwards. If one cannot be applied the load fails and the
+- Adapters you know at load time go in `ModelParams.loras` as
+  `LoraAdapterConfig.source(source, scale: ...)`. `LlamaEngine` resolves
+  their sources before the model loads (`loadModelSource` with its `options`
+  minus `sha256`, other loads with defaults; no progress). On llama.cpp
+  (native and WebGPU) each is applied in list order at its scale, as
+  `setLoraSource` would, once the model loads; `setLoraSource`,
+  `removeLoraSource` and `clearLoras` can change them afterwards. If one cannot be applied the load fails and the
   engine is left with no model: `LlamaUnsupportedException` (naming the
   adapter) for an unsupported adapter or WebGPU bridge assets, otherwise
   `LlamaModelException` with the adapter and cause in its `details`.
 - Adapter state belongs to the loaded model. `unloadModel()` and `dispose()`
-  drop it, including `setLora` changes. Each load applies its own
-  `ModelParams.loras` again; re-apply `setLora` adapters after a reload or
-  model switch.
+  drop it, including `setLoraSource` changes. Each load applies its own
+  `ModelParams.loras` again; re-apply `setLoraSource` adapters after a reload
+  or model switch.
 - An aLoRA (activated LoRA) adapter throws `LlamaUnsupportedException` from
-  `setLora` or from a load that lists it in `ModelParams.loras`: llamadart
+  `setLoraSource` or from a load that lists it in `ModelParams.loras`: llamadart
   applies adapters from the first token and does not implement
   invocation-sequence activation. Use a standard LoRA adapter.
 - Runtime support by target:
   - Native llama.cpp (GGUF): `ModelParams.loras` and the full runtime API,
-    multiple adapters, custom scales. `path` is a local file path.
+    multiple adapters, custom scales, local or downloaded adapter files.
   - WebGPU (GGUF on web): needs bridge assets whose
     `getLoraAdapterCapabilities()` reports support (bridge `v0.1.54+`, which
     includes the default pin), for `ModelParams.loras` and the runtime API.
-    `path` is a URL, downloaded once per model load. Older bridge assets throw
+    The source must be remote; the bridge fetches its URL once per model
+    load, and a local path throws `LlamaUnsupportedException`. Older bridge assets throw
     `LlamaUnsupportedException` on every LoRA call and on a load with
     `ModelParams.loras`.
   - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
     passed as `ModelParams.loras` at load. More than one adapter or a
     non-default scale fails the load with `LlamaUnsupportedException`.
-    `setLora`, `removeLora` and `clearLoras` throw `LlamaUnsupportedException`.
+    `setLoraSource`, `removeLoraSource` and `clearLoras` throw
+    `LlamaUnsupportedException`.
   - LiteRT-LM on web: no LoRA. Any `ModelParams.loras` entry fails the load and
     the runtime calls throw `LlamaUnsupportedException`.
 - Do not catch and ignore `LlamaUnsupportedException` from LoRA calls; it means
@@ -105,23 +118,27 @@ reload applies `ModelParams.loras` again:
 ```dart
 import 'package:llamadart/llamadart.dart';
 
-const ModelParams withAdapters = ModelParams(
-  loras: [
-    LoraAdapterConfig(path: '/models/lora/style.gguf', scale: 0.35),
-    LoraAdapterConfig(path: '/models/lora/domain.gguf', scale: 0.7),
-  ],
+final ModelSource style = ModelSource.path('/models/lora/style.gguf');
+final ModelSource domain = ModelSource.parse(
+  'hf://owner/repo/domain-lora.gguf',
 );
 
 Future<void> main() async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  final ModelParams withAdapters = ModelParams(
+    loras: [
+      LoraAdapterConfig.source(style, scale: 0.35),
+      LoraAdapterConfig.source(domain, scale: 0.7),
+    ],
+  );
   try {
     await engine.loadModel(
       '/models/base-model.gguf',
       modelParams: withAdapters,
     );
 
-    await engine.setLora('/models/lora/domain.gguf', scale: 0.4);
-    await engine.removeLora('/models/lora/style.gguf');
+    await engine.setLoraSource(domain, scale: 0.4);
+    await engine.removeLoraSource(style);
     await engine.clearLoras();
 
     await engine.unloadModel();
@@ -145,8 +162,12 @@ import 'package:llamadart/llamadart.dart';
 Future<void> loadLiteRtLmWithAdapter(LlamaEngine engine) {
   return engine.loadModel(
     '/models/gemma.litertlm',
-    modelParams: const ModelParams(
-      loras: [LoraAdapterConfig(path: '/models/gemma-text-adapter.bin')],
+    modelParams: ModelParams(
+      loras: [
+        LoraAdapterConfig.source(
+          ModelSource.path('/models/gemma-text-adapter.bin'),
+        ),
+      ],
     ),
   );
 }

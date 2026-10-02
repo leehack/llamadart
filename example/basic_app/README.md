@@ -323,7 +323,7 @@ LLAMADART_SDXS_MODEL=/models/sdxs-512-tinySDdistilled_Q8_0.gguf \
 ## Options
 
 - `-m, --model`: Local path, HTTP(S) URL, or `hf://` Hugging Face source for a GGUF model.
-- `-l, --lora`: Path to LoRA adapter(s). Can be set multiple times.
+- `-l, --lora`: Local path, HTTP(S) URL, or `hf://` source for a LoRA adapter. Can be set multiple times.
 - `-p, --prompt`: Prompt for single response mode.
 - `-i, --interactive`: Start in interactive mode (default if no prompt provided).
 - `-g, --log`: Enable native engine logging output (defaults to off).

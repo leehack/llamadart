@@ -147,7 +147,9 @@ in production.
   `speculativeDecoding: true` flag without a config runs `ngram-mod`.
 - WebGPU: the same configs, with bridge assets whose
   `getCompletionCapabilities()` reports the strategy: bridge assets
-  `v0.1.54+`, the default pin among them. `draftModelPath` and the n-gram cache paths are URLs, and `mtp` uses
+  `v0.1.54+`, the default pin among them. `draftModel` is a remote
+  `ModelSource` whose URL the runtime fetches, the n-gram cache paths are
+  URLs, and `mtp` uses
   only the model's own MTP layers. See
   [WebGPU bridge](../platforms/webgpu-bridge#what-differs-from-native).
 - LiteRT-LM web rejects speculative decoding.
@@ -162,11 +164,11 @@ strategies the loaded runtime runs.
 
 | Constructor | Upstream type | Draft model |
 | --- | --- | --- |
-| `mtp(...)` | `draft-mtp` | Optional `draftModelPath`; without it, load the target with `ModelParams(loadMtp: true)` |
-| `draftSimple(...)` | `draft-simple` | Required `draftModelPath` |
-| `draftEagle3(...)` | `draft-eagle3` | Required `draftModelPath` |
-| `draftDflash(...)` | `draft-dflash` | Required `draftModelPath` |
-| `draftDspark(draftModelPath: ...)` | `draft-dspark` | Required `draftModelPath` |
+| `mtp(...)` | `draft-mtp` | Optional `draftModel`; without it, load the target with `ModelParams(loadMtp: true)` |
+| `draftSimple(...)` | `draft-simple` | Required `draftModel` |
+| `draftEagle3(...)` | `draft-eagle3` | Required `draftModel` |
+| `draftDflash(...)` | `draft-dflash` | Required `draftModel` |
+| `draftDspark(draftModel: ...)` | `draft-dspark` | Required `draftModel` |
 | `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`, `ngramCache(...)` | `ngram-simple`, `ngram-map-k`, `ngram-map-k4v`, `ngram-mod`, `ngram-cache` | None; uses token history or n-gram caches |
 | `mixed(strategies: [...])` | comma-separated list | At most one draft-model strategy plus any n-gram strategies |
 
@@ -180,6 +182,34 @@ const generationParams = GenerationParams(
   ),
 );
 ```
+
+`draftModel` is a `ModelSource`: a local path, an HTTP(S) URL or a Hugging
+Face file. The `draftModelPath:` parameter is deprecated. `LlamaEngine`
+resolves the draft model when a generation starts: on native backends it
+checks a local file, or downloads a remote one into the model cache with
+`draftModelDownload` (cache policy, authentication, checksum, retries and
+cancel token), and later generations reuse the cached file. Cancelling the
+generation stops the download. The download reports no progress; to show
+progress, download the file first:
+
+```dart
+final draft = ModelSource.parse('hf://owner/repo/draft-model.gguf');
+await engine.modelDownloadManager.ensureModel(
+  draft,
+  onProgress: (progress) => print('${progress.receivedBytes} bytes'),
+);
+
+final params = GenerationParams(
+  maxTokens: 256,
+  temp: 0,
+  speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+    draftModel: draft,
+  ),
+);
+```
+
+Pass the same options to `ensureModel` as `draftModelDownload` so the
+generation finds the cached file.
 
 Knobs:
 
@@ -204,7 +234,7 @@ results are in
 
 ### DSpark
 
-DSpark (`SpeculativeDecodingConfig.draftDspark(draftModelPath: ...)`) is an
+DSpark (`SpeculativeDecodingConfig.draftDspark(draftModel: ...)`) is an
 experimental, opt-in llama.cpp external-draft strategy mapped to upstream
 `draft-dspark`. The default `v0.5.0` runtime supports it, including
 speculators-format checkpoints and LFM2 target/draft pairs. It is never

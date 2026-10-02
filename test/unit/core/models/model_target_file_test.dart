@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
+import 'package:llamadart/src/core/models/model_file_store.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_resolver.dart';
@@ -130,6 +131,41 @@ void main() {
       ),
     );
     expect(manager.calls, isEmpty);
+  });
+  group('resolveModelSourceFiles', () {
+    test('resolves files in order, local ones with the cancel token only, and '
+        'reports them together', () async {
+      final token = ModelDownloadCancelToken();
+      final download = ModelLoadOptions(
+        bearerToken: 'secret',
+        cancelToken: token,
+      );
+      final progress = <ModelDownloadProgress>[];
+
+      final paths = await resolveModelSourceFiles(
+        [
+          ModelSource.parse('hf://owner/repo/model.tflite'),
+          ModelSource.path('/models/tokenizer.json'),
+        ],
+        store: ModelFileStore(downloadManager: manager),
+        download: download,
+        onProgress: progress.add,
+        knownSizes: const {1: 5},
+      );
+
+      expect(paths, ['/cache/model.tflite', '/cache/tokenizer.json']);
+      final [(remote, remoteOptions, _), (local, localOptions, _)] =
+          manager.calls;
+      expect(remote.kind, ModelSourceKind.huggingFace);
+      expect(remoteOptions, same(download));
+      expect(local.path, '/models/tokenizer.json');
+      expect(localOptions.bearerToken, isNull);
+      expect(localOptions.cancelToken, same(token));
+      expect(progress.map((p) => (p.receivedBytes, p.totalBytes)), [
+        (0, null),
+        (5, null),
+      ]);
+    });
   });
 }
 

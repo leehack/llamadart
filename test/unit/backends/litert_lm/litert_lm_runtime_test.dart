@@ -5,6 +5,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -140,6 +142,36 @@ void main() {
         ),
       );
     }
+  });
+
+  test('ASR sessions open local files only', () {
+    final client = LiteRtLmRuntimeClient(
+      libraryPath: '/missing/libLiteRtLm.so',
+    );
+    addTearDown(client.dispose);
+
+    expect(
+      () => client.createAsrSession(
+        LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.path('/models/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://example.com/tokenizer.json?token=secret',
+          ),
+          modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+        ),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('tokenizer'),
+            contains('SpeechToTextEngine.liteRtLm'),
+            isNot(contains('secret')),
+          ),
+        ),
+      ),
+    );
   });
 
   test('LiteRtLmRuntimeMetrics serializes runtime counters', () {

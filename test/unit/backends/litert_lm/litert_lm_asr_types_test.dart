@@ -16,6 +16,21 @@ void main() {
     expect(config.overlapRatio, 0.4);
   });
 
+  test('LiteRT-LM ASR source config names its files as the runtime paths', () {
+    final config = LiteRtLmAsrRuntimeConfig.source(
+      model: ModelSource.path('/models/moonshine.tflite'),
+      tokenizer: ModelSource.parse('https://example.com/tokenizer.json'),
+      modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      numberOfThreads: 2,
+    );
+
+    expect(config.model!.path, '/models/moonshine.tflite');
+    expect(config.modelPath, '/models/moonshine.tflite');
+    expect(config.tokenizerPath, 'https://example.com/tokenizer.json');
+    expect(config.numberOfThreads, 2);
+    expect(config.overlapRatio, 0.4);
+  });
+
   test('LiteRT-LM ASR flow-control results stay explicit', () {
     const push = LiteRtLmAsrPushResult(acceptedSamples: 1600, wouldBlock: true);
     const process = LiteRtLmAsrProcessResult(

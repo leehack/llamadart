@@ -58,9 +58,9 @@ Future<void> main(List<String> args) async {
     }
     final result = await runSpeechValidation(
       PublicDedicatedSpeechAdapter(
-        config: LiteRtLmAsrRuntimeConfig(
-          modelPath: options['model']!,
-          tokenizerPath: options['tokenizer']!,
+        config: LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.path(options['model']!),
+          tokenizer: ModelSource.path(options['tokenizer']!),
           modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
         ),
         wav: wav,

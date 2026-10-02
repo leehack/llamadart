@@ -67,6 +67,71 @@ void main() {
     expect(driver.startCalls, 0);
   });
 
+  test('resolves model and tokenizer sources before the first task and '
+      'reuses them', () async {
+    final model = ModelSource.parse('hf://owner/asr/moonshine.tflite');
+    final manager = _SourceDownloadManager();
+    final token = ModelDownloadCancelToken();
+    final download = ModelLoadOptions(
+      bearerToken: 'secret',
+      cancelToken: token,
+    );
+    final progress = <ModelDownloadProgress>[];
+    final engine = SpeechToTextEngine.liteRtLm(
+      LiteRtLmAsrRuntimeConfig.source(
+        model: model,
+        tokenizer: ModelSource.path('/models/tokenizer.json'),
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+        numberOfThreads: 2,
+      ),
+      download: download,
+      onProgress: progress.add,
+      store: ModelFileStore(downloadManager: manager),
+    );
+
+    await (await engine.startStream()).cancel();
+    await (await engine.startStream()).cancel();
+
+    final started = driver.lastStartConfig!;
+    expect(started.modelPath, '/cache/moonshine.tflite');
+    expect(started.tokenizerPath, '/models/tokenizer.json');
+    expect(started.numberOfThreads, 2);
+    expect(started.modelPreset, LiteRtLmAsrModelPreset.moonshineTiny);
+    expect(driver.startCalls, 2);
+    expect(manager.calls, hasLength(2));
+    expect(manager.calls[0].$1.cacheKey, model.cacheKey);
+    expect(manager.calls[0].$2, same(download));
+    expect(manager.calls[1].$2.bearerToken, isNull);
+    expect(manager.calls[1].$2.cancelToken, same(token));
+    expect(progress, isNotEmpty);
+  });
+
+  test(
+    'a failed source download fails the task and the next task retries',
+    () async {
+      final manager = _SourceDownloadManager()..failNext = true;
+      final engine = SpeechToTextEngine.liteRtLm(
+        LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.parse('https://example.com/asr/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://example.com/asr/tokenizer.json',
+          ),
+          modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+        ),
+        store: ModelFileStore(downloadManager: manager),
+      );
+
+      await expectLater(
+        engine.startStream(),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(driver.startCalls, 0);
+
+      await (await engine.startStream()).cancel();
+      expect(driver.lastStartConfig!.tokenizerPath, '/cache/tokenizer.json');
+    },
+  );
+
   test('forwards an advanced native library override', () async {
     final engine = SpeechToTextEngine.liteRtLm(
       config,
@@ -244,6 +309,7 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
   int startCalls = 0;
   String? lastProbeLibraryPath;
   String? lastStartLibraryPath;
+  LiteRtLmAsrRuntimeConfig? lastStartConfig;
   _FakeLiteRtLmSpeechWorker worker = _FakeLiteRtLmSpeechWorker();
 
   @override
@@ -262,6 +328,7 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
   }) async {
     startCalls++;
     lastStartLibraryPath = libraryPath;
+    lastStartConfig = config;
     worker = _FakeLiteRtLmSpeechWorker();
     return worker;
   }
@@ -353,4 +420,57 @@ class _FakeLiteRtLmSpeechWorker implements LiteRtLmSpeechToTextWorker {
       await dispose();
     }
   }
+}
+
+class _SourceDownloadManager implements ModelDownloadManager {
+  final List<(ModelSource, ModelLoadOptions)> calls =
+      <(ModelSource, ModelLoadOptions)>[];
+  bool failNext = false;
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    calls.add((source, options));
+    if (failNext) {
+      failNext = false;
+      throw LlamaModelException('Download failed.');
+    }
+    onProgress?.call(
+      const ModelDownloadProgress(receivedBytes: 1, totalBytes: 2),
+    );
+    return ModelCacheEntry(
+      sourceCanonicalKey: source.metadataSourceKey,
+      cacheKey: source.cacheKey,
+      fileName: source.fileName,
+      filePath: source.path ?? '/cache/${source.fileName}',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+  }
+
+  @override
+  Future<void> clear({String? cacheDirectory}) async {}
+
+  @override
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async => null;
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async =>
+      const <ModelCacheEntry>[];
+
+  @override
+  Future<List<ModelCacheEntry>> prune({
+    Duration? maxAge,
+    int? maxBytes,
+    String? cacheDirectory,
+  }) async => const <ModelCacheEntry>[];
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
 }

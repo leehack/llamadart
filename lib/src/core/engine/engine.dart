@@ -11,6 +11,7 @@ import 'engine_observer.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
+import '../models/config/lora_config.dart';
 import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
 import '../models/diagnostics/model_file_type.dart';
@@ -100,6 +101,7 @@ class LlamaEngine {
   Map<String, String>? _cachedModelMetadata;
   String? _modelChatTemplate;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
+  final Map<String, String> _loraLocations = <String, String>{};
   int _nextDecisionHeadHandle = 1;
   int _decisionHeadEpoch = 0;
   late final GenerationCancellation _generationCancellation =
@@ -335,6 +337,10 @@ class LlamaEngine {
     ModelFormat? format,
   }) async {
     _ensureNotReady();
+    modelParams = await _resolveLoraSources(
+      modelParams,
+      ModelLoadOptions.defaults,
+    );
     final modelName = _displayNameForSource(path);
     LlamaLogger.instance.info('Loading model: $modelName');
 
@@ -386,6 +392,10 @@ class LlamaEngine {
   /// use the native download/cache manager on file-backed backends, then load
   /// the cached local file. URL-capable web backends keep using
   /// [loadModelFromUrl] for unauthenticated prefer-cached requests.
+  ///
+  /// Adapters in [ModelParams.loras] given as [LoraAdapterConfig.source]
+  /// resolve after the model file, with [options] except
+  /// [ModelLoadOptions.sha256]; see [ModelParams.loras].
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
@@ -407,7 +417,12 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _throwIfSourceLoadCancelled(options);
-      return _loadSourceFile(entry.filePath, modelParams, source.format);
+      final resolvedParams = await _resolveLoraSources(
+        modelParams,
+        _withoutSha256(options),
+      );
+      _throwIfSourceLoadCancelled(options);
+      return _loadSourceFile(entry.filePath, resolvedParams, source.format);
     }
     switch (target) {
       case LocalModelFile():
@@ -636,6 +651,10 @@ class LlamaEngine {
         'loadModelFromUrl requires a backend that supports URL loading.',
       );
     }
+    modelParams = await _resolveLoraSources(
+      modelParams,
+      ModelLoadOptions.defaults,
+    );
 
     try {
       await backend.setLogLevel(LlamaLogging.nativeLevel);
@@ -774,41 +793,55 @@ class LlamaEngine {
   }) {
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
-
-      final target = await modelResolver.resolve(
+      final location = await _resolveAuxiliarySource(
         source,
-        ModelResolveRequest(options: options, onProgress: onProgress),
+        options: options,
+        onProgress: onProgress,
+        assetType: 'multimodal projector',
       );
-
-      if (!backend.supportsUrlLoading) {
-        final entry = await ensureModelTargetFile(
-          modelDownloadManager,
-          source,
-          target,
-          options: options,
-          onProgress: onProgress,
-          assetType: 'multimodal projector',
-        );
-        return _loadMultimodalProjectorLocked(entry.filePath);
-      }
-      switch (target) {
-        case LocalModelFile():
-          throw LlamaUnsupportedException(
-            'Explicit local multimodal projector paths are not supported by URL-loading backends.',
-          );
-        case RemoteModelUrl(:final url, :final useBrowserCache):
-          if (!useBrowserCache) {
-            throw LlamaUnsupportedException(
-              'Remote multimodal projector loading without browser/backend cache is not supported yet.',
-            );
-          }
-          _rejectUnsupportedUrlBackendOptions(
-            options,
-            assetType: 'multimodal projector',
-          );
-          return _loadMultimodalProjectorLocked(url.toString());
-      }
+      return _loadMultimodalProjectorLocked(location);
     });
+  }
+
+  /// The local file, or on a URL-loading backend the URL, that the backend
+  /// loads for the auxiliary file [source] of [assetType], resolved as
+  /// [loadMultimodalProjectorSource] describes.
+  Future<String> _resolveAuxiliarySource(
+    ModelSource source, {
+    required ModelLoadOptions options,
+    ModelDownloadProgressCallback? onProgress,
+    required String assetType,
+  }) async {
+    final target = await modelResolver.resolve(
+      source,
+      ModelResolveRequest(options: options, onProgress: onProgress),
+    );
+
+    if (!backend.supportsUrlLoading) {
+      final entry = await ensureModelTargetFile(
+        modelDownloadManager,
+        source,
+        target,
+        options: options,
+        onProgress: onProgress,
+        assetType: assetType,
+      );
+      return entry.filePath;
+    }
+    switch (target) {
+      case LocalModelFile():
+        throw LlamaUnsupportedException(
+          'Explicit local $assetType paths are not supported by URL-loading backends.',
+        );
+      case RemoteModelUrl(:final url, :final useBrowserCache):
+        if (!useBrowserCache) {
+          throw LlamaUnsupportedException(
+            'Remote $assetType loading without browser/backend cache is not supported yet.',
+          );
+        }
+        _rejectUnsupportedUrlBackendOptions(options, assetType: assetType);
+        return url.toString();
+    }
   }
 
   Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {
@@ -914,6 +947,7 @@ class LlamaEngine {
     _isReady = false;
     _decisionHeadHandles.clear();
     _decisionHeadEpoch++;
+    _loraLocations.clear();
     backend.cancelGeneration();
     SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
@@ -1352,12 +1386,15 @@ class LlamaEngine {
     _ensureReady();
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
     if (request.isCancelled()) return;
+    final resolvedParams = await _resolveDraftModel(params, request);
+    if (resolvedParams == null) return;
+    _ensureReady();
 
     try {
       final stream = backend.generate(
         _contextHandle!,
         prompt,
-        params,
+        resolvedParams,
         parts: parts,
       );
 
@@ -1398,12 +1435,15 @@ class LlamaEngine {
   }) async* {
     _ensureReady();
     if (request.isCancelled()) return;
+    final resolvedParams = await _resolveDraftModel(params, request);
+    if (resolvedParams == null) return;
+    _ensureReady();
 
     try {
       final stream = nativeBackend.generateChat(
         _contextHandle!,
         messages,
-        params,
+        resolvedParams,
         tools: tools,
         toolChoice: toolChoice,
         parallelToolCalls: parallelToolCalls,
@@ -2208,6 +2248,14 @@ class LlamaEngine {
   // ============================================================
 
   /// Dynamically loads or updates a LoRA adapter's scale.
+  ///
+  /// [path] is a local file, or a URL on WebGPU, that the backend loads as
+  /// written.
+  @Deprecated(
+    'Use setLoraSource with ModelSource.path(path), or another ModelSource '
+    'to download the adapter. This method will be removed in a future '
+    'release.',
+  )
   Future<void> setLora(String path, {double scale = 1.0}) async {
     _ensureReady();
     try {
@@ -2217,7 +2265,55 @@ class LlamaEngine {
     }
   }
 
+  /// Applies the LoRA adapter at [source] with [scale], or changes the scale
+  /// of an adapter already applied from [source].
+  ///
+  /// [source] resolves as in [loadModelSource]: [modelResolver] resolves it,
+  /// and on file-backed backends [modelDownloadManager] checks a local file,
+  /// or downloads a remote one with [download] into the model cache,
+  /// resuming an interrupted download and reusing a cached file, reporting
+  /// to [onProgress]. [download]'s cancel token stops the download. On
+  /// URL-loading backends (WebGPU) a remote source goes to the runtime as a
+  /// URL, and options that need the package-managed download manager throw
+  /// [LlamaUnsupportedException], as for [loadMultimodalProjectorSource].
+  ///
+  /// Remove the adapter with [removeLoraSource] and the same [source].
+  ///
+  /// Throws [LlamaContextException] when no model is loaded,
+  /// [LlamaUnsupportedException] when the backend has no runtime LoRA API or
+  /// cannot load [source] as described above, [LlamaStateException] when
+  /// [download]'s cancel token cancels the download, and what the download
+  /// manager throws for a missing file or a failed download.
+  Future<void> setLoraSource(
+    ModelSource source, {
+    double scale = 1.0,
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    _ensureReady();
+    final location = await _resolveAuxiliarySource(
+      source,
+      options: download,
+      onProgress: onProgress,
+      assetType: 'LoRA adapter',
+    );
+    if (download.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('LoRA adapter loading was cancelled.');
+    }
+    _ensureReady();
+    try {
+      await backend.setLoraAdapter(_contextHandle!, location, scale);
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('LoRA adapters', error);
+    }
+    _loraLocations[source.canonicalKey] = location;
+  }
+
   /// Removes a specific LoRA adapter from the active session.
+  @Deprecated(
+    'Use removeLoraSource with the ModelSource the adapter was set from. '
+    'This method will be removed in a future release.',
+  )
   Future<void> removeLora(String path) async {
     _ensureReady();
     try {
@@ -2225,6 +2321,100 @@ class LlamaEngine {
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
+  }
+
+  /// Removes the LoRA adapter applied from [source], by [setLoraSource] or
+  /// [ModelParams.loras]. Does nothing when no adapter from [source] is
+  /// applied.
+  Future<void> removeLoraSource(ModelSource source) async {
+    _ensureReady();
+    final location = _loraLocations[source.canonicalKey] ?? source.path;
+    if (location == null) return;
+    try {
+      await backend.removeLoraAdapter(_contextHandle!, location);
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('LoRA adapters', error);
+    }
+    _loraLocations.remove(source.canonicalKey);
+  }
+
+  /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
+  /// resolved as [setLoraSource] resolves it, with [options] for a remote
+  /// source and only their cancel token for a local one.
+  Future<ModelParams> _resolveLoraSources(
+    ModelParams params,
+    ModelLoadOptions options,
+  ) async {
+    if (params.loras.every((lora) => lora.source == null)) return params;
+    final localOptions = ModelLoadOptions(cancelToken: options.cancelToken);
+    final resolved = <LoraAdapterConfig>[];
+    for (final lora in params.loras) {
+      final source = lora.source;
+      if (source == null) {
+        resolved.add(lora);
+        continue;
+      }
+      final location = await _resolveAuxiliarySource(
+        source,
+        options: source.isLocal ? localOptions : options,
+        assetType: 'LoRA adapter',
+      );
+      _loraLocations[source.canonicalKey] = location;
+      // A path config is what backends load and is not resolved again.
+      resolved.add(LoraAdapterConfig(path: location, scale: lora.scale));
+    }
+    return params.copyWith(loras: resolved);
+  }
+
+  /// [params] with its [SpeculativeDecodingConfig.draftModel] resolved as
+  /// [setLoraSource] resolves a source, or null when [request] is cancelled
+  /// meanwhile.
+  Future<GenerationParams?> _resolveDraftModel(
+    GenerationParams params,
+    GenerationRequest request,
+  ) async {
+    final config = params.speculativeDecodingConfig;
+    final source = config?.draftModel;
+    if (config == null || source == null) return params;
+    var download = config.draftModelDownload;
+    if (!backend.supportsUrlLoading) {
+      download = _withCancelToken(
+        download,
+        _RequestCancelToken(request, download.cancelToken),
+      );
+    }
+    final String location;
+    try {
+      location = await _resolveAuxiliarySource(
+        source,
+        options: download,
+        assetType: 'speculative draft model',
+      );
+    } on Object {
+      if (request.isCancelled()) return null;
+      rethrow;
+    }
+    if (request.isCancelled()) return null;
+    return params.copyWith(
+      speculativeDecodingConfig: SpeculativeDecodingConfig(
+        strategy: config.strategy,
+        strategies: config.strategies,
+        draftTokenMax: config.draftTokenMax,
+        draftTokenMin: config.draftTokenMin,
+        minProbability: config.minProbability,
+        draftSplitProbability: config.draftSplitProbability,
+        draftModelPath: location,
+        ngramSize: config.ngramSize,
+        ngramSizeN: config.ngramSizeN,
+        ngramSizeM: config.ngramSizeM,
+        ngramMinHits: config.ngramMinHits,
+        ngramMatch: config.ngramMatch,
+        ngramTokenMin: config.ngramTokenMin,
+        ngramTokenMax: config.ngramTokenMax,
+        ngramCacheStaticPath: config.ngramCacheStaticPath,
+        ngramCacheDynamicPath: config.ngramCacheDynamicPath,
+      ),
+    );
   }
 
   /// Removes all active LoRA adapters from the current context.
@@ -2235,6 +2425,7 @@ class LlamaEngine {
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
+    _loraLocations.clear();
   }
 
   // ============================================================
@@ -2440,6 +2631,33 @@ class LlamaEngine {
     }
   }
 
+  static ModelLoadOptions _withoutSha256(ModelLoadOptions options) =>
+      options.sha256 == null
+      ? options
+      : ModelLoadOptions(
+          cachePolicy: options.cachePolicy,
+          cacheDirectory: options.cacheDirectory,
+          bearerToken: options.bearerToken,
+          headers: options.headers,
+          cancelToken: options.cancelToken,
+          resume: options.resume,
+          maxRetries: options.maxRetries,
+        );
+
+  static ModelLoadOptions _withCancelToken(
+    ModelLoadOptions options,
+    ModelDownloadCancelToken cancelToken,
+  ) => ModelLoadOptions(
+    cachePolicy: options.cachePolicy,
+    cacheDirectory: options.cacheDirectory,
+    sha256: options.sha256,
+    bearerToken: options.bearerToken,
+    headers: options.headers,
+    cancelToken: cancelToken,
+    resume: options.resume,
+    maxRetries: options.maxRetries,
+  );
+
   void _throwIfSourceLoadCancelled(ModelLoadOptions options) {
     if (options.cancelToken?.isCancelled ?? false) {
       throw LlamaStateException('Model source loading was cancelled.');
@@ -2553,4 +2771,20 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
       templateNow: templateNow,
     ).collect();
   }
+}
+
+/// Cancelled when [_request] is cancelled, or by its own or [_caller]'s
+/// [cancel], so a generation that is cancelled stops its draft model
+/// download without cancelling the caller's token.
+class _RequestCancelToken extends ModelDownloadCancelToken {
+  final GenerationRequest _request;
+  final ModelDownloadCancelToken? _caller;
+
+  _RequestCancelToken(this._request, this._caller);
+
+  @override
+  bool get isCancelled =>
+      super.isCancelled ||
+      (_caller?.isCancelled ?? false) ||
+      _request.isCancelled();
 }

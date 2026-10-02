@@ -8,7 +8,12 @@ import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
+import '../models/download/model_download_manager.dart';
 import '../models/inference/generation_params.dart';
+import '../models/model_file_store.dart';
+import '../models/model_load_options.dart';
+import '../models/model_source.dart';
+import '../models/model_target_file.dart';
 import 'litert_lm_speech_to_text_driver.dart';
 import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
@@ -511,6 +516,10 @@ class SpeechToTextEngine {
   final LiteRtLmAsrRuntimeConfig? _liteRtLmConfig;
   final LiteRtLmSpeechToTextDriver? _liteRtLmDriver;
   final String? _liteRtLmLibraryPath;
+  final ModelLoadOptions _liteRtLmDownload;
+  final ModelDownloadProgressCallback? _liteRtLmOnProgress;
+  final ModelFileStore? _liteRtLmStore;
+  LiteRtLmAsrRuntimeConfig? _resolvedLiteRtLmConfig;
   Future<LiteRtLmSpeechToTextSupport>? _liteRtLmSupportFuture;
   bool _liteRtLmTaskActive = false;
 
@@ -527,7 +536,10 @@ class SpeechToTextEngine {
       _engineLease = SpeechEngineLease.forEngine(engine),
       _liteRtLmConfig = null,
       _liteRtLmDriver = null,
-      _liteRtLmLibraryPath = null {
+      _liteRtLmLibraryPath = null,
+      _liteRtLmDownload = ModelLoadOptions.defaults,
+      _liteRtLmOnProgress = null,
+      _liteRtLmStore = null {
     if (modelProfile == SpeechToTextModelProfile.liteRtLmDedicated) {
       throw ArgumentError.value(
         modelProfile,
@@ -544,9 +556,22 @@ class SpeechToTextEngine {
   /// float PCM and supports one active task per recognizer instance.
   /// [libraryPath] is an advanced local-validation override; packaged apps
   /// should omit it and use the runtime resolved by native assets.
+  ///
+  /// A config made with [LiteRtLmAsrRuntimeConfig.source] resolves its model
+  /// and tokenizer when the first task starts, as `ImageGenerationEngine.load`
+  /// resolves its files: [store]'s resolver and download manager (by default
+  /// [ModelFileStore]'s) check a local file, or download a remote one with
+  /// [download] into the model cache, or reuse the cached file, model first.
+  /// A local file takes only [download]'s cancel token. [onProgress] reports
+  /// both files together. A failed or cancelled resolution fails that task
+  /// and the next task tries again; once both files resolve, later tasks
+  /// reuse them.
   SpeechToTextEngine.liteRtLm(
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelFileStore? store,
   }) : _engine = null,
        _engineLease = null,
        _liteRtLmConfig = config,
@@ -554,6 +579,9 @@ class SpeechToTextEngine {
            debugLiteRtLmSpeechToTextDriverOverride ??
            createLiteRtLmSpeechToTextDriver(),
        _liteRtLmLibraryPath = libraryPath,
+       _liteRtLmDownload = download,
+       _liteRtLmOnProgress = onProgress,
+       _liteRtLmStore = store,
        modelProfile = SpeechToTextModelProfile.liteRtLmDedicated;
 
   bool get _usesLiteRtLm => _liteRtLmConfig != null;
@@ -736,7 +764,7 @@ class SpeechToTextEngine {
         );
       }
       final worker = await _liteRtLmDriver!.start(
-        _liteRtLmConfig!,
+        await _liteRtLmLocalConfig(),
         libraryPath: _liteRtLmLibraryPath,
       );
       return _LiteRtLmStreamingSession(
@@ -748,6 +776,36 @@ class SpeechToTextEngine {
       _liteRtLmTaskActive = false;
       rethrow;
     }
+  }
+
+  /// The LiteRT-LM config with its model and tokenizer sources resolved to
+  /// local files.
+  Future<LiteRtLmAsrRuntimeConfig> _liteRtLmLocalConfig() async {
+    final config = _liteRtLmConfig!;
+    final model = config.model;
+    final tokenizer = config.tokenizer;
+    if (model == null || tokenizer == null) return config;
+    final resolved = _resolvedLiteRtLmConfig;
+    if (resolved != null) return resolved;
+    final paths = await resolveModelSourceFiles(
+      [model, tokenizer],
+      store: _liteRtLmStore ?? ModelFileStore(),
+      download: _liteRtLmDownload,
+      onProgress: _liteRtLmOnProgress,
+      assetType: 'speech recognition',
+    );
+    if (_liteRtLmDownload.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('Speech model loading was cancelled.');
+    }
+    return _resolvedLiteRtLmConfig = LiteRtLmAsrRuntimeConfig.source(
+      model: ModelSource.path(paths[0]),
+      tokenizer: ModelSource.path(paths[1]),
+      modelPreset: config.modelPreset,
+      backend: config.backend,
+      numberOfThreads: config.numberOfThreads,
+      maxBufferedAudio: config.maxBufferedAudio,
+      overlapRatio: config.overlapRatio,
+    );
   }
 
   Future<SpeechToTextTask> _transcribeLiteRtLm(
