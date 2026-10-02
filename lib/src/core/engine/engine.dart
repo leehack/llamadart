@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
 import 'chat_template_renderer.dart';
+import 'engine_capabilities.dart';
 import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
@@ -85,7 +86,16 @@ class LlamaEngine {
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
-  bool _isReady = false;
+  bool _isReadyState = false;
+  // Changes on every load and unload, so a probe that awaits can tell whether
+  // the model it started on is still the loaded one.
+  int _modelEpoch = 0;
+  bool get _isReady => _isReadyState;
+  set _isReady(bool value) {
+    _isReadyState = value;
+    _modelEpoch++;
+  }
+
   String? _completionModel;
   Map<String, String>? _cachedModelMetadata;
   String? _modelChatTemplate;
@@ -169,6 +179,122 @@ class LlamaEngine {
 
   /// Whether the engine is initialized and ready for inference.
   bool get isReady => _isReady;
+
+  /// The runtime that runs the loaded model, or null when no model is loaded
+  /// or the backend does not report it.
+  ///
+  /// GGUF models run on [LlamaRuntime.llamaCpp], natively or through the
+  /// WebGPU bridge on the web, and `.litertlm` bundles on
+  /// [LlamaRuntime.liteRtLm]. Read [capabilities] for what the runtime
+  /// supports instead of branching on it where a capability exists.
+  LlamaRuntime? get runtime {
+    if (!_isReady || _modelHandle == null) return null;
+    final candidate = backend;
+    return candidate is BackendRuntimeIdentity
+        ? (candidate as BackendRuntimeIdentity).runtime
+        : null;
+  }
+
+  /// What this engine and its loaded model support, as the loaded model's
+  /// runtime reports it.
+  ///
+  /// Before a model loads, [LlamaEngineCapabilities.isSupported] is false
+  /// and every capability is false, as it is when a model loads or unloads
+  /// while the snapshot is read. Read it again after loading or unloading a
+  /// model or multimodal projector.
+  Future<LlamaEngineCapabilities> get capabilities async {
+    const notLoaded = LlamaEngineCapabilities(
+      isSupported: false,
+      unsupportedReason: 'No model is loaded. Call loadModel first.',
+    );
+    if (!_isReady || _modelHandle == null) {
+      return notLoaded;
+    }
+    final epoch = _modelEpoch;
+    final candidate = backend;
+    final runtime = this.runtime;
+    final embeddings = supportsEmbeddings;
+    final nextTokenScoring = supportsNextTokenScoring;
+    final chatScope = candidate is BackendChatScope
+        ? candidate as BackendChatScope
+        : null;
+    final multiTurnChat = chatScope?.supportsMultiTurnChat ?? true;
+    final toolCalling = chatScope?.supportsToolCalling ?? true;
+    final grammar = ChatCompletionRequestPlanner.supportsGrammarConstraints(
+      candidate,
+    );
+    final lazyGrammar =
+        grammar && ChatCompletionRequestPlanner.supportsLazyGrammar(candidate);
+    final mmContextHandle = _mmContextHandle;
+
+    final BackendGenerationCapabilities generation;
+    final ({bool vision, bool audio}) directMedia;
+    final bool projectorVision;
+    final bool projectorAudio;
+    String? backendName;
+    try {
+      generation = await _generationCapabilities();
+      directMedia = candidate is BackendDirectMediaInput
+          ? await (candidate as BackendDirectMediaInput).directMediaInput()
+          : (vision: false, audio: false);
+      projectorVision =
+          mmContextHandle != null &&
+          await _probeMedia(() => candidate.supportsVision(mmContextHandle));
+      projectorAudio =
+          mmContextHandle != null &&
+          await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+      try {
+        backendName = await candidate.getBackendName();
+      } catch (error, stackTrace) {
+        LlamaLogger.instance.warning(
+          'Could not read the backend name for capabilities.',
+          error,
+          stackTrace,
+        );
+      }
+    } catch (_) {
+      if (_modelEpoch != epoch) return notLoaded;
+      rethrow;
+    }
+    // A load or unload while probing would mix two models' answers.
+    if (_modelEpoch != epoch) return notLoaded;
+    return LlamaEngineCapabilities(
+      isSupported: true,
+      backendName: backendName,
+      runtime: runtime,
+      supportsVision: directMedia.vision || projectorVision,
+      supportsAudio: directMedia.audio || projectorAudio,
+      supportsEmbeddings: embeddings,
+      supportsNextTokenScoring: nextTokenScoring,
+      supportsMultiTurnChat: multiTurnChat,
+      supportsToolCalling: toolCalling,
+      supportsStructuredOutput: grammar,
+      supportsGrammar: grammar,
+      supportsLazyGrammar: lazyGrammar,
+      supportsPenalty: generation.penalty,
+      supportsPresencePenalty: generation.presencePenalty,
+      supportsMinP: generation.minP,
+      supportsThinkingBudget: generation.thinkingBudget,
+      supportsStreamBatching: generation.streamBatching,
+      speculativeDecodingStrategies: Set.unmodifiable(
+        generation.speculativeDecodingStrategies,
+      ),
+    );
+  }
+
+  /// A media probe that cannot run reports no support instead of throwing.
+  Future<bool> _probeMedia(Future<bool> Function() probe) async {
+    try {
+      return await probe();
+    } on LlamaUnsupportedException catch (error, stackTrace) {
+      LlamaLogger.instance.warning(
+        'Multimodal capability probe failed.',
+        error,
+        stackTrace,
+      );
+      return false;
+    }
+  }
 
   /// Loads a model from a local [path].
   ///
@@ -1936,14 +2062,22 @@ class LlamaEngine {
   /// Native llama.cpp applies all of them. LiteRT-LM applies none but
   /// speculative decoding, which native LiteRT-LM runs for
   /// [SpeculativeDecodingStrategy.backendDefault] and
-  /// [SpeculativeDecodingStrategy.mtp]. WebGPU applies those its bridge assets
+  /// [SpeculativeDecodingStrategy.mtp] on a bundle with a speculative
+  /// drafter. WebGPU applies those its bridge assets
   /// report. Each of these runtimes rejects a non-default value of a control
   /// it does not apply with [LlamaUnsupportedException]. Every control is
   /// `false`, and no speculative strategy is reported, before a model loads
   /// and on a backend that does not implement
   /// [BackendGenerationCapabilitiesSupport].
-  Future<BackendGenerationCapabilities>
-  get backendGenerationCapabilities async {
+  ///
+  /// Since `capabilities` was added, native LiteRT-LM reports
+  /// [BackendGenerationCapabilities.streamBatching] as true and no
+  /// speculative strategy for a bundle that declares no speculative drafter.
+  @Deprecated('Use capabilities, which reports these controls and the rest.')
+  Future<BackendGenerationCapabilities> get backendGenerationCapabilities =>
+      _generationCapabilities();
+
+  Future<BackendGenerationCapabilities> _generationCapabilities() async {
     final candidate = backend;
     if (!_isReady ||
         _modelHandle == null ||

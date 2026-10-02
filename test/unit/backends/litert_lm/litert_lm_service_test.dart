@@ -44,6 +44,237 @@ void main() {
     }
   });
 
+  group('bundleCapabilities', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    late ({bool vision, bool audio, bool speculativeDecoding})? declared;
+    late Object? readError;
+    late List<String> readPaths;
+
+    setUp(() {
+      declared = null;
+      readError = null;
+      readPaths = <String>[];
+    });
+
+    LiteRtLmService newService(_FakeLiteRtLmRuntimeClient client) =>
+        LiteRtLmService(
+          clientFactory: () => client,
+          readBundleCapabilities: (modelPath) {
+            readPaths.add(modelPath);
+            if (readError case final error?) throw error;
+            return declared;
+          },
+        );
+
+    test(
+      'reports the declaration of the loaded bundle once per load',
+      () async {
+        final service = newService(_FakeLiteRtLmRuntimeClient());
+        declared = (vision: true, audio: false, speculativeDecoding: true);
+        try {
+          expect(service.bundleCapabilities(), isNull);
+          expect(readPaths, isEmpty);
+
+          final model = await service.loadModel(modelFile.path, params);
+          expect(service.bundleCapabilities(), declared);
+          expect(service.bundleCapabilities(), declared);
+          expect(readPaths, hasLength(1));
+          expect(
+            File(readPaths.single).resolveSymbolicLinksSync(),
+            modelFile.resolveSymbolicLinksSync(),
+          );
+
+          declared = (vision: true, audio: true, speculativeDecoding: false);
+          await service.loadModel(modelFile.path, params);
+          expect(service.bundleCapabilities(), declared);
+          expect(readPaths, hasLength(2));
+
+          service.freeModel(model + 1);
+          expect(service.bundleCapabilities(), isNull);
+          expect(readPaths, hasLength(2));
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test('reports nothing when the runtime cannot tell', () async {
+      final service = newService(_FakeLiteRtLmRuntimeClient());
+      readError = UnsupportedError('missing symbol');
+      try {
+        await service.loadModel(modelFile.path, params);
+        expect(service.bundleCapabilities(), isNull);
+        expect(service.bundleCapabilities(), isNull);
+        expect(readPaths, hasLength(1));
+      } finally {
+        service.dispose();
+      }
+    });
+
+    Future<List<List<int>>> mediaChat(
+      LiteRtLmService service,
+      int context,
+      LlamaContentPart media,
+    ) => service.generateChat(context, [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: [const LlamaTextContent('Describe'), media],
+      ),
+    ], const GenerationParams(maxTokens: 8)).toList();
+
+    Future<void> answer(_FakeLiteRtLmRuntimeClient client) async {
+      await client.generateStarted.future;
+      client.generated.add('A');
+      await client.generated.close();
+    }
+
+    Matcher undeclared(String piece) => throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(
+          contains('declares no $piece'),
+          contains('Runtime error: Bad state: runtime failed'),
+        ),
+      ),
+    );
+    final rethrowsRuntimeError = throwsA(
+      isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'runtime failed',
+      ),
+    );
+
+    for (final (kind, piece) in [
+      ('image', 'image encoder'),
+      ('audio', 'audio encoder'),
+    ]) {
+      LlamaContentPart mediaPart() => kind == 'image'
+          ? LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3]))
+          : LlamaAudioContent(bytes: Uint8List.fromList([4, 5, 6]));
+
+      for (final declaredPresent in <bool?>[true, false, null]) {
+        ({bool vision, bool audio, bool speculativeDecoding})? declaration() =>
+            declaredPresent == null
+            ? null
+            : (
+                vision: kind == 'image' ? declaredPresent : true,
+                audio: kind == 'audio' ? declaredPresent : true,
+                speculativeDecoding: true,
+              );
+
+        test('$kind input runs whatever the bundle declares '
+            '($declaredPresent)', () async {
+          final client = _FakeLiteRtLmRuntimeClient();
+          final service = newService(client);
+          declared = declaration();
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            final pending = mediaChat(service, context, mediaPart());
+            await answer(client);
+            expect(await pending, [utf8.encode('A')]);
+          } finally {
+            service.dispose();
+          }
+        });
+
+        test('a runtime failure on $kind input is explained only when the '
+            'bundle declares no $piece ($declaredPresent)', () async {
+          final client = _FakeLiteRtLmRuntimeClient()
+            ..onCreateConversation = () => throw StateError('runtime failed');
+          final service = newService(client);
+          declared = declaration();
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            await expectLater(
+              mediaChat(service, context, mediaPart()),
+              declaredPresent == false
+                  ? undeclared(piece)
+                  : rethrowsRuntimeError,
+            );
+          } finally {
+            service.dispose();
+          }
+        });
+      }
+    }
+
+    test('a failure after output started is never explained', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = newService(client);
+      declared = (vision: false, audio: false, speculativeDecoding: false);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        final pending = mediaChat(
+          service,
+          context,
+          LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+        );
+        final failed = expectLater(pending, rethrowsRuntimeError);
+        await client.generateStarted.future;
+        client.generated
+          ..add('A')
+          ..addError(StateError('runtime failed'));
+        await client.generated.close();
+        await failed;
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final declaredDrafter in <bool?>[true, false, null]) {
+      test('speculative decoding on a bundle declaring a drafter '
+          '$declaredDrafter runs, and a runtime failure is explained only '
+          'when it declares none', () async {
+        for (final fails in [false, true]) {
+          final client = _FakeLiteRtLmRuntimeClient(
+            initializeError: fails ? StateError('runtime failed') : null,
+          );
+          final service = newService(client);
+          declared = declaredDrafter == null
+              ? null
+              : (
+                  vision: false,
+                  audio: false,
+                  speculativeDecoding: declaredDrafter,
+                );
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            final pending = service
+                .generate(
+                  context,
+                  'Hello',
+                  const GenerationParams(
+                    maxTokens: 8,
+                    speculativeDecoding: true,
+                  ),
+                )
+                .toList();
+            if (!fails) {
+              await answer(client);
+              await pending;
+              expect(client.lastSpeculativeDecoding, isTrue);
+              continue;
+            }
+            await expectLater(
+              pending,
+              declaredDrafter == false
+                  ? undeclared('speculative decoding drafter')
+                  : rethrowsRuntimeError,
+            );
+          } finally {
+            service.dispose();
+          }
+        }
+      });
+    }
+  });
+
   for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
     for (final thinking in [false, true]) {
       test('$name native text template preserves thinking=$thinking', () async {

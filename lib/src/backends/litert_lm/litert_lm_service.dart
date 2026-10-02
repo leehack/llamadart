@@ -31,6 +31,13 @@ const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
 
+/// Reads what the `.litertlm` bundle at a path declares, as
+/// [LiteRtLmRuntimeClient.bundleCapabilities] does.
+typedef LiteRtLmBundleCapabilitiesReader =
+    ({bool vision, bool audio, bool speculativeDecoding})? Function(
+      String modelPath,
+    );
+
 /// Worker-owned service for the LiteRT-LM backend.
 ///
 /// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
@@ -46,19 +53,26 @@ class LiteRtLmService {
   /// [useTempCacheDir] says whether caches go to a llamadart temp directory
   /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
   /// and Android. [createLink] replaces [Link.create] for those links in
-  /// tests.
+  /// tests. [readBundleCapabilities] replaces
+  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
     LiteRtLmLinkCreator? createLink,
+    LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _readBundleCapabilities =
+           readBundleCapabilities ??
+           ((modelPath) =>
+               LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
            useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
+  final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -77,6 +91,8 @@ class LiteRtLmService {
   int? _modelHandle;
   int? _contextHandle;
   LiteRtLmRuntimeMetrics? _lastMetrics;
+  ({bool vision, bool audio, bool speculativeDecoding})? _bundleCapabilities;
+  bool _bundleCapabilitiesRead = false;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -127,6 +143,8 @@ class LiteRtLmService {
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
+    _bundleCapabilities = null;
+    _bundleCapabilitiesRead = false;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -148,6 +166,8 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
+    _bundleCapabilities = null;
+    _bundleCapabilitiesRead = false;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -184,6 +204,18 @@ class LiteRtLmService {
 
   /// Generates UTF-8 token byte chunks for [prompt].
   Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) => _explainUndeclaredFailure(
+    _generate(contextHandle, prompt, params, parts: parts),
+    hasImages: false,
+    hasAudio: false,
+    speculativeDecoding: params.isSpeculativeDecodingEnabled,
+  );
+
+  Stream<List<int>> _generate(
     int contextHandle,
     String prompt,
     GenerationParams params, {
@@ -256,6 +288,37 @@ class LiteRtLmService {
   /// Generates UTF-8 token byte chunks using native LiteRT-LM conversation
   /// messages/tools instead of a pre-rendered Dart prompt.
   Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) => _explainUndeclaredFailure(
+    _generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    ),
+    hasImages: _maxNumImagesFor(messages) != null,
+    hasAudio: _hasAudioFor(messages),
+    speculativeDecoding: params.isSpeculativeDecodingEnabled,
+  );
+
+  Stream<List<int>> _generateChat(
     int contextHandle,
     List<LlamaChatMessage> messages,
     GenerationParams params, {
@@ -424,6 +487,84 @@ class LiteRtLmService {
     }
     final client = await _ensureClientForRuntime();
     return client.detokenize(tokens);
+  }
+
+  /// What the loaded bundle declares in its section metadata: image and
+  /// audio input, and a speculative decoding drafter.
+  ///
+  /// Null when no model is loaded or the runtime cannot read the
+  /// declaration.
+  ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities() {
+    final modelPath = _modelPath;
+    if (!_modelLoaded || modelPath == null) {
+      return null;
+    }
+    if (_bundleCapabilitiesRead) {
+      return _bundleCapabilities;
+    }
+    try {
+      _bundleCapabilities = _readBundleCapabilities(
+        _modelLink?.path ?? modelPath,
+      );
+      if (_bundleCapabilities == null) {
+        _warn(
+          'The LiteRT-LM runtime did not report the bundle capabilities; '
+          'reporting no image or audio input.',
+        );
+      }
+    } catch (error) {
+      _warn('Could not read the LiteRT-LM bundle capabilities.', error);
+    }
+    _bundleCapabilitiesRead = true;
+    return _bundleCapabilities;
+  }
+
+  /// Reports a runtime failure, before the first chunk, of a request that
+  /// needs an image or audio encoder or a speculative drafter the loaded
+  /// bundle declares absent as that missing piece.
+  ///
+  /// The declaration only explains a failure and never rejects a request
+  /// itself: LiteRT-LM's capability reader matches section types
+  /// case-sensitively and the runtime does not, so it can under-report.
+  Stream<List<int>> _explainUndeclaredFailure(
+    Stream<List<int>> generation, {
+    required bool hasImages,
+    required bool hasAudio,
+    required bool speculativeDecoding,
+  }) async* {
+    var produced = false;
+    try {
+      await for (final chunk in generation) {
+        produced = true;
+        yield chunk;
+      }
+    } catch (error, stackTrace) {
+      if (produced ||
+          _cancelRequested ||
+          error is UnsupportedError ||
+          error is ArgumentError ||
+          error is LlamaUnsupportedException) {
+        rethrow;
+      }
+      final bundle = bundleCapabilities();
+      final missing = [
+        if (hasImages && bundle?.vision == false) 'image encoder',
+        if (hasAudio && bundle?.audio == false) 'audio encoder',
+        if (speculativeDecoding && bundle?.speculativeDecoding == false)
+          'speculative decoding drafter',
+      ];
+      if (missing.isEmpty) {
+        rethrow;
+      }
+      Error.throwWithStackTrace(
+        UnsupportedError(
+          'LiteRtLmBackend: the runtime could not run this request, and the '
+          'loaded bundle declares no ${missing.join(' or ')}. Use a bundle '
+          'with it, or leave it out of the request. Runtime error: $error',
+        ),
+        stackTrace,
+      );
+    }
   }
 
   /// Returns the metadata known from the LiteRT-LM bundle path.

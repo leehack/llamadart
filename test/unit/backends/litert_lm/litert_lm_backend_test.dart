@@ -73,21 +73,6 @@ void main() {
     expect(LiteRtLmBackend().runtime, LlamaRuntime.liteRtLm);
   });
 
-  test('reports speculative decoding as its only generation control', () async {
-    final capabilities = await LiteRtLmBackend().generationCapabilities();
-
-    expect(capabilities.presencePenalty, isFalse);
-    expect(capabilities.minP, isFalse);
-    expect(capabilities.thinkingBudget, isFalse);
-    expect(
-      capabilities.speculativeDecodingStrategies,
-      <SpeculativeDecodingStrategy>{
-        SpeculativeDecodingStrategy.backendDefault,
-        SpeculativeDecodingStrategy.mtp,
-      },
-    );
-  });
-
   test('reports platform default diagnostics before model load', () async {
     final backend = LiteRtLmBackend();
 
@@ -1292,6 +1277,50 @@ void main() {
     }
   });
 
+  for (final bundle in <({bool vision, bool audio, bool speculativeDecoding})?>[
+    (vision: true, audio: false, speculativeDecoding: true),
+    (vision: false, audio: true, speculativeDecoding: false),
+    null,
+  ]) {
+    test('reports media and speculative decoding for bundle $bundle', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        bundleCapabilitiesResponse: bundle,
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        expect(await backend.directMediaInput(), (
+          vision: bundle?.vision ?? false,
+          audio: bundle?.audio ?? false,
+        ));
+        final capabilities = await backend.generationCapabilities();
+        expect(capabilities.penalty, isFalse);
+        expect(capabilities.presencePenalty, isFalse);
+        expect(capabilities.minP, isFalse);
+        expect(capabilities.thinkingBudget, isFalse);
+        expect(capabilities.streamBatching, isTrue);
+        expect(
+          capabilities.speculativeDecodingStrategies,
+          bundle?.speculativeDecoding == false
+              ? isEmpty
+              : <SpeculativeDecodingStrategy>{
+                  SpeculativeDecodingStrategy.backendDefault,
+                  SpeculativeDecodingStrategy.mtp,
+                },
+        );
+        expect(
+          worker.requests.whereType<LiteRtLmBundleCapabilitiesRequest>(),
+          hasLength(2),
+        );
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    });
+  }
+
   test('routes multimodal capability methods through the worker', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -1357,6 +1386,7 @@ class _FakeLiteRtLmWorker {
     this.multimodalHandleResponse,
     this.supportsVisionResponse,
     this.supportsAudioResponse,
+    this.bundleCapabilitiesResponse,
   }) {
     _receivePort.listen(_handleMessage);
   }
@@ -1377,6 +1407,8 @@ class _FakeLiteRtLmWorker {
   final int? multimodalHandleResponse;
   final bool? supportsVisionResponse;
   final bool? supportsAudioResponse;
+  final ({bool vision, bool audio, bool speculativeDecoding})?
+  bundleCapabilitiesResponse;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -1479,6 +1511,10 @@ class _FakeLiteRtLmWorker {
         );
       case LiteRtLmLogLevelRequest():
         message.sendPort.send(LiteRtLmDoneResponse());
+      case LiteRtLmBundleCapabilitiesRequest():
+        message.sendPort.send(
+          LiteRtLmBundleCapabilitiesResponse(bundleCapabilitiesResponse),
+        );
       case LiteRtLmMultimodalContextCreateRequest():
         final handle = multimodalHandleResponse;
         if (handle == null) {

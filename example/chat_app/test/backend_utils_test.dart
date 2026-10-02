@@ -53,6 +53,7 @@ void main() {
       expect(
         BackendUtils.deriveActiveBackendLabel(
           'LiteRT-LM web gpu',
+          runtime: LlamaRuntime.liteRtLm,
           preferredBackend: GpuBackend.vulkan,
           gpuLayers: 999,
         ),
@@ -62,6 +63,7 @@ void main() {
       expect(
         BackendUtils.deriveActiveBackendLabel(
           'LiteRT-LM gpu',
+          runtime: LlamaRuntime.liteRtLm,
           preferredBackend: GpuBackend.vulkan,
           gpuLayers: 999,
         ),
@@ -71,6 +73,7 @@ void main() {
       expect(
         BackendUtils.deriveActiveBackendLabel(
           'LiteRT-LM gpu',
+          runtime: LlamaRuntime.liteRtLm,
           preferredBackend: GpuBackend.auto,
           gpuLayers: 0,
         ),
@@ -80,6 +83,7 @@ void main() {
       expect(
         BackendUtils.deriveActiveBackendLabel(
           'LiteRT-LM cpu',
+          runtime: LlamaRuntime.liteRtLm,
           preferredBackend: GpuBackend.auto,
           gpuLayers: 999,
         ),

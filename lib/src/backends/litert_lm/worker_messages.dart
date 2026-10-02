@@ -337,6 +337,12 @@ class LiteRtLmSupportsAudioRequest extends LiteRtLmWorkerRequest {
   LiteRtLmSupportsAudioRequest(this.mmContextHandle, super.sendPort);
 }
 
+/// Request for what the loaded bundle declares in its section metadata.
+class LiteRtLmBundleCapabilitiesRequest extends LiteRtLmWorkerRequest {
+  /// Creates a bundle capabilities request.
+  LiteRtLmBundleCapabilitiesRequest(super.sendPort);
+}
+
 /// Request for system information.
 class LiteRtLmSystemInfoRequest extends LiteRtLmWorkerRequest {
   /// Creates a system info request.
@@ -419,6 +425,16 @@ class LiteRtLmGetContextSizeResponse {
 
   /// Creates a context size response.
   LiteRtLmGetContextSizeResponse(this.size);
+}
+
+/// Response containing what the loaded bundle declares, or nothing when no
+/// model is loaded or the runtime cannot read the declaration.
+class LiteRtLmBundleCapabilitiesResponse {
+  /// The declaration, as `LiteRtLmRuntimeClient.bundleCapabilities` reads it.
+  final ({bool vision, bool audio, bool speculativeDecoding})? capabilities;
+
+  /// Creates a bundle capabilities response.
+  LiteRtLmBundleCapabilitiesResponse(this.capabilities);
 }
 
 /// Response containing an error.

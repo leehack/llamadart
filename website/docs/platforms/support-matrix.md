@@ -63,16 +63,19 @@ Android-only; web rejects it.
 | --- | --- | --- | --- | --- |
 | LoRA | `ModelParams.loras` at load and `setLora` at runtime, stacked and scaled; aLoRA rejected | Same, with bridge assets whose `getLoraAdapterCapabilities()` reports support ([llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)); otherwise rejected | One default-scale text adapter through `ModelParams.loras` at load | No |
 | Thinking budget | Text-only generation, without speculative decoding | Text-only, with bridge assets whose `getCompletionCapabilities()` reports `thinkingBudget` ([llama-web-bridge#144](https://github.com/leehack/llama-web-bridge/pull/144)); otherwise rejected | No | No |
+| Strict `responseFormat` | Yes | Yes, without tools | No | No |
 | Lazy grammar | Yes | No: `grammar` applies from the first token, from `root` | No GBNF grammar | No GBNF grammar |
 | Presence penalty | Yes | With bridge assets whose `getCompletionCapabilities()` reports `presencePenalty` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
 | Min-P | Yes | With bridge assets whose `getCompletionCapabilities()` reports `minP` ([llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140)); otherwise rejects a non-zero value | No: rejects a non-zero value | No: rejects a non-zero value |
-| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, and MTP uses the model's own layers; otherwise rejected | Runtime default or MTP | No |
+| Repetition `penalty` | Yes | Yes | No: rejects a value other than the default | No: rejects a value other than the default |
+| Speculative decoding | Draft model, MTP, n-gram and DSpark strategies | Same, with bridge assets whose `getCompletionCapabilities()` reports the strategy ([llama-web-bridge#153](https://github.com/leehack/llama-web-bridge/pull/153)); draft and n-gram cache paths are URLs, and MTP uses the model's own layers; otherwise rejected | Runtime default or MTP, for bundles with a speculative drafter; `capabilities` reports the bundle's declaration | No |
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
 | Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
+| Tool calling | Yes | Yes | Yes | No: tools do not reach the model |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
 
@@ -82,8 +85,10 @@ into the bridge's WASMFS virtual filesystem; to keep state across reloads,
 export and import it in app code. Bridge assets `v0.1.54+`, the default pin
 among them, report the WebGPU LoRA, thinking-budget, presence-penalty, Min-P
 and speculative decoding capabilities; older assets report none of them.
-`LlamaEngine.backendGenerationCapabilities` reports the presence-penalty, Min-P,
-thinking-budget and speculative decoding rows for the loaded model. Guides:
+After a load, `LlamaEngine.runtime` names the runtime and
+`LlamaEngine.capabilities` reports the rows of this table for the loaded model:
+media input, embeddings, next-token scores, multi-turn chat, tools, structured
+output and grammars, sampling controls and speculative decoding. Guides:
 [LoRA adapters](../guides/lora-adapters),
 [Tool calling](../guides/tool-calling#tool-choice-semantics),
 [Performance tuning](../guides/performance-tuning),

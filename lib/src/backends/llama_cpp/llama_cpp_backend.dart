@@ -1115,9 +1115,11 @@ class NativeLlamaBackend
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     return const BackendGenerationCapabilities(
+      penalty: true,
       presencePenalty: true,
       minP: true,
       thinkingBudget: true,
+      streamBatching: true,
       speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
         SpeculativeDecodingStrategy.backendDefault,
         SpeculativeDecodingStrategy.mtp,

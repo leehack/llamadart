@@ -60,9 +60,13 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   or more llamadart picks the memory64 core up front instead of retrying after
   an out-of-memory failure. `preferMemory64: true`/`false` forces the choice.
 - Gate optional features on probes, not on the browser or the asset tag:
-  - `await engine.backendGenerationCapabilities` for `presencePenalty`, `minP`,
-    `thinkingBudget` and `speculativeDecodingStrategies` (bridge `v0.1.54+`).
-    Unreported controls throw `LlamaUnsupportedException`.
+  - `await engine.capabilities` for `supportsPresencePenalty`,
+    `supportsMinP`, `supportsThinkingBudget` and
+    `speculativeDecodingStrategies` (bridge `v0.1.54+`), and for what
+    LiteRT-LM web lacks: `supportsMultiTurnChat`, `supportsToolCalling`,
+    `supportsPenalty` and `supportsGrammar` are false there. Unreported
+    controls throw `LlamaUnsupportedException`; `engine.runtime` names the
+    runtime, so never sniff the `.litertlm` extension after loading.
   - `engine.supportsNextTokenScoring` (bridge `v0.1.52+`) and
     `engine.supportsStatePersistence` (bridge `v0.1.15+`).
   - Runtime LoRA calls, and loads with `ModelParams.loras`, throw
@@ -155,12 +159,12 @@ Future<LlamaEngine> loadWebModel(String modelUrl, int modelBytes) async {
 }
 
 Future<GenerationParams> webSamplingParams(LlamaEngine engine) async {
-  final BackendGenerationCapabilities caps =
-      await engine.backendGenerationCapabilities;
+  final LlamaEngineCapabilities caps = await engine.capabilities;
   return GenerationParams(
     maxTokens: 256,
-    minP: caps.minP ? 0.05 : 0.0,
-    presencePenalty: caps.presencePenalty ? 0.5 : 0.0,
+    minP: caps.supportsMinP ? 0.05 : 0.0,
+    presencePenalty: caps.supportsPresencePenalty ? 0.5 : 0.0,
+    penalty: caps.supportsPenalty ? 1.1 : const GenerationParams().penalty,
   );
 }
 ```

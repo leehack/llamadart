@@ -317,6 +317,11 @@ void runLiteRtLmWorkerForTesting(
             final supported = service.supportsAudio(message.mmContextHandle);
             message.sendPort.send(supported);
 
+          case LiteRtLmBundleCapabilitiesRequest():
+            message.sendPort.send(
+              LiteRtLmBundleCapabilitiesResponse(service.bundleCapabilities()),
+            );
+
           case LiteRtLmSystemInfoRequest():
             final info = service.getVramInfo();
             message.sendPort.send(

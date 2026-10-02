@@ -202,8 +202,8 @@ The feature-by-runtime table is in the
   the default pin among them. On older assets a non-zero `presencePenalty` or `minP`, any `thinkingBudget`,
   every LoRA call and a load with `ModelParams.loras` throw
   `LlamaUnsupportedException`.
-  `LlamaEngine.backendGenerationCapabilities` reports the completion
-  capabilities of the loaded assets. The capabilities come from
+  `LlamaEngine.capabilities` reports the completion capabilities of the
+  loaded assets. The capabilities come from
   [llama-web-bridge#140](https://github.com/leehack/llama-web-bridge/pull/140),
   [#144](https://github.com/leehack/llama-web-bridge/pull/144) and
   [#142](https://github.com/leehack/llama-web-bridge/pull/142).

@@ -3,7 +3,8 @@ name: llamadart-multimodal
 description: >-
   Use when sending images or audio to a model with llamadart: loading a GGUF
   multimodal projector (mmproj), building LlamaImageContent or
-  LlamaAudioContent messages, checking supportsVision / supportsAudio, using
+  LlamaAudioContent messages, checking engine.capabilities for vision and
+  audio input, using
   LiteRT-LM bundle-native media, handling web limits, or debugging media that
   is ignored or rejected.
 ---
@@ -25,14 +26,18 @@ description: >-
 - Load the model first. Either projector call before a model is loaded
   throws `LlamaContextException`. A projector that is missing or
   rejected by the runtime throws `LlamaModelException`.
-- After loading a projector, check `await engine.supportsVision` and
-  `await engine.supportsAudio` before offering image or audio input. A
+- After loading the model and any projector, read
+  `final caps = await engine.capabilities;` and check `caps.supportsVision`
+  and `caps.supportsAudio` before offering image or audio input. A
   projector can expose only some of a family's modalities; never infer support
   from the model card. `engine.hasMultimodalProjector` only says a projector is
   loaded.
-- `supportsVision` and `supportsAudio` report the GGUF projector only. They
-  are `false` for `.litertlm` bundles, whose media support you must know from
-  the bundle itself.
+- For a GGUF model they report the loaded projector; for a native `.litertlm`
+  bundle they report the modalities the bundle declares, which can
+  under-report, so treat `false` there as unknown rather than absent. The
+  older
+  `engine.supportsVision` and `engine.supportsAudio` getters report the GGUF
+  projector only and are `false` for `.litertlm` bundles.
 - Always check before sending media to a GGUF model. With no projector loaded,
   image or audio parts throw `LlamaUnsupportedException` on llama.cpp, native
   and WebGPU.
@@ -91,10 +96,11 @@ Future<void> main() async {
     await engine.loadModel('/models/gemma-3-4b-it-Q4_K_M.gguf');
     await engine.loadMultimodalProjector('/models/mmproj-gemma-3-4b-it.gguf');
 
-    if (!await engine.supportsVision) {
+    final LlamaEngineCapabilities caps = await engine.capabilities;
+    if (!caps.supportsVision) {
       throw StateError('This projector does not provide vision input.');
     }
-    print('audio input: ${await engine.supportsAudio}');
+    print('audio input: ${caps.supportsAudio}');
 
     final LlamaChatMessage message = LlamaChatMessage.withContent(
       role: LlamaChatRole.user,
@@ -130,7 +136,7 @@ Future<bool> switchVisionModel(
   }
   await engine.loadModelSource(ModelSource.parse(modelUri));
   await engine.loadMultimodalProjectorSource(ModelSource.parse(projectorUri));
-  return engine.supportsVision;
+  return (await engine.capabilities).supportsVision;
 }
 ```
 

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
@@ -20,10 +19,12 @@ void main() {
 
       final params = service.buildParams(
         settings,
-        generationCapabilities: const BackendGenerationCapabilities(
-          presencePenalty: false,
-          minP: true,
-          thinkingBudget: false,
+        capabilities: const LlamaEngineCapabilities(
+          isSupported: true,
+          runtime: LlamaRuntime.llamaCpp,
+          supportsMinP: true,
+          supportsPenalty: true,
+          supportsStreamBatching: true,
         ),
       );
 
@@ -38,54 +39,94 @@ void main() {
 
     test('sends the default Min-P when the runtime lacks it', () {
       const defaults = GenerationParams();
-      const settings = ChatSettings(
-        modelPath: 'https://example.com/model.gguf',
-        minP: 0.2,
-        penalty: 1.3,
-      );
+      const settings = ChatSettings(minP: 0.2, penalty: 1.3);
 
       final params = service.buildParams(
         settings,
-        generationCapabilities: noGenerationCapabilities,
+        capabilities: const LlamaEngineCapabilities(
+          isSupported: true,
+          runtime: LlamaRuntime.llamaCpp,
+          supportsPenalty: true,
+        ),
       );
 
       expect(params.minP, defaults.minP);
       expect(params.penalty, 1.3);
+      expect(
+        params.streamBatchTokenThreshold,
+        defaults.streamBatchTokenThreshold,
+      );
     });
 
-    test('uses platform-supported generation params for litert models', () {
+    test('flushes every token only on LiteRT-LM', () {
       const defaults = GenerationParams();
-      const settings = ChatSettings(
-        modelPath: '/models/gemma.litertlm',
-        maxTokens: 1234,
-        temperature: 0.4,
-        topK: 7,
-        topP: 0.8,
-        minP: 0.2,
-        penalty: 1.3,
-      );
+      for (final runtime in LlamaRuntime.values) {
+        final params = service.buildParams(
+          const ChatSettings(),
+          capabilities: LlamaEngineCapabilities(
+            isSupported: true,
+            runtime: runtime,
+            supportsStreamBatching: true,
+          ),
+        );
+
+        expect(
+          params.streamBatchTokenThreshold,
+          runtime == LlamaRuntime.liteRtLm
+              ? 1
+              : defaults.streamBatchTokenThreshold,
+          reason: runtime.name,
+        );
+      }
+    });
+
+    test('sends defaults before a model loads', () {
+      const defaults = GenerationParams();
+      const settings = ChatSettings(minP: 0.2, penalty: 1.3);
 
       final params = service.buildParams(
         settings,
-        generationCapabilities: noGenerationCapabilities,
+        capabilities: noEngineCapabilities,
       );
 
-      // Supported options are still forwarded.
-      expect(params.maxTokens, 1234);
-      expect(params.temp, 0.4);
-      expect(params.topK, 7);
-      expect(params.topP, 0.8);
-      // minP/penalty fall back to defaults so the LiteRT-LM backend does not
-      // reject the request with an UnsupportedError.
       expect(params.minP, defaults.minP);
       expect(params.penalty, defaults.penalty);
-      // Native LiteRT-LM needs immediate worker flushing. The Web backend
-      // streams directly and rejects non-default native batching controls.
-      expect(
-        params.streamBatchTokenThreshold,
-        kIsWeb ? defaults.streamBatchTokenThreshold : 1,
-      );
     });
+
+    for (final streamBatching in <bool>[true, false]) {
+      test('sends only options a LiteRT-LM runtime applies, '
+          'stream batching $streamBatching', () {
+        const defaults = GenerationParams();
+        const settings = ChatSettings(
+          maxTokens: 1234,
+          temperature: 0.4,
+          topK: 7,
+          topP: 0.8,
+          minP: 0.2,
+          penalty: 1.3,
+        );
+
+        final params = service.buildParams(
+          settings,
+          capabilities: LlamaEngineCapabilities(
+            isSupported: true,
+            runtime: LlamaRuntime.liteRtLm,
+            supportsStreamBatching: streamBatching,
+          ),
+        );
+
+        expect(params.maxTokens, 1234);
+        expect(params.temp, 0.4);
+        expect(params.topK, 7);
+        expect(params.topP, 0.8);
+        expect(params.minP, defaults.minP);
+        expect(params.penalty, defaults.penalty);
+        expect(
+          params.streamBatchTokenThreshold,
+          streamBatching ? 1 : defaults.streamBatchTokenThreshold,
+        );
+      });
+    }
 
     test('accumulates stream updates and metrics', () async {
       final updates = <GenerationStreamUpdate>[];

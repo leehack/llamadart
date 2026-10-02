@@ -33,6 +33,7 @@ class NativeAutoBackend
         BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
+        BackendDirectMediaInput,
         BackendRuntimeDiagnostics,
         BackendModelFileTypeDiagnostics,
         BackendGpuEnumeration,
@@ -404,6 +405,15 @@ class NativeAutoBackend
   @override
   Future<void> multimodalContextFree(int mmContextHandle) {
     return _requireDelegate().multimodalContextFree(mmContextHandle);
+  }
+
+  @override
+  Future<({bool vision, bool audio})> directMediaInput() async {
+    final delegate = _delegate;
+    if (delegate is! BackendDirectMediaInput) {
+      return (vision: false, audio: false);
+    }
+    return (delegate as BackendDirectMediaInput).directMediaInput();
   }
 
   @override

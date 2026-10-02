@@ -84,12 +84,14 @@ media turns.
 ## Capability checks
 
 ```dart
-final supportsVision = await engine.supportsVision;
-final supportsAudio = await engine.supportsAudio;
+final capabilities = await engine.capabilities;
+final supportsVision = capabilities.supportsVision;
+final supportsAudio = capabilities.supportsAudio;
 final supportsVideo = await engine.supportsVideo; // false in current releases
 ```
 
-Always prefer these runtime checks over model-card assumptions. With no
+Always prefer these runtime checks over model-card assumptions. Read
+`capabilities` again after loading or unloading a projector. With no
 projector loaded, a GGUF model (native `llama.cpp` or WebGPU) rejects image
 and audio parts with `LlamaUnsupportedException` instead of answering from the
 text alone. A loaded projector can expose only a subset of the family-level
@@ -98,8 +100,12 @@ mtmd reports both vision and audio support; audio remains experimental
 upstream. Web continues to rely
 on the loaded bridge's runtime capability report.
 
-Native `.litertlm` bundles process media themselves. `loadMultimodalProjector*`,
-`supportsVision` and `supportsAudio` apply only to GGUF projectors.
+Native `.litertlm` bundles process media themselves, without a projector.
+`capabilities.supportsVision` and `supportsAudio` report the modalities the
+bundle declares. That declaration can under-report for bundles whose section
+types are not lowercase ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)), so a `false` does not block the
+request; `loadMultimodalProjector*` and the `engine.supportsVision`
+and `engine.supportsAudio` getters apply only to GGUF projectors.
 
 Video isn't supported; send extracted frames as `LlamaImageContent`.
 `LlamaVideoContent` fails with `LlamaUnsupportedException`.
@@ -128,7 +134,7 @@ does not by itself provide a transcript contract. For typed transcription, see
   staging them, but direct `LlamaImageContent(...)` usage does not resize media
   for you.
 - Projector load success does not imply every modality is available. Re-check
-  `engine.supportsVision` / `engine.supportsAudio` after loading `mmproj`.
+  `capabilities.supportsVision` / `supportsAudio` after loading `mmproj`.
 - Keep context and generation budgets tighter than your text-only defaults.
 - Follow-up turns after an image can still overflow the active context window if
   conversation history grows too large.

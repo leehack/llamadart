@@ -64,6 +64,17 @@ For canonical full release notes, use:
   runtime and mislabelled files throw `LlamaModelFormatException`; name a Web
   URL's format with `ModelSource.url(..., format: ModelFormat.liteRtLm)`
   ([#837](https://github.com/leehack/llamadart/issues/837)).
+- Add `LlamaEngine.runtime` and `LlamaEngine.capabilities`, one snapshot of
+  what the loaded model's runtime supports: image and audio input,
+  embeddings, multi-turn chat, tools, structured output, grammars, every
+  sampling control including `penalty`, stream batching and speculative
+  strategies. Native LiteRT-LM reports the image, audio and speculative
+  decoding support the bundle declares, best-effort ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)),
+  and a request the runtime then fails for lack of one throws
+  `LlamaUnsupportedException` naming it instead of an opaque error.
+  `backendGenerationCapabilities` is deprecated; on native LiteRT-LM it now
+  reports `streamBatching` and, for bundles without a declared drafter, no
+  speculative strategy ([#841](https://github.com/leehack/llamadart/issues/841)).
 - Read completions without `choices.first.delta`: `chunk.text`,
   `chunk.thinking`, `chunk.toolCalls` and a typed `chunk.finishReason`
   (`LlamaFinishReason`); `stream.text()`, `stream.textDeltas()` and

@@ -36,6 +36,7 @@ class LiteRtLmBackend
         BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
+        BackendChatScope,
         BackendGrammarConstraintsSupport,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
@@ -104,6 +105,14 @@ class LiteRtLmBackend
 
   @override
   bool get supportsGrammarConstraints => false;
+
+  /// The web runtime takes one prompt string, so only the latest message
+  /// reaches the model.
+  @override
+  bool get supportsMultiTurnChat => false;
+
+  @override
+  bool get supportsToolCalling => false;
 
   @override
   Future<int> modelLoad(String path, ModelParams params) {

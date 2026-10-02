@@ -72,6 +72,19 @@ void main() {
           LiteRtLmSystemInfoRequest.new,
         );
         expect(systemInfo, isA<LiteRtLmSystemInfoResponse>());
+
+        final bundle = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmBundleCapabilitiesRequest.new,
+        );
+        expect(
+          bundle,
+          isA<LiteRtLmBundleCapabilitiesResponse>().having(
+            (response) => response.capabilities,
+            'capabilities before a load',
+            isNull,
+          ),
+        );
       } finally {
         await _disposeWorker(worker);
       }
@@ -300,6 +313,39 @@ void main() {
         );
         expect(response, isA<LiteRtLmDoneResponse>());
         expect(LlamaLogger.instance.level, LlamaLogLevel.none);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('routes the bundle capabilities of the loaded model', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        LiteRtLmService(
+          readBundleCapabilities: (_) =>
+              (vision: true, audio: false, speculativeDecoding: true),
+        ),
+      );
+      try {
+        await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmModelLoadRequest(
+            modelFile.path,
+            const ModelParams(preferredBackend: GpuBackend.cpu),
+            sendPort,
+          ),
+        );
+        final bundle = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmBundleCapabilitiesRequest.new,
+        );
+        expect(
+          bundle,
+          isA<LiteRtLmBundleCapabilitiesResponse>().having(
+            (response) => response.capabilities,
+            'capabilities',
+            (vision: true, audio: false, speculativeDecoding: true),
+          ),
+        );
       } finally {
         await _disposeWorker(worker);
       }

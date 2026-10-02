@@ -466,7 +466,7 @@ void main() {
     );
 
     test(
-      'loadModel disables structured controls for LiteRT-LM web metadata',
+      'loadModel disables structured controls for a single-turn runtime',
       () async {
         final initialSettings = const ChatSettings(
           modelPath: 'https://example.com/gemma-4-web.litertlm',
@@ -477,13 +477,16 @@ void main() {
           ..settings = initialSettings;
         final liteRtWebProvider = ChatProvider(
           chatService: MockChatService(
-            engine: _MetadataEngine(const {
-              'general.architecture': 'litert-lm',
-              'llamadart.litert_lm_web.chat_scope': 'single-turn-text',
-              'llamadart.litert_lm_web.structured_chat': 'false',
-              'tokenizer.chat_template':
-                  '{% for message in messages %}{% if loop.last %}{{ message["content"] }}{% endif %}{% endfor %}',
-            }),
+            engine:
+                _MetadataEngine(const {
+                    'general.architecture': 'litert-lm',
+                    'tokenizer.chat_template':
+                        '{% for message in messages %}{% if loop.last %}{{ message["content"] }}{% endif %}{% endfor %}',
+                  })
+                  ..loadedCapabilities = const LlamaEngineCapabilities(
+                    isSupported: true,
+                    runtime: LlamaRuntime.liteRtLm,
+                  ),
           ),
           settingsService: settingsService,
           enableWebModelPrefetch: false,
@@ -499,11 +502,10 @@ void main() {
         expect(liteRtWebProvider.settings.thinkingEnabled, isFalse);
         expect(
           liteRtWebProvider.messages.map((message) => message.text),
-          contains(
-            contains(
-              'LiteRT-LM Web currently exposes single-turn text generation only',
-            ),
-          ),
+          containsAll(<Matcher>[
+            contains('it passes only the latest message to the model'),
+            contains('it does not pass tools to the model'),
+          ]),
         );
 
         liteRtWebProvider.updateToolsEnabled(true);
@@ -1140,10 +1142,9 @@ void main() {
     test('sends Min-P only when the loaded runtime supports it', () async {
       for (final supported in <bool>[false, true]) {
         final engine = MockLlamaEngine()
-          ..generationCapabilities = BackendGenerationCapabilities(
-            presencePenalty: false,
-            minP: supported,
-            thinkingBudget: false,
+          ..loadedCapabilities = LlamaEngineCapabilities(
+            isSupported: true,
+            supportsMinP: supported,
           );
         final minPProvider = ChatProvider(
           chatService: MockChatService(engine: engine),

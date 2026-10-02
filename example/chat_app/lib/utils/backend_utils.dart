@@ -25,14 +25,17 @@ class BackendUtils {
   }
 
   /// Builds a concise backend label for the runtime status UI.
+  ///
+  /// [runtime] is the loaded model's runtime, or null before a model loads.
   static String deriveActiveBackendLabel(
     String backendInfo, {
     required GpuBackend preferredBackend,
     required int gpuLayers,
+    LlamaRuntime? runtime,
   }) {
     final lower = backendInfo.toLowerCase();
 
-    final isLiteRtLm = lower.contains('litert-lm');
+    final isLiteRtLm = runtime == LlamaRuntime.liteRtLm;
     final isLiteRtGpu = isLiteRtLm && lower.contains('gpu');
     if (isLiteRtGpu) {
       return lower.contains('web') ? 'WEBGPU' : 'GPU';
@@ -54,11 +57,7 @@ class BackendUtils {
       return 'CPU';
     }
 
-    if (lower.contains('webgpu') ||
-        lower.contains('wgpu') ||
-        (lower.contains('litert-lm') &&
-            lower.contains('web') &&
-            lower.contains('gpu'))) {
+    if (lower.contains('webgpu') || lower.contains('wgpu')) {
       return 'WEBGPU';
     }
 

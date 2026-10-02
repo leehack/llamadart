@@ -1260,8 +1260,10 @@ void main() {
 
     final capabilities = await backend.generationCapabilities();
 
+    expect(capabilities.penalty, isTrue);
     expect(capabilities.presencePenalty, isTrue);
     expect(capabilities.minP, isTrue);
+    expect(capabilities.streamBatching, isTrue);
     expect(capabilities.thinkingBudget, isTrue);
     expect(
       capabilities.speculativeDecodingStrategies,

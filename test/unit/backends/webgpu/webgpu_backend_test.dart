@@ -5176,6 +5176,35 @@ void main() {
     }
 
     group('completion options', () {
+      test('engine capabilities follow the loaded assets', () async {
+        final engine = LlamaEngine(backend);
+        expect((await engine.capabilities).isSupported, isFalse);
+
+        newBridge = () =>
+            FakeFeatureBridge()
+              ..completionCapabilities = <String, bool>{'minP': true};
+        await engine.loadModelFromUrl('model.gguf');
+        final capabilities = await engine.capabilities;
+
+        expect(engine.runtime, LlamaRuntime.llamaCpp);
+        expect(capabilities.runtime, LlamaRuntime.llamaCpp);
+        expect(capabilities.supportsMultiTurnChat, isTrue);
+        expect(capabilities.supportsToolCalling, isTrue);
+        expect(capabilities.supportsGrammar, isTrue);
+        expect(capabilities.supportsStructuredOutput, isTrue);
+        expect(capabilities.supportsLazyGrammar, isFalse);
+        expect(capabilities.supportsPenalty, isTrue);
+        expect(capabilities.supportsMinP, isTrue);
+        expect(capabilities.supportsPresencePenalty, isFalse);
+        expect(capabilities.supportsThinkingBudget, isFalse);
+        expect(capabilities.supportsStreamBatching, isFalse);
+        expect(capabilities.supportsVision, isFalse);
+
+        await engine.unloadModel();
+        expect(engine.runtime, isNull);
+        expect((await engine.capabilities).supportsPenalty, isFalse);
+      });
+
       test('forwards the options the loaded assets report', () async {
         await loadModel();
         await generate(
@@ -5317,28 +5346,30 @@ void main() {
       test('reports the options the probe reports as capabilities', () async {
         Future<List<bool>> reported() async {
           final capabilities = await backend.generationCapabilities();
+          expect(capabilities.streamBatching, isFalse);
           return <bool>[
+            capabilities.penalty,
             capabilities.presencePenalty,
             capabilities.minP,
             capabilities.thinkingBudget,
           ];
         }
 
-        expect(await reported(), <bool>[false, false, false]);
+        expect(await reported(), <bool>[false, false, false, false]);
 
         await loadModel();
-        expect(await reported(), <bool>[true, true, true]);
+        expect(await reported(), <bool>[true, true, true, true]);
 
         fake().completionCapabilities = <String, bool>{'minP': true};
         await loadModel();
-        expect(await reported(), <bool>[false, true, false]);
+        expect(await reported(), <bool>[true, false, true, false]);
 
         await backend.modelFree(1);
-        expect(await reported(), <bool>[false, false, false]);
+        expect(await reported(), <bool>[false, false, false, false]);
 
         newBridge = () => FakeFeatureBridge(withCompletionProbe: false);
         await loadModel();
-        expect(await reported(), <bool>[false, false, false]);
+        expect(await reported(), <bool>[true, false, false, false]);
       });
 
       test('validates a thinking budget as native generation does', () async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/widgets/runtime_status_panel.dart';
@@ -53,10 +54,37 @@ void main() {
     expect(find.text('mock bridge, echo'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (runtime, label) in [
+    (LlamaRuntime.liteRtLm, 'Maximum'),
+    (LlamaRuntime.llamaCpp, '${ModelParams.maxGpuLayers}'),
+  ]) {
+    testWidgets('labels full GPU offload as $label on ${runtime.name}', (
+      tester,
+    ) async {
+      final provider = _ReadyRuntimeProvider(
+        runtime: runtime,
+        runtimeGpuLayerCount: ModelParams.maxGpuLayers,
+      );
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: const MaterialApp(home: Scaffold(body: RuntimeStatusPanel())),
+        ),
+      );
+      await tester.tap(find.bySemanticsLabel('Open runtime details'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('GPU layers'), findsOneWidget);
+      expect(find.text(label), findsOneWidget);
+    });
+  }
 }
 
 class _ReadyRuntimeProvider extends ChatProvider {
-  _ReadyRuntimeProvider()
+  _ReadyRuntimeProvider({this.runtime, this.runtimeGpuLayerCount})
     : super(
         chatService: MockChatService(),
         settingsService: MockSettingsService(),
@@ -83,4 +111,13 @@ class _ReadyRuntimeProvider extends ChatProvider {
 
   @override
   String? get runtimeNotes => 'mock_bridge;echo';
+
+  final LlamaRuntime? runtime;
+  final int? runtimeGpuLayerCount;
+
+  @override
+  LlamaRuntime? get activeRuntime => runtime;
+
+  @override
+  int? get runtimeGpuLayers => runtimeGpuLayerCount;
 }

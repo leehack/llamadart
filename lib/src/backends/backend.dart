@@ -272,6 +272,27 @@ abstract class BackendRuntimeIdentity {
   LlamaRuntime? get runtime;
 }
 
+/// Internal backend probe for media the loaded model takes directly, without
+/// a multimodal projector.
+abstract class BackendDirectMediaInput {
+  /// Whether the loaded model takes image and audio content parts directly.
+  ///
+  /// Both are false when no model is loaded or the backend cannot tell.
+  Future<({bool vision, bool audio})> directMediaInput();
+}
+
+/// Internal backend probe for how much of a chat request the loaded runtime
+/// passes to the model. A backend that does not implement this passes all of
+/// it.
+abstract class BackendChatScope {
+  /// Whether the model sees the whole conversation, not only the latest
+  /// message.
+  bool get supportsMultiTurnChat;
+
+  /// Whether the model sees the request's tools.
+  bool get supportsToolCalling;
+}
+
 /// Internal backend capability for loading a model in an explicitly chosen
 /// [ModelFormat] instead of the format the backend would detect.
 abstract class BackendModelFormatRouting {
@@ -479,8 +500,15 @@ abstract class BackendTextToSpeech {
 /// applies.
 ///
 /// Through `LlamaEngine`, the built-in runtimes reject a non-default value of
-/// a control they report `false` with `LlamaUnsupportedException`.
+/// a control they report `false`, except [streamBatching], whose thresholds
+/// WebGPU ignores.
 class BackendGenerationCapabilities {
+  /// Whether a [GenerationParams.penalty] other than its default is applied.
+  ///
+  /// Defaults to `false` so a backend that predates this field does not
+  /// claim it.
+  final bool penalty;
+
   /// Whether a non-zero [GenerationParams.presencePenalty] is applied.
   final bool presencePenalty;
 
@@ -504,12 +532,21 @@ class BackendGenerationCapabilities {
   /// grammar or a thinking budget.
   final Set<SpeculativeDecodingStrategy> speculativeDecodingStrategies;
 
+  /// Whether [GenerationParams.streamBatchTokenThreshold] and
+  /// [GenerationParams.streamBatchByteThreshold] are applied.
+  ///
+  /// Defaults to `false` so a backend that predates this field does not
+  /// claim it.
+  final bool streamBatching;
+
   /// Creates a capability snapshot.
   const BackendGenerationCapabilities({
     required this.presencePenalty,
     required this.minP,
     required this.thinkingBudget,
     this.speculativeDecodingStrategies = const <SpeculativeDecodingStrategy>{},
+    this.penalty = false,
+    this.streamBatching = false,
   });
 }
 
