@@ -37,7 +37,10 @@ description: >-
   runtime's XCFramework through Swift Package Manager and selects the runtime
   on iOS and macOS without the entry above. Without it the hook bundles the
   runtime, and App Store Connect rejects that iOS framework's
-  `MinimumOSVersion` (the build warns).
+  `MinimumOSVersion`; only Xcode and `xcodebuild` show the build warning about
+  it. The companion needs the first core release whose changelog lists it,
+  and adding it opts the app into the runtime (about 37 MB per Apple
+  target).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
   CPUs need AVX2, FMA, F16C and BMI2). Web, Android x64 and Windows arm64

@@ -158,11 +158,14 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
 /// lacks, and the Vulkan loader. On iOS and macOS the advice also names the
 /// `llamadart_stable_diffusion_flutter` companion, which links the runtime
 /// into the process through Swift Package Manager instead of the hook.
+/// [isFlutterTestHost] (default: `FLUTTER_TEST` is set) marks a host
+/// `flutter test` run, which never links that companion.
 LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
   List<String> Function(List<String> names) missingWindowsLibraries =
       findMissingWindowsLibraries,
+  bool Function() isFlutterTestHost = _isFlutterTestHost,
 }) {
   final detail = '${error.message ?? error}';
   final isApple = platform.startsWith('ios-') || platform.startsWith('macos-');
@@ -186,15 +189,24 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
     );
   }
   if (detail.contains('Failed to lookup symbol')) {
+    if (isApple && isFlutterTestHost()) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime symbols are not linked into the flutter test '
+        'host on $platform: host `flutter test` runs do not link Swift Package '
+        'Manager companions such as $_appleCompanion. Run image generation in '
+        'an integration test on a device, simulator or the macOS app '
+        '(`flutter test integration_test -d <device>`).',
+      );
+    }
     if (isApple) {
       return LlamaUnsupportedException(
         'stable_diffusion runtime symbols are not linked into the process on '
         '$platform. A Flutter iOS/macOS app that depends on $_appleCompanion '
         'links them through Swift Package Manager: enable it with '
         '`flutter config --enable-swift-package-manager`, or remove '
-        '$_appleCompanion to bundle the runtime through the build hook. '
-        'Otherwise the runtime does not match the pinned '
-        'stable-diffusion-native release.',
+        '$_appleCompanion to bundle the runtime through the build hook. Host '
+        '`flutter test` runs never link the companion. Otherwise the runtime '
+        'does not match the pinned stable-diffusion-native release.',
       );
     }
     return LlamaUnsupportedException(
@@ -260,6 +272,8 @@ const List<String> _windowsVisualCppRuntimeLibraries = [
   'vcruntime140.dll',
   'vcruntime140_1.dll',
 ];
+
+bool _isFlutterTestHost() => Platform.environment['FLUTTER_TEST'] == 'true';
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 

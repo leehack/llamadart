@@ -1,7 +1,6 @@
 @TestOn('vm')
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -346,15 +345,15 @@ dependencies:
     },
   );
 
-  test('Flutter iOS hook bundling warns that App Store upload needs the '
-      'companion', () async {
+  test('Flutter iOS hook bundling raises an Xcode warning that App Store '
+      'upload needs the companion', () async {
     final defines = await _flutterAppleApp(
       companions: const [],
       defines: {
         'llamadart_native_runtimes': ['stable_diffusion'],
       },
     );
-    final logs = await _capturePrints(
+    final warnings = await _captureStderr(
       () => testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
@@ -370,9 +369,10 @@ dependencies:
       ),
     );
     expect(
-      logs,
+      warnings,
       contains(
         allOf(
+          startsWith('warning: '),
           contains('MinimumOSVersion 13.0'),
           contains(_stableDiffusionCompanionName),
         ),
@@ -386,7 +386,7 @@ dependencies:
       final defines = await _flutterAppleApp(
         companions: const [_stableDiffusionCompanionName],
       );
-      final logs = await _capturePrints(
+      final warnings = await _captureStderr(
         () => testCodeBuildHook(
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
@@ -414,7 +414,7 @@ dependencies:
           },
         ),
       );
-      expect(logs, isNot(contains(contains('MinimumOSVersion'))));
+      expect(warnings, isEmpty);
     },
   );
 
@@ -578,16 +578,23 @@ ${companions.map((name) => '  $name: any').join('\n')}
   );
 }
 
-/// Lines the hook logs while [body] runs.
-Future<List<String>> _capturePrints(Future<void> Function() body) async {
-  final lines = <String>[];
-  await runZoned(
-    body,
-    zoneSpecification: ZoneSpecification(
-      print: (_, _, _, line) => lines.add(line),
-    ),
-  );
-  return lines;
+/// Lines the hook writes to stderr while [body] runs; Flutter relays them
+/// into the Xcode build, where `warning:` lines become build warnings.
+Future<List<String>> _captureStderr(Future<void> Function() body) async {
+  final sink = _LineSink();
+  await IOOverrides.runZoned(body, stderr: () => sink);
+  return sink.lines;
+}
+
+final class _LineSink implements Stdout {
+  final List<String> lines = [];
+
+  @override
+  void writeln([Object? object = '']) => lines.add('$object');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('${invocation.memberName}');
 }
 
 PackageUserDefines _userDefines(Map<String, Object?> defines) =>

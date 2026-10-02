@@ -277,12 +277,15 @@ void main(List<String> args) async {
             .where((runtime) => runtime != nativeRuntimeStableDiffusion)
             .toList(growable: false);
       } else if (code.targetOS == OS.iOS) {
-        log.warning(
-          'Bundling stable_diffusion through native assets. Flutter writes '
-          'MinimumOSVersion 13.0 into the framework it wraps the library in, '
-          'while the library requires iOS 16.4, so App Store Connect rejects '
-          'the upload. Add $_stableDiffusionFlutterPackageName to the app\'s '
-          'dependencies to link the SwiftPM framework instead.',
+        // Flutter keeps hook log records in the hooks_runner stdout.txt, but
+        // it relays hook stderr into the Xcode build, where a `warning:` line
+        // becomes an Xcode build warning.
+        stderr.writeln(
+          'warning: llamadart bundles stable_diffusion through native assets. '
+          'Flutter writes MinimumOSVersion 13.0 into the framework it wraps '
+          'the library in, while the library requires iOS 16.4, so App Store '
+          'Connect rejects the upload. Add $_stableDiffusionFlutterPackageName '
+          "to the app's dependencies to link the SwiftPM framework instead.",
         );
       }
     }

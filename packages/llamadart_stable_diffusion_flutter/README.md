@@ -6,13 +6,17 @@ stable-diffusion.cpp.
 
 Add this package to a Flutter iOS/macOS app that uses `ImageGenerationEngine`
 to link the prebuilt stable-diffusion.cpp Apple XCFramework through SwiftPM.
-Without it, the core package bundles the runtime through its native-assets
-hook, whose iOS framework App Store Connect rejects: Flutter writes
-`MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
+Adding it opts iOS and macOS builds into that runtime, about 37 MB per Apple
+target. Without it, the core package bundles the runtime through its
+native-assets hook, whose iOS framework App Store Connect rejects: Flutter
+writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
+The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
+show but plain `flutter build` and `flutter run` output does not.
 
 Pair companion `0.0.1` with the first core release whose changelog lists
-this package, or a newer one. Older cores ignore the companion and keep
-bundling the runtime through their hook.
+this package, or a newer one. Older cores, including `0.9.x`, ignore the
+companion and keep bundling the runtime through their hook; the snippet below
+tracks the current core version until that release.
 
 ```yaml
 dependencies:

@@ -283,21 +283,33 @@ void main() {
     });
 
     test('an unlinked Apple framework points at Swift Package Manager', () {
-      final message = stableDiffusionLoadFailure(
-        platform: 'ios-arm64',
-        error: ArgumentError(
-          "Couldn't resolve native function 'sd_version' in "
-          "'package:llamadart/stable_diffusion' : Failed to lookup symbol "
-          "'sd_version': dlsym(RTLD_DEFAULT, sd_version): symbol not found",
-        ),
-      ).message;
+      String messageOn({required bool flutterTestHost}) =>
+          stableDiffusionLoadFailure(
+            platform: 'ios-arm64',
+            error: ArgumentError(
+              "Couldn't resolve native function 'sd_version' in "
+              "'package:llamadart/stable_diffusion' : Failed to lookup symbol "
+              "'sd_version': dlsym(RTLD_DEFAULT, sd_version): symbol not found",
+            ),
+            isFlutterTestHost: () => flutterTestHost,
+          ).message;
 
       expect(
-        message,
+        messageOn(flutterTestHost: false),
         allOf(
           contains('not linked into the process on ios-arm64'),
           contains('flutter config --enable-swift-package-manager'),
           contains('llamadart_stable_diffusion_flutter'),
+          contains('Host `flutter test` runs never link the companion'),
+        ),
+      );
+      expect(
+        messageOn(flutterTestHost: true),
+        allOf(
+          contains('not linked into the flutter test host on ios-arm64'),
+          contains('llamadart_stable_diffusion_flutter'),
+          contains('integration test'),
+          isNot(contains('enable-swift-package-manager')),
         ),
       );
     });

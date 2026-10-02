@@ -87,7 +87,8 @@ selects Vulkan, which it does by default; set
 
 Flutter iOS and macOS apps should also add the companion package, which links
 the runtime's XCFramework through Swift Package Manager and selects the
-runtime on those platforms by itself:
+runtime on those platforms by itself, adding about 37 MB per Apple target. It
+needs the first core release whose changelog lists it; older cores ignore it:
 
 ```yaml
 dependencies:
@@ -96,7 +97,9 @@ dependencies:
 
 Without it, the hook bundles the runtime into a framework that Flutter marks
 `MinimumOSVersion` 13.0 while the library needs iOS 16.4, so App Store Connect
-rejects the iOS upload; the build warns about it. See
+rejects the iOS upload. The iOS build reports this as an Xcode build warning,
+which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
+output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
 
 ## Get a model

@@ -12,8 +12,9 @@ For canonical full release notes, use:
 - Add the `llamadart_stable_diffusion_flutter` companion package: Flutter
   iOS and macOS apps that add it link the image generation runtime through
   Swift Package Manager, since App Store Connect rejects the iOS framework the
-  build hook bundles. Without it the hook keeps bundling the runtime and the
-  iOS build warns.
+  build hook bundles. Without it the hook keeps bundling the runtime, and an
+  iOS build reports an Xcode build warning (shown by Xcode and `xcodebuild`,
+  not by plain `flutter build` or `flutter run` output).
 - Image generation now runs on the x86_64 iOS simulator, with the runtime
   updated to `leehack/stable-diffusion-native@v0.2.0`.
 - Label image generation a Preview in the README and docs, and list each

@@ -38,6 +38,15 @@ class SelectionTest(unittest.TestCase):
                 self.assertEqual(plan['desktops'], list(ci.DESKTOPS))
                 self.assertEqual(plan['apps'], list(ci.APPS))
 
+    def test_companions_name_every_checked_out_flutter_apple_companion(self):
+        checked_out = sorted(
+            path.parents[2].name
+            for path in (ROOT / 'packages').glob('*/darwin/*/Package.swift')
+            if path.parent.name == path.parents[2].name
+        )
+        self.assertIn('llamadart_stable_diffusion_flutter', checked_out)
+        self.assertEqual(sorted(ci.COMPANIONS), checked_out)
+
     def test_companion_keeps_real_consumers_and_only_affected_package(self):
         for name in ci.COMPANIONS:
             plan = ci.select(['packages/' + name + '/darwin/Package.swift'])

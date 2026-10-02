@@ -131,9 +131,11 @@ hooks:
   `android-x64: [stable_diffusion]`, fails the build instead.
 - Flutter iOS and macOS apps should add the `llamadart_stable_diffusion_flutter`
   companion instead; see [Flutter Apple apps](#flutter-apple-apps). Without it
-  the hook bundles the runtime, and on iOS the build warns that App Store
-  Connect rejects that framework: Flutter writes `MinimumOSVersion` 13.0 into
-  it, while the library needs iOS 16.4.
+  the hook bundles the runtime, and App Store Connect rejects that iOS
+  framework: Flutter writes `MinimumOSVersion` 13.0 into it, while the library
+  needs iOS 16.4. The hook reports this as an Xcode build warning, which Xcode
+  and `xcodebuild` show but plain `flutter build` and `flutter run` output
+  does not.
 
 ## Choose llama.cpp backend modules
 

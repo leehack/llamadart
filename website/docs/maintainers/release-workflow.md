@@ -177,7 +177,10 @@ rsync -a --delete \
 - `release_on_prep_merge.yml`: runs after a release-prep PR is merged into
   `main`, validates the prepared version, publishes any missing companion
   package versions first, pushes the core release tag, waits for pub.dev, and
-  confirms the GitHub Release exists.
+  confirms the GitHub Release exists. Before pushing any tag,
+  `tool/release/companion_pub_preflight.dart` checks that every companion
+  under `packages/` exists on pub.dev and otherwise stops with the
+  first-publish steps above; publish the package, then rerun the run.
 
 ## 4. Post-release verification
 
