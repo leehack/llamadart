@@ -44,6 +44,7 @@ void main() {
       'packages/llamadart_validation',
       'packages/llamadart_litert_lm_flutter',
       'packages/llamadart_llama_cpp_flutter',
+      'packages/llamadart_stable_diffusion_flutter',
     ]);
     expect(
       workspacePackages.map((package) => package.path).toSet(),

@@ -30,6 +30,13 @@ Directory _fakeRepo({
     'packages/llamadart_litert_lm_flutter/pubspec.yaml': 'version: 1.2.3\n',
     'packages/llamadart_litert_lm_flutter/CHANGELOG.md':
         '## 1.2.3\n\n* Pin `leehack/litert-lm-native@v1.0.0`.\n',
+    'packages/llamadart_stable_diffusion_flutter/darwin/'
+            'llamadart_stable_diffusion_flutter/Package.swift':
+        'let stableDiffusionTag = "v0.2.0"\n',
+    'packages/llamadart_stable_diffusion_flutter/pubspec.yaml':
+        'version: 0.0.1\n',
+    'packages/llamadart_stable_diffusion_flutter/CHANGELOG.md':
+        '## 0.0.1\n\n* Pin `leehack/stable-diffusion-native@v0.2.0`.\n',
   };
   for (final entry in entries.entries) {
     File('${root.path}/${entry.key}')

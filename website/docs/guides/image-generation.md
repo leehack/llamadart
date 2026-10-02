@@ -47,7 +47,7 @@ LoRA or ControlNet yet.
 | Platform | Device | Minimum OS | Notes |
 | --- | --- | --- | --- |
 | macOS (arm64, x86_64) | Metal, CPU | macOS 13.3 | Validated on an M4 Max |
-| iOS (arm64, arm64 simulator) | Metal, CPU | iOS 16.4 | Validated on iPhone 16 Pro and iPhone SE 3; no x86_64 simulator runtime |
+| iOS (arm64, arm64 and x86_64 simulator) | Metal, CPU | iOS 16.4 | Validated on iPhone 16 Pro and iPhone SE 3 |
 | Android arm64 | CPU | Not set by llamadart | Needs Armv8.2 dot-product and fp16 (`asimddp`, `fphp`, `asimdhp`); validated on Pixel 9 Pro, Galaxy S24 and Galaxy A53; no x64 runtime |
 | Linux (arm64, x64) | CPU, or Vulkan with the Vulkan build | Not set by llamadart | x64 CPUs need AVX2, FMA, F16C and BMI2; validated on x64 with CPU and an NVIDIA L4 |
 | Windows x64 | CPU, or Vulkan with the Vulkan build | Not set by llamadart | Needs the latest Microsoft Visual C++ v14 Redistributable (x64) and AVX2; the Vulkan build needs a GPU driver that provides `vulkan-1.dll`; validated on Windows Server 2022 with CPU and an NVIDIA L4; no arm64 runtime |
@@ -84,6 +84,23 @@ Linux and Windows get the Vulkan build when `llamadart_native_backends`
 selects Vulkan, which it does by default; set
 `llamadart_stable_diffusion_backends: [cpu]` for the CPU build. See
 [Native runtime configuration](../platforms/native-build-hooks#opt-in-stable_diffusion-runtime-experimental).
+
+Flutter iOS and macOS apps should also add the companion package, which links
+the runtime's XCFramework through Swift Package Manager and selects the
+runtime on those platforms by itself, adding about 37 MB per Apple target. It
+needs the first core release whose changelog lists it; older cores ignore it:
+
+```yaml
+dependencies:
+  llamadart_stable_diffusion_flutter: ^0.0.1
+```
+
+Without it, the hook bundles the runtime into a framework that Flutter marks
+`MinimumOSVersion` 13.0 while the library needs iOS 16.4, so App Store Connect
+rejects the iOS upload. The iOS build reports this as an Xcode build warning,
+which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
+output does not. See
+[Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
 
 ## Get a model
 

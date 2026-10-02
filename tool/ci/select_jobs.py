@@ -14,7 +14,10 @@ import re
 import subprocess
 import sys
 
-COMPANIONS = ('llamadart_llama_cpp_flutter', 'llamadart_litert_lm_flutter')
+COMPANIONS = (
+    'llamadart_llama_cpp_flutter', 'llamadart_litert_lm_flutter',
+    'llamadart_stable_diffusion_flutter',
+)
 CORE_JOBS = (
     'analyze', 'docs-check', 'docs-versions', 'validation-harness',
     'validation-integration', 'companion-packages', 'test-linux-coverage',

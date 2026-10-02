@@ -21,10 +21,12 @@ abstract interface class StableDiffusionNativeApi {
 }
 
 /// ABIs stable-diffusion-native publishes a runtime for. `Abi.iosArm64` covers
-/// both the device and the arm64 simulator archive.
+/// both the device and the arm64 simulator archive; `Abi.iosX64` is the x86_64
+/// simulator.
 const Set<Abi> stableDiffusionPublishedAbis = {
   Abi.androidArm64,
   Abi.iosArm64,
+  Abi.iosX64,
   Abi.linuxArm64,
   Abi.linuxX64,
   Abi.macosArm64,
@@ -48,8 +50,9 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 ///   feature constant for FMA, F16C or BMI2; every x86 CPU with AVX2 also has
 ///   them.
 ///
-/// macOS x64 needs no check: the runtime is cross-compiled without AVX, and
-/// macOS 13.3 runs only on Intel CPUs that have AVX2 anyway.
+/// macOS x64 and the x86_64 iOS simulator need no check: the runtime is
+/// cross-compiled without AVX, and macOS 13.3 runs only on Intel CPUs that
+/// have AVX2 anyway.
 ///
 /// Then `sd_version`, `sd_commit` and `sd_list_devices` must answer.
 ///
@@ -69,8 +72,9 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
     return StableDiffusionRuntimeStatus.unavailable(
       LlamaUnsupportedException(
         'stable_diffusion runtime is not published for $platform; it is '
-        'available on android-arm64, ios-arm64 (device and simulator), '
-        'macos-arm64, macos-x64, linux-arm64, linux-x64 and windows-x64.',
+        'available on android-arm64, ios-arm64 (device and simulator), the '
+        'ios-x64 simulator, macos-arm64, macos-x64, linux-arm64, linux-x64 '
+        'and windows-x64.',
       ),
     );
   }
@@ -151,19 +155,28 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
 /// could not find. Windows reports only error 126 without naming the
 /// dependency, so [missingWindowsLibraries] checks which of the runtime's
 /// imports fail to load: the Visual C++ runtime, which stock Windows Server
-/// lacks, and the Vulkan loader.
+/// lacks, and the Vulkan loader. On iOS and macOS the advice also names the
+/// `llamadart_stable_diffusion_flutter` companion, which links the runtime
+/// into the process through Swift Package Manager instead of the hook.
+/// [isFlutterTestHost] (default: `FLUTTER_TEST` is set) marks a host
+/// `flutter test` run, which never links that companion.
 LlamaUnsupportedException stableDiffusionLoadFailure({
   required String platform,
   required ArgumentError error,
   List<String> Function(List<String> names) missingWindowsLibraries =
       findMissingWindowsLibraries,
+  bool Function() isFlutterTestHost = _isFlutterTestHost,
 }) {
   final detail = '${error.message ?? error}';
+  final isApple = platform.startsWith('ios-') || platform.startsWith('macos-');
   if (detail.contains('No asset with id')) {
+    final companionAdvice = isApple
+        ? ', or add the $_appleCompanion package to a Flutter iOS/macOS app,'
+        : '';
     return LlamaUnsupportedException(
       'stable_diffusion runtime is not bundled for $platform; add '
       'stable_diffusion to hooks.user_defines.llamadart.'
-      'llamadart_native_runtimes and rebuild.',
+      'llamadart_native_runtimes$companionAdvice and rebuild.',
     );
   }
   if (_vulkanLoaderNames.any(detail.toLowerCase().contains)) {
@@ -176,6 +189,26 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
     );
   }
   if (detail.contains('Failed to lookup symbol')) {
+    if (isApple && isFlutterTestHost()) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime symbols are not linked into the flutter test '
+        'host on $platform: host `flutter test` runs do not link Swift Package '
+        'Manager companions such as $_appleCompanion. Run image generation in '
+        'an integration test on a device, simulator or the macOS app '
+        '(`flutter test integration_test -d <device>`).',
+      );
+    }
+    if (isApple) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime symbols are not linked into the process on '
+        '$platform. A Flutter iOS/macOS app that depends on $_appleCompanion '
+        'links them through Swift Package Manager: enable it with '
+        '`flutter config --enable-swift-package-manager`, or remove '
+        '$_appleCompanion to bundle the runtime through the build hook. Host '
+        '`flutter test` runs never link the companion. Otherwise the runtime '
+        'does not match the pinned stable-diffusion-native release.',
+      );
+    }
     return LlamaUnsupportedException(
       'stable_diffusion runtime on $platform does not export the '
       'stable-diffusion.h API these bindings were generated from; bundle the '
@@ -230,6 +263,8 @@ const int _pfAvx2InstructionsAvailable = 40;
 
 const List<String> _vulkanLoaderNames = ['libvulkan.so', 'vulkan-1.dll'];
 
+const String _appleCompanion = 'llamadart_stable_diffusion_flutter';
+
 /// The Visual C++ runtime DLLs `stable-diffusion.dll` imports.
 const List<String> _windowsVisualCppRuntimeLibraries = [
   'msvcp140.dll',
@@ -237,6 +272,8 @@ const List<String> _windowsVisualCppRuntimeLibraries = [
   'vcruntime140.dll',
   'vcruntime140_1.dll',
 ];
+
+bool _isFlutterTestHost() => Platform.environment['FLUTTER_TEST'] == 'true';
 
 String _abiLabel(Abi abi) => abi.toString().replaceAll('_', '-');
 

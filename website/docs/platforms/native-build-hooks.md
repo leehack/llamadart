@@ -90,8 +90,9 @@ hooks:
         runtimes: [llama_cpp, stable_diffusion]
 ```
 
-- Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`, `macos-arm64`,
-  `macos-x86_64`, `linux-arm64`, `linux-x64` and `windows-x64`, built for iOS
+- Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
+  `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
+  and `windows-x64`, built for iOS
   16.4 and macOS 13.3 or newer. At run time the engine checks the CPU before
   loading the library: Android needs an Armv8.2 CPU with dot-product and fp16
   (`asimddp`, `fphp`, `asimdhp`), and Linux and Windows x64 need AVX2, FMA,
@@ -128,8 +129,13 @@ hooks:
 - Other targets, such as `android-x64` or Windows arm64, are skipped with a
   warning. Naming it for that exact bundle key, for example
   `android-x64: [stable_diffusion]`, fails the build instead.
-- Flutter Apple builds that use the companion packages still bundle it through
-  the hook, since it has no companion package.
+- Flutter iOS and macOS apps should add the `llamadart_stable_diffusion_flutter`
+  companion instead; see [Flutter Apple apps](#flutter-apple-apps). Without it
+  the hook bundles the runtime, and App Store Connect rejects that iOS
+  framework: Flutter writes `MinimumOSVersion` 13.0 into it, while the library
+  needs iOS 16.4. The hook reports this as an Xcode build warning, which Xcode
+  and `xcodebuild` show but plain `flutter build` and `flutter run` output
+  does not.
 
 ## Choose llama.cpp backend modules
 
@@ -278,11 +284,17 @@ companion package is a dependency:
 
 - `llamadart_llama_cpp_flutter` links the llama.cpp XCFrameworks.
 - `llamadart_litert_lm_flutter` links the LiteRT-LM iOS XCFrameworks.
+- `llamadart_stable_diffusion_flutter` links the stable-diffusion.cpp
+  XCFramework for [image generation](../guides/image-generation).
 
-When a companion is present, the installed companions choose the Apple
-`llama_cpp` and `litert_lm` families and the rest of
-`llamadart_native_runtimes` is ignored with a warning; an opt-in
-`stable_diffusion` there is still bundled. The tag,
+When the llama.cpp or LiteRT-LM companion is present, the installed companions
+choose the Apple `llama_cpp` and `litert_lm` families and the rest of
+`llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
+decided on its own: its companion selects it, and otherwise the hook bundles it
+when `llamadart_native_runtimes` names it. Adding only the stable_diffusion
+companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
+resolved llama.cpp and stable_diffusion companions' pins against the core
+package and rejects local `Artifacts` overrides. The tag,
 repository, path and backend keys do not change SwiftPM binaries; their pins
 live in each companion's `Package.swift`, so use a path or git override or a
 fork of the companion. Flutter macOS LiteRT-LM still uses the hook-managed

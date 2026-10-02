@@ -96,6 +96,11 @@ jobs:
           # the previous tag or be skipped as an already-published version.
           dart run tool/testing/verify_release_docs_versions.dart --release-prep
 
+          # Automated publishing cannot create a pub.dev package, so a new
+          # companion's tag would never publish and the core tag would never
+          # be pushed. Stop here, before any tag, with the first-publish steps.
+          dart run tool/release/companion_pub_preflight.dart
+
           core_tag="v$version"
           if git ls-remote --exit-code --tags origin "refs/tags/$core_tag" >/dev/null 2>&1; then
             echo "Release tag $core_tag already exists. Refusing to publish again." >&2
@@ -193,6 +198,7 @@ jobs:
           companion_paths=(
             packages/llamadart_llama_cpp_flutter
             packages/llamadart_litert_lm_flutter
+            packages/llamadart_stable_diffusion_flutter
           )
 
           for package_path in "${companion_paths[@]}"; do
