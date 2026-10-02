@@ -102,6 +102,7 @@ class LlamaEngine {
   String? _modelChatTemplate;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
   final Map<String, String> _loraLocations = <String, String>{};
+  final Map<String, String> _draftLocations = <String, String>{};
   int _nextDecisionHeadHandle = 1;
   int _decisionHeadEpoch = 0;
   late final GenerationCancellation _generationCancellation =
@@ -394,8 +395,9 @@ class LlamaEngine {
   /// [loadModelFromUrl] for unauthenticated prefer-cached requests.
   ///
   /// Adapters in [ModelParams.loras] given as [LoraAdapterConfig.source]
-  /// resolve after the model file, with [options] except
-  /// [ModelLoadOptions.sha256]; see [ModelParams.loras].
+  /// resolve after the model file, with their own
+  /// [LoraAdapterConfig.download] or only the non-secret parts of [options];
+  /// see [ModelParams.loras].
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
@@ -417,10 +419,7 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _throwIfSourceLoadCancelled(options);
-      final resolvedParams = await _resolveLoraSources(
-        modelParams,
-        _withoutSha256(options),
-      );
+      final resolvedParams = await _resolveLoraSources(modelParams, options);
       _throwIfSourceLoadCancelled(options);
       return _loadSourceFile(entry.filePath, resolvedParams, source.format);
     }
@@ -948,6 +947,7 @@ class LlamaEngine {
     _decisionHeadHandles.clear();
     _decisionHeadEpoch++;
     _loraLocations.clear();
+    _draftLocations.clear();
     backend.cancelGeneration();
     SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
@@ -2278,6 +2278,8 @@ class LlamaEngine {
   /// [LlamaUnsupportedException], as for [loadMultimodalProjectorSource].
   ///
   /// Remove the adapter with [removeLoraSource] and the same [source].
+  /// Setting [source] again with options that resolve it to another file,
+  /// such as another cache directory, replaces the adapter applied from it.
   ///
   /// Throws [LlamaContextException] when no model is loaded,
   /// [LlamaUnsupportedException] when the backend has no runtime LoRA API or
@@ -2301,12 +2303,16 @@ class LlamaEngine {
       throw LlamaStateException('LoRA adapter loading was cancelled.');
     }
     _ensureReady();
+    final previous = _loraLocations[source.canonicalKey];
     try {
       await backend.setLoraAdapter(_contextHandle!, location, scale);
+      _loraLocations[source.canonicalKey] = location;
+      if (previous != null && previous != location) {
+        await backend.removeLoraAdapter(_contextHandle!, previous);
+      }
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
-    _loraLocations[source.canonicalKey] = location;
   }
 
   /// Removes a specific LoRA adapter from the active session.
@@ -2339,14 +2345,14 @@ class LlamaEngine {
   }
 
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
-  /// resolved as [setLoraSource] resolves it, with [options] for a remote
-  /// source and only their cancel token for a local one.
+  /// resolved as [setLoraSource] resolves it, with the adapter's own
+  /// [LoraAdapterConfig.download], or else only the non-secret parts of the
+  /// model load's [options].
   Future<ModelParams> _resolveLoraSources(
     ModelParams params,
     ModelLoadOptions options,
   ) async {
     if (params.loras.every((lora) => lora.source == null)) return params;
-    final localOptions = ModelLoadOptions(cancelToken: options.cancelToken);
     final resolved = <LoraAdapterConfig>[];
     for (final lora in params.loras) {
       final source = lora.source;
@@ -2356,7 +2362,7 @@ class LlamaEngine {
       }
       final location = await _resolveAuxiliarySource(
         source,
-        options: source.isLocal ? localOptions : options,
+        options: _loraDownloadOptions(source, lora.download, options),
         assetType: 'LoRA adapter',
       );
       _loraLocations[source.canonicalKey] = location;
@@ -2366,9 +2372,46 @@ class LlamaEngine {
     return params.copyWith(loras: resolved);
   }
 
+  /// The download options of the [ModelParams.loras] adapter at [source]:
+  /// its own [download] with the model load's cancel token linked, or
+  /// without them only the cache policy and directory, resume, retries and
+  /// cancel token of [load]. The model load's bearer token, headers and
+  /// checksum belong to the model's host and file, never an adapter's.
+  static ModelLoadOptions _loraDownloadOptions(
+    ModelSource source,
+    ModelLoadOptions? download,
+    ModelLoadOptions load,
+  ) {
+    final loadToken = load.cancelToken;
+    if (download != null) {
+      final ownToken = download.cancelToken;
+      if (loadToken == null || identical(ownToken, loadToken)) return download;
+      return _withCancelToken(
+        download,
+        ownToken == null
+            ? loadToken
+            : _LinkedCancelToken([
+                () => ownToken.isCancelled,
+                () => loadToken.isCancelled,
+              ]),
+      );
+    }
+    if (source.isLocal) return ModelLoadOptions(cancelToken: loadToken);
+    return ModelLoadOptions(
+      cachePolicy: load.cachePolicy,
+      cacheDirectory: load.cacheDirectory,
+      cancelToken: loadToken,
+      resume: load.resume,
+      maxRetries: load.maxRetries,
+    );
+  }
+
   /// [params] with its [SpeculativeDecodingConfig.draftModel] resolved as
   /// [setLoraSource] resolves a source, or null when [request] is cancelled
-  /// meanwhile.
+  /// or the model is unloaded meanwhile.
+  ///
+  /// A draft model resolves once per loaded model, source, cache directory
+  /// and checksum; later generations reuse its file.
   Future<GenerationParams?> _resolveDraftModel(
     GenerationParams params,
     GenerationRequest request,
@@ -2376,45 +2419,91 @@ class LlamaEngine {
     final config = params.speculativeDecodingConfig;
     final source = config?.draftModel;
     if (config == null || source == null) return params;
-    var download = config.draftModelDownload;
-    if (!backend.supportsUrlLoading) {
-      download = _withCancelToken(
-        download,
-        _RequestCancelToken(request, download.cancelToken),
+    final download = config.draftModelDownload;
+    final policy = download.cachePolicy;
+    if (policy == ModelCachePolicy.noCache ||
+        policy == ModelCachePolicy.refresh) {
+      throw LlamaUnsupportedException(
+        'SpeculativeDecodingConfig.draftModelDownload cannot use '
+        'ModelCachePolicy.${policy.name}: a draft model resolves once per '
+        'loaded model and generations reuse it. Use preferCached or '
+        'cacheOnly.',
       );
     }
-    final String location;
-    try {
-      location = await _resolveAuxiliarySource(
-        source,
-        options: download,
-        assetType: 'speculative draft model',
-      );
-    } on Object {
-      if (request.isCancelled()) return null;
-      rethrow;
+    final key = [
+      source.canonicalKey,
+      download.cachePolicy.name,
+      download.cacheDirectory ?? '',
+      download.sha256 ?? '',
+    ].join('\n');
+    var location = _draftLocations[key];
+    if (location == null) {
+      await _rejectUnsupportedDraftModel(config);
+      final epoch = _modelEpoch;
+      bool abandoned() => _modelEpoch != epoch || request.isCancelled();
+      var options = download;
+      if (!backend.supportsUrlLoading) {
+        final callerToken = download.cancelToken;
+        options = _withCancelToken(
+          download,
+          _LinkedCancelToken([
+            abandoned,
+            if (callerToken != null) () => callerToken.isCancelled,
+          ]),
+        );
+      }
+      try {
+        location = await _resolveAuxiliarySource(
+          source,
+          options: options,
+          assetType: 'speculative draft model',
+        );
+      } on Object {
+        if (abandoned()) return null;
+        rethrow;
+      }
+      if (abandoned()) return null;
+      _draftLocations[key] = location;
     }
-    if (request.isCancelled()) return null;
     return params.copyWith(
-      speculativeDecodingConfig: SpeculativeDecodingConfig(
-        strategy: config.strategy,
-        strategies: config.strategies,
-        draftTokenMax: config.draftTokenMax,
-        draftTokenMin: config.draftTokenMin,
-        minProbability: config.minProbability,
-        draftSplitProbability: config.draftSplitProbability,
-        draftModelPath: location,
-        ngramSize: config.ngramSize,
-        ngramSizeN: config.ngramSizeN,
-        ngramSizeM: config.ngramSizeM,
-        ngramMinHits: config.ngramMinHits,
-        ngramMatch: config.ngramMatch,
-        ngramTokenMin: config.ngramTokenMin,
-        ngramTokenMax: config.ngramTokenMax,
-        ngramCacheStaticPath: config.ngramCacheStaticPath,
-        ngramCacheDynamicPath: config.ngramCacheDynamicPath,
+      speculativeDecodingConfig: speculativeConfigWithDraftLocation(
+        config,
+        location,
       ),
     );
+  }
+
+  /// Throws [LlamaUnsupportedException] before a draft model downloads when
+  /// the active runtime could not use it: LiteRT-LM, which loads no external
+  /// draft model, or a backend that does not report every strategy of
+  /// [config].
+  Future<void> _rejectUnsupportedDraftModel(
+    SpeculativeDecodingConfig config,
+  ) async {
+    final candidate = backend;
+    if (candidate is BackendRuntimeIdentity &&
+        (candidate as BackendRuntimeIdentity).runtime ==
+            LlamaRuntime.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM cannot load an external speculative draft model, so '
+        'SpeculativeDecodingConfig.draftModel is not downloaded. Leave it '
+        'null.',
+      );
+    }
+    if (candidate is! BackendGenerationCapabilitiesSupport) return;
+    final supported =
+        (await _generationCapabilities()).speculativeDecodingStrategies;
+    final missing = [
+      for (final strategy in config.effectiveStrategies)
+        if (!supported.contains(strategy)) strategy.name,
+    ];
+    if (missing.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        'The active backend does not support speculative strategy '
+        '${missing.join(', ')}, so SpeculativeDecodingConfig.draftModel is '
+        'not downloaded.',
+      );
+    }
   }
 
   /// Removes all active LoRA adapters from the current context.
@@ -2631,19 +2720,6 @@ class LlamaEngine {
     }
   }
 
-  static ModelLoadOptions _withoutSha256(ModelLoadOptions options) =>
-      options.sha256 == null
-      ? options
-      : ModelLoadOptions(
-          cachePolicy: options.cachePolicy,
-          cacheDirectory: options.cacheDirectory,
-          bearerToken: options.bearerToken,
-          headers: options.headers,
-          cancelToken: options.cancelToken,
-          resume: options.resume,
-          maxRetries: options.maxRetries,
-        );
-
   static ModelLoadOptions _withCancelToken(
     ModelLoadOptions options,
     ModelDownloadCancelToken cancelToken,
@@ -2773,18 +2849,14 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
   }
 }
 
-/// Cancelled when [_request] is cancelled, or by its own or [_caller]'s
-/// [cancel], so a generation that is cancelled stops its draft model
-/// download without cancelling the caller's token.
-class _RequestCancelToken extends ModelDownloadCancelToken {
-  final GenerationRequest _request;
-  final ModelDownloadCancelToken? _caller;
+/// Cancelled by its own [cancel] or when any of [_checks] reports
+/// cancellation, so the engine can stop a download for its own reasons
+/// without cancelling a caller's token.
+class _LinkedCancelToken extends ModelDownloadCancelToken {
+  final List<bool Function()> _checks;
 
-  _RequestCancelToken(this._request, this._caller);
+  _LinkedCancelToken(this._checks);
 
   @override
-  bool get isCancelled =>
-      super.isCancelled ||
-      (_caller?.isCancelled ?? false) ||
-      _request.isCancelled();
+  bool get isCancelled => super.isCancelled || _checks.any((check) => check());
 }

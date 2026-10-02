@@ -197,9 +197,14 @@ final config = LiteRtLmAsrRuntimeConfig.source(
   `LiteRtLmAsrRuntimeConfig` that now holds one.
 - Remove an adapter with the same source it was set from:
   `removeLoraSource` matches sources, not paths.
-- `draftModelDownload`, `setLoraSource(download:, onProgress:)` and
+- `draftModelDownload`, `setLoraSource(download:, onProgress:)`,
+  `LoraAdapterConfig.source(source, download:)` and
   `SpeechToTextEngine.liteRtLm(config, download:, onProgress:, store:)` set
-  the download options for remote files.
+  the download options for remote files. A `ModelParams.loras` adapter never
+  takes the model load's bearer token, headers or `sha256`; give it its own
+  `download:` when its host needs credentials.
+- A draft model downloads once per loaded model; `draftModelDownload` rejects
+  `ModelCachePolicy.noCache` and `refresh`.
 
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 

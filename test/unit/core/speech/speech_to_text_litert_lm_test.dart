@@ -132,6 +132,48 @@ void main() {
     },
   );
 
+  test('rejects one checksum for both files before downloading', () async {
+    final manager = _SourceDownloadManager();
+    final engine = SpeechToTextEngine.liteRtLm(
+      LiteRtLmAsrRuntimeConfig.source(
+        model: ModelSource.parse('https://example.com/asr/model.tflite'),
+        tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      ),
+      download: ModelLoadOptions(sha256: 'a' * 64),
+      store: ModelFileStore(downloadManager: manager),
+    );
+
+    await expectLater(
+      engine.startStream(),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(manager.calls, isEmpty);
+    expect(driver.startCalls, 0);
+  });
+
+  test('a token cancelled while the model downloads stops before the '
+      'tokenizer and the worker', () async {
+    final token = ModelDownloadCancelToken();
+    final manager = _SourceDownloadManager()..onEnsure = token.cancel;
+    final engine = SpeechToTextEngine.liteRtLm(
+      LiteRtLmAsrRuntimeConfig.source(
+        model: ModelSource.parse('https://example.com/asr/model.tflite'),
+        tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      ),
+      download: ModelLoadOptions(cancelToken: token),
+      store: ModelFileStore(downloadManager: manager),
+    );
+
+    await expectLater(
+      engine.startStream(),
+      throwsA(isA<LlamaStateException>()),
+    );
+    expect(manager.calls, hasLength(1));
+    expect(driver.startCalls, 0);
+  });
+
   test('forwards an advanced native library override', () async {
     final engine = SpeechToTextEngine.liteRtLm(
       config,
@@ -426,6 +468,7 @@ class _SourceDownloadManager implements ModelDownloadManager {
   final List<(ModelSource, ModelLoadOptions)> calls =
       <(ModelSource, ModelLoadOptions)>[];
   bool failNext = false;
+  void Function()? onEnsure;
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -434,6 +477,7 @@ class _SourceDownloadManager implements ModelDownloadManager {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     calls.add((source, options));
+    onEnsure?.call();
     if (failNext) {
       failNext = false;
       throw LlamaModelException('Download failed.');

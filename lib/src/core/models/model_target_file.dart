@@ -51,51 +51,46 @@ Future<ModelCacheEntry> ensureModelTargetFile(
 }
 
 /// Local paths of [sources], in order, resolved one at a time through
-/// [store]'s resolver and download manager.
+/// [store]'s resolver and download manager, for a load of several files
+/// named [operation] (such as `Image model loading`).
 ///
-/// A remote source downloads with [download]; a local one takes only its
-/// cancel token, since [ModelLoadOptions] rejects download options for local
-/// files. [onProgress] reports the files together: `receivedBytes` counts
-/// every file resolved so far plus the bytes of the current download, and
-/// `totalBytes` is their combined size once every size is known, from
-/// [knownSizes] (by index) or each download, and null before.
+/// [download] applies to every remote file, its bearer token and headers
+/// included, so callers must document that every file's host receives them.
+/// A local file takes only its cancel token, since [ModelLoadOptions]
+/// rejects download options for local files.
+///
+/// [onProgress] reports the files together. Byte progress counts every file
+/// resolved so far plus the bytes of the current one; `totalBytes` is their
+/// combined size once every size is known, from [knownSizes] (by index), a
+/// download or a resolved file, and null before. A file that reports only a
+/// fraction, as a URL-loading backend does, makes the combined progress a
+/// fraction of all the files.
+///
+/// Throws [LlamaUnsupportedException] before resolving anything when
+/// [download] sets [ModelLoadOptions.sha256] for more than one file, and
+/// [LlamaStateException] when [download]'s cancel token is cancelled after a
+/// file resolves.
 Future<List<String>> resolveModelSourceFiles(
   List<ModelSource> sources, {
   required ModelFileStore store,
   required ModelLoadOptions download,
+  required String operation,
   ModelDownloadProgressCallback? onProgress,
   Map<int, int> knownSizes = const <int, int>{},
   String assetType = 'model',
 }) async {
-  final sizes = Map<int, int>.of(knownSizes);
-  var resolvedBytes = 0;
-  void report(int currentBytes) {
-    if (onProgress == null) {
-      return;
-    }
-    final total = sizes.length == sources.length
-        ? sizes.values.fold<int>(0, (sum, size) => sum + size)
-        : null;
-    onProgress(
-      ModelDownloadProgress(
-        receivedBytes: resolvedBytes + currentBytes,
-        totalBytes: total,
-      ),
+  if (sources.length > 1 && download.sha256 != null) {
+    throw LlamaUnsupportedException(
+      '$operation uses ${sources.length} files, so ModelLoadOptions.sha256 '
+      'cannot apply to them. Leave it unset.',
     );
   }
-
+  final progress = _FilesProgress(onProgress, sources.length, knownSizes);
   final localOptions = ModelLoadOptions(cancelToken: download.cancelToken);
   final files = <String>[];
   for (final (index, source) in sources.indexed) {
     final fileOptions = source.isLocal ? localOptions : download;
-    final fileProgress = onProgress == null
-        ? null
-        : (ModelDownloadProgress progress) {
-            if (progress.totalBytes case final total?) {
-              sizes.putIfAbsent(index, () => total);
-            }
-            report(progress.receivedBytes);
-          };
+    final fileProgress = progress.file(index);
     final target = await store.resolver.resolve(
       source,
       ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
@@ -108,13 +103,70 @@ Future<List<String>> resolveModelSourceFiles(
       onProgress: fileProgress,
       assetType: assetType,
     );
-    files.add(entry.filePath);
-    final bytes = entry.bytes ?? sizes[index];
-    if (bytes != null) {
-      sizes[index] = bytes;
+    if (download.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('$operation was cancelled.');
     }
-    resolvedBytes += bytes ?? 0;
-    report(0);
+    progress.resolved(index, entry.bytes);
+    files.add(entry.filePath);
   }
   return files;
+}
+
+/// Combines the progress of files resolved one after another into one
+/// callback; see [resolveModelSourceFiles].
+class _FilesProgress {
+  final ModelDownloadProgressCallback? _onProgress;
+  final int _fileCount;
+  final Map<int, int> _sizes;
+
+  _FilesProgress(this._onProgress, this._fileCount, Map<int, int> knownSizes)
+    : _sizes = Map<int, int>.of(knownSizes);
+
+  ModelDownloadProgressCallback? file(int index) {
+    final onProgress = _onProgress;
+    if (onProgress == null) {
+      return null;
+    }
+    return (ModelDownloadProgress progress) {
+      final fraction = progress.fraction;
+      if (progress.receivedBytes == 0 &&
+          progress.totalBytes == null &&
+          fraction != null) {
+        onProgress(
+          ModelDownloadProgress.fraction((index + fraction) / _fileCount),
+        );
+        return;
+      }
+      if (progress.totalBytes case final total?) {
+        _sizes[index] = total;
+      }
+      _report(index, progress.receivedBytes);
+    };
+  }
+
+  void resolved(int index, int? bytes) {
+    if (_onProgress == null) {
+      return;
+    }
+    if (bytes != null) {
+      _sizes[index] = bytes;
+    }
+    _report(index, _sizes[index] ?? 0);
+  }
+
+  void _report(int index, int currentBytes) {
+    var earlierBytes = 0;
+    for (var earlier = 0; earlier < index; earlier++) {
+      earlierBytes += _sizes[earlier] ?? 0;
+    }
+    final total = _sizes.length == _fileCount
+        ? _sizes.values.fold<int>(0, (sum, size) => sum + size)
+        : null;
+    _onProgress!(
+      ModelDownloadProgress(
+        receivedBytes: earlierBytes + currentBytes,
+        totalBytes: total,
+      ),
+    );
+  }
 }

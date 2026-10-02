@@ -102,10 +102,13 @@ await engine.loadModel(
 ```
 
 - `LlamaEngine` resolves each adapter source in list order before the model
-  loads, as `setLoraSource` does. `loadModelSource` downloads them with its
-  `options` except `sha256`, which names the model file; `loadModel` and
-  `loadModelFromUrl` use default options. Adapter downloads report no
-  progress, and a failed one fails the load.
+  loads, as `setLoraSource` does, with the adapter's own options:
+  `LoraAdapterConfig.source(source, download: ModelLoadOptions(...))`.
+  Without them an adapter takes only the non-secret options of the load
+  (cache policy and directory, resume, retries and cancel token). The load's
+  bearer token, headers and `sha256` never reach an adapter's host, so set an
+  adapter's own `download` when it needs authentication. Adapter downloads
+  report no progress, and a failed one fails the load.
 
 - On llama.cpp, native and WebGPU, each adapter is applied in list order at
   its scale, exactly as `setLoraSource(source, scale: ...)` would, once the
@@ -132,7 +135,9 @@ await engine.setLoraSource(style, scale: 0.35);
 await engine.setLoraSource(domain, scale: 0.70);
 ```
 
-- Calling `setLoraSource(...)` again with the same source updates scale.
+- Calling `setLoraSource(...)` again with the same source updates scale. When
+  its options resolve the source to another file, such as another
+  `cacheDirectory`, that file replaces the adapter applied from the source.
 - Use `removeLoraSource(source)` to disable one adapter.
 - Use `clearLoras()` to reset to base model behavior.
 

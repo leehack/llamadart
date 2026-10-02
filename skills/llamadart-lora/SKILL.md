@@ -44,8 +44,10 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   (`0.1`-`0.3`) preserves more base behavior, higher can over-steer.
 - Adapters you know at load time go in `ModelParams.loras` as
   `LoraAdapterConfig.source(source, scale: ...)`. `LlamaEngine` resolves
-  their sources before the model loads (`loadModelSource` with its `options`
-  minus `sha256`, other loads with defaults; no progress). On llama.cpp
+  their sources before the model loads, with each adapter's own
+  `download:` options, or else only the load's cache policy, directory and
+  cancel token; the load's bearer token, headers and `sha256` never reach an
+  adapter's host (no progress). On llama.cpp
   (native and WebGPU) each is applied in list order at its scale, as
   `setLoraSource` would, once the model loads; `setLoraSource`,
   `removeLoraSource` and `clearLoras` can change them afterwards. If one cannot be applied the load fails and the

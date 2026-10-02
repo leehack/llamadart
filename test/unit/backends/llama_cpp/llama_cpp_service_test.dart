@@ -852,7 +852,7 @@ void main() {
           isA<ArgumentError>().having(
             (error) => error.message,
             'message',
-            contains('requires draftModelPath'),
+            contains('requires SpeculativeDecodingConfig.draftModel'),
           ),
         ),
       );
@@ -871,7 +871,7 @@ void main() {
           isA<ArgumentError>().having(
             (error) => error.message,
             'message',
-            contains('requires draftModelPath'),
+            contains('requires SpeculativeDecodingConfig.draftModel'),
           ),
         ),
       );

@@ -372,6 +372,7 @@ class ImageGenerationEngine {
       store: effectiveStore,
       download: download,
       onProgress: onProgress,
+      operation: 'Image model loading',
       knownSizes: knownSizes,
       assetType: 'image model',
     );

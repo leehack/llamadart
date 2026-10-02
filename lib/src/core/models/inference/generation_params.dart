@@ -194,22 +194,34 @@ class SpeculativeDecodingConfig {
   ///
   /// Leave null for models that carry their own MTP layers.
   ///
-  /// `LlamaEngine` resolves it when a generation starts, before the request
-  /// reaches the backend, as `LlamaEngine.loadModelSource` resolves a model:
-  /// its `modelResolver` and `modelDownloadManager` check a local file, or
-  /// download a remote one with [draftModelDownload] into the model cache,
-  /// or reuse the cached file. On WebGPU the runtime fetches the URL itself.
-  /// Cancelling the generation stops the download. The download reports no
-  /// progress; to show progress, download the file first with
+  /// `LlamaEngine` resolves it when the first generation that uses it starts,
+  /// before the request reaches the backend, as
+  /// `LlamaEngine.loadModelSource` resolves a model: its `modelResolver` and
+  /// `modelDownloadManager` check a local file, or download a remote one
+  /// with [draftModelDownload] into the model cache, or reuse the cached
+  /// file. On WebGPU the runtime fetches the URL itself. Later generations
+  /// on the same loaded model reuse that file for the same source, cache
+  /// directory and checksum, so the download and any checksum check run
+  /// once per loaded model; unloading or reloading the model resolves it
+  /// again. Cancelling the generation, or unloading the model, stops the
+  /// download. LiteRT-LM, and a backend that does not report every strategy
+  /// of this configuration, throw `LlamaUnsupportedException` before
+  /// anything downloads. The download reports no progress; to show
+  /// progress, download the file first with
   /// `engine.modelDownloadManager.ensureModel(draftModel, options:
   /// draftModelDownload, onProgress: ...)`, and the generation then reuses
   /// the cached file.
+  ///
+  /// Strategies that use a separate drafter, such as `draftSimple`, need it
+  /// at run time: the backend throws when it is null.
   final ModelSource? draftModel;
 
   /// Download options for [draftModel]: cache policy and directory,
   /// authentication, checksum, resume, retries and cancel token. A local
   /// [draftModel] takes only [ModelLoadOptions.sha256] and the cancel token,
-  /// as [ModelLoadOptions] describes.
+  /// as [ModelLoadOptions] describes. [ModelCachePolicy.noCache] and
+  /// [ModelCachePolicy.refresh] throw `LlamaUnsupportedException`, since the
+  /// draft model resolves once per loaded model.
   final ModelLoadOptions draftModelDownload;
 
   /// The draft model file that backends load: the deprecated path a caller
@@ -714,6 +726,30 @@ class SpeculativeDecodingConfig {
              (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
 
+  /// A copy of [config] that loads the draft model at [location] instead of
+  /// its [draftModel] or deprecated path.
+  SpeculativeDecodingConfig._withDraftLocation(
+    SpeculativeDecodingConfig config,
+    String location,
+  ) : strategy = config.strategy,
+      strategies = config.strategies,
+      draftTokenMax = config.draftTokenMax,
+      draftTokenMin = config.draftTokenMin,
+      minProbability = config.minProbability,
+      draftSplitProbability = config.draftSplitProbability,
+      _draftModelPath = location,
+      draftModel = null,
+      draftModelDownload = ModelLoadOptions.defaults,
+      ngramSize = config.ngramSize,
+      ngramSizeN = config.ngramSizeN,
+      ngramSizeM = config.ngramSizeM,
+      ngramMinHits = config.ngramMinHits,
+      ngramMatch = config.ngramMatch,
+      ngramTokenMin = config.ngramTokenMin,
+      ngramTokenMax = config.ngramTokenMax,
+      ngramCacheStaticPath = config.ngramCacheStaticPath,
+      ngramCacheDynamicPath = config.ngramCacheDynamicPath;
+
   /// Effective strategy list for backends that support upstream-style mixing.
   List<SpeculativeDecodingStrategy> get effectiveStrategies =>
       strategies.isEmpty ? <SpeculativeDecodingStrategy>[strategy] : strategies;
@@ -981,3 +1017,10 @@ class GenerationParams {
     );
   }
 }
+
+/// A copy of [config] whose draft model is the resolved file or URL
+/// [location]. Internal to the engine; not exported.
+SpeculativeDecodingConfig speculativeConfigWithDraftLocation(
+  SpeculativeDecodingConfig config,
+  String location,
+) => SpeculativeDecodingConfig._withDraftLocation(config, location);

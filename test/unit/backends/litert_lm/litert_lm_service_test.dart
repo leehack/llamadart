@@ -3587,7 +3587,7 @@ void main() {
             'message',
             allOf(
               contains('speculativeDecodingConfig.strategy'),
-              contains('speculativeDecodingConfig.draftModelPath'),
+              contains('speculativeDecodingConfig.draftModel'),
             ),
           ),
         ),
@@ -3659,7 +3659,7 @@ void main() {
             'message',
             allOf(
               contains('speculativeDecodingConfig.draftTokenMax'),
-              contains('speculativeDecodingConfig.draftModelPath'),
+              contains('speculativeDecodingConfig.draftModel'),
             ),
           ),
         ),

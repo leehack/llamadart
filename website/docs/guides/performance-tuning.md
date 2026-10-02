@@ -165,10 +165,10 @@ strategies the loaded runtime runs.
 | Constructor | Upstream type | Draft model |
 | --- | --- | --- |
 | `mtp(...)` | `draft-mtp` | Optional `draftModel`; without it, load the target with `ModelParams(loadMtp: true)` |
-| `draftSimple(...)` | `draft-simple` | Required `draftModel` |
-| `draftEagle3(...)` | `draft-eagle3` | Required `draftModel` |
-| `draftDflash(...)` | `draft-dflash` | Required `draftModel` |
-| `draftDspark(draftModel: ...)` | `draft-dspark` | Required `draftModel` |
+| `draftSimple(...)` | `draft-simple` | `draftModel`; generation throws without one |
+| `draftEagle3(...)` | `draft-eagle3` | `draftModel`; generation throws without one |
+| `draftDflash(...)` | `draft-dflash` | `draftModel`; generation throws without one |
+| `draftDspark(draftModel: ...)` | `draft-dspark` | `draftModel`; generation throws without one |
 | `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`, `ngramCache(...)` | `ngram-simple`, `ngram-map-k`, `ngram-map-k4v`, `ngram-mod`, `ngram-cache` | None; uses token history or n-gram caches |
 | `mixed(strategies: [...])` | comma-separated list | At most one draft-model strategy plus any n-gram strategies |
 
@@ -185,12 +185,17 @@ const generationParams = GenerationParams(
 
 `draftModel` is a `ModelSource`: a local path, an HTTP(S) URL or a Hugging
 Face file. The `draftModelPath:` parameter is deprecated. `LlamaEngine`
-resolves the draft model when a generation starts: on native backends it
-checks a local file, or downloads a remote one into the model cache with
-`draftModelDownload` (cache policy, authentication, checksum, retries and
-cancel token), and later generations reuse the cached file. Cancelling the
-generation stops the download. The download reports no progress; to show
-progress, download the file first:
+resolves the draft model when the first generation that uses it starts: on
+native backends it checks a local file, or downloads a remote one into the
+model cache with `draftModelDownload` (cache policy and directory,
+authentication, checksum, retries and cancel token). Later generations on the
+same loaded model reuse that file, so the download and any `sha256` check run
+once per loaded model; unloading or reloading the model resolves it again.
+`ModelCachePolicy.noCache` and `refresh` throw `LlamaUnsupportedException`.
+Cancelling the generation, or unloading the model, stops the download.
+LiteRT-LM, and a backend that does not support the configured strategies,
+throw `LlamaUnsupportedException` before anything downloads. The download
+reports no progress; to show progress, download the file first:
 
 ```dart
 final draft = ModelSource.parse('hf://owner/repo/draft-model.gguf');

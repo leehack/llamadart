@@ -558,14 +558,19 @@ class SpeechToTextEngine {
   /// should omit it and use the runtime resolved by native assets.
   ///
   /// A config made with [LiteRtLmAsrRuntimeConfig.source] resolves its model
-  /// and tokenizer when the first task starts, as `ImageGenerationEngine.load`
-  /// resolves its files: [store]'s resolver and download manager (by default
-  /// [ModelFileStore]'s) check a local file, or download a remote one with
-  /// [download] into the model cache, or reuse the cached file, model first.
-  /// A local file takes only [download]'s cancel token. [onProgress] reports
-  /// both files together. A failed or cancelled resolution fails that task
-  /// and the next task tries again; once both files resolve, later tasks
-  /// reuse them.
+  /// and tokenizer when the first task starts, model first, as
+  /// `ImageGenerationEngine.load` resolves its files: [store]'s resolver and
+  /// download manager (by default [ModelFileStore]'s) check a local file, or
+  /// download a remote one with [download] into the model cache, or reuse
+  /// the cached file. [download] applies to both remote files: both hosts
+  /// receive its bearer token and headers, so set them only when both files
+  /// need them. [ModelLoadOptions.sha256] cannot name two files, so a task
+  /// throws [LlamaUnsupportedException] when it is set. A local file takes
+  /// only [download]'s cancel token. [onProgress] reports both files
+  /// together. A failed resolution fails that task, and the next task tries
+  /// again; once [download]'s cancel token is cancelled, every task fails
+  /// with [LlamaStateException]. Once both files resolve, later tasks reuse
+  /// them.
   SpeechToTextEngine.liteRtLm(
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
@@ -791,12 +796,10 @@ class SpeechToTextEngine {
       [model, tokenizer],
       store: _liteRtLmStore ?? ModelFileStore(),
       download: _liteRtLmDownload,
+      operation: 'Speech model loading',
       onProgress: _liteRtLmOnProgress,
       assetType: 'speech recognition',
     );
-    if (_liteRtLmDownload.cancelToken?.isCancelled ?? false) {
-      throw LlamaStateException('Speech model loading was cancelled.');
-    }
     return _resolvedLiteRtLmConfig = LiteRtLmAsrRuntimeConfig.source(
       model: ModelSource.path(paths[0]),
       tokenizer: ModelSource.path(paths[1]),
