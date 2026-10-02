@@ -40,23 +40,27 @@ description: >-
   base URL; the model download manager is unavailable there, so pass
   `ModelSource.resolvedUri` instead of a cached file path.
 - Prefer typed keys over string ids: build questions with `ChoiceKey.enumOf`,
-  `ChoiceKey.of`, `ChoiceKey.labels`, `ScoreKey.of` and `NoulKey.of`, pass
-  `DecisionKey.questionsOf([...])` to `systemOne`, and read each answer with
+  `ChoiceKey.of`, `ChoiceKey.labels`, `ScoreKey.of` and `YesNoKey.of`, pass
+  `DecisionKey.questionsOf([...])` to `answer`, and read each answer with
   `result.answerOf(key)`. Keep keys as long-lived finals: `answerOf` throws
   `LlamaDecisionException` when the result's question is not the key's own
   question object (a key rebuilt by a getter, or a question parsed from JSON,
   does not match).
-- Use string ids with `DecisionQuestion.choice/score/noul` or
+- Use string ids with `DecisionQuestion.choice/score/yesNo` or
   `DecisionQuestion.fromJson` when questions are data (Laya's wire format) and
   results leave through `toJson()`; read them with `result.choices`,
-  `result.scores` and `result.nouls`.
+  `result.scores` and `result.yesNos`.
+- `systemOne`, `systemOneBatch`, `DecisionQuestion.noul`, `NoulQuestion`,
+  `NoulAnswer.noul`, `NoulKey` and `result.nouls` are deprecated aliases of
+  the names above; JSON keeps Laya's `noul` type.
 - Choice and score `confidence` is `1 - H(p) / ln K` (one minus normalized
-  entropy), not the top probability; noul confidence is `max(noul, 1 - noul)`.
+  entropy), not the top probability; yes/no confidence is
+  `max(probability, 1 - probability)`.
   Pick gate thresholds per head and option count on held-out data; the command
   bar example gates Laya at 0.3. Act only above the gate and fall back
   (ask the user, keep the previous state) below it.
 - Cost grows with the number of questions: each question re-encodes the
-  state. Use `systemOneBatch([DecisionRequest(...)])` to answer several states
+  state. Use `answerBatch([DecisionRequest(...)])` to answer several states
   in one backend call. Calls cannot be cancelled; in interactive UI run at
   most one call and collapse pending inputs into the latest.
 - Limits: sequences are cut to 512 tokens and a long state is truncated
@@ -128,7 +132,7 @@ final ScoreKey urgency = ScoreKey.of(
   'How urgent is this request?',
   levels: ['not urgent', 'soon', 'critical'],
 );
-final NoulKey refund = NoulKey.of('refund', 'Does the user request a refund?');
+final YesNoKey refund = YesNoKey.of('refund', 'Does the user request a refund?');
 
 const String repoId = 'fr0stbit3/laya-gguf';
 const String revision = 'ce2afdc0a8766af56a29a22dcf4a781e1f5c7d3c';
@@ -160,14 +164,14 @@ Future<DecisionEngine> loadDecisions(LlamaEngine engine) async {
 }
 
 Future<Department?> route(DecisionEngine decisions, String ticket) async {
-  final DecisionResult result = await decisions.systemOne(
+  final DecisionResult result = await decisions.answer(
     state: ticket,
     questions: DecisionKey.questionsOf([department, urgency, refund]),
   );
   final ChoiceOf<Department> choice = result.answerOf(department);
   print(
     'urgency ${result.answerOf(urgency).score}, '
-    'refund ${result.answerOf(refund).noul}',
+    'refund ${result.answerOf(refund).probability}',
   );
   return choice.confidence >= 0.3 ? choice.value : null;
 }

@@ -216,9 +216,9 @@ DecisionAnswer decodeDecisionAnswer(
         confidence: decisionConfidence(p),
         actProbability: actProbability,
       );
-    case NoulQuestion():
-      return NoulAnswer(
-        noul: p[1],
+    case YesNoQuestion():
+      return YesNoAnswer(
+        probability: p[1],
         confidence: math.max(p[1], 1 - p[1]),
         actProbability: actProbability,
       );

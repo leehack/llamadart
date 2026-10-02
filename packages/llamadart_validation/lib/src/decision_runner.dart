@@ -15,8 +15,8 @@ abstract interface class DecisionValidationEngine {
     List<Map<String, dynamic>> sequences,
   );
 
-  /// Answers `{state, questions}` [requests] with `systemOne`, or with
-  /// `systemOneBatch` when [batch] is true, as `DecisionResult` JSON.
+  /// Answers `{state, questions}` [requests] with `answer`, or with
+  /// `answerBatch` when [batch] is true, as `DecisionResult` JSON.
   Future<List<Map<String, dynamic>>> decide(
     List<Map<String, dynamic>> requests, {
     bool batch = false,
@@ -127,9 +127,9 @@ mixin _PublicDecisionValidation implements DecisionValidationEngine {
         ),
     ];
     final results = batch
-        ? await decisions.systemOneBatch(parsed)
+        ? await decisions.answerBatch(parsed)
         : [
-            await decisions.systemOne(
+            await decisions.answer(
               state: parsed.single.state,
               questions: parsed.single.questions,
             ),

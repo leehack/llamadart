@@ -41,7 +41,7 @@ final ScoreKey ticketUrgency = ScoreKey.of(
 );
 
 /// Yes/no question: whether the ticket asks for a refund.
-final NoulKey ticketRefund = NoulKey.of(
+final YesNoKey ticketRefund = YesNoKey.of(
   'refund',
   'Does the user request a refund?',
 );
@@ -80,8 +80,8 @@ String formatTicketTriage(DecisionResult result) {
     ..writeln('  ${_formatProbabilities(urgency.probabilities, level)}')
     ..writeln(_formatConfidence(urgency))
     ..writeln(
-      '${ticketRefund.id} (noul): ${_fixed(refund.noul)} '
-      '(${refund.noul >= 0.5})',
+      '${ticketRefund.id} (noul): ${_fixed(refund.probability)} '
+      '(${refund.probability >= 0.5})',
     )
     ..writeln(_formatConfidence(refund));
   return buffer.toString();

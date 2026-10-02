@@ -62,7 +62,7 @@ List<String> renderDecisionOptions(DecisionQuestion question) {
         for (var i = 0; i < levels.length; i++)
           'level $i: ${_criterion(levels[i])}',
       ];
-    case NoulQuestion(:final whenTrue, :final whenFalse):
+    case YesNoQuestion(:final whenTrue, :final whenFalse):
       return [
         'false: ${_criterionOr(whenFalse, 'no, the statement does not hold')}',
         'true: ${_criterionOr(whenTrue, 'yes, the statement holds')}',

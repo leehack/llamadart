@@ -76,13 +76,13 @@ class DecisionModelInfo {
 ///   engine,
 ///   headPath: 'laya-head.safetensors',
 /// );
-/// final result = await decisions.systemOne(
+/// final result = await decisions.answer(
 ///   state: 'Billed twice for March.',
 ///   questions: {
-///     'refund': DecisionQuestion.noul('Does the user request a refund?'),
+///     'refund': DecisionQuestion.yesNo('Does the user request a refund?'),
 ///   },
 /// );
-/// print(result.nouls['refund']!.noul);
+/// print(result.yesNos['refund']!.probability);
 /// await decisions.dispose();
 /// ```
 class DecisionEngine {
@@ -224,7 +224,7 @@ class DecisionEngine {
   /// To read answers as typed values, build [questions] with
   /// [DecisionKey.questionsOf] and read them with
   /// [DecisionResultKeys.answerOf].
-  Future<DecisionResult> systemOne({
+  Future<DecisionResult> answer({
     required Object? state,
     required Map<String, DecisionQuestion> questions,
   }) => _track(() async {
@@ -239,11 +239,23 @@ class DecisionEngine {
   /// All questions are validated and tokenized before the model runs, and
   /// all sequences run in one backend call. The call answers [requests] as
   /// they are when it starts; later changes to the list do not affect it. An
-  /// empty [requests] gives an empty list. Throws like [systemOne].
-  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) {
+  /// empty [requests] gives an empty list. Throws like [answer].
+  Future<List<DecisionResult>> answerBatch(List<DecisionRequest> requests) {
     final snapshot = List<DecisionRequest>.unmodifiable(requests);
     return _track(() => _answer(snapshot));
   }
+
+  /// Answers [questions] about [state], as Laya's `system_one`.
+  @Deprecated('Use answer instead.')
+  Future<DecisionResult> systemOne({
+    required Object? state,
+    required Map<String, DecisionQuestion> questions,
+  }) => answer(state: state, questions: questions);
+
+  /// Answers every request in [requests], in order.
+  @Deprecated('Use answerBatch instead.')
+  Future<List<DecisionResult>> systemOneBatch(List<DecisionRequest> requests) =>
+      answerBatch(requests);
 
   /// Frees the decision head after in-flight calls finish.
   ///

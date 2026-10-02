@@ -88,6 +88,25 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: neutral decision API names
+
+The decision API's Laya names still work for one minor release, with
+deprecation warnings. Rename them:
+
+| Before | After |
+| --- | --- |
+| `decisions.systemOne(...)` | `decisions.answer(...)` |
+| `decisions.systemOneBatch(...)` | `decisions.answerBatch(...)` |
+| `DecisionQuestion.noul(...)` | `DecisionQuestion.yesNo(...)` |
+| `NoulQuestion`, `NoulAnswer`, `NoulKey` | `YesNoQuestion`, `YesNoAnswer`, `YesNoKey` |
+| `NoulAnswer(noul: p, ...)`, `answer.noul` | `YesNoAnswer(probability: p, ...)`, `answer.probability` |
+| `result.nouls` | `result.yesNos` |
+| `DecisionQuestionType.noul` | `DecisionQuestionType.yesNo` |
+
+`DecisionQuestionType.yesNo` is the same value as `noul`, so its `name` and
+the wire format, including `toJson()` and `DecisionQuestion.fromJson`, keep
+Laya's `noul` type and field.
+
 ## Unreleased: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,

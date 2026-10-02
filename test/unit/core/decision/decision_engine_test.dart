@@ -127,6 +127,42 @@ void main() {
     });
   });
 
+  group('answer', () {
+    test('answers like the deprecated systemOne', () async {
+      final decisions = await loadDecisions();
+      final request = requestOf(cases['readme']!);
+
+      final result = await decisions.answer(
+        state: request.state,
+        questions: request.questions,
+      );
+      // ignore: deprecated_member_use_from_same_package
+      final legacy = await decisions.systemOne(
+        state: request.state,
+        questions: request.questions,
+      );
+
+      expect(result.choices['department']!.choice, 'billing');
+      expect(legacy.toJson(), result.toJson());
+    });
+
+    test('answerBatch answers like the deprecated systemOneBatch', () async {
+      final decisions = await loadDecisions();
+      final requests = [for (final rows in cases.values) requestOf(rows)];
+
+      final results = await decisions.answerBatch(requests);
+      // ignore: deprecated_member_use_from_same_package
+      final legacy = await decisions.systemOneBatch(requests);
+
+      expect(results, hasLength(requests.length));
+      expect(
+        [for (final r in legacy) r.toJson()],
+        [for (final r in results) r.toJson()],
+      );
+      expect(backend.runs, hasLength(2));
+    });
+  });
+
   group('load', () {
     test('passes the head and config paths and reports model info', () async {
       backend.config = {'max_len': 256, 'head_max_len': 96};

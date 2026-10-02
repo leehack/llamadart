@@ -97,7 +97,7 @@ and Firefox are untested.
 
 **Laya considers** sets the candidates: every legal landing, the three best by
 heuristic plus three random, the six best by heuristic, or six random.
-All questions about one piece go to `systemOneBatch` in one call; the knockout
+All questions about one piece go to `answerBatch` in one call; the knockout
 sends one call per round.
 
 Defaults: on Android, CPU with 6 threads and "3 best + 3 random", because the

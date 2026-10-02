@@ -48,7 +48,7 @@ launches. A Web build needs a cross-origin isolated page.
 - First-launch downloads with progress through `loadModelSource` for the
   backbone and `modelDownloadManager.ensureModel` for the heads
   ([Downloads and cache](../guides/model-downloads)).
-- Yes/no and `choice` questions sent as one `systemOneBatch` call per piece,
+- Yes/no and `choice` questions sent as one `answerBatch` call per piece,
   or per knockout round, while the llama.cpp worker isolate does the work
   ([Batches](../guides/decision-models#batches)).
 - A typed `ChoiceKey.of` over the candidate placements, read back with

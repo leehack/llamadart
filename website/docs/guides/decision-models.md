@@ -82,10 +82,13 @@ the problem.
 
 ## Ask questions
 
-`systemOne` answers every question about one state:
+`answer` answers every question about one state. It and the other neutral
+names replace Laya's vocabulary: `systemOne`, `systemOneBatch`, `noul` and the
+`Noul*` types are deprecated aliases, and the wire format keeps Laya's `noul`
+type:
 
 ```dart
-final result = await decisions.systemOne(
+final result = await decisions.answer(
   state: {
     'from': 'user@acme.com',
     'subject': 'Duplicate charge on invoice #4411',
@@ -104,14 +107,14 @@ final result = await decisions.systemOne(
       'How urgent is this request?',
       levels: ['not urgent', 'soon', 'critical'],
     ),
-    'refund': DecisionQuestion.noul('Does the user request a refund?'),
+    'refund': DecisionQuestion.yesNo('Does the user request a refund?'),
   },
 );
 
 final department = result.choices['department']!;
 print('${department.choice}: ${department.probabilities}');
 print(result.scores['urgency']!.score);
-print(result.nouls['refund']!.noul);
+print(result.yesNos['refund']!.probability);
 ```
 
 There are three question types:
@@ -120,13 +123,13 @@ There are three question types:
 | --- | --- | --- |
 | `DecisionQuestion.choice` | `criteria` maps each label to a description; `null` or `''` means no description | `ChoiceAnswer.choice` is the most probable label; `probabilities` maps every label, in option order |
 | `DecisionQuestion.score` | `levels` in order, level 0 first | `ScoreAnswer.score` is the expected level, the probability-weighted mean of the level indices; `legend` and `probabilities` are keyed `'0'`, `'1'`, and so on |
-| `DecisionQuestion.noul` | optional `whenTrue` and `whenFalse` descriptions | `NoulAnswer.noul` is the probability that the statement is true |
+| `DecisionQuestion.yesNo` | optional `whenTrue` and `whenFalse` descriptions | `YesNoAnswer.probability` is the probability that the statement is true |
 
 Every answer also has `confidence`, from 0 to 1, and `actProbability`, Laya's
 `action.act_probability`. Choice and score confidence is `1 - H(p) / ln K`,
 one minus the entropy of the answer's `K` probabilities divided by its
-maximum; noul confidence is `max(noul, 1 - noul)`. Values are unrounded
-doubles; Laya rounds its JSON to 4 decimals.
+maximum; yes/no confidence is `max(probability, 1 - probability)`. Values
+are unrounded doubles; Laya rounds its JSON to 4 decimals.
 
 The state is sent as text when it is a `String`, and as JSON text otherwise.
 Instructions are text, or a JSON-like value sent as Laya's
@@ -148,7 +151,7 @@ final category = DecisionQuestion.fromJson({
   'instructions': 'Which product area is affected?',
   'criteria': ['billing', 'login', 'performance'],
 });
-final area = await decisions.systemOne(
+final area = await decisions.answer(
   state: 'The dashboard takes a minute to load.',
   questions: {'area': category},
 );
@@ -157,32 +160,32 @@ print(jsonEncode(area.toJson()));
 
 A list of choice labels becomes labels without descriptions, as in Laya.
 `fromJson` is stricter than Laya elsewhere: score `criteria` must be a list,
-and noul `criteria` must be `null` or a map with optional `true` and `false`
-descriptions.
+and yes/no (`noul`) `criteria` must be `null` or a map with optional `true`
+and `false` descriptions.
 
 ## Batches
 
-`systemOneBatch` answers several states in one backend call. Every request is
+`answerBatch` answers several states in one backend call. Every request is
 validated and tokenized before the model runs, and results come back in
 request order:
 
 ```dart
-final results = await decisions.systemOneBatch([
+final results = await decisions.answerBatch([
   DecisionRequest(
     state: 'The login page returns a 500 error.',
     questions: {
-      'outage': DecisionQuestion.noul('Is a service down?'),
+      'outage': DecisionQuestion.yesNo('Is a service down?'),
     },
   ),
   DecisionRequest(
     state: 'Can I get a discount for a yearly plan?',
     questions: {
-      'outage': DecisionQuestion.noul('Is a service down?'),
+      'outage': DecisionQuestion.yesNo('Is a service down?'),
     },
   ),
 ]);
 for (final result in results) {
-  print(result.nouls['outage']!.noul);
+  print(result.yesNos['outage']!.probability);
 }
 ```
 
@@ -214,18 +217,18 @@ final urgency = ScoreKey.of(
   'How urgent is this request?',
   levels: ['not urgent', 'soon', 'critical'],
 );
-final refund = NoulKey.of('refund', 'Does the user request a refund?');
+final refund = YesNoKey.of('refund', 'Does the user request a refund?');
 
-final result = await decisions.systemOne(
+final result = await decisions.answer(
   state: 'We were billed twice for March. Please refund the duplicate.',
   questions: DecisionKey.questionsOf([department, urgency, refund]),
 );
 final Department route = result.answerOf(department).value;
-print('$route ${result.answerOf(urgency).score} ${result.answerOf(refund).noul}');
+print('$route ${result.answerOf(urgency).score} ${result.answerOf(refund).probability}');
 ```
 
 Keys build ordinary questions, so the model sees the same sequences as with
-string ids, and `answers`, `choices`, `scores`, `nouls` and `toJson` still
+string ids, and `answers`, `choices`, `scores`, `yesNos` and `toJson` still
 work on the result. `questionsOf` keeps the order of the keys and throws
 `LlamaDecisionException` when two keys share an id.
 
@@ -236,7 +239,7 @@ work on the result. `questionsOf` keeps the order of the keys and throws
 | `ChoiceKey.labels` | labels mapped to descriptions | `ChoiceOf<String>` |
 | `ChoiceKey(id, question, value: ...)` | a `ChoiceQuestion` and a function from label to value | `ChoiceOf<T>` |
 | `ScoreKey.of` or `ScoreKey(id, question)` | levels, or a `ScoreQuestion` | `ScoreAnswer` |
-| `NoulKey.of` or `NoulKey(id, question)` | optional true and false descriptions, or a `NoulQuestion` | `NoulAnswer` |
+| `YesNoKey.of` or `YesNoKey(id, question)` | optional true and false descriptions, or a `YesNoQuestion` | `YesNoAnswer` |
 
 `ScoreAnswer.levelProbabilities` lists the level probabilities from level 0.
 
@@ -271,7 +274,7 @@ final tone = ChoiceKey.labels(
   criteria: {'positive': null, 'neutral': null, 'negative': null},
 );
 
-final result = await decisions.systemOne(
+final result = await decisions.answer(
   state: 'We are 30 people and want to move the whole team over.',
   questions: DecisionKey.questionsOf([plan, tone]),
 );
@@ -305,7 +308,7 @@ final department = ChoiceKey(
 
 The value function runs for every label when the key is built, so a label
 that names no enum value throws `ArgumentError` before the model runs.
-`ScoreKey` and `NoulKey` wrap a parsed `ScoreQuestion` or `NoulQuestion` the
+`ScoreKey` and `YesNoKey` wrap a parsed `ScoreQuestion` or `YesNoQuestion` the
 same way.
 
 ### Reading answers
@@ -349,7 +352,7 @@ for (final MapEntry(key: id, value: answer) in result.answers.entries) {
   final text = switch (answer) {
     ChoiceAnswer(:final choice) => choice,
     ScoreAnswer(:final score) => score.toStringAsFixed(2),
-    NoulAnswer(:final noul) => noul.toStringAsFixed(2),
+    YesNoAnswer(:final probability) => probability.toStringAsFixed(2),
   };
   print('$id: $text');
 }
@@ -471,7 +474,7 @@ section; other native platforms and GPU backends have not been measured.
   options.
 - **One encoder pass per question.** The state is re-encoded for every
   question, so cost grows with the number of questions.
-- **No cancellation.** A `systemOne` or `systemOneBatch` call runs to
+- **No cancellation.** An `answer` or `answerBatch` call runs to
   completion.
 - **Unicode normalization.** Input is not normalized. The Hugging Face
   tokenizer applies NFC, so NFD text, such as a decomposed `é`, can tokenize

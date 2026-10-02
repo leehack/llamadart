@@ -50,8 +50,11 @@ ChoiceAnswer choiceAnswer(List<double> p) {
   );
 }
 
-NoulAnswer noulAnswer(double p) =>
-    NoulAnswer(noul: p, confidence: math.max(p, 1 - p), actProbability: 0);
+YesNoAnswer yesNoAnswer(double p) => YesNoAnswer(
+  probability: p,
+  confidence: math.max(p, 1 - p),
+  actProbability: 0,
+);
 
 /// Records every batch and answers choice questions in favour of the lowest
 /// bumpiness, keeping each request's questions as `DecisionEngine` does.
@@ -73,7 +76,7 @@ class FakeLaya {
                 final sum = w.reduce((a, b) => a + b);
                 return choiceAnswer([for (final v in w) v / sum]);
               }(),
-              _ => noulAnswer(0.5),
+              _ => yesNoAnswer(0.5),
             },
         }, questions: r.questions),
     ];
@@ -172,8 +175,8 @@ void main() {
         return [
           for (var i = 0; i < rs.length; i++)
             result({
-              'clears': noulAnswer(clears[i]),
-              'holes': noulAnswer(holes[i]),
+              'clears': yesNoAnswer(clears[i]),
+              'holes': yesNoAnswer(holes[i]),
             }),
         ];
       }
@@ -187,11 +190,11 @@ void main() {
       expect(batches, hasLength(1));
       final request = batches.single.first;
       expect(
-        (request.questions['clears']! as NoulQuestion).instructions,
+        (request.questions['clears']! as YesNoQuestion).instructions,
         clearInstructions,
       );
       expect(
-        (request.questions['holes']! as NoulQuestion).instructions,
+        (request.questions['holes']! as YesNoQuestion).instructions,
         holeInstructions,
       );
       expect(request.state, {
@@ -212,7 +215,7 @@ void main() {
     Future<List<DecisionResult>> decide(List<DecisionRequest> rs) async {
       batches.add(rs);
       return [
-        for (final p in [0.3, 0.8, 0.6]) result({'good': noulAnswer(p)}),
+        for (final p in [0.3, 0.8, 0.6]) result({'good': yesNoAnswer(p)}),
       ];
     }
 
@@ -229,7 +232,7 @@ void main() {
       options.first.describe(),
     );
     expect(
-      (batches.single.first.questions['good']! as NoulQuestion).instructions,
+      (batches.single.first.questions['good']! as YesNoQuestion).instructions,
       judgeInstructions,
     );
   });

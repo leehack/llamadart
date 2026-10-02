@@ -194,4 +194,63 @@ void main() {
       expect(result().questions, isNull);
     });
   });
+
+  group('YesNoAnswer', () {
+    test('serializes probability as the Laya noul field', () {
+      final answer = YesNoAnswer(
+        probability: 0.2,
+        confidence: 0.8,
+        actProbability: 0.75,
+      );
+
+      expect(answer.probability, 0.2);
+      expect(answer.type, DecisionQuestionType.yesNo);
+      expect(answer.toJson(), {
+        'type': 'noul',
+        'noul': 0.2,
+        'confidence': 0.8,
+        'action': {'act_probability': 0.75},
+      });
+    });
+
+    test('deprecated noul names forward to probability', () {
+      // ignore: deprecated_member_use_from_same_package
+      final NoulAnswer legacy = NoulAnswer(
+        // ignore: deprecated_member_use_from_same_package
+        noul: 0.3,
+        confidence: 0.7,
+        actProbability: 0,
+      );
+
+      expect(legacy, isA<YesNoAnswer>());
+      expect(legacy.probability, 0.3);
+      // ignore: deprecated_member_use_from_same_package
+      expect(legacy.noul, 0.3);
+    });
+
+    test('needs a probability', () {
+      expect(
+        () => YesNoAnswer(confidence: 0.5, actProbability: 0),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (e) => e.name,
+            'name',
+            'probability',
+          ),
+        ),
+      );
+    });
+
+    test('DecisionResult.yesNos lists them, as the deprecated nouls', () {
+      final result = DecisionResult(
+        model: 'm',
+        answers: {'c': choice(), 'y': noul()},
+        usage: const DecisionUsage(inputTokens: 0, outputTokens: 0),
+      );
+
+      expect(result.yesNos.keys, ['y']);
+      // ignore: deprecated_member_use_from_same_package
+      expect(result.nouls, result.yesNos);
+    });
+  });
 }

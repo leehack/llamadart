@@ -28,10 +28,10 @@ Measured error and speed per backbone, head file and device are under
 
 `lib/llamadart.dart` exports `DecisionEngine`, `DecisionCapabilities` and
 `DecisionModelInfo`; the questions (`DecisionQuestion` with `ChoiceQuestion`,
-`ScoreQuestion` and `NoulQuestion`, `DecisionQuestionType` and
+`ScoreQuestion` and `YesNoQuestion`, `DecisionQuestionType` and
 `DecisionRequest`); the answers (`DecisionAnswer` with `ChoiceAnswer`,
-`ScoreAnswer` and `NoulAnswer`, `DecisionUsage` and `DecisionResult`); and the
-typed keys (`DecisionKey` with `ChoiceKey`, `ScoreKey` and `NoulKey`,
+`ScoreAnswer` and `YesNoAnswer`, `DecisionUsage` and `DecisionResult`); and the
+typed keys (`DecisionKey` with `ChoiceKey`, `ScoreKey` and `YesNoKey`,
 `ChoiceOf`, and the `DecisionResultKeys.answerOf` extension). Errors use
 `LlamaDecisionException`. The
 [Decision Models guide](../website/docs/guides/decision-models.md) documents
@@ -357,7 +357,7 @@ from the prototype that preceded this implementation, not from
 `decision-model-smoke` on an Apple M4 Max (16 cores, macOS), 24 fixture rows of
 31 to 512 tokens (mean 90), `ModelParams(contextSize: 512)`, default threads
 (llama.cpp's 4). Differences are the worst over all rows against the Laya 0.3.5
-PyTorch reference; time is `systemOne` wall time per question.
+PyTorch reference; time is `answer` wall time per question.
 
 | Backbone | Head file | Backend | Head device | Logit diff | Probability diff | Score diff | ms per question |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -484,7 +484,7 @@ guide.
   reported unsupported and `DecisionEngine.load` fails before reading the head.
 - Local-only E2E `test/e2e/backends/decision_engine_e2e_test.dart`: real GGUF
   and head, the 24 fixture rows, exact token ids and markers from the engine
-  tokenizer, raw logits and `systemOne` answers within tolerance (see
+  tokenizer, raw logits and `answer` results within tolerance (see
   `doc/testing_matrix.md` for the tolerance rules); the head on the CPU when
   the model offloads no layers, and off it for a model on a GPU backend; the
   requested backend itself, not a CPU fallback; a config longer than the

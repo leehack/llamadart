@@ -445,4 +445,44 @@ void main() {
       );
     });
   });
+
+  group('YesNoQuestion', () {
+    test('is the yes/no question type with the noul wire type', () {
+      final question = DecisionQuestion.yesNo('Spam?', whenTrue: 'ads');
+
+      expect(question, isA<YesNoQuestion>());
+      expect(question.type, DecisionQuestionType.yesNo);
+      expect(DecisionQuestionType.yesNo.name, 'noul');
+      expect(question.toJson(), {
+        'type': 'noul',
+        'instructions': 'Spam?',
+        'criteria': {'true': 'ads'},
+      });
+      expect(
+        DecisionQuestion.fromJson(const {
+          'type': 'noul',
+          'instructions': 'Spam?',
+        }),
+        isA<YesNoQuestion>(),
+      );
+    });
+
+    test('deprecated noul names build the same question', () {
+      // ignore: deprecated_member_use_from_same_package
+      final DecisionQuestion legacy = DecisionQuestion.noul(
+        'Spam?',
+        whenFalse: 'no',
+      );
+
+      expect(legacy, isA<YesNoQuestion>());
+      // ignore: deprecated_member_use_from_same_package
+      expect(legacy, isA<NoulQuestion>());
+      // ignore: deprecated_member_use_from_same_package
+      expect(DecisionQuestionType.noul, same(DecisionQuestionType.yesNo));
+      expect(
+        legacy.toJson(),
+        DecisionQuestion.yesNo('Spam?', whenFalse: 'no').toJson(),
+      );
+    });
+  });
 }

@@ -219,8 +219,8 @@ class LayaModels {
         }
       }
       return LayaModels(
-        base: base.systemOneBatch,
-        tuned: tuned?.systemOneBatch,
+        base: base.answerBatch,
+        tuned: tuned?.answerBatch,
         tunedError: tunedError,
         backendName: await engine.getBackendName(),
         deviceName: base.info.deviceName,

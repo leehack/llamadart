@@ -54,7 +54,7 @@ dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
 - Local retrieval with SQLite vector search, exact or quantized, with a
   recall check against exact search ([Embeddings](../guides/embeddings)).
 - Typed choice, score and yes/no answers from a decision model with
-  `ChoiceKey.enumOf`, `ScoreKey.of`, `NoulKey.of` and `answerOf`
+  `ChoiceKey.enumOf`, `ScoreKey.of`, `YesNoKey.of` and `answerOf`
   ([Decision models](../guides/decision-models#typed-questions)).
 - Experimental image generation with SDXS, SD-Turbo, or the desktop
   models (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo)

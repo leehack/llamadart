@@ -174,7 +174,7 @@ How to translate result values:
 Triage a support ticket with a Laya decision model: a `department` choice, an
 `urgency` score and a `refund` yes/no question, answered by `DecisionEngine`
 without generating text. The questions are typed keys (`ChoiceKey.enumOf` over
-a `Department` enum, `ScoreKey.of` and `NoulKey.of`), and each answer is read
+a `Department` enum, `ScoreKey.of` and `YesNoKey.of`), and each answer is read
 with `result.answerOf(key)`. See the
 [Decision Models guide](https://llamadart.leehack.com/docs/guides/decision-models)
 for the API.

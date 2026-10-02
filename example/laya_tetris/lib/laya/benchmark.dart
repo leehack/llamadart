@@ -21,7 +21,7 @@ class SpeedResult {
   /// Configuration, such as `CPU x4` or `Metal (MTL0)`.
   final String label;
 
-  /// Mean `systemOneBatch` wall time per question.
+  /// Mean `answerBatch` wall time per question.
   final double? millis;
 
   /// Tokens in the question's sequence.

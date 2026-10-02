@@ -5,7 +5,7 @@ import 'package:llamadart/llamadart.dart';
 import 'tetris.dart';
 
 /// Answers several Laya requests in one call, like
-/// [DecisionEngine.systemOneBatch].
+/// [DecisionEngine.answerBatch].
 typedef LayaDecide =
     Future<List<DecisionResult>> Function(List<DecisionRequest> requests);
 
@@ -211,10 +211,10 @@ Future<LayaVerdict> judgeWithLaya(
     for (final o in options)
       DecisionRequest(
         state: moveState(piece, o, natural: natural),
-        questions: {'good': DecisionQuestion.noul(judgeInstructions)},
+        questions: {'good': DecisionQuestion.yesNo(judgeInstructions)},
       ),
   ]);
-  final scores = [for (final r in rs) r.nouls['good']!.noul];
+  final scores = [for (final r in rs) r.yesNos['good']!.probability];
   return LayaVerdict(
     chosen: argmaxRandomTies(scores, rng),
     scores: scores,
@@ -237,13 +237,14 @@ Future<LayaVerdict> checklistWithLaya(
       DecisionRequest(
         state: moveState(piece, o, natural: natural),
         questions: {
-          'clears': DecisionQuestion.noul(clearInstructions),
-          'holes': DecisionQuestion.noul(holeInstructions),
+          'clears': DecisionQuestion.yesNo(clearInstructions),
+          'holes': DecisionQuestion.yesNo(holeInstructions),
         },
       ),
   ]);
   final facts = [
-    for (final r in rs) (r.nouls['clears']!.noul, r.nouls['holes']!.noul),
+    for (final r in rs)
+      (r.yesNos['clears']!.probability, r.yesNos['holes']!.probability),
   ];
   final scores = [for (final (c, h) in facts) c - h];
   return LayaVerdict(

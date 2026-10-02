@@ -453,4 +453,26 @@ void main() {
       expect(r.answerOf(twenties).value, 20);
     });
   });
+
+  group('YesNoKey', () {
+    test('reads the yes/no answer of its question', () {
+      final key = YesNoKey.of('spam', 'Is it spam?', whenTrue: 'ads');
+      final answer = YesNoAnswer(
+        probability: 0.9,
+        confidence: 0.9,
+        actProbability: 0,
+      );
+
+      final result = fake({
+        key.id: answer,
+      }, questions: DecisionKey.questionsOf([key]));
+
+      expect(key.question, isA<YesNoQuestion>());
+      expect(result.answerOf(key).probability, 0.9);
+    });
+
+    test('the deprecated NoulKey is a YesNoKey', () {
+      expect(churn, isA<YesNoKey>());
+    });
+  });
 }

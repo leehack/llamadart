@@ -7,6 +7,12 @@
   load's `details` is now the cause's message instead of a `{type, message}`
   map, and the not-ready error names `loadModelSource()`
   ([#843](https://github.com/leehack/llamadart/issues/843)).
+- **Deprecated:** the decision API's Laya vocabulary gets neutral names:
+  `DecisionEngine.answer` and `answerBatch` replace `systemOne` and
+  `systemOneBatch`, and `DecisionQuestion.yesNo`, `YesNoQuestion`,
+  `YesNoAnswer.probability`, `YesNoKey`, `DecisionQuestionType.yesNo` and
+  `DecisionResult.yesNos` replace the `noul` names; JSON keeps the `noul` type
+  ([#854](https://github.com/leehack/llamadart/issues/854)).
 - **Deprecated:** `LlamaLogging.configure(level:, nativeLevel:, handler:)`
   replaces `LlamaEngine.configureLogging` and the engine's `setLogLevel`,
   `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so

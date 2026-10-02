@@ -12,14 +12,21 @@ enum DecisionQuestionType {
   score,
 
   /// Yes or no; the answer is the probability of true.
-  noul,
+  @Deprecated('Use DecisionQuestionType.yesNo; its name stays "noul".')
+  noul;
+
+  /// Yes or no; the answer is the probability of true.
+  ///
+  /// Its [name], the wire `type`, is `noul`.
+  // ignore: deprecated_member_use_from_same_package
+  static const DecisionQuestionType yesNo = noul;
 }
 
 /// A typed question for a decision model, in Laya's `system_one` format.
 ///
 /// Instructions are text, or a JSON-like value that becomes Laya's
 /// `json.dumps(value)` text with `ensure_ascii=True`. Values in criteria,
-/// levels and noul descriptions must be JSON-like too: `null`, [bool], [num],
+/// levels and yes/no descriptions must be JSON-like too: `null`, [bool], [num],
 /// [String], or a [List] or [Map] with [String] keys of JSON-like values. They
 /// are deep-copied into unmodifiable collections.
 sealed class DecisionQuestion {
@@ -38,20 +45,28 @@ sealed class DecisionQuestion {
     required List<Object?> levels,
   }) = ScoreQuestion;
 
-  /// Creates a [NoulQuestion].
+  /// Creates a [YesNoQuestion].
+  factory DecisionQuestion.yesNo(
+    Object instructions, {
+    Object? whenTrue,
+    Object? whenFalse,
+  }) = YesNoQuestion;
+
+  /// Creates a [YesNoQuestion].
+  @Deprecated('Use DecisionQuestion.yesNo instead.')
   factory DecisionQuestion.noul(
     Object instructions, {
     Object? whenTrue,
     Object? whenFalse,
-  }) = NoulQuestion;
+  }) = YesNoQuestion;
 
   /// Parses the wire format `{"type", "instructions", "criteria"}`.
   ///
   /// Follows Laya: a list of choice labels becomes labels without
   /// descriptions, keeping the first of any duplicates, and non-string
   /// `instructions` become `json.dumps(value)` text with `ensure_ascii=True`.
-  /// Stricter than Laya: score `criteria` must be a list and noul `criteria`
-  /// `null` or a map, where Laya also takes other shapes, such as a map of
+  /// Stricter than Laya: score `criteria` must be a list and yes/no (`noul`)
+  /// `criteria` `null` or a map, where Laya also takes other shapes, such as a map of
   /// score levels or an empty list for noul.
   ///
   /// Throws [LlamaDecisionException] for a malformed question.
@@ -83,7 +98,7 @@ sealed class DecisionQuestion {
                 'A score question needs "criteria" as a list of levels.',
               ),
       ),
-      _ => _noulFromJson(instructions, criteria),
+      _ => _yesNoFromJson(instructions, criteria),
     };
   }
 
@@ -155,14 +170,14 @@ final class ScoreQuestion extends DecisionQuestion {
   };
 }
 
-/// A yes-or-no question.
-final class NoulQuestion extends DecisionQuestion {
-  /// Creates a noul question with optional descriptions of each answer.
+/// A yes-or-no question, Laya's `noul` question type.
+final class YesNoQuestion extends DecisionQuestion {
+  /// Creates a yes-or-no question with optional descriptions of each answer.
   ///
   /// A `null` or empty-string description uses Laya's default text. Throws
   /// [LlamaDecisionException] when [instructions] or a description is not
   /// JSON-like.
-  NoulQuestion(super.instructions, {Object? whenTrue, Object? whenFalse})
+  YesNoQuestion(super.instructions, {Object? whenTrue, Object? whenFalse})
     : whenTrue = _frozenJson(whenTrue, 'whenTrue'),
       whenFalse = _frozenJson(whenFalse, 'whenFalse'),
       super._();
@@ -174,7 +189,7 @@ final class NoulQuestion extends DecisionQuestion {
   final Object? whenFalse;
 
   @override
-  DecisionQuestionType get type => DecisionQuestionType.noul;
+  DecisionQuestionType get type => DecisionQuestionType.yesNo;
 
   @override
   int get optionCount => 2;
@@ -187,6 +202,10 @@ final class NoulQuestion extends DecisionQuestion {
       'criteria': {'true': ?whenTrue, 'false': ?whenFalse},
   };
 }
+
+/// A yes-or-no question.
+@Deprecated('Use YesNoQuestion instead.')
+typedef NoulQuestion = YesNoQuestion;
 
 /// A state and the questions to answer about it.
 final class DecisionRequest {
@@ -275,15 +294,15 @@ Map<String, Object?> _choiceCriteriaFromJson(Object? criteria) {
   );
 }
 
-NoulQuestion _noulFromJson(String instructions, Object? criteria) {
-  if (criteria == null) return NoulQuestion(instructions);
+YesNoQuestion _yesNoFromJson(String instructions, Object? criteria) {
+  if (criteria == null) return YesNoQuestion(instructions);
   if (criteria is! Map) {
     throw LlamaDecisionException(
       'A noul question "criteria" must be a map with optional "true" and '
       '"false" descriptions.',
     );
   }
-  return NoulQuestion(
+  return YesNoQuestion(
     instructions,
     whenTrue: criteria['true'],
     whenFalse: criteria['false'],

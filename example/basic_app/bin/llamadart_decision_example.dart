@@ -57,7 +57,7 @@ Future<void> main(List<String> arguments) async {
     print('Ticket: ${decisionValueText(state)}\n');
 
     final stopwatch = Stopwatch()..start();
-    final result = await decisions.systemOne(
+    final result = await decisions.answer(
       state: state,
       questions: ticketTriageQuestions,
     );

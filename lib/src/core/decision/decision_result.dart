@@ -104,29 +104,50 @@ final class ScoreAnswer extends DecisionAnswer {
   };
 }
 
-/// Answer to a [NoulQuestion].
-final class NoulAnswer extends DecisionAnswer {
-  /// Creates a noul answer.
-  NoulAnswer({
-    required this.noul,
+/// Answer to a [YesNoQuestion].
+final class YesNoAnswer extends DecisionAnswer {
+  /// Creates a yes/no answer.
+  ///
+  /// Pass [probability]; the deprecated [noul] is its former name. Throws
+  /// [LlamaArgumentException] when neither is given.
+  YesNoAnswer({
+    double? probability,
+    @Deprecated('Use probability instead.') double? noul,
     required super.confidence,
     required super.actProbability,
-  }) : super._();
+  }) : probability =
+           probability ??
+           noul ??
+           (throw LlamaArgumentException(
+             'A YesNoAnswer needs a probability.',
+             name: 'probability',
+           )),
+       super._();
 
   /// Probability that the statement is true.
-  final double noul;
+  final double probability;
+
+  /// Probability that the statement is true.
+  @Deprecated('Use probability instead.')
+  double get noul => probability;
 
   @override
-  DecisionQuestionType get type => DecisionQuestionType.noul;
+  DecisionQuestionType get type => DecisionQuestionType.yesNo;
 
+  /// Converts this answer to Laya's response format, where [probability] is
+  /// `noul`.
   @override
   Map<String, Object?> toJson() => {
     'type': type.name,
-    'noul': noul,
+    'noul': probability,
     'confidence': confidence,
     'action': _action,
   };
 }
+
+/// Answer to a [YesNoQuestion].
+@Deprecated('Use YesNoAnswer instead.')
+typedef NoulAnswer = YesNoAnswer;
 
 /// Token usage of a decision call.
 class DecisionUsage {
@@ -183,8 +204,12 @@ class DecisionResult {
   /// The [ScoreAnswer]s in [answers], in question order.
   Map<String, ScoreAnswer> get scores => _answersOf<ScoreAnswer>();
 
-  /// The [NoulAnswer]s in [answers], in question order.
-  Map<String, NoulAnswer> get nouls => _answersOf<NoulAnswer>();
+  /// The [YesNoAnswer]s in [answers], in question order.
+  Map<String, YesNoAnswer> get yesNos => _answersOf<YesNoAnswer>();
+
+  /// The [YesNoAnswer]s in [answers], in question order.
+  @Deprecated('Use yesNos instead.')
+  Map<String, YesNoAnswer> get nouls => yesNos;
 
   /// Converts this result to Laya's `{model, answers, usage}` response format.
   Map<String, Object?> toJson() => {

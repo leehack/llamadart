@@ -31,8 +31,8 @@ DecisionResult _triage({String choice = 'billing', double refund = 0.91693}) =>
           confidence: 0.06811,
           actProbability: 0.25,
         ),
-        'refund': NoulAnswer(
-          noul: refund,
+        'refund': YesNoAnswer(
+          probability: refund,
           confidence: 0.91693,
           actProbability: 0.5,
         ),

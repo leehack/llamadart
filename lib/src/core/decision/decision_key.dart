@@ -25,7 +25,7 @@ import 'decision_result.dart';
 ///   levels: ['not urgent', 'soon', 'critical'],
 /// );
 ///
-/// final result = await decisions.systemOne(
+/// final result = await decisions.answer(
 ///   state: 'We were billed twice for March.',
 ///   questions: DecisionKey.questionsOf([department, urgency]),
 /// );
@@ -295,32 +295,36 @@ final class ScoreKey extends DecisionKey<ScoreAnswer> {
   }
 }
 
-/// Key of a noul question; reading it gives the [NoulAnswer].
-final class NoulKey extends DecisionKey<NoulAnswer> {
+/// Key of a yes-or-no question; reading it gives the [YesNoAnswer].
+final class YesNoKey extends DecisionKey<YesNoAnswer> {
   /// Creates a key for [question].
-  NoulKey(super.id, this.question) : super._();
+  YesNoKey(super.id, this.question) : super._();
 
   /// Creates a key for a yes-or-no question with optional descriptions of
   /// each answer.
   ///
-  /// Throws like [NoulQuestion.new].
-  NoulKey.of(
+  /// Throws like [YesNoQuestion.new].
+  YesNoKey.of(
     String id,
     Object instructions, {
     Object? whenTrue,
     Object? whenFalse,
   }) : this(
          id,
-         NoulQuestion(instructions, whenTrue: whenTrue, whenFalse: whenFalse),
+         YesNoQuestion(instructions, whenTrue: whenTrue, whenFalse: whenFalse),
        );
 
   @override
-  final NoulQuestion question;
+  final YesNoQuestion question;
 
   @override
-  NoulAnswer _read(DecisionAnswer answer) => answer is NoulAnswer
+  YesNoAnswer _read(DecisionAnswer answer) => answer is YesNoAnswer
       ? answer
       : throw LlamaDecisionException(
           'Answer "$id" is a ${answer.type.name} answer, not a noul answer.',
         );
 }
+
+/// Key of a yes-or-no question; reading it gives the [YesNoAnswer].
+@Deprecated('Use YesNoKey instead.')
+typedef NoulKey = YesNoKey;

@@ -91,7 +91,7 @@ typedef IntentReader = Future<IntentReading> Function(String text);
 /// text as the state.
 IntentReader layaIntentReader(DecisionEngine decisions) => (text) async {
   final stopwatch = Stopwatch()..start();
-  final result = await decisions.systemOne(
+  final result = await decisions.answer(
     state: text,
     questions: DecisionKey.questionsOf([intentKey]),
   );
