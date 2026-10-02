@@ -1,49 +1,229 @@
 import 'package:args/args.dart';
 import 'package:llamadart/llamadart.dart';
 
-/// Model presets the image example accepts.
+/// Default SDXS checkpoint: `concedo/sdxs-512-tinySDdistilled-GGUF`, pinned.
+const String defaultSdxsModelSource =
+    'hf://concedo/sdxs-512-tinySDdistilled-GGUF'
+    '@3144d898d61492f8382ffcabec055733fc5b2a0e/'
+    'sdxs-512-tinySDdistilled_Q8_0.gguf';
+
+/// Default SD-Turbo checkpoint: `Green-Sky/SD-Turbo-GGUF`, pinned.
+const String defaultSdTurboModelSource =
+    'hf://Green-Sky/SD-Turbo-GGUF@19a31586d02d64a73b4419bc193b3ecfaf38e1f0/'
+    'sd_turbo-f16-q8_0.gguf';
+
+/// TAESD decoder for SD-Turbo: `madebyollin/taesd`, pinned.
+const String defaultTaesdSource =
+    'hf://madebyollin/taesd@614f76814bbe30edbe2e627ace1c2234c81a2c0e/'
+    'diffusion_pytorch_model.safetensors';
+
+/// Default SDXL-Lightning checkpoint: `ByteDance/SDXL-Lightning`, pinned.
+const String defaultSdxlLightningModelSource =
+    'hf://ByteDance/SDXL-Lightning@c9a24f48e1c025556787b0c58dd67a091ece2e44/'
+    'sdxl_lightning_4step.safetensors';
+
+/// TAESDXL decoder for SDXL-Lightning: `madebyollin/taesdxl`, pinned.
+const String defaultTaesdxlSource =
+    'hf://madebyollin/taesdxl@b20258aaef75ef61e659c1e0f14f251cf0ad153e/'
+    'diffusion_pytorch_model.safetensors';
+
+const String _fluxRepository =
+    'hf://second-state/FLUX.1-schnell-GGUF@'
+    '8c45a2ba25e2d02bd34230989fb54983f39e44ec';
+
+const String _sd35MediumRepository =
+    'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
+    '58b78c305a43ddfcffe1ab54d7022995f61667ac';
+
+/// Default FLUX.1-schnell transformer: `second-state/FLUX.1-schnell-GGUF`
+/// Q4_0, pinned.
+const String defaultFlux1SchnellModelSource =
+    '$_fluxRepository/flux1-schnell-Q4_0.gguf';
+
+/// FLUX autoencoder, also used by Z-Image-Turbo:
+/// `second-state/FLUX.1-schnell-GGUF`, pinned.
+const String defaultFluxVaeSource = '$_fluxRepository/ae.safetensors';
+
+/// TAEF1 decoder for FLUX: `madebyollin/taef1`, pinned.
+const String defaultTaef1Source =
+    'hf://madebyollin/taef1@b1b2d00e9e440cfbf3dedb34266864da86016ceb/'
+    'diffusion_pytorch_model.safetensors';
+
+/// CLIP-L text encoder for FLUX and SD 3.5:
+/// `second-state/stable-diffusion-3.5-medium-GGUF` Q8_0, pinned.
+const String defaultClipLSource = '$_sd35MediumRepository/clip_l-Q8_0.gguf';
+
+/// CLIP-G text encoder for SD 3.5:
+/// `second-state/stable-diffusion-3.5-medium-GGUF` Q8_0, pinned.
+const String defaultClipGSource = '$_sd35MediumRepository/clip_g-Q8_0.gguf';
+
+/// T5-XXL text encoder for FLUX and SD 3.5:
+/// `second-state/stable-diffusion-3.5-medium-GGUF` Q8_0, pinned.
+const String defaultT5xxlSource = '$_sd35MediumRepository/t5xxl-Q8_0.gguf';
+
+/// Default SD 3.5 Large Turbo transformer:
+/// `city96/stable-diffusion-3.5-large-turbo-gguf` Q4_0, pinned.
+const String defaultSd35LargeTurboModelSource =
+    'hf://city96/stable-diffusion-3.5-large-turbo-gguf'
+    '@527c5548afc123f309238ca6bce7dfe3349aa997/sd3.5_large_turbo-Q4_0.gguf';
+
+/// TAESD3 decoder for SD 3.5: `madebyollin/taesd3`, pinned. The SD 3.5 VAE
+/// is in a gated repository, so the preset decodes with TAESD3 unless `--vae`
+/// names one.
+const String defaultTaesd3Source =
+    'hf://madebyollin/taesd3@d58dcaccd2b36fcb7a6b9e93c1cc507acab5a778/'
+    'diffusion_pytorch_model.safetensors';
+
+/// Default Z-Image-Turbo transformer: `leejet/Z-Image-Turbo-GGUF` Q4_K,
+/// pinned.
+const String defaultZImageTurboModelSource =
+    'hf://leejet/Z-Image-Turbo-GGUF@c61c0e422dc8b541b7548cf33a4ef8302b0f8085/'
+    'z_image_turbo-Q4_K.gguf';
+
+/// Qwen3-4B text encoder for Z-Image-Turbo:
+/// `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M, pinned.
+const String defaultQwen3LlmSource =
+    'hf://unsloth/Qwen3-4B-Instruct-2507-GGUF'
+    '@a06e946bb6b655725eafa393f4a9745d460374c9/'
+    'Qwen3-4B-Instruct-2507-Q4_K_M.gguf';
+
+const ImageGenerationDefaults _oneStep = ImageGenerationDefaults(
+  steps: 1,
+  guidanceScale: 1,
+);
+
+/// Model presets the image example accepts: the files each model needs and
+/// the settings it was validated with.
 enum ImagePreset {
-  /// SDXS-512: one step, guidance 1.
-  sdxs('sdxs'),
+  /// SDXS-512: one step, guidance 1. Its checkpoint embeds a tiny
+  /// autoencoder, so the VAE decodes without direct convolutions, which made
+  /// it about 15% slower on an M4 Max CPU.
+  sdxs(
+    'sdxs',
+    defaultSdxsModelSource,
+    defaults: _oneStep,
+    vaeDirectConvolution: false,
+  ),
 
-  /// SD-Turbo: one step by default, optional TAESD.
-  sdTurbo('sd-turbo', taesd: ImageGenerationPresetFile.taesd),
+  /// SD-Turbo: one step by default (up to 4), optional TAESD.
+  sdTurbo(
+    'sd-turbo',
+    defaultSdTurboModelSource,
+    taesd: defaultTaesdSource,
+    defaults: _oneStep,
+  ),
 
-  /// SDXL-Lightning: 4 steps at 1024x1024, optional VAE or TAESDXL.
+  /// SDXL-Lightning: 4 Euler steps on the sgm_uniform schedule at
+  /// 1024x1024, optional VAE or TAESDXL.
   sdxlLightning(
     'sdxl-lightning',
-    taesd: ImageGenerationPresetFile.taesdxl,
+    defaultSdxlLightningModelSource,
+    taesd: defaultTaesdxlSource,
     roles: {'vae'},
+    defaults: ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 4,
+      guidanceScale: 1,
+      sampler: ImageGenerationSampler.euler,
+      scheduler: ImageGenerationScheduler.sgmUniform,
+    ),
   ),
 
   /// FLUX.1-schnell: 4 steps at 1024x1024 from split files.
   flux1Schnell(
     'flux1-schnell',
-    taesd: ImageGenerationPresetFile.taef1,
+    defaultFlux1SchnellModelSource,
+    split: true,
+    taesd: defaultTaef1Source,
     roles: {'vae', 'clipL', 't5xxl'},
+    files: {
+      'vae': defaultFluxVaeSource,
+      'clipL': defaultClipLSource,
+      't5xxl': defaultT5xxlSource,
+    },
+    defaults: ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 4,
+      guidanceScale: 1,
+    ),
   ),
 
   /// SD 3.5 Large Turbo: 4 steps at 1024x1024 from split files.
   sd35LargeTurbo(
     'sd35-large-turbo',
-    taesd: ImageGenerationPresetFile.taesd3,
+    defaultSd35LargeTurboModelSource,
+    split: true,
+    taesd: defaultTaesd3Source,
     roles: {'vae', 'clipL', 'clipG', 't5xxl'},
+    files: {
+      'taesd': defaultTaesd3Source,
+      'clipL': defaultClipLSource,
+      'clipG': defaultClipGSource,
+      't5xxl': defaultT5xxlSource,
+    },
+    defaults: ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 4,
+      guidanceScale: 1,
+    ),
   ),
 
   /// Z-Image-Turbo: 8 steps at 1024x1024 with a Qwen3 text encoder.
-  zImageTurbo('z-image-turbo', roles: {'vae', 'llm'});
+  zImageTurbo(
+    'z-image-turbo',
+    defaultZImageTurboModelSource,
+    split: true,
+    roles: {'vae', 'llm'},
+    files: {'vae': defaultFluxVaeSource, 'llm': defaultQwen3LlmSource},
+    defaults: ImageGenerationDefaults(
+      width: 1024,
+      height: 1024,
+      steps: 8,
+      guidanceScale: 1,
+    ),
+  );
 
-  const ImagePreset(this.flag, {this.taesd, this.roles = const {}});
+  const ImagePreset(
+    this.flag,
+    this.modelSource, {
+    required this.defaults,
+    this.split = false,
+    this.taesd,
+    this.roles = const {},
+    this.files = const {},
+    this.vaeDirectConvolution,
+  });
 
   /// Value of `--preset`.
   final String flag;
 
+  /// Pinned main weights: the checkpoint, or the diffusion model of a split
+  /// preset.
+  final String modelSource;
+
+  /// Whether the main weights are a split checkpoint's diffusion model rather
+  /// than a single-file checkpoint.
+  final bool split;
+
   /// Pinned tiny autoencoder for `--taesd default`, or `null` when the
   /// preset takes none.
-  final ImageGenerationPresetFile? taesd;
+  final String? taesd;
 
   /// File roles besides the main weights and TAESD that the preset takes.
   final Set<String> roles;
+
+  /// Pinned sources for the roles the user leaves unset.
+  final Map<String, String> files;
+
+  /// Size and sampling settings the model was validated with.
+  final ImageGenerationDefaults defaults;
+
+  /// `ImageGenerationOptions.vaeDirectConvolution` for the model, or `null`
+  /// for the engine's choice.
+  final bool? vaeDirectConvolution;
 }
 
 /// Command-line flag of each file role besides the main weights.
@@ -72,15 +252,13 @@ final class ImageCliOptions {
   /// Model preset.
   final ImagePreset preset;
 
-  /// Main weights source, or `null` for the preset's pinned file.
-  final ModelSource? modelSource;
+  /// Main weights source.
+  final ModelSource modelSource;
 
-  /// Sources of the other files given on the command line, keyed by role as
-  /// in [imageFileFlags]. The preset downloads its pinned file for any other
-  /// role it needs.
+  /// Sources of the other files, keyed by role as in [imageFileFlags].
   final Map<String, ModelSource> fileSources;
 
-  /// TAESD source, or `null` to decode with the preset's default decoder.
+  /// TAESD source, or `null` to decode with the full VAE.
   ModelSource? get taesdSource => fileSources['taesd'];
 
   /// Generation request.
@@ -96,42 +274,34 @@ final class ImageCliOptions {
   /// CPU threads; 0 uses the physical cores.
   final int threads;
 
-  /// The engine model for [preset] with the given sources.
+  /// The engine model: [preset]'s settings with [modelSource] and
+  /// [fileSources] in their roles.
   ImageGenerationModel get model {
-    final files = fileSources;
-    return switch (preset) {
-      ImagePreset.sdxs => ImageGenerationModel.sdxsPreset(model: modelSource),
-      ImagePreset.sdTurbo => ImageGenerationModel.sdTurboPreset(
-        model: modelSource,
-        taesd: files['taesd'],
-      ),
-      ImagePreset.sdxlLightning => ImageGenerationModel.sdxlLightningPreset(
-        model: modelSource,
-        vae: files['vae'],
-        taesd: files['taesd'],
-      ),
-      ImagePreset.flux1Schnell => ImageGenerationModel.flux1SchnellPreset(
-        diffusionModel: modelSource,
-        clipL: files['clipL'],
-        t5xxl: files['t5xxl'],
-        vae: files['vae'],
-        taesd: files['taesd'],
-      ),
-      ImagePreset.sd35LargeTurbo => ImageGenerationModel.sd35LargeTurboPreset(
-        diffusionModel: modelSource,
-        clipL: files['clipL'],
-        clipG: files['clipG'],
-        t5xxl: files['t5xxl'],
-        vae: files['vae'],
-        taesd: files['taesd'],
-      ),
-      ImagePreset.zImageTurbo => ImageGenerationModel.zImageTurboPreset(
-        diffusionModel: modelSource,
-        llm: files['llm'],
-        vae: files['vae'],
-      ),
+    final sources = {
+      preset.split ? 'diffusionModel' : 'model': modelSource,
+      ...fileSources,
     };
+    return ImageGenerationModel(
+      files: ImageGenerationModelFiles(
+        model: sources['model'],
+        diffusionModel: sources['diffusionModel'],
+        vae: sources['vae'],
+        taesd: sources['taesd'],
+        clipL: sources['clipL'],
+        clipG: sources['clipG'],
+        t5xxl: sources['t5xxl'],
+        llm: sources['llm'],
+      ),
+      defaults: preset.defaults,
+    );
   }
+
+  /// Engine settings: [device], [threads] and [preset]'s VAE setting.
+  ImageGenerationOptions get engineOptions => ImageGenerationOptions(
+    device: device,
+    threads: threads,
+    vaeDirectConvolution: preset.vaeDirectConvolution,
+  );
 
   /// Output path of image [index].
   String outputPathFor(int index) {
@@ -226,14 +396,22 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
       );
     }
   }
-  final model = results['model'] as String?;
+  final decoderGiven = given.containsKey('vae') || given.containsKey('taesd');
+  final texts = <String, String>{
+    for (final MapEntry(key: role, value: text) in preset.files.entries)
+      if (!decoderGiven || (role != 'vae' && role != 'taesd')) role: text,
+    ...given,
+  };
   return ImageCliOptions(
     preset: preset,
-    modelSource: model == null ? null : _source('model', model),
+    modelSource: _source(
+      'model',
+      results['model'] as String? ?? preset.modelSource,
+    ),
     fileSources: {
-      for (final MapEntry(key: role, value: text) in given.entries)
+      for (final MapEntry(key: role, value: text) in texts.entries)
         role: role == 'taesd' && text == 'default'
-            ? preset.taesd!.source
+            ? ModelSource.parse(preset.taesd!)
             : _source(imageFileFlags[role]!, text),
     },
     request: ImageGenerationRequest(

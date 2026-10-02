@@ -12,8 +12,8 @@ import 'package:test/test.dart';
 // opts into. Set LLAMADART_SDXS_MODEL, and optionally
 // LLAMADART_SD_TURBO_MODEL, LLAMADART_TAESD, LLAMADART_SDXL_LIGHTNING_MODEL,
 // LLAMADART_TAESDXL and LLAMADART_IMAGE_OUTPUT_DIR. Downloads nothing unless
-// LLAMADART_IMAGE_PRESET_CACHE names a model cache directory: then the SDXS
-// preset loads its pinned Hugging Face file through it (683 MB once).
+// LLAMADART_IMAGE_HF_CACHE names a model cache directory: then SDXS loads
+// from its pinned Hugging Face file through it (683 MB once).
 void main() {
   final sdxsPath = Platform.environment['LLAMADART_SDXS_MODEL'];
   final sdTurboPath = Platform.environment['LLAMADART_SD_TURBO_MODEL'];
@@ -21,7 +21,7 @@ void main() {
   final sdxlLightningPath =
       Platform.environment['LLAMADART_SDXL_LIGHTNING_MODEL'];
   final taesdxlPath = Platform.environment['LLAMADART_TAESDXL'];
-  final presetCache = Platform.environment['LLAMADART_IMAGE_PRESET_CACHE'];
+  final hfCache = Platform.environment['LLAMADART_IMAGE_HF_CACHE'];
   final outputDir = Platform.environment['LLAMADART_IMAGE_OUTPUT_DIR'];
   if (outputDir != null) {
     Directory(outputDir).createSync(recursive: true);
@@ -50,7 +50,7 @@ void main() {
   // pipeline yet.
   test('after warmUp the first image is about as fast as a warm one', () async {
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath!)),
+      _sdxs(ModelSource.path(sdxsPath!)),
     );
     addTearDown(engine.dispose);
     const request = ImageGenerationRequest(
@@ -82,8 +82,8 @@ void main() {
     // or text encoder, so the runtime rejects it.
     await expectLater(
       ImageGenerationEngine.load(
-        ImageGenerationModel.custom(
-          ImageGenerationModelFiles.fromSources(
+        ImageGenerationModel(
+          files: ImageGenerationModelFiles(
             diffusionModel: ModelSource.path(sdxsPath!),
           ),
         ),
@@ -113,7 +113,7 @@ void main() {
 
     setUpAll(() async {
       engine = await ImageGenerationEngine.load(
-        ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath!)),
+        _sdxs(ModelSource.path(sdxsPath!)),
       );
     });
 
@@ -227,9 +227,7 @@ void main() {
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(
-        ImageGenerationEngine.load(
-          ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath!)),
-        ),
+        ImageGenerationEngine.load(_sdxs(ModelSource.path(sdxsPath!))),
         throwsA(isA<LlamaStateException>()),
       );
       expect(
@@ -246,9 +244,12 @@ void main() {
       return;
     }
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdTurboPreset(
-        model: ModelSource.path(sdTurboPath),
-        taesd: taesdPath == null ? null : ModelSource.path(taesdPath),
+      ImageGenerationModel(
+        defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+        files: ImageGenerationModelFiles(
+          model: ModelSource.path(sdTurboPath),
+          taesd: taesdPath == null ? null : ModelSource.path(taesdPath),
+        ),
       ),
     );
     addTearDown(engine.dispose);
@@ -280,9 +281,12 @@ void main() {
         return;
       }
       final engine = await ImageGenerationEngine.load(
-        ImageGenerationModel.sdxlLightningPreset(
-          model: ModelSource.path(sdxlLightningPath),
-          taesd: taesdxlPath == null ? null : ModelSource.path(taesdxlPath),
+        ImageGenerationModel(
+          defaults: _lightning,
+          files: ImageGenerationModelFiles(
+            model: ModelSource.path(sdxlLightningPath),
+            taesd: taesdxlPath == null ? null : ModelSource.path(taesdxlPath),
+          ),
         ),
       );
       addTearDown(engine.dispose);
@@ -310,62 +314,63 @@ void main() {
     },
   );
 
-  test('the SDXS preset loads its pinned file through the model cache, then '
-      'reuses it', () async {
-    // A skip: argument would not apply: the scenario passes --run-skipped.
-    if (presetCache == null) {
-      markTestSkipped('Set LLAMADART_IMAGE_PRESET_CACHE');
-      return;
-    }
-    final downloads = DefaultModelDownloadManager(
-      defaultCacheDirectory: presetCache,
-    );
-    final total = ImageGenerationPresetFile.sdxs.sizeBytes;
-
-    Future<List<ModelDownloadProgress>> loadAndGenerate() async {
-      final events = <ModelDownloadProgress>[];
-      final timer = Stopwatch()..start();
-      final engine = await ImageGenerationEngine.load(
-        ImageGenerationModel.sdxsPreset(),
-        modelDownloadManager: downloads,
-        onProgress: events.add,
-      );
-      final loaded = timer.elapsedMilliseconds;
-      try {
-        final result = await engine.generateImage(
-          const ImageGenerationRequest(
-            prompt: 'a red fox in autumn leaves',
-            width: 256,
-            height: 256,
-            seed: 42,
-          ),
-        );
-        expect(result.images.single.pixels.toSet().length, greaterThan(64));
-        print(
-          'SDXS preset: ${events.length} progress events, loaded in '
-          '$loaded ms, image ${result.elapsed.inMilliseconds} ms',
-        );
-      } finally {
-        await engine.dispose();
+  test(
+    'SDXS loads from its pinned Hugging Face file through the model cache, then '
+    'reuses it',
+    () async {
+      // A skip: argument would not apply: the scenario passes --run-skipped.
+      if (hfCache == null) {
+        markTestSkipped('Set LLAMADART_IMAGE_HF_CACHE');
+        return;
       }
-      return events;
-    }
+      final downloads = DefaultModelDownloadManager(
+        defaultCacheDirectory: hfCache,
+      );
+      const total = 682847200;
 
-    final first = await loadAndGenerate();
-    expect(first.last.receivedBytes, total);
-    expect(first.last.totalBytes, total);
+      Future<List<ModelDownloadProgress>> loadAndGenerate() async {
+        final events = <ModelDownloadProgress>[];
+        final timer = Stopwatch()..start();
+        final engine = await ImageGenerationEngine.load(
+          _sdxs(_pinnedSdxs),
+          modelDownloadManager: downloads,
+          onProgress: events.add,
+        );
+        final loaded = timer.elapsedMilliseconds;
+        try {
+          final result = await engine.generateImage(
+            const ImageGenerationRequest(
+              prompt: 'a red fox in autumn leaves',
+              width: 256,
+              height: 256,
+              seed: 42,
+            ),
+          );
+          expect(result.images.single.pixels.toSet().length, greaterThan(64));
+          print(
+            'SDXS from Hugging Face: ${events.length} progress events, loaded in '
+            '$loaded ms, image ${result.elapsed.inMilliseconds} ms',
+          );
+        } finally {
+          await engine.dispose();
+        }
+        return events;
+      }
 
-    final cached = await loadAndGenerate();
-    expect(cached.map((event) => event.receivedBytes), [total]);
-    final entry = await downloads.get(
-      ImageGenerationPresetFile.sdxs.source.cacheKey,
-    );
-    expect(entry?.bytes, total);
-  });
+      final first = await loadAndGenerate();
+      expect(first.last.receivedBytes, total);
+      expect(first.last.totalBytes, total);
+
+      final cached = await loadAndGenerate();
+      expect(cached.map((event) => event.receivedBytes), [total]);
+      final entry = await downloads.get(_pinnedSdxs.cacheKey);
+      expect(entry?.bytes, total);
+    },
+  );
 
   test('dispose during a generation cancels it', () async {
     final engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath!)),
+      _sdxs(ModelSource.path(sdxsPath!)),
     );
     final result = engine.generateImage(
       const ImageGenerationRequest(prompt: 'a castle', steps: 20),
@@ -379,6 +384,26 @@ void main() {
     expect(engine.capabilities.isSupported, isFalse);
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 }
+
+final _pinnedSdxs = ModelSource.huggingFace(
+  repoId: 'concedo/sdxs-512-tinySDdistilled-GGUF',
+  revision: '3144d898d61492f8382ffcabec055733fc5b2a0e',
+  filePath: 'sdxs-512-tinySDdistilled_Q8_0.gguf',
+);
+
+const _lightning = ImageGenerationDefaults(
+  width: 1024,
+  height: 1024,
+  steps: 4,
+  guidanceScale: 1,
+  sampler: ImageGenerationSampler.euler,
+  scheduler: ImageGenerationScheduler.sgmUniform,
+);
+
+ImageGenerationModel _sdxs(ModelSource model) => ImageGenerationModel(
+  files: ImageGenerationModelFiles(model: model),
+  defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+);
 
 /// Runs [body] while a 10 ms periodic timer measures the longest time the
 /// event loop went without running it.

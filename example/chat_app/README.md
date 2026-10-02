@@ -266,10 +266,9 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   it takes under 0.5 s.
 - Models: **SDXS-512** (683 MB, recommended, fits most phones) and
   **SD-Turbo + TAESD** (2.0 GB). Both download into the app's model cache
-  from the library's pinned `ImageGenerationPresetFile`s, checked against
-  their exact sizes and SHA-256; an interrupted download resumes. SD-Turbo
-  shows a memory note: it needs about 3.1 GB free, so phones with less than
-  8 GB of RAM usually cannot load it.
+  from pinned Hugging Face revisions with exact sizes and SHA-256 checks; an
+  interrupted download resumes. SD-Turbo shows a memory note: it needs about
+  3.1 GB free, so phones with less than 8 GB of RAM usually cannot load it.
 - Controls: prompt, optional negative prompt (ignored at guidance 1, which
   both presets use), 256 or 512 px, steps (1 to 4, defaulting to the preset's
   1), and a seed that is random when empty. The result shows the seed it used,

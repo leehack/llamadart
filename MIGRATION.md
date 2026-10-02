@@ -2,16 +2,19 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.10.x` -> next release: image generation model sources
+## `0.10.x` -> next release: image generation models from `ModelSource`s
 
-Image generation is a Preview. The path-based model API still works in the
-next release but is deprecated, and a later release removes it.
+Image generation is a Preview, and this release changes its model API with
+no deprecation period. The library no longer has model presets or
+`String` paths: an app describes each model by its files and settings.
 
-1. **Presets take `ModelSource`s and download pinned files by default.**
-   Each path factory has a `*Preset` replacement whose parameters are
-   `ModelSource`s named after the file roles. Omit a file to use the
-   preset's `ImageGenerationPresetFile`, which `ImageGenerationEngine.load`
-   downloads into the model cache. Wrap a local path in `ModelSource.path`:
+1. **Presets are removed.** `ImageGenerationModel.sdxs`, `sdTurbo`,
+   `sdxlLightning`, `flux1Schnell`, `sd35LargeTurbo`, `zImageTurbo` and
+   `custom` are gone, as is `ImageGenerationModelFamily` and
+   `ImageGenerationModel.family`. Build the model with its files and the
+   settings the preset used; the
+   [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation#recipes)
+   lists them for each former preset:
 
    ```dart
    // Before
@@ -24,47 +27,51 @@ next release but is deprecated, and a later release removes it.
    final engine = await ImageGenerationEngine.load(
      ImageGenerationModel.sdxs(entry.filePath),
    );
-   // After
+   // After: load downloads the file into the model cache.
    final engine = await ImageGenerationEngine.load(
-     ImageGenerationModel.sdxsPreset(),
+     ImageGenerationModel(
+       files: ImageGenerationModelFiles(
+         model: ModelSource.parse(
+           'hf://concedo/sdxs-512-tinySDdistilled-GGUF/'
+           'sdxs-512-tinySDdistilled_Q8_0.gguf',
+         ),
+       ),
+       defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+     ),
+     options: const ImageGenerationOptions(vaeDirectConvolution: false),
      onProgress: (progress) => print(progress.fraction),
-   );
-   // After, keeping a local file
-   final engine = await ImageGenerationEngine.load(
-     ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath)),
    );
    ```
 
-   | Deprecated | Replacement |
-   | --- | --- |
-   | `sdxs(modelPath)` | `sdxsPreset(model:)` |
-   | `sdTurbo(modelPath, taesdPath:)` | `sdTurboPreset(model:, taesd:)` |
-   | `sdxlLightning(modelPath, vaePath:, taesdPath:)` | `sdxlLightningPreset(model:, vae:, taesd:)` |
-   | `flux1Schnell(diffusionModelPath:, clipLPath:, t5xxlPath:, vaePath:, taesdPath:)` | `flux1SchnellPreset(diffusionModel:, clipL:, t5xxl:, vae:, taesd:)` |
-   | `sd35LargeTurbo(diffusionModelPath:, clipLPath:, clipGPath:, t5xxlPath:, vaePath:, taesdPath:)` | `sd35LargeTurboPreset(diffusionModel:, clipL:, clipG:, t5xxl:, vae:, taesd:)` |
-   | `zImageTurbo(diffusionModelPath:, llmPath:, vaePath:)` | `zImageTurboPreset(diffusionModel:, llm:, vae:)` |
+   | Removed | Files | `ImageGenerationDefaults` |
+   | --- | --- | --- |
+   | `sdxs(path)` | `model` | `steps: 1, guidanceScale: 1` |
+   | `sdTurbo(path, taesdPath:)` | `model`, `taesd` | `steps: 1, guidanceScale: 1` |
+   | `sdxlLightning(path, vaePath:, taesdPath:)` | `model`, `vae`, `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1, sampler: euler, scheduler: sgmUniform` |
+   | `flux1Schnell(...)` | `diffusionModel`, `clipL`, `t5xxl`, `vae` or `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `sd35LargeTurbo(...)` | `diffusionModel`, `clipL`, `clipG`, `t5xxl`, `vae` or `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `zImageTurbo(...)` | `diffusionModel`, `llm`, `vae` | `width: 1024, height: 1024, steps: 8, guidanceScale: 1` |
+   | `custom(files, defaults:)` | the same roles | the same `defaults` |
 
-   An optional file that the old factory left out stays out: `sdTurboPreset`
-   and `sdxlLightningPreset` add no TAESD unless given one, such as
-   `ImageGenerationPresetFile.taesd.source`. `flux1SchnellPreset` and
-   `sd35LargeTurboPreset` no longer throw `ArgumentError` without a
-   decoder: they use the pinned FLUX `ae` and TAESD3, and any `vae` or
-   `taesd` you pass replaces that default.
+2. **Files are `ModelSource`s.** Each `ImageGenerationModelFiles` role takes
+   a `ModelSource` instead of a `String` path, and `paths` is replaced by
+   `sources`. Wrap a local path in `ModelSource.path(path)`, or pass a URL or
+   `hf://` source to have `ImageGenerationEngine.load` download it. An empty
+   path now throws `ArgumentError` from `ModelSource.path`.
 
-2. **`ImageGenerationModelFiles` takes sources.** Replace
-   `ImageGenerationModelFiles(model: path, ...)` with
-   `ImageGenerationModelFiles.fromSources(model: ModelSource.path(path),
-   ...)`; `ImageGenerationModel.custom` is unchanged. The `String` fields
-   (`model`, `vae`, ...) and `paths` are deprecated: read
-   `files.sources['vae']` instead. For a file from a URL or Hugging Face
-   they are `null`, and `paths` leaves it out.
+3. **SDXS needs `vaeDirectConvolution: false` to keep its speed.** The
+   engine used to keep direct VAE convolutions off for the SDXS preset; it
+   now decides from the device and the `taesd` role only. Off Metal, pass
+   `ImageGenerationOptions(vaeDirectConvolution: false)` for SDXS or another
+   checkpoint that embeds a tiny autoencoder, or keep the default to use
+   about 250 MiB less memory at 15 to 25% more time per image on the CPU.
 
-3. **`ImageGenerationEngine.load` resolves every file.** It now checks local
+4. **`ImageGenerationEngine.load` resolves every file.** It checks local
    files through the model download manager, like
    `LlamaEngine.loadModelSource`, and takes `loadOptions`, `onProgress`,
    `modelResolver` and `modelDownloadManager`. `ModelLoadOptions.sha256`
    throws `LlamaUnsupportedException`, since one checksum cannot cover
-   several files. Loading only local files behaves as before.
+   several files.
 
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 

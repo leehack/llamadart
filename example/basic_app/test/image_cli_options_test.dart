@@ -5,23 +5,15 @@ import 'package:test/test.dart';
 ImageCliOptions _parse(List<String> arguments) =>
     parseImageCliOptions(createImageArgParser().parse(arguments));
 
-Map<String, String> _keys(ImageCliOptions options) => {
-  for (final MapEntry(key: role, value: source)
-      in options.model.files.sources.entries)
-    role: source.canonicalKey,
-};
-
-Map<String, String> _pinned(Map<String, ImageGenerationPresetFile> files) => {
-  for (final MapEntry(key: role, value: file) in files.entries)
-    role: file.source.canonicalKey,
-};
-
 void main() {
   test('defaults to the pinned SDXS checkpoint and a random seed', () {
     final options = _parse(const ['-p', 'a fox']);
 
     expect(options.preset, ImagePreset.sdxs);
-    expect(options.modelSource, isNull);
+    expect(
+      options.modelSource.canonicalKey,
+      ModelSource.parse(defaultSdxsModelSource).canonicalKey,
+    );
     expect(options.taesdSource, isNull);
     expect(options.request.prompt, 'a fox');
     expect(options.request.width, isNull);
@@ -33,8 +25,10 @@ void main() {
     expect(options.outputPath, 'image.png');
     expect(options.device, ImageGenerationDevice.auto);
     expect(options.threads, 0);
-    expect(options.model.family, ImageGenerationModelFamily.sdxs);
-    expect(_keys(options), _pinned({'model': ImageGenerationPresetFile.sdxs}));
+    final model = options.model;
+    expect(model.files.sources.keys, ['model']);
+    expect((model.defaults.steps, model.defaults.guidanceScale), (1, 1.0));
+    expect(options.engineOptions.vaeDirectConvolution, isFalse);
   });
 
   test('reads every option for sd-turbo', () {
@@ -70,7 +64,7 @@ void main() {
     ]);
 
     expect(options.preset, ImagePreset.sdTurbo);
-    expect(options.modelSource?.path, '/models/turbo.gguf');
+    expect(options.modelSource.path, '/models/turbo.gguf');
     expect(options.taesdSource?.path, '/models/taesd.safetensors');
     expect(options.request.negativePrompt, 'blurry');
     expect((options.request.width, options.request.height), (256, 320));
@@ -82,12 +76,13 @@ void main() {
     expect(options.threads, 6);
     expect(options.outputPathFor(0), 'out/light.png');
     expect(options.outputPathFor(1), 'out/light-1.png');
-    expect(
-      options.model.files.sources.map(
-        (role, source) => MapEntry(role, source.path),
-      ),
-      {'model': '/models/turbo.gguf', 'taesd': '/models/taesd.safetensors'},
-    );
+    final model = options.model;
+    expect(model.files.model?.path, '/models/turbo.gguf');
+    expect(model.files.taesd?.path, '/models/taesd.safetensors');
+    expect((model.defaults.steps, model.defaults.width), (1, 512));
+    expect(options.engineOptions.device, ImageGenerationDevice.cpu);
+    expect(options.engineOptions.threads, 6);
+    expect(options.engineOptions.vaeDirectConvolution, isNull);
   });
 
   test('sd-turbo defaults to the pinned checkpoint and --taesd default', () {
@@ -101,11 +96,12 @@ void main() {
     ]);
 
     expect(
-      _keys(options),
-      _pinned({
-        'model': ImageGenerationPresetFile.sdTurbo,
-        'taesd': ImageGenerationPresetFile.taesd,
-      }),
+      options.modelSource.canonicalKey,
+      ModelSource.parse(defaultSdTurboModelSource).canonicalKey,
+    );
+    expect(
+      options.taesdSource?.canonicalKey,
+      ModelSource.parse(defaultTaesdSource).canonicalKey,
     );
   });
 
@@ -138,42 +134,44 @@ void main() {
     }
   });
 
-  test('desktop presets default to the library pinned files', () {
+  test('desktop presets default to pinned files and the model size', () {
+    String key(String source) => ModelSource.parse(source).canonicalKey;
+    Map<String, String> keys(ImageCliOptions options) => {
+      for (final MapEntry(key: role, value: source)
+          in options.fileSources.entries)
+        role: source.canonicalKey,
+    };
+
     final lightning = _parse(const ['--preset', 'sdxl-lightning', '-p', 'a']);
-    expect(lightning.fileSources, isEmpty);
     expect(
-      _keys(lightning),
-      _pinned({'model': ImageGenerationPresetFile.sdxlLightning}),
+      lightning.modelSource.canonicalKey,
+      key(defaultSdxlLightningModelSource),
     );
+    expect(lightning.fileSources, isEmpty);
     expect((lightning.request.width, lightning.request.height), (null, null));
 
-    expect(
-      _keys(_parse(const ['--preset', 'flux1-schnell', '-p', 'a'])),
-      _pinned({
-        'diffusionModel': ImageGenerationPresetFile.flux1Schnell,
-        'vae': ImageGenerationPresetFile.fluxVae,
-        'clipL': ImageGenerationPresetFile.clipL,
-        't5xxl': ImageGenerationPresetFile.t5xxl,
-      }),
-    );
-    expect(
-      _keys(_parse(const ['--preset', 'sd35-large-turbo', '-p', 'a'])),
-      _pinned({
-        'diffusionModel': ImageGenerationPresetFile.sd35LargeTurbo,
-        'taesd': ImageGenerationPresetFile.taesd3,
-        'clipL': ImageGenerationPresetFile.clipL,
-        'clipG': ImageGenerationPresetFile.clipG,
-        't5xxl': ImageGenerationPresetFile.t5xxl,
-      }),
-    );
-    expect(
-      _keys(_parse(const ['--preset', 'z-image-turbo', '-p', 'a'])),
-      _pinned({
-        'diffusionModel': ImageGenerationPresetFile.zImageTurbo,
-        'vae': ImageGenerationPresetFile.fluxVae,
-        'llm': ImageGenerationPresetFile.zImageTurboLlm,
-      }),
-    );
+    final flux = _parse(const ['--preset', 'flux1-schnell', '-p', 'a']);
+    expect(flux.modelSource.canonicalKey, key(defaultFlux1SchnellModelSource));
+    expect(keys(flux), {
+      'vae': key(defaultFluxVaeSource),
+      'clipL': key(defaultClipLSource),
+      't5xxl': key(defaultT5xxlSource),
+    });
+
+    final sd35 = _parse(const ['--preset', 'sd35-large-turbo', '-p', 'a']);
+    expect(keys(sd35), {
+      'taesd': key(defaultTaesd3Source),
+      'clipL': key(defaultClipLSource),
+      'clipG': key(defaultClipGSource),
+      't5xxl': key(defaultT5xxlSource),
+    });
+
+    final zImage = _parse(const ['--preset', 'z-image-turbo', '-p', 'a']);
+    expect(zImage.modelSource.canonicalKey, key(defaultZImageTurboModelSource));
+    expect(keys(zImage), {
+      'vae': key(defaultFluxVaeSource),
+      'llm': key(defaultQwen3LlmSource),
+    });
   });
 
   test('a given decoder replaces the default one, and files override '
@@ -188,17 +186,12 @@ void main() {
       '-p',
       'a',
     ]);
-    expect(flux.model.files.sources.keys, [
-      'diffusionModel',
-      'taesd',
-      'clipL',
-      't5xxl',
-    ]);
+    expect(flux.fileSources.keys, unorderedEquals(['taesd', 'clipL', 't5xxl']));
     expect(
       flux.taesdSource?.canonicalKey,
-      ImageGenerationPresetFile.taef1.source.canonicalKey,
+      ModelSource.parse(defaultTaef1Source).canonicalKey,
     );
-    expect(flux.model.files.sources['t5xxl']?.path, '/m/t5.gguf');
+    expect(flux.fileSources['t5xxl']?.path, '/m/t5.gguf');
 
     final sd35 = _parse(const [
       '--preset',
@@ -208,64 +201,34 @@ void main() {
       '-p',
       'a',
     ]);
-    expect(sd35.model.files.sources, isNot(contains('taesd')));
-    expect(sd35.model.files.sources['vae']?.path, '/m/sd3_vae.safetensors');
+    expect(sd35.taesdSource, isNull);
+    expect(sd35.fileSources['vae']?.path, '/m/sd3_vae.safetensors');
   });
 
-  test('desktop presets build their library models from given files', () {
-    const files = {
-      'vae': '/m/vae.safetensors',
-      'taesd': '/m/tae.safetensors',
-      'clipL': '/m/clip_l.gguf',
-      'clipG': '/m/clip_g.gguf',
-      't5xxl': '/m/t5.gguf',
-      'llm': '/m/qwen3.gguf',
-    };
-    for (final (flag, family, roles) in const [
-      (
-        'sdxl-lightning',
-        ImageGenerationModelFamily.sdxlLightning,
-        ['model', 'vae', 'taesd'],
-      ),
-      (
-        'flux1-schnell',
-        ImageGenerationModelFamily.flux1Schnell,
-        ['diffusionModel', 'vae', 'taesd', 'clipL', 't5xxl'],
-      ),
+  test('desktop presets build models with their roles and settings', () {
+    for (final (flag, roles, steps) in const [
+      ('sdxl-lightning', ['model'], 4),
+      ('flux1-schnell', ['diffusionModel', 'vae', 'clipL', 't5xxl'], 4),
       (
         'sd35-large-turbo',
-        ImageGenerationModelFamily.sd35LargeTurbo,
-        ['diffusionModel', 'vae', 'taesd', 'clipL', 'clipG', 't5xxl'],
+        ['diffusionModel', 'taesd', 'clipL', 'clipG', 't5xxl'],
+        4,
       ),
-      (
-        'z-image-turbo',
-        ImageGenerationModelFamily.zImageTurbo,
-        ['diffusionModel', 'vae', 'llm'],
-      ),
+      ('z-image-turbo', ['diffusionModel', 'vae', 'llm'], 8),
     ]) {
-      final preset = ImagePreset.values.firstWhere((p) => p.flag == flag);
-      final options = _parse([
-        '--preset',
-        flag,
-        '-m',
-        '/m/w',
-        for (final MapEntry(key: role, value: path) in files.entries)
-          if (preset.roles.contains(role) ||
-              (role == 'taesd' && preset.taesd != null)) ...[
-            '--${imageFileFlags[role]}',
-            path,
-          ],
-        '-p',
-        'a',
-      ]);
-      expect(options.model.family, family, reason: flag);
-      expect(options.model.files.sources.keys, roles, reason: flag);
-      expect(
-        options.model.files.sources.values.every((source) => source.isLocal),
-        isTrue,
-        reason: flag,
-      );
+      final model = _parse(['--preset', flag, '-p', 'a']).model;
+      expect(model.files.sources.keys, roles, reason: flag);
+      expect(model.defaults.steps, steps, reason: flag);
+      expect(model.defaults.guidanceScale, 1, reason: flag);
+      expect((model.defaults.width, model.defaults.height), (1024, 1024));
     }
+    final lightning = _parse(const ['--preset', 'sdxl-lightning', '-p', 'a']);
+    expect(lightning.model.defaults.sampler, ImageGenerationSampler.euler);
+    expect(
+      lightning.model.defaults.scheduler,
+      ImageGenerationScheduler.sgmUniform,
+    );
+    expect(lightning.engineOptions.vaeDirectConvolution, isNull);
   });
 
   test('names output files without an extension', () {

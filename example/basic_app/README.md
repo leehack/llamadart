@@ -16,7 +16,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Embedding Demo**: Includes a dedicated embedding CLI example.
 - **SQLite Vector Demo**: Stores embeddings in SQLite and runs nearest-neighbor search with `sqlite_vector`.
 - **Decision Model Demo**: Triages a support ticket with a Laya decision model through `DecisionEngine`.
-- **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop preset (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
+- **Image Generation Demo (experimental)**: Writes a PNG with SDXS, SD-Turbo or a desktop model (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo) through `ImageGenerationEngine`, with progress and Ctrl-C cancellation.
 
 ## Usage
 
@@ -233,9 +233,9 @@ hooks:
 ```
 
 The first run downloads the runtime (40 to 70 MB) through the build hook.
-`ImageGenerationEngine.load` then downloads the preset's pinned files
-(`ImageGenerationPresetFile`), unless a flag names a local file: for SDXS the
-683 MB checkpoint from `concedo/sdxs-512-tinySDdistilled-GGUF`, into the
+`ImageGenerationEngine.load` then downloads the files this example pins for
+the preset in `lib/services/image_cli_options.dart`, unless a flag names a
+local file: for SDXS the 683 MB checkpoint from `concedo/sdxs-512-tinySDdistilled-GGUF`, into the
 package-managed cache, which later runs reuse.
 
 ```bash
@@ -301,8 +301,8 @@ LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
 
-Set `LLAMADART_IMAGE_PRESET_CACHE` to a cache directory to also load the
-SDXS preset from its pinned Hugging Face file (683 MB on the first run) and
+Set `LLAMADART_IMAGE_HF_CACHE` to a cache directory to also load SDXS
+from its pinned Hugging Face file through `ImageGenerationEngine.load` (683 MB on the first run) and
 check that the next load reuses the cache.
 
 Another local-only test checks that a program ending with a llama.cpp or
@@ -346,7 +346,7 @@ dart test
 - **`bin/llamadart_decision_example.dart`**: Decision model CLI example.
 - **`lib/services/decision_cli_options.dart`**: Decision CLI flags and pinned model sources.
 - **`bin/llamadart_image_example.dart`**: Image generation CLI example.
-- **`lib/services/image_cli_options.dart`**: Image CLI flags and the library presets they build.
+- **`lib/services/image_cli_options.dart`**: Image CLI flags, and each preset's pinned files and settings.
 - **`lib/services/decision_ticket_triage.dart`**: Typed ticket question keys and answer formatting.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.

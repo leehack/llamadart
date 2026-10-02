@@ -98,10 +98,10 @@ experimental and may change, and the runtime is opt-in.
   Linux x64 and Windows x64
   ([#779](https://github.com/leehack/llamadart/issues/779)). The
   SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo
-  desktop presets generate 1024x1024 images by default and are validated on
+  desktop models generate 1024x1024 images and are validated on
   macOS Metal only ([#802](https://github.com/leehack/llamadart/issues/802)).
 - **Model licenses differ**, including for commercial use. Check each
-  model's license before shipping it; the guide lists each preset's license.
+  model's license before shipping it; the guide lists each model's license.
 
 ```dart
 import 'dart:io';
@@ -109,9 +109,19 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  // Downloads the pinned SDXS file (683 MB) into the model cache once.
+  // Downloads SDXS (683 MB) into the model cache once.
   final engine = await ImageGenerationEngine.load(
-    ImageGenerationModel.sdxsPreset(),
+    ImageGenerationModel(
+      files: ImageGenerationModelFiles(
+        model: ModelSource.parse(
+          'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
+          '3144d898d61492f8382ffcabec055733fc5b2a0e/'
+          'sdxs-512-tinySDdistilled_Q8_0.gguf',
+        ),
+      ),
+      defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+    ),
+    options: const ImageGenerationOptions(vaeDirectConvolution: false),
     onProgress: (progress) => print('${progress.receivedBytes} bytes'),
   );
   try {
@@ -125,11 +135,11 @@ Future<void> main() async {
 }
 ```
 
-Each preset downloads files pinned to a Hugging Face commit, resolved like
-`LlamaEngine.loadModelSource`; pass a `ModelSource` to use a local copy or
-another file, such as `sdxsPreset(model: ModelSource.path(path))`. See the
+Each file is a `ModelSource` (local path, URL or `hf://`), resolved like
+`LlamaEngine.loadModelSource`. See the
 [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
-for presets, download options, memory checks and known limits.
+for the files and settings of each validated model, download options, memory
+checks and known limits.
 
 ## Requirements
 

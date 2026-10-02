@@ -135,8 +135,12 @@ class ImageGenerationTask {
 ///
 /// ```dart
 /// final engine = await ImageGenerationEngine.load(
-///   ImageGenerationModel.sdxsPreset(),
-///   onProgress: (progress) => print(progress.fraction),
+///   ImageGenerationModel(
+///     files: ImageGenerationModelFiles(
+///       model: ModelSource.path('sdxs-512-tinySDdistilled_Q8_0.gguf'),
+///     ),
+///     defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+///   ),
 /// );
 /// final result = await engine.generateImage(
 ///   const ImageGenerationRequest(prompt: 'a red fox in autumn leaves'),
@@ -249,8 +253,8 @@ class ImageGenerationEngine {
   /// [onProgress] reports the files together: `receivedBytes` counts every
   /// file resolved so far, including cached and local ones, plus the bytes
   /// of the current download; `totalBytes` is the combined size of all files
-  /// once every size is known (from the start for local files and
-  /// [ImageGenerationPresetFile]s), and `null` before.
+  /// once every size is known (from the start for local files, otherwise
+  /// when each download starts), and `null` before.
   ///
   /// Weights load eagerly, so the first [generate] does not pay for them. The
   /// first GPU generation in a process still compiles GPU pipelines; see
@@ -316,8 +320,6 @@ class ImageGenerationEngine {
     for (final MapEntry(key: role, value: source) in sources.entries) {
       if (source.isLocal) {
         knownSizes[role] = _fileSize(driver, role, source.path!);
-      } else if (ImageGenerationPresetFile.of(source) case final pinned?) {
-        knownSizes[role] = pinned.sizeBytes;
       }
     }
 
@@ -364,7 +366,6 @@ class ImageGenerationEngine {
               options.vaeDirectConvolution ??
               _vaeDirectConvolutionByDefault(
                 backendName,
-                model.family,
                 hasTaesd: files.containsKey('taesd'),
               ),
         ),
@@ -468,10 +469,10 @@ class ImageGenerationEngine {
   /// Use the size the app will generate: ggml picks some pipelines by tensor
   /// size, so another size can still compile more. An unset [width] or
   /// [height] uses the model's (`ImageGenerationDefaults.width` and
-  /// `height`), like an unset request size in [generate]. For the desktop
-  /// presets that is 1024x1024, so the warm-up costs one sampling step and
-  /// a decode at that size: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on
-  /// an M4 Max, and the same peak memory as an image, which the memory
+  /// `height`), like an unset request size in [generate]. For a model
+  /// trained at 1024x1024 the warm-up costs one sampling step and a decode
+  /// at that size: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on an
+  /// M4 Max, and the same peak memory as an image, which the memory
   /// check in [load] covers.
   ///
   /// On the CPU there is nothing to compile, so this returns at once.
@@ -761,15 +762,11 @@ class ImageGenerationEngine {
       !_isGpu(backendName) || _isMetal(backendName);
 
   /// Direct VAE convolutions are much slower on Metal, and gain little with
-  /// a tiny autoencoder, which SDXS embeds.
+  /// a tiny autoencoder.
   static bool _vaeDirectConvolutionByDefault(
-    String backendName,
-    ImageGenerationModelFamily family, {
+    String backendName, {
     required bool hasTaesd,
-  }) =>
-      !_isMetal(backendName) &&
-      !hasTaesd &&
-      family != ImageGenerationModelFamily.sdxs;
+  }) => !_isMetal(backendName) && !hasTaesd;
 
   /// ggml registry names of GPU devices. The published runtimes use Metal
   /// (`MTL0`) and Vulkan (`Vulkan0`).

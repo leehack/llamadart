@@ -24,14 +24,14 @@ class ImageGenerationRequest {
   /// Text prompt.
   final String prompt;
 
-  /// Negative prompt. Ignored when the guidance scale is 1, as with the SDXS
-  /// and SD-Turbo presets.
+  /// Negative prompt. Ignored when the guidance scale is 1, as distilled
+  /// models such as SDXS and SD-Turbo use.
   final String negativePrompt;
 
   /// Output width in pixels: a multiple of 8 from [minDimension] to
   /// [maxDimension]. `null` uses the model's native width
-  /// (`ImageGenerationDefaults.width`): 512 for SDXS and SD-Turbo, 1024 for
-  /// the desktop presets. The runtime rounds SD 1.x and 2.x sizes up to a
+  /// (`ImageGenerationDefaults.width`), such as 512 for SDXS and SD-Turbo or
+  /// 1024 for SDXL and newer families. The runtime rounds SD 1.x and 2.x sizes up to a
   /// multiple of 64; `GeneratedImage.width` reports the size produced.
   final int? width;
 

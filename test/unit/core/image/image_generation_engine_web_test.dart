@@ -27,10 +27,13 @@ void main() {
       'downloads', () async {
     final downloads = _RecordingDownloads();
 
-    for (final model in [
-      ImageGenerationModel.sdxsPreset(),
-      ImageGenerationModel.sdxs('sdxs.gguf'),
+    for (final file in [
+      ModelSource.parse('hf://owner/sdxs@main/sdxs.gguf'),
+      ModelSource.path('sdxs.gguf'),
     ]) {
+      final model = ImageGenerationModel(
+        files: ImageGenerationModelFiles(model: file),
+      );
       await expectLater(
         ImageGenerationEngine.load(model, modelDownloadManager: downloads),
         throwsA(

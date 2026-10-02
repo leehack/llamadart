@@ -442,8 +442,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'same-seed determinism, pre-start and mid-run cancellation, the '
         'one-generation guard, dispose during generation, and PNG output; '
         'SD-Turbo with TAESD when LLAMADART_SD_TURBO_MODEL is set, and the '
-        'SDXS preset from its pinned Hugging Face file through the model '
-        'cache when LLAMADART_IMAGE_PRESET_CACHE is set',
+        'SDXS from its pinned Hugging Face file through the model '
+        'cache when LLAMADART_IMAGE_HF_CACHE is set',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'image-generation-smoke --model-path <sdxs.gguf>',

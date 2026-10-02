@@ -4,8 +4,8 @@ description: >-
   Use when generating images from text prompts in a llamadart app with the
   Preview (experimental) ImageGenerationEngine: opting into the stable_diffusion
   runtime, loading SDXS or SD-Turbo (with TAESD) or the desktop SDXL-Lightning,
-  FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo presets from their
-  pinned Hugging Face files or local paths, showing download and generation
+  FLUX.1-schnell, SD 3.5 Large Turbo and Z-Image-Turbo models from pinned
+  Hugging Face files or local paths, showing download and generation
   progress, cancelling,
   saving PNGs, or handling unsupported platforms, memory refusals and
   concurrent-generation errors.
@@ -53,77 +53,60 @@ description: >-
   cases. The synchronous `runtimeCapabilities()` returns the same result but
   blocks the calling isolate on the first probe; do not call it from a UI
   isolate before `checkRuntime()` has completed.
-- Models: each preset factory takes a `ModelSource` per file (local path,
-  HTTP(S) URL or `hf://`) and defaults every file to an
-  `ImageGenerationPresetFile` pinned to a Hugging Face commit, so
-  `ImageGenerationModel.sdxsPreset()` needs no arguments. Building a model
-  does no IO; `ImageGenerationEngine.load` downloads missing files into the
-  model cache (resumable, reused on later loads), like
-  `LlamaEngine.loadModelSource`. Pass `ModelSource.path(...)` for a file the
-  app already has. Use the pinned files' `sizeBytes` and `sha256` to show
-  download sizes or verify an app-managed download.
-  - `ImageGenerationModel.sdxsPreset(model:)`: SDXS-512 Q8_0 (683 MB).
-    Exactly 1 step at guidance 1, which are its defaults; do not raise them.
-  - `ImageGenerationModel.sdTurboPreset(model:, taesd:)`: SD-Turbo Q8_0
-    (2.0 GB). Defaults to 1 step at guidance 1; up to 4 steps add detail. No
-    TAESD unless given: pass `taesd: ImageGenerationPresetFile.taesd.source`
-    (10 MB), and prefer it on phones. A self-hosted TAESD must be
-    `diffusion_pytorch_model.safetensors`, not `taesd_decoder.safetensors`.
-  - Desktop presets, 1024x1024 by default, for desktop GPUs and Macs, not
-    phones; they download 7 to 12 GB. The memory check asks for about
-    8.6 GiB for SDXL-Lightning (a desktop GPU or a Mac with 16 GB or more),
-    8.3 GiB for Z-Image-Turbo (a 12 GB desktop GPU or a 16 GB Mac), and
-    14.5 GiB for FLUX.1-schnell and 13.1 GiB for SD 3.5 Large Turbo (a 16 GB
-    desktop GPU or a Mac with 24 GB or more; `load` refuses them on a 16 GB
-    Mac under Metal's working-set cap):
-    - `ImageGenerationModel.sdxlLightningPreset(model:, vae:, taesd:)`:
-      `sdxl_lightning_4step.safetensors`; 4 steps, guidance 1, Euler with
-      `sgmUniform`. `taesd: ImageGenerationPresetFile.taesdxl.source` halves
-      the time per image.
-    - `ImageGenerationModel.flux1SchnellPreset(diffusionModel:, clipL:,
-      t5xxl:, vae:, taesd:)`: FLUX.1-schnell Q4_0 with CLIP-L and T5-XXL Q8_0
-      and the FLUX `ae` decoder; `taesd: ImageGenerationPresetFile.taef1.source`
-      replaces `ae`. 4 steps at guidance 1.
-    - `ImageGenerationModel.sd35LargeTurboPreset(diffusionModel:, clipL:,
-      clipG:, t5xxl:, vae:, taesd:)`: SD 3.5 Large Turbo Q4_0 with the three
-      text encoders and TAESD3 (the SD 3.5 VAE repository is gated); 4 steps.
-    - `ImageGenerationModel.zImageTurboPreset(diffusionModel:, llm:, vae:)`:
-      Z-Image-Turbo Q4_K, Qwen3-4B-Instruct-2507 Q4_K_M and the FLUX `ae`;
-      8 steps.
-    - For FLUX and SD 3.5, setting `vae` or `taesd` replaces the default
-      decoder with exactly the ones set.
-  - `ImageGenerationModel.custom(ImageGenerationModelFiles.fromSources(...),
-    defaults: ImageGenerationDefaults(width:, height:, steps:,
-    guidanceScale:))` for any other family stable-diffusion.cpp loads (SDXL,
-    SD 3.5, FLUX, Z-Image, Qwen-Image); experimental, for desktop GPUs and
-    Macs. Split files: SD 3.5 takes `diffusionModel`, `vae` or `taesd`,
-    `clipL`, `clipG`, `t5xxl`; FLUX `diffusionModel`, `vae` or `taesd`,
-    `clipL`, `t5xxl`; Z-Image and Qwen-Image `diffusionModel`, `vae`, `llm`.
-    A single-file GGUF that includes the VAE (SD 3.5 Medium) goes in
-    `model`, not `diffusionModel`.
-    Distilled models need their own defaults, such as `steps: 4,
-    guidanceScale: 1` for SDXL-Lightning or FLUX.1-schnell, and the size
-    defaults to 512x512, so set `width: 1024, height: 1024` for families
-    trained at 1024.
-  - The path factories (`ImageGenerationModel.sdxs(path)`, `sdTurbo`,
-    `sdxlLightning`, `flux1Schnell`, `sd35LargeTurbo`, `zImageTurbo`) and
-    `ImageGenerationModelFiles(model: path, ...)` are deprecated; do not
-    use them in new code.
+- Models: `ImageGenerationModel(files: ImageGenerationModelFiles(...),
+  defaults: ImageGenerationDefaults(...))`. Every file role is a
+  `ModelSource` (`ModelSource.path`, an HTTP(S) URL or `hf://owner/repo@sha/
+  file`); pin a commit. The library has no presets: the app owns each
+  model's files and settings. Roles: SD 1.x, 2.x and SDXL take `model`
+  (single file), optionally `vae` or `taesd`; SD 3.5 `diffusionModel`, `vae`
+  or `taesd`, `clipL`, `clipG`, `t5xxl` (a single-file GGUF that includes
+  the VAE, such as SD 3.5 Medium, goes in `model`); FLUX `diffusionModel`,
+  `vae` or `taesd`, `clipL`, `t5xxl`; Z-Image and Qwen-Image
+  `diffusionModel`, `vae`, `llm`. `ImageGenerationDefaults` (512x512,
+  20 steps, guidance 7 unless set) suits undistilled SD 1.x/2.x; set the
+  validated settings (the guide's recipes, with pinned files):
+  - SDXS-512 (`concedo/sdxs-512-tinySDdistilled-GGUF`
+    `sdxs-512-tinySDdistilled_Q8_0.gguf`, 683 MB): `steps: 1,
+    guidanceScale: 1`; do not raise them. It embeds a tiny autoencoder, so
+    load it with `ImageGenerationOptions(vaeDirectConvolution: false)`.
+  - SD-Turbo (`Green-Sky/SD-Turbo-GGUF` `sd_turbo-f16-q8_0.gguf`, 2.0 GB):
+    `steps: 1, guidanceScale: 1`, up to 4 steps for detail. Add `taesd:`
+    `madebyollin/taesd` `diffusion_pytorch_model.safetensors` (not
+    `taesd_decoder.safetensors`) on phones.
+  - Desktop models (desktop GPUs and Macs, not phones; 7 to 12 GB):
+    SDXL-Lightning (`ByteDance/SDXL-Lightning`
+    `sdxl_lightning_4step.safetensors`, optional `madebyollin/taesdxl`):
+    1024x1024, `steps: 4, guidanceScale: 1, sampler:
+    ImageGenerationSampler.euler, scheduler:
+    ImageGenerationScheduler.sgmUniform`. FLUX.1-schnell
+    (`second-state/FLUX.1-schnell-GGUF` Q4_0 and `ae.safetensors`, `clip_l`
+    and `t5xxl` Q8_0 from `second-state/stable-diffusion-3.5-medium-GGUF`;
+    `madebyollin/taef1` can replace `ae`) and SD 3.5 Large Turbo
+    (`city96/stable-diffusion-3.5-large-turbo-gguf` Q4_0, the same
+    encoders plus `clip_g`, and `madebyollin/taesd3` since the SD 3.5 VAE
+    is gated): 1024x1024, `steps: 4, guidanceScale: 1`. Z-Image-Turbo
+    (`leejet/Z-Image-Turbo-GGUF` Q4_K, `unsloth/Qwen3-4B-Instruct-2507-GGUF`
+    Q4_K_M as `llm`, FLUX `ae` as `vae`): 1024x1024, `steps: 8,
+    guidanceScale: 1`. The memory check asks for about 8.6 GiB for
+    SDXL-Lightning, 8.3 GiB for Z-Image-Turbo, and 14.5 and 13.1 GiB for
+    FLUX.1-schnell and SD 3.5 Large Turbo (`load` refuses those two on a
+    16 GB Mac under Metal's working-set cap).
 - `ImageGenerationEngine.load(model, options:, loadOptions:, onProgress:)`:
   `loadOptions` (`ModelLoadOptions`) sets the cache policy and directory,
   `bearerToken` or headers, retries and a `cancelToken` for every remote
   file; local files take only the cancel token. `sha256` is rejected
   (`LlamaUnsupportedException`): there are several files. `onProgress`
-  reports `ModelDownloadProgress` across all files: cached and local files
-  count as received, and `totalBytes` is known up front for pinned and local
-  files. A cancelled load throws `LlamaStateException`; a failed download
+  reports `ModelDownloadProgress` across all files; cached and local files
+  count as received. A cancelled load throws `LlamaStateException`; a failed download
   throws what the download manager throws (usually `LlamaModelException`).
   The runtime check, option checks and local-file checks run before
   anything downloads, so the web and unsupported devices download nothing.
+  `totalBytes` in progress is `null` until every file size is known (local
+  files at once, remote ones when their download starts).
   On Android and iOS pass a `modelDownloadManager:` such as
   `DefaultModelDownloadManager.appPrivate(cacheDirectory: ...)` for durable
   storage; the default uses a temporary cache there.
-- Model licenses differ by preset, including on commercial use (Stability AI
+- Model licenses differ by model, including on commercial use (Stability AI
   Community License for SD-Turbo and SD 3.5 Large Turbo, CreativeML Open
   RAIL++-M for SDXS and SDXL-Lightning, Apache 2.0 for FLUX.1-schnell and
   Z-Image-Turbo). Tell users to check the model card's license before
@@ -149,7 +132,10 @@ description: >-
   `flashAttention` and `vaeDirectConvolution` default to `null`, which picks
   per device: flash attention on for the CPU and Metal, off on Vulkan; direct
   VAE convolutions on except on Metal (about 7 times slower there) and with a
-  tiny autoencoder. Leave them `null` unless measuring. Direct VAE
+  `taesd` file. The engine cannot see that a checkpoint embeds a tiny
+  autoencoder (SDXS): pass `vaeDirectConvolution: false` for it, which was
+  faster on CPU at about 250 MiB more memory. Otherwise leave them `null`
+  unless measuring. Direct VAE
   convolutions leave the image identical; flash attention changes pixels
   slightly.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
@@ -162,7 +148,7 @@ description: >-
 - `await engine.warmUp()` right after `load`, while the user writes the
   prompt, moves the pipeline compile off the first real image. It warms up
   at the model's size; pass `width` and `height` when the app generates at
-  another, since another size can compile more. At a desktop preset's
+  another, since another size can compile more. At a desktop model's
   1024x1024 it costs one step and a decode (3 to 4 s for SDXL-Lightning
   with TAESDXL on an M4 Max). It runs one discarded single-step image,
   returns at once on the CPU, holds the one-operation slot (await it before
@@ -170,8 +156,8 @@ description: >-
 - `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
   invalid requests throw `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048; leave them `null` for the
-  model's native size (512x512 for SDXS, SD-Turbo and `.custom`, 1024x1024
-  for the desktop presets). 256 is fine for SDXS and SD-Turbo; the runtime
+  model's default size (`ImageGenerationDefaults.width`/`height`: 512x512
+  for SDXS and SD-Turbo, 1024x1024 for the desktop models). 256 is fine for SDXS and SD-Turbo; the runtime
   rounds up to 64, so read the size from `GeneratedImage`. Steps are 1 to
   150, guidance 0 to 30, count 1 to 16.
   `seed: null` is random; `result.seed` reports it, image `i` used
@@ -228,7 +214,11 @@ Future<void> generateFox(String sdxsPath, String outputPath) async {
   }
 
   final ImageGenerationEngine engine = await ImageGenerationEngine.load(
-    ImageGenerationModel.sdxsPreset(model: ModelSource.path(sdxsPath)),
+    ImageGenerationModel(
+      files: ImageGenerationModelFiles(model: ModelSource.path(sdxsPath)),
+      defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+    ),
+    options: const ImageGenerationOptions(vaeDirectConvolution: false),
   );
   try {
     final ImageGenerationTask task = engine.generate(
@@ -258,7 +248,7 @@ Future<void> generateFox(String sdxsPath, String outputPath) async {
 }
 ```
 
-SD-Turbo with TAESD, downloaded from the pinned files with progress, and
+SD-Turbo with TAESD from pinned Hugging Face files, with download progress,
 cancellable while downloading or generating:
 
 ```dart
@@ -277,8 +267,18 @@ Future<Uint8List?> generateWithCancel(Future<void> userCancelled) async {
   final ImageGenerationEngine engine;
   try {
     engine = await ImageGenerationEngine.load(
-      ImageGenerationModel.sdTurboPreset(
-        taesd: ImageGenerationPresetFile.taesd.source,
+      ImageGenerationModel(
+        files: ImageGenerationModelFiles(
+          model: ModelSource.parse(
+            'hf://Green-Sky/SD-Turbo-GGUF@'
+            '19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16-q8_0.gguf',
+          ),
+          taesd: ModelSource.parse(
+            'hf://madebyollin/taesd@614f76814bbe30edbe2e627ace1c2234c81a2c0e/'
+            'diffusion_pytorch_model.safetensors',
+          ),
+        ),
+        defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
       ),
       loadOptions: ModelLoadOptions(cancelToken: cancelDownload),
       onProgress: (ModelDownloadProgress progress) {

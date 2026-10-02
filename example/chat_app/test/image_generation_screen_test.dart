@@ -470,13 +470,11 @@ void main() {
     await pumpEventQueue();
     final turboEngine = generation.generator!;
     expect(
-      generation.loadedModels.last.family,
-      ImageGenerationModelFamily.sdTurbo,
-    );
-    expect(
-      generation.loadedModels.last.files.sources['taesd']?.path,
+      generation.loadedModels.last.files.taesd?.path,
       '/models/taesd.safetensors',
     );
+    expect(generation.loadedOptions.first.vaeDirectConvolution, isFalse);
+    expect(generation.loadedOptions.last.vaeDirectConvolution, isNull);
     provider.dispose();
     await second;
     await pumpEventQueue();
@@ -890,44 +888,23 @@ void main() {
       expect(ImageModelProfile.sdxs.isRecommended, isTrue);
     });
 
-    test('reuses the library pins, keeping the URLs installs were made '
-        'from', () {
-      expect(
-        ImageModelProfile.sdxs.modelSource.url,
-        'https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF/resolve/'
-        '3144d898d61492f8382ffcabec055733fc5b2a0e/'
-        'sdxs-512-tinySDdistilled_Q8_0.gguf?download=true',
-      );
-      for (final (source, file) in [
-        (ImageModelProfile.sdxs.modelSource, ImageGenerationPresetFile.sdxs),
-        (
-          ImageModelProfile.sdTurbo.modelSource,
-          ImageGenerationPresetFile.sdTurbo,
-        ),
-        (
-          ImageModelProfile.sdTurbo.taesdSource!,
-          ImageGenerationPresetFile.taesd,
-        ),
-      ]) {
-        expect(source.url, file.source.resolvedUri.toString());
-        expect(source.sizeBytes, file.sizeBytes);
-        expect(source.sha256, file.sha256);
-      }
-    });
-
-    test('builds the library presets and their defaults', () {
+    test('builds library models with the settings of each profile', () {
       final sdxs = ImageModelProfile.sdxs.buildModel(modelPath: '/m.gguf');
-      expect(sdxs.family, ImageGenerationModelFamily.sdxs);
-      expect(sdxs.files.sources['model']?.path, '/m.gguf');
-      expect(ImageModelProfile.sdxs.defaults.steps, 1);
+      expect(sdxs.files.sources.keys, ['model']);
+      expect(sdxs.files.model?.path, '/m.gguf');
+      expect(sdxs.defaults.steps, 1);
+      expect(sdxs.defaults.guidanceScale, 1);
+      expect(ImageModelProfile.sdxs.options.vaeDirectConvolution, isFalse);
+      expect(ImageModelProfile.sdTurbo.options.vaeDirectConvolution, isNull);
 
-      final turbo = InstalledImageModel(
+      final turbo = const InstalledImageModel(
         profile: ImageModelProfile.sdTurbo,
         modelPath: '/turbo.gguf',
         taesdPath: '/taesd.safetensors',
       ).toGenerationModel();
-      expect(turbo.family, ImageGenerationModelFamily.sdTurbo);
-      expect(turbo.files.sources['taesd']?.path, '/taesd.safetensors');
+      expect(turbo.files.model?.path, '/turbo.gguf');
+      expect(turbo.files.taesd?.path, '/taesd.safetensors');
+      expect(turbo.defaults.steps, 1);
       expect(turbo.defaults.guidanceScale, 1);
     });
   });
@@ -944,6 +921,7 @@ class FakeImageGenerationService implements ImageGenerationService {
   Completer<void>? loadGate;
   int loadCount = 0;
   final List<ImageGenerationModel> loadedModels = <ImageGenerationModel>[];
+  final List<ImageGenerationOptions> loadedOptions = <ImageGenerationOptions>[];
   FakeImageGenerator? generator;
 
   Completer<void>? checkGate;
@@ -961,9 +939,13 @@ class FakeImageGenerationService implements ImageGenerationService {
   }
 
   @override
-  Future<ImageGenerator> load(ImageGenerationModel model) async {
+  Future<ImageGenerator> load(
+    ImageGenerationModel model, {
+    ImageGenerationOptions options = const ImageGenerationOptions(),
+  }) async {
     loadCount += 1;
     loadedModels.add(model);
+    loadedOptions.add(options);
     await loadGate?.future;
     if (loadError case final error?) {
       throw error;

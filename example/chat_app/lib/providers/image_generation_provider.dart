@@ -132,18 +132,17 @@ class ImageGenerationProvider extends ChangeNotifier {
     Future<void> Function()? unloadChatModel,
     Future<Uint8List> Function(GeneratedImage image)? encodePng,
     AppExitCoordinator? exitCoordinator,
-    List<ImageModelProfile>? profiles,
-  }) : profiles = profiles ?? ImageModelProfile.defaultModels,
-       _generationService = generationService ?? ImageGenerationService(),
+    this.profiles = ImageModelProfile.defaultModels,
+  }) : _generationService = generationService ?? ImageGenerationService(),
        _modelService = modelService ?? ImageModelService(),
        _isChatModelLoaded = isChatModelLoaded ?? _never,
        _unloadChatModel = unloadChatModel,
        _encode = encodePng ?? _encodePngInBackground,
        _exitCoordinator = exitCoordinator {
     _removeExitRelease = exitCoordinator?.addRelease(shutdown);
-    _selected = this.profiles.firstWhere(
+    _selected = profiles.firstWhere(
       (profile) => profile.isRecommended,
-      orElse: () => this.profiles.first,
+      orElse: () => profiles.first,
     );
     _steps = _selected.defaults.steps;
   }
@@ -519,6 +518,7 @@ class ImageGenerationProvider extends ChangeNotifier {
   Future<ImageGenerator?> _loadGenerator(InstalledImageModel installed) async {
     final generator = await _generationService.load(
       installed.toGenerationModel(),
+      options: installed.profile.options,
     );
     if (_isClosed) {
       await _trackDisposal(generator.dispose());

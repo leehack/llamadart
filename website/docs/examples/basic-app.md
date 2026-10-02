@@ -35,8 +35,8 @@ dart run bin/llamadart_sqlite_vector_example.dart \
 dart run bin/llamadart_decision_example.dart
 
 # Image generation: write a PNG with SDXS (downloads the stable_diffusion
-# runtime and the preset's pinned sdxs-512-tinySDdistilled_Q8_0.gguf,
-# 683 MB); Ctrl-C cancels
+# runtime and the pinned sdxs-512-tinySDdistilled_Q8_0.gguf, 683 MB);
+# Ctrl-C cancels
 dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
 ```
 
@@ -57,8 +57,8 @@ dart run bin/llamadart_image_example.dart -p "a red fox in autumn leaves"
   `ChoiceKey.enumOf`, `ScoreKey.of`, `NoulKey.of` and `answerOf`
   ([Decision models](../guides/decision-models#typed-questions)).
 - Experimental image generation with SDXS, SD-Turbo, or the desktop
-  presets (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo)
-  from the library's pinned downloads: file and phase progress,
+  models (SDXL-Lightning, FLUX.1-schnell, SD 3.5 Large Turbo, Z-Image-Turbo)
+  from the example's pinned downloads and settings: file and phase progress,
   Ctrl-C cancellation and PNG output, with the `stable_diffusion` runtime
   opted in through the example's `pubspec.yaml`
   ([Image generation](../guides/image-generation)).

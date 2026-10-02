@@ -10,8 +10,12 @@ abstract interface class ImageGenerationService {
   /// isolate.
   Future<ImageGenerationCapabilities> checkRuntime();
 
-  /// Loads [model]; throws what [ImageGenerationEngine.load] throws.
-  Future<ImageGenerator> load(ImageGenerationModel model);
+  /// Loads [model] with [options]; throws what [ImageGenerationEngine.load]
+  /// throws.
+  Future<ImageGenerator> load(
+    ImageGenerationModel model, {
+    ImageGenerationOptions options = const ImageGenerationOptions(),
+  });
 }
 
 /// A loaded image model.
@@ -45,8 +49,12 @@ class _EngineImageGenerationService implements ImageGenerationService {
       ImageGenerationEngine.checkRuntime();
 
   @override
-  Future<ImageGenerator> load(ImageGenerationModel model) async =>
-      _EngineImageGenerator(await ImageGenerationEngine.load(model));
+  Future<ImageGenerator> load(
+    ImageGenerationModel model, {
+    ImageGenerationOptions options = const ImageGenerationOptions(),
+  }) async => _EngineImageGenerator(
+    await ImageGenerationEngine.load(model, options: options),
+  );
 }
 
 class _EngineImageGenerator implements ImageGenerator {

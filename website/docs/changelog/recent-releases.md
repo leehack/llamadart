@@ -9,12 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Image generation presets load their files from `ModelSource`s and default
-  to pinned Hugging Face files: `ImageGenerationModel.sdxsPreset()` and the
-  other `*Preset` factories download into the model cache when
-  `ImageGenerationEngine.load` runs, with combined progress, cancellation
-  and cache reuse. The path factories such as
-  `ImageGenerationModel.sdxs(path)` are deprecated; see `MIGRATION.md`.
+- **Breaking (Preview):** image generation models are built from
+  `ModelSource`s with `ImageGenerationModel(files:, defaults:)`, and
+  `ImageGenerationEngine.load` downloads remote files into the model cache
+  with combined progress, cancellation and cache reuse. The model presets,
+  `ImageGenerationModelFamily` and `String` file paths are removed; the
+  guide's recipes give each former preset's files and settings, and
+  `MIGRATION.md` shows how to migrate.
 
 ## 0.10.0
 
