@@ -36,6 +36,7 @@ tool/git/safe_pr_head_update.dart @leehack
 tool/git/pr_head_update_evidence.schema.json @leehack
 test/unit/tooling/safe_pr_head_update_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
+tool/release/companion_pub_preflight.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
 tool/native/sync_native_release_pins.py @leehack
 tool/native/test_sync_native_release_pins.py @leehack

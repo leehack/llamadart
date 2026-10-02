@@ -59,11 +59,11 @@ mismatch or on an unverified local `Artifacts` override; resolve the matching
 companion and rerun `flutter pub get`. Flutter macOS LiteRT-LM builds still use
 the core package's native-assets runtime rather than SwiftPM.
 
-`llamadart_stable_diffusion_flutter` needs the first core release whose
-changelog lists it; older cores, including `0.9.x`, ignore it. Adding it opts
-iOS and macOS builds into the image generation runtime (about 37 MB per Apple
-target) on its own and leaves the other runtimes on their current path, so
-leave it out unless the app uses `ImageGenerationEngine`. An app that uses
+Pair `llamadart_stable_diffusion_flutter` `0.0.1` with core `0.10.0` or
+newer; older cores, including `0.9.x`, ignore it. Adding it opts iOS and macOS
+builds into the image generation runtime (about 37 MB per Apple target) on
+its own and leaves the other runtimes on their current path, so leave it out
+unless the app uses `ImageGenerationEngine`. An app that uses
 image generation without it gets the hook-bundled runtime, whose iOS framework
 `MinimumOSVersion` App Store Connect rejects; only Xcode and `xcodebuild` show
 the build warning about it.

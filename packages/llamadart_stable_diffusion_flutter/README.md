@@ -13,14 +13,12 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Pair companion `0.0.1` with the first core release whose changelog lists
-this package, or a newer one. Older cores, including `0.9.x`, ignore the
-companion and keep bundling the runtime through their hook; the snippet below
-tracks the current core version until that release.
+Pair companion `0.0.1` with core `0.10.0` or newer. Older cores, including
+`0.9.x`, ignore the companion and keep bundling the runtime through their hook.
 
 ```yaml
 dependencies:
-  llamadart: ^0.9.0
+  llamadart: ^0.10.0
   llamadart_stable_diffusion_flutter: ^0.0.1
 ```
 

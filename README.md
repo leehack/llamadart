@@ -86,10 +86,10 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. It needs the first core release whose changelog lists it.
-  Without it the hook bundles the runtime, App Store Connect rejects that iOS
-  framework's `MinimumOSVersion`, and only Xcode and `xcodebuild` show the
-  build warning about it.
+  the entry above. It needs core `0.10.0` or newer. Without it the hook
+  bundles the runtime, App Store Connect rejects that iOS framework's
+  `MinimumOSVersion`, and only Xcode and `xcodebuild` show the build warning
+  about it.
 
 - **Platforms:** Android arm64 (CPU), iOS and macOS (Metal), Linux arm64/x64
   and Windows x64 (CPU or Vulkan). Not available on the web yet
@@ -168,10 +168,10 @@ dependencies:
   llamadart_stable_diffusion_flutter: ^0.0.1 # Apple image generation, opt-in
 ```
 
-`llamadart_stable_diffusion_flutter` needs the first core release whose
-changelog lists it; older cores, including `0.9.x`, ignore it. Adding it opts
-iOS and macOS builds into the image generation runtime (about 37 MB per Apple
-target), so leave it out unless the app uses `ImageGenerationEngine`.
+Pair `llamadart_stable_diffusion_flutter` `0.0.1` with core `0.10.0` or
+newer; older cores, including `0.9.x`, ignore it. Adding it opts iOS and macOS
+builds into the image generation runtime (about 37 MB per Apple target), so
+leave it out unless the app uses `ImageGenerationEngine`.
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime
 targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS LiteRT-LM
