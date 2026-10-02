@@ -58,6 +58,28 @@ void main() {
       );
     });
 
+    test('flushes every token only on LiteRT-LM', () {
+      const defaults = GenerationParams();
+      for (final runtime in LlamaRuntime.values) {
+        final params = service.buildParams(
+          const ChatSettings(),
+          capabilities: LlamaEngineCapabilities(
+            isSupported: true,
+            runtime: runtime,
+            supportsStreamBatching: true,
+          ),
+        );
+
+        expect(
+          params.streamBatchTokenThreshold,
+          runtime == LlamaRuntime.liteRtLm
+              ? 1
+              : defaults.streamBatchTokenThreshold,
+          reason: runtime.name,
+        );
+      }
+    });
+
     test('sends defaults before a model loads', () {
       const defaults = GenerationParams();
       const settings = ChatSettings(minP: 0.2, penalty: 1.3);

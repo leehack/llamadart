@@ -1278,8 +1278,8 @@ void main() {
   });
 
   for (final bundle in <({bool vision, bool audio, bool speculativeDecoding})?>[
-    (vision: true, audio: true, speculativeDecoding: true),
-    (vision: false, audio: false, speculativeDecoding: false),
+    (vision: true, audio: false, speculativeDecoding: true),
+    (vision: false, audio: true, speculativeDecoding: false),
     null,
   ]) {
     test('reports media and speculative decoding for bundle $bundle', () async {

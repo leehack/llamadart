@@ -106,7 +106,9 @@ on the loaded bridge's runtime capability report.
 
 Native `.litertlm` bundles process media themselves, without a projector.
 `capabilities.supportsVision` and `supportsAudio` report the modalities the
-bundle declares; `loadMultimodalProjector*` and the `engine.supportsVision`
+bundle declares. That declaration can under-report for bundles whose section
+types are not lowercase ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)), so a `false` does not block the
+request; `loadMultimodalProjector*` and the `engine.supportsVision`
 and `engine.supportsAudio` getters apply only to GGUF projectors.
 
 Video isn't supported; send extracted frames as `LlamaImageContent`.

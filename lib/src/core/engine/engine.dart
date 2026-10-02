@@ -99,7 +99,16 @@ class LlamaEngine {
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
-  bool _isReady = false;
+  bool _isReadyState = false;
+  // Changes on every load and unload, so a probe that awaits can tell whether
+  // the model it started on is still the loaded one.
+  int _modelEpoch = 0;
+  bool get _isReady => _isReadyState;
+  set _isReady(bool value) {
+    _isReadyState = value;
+    _modelEpoch++;
+  }
+
   String? _completionModel;
   Map<String, String>? _cachedModelMetadata;
   String? _modelChatTemplate;
@@ -203,59 +212,78 @@ class LlamaEngine {
   /// runtime reports it.
   ///
   /// Before a model loads, [LlamaEngineCapabilities.isSupported] is false
-  /// and every capability is false. The snapshot is taken when the future
-  /// completes; read it again after loading or unloading a model or
-  /// multimodal projector.
+  /// and every capability is false, as it is when a model loads or unloads
+  /// while the snapshot is read. Read it again after loading or unloading a
+  /// model or multimodal projector.
   Future<LlamaEngineCapabilities> get capabilities async {
+    const notLoaded = LlamaEngineCapabilities(
+      isSupported: false,
+      unsupportedReason: 'No model is loaded. Call loadModel first.',
+    );
     if (!_isReady || _modelHandle == null) {
-      return const LlamaEngineCapabilities(
-        isSupported: false,
-        unsupportedReason: 'No model is loaded. Call loadModel first.',
-      );
+      return notLoaded;
     }
+    final epoch = _modelEpoch;
     final candidate = backend;
-    final generation = await _generationCapabilities();
-    final directMedia = candidate is BackendDirectMediaInput
-        ? await (candidate as BackendDirectMediaInput).directMediaInput()
-        : (vision: false, audio: false);
-    final mmContextHandle = _mmContextHandle;
-    final projectorVision =
-        mmContextHandle != null &&
-        await _probeMedia(() => candidate.supportsVision(mmContextHandle));
-    final projectorAudio =
-        mmContextHandle != null &&
-        await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+    final runtime = this.runtime;
+    final embeddings = supportsEmbeddings;
+    final nextTokenScoring = supportsNextTokenScoring;
     final chatScope = candidate is BackendChatScope
         ? candidate as BackendChatScope
         : null;
+    final multiTurnChat = chatScope?.supportsMultiTurnChat ?? true;
+    final toolCalling = chatScope?.supportsToolCalling ?? true;
     final grammar = ChatCompletionRequestPlanner.supportsGrammarConstraints(
       candidate,
     );
+    final lazyGrammar =
+        grammar && ChatCompletionRequestPlanner.supportsLazyGrammar(candidate);
+    final mmContextHandle = _mmContextHandle;
+
+    final BackendGenerationCapabilities generation;
+    final ({bool vision, bool audio}) directMedia;
+    final bool projectorVision;
+    final bool projectorAudio;
     String? backendName;
     try {
-      backendName = await candidate.getBackendName();
-    } catch (error, stackTrace) {
-      LlamaLogger.instance.warning(
-        'Could not read the backend name for capabilities.',
-        error,
-        stackTrace,
-      );
+      generation = await _generationCapabilities();
+      directMedia = candidate is BackendDirectMediaInput
+          ? await (candidate as BackendDirectMediaInput).directMediaInput()
+          : (vision: false, audio: false);
+      projectorVision =
+          mmContextHandle != null &&
+          await _probeMedia(() => candidate.supportsVision(mmContextHandle));
+      projectorAudio =
+          mmContextHandle != null &&
+          await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+      try {
+        backendName = await candidate.getBackendName();
+      } catch (error, stackTrace) {
+        LlamaLogger.instance.warning(
+          'Could not read the backend name for capabilities.',
+          error,
+          stackTrace,
+        );
+      }
+    } catch (_) {
+      if (_modelEpoch != epoch) return notLoaded;
+      rethrow;
     }
+    // A load or unload while probing would mix two models' answers.
+    if (_modelEpoch != epoch) return notLoaded;
     return LlamaEngineCapabilities(
       isSupported: true,
       backendName: backendName,
       runtime: runtime,
       supportsVision: directMedia.vision || projectorVision,
       supportsAudio: directMedia.audio || projectorAudio,
-      supportsEmbeddings: supportsEmbeddings,
-      supportsNextTokenScoring: supportsNextTokenScoring,
-      supportsMultiTurnChat: chatScope?.supportsMultiTurnChat ?? true,
-      supportsToolCalling: chatScope?.supportsToolCalling ?? true,
+      supportsEmbeddings: embeddings,
+      supportsNextTokenScoring: nextTokenScoring,
+      supportsMultiTurnChat: multiTurnChat,
+      supportsToolCalling: toolCalling,
       supportsStructuredOutput: grammar,
       supportsGrammar: grammar,
-      supportsLazyGrammar:
-          grammar &&
-          ChatCompletionRequestPlanner.supportsLazyGrammar(candidate),
+      supportsLazyGrammar: lazyGrammar,
       supportsPenalty: generation.penalty,
       supportsPresencePenalty: generation.presencePenalty,
       supportsMinP: generation.minP,
@@ -2006,6 +2034,10 @@ class LlamaEngine {
   /// `false`, and no speculative strategy is reported, before a model loads
   /// and on a backend that does not implement
   /// [BackendGenerationCapabilitiesSupport].
+  ///
+  /// Since `capabilities` was added, native LiteRT-LM reports
+  /// [BackendGenerationCapabilities.streamBatching] as true and no
+  /// speculative strategy for a bundle that declares no speculative drafter.
   @Deprecated('Use capabilities, which reports these controls and the rest.')
   Future<BackendGenerationCapabilities> get backendGenerationCapabilities =>
       _generationCapabilities();

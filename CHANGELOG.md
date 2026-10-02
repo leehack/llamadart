@@ -42,11 +42,13 @@
   what the loaded model's runtime supports: image and audio input,
   embeddings, multi-turn chat, tools, structured output, grammars, every
   sampling control including `penalty`, stream batching and speculative
-  strategies. Native LiteRT-LM reads image, audio and speculative decoding
-  support from the bundle, and now rejects such a request for a bundle that
-  lacks it with `LlamaUnsupportedException` instead of failing inside the
-  runtime. `backendGenerationCapabilities` is deprecated
-  ([#841](https://github.com/leehack/llamadart/issues/841)).
+  strategies. Native LiteRT-LM reports the image, audio and speculative
+  decoding support the bundle declares, best-effort ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)),
+  and a request the runtime then fails for lack of one throws
+  `LlamaUnsupportedException` naming it instead of an opaque error.
+  `backendGenerationCapabilities` is deprecated; on native LiteRT-LM it now
+  reports `streamBatching` and, for bundles without a declared drafter, no
+  speculative strategy ([#841](https://github.com/leehack/llamadart/issues/841)).
 
 ## 0.10.0
 

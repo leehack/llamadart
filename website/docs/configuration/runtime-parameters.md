@@ -230,9 +230,13 @@ than the default throws `LlamaUnsupportedException`:
 | `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
 | `grammarLazy` | `supportsLazyGrammar` | Yes | No | No | No |
 | Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |
-| Speculative strategies | `speculativeDecodingStrategies` | All | Bridge reports | `backendDefault`, `mtp` with a bundle drafter | None |
+| Speculative strategies | `speculativeDecodingStrategies` | All | Bridge reports | `backendDefault`, `mtp` unless the bundle declares no drafter | None |
 
-Every field is `false`, and the strategy set empty, before a load. Use it to
+Every field is `false`, and the strategy set empty, before a load. Native
+LiteRT-LM reads speculative, image and audio support from the bundle's
+declaration, which can under-report ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)); such a `false` does not
+reject the request, and a runtime failure it explains throws
+`LlamaUnsupportedException`. Use it to
 send a control only where it applies:
 
 ```dart

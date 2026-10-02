@@ -111,93 +111,165 @@ void main() {
       }
     });
 
-    for (final vision in <bool?>[true, false, null]) {
-      test('image input on a bundle declaring vision $vision', () async {
-        final client = _FakeLiteRtLmRuntimeClient();
-        final service = newService(client);
-        declared = vision == null
-            ? null
-            : (vision: vision, audio: false, speculativeDecoding: false);
-        try {
-          final model = await service.loadModel(modelFile.path, params);
-          final context = service.createContext(model, params);
-          final pending = service.generateChat(context, [
-            LlamaChatMessage.withContent(
-              role: LlamaChatRole.user,
-              content: [
-                const LlamaTextContent('Describe'),
-                LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
-              ],
-            ),
-          ], const GenerationParams(maxTokens: 8)).toList();
-          if (vision == false) {
-            await expectLater(
-              pending,
-              throwsA(
-                isA<UnsupportedError>().having(
-                  (error) => '${error.message}',
-                  'message',
-                  contains('declares no image input'),
-                ),
-              ),
-            );
-            expect(client.generateCount, 0);
-            return;
-          }
-          await client.generateStarted.future;
-          client.generated.add('A');
-          await client.generated.close();
-          await pending;
-          expect(client.lastVisionBackend, isNotNull);
-        } finally {
-          service.dispose();
-        }
-      });
+    Future<List<List<int>>> mediaChat(
+      LiteRtLmService service,
+      int context,
+      LlamaContentPart media,
+    ) => service.generateChat(context, [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: [const LlamaTextContent('Describe'), media],
+      ),
+    ], const GenerationParams(maxTokens: 8)).toList();
+
+    Future<void> answer(_FakeLiteRtLmRuntimeClient client) async {
+      await client.generateStarted.future;
+      client.generated.add('A');
+      await client.generated.close();
     }
 
-    for (final speculativeDecoding in <bool?>[true, false, null]) {
-      test('speculative decoding on a bundle declaring '
-          '$speculativeDecoding', () async {
-        final client = _FakeLiteRtLmRuntimeClient();
-        final service = newService(client);
-        declared = speculativeDecoding == null
+    Matcher undeclared(String piece) => throwsA(
+      isA<UnsupportedError>().having(
+        (error) => '${error.message}',
+        'message',
+        allOf(
+          contains('declares no $piece'),
+          contains('Runtime error: Bad state: runtime failed'),
+        ),
+      ),
+    );
+    final rethrowsRuntimeError = throwsA(
+      isA<StateError>().having(
+        (error) => error.message,
+        'message',
+        'runtime failed',
+      ),
+    );
+
+    for (final (kind, piece) in [
+      ('image', 'image encoder'),
+      ('audio', 'audio encoder'),
+    ]) {
+      LlamaContentPart mediaPart() => kind == 'image'
+          ? LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3]))
+          : LlamaAudioContent(bytes: Uint8List.fromList([4, 5, 6]));
+
+      for (final declaredPresent in <bool?>[true, false, null]) {
+        ({bool vision, bool audio, bool speculativeDecoding})? declaration() =>
+            declaredPresent == null
             ? null
             : (
-                vision: false,
-                audio: false,
-                speculativeDecoding: speculativeDecoding,
+                vision: kind == 'image' ? declaredPresent : true,
+                audio: kind == 'audio' ? declaredPresent : true,
+                speculativeDecoding: true,
               );
-        try {
-          final model = await service.loadModel(modelFile.path, params);
-          final context = service.createContext(model, params);
-          final pending = service
-              .generate(
-                context,
-                'Hello',
-                const GenerationParams(maxTokens: 8, speculativeDecoding: true),
-              )
-              .toList();
-          if (speculativeDecoding == false) {
+
+        test('$kind input runs whatever the bundle declares '
+            '($declaredPresent)', () async {
+          final client = _FakeLiteRtLmRuntimeClient();
+          final service = newService(client);
+          declared = declaration();
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            final pending = mediaChat(service, context, mediaPart());
+            await answer(client);
+            expect(await pending, [utf8.encode('A')]);
+          } finally {
+            service.dispose();
+          }
+        });
+
+        test('a runtime failure on $kind input is explained only when the '
+            'bundle declares no $piece ($declaredPresent)', () async {
+          final client = _FakeLiteRtLmRuntimeClient()
+            ..onCreateConversation = () => throw StateError('runtime failed');
+          final service = newService(client);
+          declared = declaration();
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            await expectLater(
+              mediaChat(service, context, mediaPart()),
+              declaredPresent == false
+                  ? undeclared(piece)
+                  : rethrowsRuntimeError,
+            );
+          } finally {
+            service.dispose();
+          }
+        });
+      }
+    }
+
+    test('a failure after output started is never explained', () async {
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = newService(client);
+      declared = (vision: false, audio: false, speculativeDecoding: false);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        final pending = mediaChat(
+          service,
+          context,
+          LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+        );
+        final failed = expectLater(pending, rethrowsRuntimeError);
+        await client.generateStarted.future;
+        client.generated
+          ..add('A')
+          ..addError(StateError('runtime failed'));
+        await client.generated.close();
+        await failed;
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final declaredDrafter in <bool?>[true, false, null]) {
+      test('speculative decoding on a bundle declaring a drafter '
+          '$declaredDrafter runs, and a runtime failure is explained only '
+          'when it declares none', () async {
+        for (final fails in [false, true]) {
+          final client = _FakeLiteRtLmRuntimeClient(
+            initializeError: fails ? StateError('runtime failed') : null,
+          );
+          final service = newService(client);
+          declared = declaredDrafter == null
+              ? null
+              : (
+                  vision: false,
+                  audio: false,
+                  speculativeDecoding: declaredDrafter,
+                );
+          try {
+            final model = await service.loadModel(modelFile.path, params);
+            final context = service.createContext(model, params);
+            final pending = service
+                .generate(
+                  context,
+                  'Hello',
+                  const GenerationParams(
+                    maxTokens: 8,
+                    speculativeDecoding: true,
+                  ),
+                )
+                .toList();
+            if (!fails) {
+              await answer(client);
+              await pending;
+              expect(client.lastSpeculativeDecoding, isTrue);
+              continue;
+            }
             await expectLater(
               pending,
-              throwsA(
-                isA<UnsupportedError>().having(
-                  (error) => '${error.message}',
-                  'message',
-                  contains('declares none'),
-                ),
-              ),
+              declaredDrafter == false
+                  ? undeclared('speculative decoding drafter')
+                  : rethrowsRuntimeError,
             );
-            expect(client.generateCount, 0);
-            return;
+          } finally {
+            service.dispose();
           }
-          await client.generateStarted.future;
-          client.generated.add('Hi');
-          await client.generated.close();
-          await pending;
-          expect(client.lastSpeculativeDecoding, isTrue);
-        } finally {
-          service.dispose();
         }
       });
     }

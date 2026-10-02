@@ -318,6 +318,39 @@ void main() {
       }
     });
 
+    test('routes the bundle capabilities of the loaded model', () async {
+      final worker = await _startWorkerInCurrentIsolate(
+        LiteRtLmService(
+          readBundleCapabilities: (_) =>
+              (vision: true, audio: false, speculativeDecoding: true),
+        ),
+      );
+      try {
+        await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmModelLoadRequest(
+            modelFile.path,
+            const ModelParams(preferredBackend: GpuBackend.cpu),
+            sendPort,
+          ),
+        );
+        final bundle = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmBundleCapabilitiesRequest.new,
+        );
+        expect(
+          bundle,
+          isA<LiteRtLmBundleCapabilitiesResponse>().having(
+            (response) => response.capabilities,
+            'capabilities',
+            (vision: true, audio: false, speculativeDecoding: true),
+          ),
+        );
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test('routes successful detokenize and LoRA service responses', () async {
       final service = _TokenAndLoraLiteRtLmService();
       final worker = await _startWorkerInCurrentIsolate(service);

@@ -33,7 +33,9 @@ description: >-
   from the model card. `engine.hasMultimodalProjector` only says a projector is
   loaded.
 - For a GGUF model they report the loaded projector; for a native `.litertlm`
-  bundle they report the modalities the bundle declares. The older
+  bundle they report the modalities the bundle declares, which can
+  under-report, so treat `false` there as unknown rather than absent. The
+  older
   `engine.supportsVision` and `engine.supportsAudio` getters report the GGUF
   projector only and are `false` for `.litertlm` bundles.
 - Always check before sending media to a GGUF model. With no projector loaded,

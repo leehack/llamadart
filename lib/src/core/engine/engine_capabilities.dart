@@ -6,7 +6,10 @@ import 'engine_observer.dart';
 ///
 /// Read it with `LlamaEngine.capabilities` after a model loads. A request that
 /// uses an input or option reported `false` throws
-/// `LlamaUnsupportedException`, except where a field says otherwise. The
+/// `LlamaUnsupportedException`, except where a field says otherwise. A
+/// `false` reported from a native LiteRT-LM bundle's declaration is
+/// best-effort: the request is still sent, and fails with
+/// `LlamaUnsupportedException` only if the runtime cannot run it. The
 /// snapshot does not change when the engine later loads or unloads a model
 /// or multimodal projector.
 class LlamaEngineCapabilities {
@@ -31,8 +34,11 @@ class LlamaEngineCapabilities {
   /// Whether chat requests can include image parts.
   ///
   /// llama.cpp needs a loaded multimodal projector that reports vision.
-  /// Native LiteRT-LM reports what the bundle declares and needs no
-  /// projector. LiteRT-LM web takes no media.
+  /// Native LiteRT-LM needs no projector and reports the encoders the bundle
+  /// declares. That declaration can under-report: LiteRT-LM's reader matches
+  /// section types case-sensitively and its runtime does not, so a bundle
+  /// reported without an encoder may still take the media. LiteRT-LM web
+  /// takes no media.
   final bool supportsVision;
 
   /// Whether chat requests can include audio parts, under the same rules as
@@ -110,7 +116,11 @@ class LlamaEngineCapabilities {
   /// The strategies that [GenerationParams.speculativeDecodingConfig] can use.
   ///
   /// [SpeculativeDecodingStrategy.backendDefault] also stands for the
-  /// [GenerationParams.speculativeDecoding] flag. A runtime can still reject a
+  /// [GenerationParams.speculativeDecoding] flag. Native LiteRT-LM reports
+  /// [SpeculativeDecodingStrategy.backendDefault] and
+  /// [SpeculativeDecodingStrategy.mtp] unless the bundle declares no
+  /// speculative drafter, a declaration that can under-report as for
+  /// [supportsVision]. A runtime can still reject a
   /// request that uses only these strategies, such as one that combines
   /// strategies, sets a tuning field or draft model the runtime does not take,
   /// or has media parts, a grammar or a thinking budget.

@@ -208,6 +208,18 @@ class LiteRtLmService {
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
+  }) => _explainUndeclaredFailure(
+    _generate(contextHandle, prompt, params, parts: parts),
+    hasImages: false,
+    hasAudio: false,
+    speculativeDecoding: params.isSpeculativeDecodingEnabled,
+  );
+
+  Stream<List<int>> _generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
     if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
@@ -287,6 +299,37 @@ class LiteRtLmService {
     String? sourceLangCode,
     String? targetLangCode,
     DateTime? templateNow,
+  }) => _explainUndeclaredFailure(
+    _generateChat(
+      contextHandle,
+      messages,
+      params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+    ),
+    hasImages: _maxNumImagesFor(messages) != null,
+    hasAudio: _hasAudioFor(messages),
+    speculativeDecoding: params.isSpeculativeDecodingEnabled,
+  );
+
+  Stream<List<int>> _generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
   }) async* {
     _checkContextHandle(contextHandle);
     if (messages.isEmpty) {
@@ -328,10 +371,6 @@ class LiteRtLmService {
     );
     final maxNumImages = _maxNumImagesFor(messages);
     final enableAudio = _hasAudioFor(messages);
-    _rejectUndeclaredMedia(
-      hasImages: maxNumImages != null,
-      hasAudio: enableAudio,
-    );
     final client = await _ensureClientForGeneration(
       params,
       maxNumImages: maxNumImages,
@@ -480,27 +519,50 @@ class LiteRtLmService {
     return _bundleCapabilities;
   }
 
-  /// Rejects media the loaded bundle declares no encoder for, which would
-  /// otherwise fail inside the runtime with an opaque error.
-  void _rejectUndeclaredMedia({
+  /// Reports a runtime failure, before the first chunk, of a request that
+  /// needs an image or audio encoder or a speculative drafter the loaded
+  /// bundle declares absent as that missing piece.
+  ///
+  /// The declaration only explains a failure and never rejects a request
+  /// itself: LiteRT-LM's capability reader matches section types
+  /// case-sensitively and the runtime does not, so it can under-report.
+  Stream<List<int>> _explainUndeclaredFailure(
+    Stream<List<int>> generation, {
     required bool hasImages,
     required bool hasAudio,
-  }) {
-    if (!hasImages && !hasAudio) {
-      return;
-    }
-    final bundle = bundleCapabilities();
-    if (bundle == null) {
-      return;
-    }
-    final missing = [
-      if (hasImages && !bundle.vision) 'image',
-      if (hasAudio && !bundle.audio) 'audio',
-    ];
-    if (missing.isNotEmpty) {
-      throw UnsupportedError(
-        'LiteRtLmBackend: the loaded bundle declares no ${missing.join(' or ')} '
-        'input. Use a bundle with that encoder or send text only.',
+    required bool speculativeDecoding,
+  }) async* {
+    var produced = false;
+    try {
+      await for (final chunk in generation) {
+        produced = true;
+        yield chunk;
+      }
+    } catch (error, stackTrace) {
+      if (produced ||
+          _cancelRequested ||
+          error is UnsupportedError ||
+          error is ArgumentError ||
+          error is LlamaUnsupportedException) {
+        rethrow;
+      }
+      final bundle = bundleCapabilities();
+      final missing = [
+        if (hasImages && bundle?.vision == false) 'image encoder',
+        if (hasAudio && bundle?.audio == false) 'audio encoder',
+        if (speculativeDecoding && bundle?.speculativeDecoding == false)
+          'speculative decoding drafter',
+      ];
+      if (missing.isEmpty) {
+        rethrow;
+      }
+      Error.throwWithStackTrace(
+        UnsupportedError(
+          'LiteRtLmBackend: the runtime could not run this request, and the '
+          'loaded bundle declares no ${missing.join(' or ')}. Use a bundle '
+          'with it, or leave it out of the request. Runtime error: $error',
+        ),
+        stackTrace,
       );
     }
   }
@@ -1181,13 +1243,6 @@ class LiteRtLmService {
     _addUnsupportedSpeculativeDecodingOptions(params, unsupported);
 
     if (unsupported.isEmpty) {
-      if (params.isSpeculativeDecodingEnabled &&
-          bundleCapabilities()?.speculativeDecoding == false) {
-        throw UnsupportedError(
-          'LiteRtLmBackend speculative decoding needs a bundle with a '
-          'speculative decoding drafter; the loaded bundle declares none.',
-        );
-      }
       return;
     }
     throw UnsupportedError(

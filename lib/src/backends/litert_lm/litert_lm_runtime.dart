@@ -599,7 +599,9 @@ class LiteRtLmRuntimeClient {
   /// audio input, and whether it has a speculative decoding drafter.
   ///
   /// Returns null when the runtime lacks LiteRT-LM's loaded-file capability
-  /// API or cannot read the bundle.
+  /// API or cannot read the bundle. The reader matches section types
+  /// case-sensitively and the runtime does not, so a `false` can be wrong
+  /// for a bundle whose section types are not lowercase.
   ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
     String modelPath,
   ) {

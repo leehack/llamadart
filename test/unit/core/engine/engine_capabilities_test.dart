@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
     show
@@ -78,9 +80,14 @@ class _RuntimeBackend extends MockLlamaBackend
   final Object? projectorProbeError;
   final Object? backendNameError;
 
+  /// When set, [generationCapabilities] waits for it.
+  Completer<void>? generationGate;
+
   @override
-  Future<BackendGenerationCapabilities> generationCapabilities() async =>
-      generation;
+  Future<BackendGenerationCapabilities> generationCapabilities() async {
+    await generationGate?.future;
+    return generation;
+  }
 
   @override
   Future<({bool vision, bool audio})> directMediaInput() async => directMedia;
@@ -303,6 +310,30 @@ void main() {
     expect(capabilities.supportsMinP, isFalse);
     expect(capabilities.speculativeDecodingStrategies, isEmpty);
   });
+
+  for (final reload in [false, true]) {
+    test('reports no model when the model ${reload ? 'reloads' : 'unloads'} '
+        'while capabilities are read', () async {
+      final backend = _RuntimeBackend(
+        runtime: LlamaRuntime.llamaCpp,
+        generation: _llamaCppGeneration,
+      );
+      final engine = await loaded(backend);
+      final gate = backend.generationGate = Completer<void>();
+
+      final pending = engine.capabilities;
+      await engine.unloadModel();
+      if (reload) await engine.loadModel('model.gguf');
+      gate.complete();
+      final capabilities = await pending;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.runtime, isNull);
+      expect(capabilities.supportsPenalty, isFalse);
+      backend.generationGate = null;
+      expect((await engine.capabilities).isSupported, reload);
+    });
+  }
 
   test('reports a failed media probe or backend name as missing', () async {
     final engine = await loaded(
