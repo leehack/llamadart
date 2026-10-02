@@ -29,6 +29,44 @@ final _cancelled = throwsA(
 );
 
 void main() {
+  test('loads the model from sources and owns it until dispose', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final mmprojPath = _requiredFile(_mmprojPathKey);
+    if (modelPath == null || mmprojPath == null) {
+      return;
+    }
+
+    final synthesizer = await TextToSpeechEngine.load(
+      TextToSpeechModel(
+        ModelSource.path(modelPath),
+        projector: ModelSource.path(mmprojPath),
+        adapter: const Qwen3TtsAdapter(),
+      ),
+      params: const ModelParams(
+        contextSize: 4096,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      ),
+    );
+    try {
+      final result = await synthesizer.synthesizeOnce(
+        const TextToSpeechRequest(
+          text: 'Hello from llamadart.',
+          language: 'English',
+          maxFrames: 128,
+          seed: 1,
+        ),
+      );
+      expect(result.sampleRateHz, 24000);
+      expect(result.samples, isNotEmpty);
+      expect(result.toWavBytes().length, greaterThan(44));
+    } finally {
+      await synthesizer.dispose();
+    }
+    expect(synthesizer.isDisposed, isTrue);
+    expect((await synthesizer.capabilities).isSupported, isFalse);
+  });
+
   test('synthesizes a playable WAV through the public API', () async {
     final modelPath = _requiredFile(_modelPathKey);
     final mmprojPath = _requiredFile(_mmprojPathKey);
@@ -53,9 +91,9 @@ void main() {
       );
       await engine.loadMultimodalProjector(mmprojPath);
 
-      final synthesizer = TextToSpeechEngine(
+      final synthesizer = TextToSpeechEngine.attach(
         engine,
-        modelProfile: TextToSpeechModelProfile.qwen3Tts,
+        adapter: const Qwen3TtsAdapter(),
       );
       final capabilities = await synthesizer.capabilities;
       expect(

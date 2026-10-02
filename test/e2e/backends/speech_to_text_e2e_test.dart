@@ -53,9 +53,9 @@ void main() {
           );
           await engine.loadMultimodalProjector(mmprojPath);
 
-          final recognizer = SpeechToTextEngine(
+          final recognizer = SpeechToTextEngine.attach(
             engine,
-            modelProfile: SpeechToTextModelProfile.qwen3Asr,
+            adapter: const Qwen3AsrAdapter(),
           );
           final capabilities = await recognizer.capabilities;
           expect(
@@ -156,6 +156,45 @@ void main() {
     );
   }
 
+  test('loads the model from sources and owns it until dispose', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    final mmprojPath = _requiredFile(_mmprojPathKey);
+    final audioPath = _requiredFile(_audioPathKey);
+    final expectedText = _requiredText(_expectedTextKey);
+    if (modelPath == null ||
+        mmprojPath == null ||
+        audioPath == null ||
+        expectedText == null) {
+      return;
+    }
+
+    final recognizer = await SpeechToTextEngine.load(
+      SpeechToTextModel(
+        ModelSource.path(modelPath),
+        projector: ModelSource.path(mmprojPath),
+        adapter: const Qwen3AsrAdapter(),
+      ),
+      params: const ModelParams(
+        contextSize: 4096,
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      ),
+    );
+    try {
+      final result = await recognizer.transcribeOnce(
+        SpeechToTextRequest(
+          audio: SpeechAudioFileInput(audioPath),
+          maxOutputTokens: 512,
+        ),
+      );
+      expect(result.text, expectedText);
+    } finally {
+      await recognizer.dispose();
+    }
+    expect(recognizer.isDisposed, isTrue);
+    expect((await recognizer.capabilities).isSupported, isFalse);
+  });
+
   test('rejects a projector made for another model family', () async {
     final modelPath = _requiredFile(_modelPathKey);
     final mmprojPath = _requiredFile(_mmprojPathKey);
@@ -191,9 +230,9 @@ void main() {
             ),
           ),
         );
-        final capabilities = await SpeechToTextEngine(
+        final capabilities = await SpeechToTextEngine.attach(
           engine,
-          modelProfile: SpeechToTextModelProfile.qwen3Asr,
+          adapter: const Qwen3AsrAdapter(),
         ).capabilities;
         expect(
           capabilities.unsupportedReason,
