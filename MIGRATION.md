@@ -2,76 +2,91 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.10.x` -> next release: image generation models from `ModelSource`s
+## `0.10.x` -> next release: image generation engine API
 
-Image generation is a Preview, and this release changes its model API with
-no deprecation period. The library no longer has model presets or
-`String` paths: an app describes each model by its files and settings.
+Image generation is a Preview, and this release changes its API with no
+deprecation period, to the pattern every llamadart engine will share: a
+model of `ModelSource` files, `params:` for runtime settings, `download:`
+for `ModelLoadOptions`, and generation settings on the request. The library
+no longer has model presets or `String` paths.
 
-1. **Presets are removed.** `ImageGenerationModel.sdxs`, `sdTurbo`,
-   `sdxlLightning`, `flux1Schnell`, `sd35LargeTurbo`, `zImageTurbo` and
-   `custom` are gone, as is `ImageGenerationModelFamily` and
-   `ImageGenerationModel.family`. Build the model with its files and the
-   settings the preset used; the
-   [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation#recipes)
-   lists them for each former preset:
+1. **A model is a main file plus components, each a `ModelSource`.**
+   `ImageGenerationModel.sdxs`, `sdTurbo`, `sdxlLightning`, `flux1Schnell`,
+   `sd35LargeTurbo`, `zImageTurbo` and `custom`, `ImageGenerationModelFiles`,
+   `ImageGenerationModelFamily` and `ImageGenerationModel.family` are gone.
+   `load` downloads each file if needed and assigns its role from its
+   header, so list files in any order:
 
    ```dart
    // Before
-   final entry = await DefaultModelDownloadManager().ensureModel(
-     ModelSource.parse(
-       'hf://concedo/sdxs-512-tinySDdistilled-GGUF/'
-       'sdxs-512-tinySDdistilled_Q8_0.gguf',
-     ),
-   );
    final engine = await ImageGenerationEngine.load(
-     ImageGenerationModel.sdxs(entry.filePath),
+     ImageGenerationModel.flux1Schnell(
+       diffusionModelPath: fluxPath,
+       clipLPath: clipLPath,
+       t5xxlPath: t5xxlPath,
+       vaePath: aePath,
+     ),
+     options: const ImageGenerationOptions(device: ImageGenerationDevice.gpu),
    );
-   // After: load downloads the file into the model cache.
+   final result = await engine.generateImage(
+     const ImageGenerationRequest(prompt: 'a red fox'),
+   );
+   // After
    final engine = await ImageGenerationEngine.load(
      ImageGenerationModel(
-       files: ImageGenerationModelFiles(
-         model: ModelSource.parse(
-           'hf://concedo/sdxs-512-tinySDdistilled-GGUF/'
-           'sdxs-512-tinySDdistilled_Q8_0.gguf',
-         ),
-       ),
-       defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+       ModelSource.path(fluxPath),
+       components: [
+         for (final path in [aePath, clipLPath, t5xxlPath])
+           ImageModelComponent.auto(ModelSource.path(path)),
+       ],
      ),
-     options: const ImageGenerationOptions(vaeDirectConvolution: false),
-     onProgress: (progress) => print(progress.fraction),
+     params: const ImageModelParams(device: ComputeDevice.gpu),
+   );
+   final result = await engine.generateImage(
+     const ImageGenerationRequest(
+       prompt: 'a red fox',
+       width: 1024,
+       height: 1024,
+       steps: 4,
+       guidanceScale: 1,
+     ),
    );
    ```
 
-   | Removed | Files | `ImageGenerationDefaults` |
+   A file the header check cannot classify, such as a `.ckpt`, takes an
+   explicit role: `ImageModelComponent(source, role: ImageModelRole.vae)`,
+   or `ImageGenerationModel(source, role: ImageModelRole.checkpoint)`.
+   `load` now refuses LoRA and ControlNet files, two files in one role, and
+   a VAE or TAESD for other latent channels than the diffusion model's.
+
+2. **Generation settings move to the request.** `ImageGenerationDefaults`
+   is gone; an unset request size is 512x512, steps 20 and guidance 7. Set
+   each former preset's values on the request, as in the
+   [image generation guide's recipes](https://llamadart.leehack.com/docs/guides/image-generation#recipes):
+
+   | 0.10.0 preset | Files | Request settings |
    | --- | --- | --- |
-   | `sdxs(path)` | `model` | `steps: 1, guidanceScale: 1` |
-   | `sdTurbo(path, taesdPath:)` | `model`, `taesd` | `steps: 1, guidanceScale: 1` |
-   | `sdxlLightning(path, vaePath:, taesdPath:)` | `model`, `vae`, `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1, sampler: euler, scheduler: sgmUniform` |
-   | `flux1Schnell(...)` | `diffusionModel`, `clipL`, `t5xxl`, `vae` or `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
-   | `sd35LargeTurbo(...)` | `diffusionModel`, `clipL`, `clipG`, `t5xxl`, `vae` or `taesd` | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
-   | `zImageTurbo(...)` | `diffusionModel`, `llm`, `vae` | `width: 1024, height: 1024, steps: 8, guidanceScale: 1` |
-   | `custom(files, defaults:)` | the same roles | the same `defaults` |
+   | `sdxs(path)` | the checkpoint | `steps: 1, guidanceScale: 1` |
+   | `sdTurbo(path, taesdPath:)` | the checkpoint, optional TAESD | `steps: 1, guidanceScale: 1` |
+   | `sdxlLightning(path, vaePath:, taesdPath:)` | the checkpoint, optional VAE or TAESDXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1, sampler: euler, scheduler: sgmUniform` |
+   | `flux1Schnell(...)` | diffusion model, `ae` or TAEF1, CLIP-L, T5-XXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `sd35LargeTurbo(...)` | diffusion model, TAESD3 or VAE, CLIP-L, CLIP-G, T5-XXL | `width: 1024, height: 1024, steps: 4, guidanceScale: 1` |
+   | `zImageTurbo(...)` | diffusion model, `ae`, Qwen3 `llm` | `width: 1024, height: 1024, steps: 8, guidanceScale: 1` |
+   | `custom(files, defaults:)` | the same files | the former `defaults` |
 
-2. **Files are `ModelSource`s.** Each `ImageGenerationModelFiles` role takes
-   a `ModelSource` instead of a `String` path, and `paths` is replaced by
-   `sources`. Wrap a local path in `ModelSource.path(path)`, or pass a URL or
-   `hf://` source to have `ImageGenerationEngine.load` download it. An empty
-   path now throws `ArgumentError` from `ModelSource.path`.
+   `warmUp` takes `guidanceScale` too, so pass the size and guidance you
+   generate with.
 
-3. **SDXS needs `vaeDirectConvolution: false` to keep its speed.** The
-   engine used to keep direct VAE convolutions off for the SDXS preset; it
-   now decides from the device and the `taesd` role only. Off Metal, pass
-   `ImageGenerationOptions(vaeDirectConvolution: false)` for SDXS or another
-   checkpoint that embeds a tiny autoencoder, or keep the default to use
-   about 250 MiB less memory at 15 to 25% more time per image on the CPU.
+3. **`load` takes `params:`, `download:`, `onProgress:` and `store:`.**
+   `ImageGenerationOptions` is now `ImageModelParams`, and
+   `ImageGenerationDevice` the shared `ComputeDevice`. `download:` takes
+   `ModelLoadOptions` for remote files (cache, auth, retries, cancellation);
+   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
+   checksum cannot cover several files. `store: ModelFileStore(resolver: ...,
+   downloadManager: ...)` replaces the resolver and download manager.
 
-4. **`ImageGenerationEngine.load` resolves every file.** It checks local
-   files through the model download manager, like
-   `LlamaEngine.loadModelSource`, and takes `loadOptions`, `onProgress`,
-   `modelResolver` and `modelDownloadManager`. `ModelLoadOptions.sha256`
-   throws `LlamaUnsupportedException`, since one checksum cannot cover
-   several files.
+4. **Errors name files by position, not path.** A missing or unusable file
+   is "the main file" or "component N".
 
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 

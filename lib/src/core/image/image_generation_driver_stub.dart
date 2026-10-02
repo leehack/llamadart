@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_stub.dart';
 import 'image_generation_driver.dart';
@@ -18,6 +20,10 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   int? fileSize(String path) => null;
+
+  @override
+  Future<Uint8List> readFileRange(String path, int offset, int length) =>
+      Future.error(probe().unavailableReason!);
 
   @override
   ImageGenerationMemoryBudget? memoryBudget(

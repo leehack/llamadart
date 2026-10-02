@@ -235,8 +235,10 @@ hooks:
 The first run downloads the runtime (40 to 70 MB) through the build hook.
 `ImageGenerationEngine.load` then downloads the files this example pins for
 the preset in `lib/services/image_cli_options.dart`, unless a flag names a
-local file: for SDXS the 683 MB checkpoint from `concedo/sdxs-512-tinySDdistilled-GGUF`, into the
-package-managed cache, which later runs reuse.
+local file: for SDXS the 683 MB checkpoint from
+`concedo/sdxs-512-tinySDdistilled-GGUF`, into the package-managed cache,
+which later runs reuse. The engine assigns each file its role from its
+header; the preset sets the request's size, steps and guidance.
 
 ```bash
 dart run bin/llamadart_image_example.dart \
@@ -301,6 +303,9 @@ LLAMADART_TAESD=/models/taesd.safetensors \
   dart test --run-skipped -t local-only test/image_generation_e2e_test.dart
 ```
 
+Set `LLAMADART_IMAGE_SPLIT_MODEL` to a split model's local files, comma
+separated in any order (such as FLUX.1-schnell's transformer, `ae`, CLIP-L
+and T5-XXL), to check that the engine assigns their roles and generates.
 Set `LLAMADART_IMAGE_HF_CACHE` to a cache directory to also load SDXS
 from its pinned Hugging Face file through `ImageGenerationEngine.load` (683 MB on the first run) and
 check that the next load reuses the cache.

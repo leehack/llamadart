@@ -13,12 +13,11 @@ class ImageModelProfile {
   /// Short user-facing model description.
   final String description;
 
-  /// Size and sampling settings the model was validated with.
-  final ImageGenerationDefaults defaults;
+  /// Sampling steps the model was validated with.
+  final int steps;
 
-  /// `ImageGenerationOptions.vaeDirectConvolution` for this model, or `null`
-  /// for the engine's choice.
-  final bool? vaeDirectConvolution;
+  /// Guidance scale the model was validated with.
+  final double guidanceScale;
 
   /// Single-file checkpoint.
   final RemoteModelAssetSource modelSource;
@@ -38,11 +37,11 @@ class ImageModelProfile {
     required this.id,
     required this.name,
     required this.description,
-    required this.defaults,
+    required this.steps,
+    required this.guidanceScale,
     required this.modelSource,
     this.taesdSource,
     this.memoryNote,
-    this.vaeDirectConvolution,
     this.isRecommended = false,
   });
 
@@ -69,23 +68,20 @@ class ImageModelProfile {
     required String modelPath,
     String? taesdPath,
   }) => ImageGenerationModel(
-    files: ImageGenerationModelFiles(
-      model: ModelSource.path(modelPath),
-      taesd: taesdPath == null ? null : ModelSource.path(taesdPath),
-    ),
-    defaults: defaults,
+    ModelSource.path(modelPath),
+    components: [
+      if (taesdPath != null)
+        ImageModelComponent.auto(ModelSource.path(taesdPath)),
+    ],
   );
-
-  /// Engine settings for this model.
-  ImageGenerationOptions get options =>
-      ImageGenerationOptions(vaeDirectConvolution: vaeDirectConvolution);
 
   /// SDXS-512: a one-step distilled SD 1.x-size model that fits phones.
   static const ImageModelProfile sdxs = ImageModelProfile(
     id: 'sdxs-512-q8_0',
     name: 'SDXS-512',
     description: 'One-step distilled model that fits most phones.',
-    defaults: ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+    steps: 1,
+    guidanceScale: 1,
     modelSource: RemoteModelAssetSource(
       url:
           'https://huggingface.co/concedo/sdxs-512-tinySDdistilled-GGUF/resolve/3144d898d61492f8382ffcabec055733fc5b2a0e/sdxs-512-tinySDdistilled_Q8_0.gguf?download=true',
@@ -94,9 +90,6 @@ class ImageModelProfile {
       sha256:
           '409ab23582ee074c6b9d5395784fc0741b0599fb9d138686c69087c71678eb6a',
     ),
-    // The checkpoint embeds a tiny autoencoder; direct VAE convolutions
-    // made it about 15% slower on an M4 Max CPU.
-    vaeDirectConvolution: false,
     isRecommended: true,
   );
 
@@ -106,7 +99,8 @@ class ImageModelProfile {
     id: 'sd-turbo-q8_0-taesd',
     name: 'SD-Turbo + TAESD',
     description: 'SD 2.1 Turbo with the tiny TAESD decoder; 1 to 4 steps.',
-    defaults: ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+    steps: 1,
+    guidanceScale: 1,
     modelSource: RemoteModelAssetSource(
       url:
           'https://huggingface.co/Green-Sky/SD-Turbo-GGUF/resolve/19a31586d02d64a73b4419bc193b3ecfaf38e1f0/sd_turbo-f16-q8_0.gguf?download=true',

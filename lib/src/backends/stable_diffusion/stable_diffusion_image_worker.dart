@@ -167,9 +167,9 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   };
 }
 
-/// The error for stable-diffusion.cpp rejecting [files], keyed by role as in
-/// `ImageGenerationModelFiles.paths`. Its details list the roles, never the
-/// paths.
+/// The error for stable-diffusion.cpp rejecting [files], keyed by runtime
+/// role as in `ImageGenerationSessionConfig.files`. Its details list the
+/// roles, never the paths.
 ///
 /// The runtime logs its reason only through a callback whose text is gone by
 /// the time Dart can read it (stable-diffusion-native#3), so the message

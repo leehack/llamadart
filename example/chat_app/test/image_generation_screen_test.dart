@@ -200,6 +200,7 @@ void main() {
     final run = generation.generator!.runs.single;
     expect(run.request.seed, isNull);
     expect(run.request.steps, 1);
+    expect(run.request.guidanceScale, 1);
     expect(run.request.width, 512);
 
     run.progress(ImageGenerationPhase.encodingPrompt, 0, 1);
@@ -268,7 +269,7 @@ void main() {
         'The image model needs about 2.62 GiB (1.89 GiB of weights plus '
         'working memory), but only 1.50 GiB is available (MemAvailable). Use '
         'a smaller or more quantized model, free memory, or set '
-        'ImageGenerationOptions.checkMemory to false to try anyway.';
+        'ImageModelParams.checkMemory to false to try anyway.';
     generation.loadError = LlamaModelException(refusal);
     await pumpScreen(tester);
 
@@ -470,11 +471,9 @@ void main() {
     await pumpEventQueue();
     final turboEngine = generation.generator!;
     expect(
-      generation.loadedModels.last.files.taesd?.path,
+      generation.loadedModels.last.components.single.source.path,
       '/models/taesd.safetensors',
     );
-    expect(generation.loadedOptions.first.vaeDirectConvolution, isFalse);
-    expect(generation.loadedOptions.last.vaeDirectConvolution, isNull);
     provider.dispose();
     await second;
     await pumpEventQueue();
@@ -890,22 +889,21 @@ void main() {
 
     test('builds library models with the settings of each profile', () {
       final sdxs = ImageModelProfile.sdxs.buildModel(modelPath: '/m.gguf');
-      expect(sdxs.files.sources.keys, ['model']);
-      expect(sdxs.files.model?.path, '/m.gguf');
-      expect(sdxs.defaults.steps, 1);
-      expect(sdxs.defaults.guidanceScale, 1);
-      expect(ImageModelProfile.sdxs.options.vaeDirectConvolution, isFalse);
-      expect(ImageModelProfile.sdTurbo.options.vaeDirectConvolution, isNull);
+      expect(sdxs.source.path, '/m.gguf');
+      expect(sdxs.components, isEmpty);
+      expect(
+        (ImageModelProfile.sdxs.steps, ImageModelProfile.sdxs.guidanceScale),
+        (1, 1.0),
+      );
 
       final turbo = const InstalledImageModel(
         profile: ImageModelProfile.sdTurbo,
         modelPath: '/turbo.gguf',
         taesdPath: '/taesd.safetensors',
       ).toGenerationModel();
-      expect(turbo.files.model?.path, '/turbo.gguf');
-      expect(turbo.files.taesd?.path, '/taesd.safetensors');
-      expect(turbo.defaults.steps, 1);
-      expect(turbo.defaults.guidanceScale, 1);
+      expect(turbo.source.path, '/turbo.gguf');
+      expect(turbo.components.single.source.path, '/taesd.safetensors');
+      expect(turbo.components.single.role, isNull);
     });
   });
 }
@@ -921,7 +919,6 @@ class FakeImageGenerationService implements ImageGenerationService {
   Completer<void>? loadGate;
   int loadCount = 0;
   final List<ImageGenerationModel> loadedModels = <ImageGenerationModel>[];
-  final List<ImageGenerationOptions> loadedOptions = <ImageGenerationOptions>[];
   FakeImageGenerator? generator;
 
   Completer<void>? checkGate;
@@ -939,13 +936,9 @@ class FakeImageGenerationService implements ImageGenerationService {
   }
 
   @override
-  Future<ImageGenerator> load(
-    ImageGenerationModel model, {
-    ImageGenerationOptions options = const ImageGenerationOptions(),
-  }) async {
+  Future<ImageGenerator> load(ImageGenerationModel model) async {
     loadCount += 1;
     loadedModels.add(model);
-    loadedOptions.add(options);
     await loadGate?.future;
     if (loadError case final error?) {
       throw error;

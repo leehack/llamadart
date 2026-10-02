@@ -8,8 +8,14 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/image/image_generation_engine.dart';
 
-const _model = '/models/sdxs.gguf';
+import '../../../support/image_model_headers.dart';
+
+const _model = '/models/sd-turbo.gguf';
 const _taesd = '/models/taesd.safetensors';
+const _flux = '/models/flux1-schnell.gguf';
+const _ae = '/models/ae.safetensors';
+const _clipL = '/models/clip_l.gguf';
+const _t5xxl = '/models/t5xxl.gguf';
 const _gib = 1 << 30;
 
 ModelSource _local(String path) => ModelSource.path(path);
@@ -19,14 +25,24 @@ final _remoteTaesd = ModelSource.parse(
   'hf://owner/taesd@0123abc/taesd.safetensors',
 );
 
+/// A checkpoint (by default the local SD-Turbo fixture), plus [taesd].
 ImageGenerationModel _sdxs([ModelSource? model, ModelSource? taesd]) =>
     ImageGenerationModel(
-      files: ImageGenerationModelFiles(
-        model: model ?? _local(_model),
-        taesd: taesd,
-      ),
-      defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+      model ?? _local(_model),
+      components: [if (taesd != null) ImageModelComponent.auto(taesd)],
     );
+
+/// FLUX.1-schnell's four local files, main file first, components in
+/// [order] of `ae`, CLIP-L and T5-XXL.
+ImageGenerationModel _fluxModel([List<int> order = const [0, 1, 2]]) {
+  const parts = [_ae, _clipL, _t5xxl];
+  return ImageGenerationModel(
+    _local(_flux),
+    components: [
+      for (final index in order) ImageModelComponent.auto(_local(parts[index])),
+    ],
+  );
+}
 
 void main() {
   late _FakeDriver driver;
@@ -36,18 +52,17 @@ void main() {
 
   Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
-    ImageGenerationOptions options = const ImageGenerationOptions(),
-    ModelLoadOptions loadOptions = ModelLoadOptions.defaults,
+    ImageModelParams params = const ImageModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
-    ModelResolver? modelResolver,
+    ModelResolver? resolver,
   }) async {
     final engine = await ImageGenerationEngine.load(
       model,
-      options: options,
-      loadOptions: loadOptions,
+      params: params,
+      download: download,
       onProgress: onProgress,
-      modelResolver: modelResolver,
-      modelDownloadManager: downloads,
+      store: ModelFileStore(resolver: resolver, downloadManager: downloads),
     );
     engines.add(engine);
     return engine;
@@ -213,10 +228,7 @@ void main() {
     test('passes every file and the device choice to the runtime', () async {
       final engine = await load(
         _sdxs(_local(_model), _local(_taesd)),
-        options: const ImageGenerationOptions(
-          device: ImageGenerationDevice.cpu,
-          threads: 4,
-        ),
+        params: const ImageModelParams(device: ComputeDevice.cpu, threads: 4),
       );
 
       final config = driver.started.single;
@@ -236,57 +248,91 @@ void main() {
       expect(engine.capabilities.backendName, 'MTL0');
     });
 
-    test('passes the llm text encoder to the runtime', () async {
-      const llm = '/models/qwen3-4b.gguf';
-      driver.sizes[llm] = _gib;
+    test('assigns split files their roles from their headers, in any '
+        'order', () async {
+      for (final order in const [
+        [0, 1, 2],
+        [2, 0, 1],
+        [1, 2, 0],
+      ]) {
+        final engine = await load(_fluxModel(order));
+        await engine.dispose();
+
+        expect(driver.started.last.files, {
+          'diffusionModel': _flux,
+          'vae': _ae,
+          'clipL': _clipL,
+          't5xxl': _t5xxl,
+        }, reason: '$order');
+        expect(
+          engine.roles.map((role, source) => MapEntry(role, source.path)),
+          {
+            ImageModelRole.diffusionModel: _flux,
+            ImageModelRole.vae: _ae,
+            ImageModelRole.clipL: _clipL,
+            ImageModelRole.t5xxl: _t5xxl,
+          },
+        );
+      }
+    });
+
+    test('takes the role a component sets, and the main file role', () async {
+      const ckpt = '/models/model.ckpt';
+      driver
+        ..sizes[ckpt] = _gib
+        ..headers[ckpt] = ImageModelHeaders.pickle;
 
       await load(
         ImageGenerationModel(
-          files: ImageGenerationModelFiles(
-            diffusionModel: _local(_model),
-            vae: _local(_taesd),
-            llm: _local(llm),
-          ),
+          _local(_taesd),
+          components: [
+            ImageModelComponent(_local(ckpt), role: ImageModelRole.checkpoint),
+          ],
         ),
       );
+      expect(driver.started.last.files, {'model': ckpt, 'taesd': _taesd});
 
-      expect(driver.started.single.files, {
-        'diffusionModel': _model,
-        'vae': _taesd,
-        'llm': llm,
-      });
+      await engines.removeLast().dispose();
+      await load(
+        ImageGenerationModel(_local(ckpt), role: ImageModelRole.checkpoint),
+      );
+      expect(driver.started.last.files, {'model': ckpt});
     });
 
-    test('a missing llm file throws LlamaModelException naming its role', () {
-      expect(
-        load(
-          ImageGenerationModel(
-            files: ImageGenerationModelFiles(
-              diffusionModel: _local(_model),
-              llm: _local('/models/missing.gguf'),
-            ),
-          ),
-        ),
+    test('a file the header check cannot classify throws naming its '
+        'position', () async {
+      const ckpt = '/models/model.ckpt';
+      driver
+        ..sizes[ckpt] = _gib
+        ..headers[ckpt] = ImageModelHeaders.pickle;
+
+      await expectLater(
+        load(_sdxs(_local(_model), _local(ckpt))),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
             'message',
-            allOf(contains('llm'), contains('/models/missing.gguf')),
+            allOf(
+              contains('component 1'),
+              contains('ImageModelComponent(source, role: ...)'),
+              isNot(contains(ckpt)),
+            ),
           ),
         ),
       );
+      expect(driver.started, isEmpty);
     });
 
     group('automatic attention and VAE settings', () {
       Future<ImageGenerationSessionConfig> startedWith(
         String devices,
         ImageGenerationModel model, {
-        ImageGenerationOptions options = const ImageGenerationOptions(),
+        ImageModelParams params = const ImageModelParams(),
       }) async {
         driver
           ..status = _available(devices)
           ..started.clear();
-        await load(model, options: options);
+        await load(model, params: params);
         return driver.started.single;
       }
 
@@ -322,9 +368,7 @@ void main() {
         final config = await startedWith(
           metal,
           checkpoint,
-          options: const ImageGenerationOptions(
-            device: ImageGenerationDevice.cpu,
-          ),
+          params: const ImageModelParams(device: ComputeDevice.cpu),
         );
 
         expect(config.flashAttention, isTrue);
@@ -346,17 +390,33 @@ void main() {
           (await startedWith(
             cpu,
             checkpoint,
-            options: const ImageGenerationOptions(vaeDirectConvolution: false),
+            params: const ImageModelParams(vaeDirectConvolution: false),
           )).vaeDirectConvolution,
           isFalse,
         );
       });
 
-      test('explicit options override the automatic choice', () async {
+      test('a checkpoint whose header shows an embedded tiny autoencoder '
+          'keeps the unfolded VAE', () async {
+        const sdxs = '/models/sdxs.gguf';
+        driver
+          ..sizes[sdxs] = 651 << 20
+          ..headers[sdxs] = ImageModelHeaders.sdxsCheckpoint;
+
+        for (final devices in [metal, vulkan, cpu]) {
+          final config = await startedWith(
+            devices,
+            ImageGenerationModel(_local(sdxs)),
+          );
+          expect(config.vaeDirectConvolution, isFalse, reason: devices);
+        }
+      });
+
+      test('explicit params override the automatic choice', () async {
         final onMetal = await startedWith(
           metal,
           checkpoint,
-          options: const ImageGenerationOptions(
+          params: const ImageModelParams(
             flashAttention: false,
             vaeDirectConvolution: true,
           ),
@@ -367,7 +427,7 @@ void main() {
         final onVulkan = await startedWith(
           vulkan,
           _sdxs(),
-          options: const ImageGenerationOptions(
+          params: const ImageModelParams(
             flashAttention: true,
             vaeDirectConvolution: true,
           ),
@@ -382,9 +442,7 @@ void main() {
 
       final engine = await load(
         _sdxs(),
-        options: const ImageGenerationOptions(
-          device: ImageGenerationDevice.gpu,
-        ),
+        params: const ImageModelParams(device: ComputeDevice.gpu),
       );
 
       expect(driver.started.single.backend, 'gpu');
@@ -397,16 +455,14 @@ void main() {
       await expectLater(
         load(
           _sdxs(),
-          options: const ImageGenerationOptions(
-            device: ImageGenerationDevice.gpu,
-          ),
+          params: const ImageModelParams(device: ComputeDevice.gpu),
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
             allOf(
-              contains('ImageGenerationDevice.gpu needs a GPU'),
+              contains('ComputeDevice.gpu needs a GPU'),
               contains('reports only CPU'),
               contains('llamadart_stable_diffusion_backends'),
             ),
@@ -419,7 +475,8 @@ void main() {
       expect(engine.capabilities.backendName, 'CPU');
     });
 
-    test('a missing file throws LlamaModelException naming its role', () async {
+    test('a missing file throws LlamaModelException naming its position, '
+        'not its path', () async {
       driver.sizes.remove(_taesd);
 
       await expectLater(
@@ -428,7 +485,7 @@ void main() {
           isA<LlamaModelException>().having(
             (error) => error.message,
             'message',
-            allOf(contains('taesd'), contains(_taesd)),
+            allOf(contains('component 1'), isNot(contains(_taesd))),
           ),
         ),
       );
@@ -439,28 +496,45 @@ void main() {
       expect(driver.started, isEmpty);
     });
 
-    test('a file set without model or diffusionModel is rejected', () async {
+    test('a set without diffusion weights is rejected', () async {
       await expectLater(
         load(
           ImageGenerationModel(
-            files: ImageGenerationModelFiles(
-              vae: _local('/models/vae.safetensors'),
-            ),
+            _local(_ae),
+            components: [ImageModelComponent.auto(_local(_clipL))],
           ),
         ),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
             'message',
-            contains('model or diffusionModel'),
+            contains('None of the image model files holds diffusion weights'),
           ),
         ),
       );
+      expect(driver.started, isEmpty);
+    });
+
+    test('ComputeDevice.npu is unsupported', () async {
+      await expectLater(
+        load(
+          _sdxs(),
+          params: const ImageModelParams(device: ComputeDevice.npu),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('no NPU backend'),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
     });
 
     test('negative threads are rejected', () async {
       await expectLater(
-        load(_sdxs(), options: const ImageGenerationOptions(threads: -1)),
+        load(_sdxs(), params: const ImageModelParams(threads: -1)),
         throwsA(isA<LlamaImageGenerationException>()),
       );
     });
@@ -476,48 +550,106 @@ void main() {
         await load(_sdxs());
       },
     );
+
+    test('a load is atomic: a runtime failure leaves nothing loaded, and the '
+        'next load starts from scratch', () async {
+      driver.startError = LlamaModelException('not an image model');
+
+      await expectLater(
+        load(_fluxModel()),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(driver.started, isEmpty);
+      expect(driver.session.disposeCalls, 0);
+
+      driver.startError = null;
+      final engine = await load(_sdxs());
+      expect(driver.started.single.files, {'model': _model});
+      expect(engine.capabilities.isSupported, isTrue);
+    });
+
+    test('dispose is idempotent', () async {
+      final engine = await load(_sdxs());
+
+      final first = engine.dispose();
+      final second = engine.dispose();
+      expect(second, same(first));
+      await first;
+      await engine.dispose();
+
+      expect(engine.isDisposed, isTrue);
+      expect(driver.session.disposeCalls, 1);
+      expect(engine.capabilities.isSupported, isFalse);
+    });
   });
 
   group('model sources', () {
-    test('resolves every role through the manager and starts the runtime '
-        'with the local files', () async {
-      final sources = <String, ModelSource>{
-        'diffusionModel': _remote,
-        'vae': ModelSource.url(Uri.parse('https://example.com/ae.safetensors')),
-        'taesd': _local(_taesd),
-        'clipL': ModelSource.parse('hf://owner/clip@0123abc/clip_l.gguf'),
-        'clipG': ModelSource.parse('hf://owner/clip@0123abc/clip_g.gguf'),
-        't5xxl': ModelSource.parse('hf://owner/t5@0123abc/t5xxl.gguf'),
-        'llm': ModelSource.parse('hf://owner/qwen@0123abc/qwen3.gguf'),
-      };
+    test('resolves every file through the manager, then assigns roles to '
+        'the local copies', () async {
+      final flux = ModelSource.parse('hf://owner/flux@0123abc/flux.gguf');
+      final ae = ModelSource.url(
+        Uri.parse('https://example.com/ae.safetensors'),
+      );
+      final t5xxl = ModelSource.parse('hf://owner/t5@0123abc/t5xxl.gguf');
+      downloads.remoteHeaders
+        ..['flux.gguf'] = ImageModelHeaders.fluxDiffusion
+        ..['ae.safetensors'] = ImageModelHeaders.fluxVae
+        ..['t5xxl.gguf'] = ImageModelHeaders.t5xxl;
 
-      await load(
+      final engine = await load(
         ImageGenerationModel(
-          files: ImageGenerationModelFiles(
-            diffusionModel: sources['diffusionModel'],
-            vae: sources['vae'],
-            taesd: sources['taesd'],
-            clipL: sources['clipL'],
-            clipG: sources['clipG'],
-            t5xxl: sources['t5xxl'],
-            llm: sources['llm'],
-          ),
+          t5xxl,
+          components: [
+            ImageModelComponent.auto(_local(_clipL)),
+            ImageModelComponent.auto(flux),
+            ImageModelComponent.auto(ae),
+          ],
         ),
       );
 
       expect(
         [for (final (source, _) in downloads.calls) source.canonicalKey],
-        [for (final source in sources.values) source.canonicalKey],
+        [
+          for (final source in [t5xxl, _local(_clipL), flux, ae])
+            source.canonicalKey,
+        ],
       );
       expect(driver.started.single.files, {
-        for (final MapEntry(key: role, value: source) in sources.entries)
-          role: source.isLocal ? source.path : _FakeDownloads.cachePath(source),
+        'diffusionModel': _FakeDownloads.cachePath(flux),
+        'vae': _FakeDownloads.cachePath(ae),
+        'clipL': _clipL,
+        't5xxl': _FakeDownloads.cachePath(t5xxl),
       });
+      expect(engine.roles[ImageModelRole.diffusionModel], flux);
       expect(
         downloads.calls.first.$1.resolvedUri.toString(),
-        'https://huggingface.co/owner/sdxs/resolve/0123abc/sdxs.gguf'
+        'https://huggingface.co/owner/t5/resolve/0123abc/t5xxl.gguf'
         '?download=true',
       );
+    });
+
+    test('a non-component file fails after its download, starts nothing, '
+        'and keeps the download cached', () async {
+      final lora = ModelSource.parse(
+        'hf://owner/lora@0123abc/lora.safetensors',
+      );
+      downloads.remoteHeaders['lora.safetensors'] = ImageModelHeaders.lora;
+
+      await expectLater(
+        load(_sdxs(_local(_model), lora)),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              startsWith('Component 1 is a LoRA adapter'),
+              isNot(contains('lora.safetensors')),
+            ),
+          ),
+        ),
+      );
+      expect(driver.started, isEmpty);
+      expect(downloads.cached, contains(lora.canonicalKey));
     });
 
     test('remote-only options reach only remote files', () async {
@@ -525,7 +657,7 @@ void main() {
 
       await load(
         _sdxs(_remote, _local(_taesd)),
-        loadOptions: ModelLoadOptions(
+        download: ModelLoadOptions(
           bearerToken: 'hf_secret',
           cacheDirectory: cacheDirectory,
         ),
@@ -562,6 +694,7 @@ void main() {
 
     test('local file sizes count toward the total from the start', () async {
       downloads.remoteSizes['late.gguf'] = 1024;
+      downloads.remoteHeaders['late.gguf'] = ImageModelHeaders.taesd;
       final events = <ModelDownloadProgress>[];
 
       await load(
@@ -597,7 +730,7 @@ void main() {
 
       final loading = load(
         _sdxs(_remote, _remoteTaesd),
-        loadOptions: ModelLoadOptions(cancelToken: cancelToken),
+        download: ModelLoadOptions(cancelToken: cancelToken),
       );
       await pumpEventQueue();
       cancelToken.cancel();
@@ -619,7 +752,7 @@ void main() {
       await expectLater(
         load(
           _sdxs(_remote),
-          loadOptions: ModelLoadOptions(cancelToken: cancelToken),
+          download: ModelLoadOptions(cancelToken: cancelToken),
           onProgress: (progress) {
             if (progress.receivedBytes == 4096) {
               cancelToken.cancel();
@@ -650,17 +783,18 @@ void main() {
       await expectLater(
         load(
           ImageGenerationModel(
-            files: ImageGenerationModelFiles(
-              diffusionModel: _remote,
-              t5xxl: _local('/models/missing.gguf'),
-            ),
+            _remote,
+            components: [
+              ImageModelComponent.auto(_local(_clipL)),
+              ImageModelComponent.auto(_local('/models/missing.gguf')),
+            ],
           ),
         ),
         throwsA(
           isA<LlamaModelException>().having(
             (error) => error.message,
             'message',
-            allOf(contains('t5xxl'), contains('/models/missing.gguf')),
+            allOf(contains('component 2'), isNot(contains('missing.gguf'))),
           ),
         ),
       );
@@ -682,7 +816,7 @@ void main() {
     test('a checksum in the load options is rejected before anything '
         'downloads', () async {
       await expectLater(
-        load(_sdxs(_remote), loadOptions: ModelLoadOptions(sha256: 'a' * 64)),
+        load(_sdxs(_remote), download: ModelLoadOptions(sha256: 'a' * 64)),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
@@ -703,8 +837,8 @@ void main() {
       await expectLater(
         load(
           _sdxs(_remote),
-          modelResolver: _RemoteTargetResolver(signed, useBrowserCache: false),
-          loadOptions: ModelLoadOptions(bearerToken: 'hf_secret'),
+          resolver: _RemoteTargetResolver(signed, useBrowserCache: false),
+          download: ModelLoadOptions(bearerToken: 'hf_secret'),
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
@@ -721,7 +855,7 @@ void main() {
 
       await load(
         _sdxs(_remote),
-        modelResolver: _RemoteTargetResolver(signed, useBrowserCache: true),
+        resolver: _RemoteTargetResolver(signed, useBrowserCache: true),
       );
       final (source, _) = downloads.calls.single;
       expect(source.resolvedUri, signed);
@@ -795,10 +929,7 @@ void main() {
       await load(_sdxs());
 
       driver.budget = (bytes: _gib, source: 'physical memory');
-      await load(
-        _sdxs(),
-        options: const ImageGenerationOptions(checkMemory: false),
-      );
+      await load(_sdxs(), params: const ImageModelParams(checkMemory: false));
       expect(driver.started, hasLength(2));
     });
 
@@ -814,29 +945,29 @@ void main() {
       for (final (devices, device, expected) in [
         (
           'MTL0\tApple M4\nCPU\tApple M4\n',
-          ImageGenerationDevice.auto,
+          ComputeDevice.auto,
           ImageGenerationComputeDevice.metal,
         ),
         (
           'MTL0\tApple M4\nCPU\tApple M4\n',
-          ImageGenerationDevice.cpu,
+          ComputeDevice.cpu,
           ImageGenerationComputeDevice.cpu,
         ),
         (
           'Vulkan0\tNVIDIA L4\nCPU\tHost\n',
-          ImageGenerationDevice.auto,
+          ComputeDevice.auto,
           ImageGenerationComputeDevice.otherGpu,
         ),
         (
           'CPU\tCortex-A78\n',
-          ImageGenerationDevice.auto,
+          ComputeDevice.auto,
           ImageGenerationComputeDevice.cpu,
         ),
       ]) {
         driver
           ..status = _available(devices)
           ..budgetDevices.clear();
-        await load(_sdxs(), options: ImageGenerationOptions(device: device));
+        await load(_sdxs(), params: ImageModelParams(device: device));
         expect(driver.budgetDevices, [expected], reason: devices);
       }
     });
@@ -869,213 +1000,51 @@ void main() {
       await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
     });
 
-    test('rejects invalid custom model defaults before starting', () async {
-      for (final defaults in const [
-        ImageGenerationDefaults(steps: 0),
-        ImageGenerationDefaults(steps: -3),
-        ImageGenerationDefaults(steps: 1000),
-        ImageGenerationDefaults(guidanceScale: double.nan),
-        ImageGenerationDefaults(guidanceScale: -1),
-      ]) {
-        final engine = await load(
-          ImageGenerationModel(
-            files: ImageGenerationModelFiles(model: _local(_model)),
-            defaults: defaults,
-          ),
-        );
-        expect(
-          () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
-          throwsA(isA<LlamaImageGenerationException>()),
-          reason: 'steps ${defaults.steps}, guidance ${defaults.guidanceScale}',
-        );
-        expect(driver.session.requests, isEmpty);
-
-        // A valid request value still overrides an invalid default, and the
-        // rejection above released the operation lock.
-        await engine
-            .generate(
-              const ImageGenerationRequest(
-                prompt: 'a',
-                steps: 2,
-                guidanceScale: 1,
-              ),
-            )
-            .done;
-        expect(driver.session.requests.single.steps, 2);
-        await engine.dispose();
-        driver = _FakeDriver();
-        debugImageGenerationDriverOverride = driver;
-      }
-    });
-
-    test('fills unset steps and guidance from the model defaults', () async {
-      final sdxs = await load(_sdxs());
-      await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;
-      expect(driver.session.requests.last.steps, 1);
-      expect(driver.session.requests.last.guidanceScale, 1);
-
-      await sdxs
-          .generate(
-            const ImageGenerationRequest(
-              prompt: 'a',
-              steps: 3,
-              guidanceScale: 2.5,
-            ),
-          )
-          .done;
-      expect(driver.session.requests.last.steps, 3);
-      expect(driver.session.requests.last.guidanceScale, 2.5);
-
-      final custom = await load(
-        ImageGenerationModel(
-          files: ImageGenerationModelFiles(model: _local(_model)),
-        ),
-      );
-      await custom.generate(const ImageGenerationRequest(prompt: 'a')).done;
-      expect(driver.session.requests.last.steps, 20);
-      expect(driver.session.requests.last.guidanceScale, 7);
-    });
-
-    test('fills an unset size from the model defaults, and a request '
-        'overrides each side', () async {
-      ImageGenerationModel sized(ImageGenerationDefaults defaults) =>
-          ImageGenerationModel(
-            files: ImageGenerationModelFiles(model: _local(_model)),
-            defaults: defaults,
-          );
-      final sizes = <(int, int)>[];
-      for (final model in [
-        sized(const ImageGenerationDefaults()),
-        sized(const ImageGenerationDefaults(width: 1024, height: 1024)),
-        sized(const ImageGenerationDefaults(width: 1024, height: 768)),
-      ]) {
-        final engine = await load(model);
-        await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
-        final sent = driver.session.requests.last;
-        sizes.add((sent.width, sent.height));
-        await engine.dispose();
-      }
-      expect(sizes, [(512, 512), (1024, 1024), (1024, 768)]);
-
-      final lightning = await load(
-        sized(const ImageGenerationDefaults(width: 1024, height: 1024)),
-      );
-      for (final request in const [
-        ImageGenerationRequest(prompt: 'a', width: 512, height: 512),
-        ImageGenerationRequest(prompt: 'a', width: 768),
-        ImageGenerationRequest(prompt: 'a', height: 640),
-      ]) {
-        await lightning.generate(request).done;
-      }
-      expect(
-        driver.session.requests.reversed
-            .take(3)
-            .toList()
-            .reversed
-            .map((r) => (r.width, r.height)),
-        [(512, 512), (768, 1024), (1024, 640)],
-      );
-    });
-
-    test('rejects an invalid size from the model defaults', () async {
-      for (final (defaults, field) in const [
-        (ImageGenerationDefaults(width: 500), 'width'),
-        (ImageGenerationDefaults(height: 4096), 'height'),
-      ]) {
-        final engine = await load(
-          ImageGenerationModel(
-            files: ImageGenerationModelFiles(model: _local(_model)),
-            defaults: defaults,
-          ),
-        );
-        expect(
-          () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
-          throwsA(
-            isA<LlamaImageGenerationException>().having(
-              (error) => error.message,
-              'message',
-              startsWith(field),
-            ),
-          ),
-        );
-        // A valid request size still overrides an invalid default.
-        await engine
-            .generate(
-              const ImageGenerationRequest(
-                prompt: 'a',
-                width: 256,
-                height: 256,
-              ),
-            )
-            .done;
-        expect(driver.session.requests.last.width, 256);
-        await engine.dispose();
-      }
-    });
-
-    test('fills unset sampler, scheduler and flow shift from the model '
-        'defaults, and a request overrides them', () async {
-      final engine = await load(
-        ImageGenerationModel(
-          files: ImageGenerationModelFiles(model: _local(_model)),
-          defaults: const ImageGenerationDefaults(
-            steps: 4,
-            guidanceScale: 1,
-            sampler: ImageGenerationSampler.euler,
-            scheduler: ImageGenerationScheduler.sgmUniform,
-            flowShift: 3,
-          ),
-        ),
-      );
+    test('fills unset size, steps and guidance with the neutral fallbacks, '
+        'and leaves sampling to the runtime', () async {
+      final engine = await load(_sdxs());
 
       await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
-      var sent = driver.session.requests.last;
-      expect(sent.sampler, ImageGenerationSampler.euler);
-      expect(sent.scheduler, ImageGenerationScheduler.sgmUniform);
-      expect(sent.flowShift, 3);
 
-      await engine
-          .generate(
-            const ImageGenerationRequest(
-              prompt: 'a',
-              sampler: ImageGenerationSampler.dpmpp2m,
-              scheduler: ImageGenerationScheduler.karras,
-              flowShift: 1.5,
-            ),
-          )
-          .done;
-      sent = driver.session.requests.last;
-      expect(sent.sampler, ImageGenerationSampler.dpmpp2m);
-      expect(sent.scheduler, ImageGenerationScheduler.karras);
-      expect(sent.flowShift, 1.5);
-
-      final sdxs = await load(_sdxs());
-      await sdxs.generate(const ImageGenerationRequest(prompt: 'a')).done;
-      sent = driver.session.requests.last;
+      final sent = driver.session.requests.last;
+      expect((sent.width, sent.height), (512, 512));
+      expect(sent.steps, 20);
+      expect(sent.guidanceScale, 7);
       expect(sent.sampler, isNull);
       expect(sent.scheduler, isNull);
       expect(sent.flowShift, isNull);
     });
 
-    test('rejects an invalid flow shift from the model defaults', () async {
-      final engine = await load(
-        ImageGenerationModel(
-          files: ImageGenerationModelFiles(model: _local(_model)),
-          defaults: const ImageGenerationDefaults(flowShift: 0),
-        ),
-      );
+    test('sends every setting a request sets, each side of the size on its '
+        'own', () async {
+      final engine = await load(_fluxModel());
 
-      expect(
-        () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
-        throwsA(
-          isA<LlamaImageGenerationException>().having(
-            (error) => error.message,
-            'message',
-            contains('flowShift'),
-          ),
-        ),
-      );
-      expect(driver.session.requests, isEmpty);
+      await engine
+          .generate(
+            const ImageGenerationRequest(
+              prompt: 'a',
+              width: 1024,
+              height: 768,
+              steps: 4,
+              guidanceScale: 1,
+              sampler: ImageGenerationSampler.euler,
+              scheduler: ImageGenerationScheduler.sgmUniform,
+              flowShift: 3,
+            ),
+          )
+          .done;
+      var sent = driver.session.requests.last;
+      expect((sent.width, sent.height, sent.steps), (1024, 768, 4));
+      expect(sent.guidanceScale, 1);
+      expect(sent.sampler, ImageGenerationSampler.euler);
+      expect(sent.scheduler, ImageGenerationScheduler.sgmUniform);
+      expect(sent.flowShift, 3);
+
+      await engine
+          .generate(const ImageGenerationRequest(prompt: 'a', width: 768))
+          .done;
+      sent = driver.session.requests.last;
+      expect((sent.width, sent.height), (768, 512));
     });
 
     test('reports the seed it used', () async {
@@ -1302,11 +1271,12 @@ void main() {
   });
 
   group('warmUp', () {
-    test('runs one discarded single-step generation at the given size with '
-        'the model guidance', () async {
-      final sdxs = await load(_sdxs());
-      await sdxs.warmUp();
-      await sdxs.warmUp(width: 256, height: 384);
+    test('runs one discarded single-step generation at the given size and '
+        'guidance', () async {
+      final engine = await load(_sdxs());
+
+      await engine.warmUp(guidanceScale: 1);
+      await engine.warmUp(width: 256, height: 384, guidanceScale: 1);
 
       expect(
         driver.session.requests.map(
@@ -1314,36 +1284,21 @@ void main() {
         ),
         [(512, 512, 1, 1.0, 1), (256, 384, 1, 1.0, 1)],
       );
-
-      final custom = await load(
-        ImageGenerationModel(
-          files: ImageGenerationModelFiles(model: _local(_model)),
-        ),
-      );
-      await custom.warmUp();
-      expect(driver.session.requests.last.steps, 1);
-      expect(driver.session.requests.last.guidanceScale, 7);
     });
 
-    test('defaults to the model size, and a given side overrides it', () async {
-      final lightning = await load(
-        ImageGenerationModel(
-          files: ImageGenerationModelFiles(
-            model: _local(_model),
-            taesd: _local(_taesd),
-          ),
-          defaults: const ImageGenerationDefaults(width: 1024, height: 1024),
-        ),
-      );
-      await lightning.warmUp();
-      await lightning.warmUp(width: 512, height: 512);
-      await lightning.warmUp(height: 768);
+    test('falls back like a request, and a given side overrides it', () async {
+      final engine = await load(_fluxModel());
 
-      expect(driver.session.requests.map((r) => (r.width, r.height, r.steps)), [
-        (1024, 1024, 1),
-        (512, 512, 1),
-        (1024, 768, 1),
-      ]);
+      await engine.warmUp();
+      await engine.warmUp(width: 1024, height: 1024);
+      await engine.warmUp(height: 768);
+
+      expect(
+        driver.session.requests.map(
+          (r) => (r.width, r.height, r.steps, r.guidanceScale),
+        ),
+        [(512, 512, 1, 7.0), (1024, 1024, 1, 7.0), (512, 768, 1, 7.0)],
+      );
     });
 
     test('runs nothing on the CPU but still checks the size and the engine '
@@ -1490,7 +1445,22 @@ final class _FakeDriver implements ImageGenerationDriver {
   StableDiffusionRuntimeStatus status = _available(
     'MTL0\tApple M4\nBLAS\tAccelerate\nCPU\tApple M4\n',
   );
-  final Map<String, int> sizes = {_model: 651 << 20, _taesd: 9 << 20};
+  final Map<String, int> sizes = {
+    _model: 651 << 20,
+    _taesd: 9 << 20,
+    _flux: 6 * _gib,
+    _ae: 320 << 20,
+    _clipL: 120 << 20,
+    _t5xxl: 5 * _gib,
+  };
+  final Map<String, Uint8List> headers = {
+    _model: ImageModelHeaders.sdTurboCheckpoint,
+    _taesd: ImageModelHeaders.taesd,
+    _flux: ImageModelHeaders.fluxDiffusion,
+    _ae: ImageModelHeaders.fluxVae,
+    _clipL: ImageModelHeaders.clipL,
+    _t5xxl: ImageModelHeaders.t5xxl,
+  };
   ImageGenerationMemoryBudget? budget;
   Object? startError;
   final List<ImageGenerationSessionConfig> started = [];
@@ -1519,6 +1489,17 @@ final class _FakeDriver implements ImageGenerationDriver {
 
   @override
   int? fileSize(String path) => sizes[path];
+
+  @override
+  Future<Uint8List> readFileRange(String path, int offset, int length) async {
+    final bytes = headers[path] ?? Uint8List(0);
+    final start = offset.clamp(0, bytes.length);
+    return Uint8List.sublistView(
+      bytes,
+      start,
+      (offset + length).clamp(0, bytes.length),
+    );
+  }
 
   final List<ImageGenerationComputeDevice> budgetDevices = [];
 
@@ -1632,6 +1613,10 @@ final class _FakeDownloads implements ModelDownloadManager {
   final Set<String> cached = {};
   final List<String> downloaded = [];
   final Map<String, int> remoteSizes = {};
+
+  /// Header of each downloaded file, by file name; `.gguf` files default to
+  /// a checkpoint and `.safetensors` files to a TAESD.
+  final Map<String, Uint8List> remoteHeaders = {};
   Object? error;
   Completer<void>? gate;
 
@@ -1666,6 +1651,11 @@ final class _FakeDownloads implements ModelDownloadManager {
         downloaded.add(source.fileName);
       }
       driver.sizes[path] = size;
+      driver.headers[path] =
+          remoteHeaders[source.fileName] ??
+          (source.fileName.endsWith('.gguf')
+              ? ImageModelHeaders.sdTurboCheckpoint
+              : ImageModelHeaders.taesd);
     }
     final now = DateTime.utc(2026);
     return ModelCacheEntry(

@@ -45,8 +45,8 @@ Future<void> main(List<String> arguments) async {
     final loadTimer = Stopwatch()..start();
     engine = await ImageGenerationEngine.load(
       options.model,
-      options: options.engineOptions,
-      loadOptions: ModelLoadOptions(cancelToken: cancelLoad),
+      params: options.params,
+      download: ModelLoadOptions(cancelToken: cancelLoad),
       onProgress: _printProgress,
     );
     stdout.writeln();

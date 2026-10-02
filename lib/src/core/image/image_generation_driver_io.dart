@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import '../../backends/stable_diffusion/stable_diffusion_image_worker.dart';
 import '../../backends/stable_diffusion/stable_diffusion_memory.dart';
@@ -22,6 +23,10 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   int? fileSize(String path) => stableDiffusionFileSize(path);
+
+  @override
+  Future<Uint8List> readFileRange(String path, int offset, int length) =>
+      readStableDiffusionFileRange(path, offset, length);
 
   @override
   ImageGenerationMemoryBudget? memoryBudget(

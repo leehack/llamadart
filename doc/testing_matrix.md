@@ -291,7 +291,9 @@ dart run tool/testing/run_local_e2e.dart \
 # writes PNGs to build/image-generation-smoke. Export LLAMADART_SD_TURBO_MODEL
 # (and optionally LLAMADART_TAESD) first to add the SD-Turbo case, and
 # LLAMADART_IMAGE_HF_CACHE (a model cache directory) to load SDXS from its
-# pinned Hugging Face file through the resolver, 683 MB on the first run.
+# pinned Hugging Face file through the resolver, 683 MB on the first run, and
+# LLAMADART_IMAGE_SPLIT_MODEL (a split model's files, comma separated in any
+# order) to check role detection on a real split model.
 dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
   --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
 

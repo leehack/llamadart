@@ -112,21 +112,21 @@ Future<void> main() async {
   // Downloads SDXS (683 MB) into the model cache once.
   final engine = await ImageGenerationEngine.load(
     ImageGenerationModel(
-      files: ImageGenerationModelFiles(
-        model: ModelSource.parse(
-          'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
-          '3144d898d61492f8382ffcabec055733fc5b2a0e/'
-          'sdxs-512-tinySDdistilled_Q8_0.gguf',
-        ),
+      ModelSource.parse(
+        'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
+        '3144d898d61492f8382ffcabec055733fc5b2a0e/'
+        'sdxs-512-tinySDdistilled_Q8_0.gguf',
       ),
-      defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
     ),
-    options: const ImageGenerationOptions(vaeDirectConvolution: false),
     onProgress: (progress) => print('${progress.receivedBytes} bytes'),
   );
   try {
     final result = await engine.generateImage(
-      const ImageGenerationRequest(prompt: 'a red fox in autumn leaves'),
+      const ImageGenerationRequest(
+        prompt: 'a red fox in autumn leaves',
+        steps: 1,
+        guidanceScale: 1,
+      ),
     );
     await File('fox.png').writeAsBytes(result.images.first.toPng());
   } finally {
@@ -135,8 +135,9 @@ Future<void> main() async {
 }
 ```
 
-Each file is a `ModelSource` (local path, URL or `hf://`), resolved like
-`LlamaEngine.loadModelSource`. See the
+A split model lists its other files as `components`, in any order: the
+engine downloads each `ModelSource` (local path, URL or `hf://`) like
+`LlamaEngine.loadModelSource` and gives it its role from its header. See the
 [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
 for the files and settings of each validated model, download options, memory
 checks and known limits.

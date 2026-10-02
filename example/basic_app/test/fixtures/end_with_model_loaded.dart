@@ -12,10 +12,7 @@ Future<void> main(List<String> args) async {
   final [runtime, ending, model] = args;
   if (runtime == 'image') {
     await ImageGenerationEngine.load(
-      ImageGenerationModel(
-        files: ImageGenerationModelFiles(model: ModelSource.path(model)),
-        defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
-      ),
+      ImageGenerationModel(ModelSource.path(model)),
     );
   } else {
     await LlamaEngine(LlamaBackend()).loadModel(model);

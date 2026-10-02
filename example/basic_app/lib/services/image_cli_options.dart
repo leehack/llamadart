@@ -87,31 +87,14 @@ const String defaultQwen3LlmSource =
     '@a06e946bb6b655725eafa393f4a9745d460374c9/'
     'Qwen3-4B-Instruct-2507-Q4_K_M.gguf';
 
-const ImageGenerationDefaults _oneStep = ImageGenerationDefaults(
-  steps: 1,
-  guidanceScale: 1,
-);
-
 /// Model presets the image example accepts: the files each model needs and
-/// the settings it was validated with.
+/// the request settings it was validated with.
 enum ImagePreset {
-  /// SDXS-512: one step, guidance 1. Its checkpoint embeds a tiny
-  /// autoencoder, so the VAE decodes without direct convolutions, which made
-  /// it about 15% slower on an M4 Max CPU.
-  sdxs(
-    'sdxs',
-    defaultSdxsModelSource,
-    defaults: _oneStep,
-    vaeDirectConvolution: false,
-  ),
+  /// SDXS-512: one step, guidance 1.
+  sdxs('sdxs', defaultSdxsModelSource),
 
   /// SD-Turbo: one step by default (up to 4), optional TAESD.
-  sdTurbo(
-    'sd-turbo',
-    defaultSdTurboModelSource,
-    taesd: defaultTaesdSource,
-    defaults: _oneStep,
-  ),
+  sdTurbo('sd-turbo', defaultSdTurboModelSource, taesd: defaultTaesdSource),
 
   /// SDXL-Lightning: 4 Euler steps on the sgm_uniform schedule at
   /// 1024x1024, optional VAE or TAESDXL.
@@ -120,21 +103,16 @@ enum ImagePreset {
     defaultSdxlLightningModelSource,
     taesd: defaultTaesdxlSource,
     roles: {'vae'},
-    defaults: ImageGenerationDefaults(
-      width: 1024,
-      height: 1024,
-      steps: 4,
-      guidanceScale: 1,
-      sampler: ImageGenerationSampler.euler,
-      scheduler: ImageGenerationScheduler.sgmUniform,
-    ),
+    size: 1024,
+    steps: 4,
+    sampler: ImageGenerationSampler.euler,
+    scheduler: ImageGenerationScheduler.sgmUniform,
   ),
 
   /// FLUX.1-schnell: 4 steps at 1024x1024 from split files.
   flux1Schnell(
     'flux1-schnell',
     defaultFlux1SchnellModelSource,
-    split: true,
     taesd: defaultTaef1Source,
     roles: {'vae', 'clipL', 't5xxl'},
     files: {
@@ -142,19 +120,14 @@ enum ImagePreset {
       'clipL': defaultClipLSource,
       't5xxl': defaultT5xxlSource,
     },
-    defaults: ImageGenerationDefaults(
-      width: 1024,
-      height: 1024,
-      steps: 4,
-      guidanceScale: 1,
-    ),
+    size: 1024,
+    steps: 4,
   ),
 
   /// SD 3.5 Large Turbo: 4 steps at 1024x1024 from split files.
   sd35LargeTurbo(
     'sd35-large-turbo',
     defaultSd35LargeTurboModelSource,
-    split: true,
     taesd: defaultTaesd3Source,
     roles: {'vae', 'clipL', 'clipG', 't5xxl'},
     files: {
@@ -163,38 +136,30 @@ enum ImagePreset {
       'clipG': defaultClipGSource,
       't5xxl': defaultT5xxlSource,
     },
-    defaults: ImageGenerationDefaults(
-      width: 1024,
-      height: 1024,
-      steps: 4,
-      guidanceScale: 1,
-    ),
+    size: 1024,
+    steps: 4,
   ),
 
   /// Z-Image-Turbo: 8 steps at 1024x1024 with a Qwen3 text encoder.
   zImageTurbo(
     'z-image-turbo',
     defaultZImageTurboModelSource,
-    split: true,
     roles: {'vae', 'llm'},
     files: {'vae': defaultFluxVaeSource, 'llm': defaultQwen3LlmSource},
-    defaults: ImageGenerationDefaults(
-      width: 1024,
-      height: 1024,
-      steps: 8,
-      guidanceScale: 1,
-    ),
+    size: 1024,
+    steps: 8,
   );
 
   const ImagePreset(
     this.flag,
     this.modelSource, {
-    required this.defaults,
-    this.split = false,
     this.taesd,
     this.roles = const {},
     this.files = const {},
-    this.vaeDirectConvolution,
+    this.size = 512,
+    this.steps = 1,
+    this.sampler,
+    this.scheduler,
   });
 
   /// Value of `--preset`.
@@ -203,10 +168,6 @@ enum ImagePreset {
   /// Pinned main weights: the checkpoint, or the diffusion model of a split
   /// preset.
   final String modelSource;
-
-  /// Whether the main weights are a split checkpoint's diffusion model rather
-  /// than a single-file checkpoint.
-  final bool split;
 
   /// Pinned tiny autoencoder for `--taesd default`, or `null` when the
   /// preset takes none.
@@ -218,12 +179,17 @@ enum ImagePreset {
   /// Pinned sources for the roles the user leaves unset.
   final Map<String, String> files;
 
-  /// Size and sampling settings the model was validated with.
-  final ImageGenerationDefaults defaults;
+  /// Native width and height.
+  final int size;
 
-  /// `ImageGenerationOptions.vaeDirectConvolution` for the model, or `null`
-  /// for the engine's choice.
-  final bool? vaeDirectConvolution;
+  /// Sampling steps; every preset samples at guidance 1.
+  final int steps;
+
+  /// Sampler, or `null` for the runtime's default.
+  final ImageGenerationSampler? sampler;
+
+  /// Schedule, or `null` for the runtime's default.
+  final ImageGenerationScheduler? scheduler;
 }
 
 /// Command-line flag of each file role besides the main weights.
@@ -269,39 +235,23 @@ final class ImageCliOptions {
   final String outputPath;
 
   /// Device to run on.
-  final ImageGenerationDevice device;
+  final ComputeDevice device;
 
   /// CPU threads; 0 uses the physical cores.
   final int threads;
 
-  /// The engine model: [preset]'s settings with [modelSource] and
-  /// [fileSources] in their roles.
-  ImageGenerationModel get model {
-    final sources = {
-      preset.split ? 'diffusionModel' : 'model': modelSource,
-      ...fileSources,
-    };
-    return ImageGenerationModel(
-      files: ImageGenerationModelFiles(
-        model: sources['model'],
-        diffusionModel: sources['diffusionModel'],
-        vae: sources['vae'],
-        taesd: sources['taesd'],
-        clipL: sources['clipL'],
-        clipG: sources['clipG'],
-        t5xxl: sources['t5xxl'],
-        llm: sources['llm'],
-      ),
-      defaults: preset.defaults,
-    );
-  }
-
-  /// Engine settings: [device], [threads] and [preset]'s VAE setting.
-  ImageGenerationOptions get engineOptions => ImageGenerationOptions(
-    device: device,
-    threads: threads,
-    vaeDirectConvolution: preset.vaeDirectConvolution,
+  /// The engine model: [modelSource] and [fileSources], each assigned its
+  /// role from its header when the engine loads it.
+  ImageGenerationModel get model => ImageGenerationModel(
+    modelSource,
+    components: [
+      for (final source in fileSources.values) ImageModelComponent.auto(source),
+    ],
   );
+
+  /// Engine settings: [device] and [threads].
+  ImageModelParams get params =>
+      ImageModelParams(device: device, threads: threads);
 
   /// Output path of image [index].
   String outputPathFor(int index) {
@@ -362,8 +312,11 @@ ArgParser createImageArgParser() {
     ..addOption(
       'device',
       help: 'Device.',
-      allowed: [for (final device in ImageGenerationDevice.values) device.name],
-      defaultsTo: ImageGenerationDevice.auto.name,
+      allowed: [
+        for (final device in ComputeDevice.values)
+          if (device != ComputeDevice.npu) device.name,
+      ],
+      defaultsTo: ComputeDevice.auto.name,
     )
     ..addOption('threads', help: 'CPU threads (0: all cores).', defaultsTo: '0')
     ..addFlag('help', abbr: 'h', help: 'Show this help.', negatable: false);
@@ -417,15 +370,17 @@ ImageCliOptions parseImageCliOptions(ArgResults results) {
     request: ImageGenerationRequest(
       prompt: prompt,
       negativePrompt: results['negative'] as String,
-      width: _int(results, 'width'),
-      height: _int(results, 'height'),
-      steps: _int(results, 'steps'),
-      guidanceScale: _double(results, 'guidance'),
+      width: _int(results, 'width') ?? preset.size,
+      height: _int(results, 'height') ?? preset.size,
+      steps: _int(results, 'steps') ?? preset.steps,
+      guidanceScale: _double(results, 'guidance') ?? 1,
+      sampler: preset.sampler,
+      scheduler: preset.scheduler,
       seed: _int(results, 'seed'),
       count: _int(results, 'count')!,
     ),
     outputPath: results['out'] as String,
-    device: ImageGenerationDevice.values.byName(results['device'] as String),
+    device: ComputeDevice.values.byName(results['device'] as String),
     threads: _int(results, 'threads')!,
   );
 }

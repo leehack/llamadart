@@ -27,15 +27,18 @@ void main() {
       'downloads', () async {
     final downloads = _RecordingDownloads();
 
-    for (final file in [
-      ModelSource.parse('hf://owner/sdxs@main/sdxs.gguf'),
-      ModelSource.path('sdxs.gguf'),
+    for (final model in [
+      ImageGenerationModel(ModelSource.parse('hf://owner/sdxs@main/sdxs.gguf')),
+      ImageGenerationModel(
+        ModelSource.path('flux.gguf'),
+        components: [ImageModelComponent.auto(ModelSource.path('ae.gguf'))],
+      ),
     ]) {
-      final model = ImageGenerationModel(
-        files: ImageGenerationModelFiles(model: file),
-      );
       await expectLater(
-        ImageGenerationEngine.load(model, modelDownloadManager: downloads),
+        ImageGenerationEngine.load(
+          model,
+          store: ModelFileStore(downloadManager: downloads),
+        ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,

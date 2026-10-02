@@ -9,13 +9,16 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- **Breaking (Preview):** image generation models are built from
-  `ModelSource`s with `ImageGenerationModel(files:, defaults:)`, and
-  `ImageGenerationEngine.load` downloads remote files into the model cache
-  with combined progress, cancellation and cache reuse. The model presets,
-  `ImageGenerationModelFamily` and `String` file paths are removed; the
-  guide's recipes give each former preset's files and settings, and
-  `MIGRATION.md` shows how to migrate.
+- **Breaking (Preview):** image generation follows the shared engine
+  pattern: `ImageGenerationEngine.load(ImageGenerationModel(source,
+  components: [...]), params:, download:, onProgress:)` downloads every
+  `ModelSource` into the model cache, with combined progress, cancellation
+  and cache reuse, and detects each file's role from its header. Generation
+  settings move to `ImageGenerationRequest`. The model presets,
+  `ImageGenerationModelFiles`, `ImageGenerationDefaults`,
+  `ImageGenerationOptions` (now `ImageModelParams`) and `String` paths are
+  removed; `MIGRATION.md` maps each former preset to its files and request
+  settings.
 
 ## 0.10.0
 

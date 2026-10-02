@@ -595,7 +595,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'LLAMADART_SD_TURBO_MODEL is set, SDXL-Lightning when '
           'LLAMADART_SDXL_LIGHTNING_MODEL is set, and SDXS from its pinned '
           'Hugging Face file when LLAMADART_IMAGE_HF_CACHE '
-          'names a model cache directory.',
+          'names a model cache directory, and a split model from files in '
+          'any order when LLAMADART_IMAGE_SPLIT_MODEL lists them.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(

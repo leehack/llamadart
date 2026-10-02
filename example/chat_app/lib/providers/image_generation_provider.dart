@@ -144,7 +144,7 @@ class ImageGenerationProvider extends ChangeNotifier {
       (profile) => profile.isRecommended,
       orElse: () => profiles.first,
     );
-    _steps = _selected.defaults.steps;
+    _steps = _selected.steps;
   }
 
   static bool _never() => false;
@@ -308,7 +308,7 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   void _select(ImageModelProfile profile) {
     _selected = profile;
-    _steps = profile.defaults.steps;
+    _steps = profile.steps;
   }
 
   /// Sets the output size.
@@ -451,6 +451,7 @@ class ImageGenerationProvider extends ChangeNotifier {
           width: _size,
           height: _size,
           steps: _steps,
+          guidanceScale: installed.profile.guidanceScale,
           seed: seed,
         ),
       );
@@ -518,7 +519,6 @@ class ImageGenerationProvider extends ChangeNotifier {
   Future<ImageGenerator?> _loadGenerator(InstalledImageModel installed) async {
     final generator = await _generationService.load(
       installed.toGenerationModel(),
-      options: installed.profile.options,
     );
     if (_isClosed) {
       await _trackDisposal(generator.dispose());

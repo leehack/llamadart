@@ -268,7 +268,7 @@ class _ImageGenerationScreenState extends State<ImageGenerationScreen> {
                       DropdownMenuItem<int>(
                         value: steps,
                         child: Text(
-                          steps == _provider.selectedProfile.defaults.steps
+                          steps == _provider.selectedProfile.steps
                               ? '$steps (default)'
                               : '$steps',
                         ),

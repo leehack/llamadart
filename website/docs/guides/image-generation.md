@@ -104,161 +104,191 @@ output does not. See
 
 ## Get a model
 
-A model is its weight files and the generation defaults it needs:
-
-```dart
-final model = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    model: ModelSource.parse(
-      'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
-      '3144d898d61492f8382ffcabec055733fc5b2a0e/'
-      'sdxs-512-tinySDdistilled_Q8_0.gguf',
-    ),
-  ),
-  defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
-);
-```
-
-Each file is a `ModelSource` in a role: a local file (`ModelSource.path`),
-an HTTP(S) URL or a Hugging Face file. The runtime detects the family from
-the weights, and each family takes its own roles:
-
-| Family | Roles in `ImageGenerationModelFiles` |
-| --- | --- |
-| SD 1.x, 2.x, SDXL | `model` (single file), optionally `vae` or `taesd` |
-| SD 3.5 | `diffusionModel`, `vae` or `taesd`, `clipL`, `clipG`, `t5xxl`; a single-file GGUF that includes the VAE and encoders, such as SD 3.5 Medium, goes in `model` instead |
-| FLUX | `diffusionModel`, `vae` or `taesd`, `clipL`, `t5xxl` |
-| Z-Image, Qwen-Image | `diffusionModel`, `vae`, `llm` (the language-model text encoder) |
-
-`ImageGenerationDefaults` fills what a request leaves unset: size, steps,
-guidance, sampler, schedule and flow shift. Its own defaults (512x512,
-20 steps, guidance 7, the runtime's sampler and schedule) suit undistilled
-SD 1.x and 2.x checkpoints; distilled models and families trained at
-1024x1024 need the settings in the [recipes](#recipes).
-
-Building a model does no network or file access. `ImageGenerationEngine.load`
-resolves each file like `LlamaEngine.loadModelSource`: a local path is
-checked, and a URL or `hf://` file is downloaded into the package-managed
-model cache, resuming an interrupted download and reusing a cached file on
-later loads:
+A model is its main file and the other files it needs, each a
+`ModelSource`: a local file (`ModelSource.path`), an HTTP(S) URL or a
+Hugging Face file. `ImageGenerationEngine.load` downloads what is not local
+and gives each file its runtime role from its header, so the files can be
+listed in any order:
 
 ```dart
 final cancel = ModelDownloadCancelToken();
 final engine = await ImageGenerationEngine.load(
-  model,
-  loadOptions: ModelLoadOptions(cancelToken: cancel),
-  onProgress: (progress) {
-    final fraction = progress.fraction;
-    if (fraction != null) print('${(fraction * 100).round()}%');
-  },
+  ImageGenerationModel(
+    ModelSource.parse(
+      'hf://second-state/FLUX.1-schnell-GGUF@'
+      '8c45a2ba25e2d02bd34230989fb54983f39e44ec/flux1-schnell-Q4_0.gguf',
+    ),
+    components: [
+      ImageModelComponent.auto(ModelSource.path('ae.safetensors')),
+      ImageModelComponent.auto(ModelSource.path('clip_l-Q8_0.gguf')),
+      ImageModelComponent.auto(ModelSource.path('t5xxl-Q8_0.gguf')),
+    ],
+  ),
+  params: const ImageModelParams(device: ComputeDevice.auto),
+  download: ModelLoadOptions(cancelToken: cancel),
+  onProgress: (progress) => print(progress.fraction),
 );
 ```
+
+### Roles
+
+The engine reads only each file's header: the GGUF metadata and tensor
+names, or the safetensors header. A GGUF whose `general.architecture` names a
+llama.cpp language model, such as `qwen3`, is the `llm` text encoder; reading
+stops there. Each file gets one `ImageModelRole`:
+
+| Role | Files | Used by |
+| --- | --- | --- |
+| `checkpoint` | A single file with diffusion weights, usually with its VAE and text encoders | SD 1.x, 2.x, SDXL, SD 3.5 Medium |
+| `diffusionModel` | A split model's UNet or transformer | SD 3.5 Large, FLUX, Z-Image, Qwen-Image |
+| `vae` | A VAE | Split models; replaces a checkpoint's own |
+| `taesd` | A tiny autoencoder that replaces the VAE decoder | Any family with a matching one |
+| `clipL`, `clipG`, `t5xxl` | Text encoders | SDXL-style, SD 3.5, FLUX |
+| `llm` | A language-model text encoder | Z-Image, Qwen-Image |
+
+The set needs exactly one `checkpoint` or `diffusionModel` and at most one
+file per role. `load` throws `LlamaModelException`, naming files by position
+(the main file, component 1, ...) and never by path, for:
+
+- a LoRA adapter, ControlNet, upscaler or vision projector, which text to
+  image does not load;
+- `taesd_decoder.safetensors`, a decoder-only export the runtime rejects
+  (use `diffusion_pytorch_model.safetensors`);
+- two files in one role, a checkpoint plus separate diffusion weights, or no
+  diffusion weights;
+- a VAE or tiny autoencoder for other latent channels than the diffusion
+  model's, such as TAESD (4 channels) with FLUX (16);
+- a file with no known image-model layout, such as a pickled `.ckpt`.
+
+Give such a file its role yourself with `ImageModelComponent(source, role:
+ImageModelRole.vae)`, or `ImageGenerationModel(source, role: ...)` for the
+main file. Explicit roles also settle layouts the header cannot tell apart:
+TAESD and TAESDXL share one layout, as do TAESD3 and TAEF1, and only their
+latent channels are checked. Classification runs on the downloaded file, so a
+wrong file costs its download; it stays in the cache.
+
+### Loading options
 
 - `onProgress` reports all files together as a `ModelDownloadProgress`.
   Cached and local files count as received. `totalBytes` is `null` until
   every file's size is known: local files from the start, others when their
   download starts.
-- `loadOptions` applies to every remote file: cache policy and directory,
-  `bearerToken` and headers (for example for a gated repository), resume,
-  retries and the cancel token. Local files take only the cancel token.
+- `download:` (`ModelLoadOptions`, as for `LlamaEngine.loadModelSource`)
+  applies to every remote file: cache policy and directory, `bearerToken` and
+  headers (for example for a gated repository), resume, retries and the
+  cancel token. Local files take only the cancel token.
   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since it
   cannot name one of several files.
 - A cancelled load throws `LlamaStateException`. A failed download throws
   what the download manager throws, usually `LlamaModelException`, with
   URL secrets redacted.
-- The runtime check, option checks and the check that every local file
+- The runtime check, `params:` checks and the check that every local file
   exists run first, so an unsupported platform, including the web, downloads
   nothing.
-- `modelDownloadManager:` and `modelResolver:` replace the defaults, as for
-  `LlamaEngine`. On Android and iOS the default manager uses a temporary
-  cache directory; pass `DefaultModelDownloadManager.appPrivate(cacheDirectory:
-  ...)` to keep the weights. An app that downloads files itself passes
-  `ModelSource.path` sources.
+- A load is atomic: when it throws, nothing stays loaded.
+- `store: ModelFileStore(resolver: ..., downloadManager: ...)` replaces the
+  defaults, as for `LlamaEngine`. On Android and iOS the default download
+  manager uses a temporary cache directory; pass
+  `ModelFileStore(downloadManager: DefaultModelDownloadManager.appPrivate(cacheDirectory: ...))`
+  to keep the weights.
+
+`engine.roles` reports the file in each role.
 
 ### Recipes
 
 Files pinned to the Hugging Face commits the
-[basic app](../examples/basic-app) uses, with the settings each model was
-validated with. Pin a commit (`@<sha>`) so the file cannot change under the
-app.
+[basic app](../examples/basic-app) uses, and the request settings each model
+was validated with. Pin a commit (`@<sha>`) so the file cannot change under
+the app. The request carries the generation settings; unset, size falls back
+to 512x512, steps to 20 and guidance to 7.
 
 **SDXS-512** (683 MB, phones and desktops). Distilled for exactly one step at
-guidance 1. Its checkpoint embeds a tiny autoencoder, so direct VAE
-convolutions only cost time; see
-[Attention and VAE settings](#attention-and-vae-settings):
+guidance 1:
 
 ```dart
-final sdxs = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    model: ModelSource.parse(
+final sdxs = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse(
       'hf://concedo/sdxs-512-tinySDdistilled-GGUF@'
       '3144d898d61492f8382ffcabec055733fc5b2a0e/'
       'sdxs-512-tinySDdistilled_Q8_0.gguf',
     ),
   ),
-  defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
 );
-final engine = await ImageGenerationEngine.load(
-  sdxs,
-  options: const ImageGenerationOptions(vaeDirectConvolution: false),
+const request = ImageGenerationRequest(
+  prompt: 'a red fox in autumn leaves',
+  steps: 1,
+  guidanceScale: 1,
 );
 ```
 
 **SD-Turbo with TAESD** (2.0 GB plus 10 MB). One step at guidance 1, or up to
 four for more detail at about four times the sampling time. TAESD replaces
 the full VAE decoder: several times faster and far less memory, at a small
-quality cost; use it on phones. Use `diffusion_pytorch_model.safetensors`;
-the runtime rejects `taesd_decoder.safetensors`:
+quality cost; use it on phones:
 
 ```dart
-final sdTurbo = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    model: ModelSource.parse(
+final sdTurbo = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse(
       'hf://Green-Sky/SD-Turbo-GGUF@19a31586d02d64a73b4419bc193b3ecfaf38e1f0/'
       'sd_turbo-f16-q8_0.gguf',
     ),
-    taesd: ModelSource.parse(
-      'hf://madebyollin/taesd@614f76814bbe30edbe2e627ace1c2234c81a2c0e/'
-      'diffusion_pytorch_model.safetensors',
-    ),
+    components: [
+      ImageModelComponent.auto(
+        ModelSource.parse(
+          'hf://madebyollin/taesd@614f76814bbe30edbe2e627ace1c2234c81a2c0e/'
+          'diffusion_pytorch_model.safetensors',
+        ),
+      ),
+    ],
   ),
-  defaults: const ImageGenerationDefaults(steps: 1, guidanceScale: 1),
+);
+const request = ImageGenerationRequest(
+  prompt: 'a lighthouse at dusk',
+  steps: 1,
+  guidanceScale: 1,
 );
 ```
 
 **SDXL-Lightning 4-step** (6.9 GB plus 10 MB). 1024x1024, 4 Euler steps on
 the `sgmUniform` schedule at guidance 1, as the model card recommends.
-TAESDXL halved the time per image on an M4 Max; leave `taesd` out to decode
-with the checkpoint's VAE:
+TAESDXL halved the time per image on an M4 Max; leave it out to decode with
+the checkpoint's VAE:
 
 ```dart
-final sdxlLightning = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    model: ModelSource.parse(
+final sdxlLightning = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse(
       'hf://ByteDance/SDXL-Lightning@c9a24f48e1c025556787b0c58dd67a091ece2e44/'
       'sdxl_lightning_4step.safetensors',
     ),
-    taesd: ModelSource.parse(
-      'hf://madebyollin/taesdxl@b20258aaef75ef61e659c1e0f14f251cf0ad153e/'
-      'diffusion_pytorch_model.safetensors',
-    ),
+    components: [
+      ImageModelComponent.auto(
+        ModelSource.parse(
+          'hf://madebyollin/taesdxl@b20258aaef75ef61e659c1e0f14f251cf0ad153e/'
+          'diffusion_pytorch_model.safetensors',
+        ),
+      ),
+    ],
   ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 4,
-    guidanceScale: 1,
-    sampler: ImageGenerationSampler.euler,
-    scheduler: ImageGenerationScheduler.sgmUniform,
-  ),
+);
+const request = ImageGenerationRequest(
+  prompt: 'a lighthouse at dusk',
+  width: 1024,
+  height: 1024,
+  steps: 4,
+  guidanceScale: 1,
+  sampler: ImageGenerationSampler.euler,
+  scheduler: ImageGenerationScheduler.sgmUniform,
 );
 ```
 
-**FLUX.1-schnell** (12.3 GB). 1024x1024, 4 steps at guidance 1, from split
-files: the Q4_0 transformer and the FLUX autoencoder, plus the CLIP-L and
-T5-XXL encoders. TAEF1
+**FLUX.1-schnell** (12.3 GB). 1024x1024, 4 steps at guidance 1, from the
+Q4_0 transformer, the FLUX autoencoder and the CLIP-L and T5-XXL encoders.
+TAEF1
 (`hf://madebyollin/taef1@b1b2d00e9e440cfbf3dedb34266864da86016ceb/diffusion_pytorch_model.safetensors`)
-can replace `ae` as `taesd`:
+can replace `ae`:
 
 ```dart
 const fluxRepo =
@@ -267,19 +297,25 @@ const fluxRepo =
 const encoders =
     'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
     '58b78c305a43ddfcffe1ab54d7022995f61667ac';
-final flux = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    diffusionModel: ModelSource.parse('$fluxRepo/flux1-schnell-Q4_0.gguf'),
-    vae: ModelSource.parse('$fluxRepo/ae.safetensors'),
-    clipL: ModelSource.parse('$encoders/clip_l-Q8_0.gguf'),
-    t5xxl: ModelSource.parse('$encoders/t5xxl-Q8_0.gguf'),
+final flux = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse('$fluxRepo/flux1-schnell-Q4_0.gguf'),
+    components: [
+      for (final file in [
+        '$fluxRepo/ae.safetensors',
+        '$encoders/clip_l-Q8_0.gguf',
+        '$encoders/t5xxl-Q8_0.gguf',
+      ])
+        ImageModelComponent.auto(ModelSource.parse(file)),
+    ],
   ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 4,
-    guidanceScale: 1,
-  ),
+);
+const request = ImageGenerationRequest(
+  prompt: 'a red fox in autumn leaves',
+  width: 1024,
+  height: 1024,
+  steps: 4,
+  guidanceScale: 1,
 );
 ```
 
@@ -290,55 +326,61 @@ SD 3.5 VAE repository is gated, so this decodes with TAESD3:
 const encoders =
     'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
     '58b78c305a43ddfcffe1ab54d7022995f61667ac';
-final sd35LargeTurbo = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    diffusionModel: ModelSource.parse(
+final sd35LargeTurbo = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse(
       'hf://city96/stable-diffusion-3.5-large-turbo-gguf@'
       '527c5548afc123f309238ca6bce7dfe3349aa997/sd3.5_large_turbo-Q4_0.gguf',
     ),
-    taesd: ModelSource.parse(
-      'hf://madebyollin/taesd3@d58dcaccd2b36fcb7a6b9e93c1cc507acab5a778/'
-      'diffusion_pytorch_model.safetensors',
-    ),
-    clipL: ModelSource.parse('$encoders/clip_l-Q8_0.gguf'),
-    clipG: ModelSource.parse('$encoders/clip_g-Q8_0.gguf'),
-    t5xxl: ModelSource.parse('$encoders/t5xxl-Q8_0.gguf'),
+    components: [
+      for (final file in [
+        'hf://madebyollin/taesd3@d58dcaccd2b36fcb7a6b9e93c1cc507acab5a778/'
+            'diffusion_pytorch_model.safetensors',
+        '$encoders/clip_l-Q8_0.gguf',
+        '$encoders/clip_g-Q8_0.gguf',
+        '$encoders/t5xxl-Q8_0.gguf',
+      ])
+        ImageModelComponent.auto(ModelSource.parse(file)),
+    ],
   ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 4,
-    guidanceScale: 1,
-  ),
+);
+const request = ImageGenerationRequest(
+  prompt: 'a red fox in autumn leaves',
+  width: 1024,
+  height: 1024,
+  steps: 4,
+  guidanceScale: 1,
 );
 ```
 
 **Z-Image-Turbo** (6.7 GB). 1024x1024, 8 steps at guidance 1, with the
-Qwen3-4B text encoder in `llm` and the FLUX autoencoder:
+Qwen3-4B text encoder and the FLUX autoencoder:
 
 ```dart
-final zImageTurbo = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    diffusionModel: ModelSource.parse(
+final zImageTurbo = await ImageGenerationEngine.load(
+  ImageGenerationModel(
+    ModelSource.parse(
       'hf://leejet/Z-Image-Turbo-GGUF@c61c0e422dc8b541b7548cf33a4ef8302b0f8085/'
       'z_image_turbo-Q4_K.gguf',
     ),
-    vae: ModelSource.parse(
-      'hf://second-state/FLUX.1-schnell-GGUF@'
-      '8c45a2ba25e2d02bd34230989fb54983f39e44ec/ae.safetensors',
-    ),
-    llm: ModelSource.parse(
-      'hf://unsloth/Qwen3-4B-Instruct-2507-GGUF@'
-      'a06e946bb6b655725eafa393f4a9745d460374c9/'
-      'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
-    ),
+    components: [
+      for (final file in [
+        'hf://second-state/FLUX.1-schnell-GGUF@'
+            '8c45a2ba25e2d02bd34230989fb54983f39e44ec/ae.safetensors',
+        'hf://unsloth/Qwen3-4B-Instruct-2507-GGUF@'
+            'a06e946bb6b655725eafa393f4a9745d460374c9/'
+            'Qwen3-4B-Instruct-2507-Q4_K_M.gguf',
+      ])
+        ImageModelComponent.auto(ModelSource.parse(file)),
+    ],
   ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 8,
-    guidanceScale: 1,
-  ),
+);
+const request = ImageGenerationRequest(
+  prompt: 'a red fox in autumn leaves',
+  width: 1024,
+  height: 1024,
+  steps: 8,
+  guidanceScale: 1,
 );
 ```
 
@@ -387,64 +429,32 @@ is the ungated choice.
 Any family the bundled stable-diffusion.cpp supports loads the same way,
 including other SDXL, SD 3.5, FLUX, Z-Image and Qwen-Image checkpoints.
 These need several GB of memory and are meant for desktop GPUs and Macs.
-Give each model its size and sampling defaults. Settings run in
-[#802](https://github.com/leehack/llamadart/issues/802) (SD 3.5 Medium took
-about 3 minutes per 1024x1024 image on an M4 Max, Qwen-Image about 11):
+Settings run in [#802](https://github.com/leehack/llamadart/issues/802)
+(SD 3.5 Medium took about 3 minutes per 1024x1024 image on an M4 Max,
+Qwen-Image about 11):
 
-```dart
-const encoders =
-    'hf://second-state/stable-diffusion-3.5-medium-GGUF@'
-    '58b78c305a43ddfcffe1ab54d7022995f61667ac';
-final sd35Medium = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    // Includes the VAE.
-    model: ModelSource.parse('$encoders/sd3.5_medium-Q8_0.gguf'),
-    clipL: ModelSource.parse('$encoders/clip_l-Q8_0.gguf'),
-    clipG: ModelSource.parse('$encoders/clip_g-Q8_0.gguf'),
-    t5xxl: ModelSource.parse('$encoders/t5xxl-Q8_0.gguf'),
-  ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 28,
-    guidanceScale: 4.5,
-  ),
-);
-final qwenImage = ImageGenerationModel(
-  files: ImageGenerationModelFiles(
-    diffusionModel: ModelSource.path('Qwen_Image-Q4_0.gguf'),
-    vae: ModelSource.path('qwen_image_vae.safetensors'),
-    llm: ModelSource.path('Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf'),
-  ),
-  defaults: const ImageGenerationDefaults(
-    width: 1024,
-    height: 1024,
-    steps: 20,
-    guidanceScale: 2.5,
-    flowShift: 3,
-  ),
-);
-```
+| Model | Files | Request settings |
+| --- | --- | --- |
+| SD 3.5 Medium | `sd3.5_medium-Q8_0.gguf` (a checkpoint with its VAE) plus `clip_l`, `clip_g` and `t5xxl` from [`second-state/stable-diffusion-3.5-medium-GGUF`](https://huggingface.co/second-state/stable-diffusion-3.5-medium-GGUF) | 1024x1024, 28 steps, guidance 4.5 |
+| Qwen-Image | `Qwen_Image-Q4_0.gguf`, `qwen_image_vae.safetensors`, `Qwen2.5-VL-7B-Instruct.Q4_K_M.gguf` | 1024x1024, 20 steps, guidance 2.5, `flowShift: 3` |
 
-`sampler`, `scheduler` and `flowShift` can also be set per request. Left
-unset, the runtime picks the model's own: Euler for SD 3.5, FLUX and Z-Image,
-Euler ancestral with the discrete schedule for SD 1.x, 2.x and SDXL.
-`flowShift` applies only to flow-matching models; Qwen-Image's reference
-settings use 3.
+Left unset, `sampler`, `scheduler` and `flowShift` are the runtime's own for
+the model: Euler for SD 3.5, FLUX and Z-Image, Euler ancestral with the
+discrete schedule for SD 1.x, 2.x and SDXL. `flowShift` applies only to
+flow-matching models.
 
 ## Generate
 
 ```dart
-final engine = await ImageGenerationEngine.load(
-  model,
-  options: const ImageGenerationOptions(device: ImageGenerationDevice.auto),
-);
+final engine = await ImageGenerationEngine.load(model);
 print('${engine.capabilities.modelVersion} on '
     '${engine.capabilities.backendName}');
 
 final task = engine.generate(
   const ImageGenerationRequest(
     prompt: 'a red fox in autumn leaves',
+    steps: 1,
+    guidanceScale: 1,
     seed: 42,
   ),
 );
@@ -463,15 +473,16 @@ await engine.dispose();
 `engine.generateImage(request)` is the one-call form; it returns the
 `ImageGenerationResult` or throws the failure.
 
-- Width and height are multiples of 8 from 64 to 2048. Unset, each uses the
-  model's default (`ImageGenerationDefaults.width` and `height`), its native
-  size: 512x512 for SDXS and SD-Turbo, 1024x1024 for the desktop models in
-  the recipes. SDXS and SD-Turbo also work at 256. The runtime rounds the
+- Width and height are multiples of 8 from 64 to 2048, and default to 512.
+  Use the model's native size: 512x512 for SDXS and SD-Turbo, 1024x1024 for
+  the desktop models in the recipes. SDXS and SD-Turbo also work at 256. The runtime rounds the
   size up to a multiple of 64 for these models, so a 200x136 request produces
   256x192; `GeneratedImage.width` and `height` report the real size.
-- `steps`, `guidanceScale`, `sampler`, `scheduler` and `flowShift` fall back
-  to the model's defaults. A guidance of
-  1 skips the negative prompt and halves the work per step.
+- `steps` defaults to 20 and `guidanceScale` to 7, which suit undistilled
+  SD 1.x and 2.x models; set the model's own, as in the recipes. A guidance
+  of 1 skips the negative prompt and halves the work per step. `sampler`,
+  `scheduler` and `flowShift` default to the runtime's choice for the
+  model.
 - A `null` seed picks one at random. `result.seed` reports the seed used, and
   image `i` of `count` used `seed + i`. The same seed, size, steps and model
   reproduce the same pixels.
@@ -485,7 +496,7 @@ slow while the GPU compiles shaders; see
 
 ## Attention and VAE settings
 
-Two runtime settings in `ImageGenerationOptions` change speed and memory.
+Two runtime settings in `ImageModelParams` change speed and memory.
 Direct VAE convolutions leave the image identical; flash attention changes
 pixels slightly, by rounding. Left `null`, the engine picks them for the device it loads
 on:
@@ -493,15 +504,12 @@ on:
 | Setting | Automatic choice | Measured |
 | --- | --- | --- |
 | `flashAttention` (diffusion model) | On for the CPU and Metal, off on Vulkan | M4 Max Metal: SD 3.5 Medium sampling 1.6 times as fast, compute buffer 1.8 GiB to 0.3 GiB; SDXL-Lightning about 10% and FLUX about 5% faster; SD 1.x/2.x sampling time unchanged. M4 Max CPU: SD-Turbo sampling about a fifth faster. Pixels change slightly |
-| `vaeDirectConvolution` (VAE decode) | On, except on Metal and with a `taesd` file | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Metal: about 7 times slower. Identical output |
+| `vaeDirectConvolution` (VAE decode) | On, except on Metal and when a tiny autoencoder decodes: a `taesd` file, or a checkpoint whose header shows an embedded one, as SDXS's does | NVIDIA L4 Vulkan, 1024x1024, stable-diffusion.cpp's native CLI: decode 23 to 56 s to about 1 s, 4 to 5 GiB less device memory. M4 Max CPU, SD-Turbo 512x512: about 5% slower end to end, peak 3.6 GiB to 2.7 GiB. Metal: about 7 times slower. Identical output |
 
-The engine cannot tell before loading that a checkpoint embeds a tiny
-autoencoder, as SDXS does, so the automatic choice turns direct VAE
-convolutions on for it off Metal. On an M4 Max CPU that took 1.4 to 1.7 s
-per 512x512 SDXS image against 1.2 to 1.3 s with `vaeDirectConvolution:
-false`, and peaked at 1.32 GiB of process memory against 1.56 GiB. The SDXS
-recipe and the example apps pass `false`; keep the default where memory
-matters more than speed. On Metal the automatic choice is off either way.
+With a tiny autoencoder, direct convolutions cost time for little memory:
+on an M4 Max CPU they took 1.4 to 1.7 s per 512x512 SDXS image against 1.2
+to 1.3 s, for 0.24 GiB less peak process memory. Set `vaeDirectConvolution:
+true` where that memory matters more.
 
 Vulkan flash attention has not been measured yet, so it stays off there;
 pass `flashAttention: true` to try it. The runtime falls back to regular
@@ -538,21 +546,20 @@ turns the Metal shader cache off. The Vulkan figures are from
 nothing; its first image is as fast as the next.
 
 `warmUp` moves the pipeline compile off the first real image. It runs one
-single-step generation and discards it, at the model's size unless given
-another:
+single-step generation at the size and guidance it is given, with the
+request fallbacks otherwise, and discards it:
 
 ```dart
 final engine = await ImageGenerationEngine.load(model);
 // While the user writes the prompt:
-await engine.warmUp();
+await engine.warmUp(width: 1024, height: 1024, guidanceScale: 1);
 ```
 
-- Warm up at the size the app will generate; pass `width` and `height` when
-  it is not the model's. ggml picks some pipelines by tensor size: on the
+- Warm up at the size and guidance the app will generate. ggml picks some pipelines by tensor size: on the
   M4 Max a 64x64 warm-up left about 0.1 s of the 512x512 compile, while a
   512x512 warm-up left none.
-- For the desktop models the default warm-up is one sampling step and a
-  decode at 1024x1024: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on the
+- For the desktop models a warm-up is one sampling step and a decode at
+  1024x1024: 3.0 to 3.8 s for SDXL-Lightning with TAESDXL on the
   M4 Max, with or without the Metal shader cache, and the same peak memory
   as an image, which the [memory check](#memory-check) already covers.
 - It moves the cost, it does not remove it. Call it while the user is not
@@ -609,6 +616,7 @@ avoids by loading them eagerly.
   once.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
   `generateImage` then throws `LlamaStateException`.
+- `dispose()` is idempotent: later calls return the first call's future.
 - Free the model before a Flutter app quits: on macOS Metal, quitting with a
   model still loaded aborts the process. A Dart program that ends with the
   model loaded frees it on the way out and does not abort, unless it dies of
@@ -641,7 +649,7 @@ device the model loads on:
 
 A model that does not fit throws `LlamaModelException` naming both figures,
 instead of the system killing the app. Set
-`ImageGenerationOptions(checkMemory: false)` to load anyway.
+`ImageModelParams(checkMemory: false)` to load anyway.
 
 On Android, `MemAvailable` alone is too strict: it leaves out the memory the
 low-memory killer frees by stopping cached apps and what it swaps to zram,
@@ -667,8 +675,7 @@ swapped most of the app out: a one-step image took 65 s with TAESD and 282 s
 with the full VAE, against 18 s and 67 s on the Pixel 6a.
 
 The estimate does not depend on the image size. It covers the measured peaks
-at each model's native size, which requests and `warmUp` use unless they set
-another, with the automatic attention and VAE settings:
+at each model's native size, with the automatic attention and VAE settings:
 SDXS used 1.30 GiB and SD-Turbo on the CPU 2.66 GiB of process memory on an
 M4 Max; on five Android phones, loading and generating at 512x512 added at
 most 1.16 GiB to the app for SDXS, 2.26 GiB for SD-Turbo with TAESD and
@@ -685,9 +692,9 @@ does not fail the load.
 
 | Exception | When |
 | --- | --- |
-| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ImageGenerationDevice.gpu` without a GPU, or `ModelLoadOptions.sha256` set for `load` |
-| `LlamaModelException` | A file is missing or fails to download, the model does not fit, or the runtime cannot load it as an image model. A rejected split checkpoint names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
-| `LlamaImageGenerationException` | An invalid request or options |
+| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, or `ModelLoadOptions.sha256` set for `load` |
+| `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A rejected split model names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
+| `LlamaImageGenerationException` | An invalid request or `params:` |
 | `LlamaStateException` | The load's cancel token cancelled it, another generation or load is running, or the engine is disposed |
 | `LlamaInferenceException` | The runtime failed a generation, for example an aborted Metal command buffer or running out of memory; the engine runs the next request |
 
