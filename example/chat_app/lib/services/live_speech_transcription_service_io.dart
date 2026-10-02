@@ -43,6 +43,7 @@ class _IoLiveSpeechTranscriptionService
     }
 
     final recorder = AudioRecorder();
+    SpeechToTextEngine? speechEngine;
     SpeechToTextStreamingSession? speechSession;
     try {
       if (!await recorder.hasPermission()) {
@@ -56,11 +57,11 @@ class _IoLiveSpeechTranscriptionService
           'PCM16 microphone streaming is unavailable on this device.',
         );
       }
-      final speechEngine = SpeechToTextEngine.liteRtLm(
-        LiteRtLmAsrRuntimeConfig(
-          modelPath: modelPath,
-          tokenizerPath: tokenizerPath,
-          modelPreset: preset,
+      speechEngine = await SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          tokenizer: ModelSource.path(tokenizerPath),
+          adapter: LiteRtLmAsrAdapter(preset),
         ),
       );
       speechSession = await speechEngine.startStream();
@@ -75,6 +76,7 @@ class _IoLiveSpeechTranscriptionService
       late final _IoLiveSpeechTranscriptionTask task;
       task = _IoLiveSpeechTranscriptionTask(
         recorder: recorder,
+        speechEngine: speechEngine,
         speechSession: speechSession,
         microphoneStream: stream,
         onClosed: () {
@@ -88,6 +90,7 @@ class _IoLiveSpeechTranscriptionService
     } catch (_) {
       await recorder.dispose();
       await speechSession?.cancel();
+      await speechEngine?.dispose();
       rethrow;
     }
   }
@@ -106,6 +109,7 @@ class _IoLiveSpeechTranscriptionService
 
 class _IoLiveSpeechTranscriptionTask implements LiveSpeechTranscriptionTask {
   final AudioRecorder _recorder;
+  final SpeechToTextEngine _speechEngine;
   final SpeechToTextStreamingSession _speechSession;
   final void Function() _onClosed;
   final StreamController<LiveSpeechTranscriptUpdate> _updates =
@@ -125,10 +129,12 @@ class _IoLiveSpeechTranscriptionTask implements LiveSpeechTranscriptionTask {
 
   _IoLiveSpeechTranscriptionTask({
     required AudioRecorder recorder,
+    required SpeechToTextEngine speechEngine,
     required SpeechToTextStreamingSession speechSession,
     required Stream<Uint8List> microphoneStream,
     required void Function() onClosed,
   }) : _recorder = recorder,
+       _speechEngine = speechEngine,
        _speechSession = speechSession,
        _onClosed = onClosed {
     _speechSubscription = _speechSession.events.listen(
@@ -321,6 +327,7 @@ class _IoLiveSpeechTranscriptionTask implements LiveSpeechTranscriptionTask {
     await _speechSubscription?.cancel();
     _speechSubscription = null;
     await _recorder.dispose();
+    await _speechEngine.dispose();
     if (!_updates.isClosed) {
       unawaited(_updates.close());
     }

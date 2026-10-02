@@ -155,7 +155,7 @@ flutter test --run-skipped -t local-only \
      on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
      54 MB default; Parakeet TDT 0.6B is an optional 615 MB higher-capacity,
      heavier choice. Both process mono 16 kHz PCM in five-second windows on a
-     worker isolate through `SpeechToTextEngine.liteRtLm` (the sidecar keeps
+     worker isolate through `SpeechToTextEngine.load` with a `LiteRtLmAsrAdapter` (the sidecar keeps
      samples split across byte-chunk boundaries and one worker push in
      flight), show confirmed and
      replaceable pending English text, and put the finalized transcript into the composer for review instead of

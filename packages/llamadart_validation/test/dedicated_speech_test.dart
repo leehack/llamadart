@@ -9,6 +9,17 @@ import 'package:test/test.dart';
 class Recognizer implements SpeechToTextEngine {
   final session = Session();
   @override
+  final SpeechToTextAdapter adapter = const LiteRtLmAsrAdapter(
+    LiteRtLmAsrModelPreset.moonshineTiny,
+  );
+  @override
+  bool isDisposed = false;
+  @override
+  Future<void> dispose() async {
+    isDisposed = true;
+  }
+
+  @override
   Future<SpeechToTextCapabilities> get capabilities async =>
       const SpeechToTextCapabilities(isSupported: true);
   @override
@@ -113,14 +124,16 @@ class Session implements SpeechToTextStreamingSession {
 void main() {
   PublicDedicatedSpeechAdapter adapter(Recognizer recognizer) =>
       PublicDedicatedSpeechAdapter(
-        config: const LiteRtLmAsrRuntimeConfig(
-          modelPath: 'fixture',
-          tokenizerPath: 'fixture',
-          modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+        model: SpeechToTextModel(
+          ModelSource.path('fixture'),
+          tokenizer: ModelSource.path('fixture'),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
         ),
         wav: File('assets/speech/jfk.wav').readAsBytesSync(),
         reference: 'expected',
-        createRecognizer: (_) => recognizer,
+        loadRecognizer: (_) async => recognizer,
       );
   test(
     'CPU adapter pushes bounded PCM and drains delayed final before passing',
@@ -134,6 +147,7 @@ void main() {
       expect(engine.session.largestPush, 1600);
       expect(engine.session.cancelCalled, true);
       await target.dispose();
+      expect(engine.isDisposed, isTrue);
     },
   );
   test(

@@ -260,9 +260,9 @@ class PublicSpeechValidationAdapter
       'channels': fixture.channelCount,
       'audio_seconds': fixture.seconds,
     };
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
     final watch = _newStopwatch()..start();
     final String transcript;
@@ -365,9 +365,9 @@ class PublicSpeechValidationAdapter
     final engine = _engine ?? (throw StateError('Speech engine is not loaded'));
     final watch = _newStopwatch()..start();
     if (pack == 'stt') {
-      final recognizer = SpeechToTextEngine(
+      final recognizer = SpeechToTextEngine.attach(
         engine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
       final capability = await recognizer.capabilities;
       if (!capability.isSupported) {
@@ -427,9 +427,9 @@ class PublicSpeechValidationAdapter
         'streaming_input': false,
       };
     }
-    final synthesizer = TextToSpeechEngine(
+    final synthesizer = TextToSpeechEngine.attach(
       engine,
-      modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      adapter: const Qwen3TtsAdapter(),
     );
     final capability = await synthesizer.capabilities;
     if (!capability.isSupported) {
@@ -505,9 +505,9 @@ class PublicSpeechValidationAdapter
       throw StateError('Synthesis interrupts require the TTS pack');
     }
     final engine = _engine ?? (throw StateError('Speech engine is not loaded'));
-    return TextToSpeechEngine(
+    return TextToSpeechEngine.attach(
       engine,
-      modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      adapter: const Qwen3TtsAdapter(),
     ).synthesize(_synthesisRequest(maxFrames: maxFrames));
   }
 
@@ -749,9 +749,9 @@ class PublicSpeechValidationAdapter
     required int repeats,
   }) async {
     final watch = _newStopwatch()..start();
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
     final task = await recognizer.transcribe(
       SpeechToTextRequest(
@@ -1596,13 +1596,13 @@ double speechFixtureSeconds(Uint8List bytes) {
 /// Dedicated native CPU ASR: PCM streaming is separate from GGUF prompt ASR.
 class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
   PublicDedicatedSpeechAdapter({
-    required this.config,
+    required this.model,
     required this.wav,
     required this.reference,
-    SpeechToTextEngine Function(LiteRtLmAsrRuntimeConfig)? createRecognizer,
-  }) : _createRecognizer = createRecognizer ?? SpeechToTextEngine.liteRtLm;
-  final SpeechToTextEngine Function(LiteRtLmAsrRuntimeConfig) _createRecognizer;
-  final LiteRtLmAsrRuntimeConfig config;
+    Future<SpeechToTextEngine> Function(SpeechToTextModel)? loadRecognizer,
+  }) : _loadRecognizer = loadRecognizer ?? SpeechToTextEngine.load;
+  final Future<SpeechToTextEngine> Function(SpeechToTextModel) _loadRecognizer;
+  final SpeechToTextModel model;
   final Uint8List wav;
   final String reference;
   SpeechToTextEngine? _recognizer;
@@ -1626,7 +1626,7 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
       }
       offset += 8 + size + (size.isOdd ? 1 : 0);
     }
-    _recognizer = _createRecognizer(config);
+    _recognizer = await _loadRecognizer(model);
     final capabilities = await _recognizer!.capabilities;
     if (!capabilities.isSupported) {
       throw StateError(capabilities.unsupportedReason ?? 'ASR unsupported');
@@ -1637,6 +1637,7 @@ class PublicDedicatedSpeechAdapter implements SpeechValidationAdapter {
   Future<void> dispose() async {
     await _active?.cancel();
     _active = null;
+    await _recognizer?.dispose();
     _recognizer = null;
   }
 

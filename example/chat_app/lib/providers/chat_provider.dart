@@ -3683,6 +3683,10 @@ class ChatProvider extends ChangeNotifier {
     _isTranscribing = true;
     notifyListeners();
 
+    final recognizer = SpeechToTextEngine.attach(
+      _chatService.engine,
+      adapter: const Qwen3AsrAdapter(),
+    );
     try {
       final llamaAudio = switch (audio) {
         SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
@@ -3715,10 +3719,6 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       await _yieldUiFrame();
 
-      final recognizer = SpeechToTextEngine(
-        _chatService.engine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
-      );
       Future<({SpeechToTextCompletion completion, SpeechToTextResult? result})>
       runAttempt(SpeechAudioInput attemptAudio) async {
         final task = await recognizer.transcribe(
@@ -3828,6 +3828,7 @@ class ChatProvider extends ChangeNotifier {
       );
     } finally {
       _activeSpeechToTextTask = null;
+      await recognizer.dispose();
       if (identical(_activeTranscriptionDone, operationDone)) {
         _activeTranscriptionDone = null;
       }
@@ -3874,13 +3875,13 @@ class ChatProvider extends ChangeNotifier {
     _textToSpeechError = null;
     notifyListeners();
 
+    final synthesizer = TextToSpeechEngine.attach(
+      _chatService.engine,
+      adapter: const Qwen3TtsAdapter(),
+    );
     TextToSpeechTask? task;
     StreamSubscription<TextToSpeechEvent>? eventSubscription;
     try {
-      final synthesizer = TextToSpeechEngine(
-        _chatService.engine,
-        modelProfile: TextToSpeechModelProfile.qwen3Tts,
-      );
       task = await synthesizer.synthesize(
         TextToSpeechRequest(
           text: normalizedText,
