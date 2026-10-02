@@ -296,8 +296,6 @@ class LiteRtLmService {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
-    String? sourceLangCode,
-    String? targetLangCode,
     DateTime? templateNow,
   }) => _explainUndeclaredFailure(
     _generateChat(
@@ -309,8 +307,6 @@ class LiteRtLmService {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       chatTemplateKwargs: chatTemplateKwargs,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       templateNow: templateNow,
     ),
     hasImages: _maxNumImagesFor(messages) != null,
@@ -327,8 +323,6 @@ class LiteRtLmService {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
-    String? sourceLangCode,
-    String? targetLangCode,
     DateTime? templateNow,
   }) async* {
     _checkContextHandle(contextHandle);
@@ -385,8 +379,6 @@ class LiteRtLmService {
     final loraPath = _activeTextLoraPath();
     final extraContext = _nativeExtraContext(
       chatTemplateKwargs: chatTemplateKwargs,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       templateNow: templateNow,
       enableThinking: enableThinking,
     );
@@ -1474,17 +1466,11 @@ class LiteRtLmService {
 
   Map<String, dynamic>? _nativeExtraContext({
     Map<String, dynamic>? chatTemplateKwargs,
-    String? sourceLangCode,
-    String? targetLangCode,
     DateTime? templateNow,
     required bool enableThinking,
   }) {
     final extraContext = <String, dynamic>{
       ...?chatTemplateKwargs,
-      if (sourceLangCode != null && sourceLangCode.isNotEmpty)
-        'source_lang_code': sourceLangCode,
-      if (targetLangCode != null && targetLangCode.isNotEmpty)
-        'target_lang_code': targetLangCode,
       if (templateNow != null) 'now': templateNow.toIso8601String(),
       'enable_thinking': enableThinking,
     };

@@ -13,6 +13,7 @@ import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
 import '../../core/models/tools/tool_definition.dart';
+import '../../core/template/handlers/translate_gemma_handler.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend.dart';
 import '../llama_cpp/llama_cpp_backend.dart';
@@ -215,7 +216,9 @@ class NativeAutoBackend
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     DateTime? templateNow,
   }) {
@@ -229,9 +232,11 @@ class NativeAutoBackend
         toolChoice: toolChoice,
         parallelToolCalls: parallelToolCalls,
         enableThinking: enableThinking,
-        chatTemplateKwargs: chatTemplateKwargs,
-        sourceLangCode: sourceLangCode,
-        targetLangCode: targetLangCode,
+        chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+          chatTemplateKwargs,
+          sourceLangCode: sourceLangCode,
+          targetLangCode: targetLangCode,
+        ),
         templateNow: templateNow,
       );
     }

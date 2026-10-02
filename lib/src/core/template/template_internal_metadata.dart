@@ -1,3 +1,5 @@
+import 'tool_call_parsing_utils.dart';
+
 /// Internal metadata key carrying tool choice for handler parity behavior.
 ///
 /// This key is populated by [ChatTemplateEngine] and consumed by handlers that
@@ -15,6 +17,25 @@ const String internalParallelToolCallsMetadataKey =
 /// Value is serialized as a JSON object string.
 const String internalChatTemplateKwargsMetadataKey =
     'llamadart.internal.chat_template_kwargs';
+
+/// Decodes the `chat_template_kwargs` stored under
+/// [internalChatTemplateKwargsMetadataKey].
+///
+/// Returns an empty map when [metadata] carries none or an unreadable value.
+Map<String, dynamic> chatTemplateKwargsFromMetadata(
+  Map<String, String> metadata,
+) {
+  final rawKwargs = metadata[internalChatTemplateKwargsMetadataKey];
+  if (rawKwargs == null || rawKwargs.trim().isEmpty) {
+    return <String, dynamic>{};
+  }
+  try {
+    final decoded = ToolCallParsingUtils.decodeJsonValue(rawKwargs);
+    return ToolCallParsingUtils.coerceMap(decoded) ?? <String, dynamic>{};
+  } catch (_) {
+    return <String, dynamic>{};
+  }
+}
 
 /// Internal metadata key carrying caller-provided template `now` value.
 ///

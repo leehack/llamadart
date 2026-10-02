@@ -194,8 +194,6 @@ void runLiteRtLmWorkerForTesting(
                 parallelToolCalls: message.parallelToolCalls,
                 enableThinking: message.enableThinking,
                 chatTemplateKwargs: message.chatTemplateKwargs,
-                sourceLangCode: message.sourceLangCode,
-                targetLangCode: message.targetLangCode,
                 templateNow: message.templateNow,
               );
               final batcher = NativeTokenStreamBatcher(
