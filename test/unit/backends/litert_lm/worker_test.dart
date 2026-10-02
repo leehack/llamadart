@@ -72,6 +72,19 @@ void main() {
           LiteRtLmSystemInfoRequest.new,
         );
         expect(systemInfo, isA<LiteRtLmSystemInfoResponse>());
+
+        final bundle = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmBundleCapabilitiesRequest.new,
+        );
+        expect(
+          bundle,
+          isA<LiteRtLmBundleCapabilitiesResponse>().having(
+            (response) => response.capabilities,
+            'capabilities before a load',
+            isNull,
+          ),
+        );
       } finally {
         await _disposeWorker(worker);
       }

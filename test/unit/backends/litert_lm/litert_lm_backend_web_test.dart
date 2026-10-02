@@ -598,7 +598,7 @@ void main() {
     });
   }
 
-  test('reports and rejects no optional sampling controls', () async {
+  test('reports and rejects the options it does not apply', () async {
     var prompts = 0;
     _installFakeEngine(
       onPrompt: (_) {
@@ -610,12 +610,36 @@ void main() {
     try {
       await engine.loadModel('https://example.com/model.litertlm');
 
-      final capabilities = await engine.backendGenerationCapabilities;
-      expect(capabilities.presencePenalty, isFalse);
-      expect(capabilities.minP, isFalse);
-      expect(capabilities.thinkingBudget, isFalse);
+      final capabilities = await engine.capabilities;
+      expect(engine.runtime, LlamaRuntime.liteRtLm);
+      expect(capabilities.runtime, LlamaRuntime.liteRtLm);
+      expect(capabilities.backendName, startsWith('LiteRT-LM web'));
+      expect(capabilities.supportsMultiTurnChat, isFalse);
+      expect(capabilities.supportsToolCalling, isFalse);
+      expect(capabilities.supportsVision, isFalse);
+      expect(capabilities.supportsAudio, isFalse);
+      expect(capabilities.supportsEmbeddings, isFalse);
+      expect(capabilities.supportsStructuredOutput, isFalse);
+      expect(capabilities.supportsGrammar, isFalse);
+      expect(capabilities.supportsLazyGrammar, isFalse);
+      expect(capabilities.supportsPenalty, isFalse);
+      expect(capabilities.supportsPresencePenalty, isFalse);
+      expect(capabilities.supportsMinP, isFalse);
+      expect(capabilities.supportsThinkingBudget, isFalse);
+      expect(capabilities.supportsStreamBatching, isFalse);
+      expect(capabilities.speculativeDecodingStrategies, isEmpty);
       for (final (option, params) in [
+        ('penalty', const GenerationParams(penalty: 1.3)),
         ('presencePenalty', const GenerationParams(presencePenalty: 0.5)),
+        ('grammar', const GenerationParams(grammar: 'root ::= "a"')),
+        (
+          'speculativeDecoding',
+          const GenerationParams(speculativeDecoding: true),
+        ),
+        (
+          'streamBatchTokenThreshold',
+          const GenerationParams(streamBatchTokenThreshold: 1),
+        ),
         ('minP', const GenerationParams(minP: 0.1)),
         (
           'thinkingBudget',

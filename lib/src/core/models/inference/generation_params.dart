@@ -656,7 +656,8 @@ class GenerationParams {
   /// Enables backend-native speculative decoding when supported.
   ///
   /// Native LiteRT-LM forwards this flag to the runtime's speculative decoding
-  /// setting. llama.cpp, native and WebGPU, maps it to the backend-default
+  /// setting, and rejects it for a bundle that declares no speculative
+  /// drafter. llama.cpp, native and WebGPU, maps it to the backend-default
   /// speculative strategy, `ngram-mod`, when the active model/context supports
   /// that path; WebGPU needs bridge assets that report `ngram-mod`. LiteRT-LM
   /// web rejects this option.

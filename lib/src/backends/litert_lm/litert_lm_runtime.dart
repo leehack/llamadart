@@ -21,6 +21,9 @@ const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
 const _streamChunkCallbackAbiVersion = 2;
+// `LiteRtLmModality` values from LiteRT-LM's `c/capabilities.h`.
+const _liteRtLmModalityVision = 1;
+const _liteRtLmModalityAudio = 2;
 
 /// Returns macOS LiteRT-LM candidates for a concrete runtime library path.
 ///
@@ -452,6 +455,8 @@ final class _LiteRtLmTokenUnion extends Opaque {}
 
 final class _LiteRtLmSamplerParams extends Opaque {}
 
+final class _LiteRtLmLoadedFile extends Opaque {}
+
 final class _LegacyLiteRtLmSamplerParams extends Struct {
   @Int32()
   external int type;
@@ -586,6 +591,48 @@ class LiteRtLmRuntimeClient {
       return true;
     } on Object {
       return false;
+    }
+  }
+
+  /// What the `.litertlm` bundle at [modelPath] declares in its section
+  /// metadata, read without creating an engine: whether it takes image and
+  /// audio input, and whether it has a speculative decoding drafter.
+  ///
+  /// Returns null when the runtime lacks LiteRT-LM's loaded-file capability
+  /// API or cannot read the bundle.
+  ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
+    String modelPath,
+  ) {
+    _ensureLibrariesLoaded();
+    final bindings = _bindings!;
+    final create = bindings.loadedFileCreate;
+    final delete = bindings.loadedFileDelete;
+    final supportsInputModality = bindings.loadedFileSupportsInputModality;
+    final hasSpeculativeDecoding =
+        bindings.loadedFileHasSpeculativeDecodingSupport;
+    if (create == null ||
+        delete == null ||
+        supportsInputModality == null ||
+        hasSpeculativeDecoding == null) {
+      return null;
+    }
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
+    try {
+      final loadedFile = create(modelPathPtr.cast());
+      if (loadedFile == nullptr) {
+        return null;
+      }
+      try {
+        return (
+          vision: supportsInputModality(loadedFile, _liteRtLmModalityVision),
+          audio: supportsInputModality(loadedFile, _liteRtLmModalityAudio),
+          speculativeDecoding: hasSpeculativeDecoding(loadedFile),
+        );
+      } finally {
+        delete(loadedFile);
+      }
+    } finally {
+      calloc.free(modelPathPtr);
     }
   }
 
@@ -3082,6 +3129,27 @@ class _LiteRtLmBindings {
             Void Function(Pointer<_LiteRtLmEngineSettings>, Int)
           >('litert_lm_engine_settings_set_num_threads')
           ?.asFunction<void Function(Pointer<_LiteRtLmEngineSettings>, int)>();
+
+  late final loadedFileCreate =
+      _lookupOptionalNative<
+            Pointer<_LiteRtLmLoadedFile> Function(Pointer<Char>)
+          >('litert_lm_loaded_file_create')
+          ?.asFunction<Pointer<_LiteRtLmLoadedFile> Function(Pointer<Char>)>();
+
+  late final loadedFileDelete =
+      _lookupOptionalNative<Void Function(Pointer<_LiteRtLmLoadedFile>)>(
+        'litert_lm_loaded_file_delete',
+      )?.asFunction<void Function(Pointer<_LiteRtLmLoadedFile>)>();
+
+  late final loadedFileHasSpeculativeDecodingSupport =
+      _lookupOptionalNative<Bool Function(Pointer<_LiteRtLmLoadedFile>)>(
+        'litert_lm_loaded_file_has_speculative_decoding_support',
+      )?.asFunction<bool Function(Pointer<_LiteRtLmLoadedFile>)>();
+
+  late final loadedFileSupportsInputModality =
+      _lookupOptionalNative<Bool Function(Pointer<_LiteRtLmLoadedFile>, Int)>(
+        'litert_lm_loaded_file_supports_input_modality',
+      )?.asFunction<bool Function(Pointer<_LiteRtLmLoadedFile>, int)>();
 
   late final engineDelete = _library
       .lookupFunction<

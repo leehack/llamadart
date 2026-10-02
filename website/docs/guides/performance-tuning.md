@@ -154,8 +154,8 @@ in production.
 - On llama.cpp, native or WebGPU, speculative decoding is text-only and cannot
   be combined with `thinkingBudget` or `grammar`.
 
-`engine.backendGenerationCapabilities` reports the strategies the loaded
-runtime runs in `speculativeDecodingStrategies`.
+`(await engine.capabilities).speculativeDecodingStrategies` reports the
+strategies the loaded runtime runs.
 
 `SpeculativeDecodingConfig` constructors mirror upstream llama.cpp
 `--spec-type` values:

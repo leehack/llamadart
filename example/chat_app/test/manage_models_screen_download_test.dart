@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llamadart/llamadart.dart' show BackendGenerationCapabilities;
+import 'package:llamadart/llamadart.dart' show LlamaEngineCapabilities;
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
@@ -929,10 +929,9 @@ void main() {
         (tester) async {
           SharedPreferences.setMockInitialValues({});
           final engine = MockLlamaEngine()
-            ..generationCapabilities = BackendGenerationCapabilities(
-              presencePenalty: false,
-              minP: supported,
-              thinkingBudget: false,
+            ..loadedCapabilities = LlamaEngineCapabilities(
+              isSupported: true,
+              supportsMinP: supported,
             );
           final provider = ChatProvider(
             chatService: MockChatService(engine: engine),

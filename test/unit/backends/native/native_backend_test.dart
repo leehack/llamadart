@@ -893,6 +893,28 @@ void main() {
     }
   });
 
+  test('reports the direct media input of the loaded runtime', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _FakeBackend(handle: 11),
+      liteRtLmFactory: () => _DirectMediaFakeBackend(handle: 22),
+    );
+
+    try {
+      expect(await backend.directMediaInput(), (vision: false, audio: false));
+
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+      expect(await backend.directMediaInput(), (vision: true, audio: true));
+
+      await backend.modelLoad('/models/qwen.gguf', const ModelParams());
+      expect(await backend.directMediaInput(), (vision: false, audio: false));
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects decision calls before a model load', () async {
     final llama = _DecisionFakeBackend(handle: 11);
     final backend = NativeAutoBackend(
@@ -1859,6 +1881,15 @@ class _GenerationCapabilitiesFakeBackend extends _FakeBackend
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     return capabilities;
   }
+}
+
+class _DirectMediaFakeBackend extends _FakeBackend
+    implements BackendDirectMediaInput {
+  _DirectMediaFakeBackend({required super.handle});
+
+  @override
+  Future<({bool vision, bool audio})> directMediaInput() async =>
+      (vision: true, audio: true);
 }
 
 class _DecisionFakeBackend extends _FakeBackend implements BackendDecision {

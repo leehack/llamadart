@@ -91,7 +91,7 @@ class ChatService {
         await _engine.loadModel(settings.modelPath!, modelParams: modelParams);
       }
 
-      final isLiteRtLmModel = _isLiteRtLmModel(settings.modelPath);
+      final isLiteRtLmModel = _engine.runtime == LlamaRuntime.liteRtLm;
       final directAudioLiteRtLm =
           isLiteRtLmModel &&
           settings.directMediaInput &&

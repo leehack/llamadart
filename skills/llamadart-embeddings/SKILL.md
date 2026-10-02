@@ -25,8 +25,8 @@ description: >-
   engine holds one model, and switching models per query reloads weights.
 - Embeddings are llama.cpp-only. LiteRT-LM (`.litertlm`) engines, native or
   web, throw `LlamaUnsupportedException`. After loading, check
-  `engine.supportsEmbeddings` (false on LiteRT-LM) before offering the
-  feature. It reports the backend only, so still treat
+  `(await engine.capabilities).supportsEmbeddings` (false on LiteRT-LM) before
+  offering the feature. It reports the backend only, so still treat
   `LlamaUnsupportedException` from `embed` as a configuration error, not
   something to retry or swallow.
 - Rank-pooled reranker GGUFs (such as Qwen3-Reranker) produce classifier

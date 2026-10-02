@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 
 import '../models/chat_settings.dart';
@@ -38,12 +37,9 @@ class GenerationStreamResult {
 }
 
 /// Capabilities reported before a model loads.
-const BackendGenerationCapabilities noGenerationCapabilities =
-    BackendGenerationCapabilities(
-      presencePenalty: false,
-      minP: false,
-      thinkingBudget: false,
-    );
+const LlamaEngineCapabilities noEngineCapabilities = LlamaEngineCapabilities(
+  isSupported: false,
+);
 
 class ChatGenerationService {
   const ChatGenerationService();
@@ -54,34 +50,32 @@ class ChatGenerationService {
   static const int _streamFlushBudgetMs = 220;
   static const int _tokenDeltaFlushBatchSize = 8;
 
+  /// Sends only the sampling options the loaded runtime applies, so a runtime
+  /// such as LiteRT-LM does not reject the request.
   GenerationParams buildParams(
     ChatSettings settings, {
-    required BackendGenerationCapabilities generationCapabilities,
+    required LlamaEngineCapabilities capabilities,
   }) {
-    // The LiteRT-LM backend only supports a subset of generation options
-    // (maxTokens, temp, topK, topP, seed, stopSequences) and throws an
-    // UnsupportedError for llama.cpp-specific fields like penalty when they
-    // differ from their defaults. For .litertlm models, leave those fields at
-    // their defaults so generation does not fail. Min-P follows the loaded
-    // runtime's reported capabilities instead.
     const defaults = GenerationParams();
-    final isLiteRtLm = _isLiteRtLmModel(settings.modelPath);
+    // Native LiteRT-LM streams through a worker; flush every token so the UI
+    // reveals text as it arrives.
+    final flushEveryToken =
+        capabilities.runtime == LlamaRuntime.liteRtLm &&
+        capabilities.supportsStreamBatching;
     return GenerationParams(
       maxTokens: settings.maxTokens,
       temp: settings.temperature,
       topK: settings.topK,
       topP: settings.topP,
-      minP: generationCapabilities.minP ? settings.minP : defaults.minP,
-      penalty: isLiteRtLm ? defaults.penalty : settings.penalty,
+      minP: capabilities.supportsMinP ? settings.minP : defaults.minP,
+      penalty: capabilities.supportsPenalty
+          ? settings.penalty
+          : defaults.penalty,
       stopSequences: const <String>[],
-      streamBatchTokenThreshold: isLiteRtLm && !kIsWeb
+      streamBatchTokenThreshold: flushEveryToken
           ? 1
           : defaults.streamBatchTokenThreshold,
     );
-  }
-
-  bool _isLiteRtLmModel(String? modelPath) {
-    return ModelFormat.fromPath(modelPath ?? '') == ModelFormat.liteRtLm;
   }
 
   List<LlamaContentPart> buildChatParts({

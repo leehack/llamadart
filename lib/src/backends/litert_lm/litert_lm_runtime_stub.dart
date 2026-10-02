@@ -81,6 +81,13 @@ class LiteRtLmRuntimeClient {
   /// Dedicated native ASR is unavailable without `dart:ffi`.
   bool get supportsAsrBridge => false;
 
+  /// Bundle capability queries are unavailable without `dart:ffi`.
+  ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities(
+    String modelPath,
+  ) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
   /// Dedicated native ASR is unavailable without `dart:ffi`.
   LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
     throw UnsupportedError('LiteRT-LM ASR requires a native platform.');

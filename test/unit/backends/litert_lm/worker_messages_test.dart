@@ -95,6 +95,7 @@ void main() {
       expect(LiteRtLmSupportsVisionRequest(1, sp).mmContextHandle, 1);
       expect(LiteRtLmSupportsAudioRequest(1, sp).mmContextHandle, 1);
       expect(LiteRtLmSystemInfoRequest(sp).sendPort, sp);
+      expect(LiteRtLmBundleCapabilitiesRequest(sp).sendPort, sp);
       expect(
         LiteRtLmChatTemplateRequest(
           1,
@@ -135,6 +136,14 @@ void main() {
         const <String, String>{'a': 'b'},
       );
       expect(LiteRtLmGetContextSizeResponse(4096).size, 4096);
+      expect(
+        LiteRtLmBundleCapabilitiesResponse((
+          vision: true,
+          audio: false,
+          speculativeDecoding: true,
+        )).capabilities,
+        (vision: true, audio: false, speculativeDecoding: true),
+      );
       expect(LiteRtLmErrorResponse('bad', kind: 'state').kind, 'state');
       expect(
         LiteRtLmBackendInfoResponse('LiteRT-LM gpu').name,

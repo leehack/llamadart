@@ -35,6 +35,15 @@ For canonical full release notes, use:
   runtime and mislabelled files throw `LlamaModelFormatException`; name a Web
   URL's format with `ModelSource.url(..., format: ModelFormat.liteRtLm)`
   ([#837](https://github.com/leehack/llamadart/issues/837)).
+- Add `LlamaEngine.runtime` and `LlamaEngine.capabilities`, one snapshot of
+  what the loaded model's runtime supports: image and audio input,
+  embeddings, multi-turn chat, tools, structured output, grammars, every
+  sampling control including `penalty`, stream batching and speculative
+  strategies. Native LiteRT-LM reads image, audio and speculative decoding
+  support from the bundle, and now rejects such a request for a bundle that
+  lacks it with `LlamaUnsupportedException` instead of failing inside the
+  runtime. `backendGenerationCapabilities` is deprecated
+  ([#841](https://github.com/leehack/llamadart/issues/841)).
 
 ## 0.10.0
 

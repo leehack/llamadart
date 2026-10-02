@@ -210,25 +210,41 @@ Important fields:
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in speculative
   decoding. Native LiteRT-LM uses the boolean, or a
   `SpeculativeDecodingConfig.backendDefault()` or `.mtp()` config without
-  draft tuning; native llama.cpp takes any `SpeculativeDecodingConfig`
+  draft tuning, on bundles that carry a speculative drafter; native llama.cpp takes any `SpeculativeDecodingConfig`
   strategy. WebGPU takes the strategies its bridge assets report, with URLs
   for `draftModelPath` and the n-gram cache paths. LiteRT-LM web rejects both.
   See [Speculative decoding](../guides/performance-tuning#speculative-decoding).
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 
-After a model loads, `engine.backendGenerationCapabilities` reports whether
-the runtime applies `presencePenalty`, `minP` and `thinkingBudget`, and which
-`SpeculativeDecodingStrategy` values it runs in
-`speculativeDecodingStrategies`: native llama.cpp reports everything, LiteRT-LM
-none of the three and, natively, `backendDefault` and `mtp`, and WebGPU what
-its bridge assets report. Every field is `false`, and the strategy set empty,
-before a load. Use it to send a control only where it applies:
+After a model loads, `engine.capabilities` reports which of these options the
+runtime applies. A request that sets one it reports `false` to a value other
+than the default throws `LlamaUnsupportedException`:
+
+| Option | `LlamaEngineCapabilities` field | llama.cpp native | WebGPU | LiteRT-LM native | LiteRT-LM web |
+| --- | --- | --- | --- | --- | --- |
+| `penalty` | `supportsPenalty` | Yes | Yes | No | No |
+| `presencePenalty` | `supportsPresencePenalty` | Yes | Bridge reports | No | No |
+| `minP` | `supportsMinP` | Yes | Bridge reports | No | No |
+| `thinkingBudget` | `supportsThinkingBudget` | Yes | Bridge reports | No | No |
+| `grammar`, `grammarTriggers`, `preservedTokens` | `supportsGrammar` | Yes | Yes | No | No |
+| `grammarLazy` | `supportsLazyGrammar` | Yes | No | No | No |
+| Stream batching thresholds | `supportsStreamBatching` | Yes | Ignored | Yes | No |
+| Speculative strategies | `speculativeDecodingStrategies` | All | Bridge reports | `backendDefault`, `mtp` with a bundle drafter | None |
+
+Every field is `false`, and the strategy set empty, before a load. Use it to
+send a control only where it applies:
 
 ```dart
-final capabilities = await engine.backendGenerationCapabilities;
-final params = GenerationParams(minP: capabilities.minP ? 0.05 : 0.0);
+final capabilities = await engine.capabilities;
+final params = GenerationParams(
+  minP: capabilities.supportsMinP ? 0.05 : 0.0,
+  penalty: capabilities.supportsPenalty ? 1.1 : const GenerationParams().penalty,
+);
 ```
+
+`engine.backendGenerationCapabilities` is deprecated; `capabilities` reports
+the same controls and the rest.
 
 Native GGUF `stopSequences` suppress the first completed marker and any text
 following it, including markers split across tokens or embedded inside a token.

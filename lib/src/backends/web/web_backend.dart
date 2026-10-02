@@ -26,6 +26,7 @@ class WebAutoBackend
         BackendModelFormatRouting,
         LlamaBackend,
         BackendAvailability,
+        BackendChatScope,
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
@@ -131,6 +132,20 @@ class WebAutoBackend
           .supportsGrammarConstraints;
     }
     return true;
+  }
+
+  @override
+  bool get supportsMultiTurnChat {
+    final delegate = _delegate;
+    return delegate is! BackendChatScope ||
+        (delegate as BackendChatScope).supportsMultiTurnChat;
+  }
+
+  @override
+  bool get supportsToolCalling {
+    final delegate = _delegate;
+    return delegate is! BackendChatScope ||
+        (delegate as BackendChatScope).supportsToolCalling;
   }
 
   @override

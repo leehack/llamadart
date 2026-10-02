@@ -9,6 +9,7 @@ typedef _RuntimeStatus = ({
   bool isReady,
   String activeBackend,
   String activeModelName,
+  LlamaRuntime? runtime,
   int currentTokens,
   int contextLimit,
   double? tokensPerSecond,
@@ -44,6 +45,7 @@ class RuntimeStatusPanel extends StatelessWidget {
         isReady: provider.isReady,
         activeBackend: provider.activeBackend,
         activeModelName: provider.activeModelName,
+        runtime: provider.activeRuntime,
         currentTokens: provider.currentTokens,
         contextLimit: provider.contextLimit,
         tokensPerSecond: provider.lastTokensPerSecond,
@@ -168,8 +170,7 @@ class RuntimeStatusPanel extends StatelessWidget {
     );
     add(Icons.repeat_rounded, 'Reused graphs', status.nativeReusedGraphs);
 
-    final isLiteRtLmModel =
-        ModelFormat.fromPath(status.activeModelName) == ModelFormat.liteRtLm;
+    final isLiteRtLmModel = status.runtime == LlamaRuntime.liteRtLm;
     add(
       Icons.layers_rounded,
       'GPU layers',

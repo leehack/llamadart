@@ -2336,7 +2336,9 @@ class WebGpuLlamaBackend
 
   /// Reports the options that the loaded bridge assets'
   /// `getCompletionCapabilities()` reported after the model load; none before
-  /// a load or when the probe is missing or failed.
+  /// a load or when the probe is missing or failed. Every bridge applies
+  /// [GenerationParams.penalty] to a loaded model and ignores the stream
+  /// batching thresholds.
   ///
   /// Speculative strategies follow [webGpuSpeculativeStrategiesFrom]: a
   /// draft-model strategy counts when the assets have `loadDraftModel()`,
@@ -2345,6 +2347,7 @@ class WebGpuLlamaBackend
   Future<BackendGenerationCapabilities> generationCapabilities() async {
     final capabilities = _completionCapabilities;
     return BackendGenerationCapabilities(
+      penalty: _isReady,
       presencePenalty: capabilities.presencePenalty,
       minP: capabilities.minP,
       thinkingBudget: capabilities.thinkingBudget,

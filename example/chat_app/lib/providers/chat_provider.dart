@@ -181,8 +181,7 @@ class ChatProvider extends ChangeNotifier {
   bool _supportsAudio = false;
   bool _templateSupportsTools = true;
   bool _thinkingControlsSupported = true;
-  BackendGenerationCapabilities _generationCapabilities =
-      noGenerationCapabilities;
+  LlamaEngineCapabilities _engineCapabilities = noEngineCapabilities;
   ChatFormat? _detectedChatFormat;
   String? _error;
   Timer? _settingsSaveDebounce;
@@ -528,7 +527,10 @@ class ChatProvider extends ChangeNotifier {
       !hasActiveAudioRecording;
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
-  bool get minPSupported => _generationCapabilities.minP;
+  bool get minPSupported => _engineCapabilities.supportsMinP;
+
+  /// The loaded model's runtime, or null before a model loads.
+  LlamaRuntime? get activeRuntime => _engineCapabilities.runtime;
   String? get error => _error;
   double get temperature => _settings.temperature;
   int get topK => _settings.topK;
@@ -895,6 +897,7 @@ class ChatProvider extends ChangeNotifier {
     if (backendInfoForLabel != null) {
       _activeBackend = BackendUtils.deriveActiveBackendLabel(
         backendInfoForLabel,
+        runtime: _chatService.engine.runtime,
         preferredBackend: _settings.preferredBackend,
         gpuLayers: _settings.gpuLayers,
       );
@@ -1129,7 +1132,7 @@ class ChatProvider extends ChangeNotifier {
     _mmprojLoaded = false;
     _templateSupportsTools = true;
     _thinkingControlsSupported = true;
-    _generationCapabilities = noGenerationCapabilities;
+    _engineCapabilities = noEngineCapabilities;
   }
 
   void _clearRuntimeDiagnostics() {
@@ -1466,6 +1469,7 @@ class ChatProvider extends ChangeNotifier {
       if (backendInfoForLabel != null) {
         _activeBackend = BackendUtils.deriveActiveBackendLabel(
           backendInfoForLabel,
+          runtime: _chatService.engine.runtime,
           preferredBackend: _settings.preferredBackend,
           gpuLayers: _settings.gpuLayers,
         );
@@ -1482,8 +1486,7 @@ class ChatProvider extends ChangeNotifier {
       final inferredCapabilities = _inferMultimodalCapabilities(metadata);
       final runtimeSupportsVision = await _chatService.engine.supportsVision;
       final runtimeSupportsAudio = await _chatService.engine.supportsAudio;
-      _generationCapabilities =
-          await _chatService.engine.backendGenerationCapabilities;
+      _engineCapabilities = await _chatService.engine.capabilities;
       final declaredDirectVision =
           _settings.directMediaInput && _settings.modelSupportsVision;
       final declaredDirectAudio =
@@ -1496,7 +1499,7 @@ class ChatProvider extends ChangeNotifier {
           runtimeSupportsAudio ||
           declaredDirectAudio ||
           (!_mmprojLoaded && inferredCapabilities.supportsAudio);
-      _updateThinkingControlSupport(metadata);
+      _updateThinkingControlSupport();
       _updateToolTemplateSupport(metadata);
       updateLoadingUi(0.9);
 
@@ -2069,7 +2072,7 @@ class ChatProvider extends ChangeNotifier {
 
       final params = _chatGenerationService.buildParams(
         _settings,
-        generationCapabilities: _generationCapabilities,
+        capabilities: _engineCapabilities,
       );
       final chatParts = _chatGenerationService.buildChatParts(
         text: text,
@@ -4417,18 +4420,8 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  bool _isSingleTurnTextOnlyRuntime(Map<String, String> metadata) {
-    final structuredChat = metadata['llamadart.litert_lm_web.structured_chat']
-        ?.trim()
-        .toLowerCase();
-    final chatScope = metadata['llamadart.litert_lm_web.chat_scope']
-        ?.trim()
-        .toLowerCase();
-    return structuredChat == 'false' || chatScope == 'single-turn-text';
-  }
-
-  void _updateThinkingControlSupport(Map<String, String> metadata) {
-    _thinkingControlsSupported = !_isSingleTurnTextOnlyRuntime(metadata);
+  void _updateThinkingControlSupport() {
+    _thinkingControlsSupported = _engineCapabilities.supportsMultiTurnChat;
     if (_thinkingControlsSupported || !_settings.thinkingEnabled) {
       return;
     }
@@ -4436,12 +4429,12 @@ class ChatProvider extends ChangeNotifier {
     _settings = _settings.copyWith(thinkingEnabled: false);
     unawaited(_saveSettingsNow());
     _addInfoMessage(
-      'Thinking controls disabled for this runtime: LiteRT-LM Web currently exposes single-turn text generation only.',
+      'Thinking controls disabled for this runtime: it passes only the latest message to the model.',
     );
   }
 
   void _updateToolTemplateSupport(Map<String, String> metadata) {
-    if (_isSingleTurnTextOnlyRuntime(metadata)) {
+    if (!_engineCapabilities.supportsToolCalling) {
       _detectedChatFormat = ChatFormat.contentOnly;
       _templateSupportsTools = false;
       if (_settings.toolsEnabled) {
@@ -4449,7 +4442,7 @@ class ChatProvider extends ChangeNotifier {
         unawaited(_saveSettingsNow());
       }
       _addInfoMessage(
-        'Tool calling disabled for this runtime: LiteRT-LM Web currently exposes single-turn text generation only. Use GGUF/WebGPU or a native LiteRT-LM target for structured tool calls.',
+        'Tool calling disabled for this runtime: it does not pass tools to the model. Use GGUF/WebGPU or a native LiteRT-LM target for structured tool calls.',
       );
       return;
     }

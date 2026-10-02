@@ -74,7 +74,7 @@ class ChatCompletionRequestPlanner {
     final mediaParts = messages
         .expand((message) => message.parts)
         .toList(growable: false);
-    final backendSupportsGrammarConstraints = _supportsGrammarConstraints(
+    final backendSupportsGrammarConstraints = supportsGrammarConstraints(
       backend,
     );
     if (!backendSupportsGrammarConstraints && templateResult.grammar != null) {
@@ -112,7 +112,7 @@ class ChatCompletionRequestPlanner {
         backendSupportsGrammarConstraints &&
         templateResult.grammar != null &&
         templateResult.grammarLazy &&
-        !_supportsLazyGrammar(backend);
+        !supportsLazyGrammar(backend);
     if (skipsLazyTemplateGrammar) {
       if (strictResponseFormat) {
         throw LlamaUnsupportedException(
@@ -226,7 +226,9 @@ class ChatCompletionRequestPlanner {
     );
   }
 
-  static bool _supportsGrammarConstraints(LlamaBackend backend) {
+  /// Whether [backend] applies grammar constraints; true unless it reports
+  /// otherwise.
+  static bool supportsGrammarConstraints(LlamaBackend backend) {
     if (backend is BackendGrammarConstraintsSupport) {
       return (backend as BackendGrammarConstraintsSupport)
           .supportsGrammarConstraints;
@@ -240,7 +242,9 @@ class ChatCompletionRequestPlanner {
         : 'this chat format';
   }
 
-  static bool _supportsLazyGrammar(LlamaBackend backend) {
+  /// Whether [backend] applies lazy grammars; true unless it reports
+  /// otherwise.
+  static bool supportsLazyGrammar(LlamaBackend backend) {
     if (backend is BackendLazyGrammarSupport) {
       return (backend as BackendLazyGrammarSupport).supportsLazyGrammar;
     }

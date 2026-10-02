@@ -31,6 +31,13 @@ const String _liteRtLmVideoUnsupportedMessage =
     'LiteRT-LM video input is not supported through llamadart. '
     'Extract and send image frames instead.';
 
+/// Reads what the `.litertlm` bundle at a path declares, as
+/// [LiteRtLmRuntimeClient.bundleCapabilities] does.
+typedef LiteRtLmBundleCapabilitiesReader =
+    ({bool vision, bool audio, bool speculativeDecoding})? Function(
+      String modelPath,
+    );
+
 /// Worker-owned service for the LiteRT-LM backend.
 ///
 /// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
@@ -46,19 +53,26 @@ class LiteRtLmService {
   /// [useTempCacheDir] says whether caches go to a llamadart temp directory
   /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
   /// and Android. [createLink] replaces [Link.create] for those links in
-  /// tests.
+  /// tests. [readBundleCapabilities] replaces
+  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client.
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
     LiteRtLmLinkCreator? createLink,
+    LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _readBundleCapabilities =
+           readBundleCapabilities ??
+           ((modelPath) =>
+               LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
            useTempCacheDir ?? (Platform.isMacOS || Platform.isAndroid);
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
+  final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -77,6 +91,8 @@ class LiteRtLmService {
   int? _modelHandle;
   int? _contextHandle;
   LiteRtLmRuntimeMetrics? _lastMetrics;
+  ({bool vision, bool audio, bool speculativeDecoding})? _bundleCapabilities;
+  bool _bundleCapabilitiesRead = false;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -127,6 +143,8 @@ class LiteRtLmService {
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
+    _bundleCapabilities = null;
+    _bundleCapabilitiesRead = false;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -148,6 +166,8 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
     _workingAudioBackend = null;
+    _bundleCapabilities = null;
+    _bundleCapabilitiesRead = false;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -308,6 +328,10 @@ class LiteRtLmService {
     );
     final maxNumImages = _maxNumImagesFor(messages);
     final enableAudio = _hasAudioFor(messages);
+    _rejectUndeclaredMedia(
+      hasImages: maxNumImages != null,
+      hasAudio: enableAudio,
+    );
     final client = await _ensureClientForGeneration(
       params,
       maxNumImages: maxNumImages,
@@ -424,6 +448,61 @@ class LiteRtLmService {
     }
     final client = await _ensureClientForRuntime();
     return client.detokenize(tokens);
+  }
+
+  /// What the loaded bundle declares in its section metadata: image and
+  /// audio input, and a speculative decoding drafter.
+  ///
+  /// Null when no model is loaded or the runtime cannot read the
+  /// declaration.
+  ({bool vision, bool audio, bool speculativeDecoding})? bundleCapabilities() {
+    final modelPath = _modelPath;
+    if (!_modelLoaded || modelPath == null) {
+      return null;
+    }
+    if (_bundleCapabilitiesRead) {
+      return _bundleCapabilities;
+    }
+    try {
+      _bundleCapabilities = _readBundleCapabilities(
+        _modelLink?.path ?? modelPath,
+      );
+      if (_bundleCapabilities == null) {
+        _warn(
+          'The LiteRT-LM runtime did not report the bundle capabilities; '
+          'reporting no image or audio input.',
+        );
+      }
+    } catch (error) {
+      _warn('Could not read the LiteRT-LM bundle capabilities.', error);
+    }
+    _bundleCapabilitiesRead = true;
+    return _bundleCapabilities;
+  }
+
+  /// Rejects media the loaded bundle declares no encoder for, which would
+  /// otherwise fail inside the runtime with an opaque error.
+  void _rejectUndeclaredMedia({
+    required bool hasImages,
+    required bool hasAudio,
+  }) {
+    if (!hasImages && !hasAudio) {
+      return;
+    }
+    final bundle = bundleCapabilities();
+    if (bundle == null) {
+      return;
+    }
+    final missing = [
+      if (hasImages && !bundle.vision) 'image',
+      if (hasAudio && !bundle.audio) 'audio',
+    ];
+    if (missing.isNotEmpty) {
+      throw UnsupportedError(
+        'LiteRtLmBackend: the loaded bundle declares no ${missing.join(' or ')} '
+        'input. Use a bundle with that encoder or send text only.',
+      );
+    }
   }
 
   /// Returns the metadata known from the LiteRT-LM bundle path.
@@ -1102,6 +1181,13 @@ class LiteRtLmService {
     _addUnsupportedSpeculativeDecodingOptions(params, unsupported);
 
     if (unsupported.isEmpty) {
+      if (params.isSpeculativeDecodingEnabled &&
+          bundleCapabilities()?.speculativeDecoding == false) {
+        throw UnsupportedError(
+          'LiteRtLmBackend speculative decoding needs a bundle with a '
+          'speculative decoding drafter; the loaded bundle declares none.',
+        );
+      }
       return;
     }
     throw UnsupportedError(

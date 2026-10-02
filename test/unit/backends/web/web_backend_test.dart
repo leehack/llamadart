@@ -366,6 +366,31 @@ void main() {
     },
   );
 
+  test('WebAutoBackend reports the chat scope of its delegate', () async {
+    final backend = WebAutoBackend(
+      webGpuFactory: () => _RecordingBackend('webgpu'),
+      liteRtLmFactory: _SingleTurnBackend.new,
+    );
+
+    expect(backend.supportsMultiTurnChat, isTrue);
+    expect(backend.supportsToolCalling, isTrue);
+
+    await backend.modelLoadFromUrl(
+      'https://example.com/model.gguf',
+      const ModelParams(),
+    );
+    expect(backend.supportsMultiTurnChat, isTrue);
+    expect(backend.supportsToolCalling, isTrue);
+
+    await backend.modelLoadFromUrl(
+      'https://example.com/gemma-4-E2B-it-web.litertlm',
+      const ModelParams(),
+    );
+    expect(backend.supportsMultiTurnChat, isFalse);
+    expect(backend.supportsToolCalling, isFalse);
+    await backend.dispose();
+  });
+
   test('WebAutoBackend rejects decision calls before a model load', () async {
     final backend = WebAutoBackend(webGpuFactory: _DecisionBackend.new);
 
@@ -687,6 +712,14 @@ class _GrammarSupportBackend extends _NoStateBackend
 
   @override
   final bool supportsGrammarConstraints;
+}
+
+class _SingleTurnBackend extends _NoStateBackend implements BackendChatScope {
+  @override
+  bool get supportsMultiTurnChat => false;
+
+  @override
+  bool get supportsToolCalling => false;
 }
 
 class _EagerGrammarBackend extends _NoStateBackend

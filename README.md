@@ -59,10 +59,13 @@ for each target.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
-a specific model format or platform. After a model loads,
-`LlamaEngine.backendGenerationCapabilities` reports whether the runtime applies
-`presencePenalty`, `minP` and `thinkingBudget`, and which speculative decoding
-strategies it runs.
+a specific model format or platform. After a model loads, `engine.runtime`
+names the runtime (`llamaCpp` or `liteRtLm`) and `await engine.capabilities`
+reports what it supports: image and audio input, embeddings, multi-turn chat,
+tools, structured output and grammars, each sampling control
+(`penalty`, `presencePenalty`, `minP`, `thinkingBudget`), and the speculative
+decoding strategies it runs. Branch on these instead of the model's file
+extension or backend name.
 
 ## Image generation (Preview)
 

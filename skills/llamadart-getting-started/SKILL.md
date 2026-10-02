@@ -28,7 +28,10 @@ Linux and web. Full docs: https://llamadart.leehack.com
   llama.cpp supports embeddings, grammar-constrained and structured JSON output,
   runtime LoRA, KV-cache state persistence, next-token scores and external
   multimodal projectors. LiteRT-LM throws `LlamaUnsupportedException` for
-  llama.cpp-only options; do not catch and ignore it.
+  llama.cpp-only options; do not catch and ignore it. After a load,
+  `engine.runtime` names the runtime and `await engine.capabilities` reports
+  every option it applies; gate features on these, never on the file
+  extension or `getBackendName()` text.
 - Load remote models with `engine.loadModelSource(ModelSource.parse(...))`
   (`hf://owner/repo/file.gguf`, an HTTP(S) URL, or a local path). Native
   targets download once into a cache and reuse it: a per-user cache on

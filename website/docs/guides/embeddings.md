@@ -17,7 +17,7 @@ Future<void> main() async {
 
   try {
     await engine.loadModel('path/to/embedding-model.gguf');
-    if (!engine.supportsEmbeddings) {
+    if (!(await engine.capabilities).supportsEmbeddings) {
       print('This backend cannot embed.');
       return;
     }
@@ -39,8 +39,9 @@ Future<void> main() async {
 ## Backend support and compatibility
 
 - Embeddings are an optional backend capability. After loading a model,
-  `LlamaEngine.supportsEmbeddings` reports whether the active backend
-  supports them; when it is false, `LlamaEngine.embed(...)` and
+  `(await engine.capabilities).supportsEmbeddings`, like the synchronous
+  `engine.supportsEmbeddings`, reports whether the active backend supports
+  them; when it is false, `LlamaEngine.embed(...)` and
   `embedBatch(...)` throw `LlamaUnsupportedException`. It does not inspect the
   model, so the model limits below still apply.
 - Native llama.cpp/GGUF backends support embeddings, including batched

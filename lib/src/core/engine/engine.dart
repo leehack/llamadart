@@ -5,6 +5,7 @@ import '../../backends/backend.dart';
 import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
 import 'chat_template_renderer.dart';
+import 'engine_capabilities.dart';
 import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
@@ -194,6 +195,103 @@ class LlamaEngine {
 
   /// Whether the engine is initialized and ready for inference.
   bool get isReady => _isReady;
+
+  /// The runtime that runs the loaded model, or null when no model is loaded
+  /// or the backend does not report it.
+  ///
+  /// GGUF models run on [LlamaRuntime.llamaCpp], natively or through the
+  /// WebGPU bridge on the web, and `.litertlm` bundles on
+  /// [LlamaRuntime.liteRtLm]. Read [capabilities] for what the runtime
+  /// supports instead of branching on it where a capability exists.
+  LlamaRuntime? get runtime {
+    if (!_isReady || _modelHandle == null) return null;
+    final candidate = backend;
+    return candidate is BackendRuntimeIdentity
+        ? (candidate as BackendRuntimeIdentity).runtime
+        : null;
+  }
+
+  /// What this engine and its loaded model support, as the loaded model's
+  /// runtime reports it.
+  ///
+  /// Before a model loads, [LlamaEngineCapabilities.isSupported] is false
+  /// and every capability is false. The snapshot is taken when the future
+  /// completes; read it again after loading or unloading a model or
+  /// multimodal projector.
+  Future<LlamaEngineCapabilities> get capabilities async {
+    if (!_isReady || _modelHandle == null) {
+      return const LlamaEngineCapabilities(
+        isSupported: false,
+        unsupportedReason: 'No model is loaded. Call loadModel first.',
+      );
+    }
+    final candidate = backend;
+    final generation = await _generationCapabilities();
+    final directMedia = candidate is BackendDirectMediaInput
+        ? await (candidate as BackendDirectMediaInput).directMediaInput()
+        : (vision: false, audio: false);
+    final mmContextHandle = _mmContextHandle;
+    final projectorVision =
+        mmContextHandle != null &&
+        await _probeMedia(() => candidate.supportsVision(mmContextHandle));
+    final projectorAudio =
+        mmContextHandle != null &&
+        await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+    final chatScope = candidate is BackendChatScope
+        ? candidate as BackendChatScope
+        : null;
+    final grammar = ChatCompletionRequestPlanner.supportsGrammarConstraints(
+      candidate,
+    );
+    String? backendName;
+    try {
+      backendName = await candidate.getBackendName();
+    } catch (error, stackTrace) {
+      LlamaLogger.instance.warning(
+        'Could not read the backend name for capabilities.',
+        error,
+        stackTrace,
+      );
+    }
+    return LlamaEngineCapabilities(
+      isSupported: true,
+      backendName: backendName,
+      runtime: runtime,
+      supportsVision: directMedia.vision || projectorVision,
+      supportsAudio: directMedia.audio || projectorAudio,
+      supportsEmbeddings: supportsEmbeddings,
+      supportsNextTokenScoring: supportsNextTokenScoring,
+      supportsMultiTurnChat: chatScope?.supportsMultiTurnChat ?? true,
+      supportsToolCalling: chatScope?.supportsToolCalling ?? true,
+      supportsStructuredOutput: grammar,
+      supportsGrammar: grammar,
+      supportsLazyGrammar:
+          grammar &&
+          ChatCompletionRequestPlanner.supportsLazyGrammar(candidate),
+      supportsPenalty: generation.penalty,
+      supportsPresencePenalty: generation.presencePenalty,
+      supportsMinP: generation.minP,
+      supportsThinkingBudget: generation.thinkingBudget,
+      supportsStreamBatching: generation.streamBatching,
+      speculativeDecodingStrategies: Set.unmodifiable(
+        generation.speculativeDecodingStrategies,
+      ),
+    );
+  }
+
+  /// A media probe that cannot run reports no support instead of throwing.
+  Future<bool> _probeMedia(Future<bool> Function() probe) async {
+    try {
+      return await probe();
+    } on LlamaUnsupportedException catch (error, stackTrace) {
+      LlamaLogger.instance.warning(
+        'Multimodal capability probe failed.',
+        error,
+        stackTrace,
+      );
+      return false;
+    }
+  }
 
   /// Loads a model from a local [path].
   ///
@@ -1912,14 +2010,18 @@ class LlamaEngine {
   /// Native llama.cpp applies all of them. LiteRT-LM applies none but
   /// speculative decoding, which native LiteRT-LM runs for
   /// [SpeculativeDecodingStrategy.backendDefault] and
-  /// [SpeculativeDecodingStrategy.mtp]. WebGPU applies those its bridge assets
+  /// [SpeculativeDecodingStrategy.mtp] on a bundle with a speculative
+  /// drafter. WebGPU applies those its bridge assets
   /// report. Each of these runtimes rejects a non-default value of a control
   /// it does not apply with [LlamaUnsupportedException]. Every control is
   /// `false`, and no speculative strategy is reported, before a model loads
   /// and on a backend that does not implement
   /// [BackendGenerationCapabilitiesSupport].
-  Future<BackendGenerationCapabilities>
-  get backendGenerationCapabilities async {
+  @Deprecated('Use capabilities, which reports these controls and the rest.')
+  Future<BackendGenerationCapabilities> get backendGenerationCapabilities =>
+      _generationCapabilities();
+
+  Future<BackendGenerationCapabilities> _generationCapabilities() async {
     final candidate = backend;
     if (!_isReady ||
         _modelHandle == null ||

@@ -25,6 +25,26 @@ description: Decide when to use GGUF with llama.cpp or .litertlm bundles with Li
   before choosing.
 - Log `engine.getBackendName()` so support reports name the actual runtime.
 
+## Checking the loaded runtime
+
+After a load, `engine.runtime` is `LlamaRuntime.llamaCpp` for GGUF, native or
+WebGPU, and `LlamaRuntime.liteRtLm` for a bundle. `await engine.capabilities`
+reports what that runtime supports for the loaded model, so an app can offer
+only what works instead of checking the file extension:
+
+```dart
+final caps = await engine.capabilities;
+final params = GenerationParams(
+  minP: caps.supportsMinP ? 0.05 : 0.0,
+  penalty: caps.supportsPenalty ? 1.1 : const GenerationParams().penalty,
+);
+final offerTools = caps.supportsToolCalling;
+final offerImages = caps.supportsVision;
+```
+
+The [support matrix](../platforms/support-matrix#features-by-runtime) lists
+what each runtime reports.
+
 ## How routing works
 
 `LlamaBackend()` picks the runtime from the model format: LiteRT-LM bundles run

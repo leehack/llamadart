@@ -44,6 +44,165 @@ void main() {
     }
   });
 
+  group('bundleCapabilities', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    late ({bool vision, bool audio, bool speculativeDecoding})? declared;
+    late Object? readError;
+    late List<String> readPaths;
+
+    setUp(() {
+      declared = null;
+      readError = null;
+      readPaths = <String>[];
+    });
+
+    LiteRtLmService newService(_FakeLiteRtLmRuntimeClient client) =>
+        LiteRtLmService(
+          clientFactory: () => client,
+          readBundleCapabilities: (modelPath) {
+            readPaths.add(modelPath);
+            if (readError case final error?) throw error;
+            return declared;
+          },
+        );
+
+    test(
+      'reports the declaration of the loaded bundle once per load',
+      () async {
+        final service = newService(_FakeLiteRtLmRuntimeClient());
+        declared = (vision: true, audio: false, speculativeDecoding: true);
+        try {
+          expect(service.bundleCapabilities(), isNull);
+          expect(readPaths, isEmpty);
+
+          final model = await service.loadModel(modelFile.path, params);
+          expect(service.bundleCapabilities(), declared);
+          expect(service.bundleCapabilities(), declared);
+          expect(readPaths, hasLength(1));
+          expect(
+            File(readPaths.single).resolveSymbolicLinksSync(),
+            modelFile.resolveSymbolicLinksSync(),
+          );
+
+          declared = (vision: true, audio: true, speculativeDecoding: false);
+          await service.loadModel(modelFile.path, params);
+          expect(service.bundleCapabilities(), declared);
+          expect(readPaths, hasLength(2));
+
+          service.freeModel(model + 1);
+          expect(service.bundleCapabilities(), isNull);
+          expect(readPaths, hasLength(2));
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+
+    test('reports nothing when the runtime cannot tell', () async {
+      final service = newService(_FakeLiteRtLmRuntimeClient());
+      readError = UnsupportedError('missing symbol');
+      try {
+        await service.loadModel(modelFile.path, params);
+        expect(service.bundleCapabilities(), isNull);
+        expect(service.bundleCapabilities(), isNull);
+        expect(readPaths, hasLength(1));
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final vision in <bool?>[true, false, null]) {
+      test('image input on a bundle declaring vision $vision', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = newService(client);
+        declared = vision == null
+            ? null
+            : (vision: vision, audio: false, speculativeDecoding: false);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          final pending = service.generateChat(context, [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                const LlamaTextContent('Describe'),
+                LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+              ],
+            ),
+          ], const GenerationParams(maxTokens: 8)).toList();
+          if (vision == false) {
+            await expectLater(
+              pending,
+              throwsA(
+                isA<UnsupportedError>().having(
+                  (error) => '${error.message}',
+                  'message',
+                  contains('declares no image input'),
+                ),
+              ),
+            );
+            expect(client.generateCount, 0);
+            return;
+          }
+          await client.generateStarted.future;
+          client.generated.add('A');
+          await client.generated.close();
+          await pending;
+          expect(client.lastVisionBackend, isNotNull);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final speculativeDecoding in <bool?>[true, false, null]) {
+      test('speculative decoding on a bundle declaring '
+          '$speculativeDecoding', () async {
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = newService(client);
+        declared = speculativeDecoding == null
+            ? null
+            : (
+                vision: false,
+                audio: false,
+                speculativeDecoding: speculativeDecoding,
+              );
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+          final pending = service
+              .generate(
+                context,
+                'Hello',
+                const GenerationParams(maxTokens: 8, speculativeDecoding: true),
+              )
+              .toList();
+          if (speculativeDecoding == false) {
+            await expectLater(
+              pending,
+              throwsA(
+                isA<UnsupportedError>().having(
+                  (error) => '${error.message}',
+                  'message',
+                  contains('declares none'),
+                ),
+              ),
+            );
+            expect(client.generateCount, 0);
+            return;
+          }
+          await client.generateStarted.future;
+          client.generated.add('Hi');
+          await client.generated.close();
+          await pending;
+          expect(client.lastSpeculativeDecoding, isTrue);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  });
+
   for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
     for (final thinking in [false, true]) {
       test('$name native text template preserves thinking=$thinking', () async {

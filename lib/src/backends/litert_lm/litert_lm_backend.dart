@@ -25,6 +25,7 @@ class LiteRtLmBackend
         BackendRuntimeIdentity,
         LlamaBackend,
         BackendAvailability,
+        BackendDirectMediaInput,
         BackendGrammarConstraintsSupport,
         BackendRuntimeDiagnostics,
         BackendDeferredEngineCreation,
@@ -502,20 +503,25 @@ class LiteRtLmBackend
     ).layers;
   }
 
-  /// Reports speculative decoding through the LiteRT-LM runtime switch,
-  /// which [SpeculativeDecodingStrategy.backendDefault] and
-  /// [SpeculativeDecodingStrategy.mtp] turn on, and none of the other
-  /// controls.
+  /// Reports the stream batching thresholds the worker applies, none of the
+  /// sampling controls, and speculative decoding through the LiteRT-LM
+  /// runtime switch, which [SpeculativeDecodingStrategy.backendDefault] and
+  /// [SpeculativeDecodingStrategy.mtp] turn on, unless the loaded bundle
+  /// declares no speculative decoding drafter.
   @override
   Future<BackendGenerationCapabilities> generationCapabilities() async {
-    return const BackendGenerationCapabilities(
+    final bundle = await _bundleCapabilities();
+    return BackendGenerationCapabilities(
       presencePenalty: false,
       minP: false,
       thinkingBudget: false,
-      speculativeDecodingStrategies: <SpeculativeDecodingStrategy>{
-        SpeculativeDecodingStrategy.backendDefault,
-        SpeculativeDecodingStrategy.mtp,
-      },
+      speculativeDecodingStrategies: bundle?.speculativeDecoding == false
+          ? const <SpeculativeDecodingStrategy>{}
+          : const <SpeculativeDecodingStrategy>{
+              SpeculativeDecodingStrategy.backendDefault,
+              SpeculativeDecodingStrategy.mtp,
+            },
+      streamBatching: true,
     );
   }
 
@@ -633,6 +639,21 @@ class LiteRtLmBackend
       (sendPort) =>
           LiteRtLmMultimodalContextFreeRequest(mmContextHandle, sendPort),
     );
+  }
+
+  /// Reports the image and audio input that the loaded bundle declares.
+  @override
+  Future<({bool vision, bool audio})> directMediaInput() async {
+    final bundle = await _bundleCapabilities();
+    return (vision: bundle?.vision ?? false, audio: bundle?.audio ?? false);
+  }
+
+  Future<({bool vision, bool audio, bool speculativeDecoding})?>
+  _bundleCapabilities() async {
+    return _expect<LiteRtLmBundleCapabilitiesResponse>(
+      await _sendRequest(LiteRtLmBundleCapabilitiesRequest.new),
+      'bundle capability lookup',
+    ).capabilities;
   }
 
   @override

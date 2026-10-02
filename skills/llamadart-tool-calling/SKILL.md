@@ -42,7 +42,9 @@ description: >-
   prompts and tool-call parsing then both follow that template.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does
   not forward tools, and WebGPU `ToolChoice.auto` parses calls best-effort.
-  Test tool flows on every target runtime.
+  `(await engine.capabilities).supportsToolCalling`,
+  `supportsStructuredOutput` and `supportsLazyGrammar` report these per
+  loaded model. Test tool flows on every target runtime.
 
 ## Examples
 

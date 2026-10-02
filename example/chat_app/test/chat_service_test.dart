@@ -264,7 +264,8 @@ void main() {
       'keeps LiteRT-LM auto on GPU when saved GPU layers are stale zero',
       () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
-        final engine = MockLlamaEngine();
+        final engine = MockLlamaEngine()
+          ..loadedCapabilities = _liteRtLmCapabilities;
         final service = ChatService(engine: engine);
 
         await service.init(
@@ -307,7 +308,8 @@ void main() {
     });
 
     test('skips text-only warmup for direct-audio LiteRT-LM models', () async {
-      final engine = MockLlamaEngine();
+      final engine = MockLlamaEngine()
+        ..loadedCapabilities = _liteRtLmCapabilities;
       final service = ChatService(engine: engine);
 
       await service.init(
@@ -435,3 +437,11 @@ class _FailingProjectorEngine extends MockLlamaEngine {
     initialized = false;
   }
 }
+
+const _liteRtLmCapabilities = LlamaEngineCapabilities(
+  isSupported: true,
+  runtime: LlamaRuntime.liteRtLm,
+  supportsMultiTurnChat: true,
+  supportsToolCalling: true,
+  supportsStreamBatching: true,
+);
