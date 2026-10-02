@@ -88,7 +88,7 @@ selects Vulkan, which it does by default; set
 Flutter iOS and macOS apps should also add the companion package, which links
 the runtime's XCFramework through Swift Package Manager and selects the
 runtime on those platforms by itself, adding about 37 MB per Apple target. It
-needs the first core release whose changelog lists it; older cores ignore it:
+needs core `0.10.0` or newer; older cores ignore it:
 
 ```yaml
 dependencies:
