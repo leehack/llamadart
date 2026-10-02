@@ -13,8 +13,8 @@ writes `MinimumOSVersion` 13.0 into it, while the library requires iOS 16.4.
 The hook reports this as an Xcode build warning, which Xcode and `xcodebuild`
 show but plain `flutter build` and `flutter run` output does not.
 
-Pair companion `0.0.1` with core `0.10.0` or newer. Older cores, including
-`0.9.x`, ignore the companion and keep bundling the runtime through their hook.
+Pair companion `0.0.1` with core `0.10.0` or newer; older cores, including
+`0.9.x`, ignore it.
 
 ```yaml
 dependencies:
