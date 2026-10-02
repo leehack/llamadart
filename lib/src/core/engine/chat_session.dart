@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'chat_completion_request_planner.dart';
 import 'engine.dart';
 import 'generation_cancellation.dart';
 import '../llama_logger.dart';
@@ -12,7 +13,6 @@ import '../models/inference/generation_params.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
-import '../template/response_format.dart';
 
 /// Convenience wrapper for multi-turn chat with automatic history management.
 ///
@@ -112,9 +112,16 @@ class ChatSession {
   ///
   /// Pass [responseFormat] to request strict structured output for this turn,
   /// with the same shapes and backend checks as [LlamaEngine.create]. An
-  /// unrecognised shape throws `LlamaUnsupportedException` before the user
-  /// message is added to [history]. Use [createStructuredJson] to also
-  /// validate and decode the reply.
+  /// unrecognised shape, or a strict format on a backend without
+  /// grammar-constrained decoding such as LiteRT-LM, throws
+  /// `LlamaUnsupportedException` before the user message is added to
+  /// [history]. Use [createStructuredJson] to also validate and decode the
+  /// reply.
+  ///
+  /// If the request fails before the engine yields its first chunk, for
+  /// example because the backend rejects the rendered request, [history] is
+  /// restored to its state before this call, so a retry does not repeat the
+  /// user message. [onMessageAdded] has already reported that message.
   ///
   /// Example with tools:
   /// ```dart
@@ -162,7 +169,11 @@ class ChatSession {
     final cancellation = GenerationCancellation.forEngine(_engine);
     final zone = Zone.current;
     return cancellation.request((request) async* {
-      responseFormatSchema(responseFormat);
+      ChatCompletionRequestPlanner.rejectUnsupportedResponseFormat(
+        _engine.backend,
+        responseFormat,
+      );
+      final historyBefore = List<LlamaChatMessage>.of(_history);
 
       // Add user message if parts provided
       if (parts.isNotEmpty) {
@@ -181,41 +192,49 @@ class ChatSession {
         onMessageAdded?.call(userMsg);
       }
 
-      // Ensure the rendered request, including tool schemas, leaves enough room
-      // for the configured response rather than using a fixed small reserve.
-      _lastRequestFitContext = await _enforceContextLimit(
-        params: params,
-        tools: tools,
-        toolChoice: toolChoice,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-        responseFormat: responseFormat,
-        chatTemplateKwargs: chatTemplateKwargs,
-      );
+      final Stream<LlamaCompletionChunk> completion;
+      try {
+        // Ensure the rendered request, including tool schemas, leaves enough
+        // room for the configured response rather than using a fixed small
+        // reserve.
+        _lastRequestFitContext = await _enforceContextLimit(
+          params: params,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          responseFormat: responseFormat,
+          chatTemplateKwargs: chatTemplateKwargs,
+        );
 
-      // Build messages for engine
-      final messages = _buildMessages();
+        final messages = _buildMessages();
+        completion = _restoreHistoryOnEarlyError(
+          zone.run(
+            () => cancellation.inherit(
+              request,
+              () => _engine.create(
+                messages,
+                params: params,
+                tools: tools,
+                toolChoice: toolChoice,
+                parallelToolCalls: parallelToolCalls,
+                enableThinking: enableThinking,
+                responseFormat: responseFormat,
+                chatTemplateKwargs: chatTemplateKwargs,
+              ),
+            ),
+          ),
+          historyBefore,
+        );
+      } catch (_) {
+        _restoreHistory(historyBefore);
+        rethrow;
+      }
 
-      // Generate response
       final fullContent = StringBuffer();
       final fullThinking = StringBuffer();
       final Map<int, _ToolCallBuilder> toolCallBuilders = {};
 
-      final completion = zone.run(
-        () => cancellation.inherit(
-          request,
-          () => _engine.create(
-            messages,
-            params: params,
-            tools: tools,
-            toolChoice: toolChoice,
-            parallelToolCalls: parallelToolCalls,
-            enableThinking: enableThinking,
-            responseFormat: responseFormat,
-            chatTemplateKwargs: chatTemplateKwargs,
-          ),
-        ),
-      );
       await for (final chunk in completion) {
         // Guard against an empty-choices chunk (e.g. a keep-alive) which would
         // otherwise throw "Bad state: No element" mid-stream.
@@ -284,6 +303,30 @@ class ChatSession {
       _history.add(assistantMsg);
       onMessageAdded?.call(assistantMsg);
     });
+  }
+
+  /// [completion], restoring [history] to [historyBefore] when it fails
+  /// before its first chunk.
+  Stream<LlamaCompletionChunk> _restoreHistoryOnEarlyError(
+    Stream<LlamaCompletionChunk> completion,
+    List<LlamaChatMessage> historyBefore,
+  ) async* {
+    var started = false;
+    try {
+      await for (final chunk in completion) {
+        started = true;
+        yield chunk;
+      }
+    } catch (_) {
+      if (!started) _restoreHistory(historyBefore);
+      rethrow;
+    }
+  }
+
+  void _restoreHistory(List<LlamaChatMessage> historyBefore) {
+    _history
+      ..clear()
+      ..addAll(historyBefore);
   }
 
   /// Sends a user message, generates strict structured JSON, and decodes it.

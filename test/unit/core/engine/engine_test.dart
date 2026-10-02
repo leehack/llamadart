@@ -1173,6 +1173,20 @@ void main() {
           ('blob:https://example.com/0f3c', true, 'llama_model'),
           ('https://example.com/a%2Fb%3Ftoken%3Dx', true, 'llama_model'),
           ('https://example.com/m.gguf;jsessionid=abc', true, 'llama_model'),
+          (r'C:\a\proj#1\m.gguf', false, 'm.gguf'),
+          ('https:example.com', true, 'llama_model'),
+          ('https:/example.com', true, 'llama_model'),
+          ('models/q%41.gguf', false, 'q%41.gguf'),
+          (
+            'https://u:longpassword123@host/x/longpassword123',
+            true,
+            'llama_model',
+          ),
+          ('https://alice@host/models/alice', true, 'llama_model'),
+          ('https://user:PW7@host/PW7.gguf', false, 'llama_model'),
+          ('https:user:PW7@host/m/PW7.gguf', true, 'llama_model'),
+          ('https://user:s%65cret@host/secret.gguf', true, 'llama_model'),
+          ('https://user:secret@host/model.gguf', true, 'model.gguf'),
         ]) {
           final modelEngine = LlamaEngine(
             MockLlamaBackend(urlLoadingSupported: urlLoading)
@@ -1240,6 +1254,40 @@ void main() {
             reason: path,
           );
         }
+      }
+    });
+
+    test('logs no URL credential repeated as the model name', () async {
+      final logs = <String>[];
+      LlamaLogger.instance
+        ..setLevel(LlamaLogLevel.info)
+        ..setHandler((record) => logs.add(record.message));
+      addTearDown(
+        () => LlamaLogger.instance
+          ..setHandler(null)
+          ..setLevel(LlamaLogLevel.none),
+      );
+
+      for (final (url, urlLoading) in const [
+        ('https://user:PW7secret@host/PW7secret.gguf', false),
+        ('https://user:PW7secret@host/PW7secret.gguf', true),
+        ('https:user:PW7secret@example.com/m/PW7secret.gguf', true),
+        ('https:user:PW7secret@host/m/PW7secret.gguf', true),
+        ('https:user:PW7secret@example.com', true),
+        ('https://PW7secret@host/m/PW7secret%2F.gguf', true),
+      ]) {
+        logs.clear();
+        final urlEngine = LlamaEngine(
+          MockLlamaBackend(urlLoadingSupported: urlLoading),
+        );
+
+        await urlEngine.loadModel(url);
+        await urlEngine.loadMultimodalProjector(url);
+        await urlEngine.dispose();
+
+        final nameLogs = logs.where((log) => log.startsWith('Loading '));
+        expect(nameLogs, isNotEmpty, reason: url);
+        expect(nameLogs.join('\n'), isNot(contains('PW7secret')), reason: url);
       }
     });
 

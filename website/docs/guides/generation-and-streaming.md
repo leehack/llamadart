@@ -103,7 +103,8 @@ URL path without its query or fragment. A local file name is reported as
 written, `%` included. It is `llama_model` when that segment could carry more
 than a file name, and for `data:` and `blob:` URLs. It leaves
 out directories and hosts, but not the segment itself: a URL whose last
-segment is a token reports that token. An OpenAI-compatible server that
+segment is a token reports that token, unless it repeats the URL's userinfo
+credential, which reports `llama_model`. An OpenAI-compatible server that
 exposes its own model id should set that id on its responses instead.
 
 ## Token usage and timings
@@ -275,9 +276,10 @@ final classification = await engine.createStructuredJson(
 Without the helper, pass `responseFormat: {'type': 'json_object'}` or
 `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}` to
 `engine.create(...)`; `json_schema` may also carry `name`, `description` and
-`strict`, and `{'type': 'text'}` requests unconstrained text. Any other type or
-key, such as a misspelled `json_shema` or `schma`, throws
-`LlamaUnsupportedException` before generation on every backend.
+`strict`, and `{'type': 'text'}` requests unconstrained text. A key whose
+value is `null` counts as absent. Any other type or key, such as a misspelled
+`json_shema` or `schma`, throws `LlamaUnsupportedException` before generation
+on every backend.
 
 For live rendering, keep the stream returned by
 `engine.create(..., responseFormat: output.responseFormat)` and finalize it with
@@ -297,6 +299,10 @@ fail early for strict structured output.
 `ChatSession` takes the same `responseFormat` on `session.create(...)` and has
 `session.createStructuredJson(parts, output: output)` for multi-turn structured
 output; the JSON reply is kept in the session history like any other turn.
+An unrecognised format, or a strict one on a backend without grammar
+constraints, throws before the user message joins the history, and a request
+that fails before its first chunk leaves the history as it was, so a retry
+does not repeat the user turn.
 
 ## `create(...)` flow at a glance
 

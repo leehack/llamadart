@@ -31,6 +31,31 @@ void main() {
       );
     });
 
+    test('treats null-valued keys as absent', () {
+      expect(
+        responseFormatSchema(const {'type': 'text', 'json_schema': null}),
+        isNull,
+      );
+      expect(
+        responseFormatSchema(const {'type': 'json_object', 'schema': null}),
+        {'type': 'object'},
+      );
+      expect(
+        responseFormatSchema(const {
+          'type': 'json_schema',
+          'schema': null,
+          'json_schema': {
+            'schema': schema,
+            'name': null,
+            'description': null,
+            'strict': null,
+            'schma': null,
+          },
+        }),
+        same(schema),
+      );
+    });
+
     test('accepts LlamaStructuredOutput response formats', () {
       final output = LlamaStructuredOutput<Object?>.jsonValueSchema(
         schema: const {'type': 'array'},
@@ -78,6 +103,27 @@ void main() {
           'json_schema': {'schema': schema, 'name': 1},
         },
         'responseFormat.json_schema.name must be a string.',
+      ),
+      (
+        {
+          'type': 'json_schema',
+          'json_schema': {
+            'schema': <dynamic, dynamic>{'type': 'object'},
+          },
+        },
+        'responseFormat.json_schema.schema must be a JSON object typed '
+            'Map<String, dynamic>, as jsonDecode returns or a '
+            '<String, dynamic>{} literal declares; got '
+            '${<dynamic, dynamic>{}.runtimeType}.',
+      ),
+      (
+        const {
+          'type': 'json_schema',
+          'json_schema': {'schema': null},
+        },
+        'responseFormat.json_schema.schema must be a JSON object typed '
+            'Map<String, dynamic>, as jsonDecode returns or a '
+            '<String, dynamic>{} literal declares; got none.',
       ),
     ]) {
       test('rejects $format', () {

@@ -435,22 +435,30 @@ class LlamaEngine {
     caseSensitive: false,
   );
 
-  /// The last path segment of [source], or null when it is empty, holds URL
-  /// syntax that could carry more than a file name, as written or as a percent
-  /// escape, or [source] is a `data:` or `blob:` URL. A URL's segment is
+  String? _modelNameForSource(String source) => _sourceName(source).name;
+
+  /// The last path segment of [source] as `name`, and the userinfo
+  /// credentials of a URL [source] that a name must not repeat.
+  ///
+  /// `name` is null when the segment is empty, holds URL syntax that could
+  /// carry more than a file name, as written or as a percent escape, contains
+  /// a credential, or [source] is a `data:` or `blob:` URL. A URL's segment is
   /// percent-decoded, and null when that fails; a file name is literal.
   ///
   /// [source] is a URL when it has a scheme of two or more characters (so a
   /// Windows drive letter is not one), starts with `//`, or the backend loads
   /// URLs. Otherwise it is a file path split at `/` and `\`, so `?` and `#`
   /// in its directory names are literal.
-  String? _modelNameForSource(String source) {
+  ({String? name, Set<String> credentials}) _sourceName(String source) {
     final scheme = _sourceScheme.firstMatch(source)?[1]?.toLowerCase();
     final isUrl =
         scheme != null || source.startsWith('//') || backend.supportsUrlLoading;
     var path = source.replaceAll('\\', '/');
+    var credentials = const <String>{};
     if (isUrl) {
-      if (scheme == 'data' || scheme == 'blob') return null;
+      if (scheme == 'data' || scheme == 'blob') {
+        return (name: null, credentials: credentials);
+      }
       path = path.split('#').first.split('?').first;
       if (scheme != null) path = path.substring(scheme.length + 1);
       if (const {'http', 'https', 'ws', 'wss', 'ftp'}.contains(scheme)) {
@@ -459,15 +467,51 @@ class LlamaEngine {
       }
       if (path.startsWith('//')) {
         final pathStart = path.indexOf('/', 2);
-        if (pathStart < 0) return null;
+        final authority = path.substring(2, pathStart < 0 ? null : pathStart);
+        credentials = _userInfoCredentials(authority);
+        if (pathStart < 0) return (name: null, credentials: credentials);
         path = path.substring(pathStart);
       }
     }
-    final name = path.split('/').last;
-    if (name.isEmpty || name.contains(_unsafeModelName)) return null;
-    if (!isUrl) return name;
+    final segment = path.split('/').last;
+    String? name;
+    if (segment.isNotEmpty && !segment.contains(_unsafeModelName)) {
+      name = isUrl ? _percentDecodedOrNull(segment) : segment;
+    }
+    if (name != null && _repeatsCredential(name, credentials)) name = null;
+    return (name: name, credentials: credentials);
+  }
+
+  /// The userinfo of [authority] and its password, as written and
+  /// percent-decoded, matching the credentials that [redactUrlSecrets]
+  /// removes.
+  static Set<String> _userInfoCredentials(String authority) {
+    final at = authority.lastIndexOf('@');
+    if (at < 0) return const <String>{};
+    final userInfo = authority.substring(0, at);
+    final colon = userInfo.indexOf(':');
+    return <String>{
+      for (final secret in <String>[
+        userInfo,
+        if (colon >= 0) userInfo.substring(colon + 1),
+      ])
+        if (secret.isNotEmpty) ...<String>{
+          secret,
+          ?_percentDecodedOrNull(secret),
+        },
+    };
+  }
+
+  static bool _repeatsCredential(String text, Set<String> credentials) {
+    final decoded = _percentDecodedOrNull(text);
+    return credentials.any(
+      (secret) => text.contains(secret) || (decoded?.contains(secret) ?? false),
+    );
+  }
+
+  static String? _percentDecodedOrNull(String text) {
     try {
-      return Uri.decodeComponent(name);
+      return Uri.decodeComponent(text);
     } on ArgumentError {
       return null;
     } on FormatException {
@@ -2289,13 +2333,15 @@ class LlamaEngine {
   }
 
   /// The model name of [source], or else the last segment of [source] with
-  /// its URL secrets redacted.
+  /// its URL secrets redacted, or `llama_model` when that segment still
+  /// repeats a userinfo credential.
   String _displayNameForSource(String source) {
-    final name = _modelNameForSource(source);
+    final (:name, :credentials) = _sourceName(source);
     if (name != null) return name;
     final redacted = _redactedSource(source);
     final lastSegment = redacted.replaceAll('\\', '/').split('/').last;
-    return lastSegment.isNotEmpty ? lastSegment : redacted;
+    final display = lastSegment.isNotEmpty ? lastSegment : redacted;
+    return _repeatsCredential(display, credentials) ? 'llama_model' : display;
   }
 
   static String _redactedSource(String source) =>

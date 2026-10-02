@@ -22,9 +22,24 @@ For canonical full release notes, use:
 - **Behavior change:** `responseFormat` maps with an unknown `type` or
   key, such as `json_shema` or a misspelled `schma`, now throw
   `LlamaUnsupportedException` before generation instead of generating
-  unconstrained output, and `ChatSession.create` takes `responseFormat` with a
-  new `ChatSession.createStructuredJson`
-  ([#836](https://github.com/leehack/llamadart/issues/836)).
+  unconstrained output; a `null`-valued key counts as absent
+  ([#836](https://github.com/leehack/llamadart/issues/836),
+  [#864](https://github.com/leehack/llamadart/issues/864)).
+- `ChatSession.create` takes `responseFormat`, and the new
+  `ChatSession.createStructuredJson` decodes the reply; a turn rejected
+  before its first chunk, such as a strict format on LiteRT-LM, leaves the
+  session history unchanged
+  ([#836](https://github.com/leehack/llamadart/issues/836),
+  [#864](https://github.com/leehack/llamadart/issues/864)).
+- `LlamaCompletionChunk.model`, observer model names and load logs report
+  `llama_model`, and web LiteRT-LM omits `general.name`, when a URL's last
+  path segment repeats its userinfo credential; web LiteRT-LM
+  `litert_lm.model_url` shows a relative URL as given and a `blob:` or `data:`
+  URL as its scheme ([#822](https://github.com/leehack/llamadart/issues/822)).
+- `loadModelSource` throws `LlamaUnsupportedException` instead of
+  `ArgumentError` for a local path whose file name holds `%2F` or `%5C` or
+  whose directory is named `%2e` or `%2e%2e`; `loadModel` still loads it
+  ([#822](https://github.com/leehack/llamadart/issues/822)).
 - **Behavior change:** on Android and iOS, the default model cache is now
   `llamadart/models` in the app's cache directory instead of the temporary
   directory, which Android empties on every app update and iOS purges; add
