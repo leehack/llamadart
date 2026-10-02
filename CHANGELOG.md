@@ -49,6 +49,17 @@
   `backendGenerationCapabilities` is deprecated; on native LiteRT-LM it now
   reports `streamBatching` and, for bundles without a declared drafter, no
   speculative strategy ([#841](https://github.com/leehack/llamadart/issues/841)).
+- Read completions without `choices.first.delta`: `chunk.text`,
+  `chunk.thinking`, `chunk.toolCalls` and a typed `chunk.finishReason`
+  (`LlamaFinishReason`); `stream.text()`, `stream.textDeltas()` and
+  `stream.collect()` (a `LlamaCompletion` with assembled tool calls and an
+  assistant `message`); and the one-shot `engine.complete(messages)` and
+  `session.send('...')`
+  ([#840](https://github.com/leehack/llamadart/issues/840)).
+- `GenerationGrammarTrigger.typed(type: GrammarTriggerType.word, ...)`
+  replaces the raw-`int` constructor, now deprecated; an unknown raw trigger
+  type throws `LlamaUnsupportedException` on llama.cpp instead of being
+  ignored ([#844](https://github.com/leehack/llamadart/issues/844)).
 
 ## 0.10.0
 

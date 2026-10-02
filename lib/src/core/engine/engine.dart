@@ -15,6 +15,7 @@ import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
 import '../models/diagnostics/model_file_type.dart';
 import '../models/chat/chat_message.dart';
+import '../models/chat/completion.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
 import '../models/chat/chat_template_result.dart';
@@ -53,30 +54,16 @@ import '../url_redaction.dart';
 ///   LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello!'),
 /// ];
 ///
-/// // Create completion
-/// final response = StringBuffer();
+/// // Stream a completion
 /// await for (final chunk in engine.create(messages)) {
-///   final text = chunk.choices.first.delta.content;
-///   if (text != null) {
-///     response.write(text);
-///   }
+///   stdout.write(chunk.text);
 /// }
 ///
-/// // Append response and continue conversation
-/// messages.add(
-///   LlamaChatMessage.fromText(
-///     role: LlamaChatRole.assistant,
-///     text: response.toString(),
-///   ),
-/// );
+/// // Or wait for the whole reply, append it and continue the conversation
+/// final reply = await engine.complete(messages);
+/// messages.add(reply.message);
 /// messages.add(LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Follow up?'));
-/// final response2 = StringBuffer();
-/// await for (final chunk in engine.create(messages)) {
-///   final text = chunk.choices.first.delta.content;
-///   if (text != null) {
-///     response2.write(text);
-///   }
-/// }
+/// final followUp = await engine.create(messages).text();
 /// ```
 class LlamaEngine {
   /// The backend implementation used for inference.
@@ -958,8 +945,8 @@ class LlamaEngine {
   /// final messages = [
   ///   LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello!'),
   /// ];
-  /// await for (final token in engine.create(messages)) {
-  ///   print(token);
+  /// await for (final chunk in engine.create(messages)) {
+  ///   stdout.write(chunk.text);
   /// }
   ///
   /// await engine.create(messages, responseFormat: const {
@@ -975,6 +962,10 @@ class LlamaEngine {
   ///   },
   /// }).drain();
   /// ```
+  ///
+  /// Read each chunk with `chunk.text`, `chunk.thinking`, `chunk.toolCalls`
+  /// and `chunk.finishReason`, or the whole stream with `text()`,
+  /// `textDeltas()` or `collect()`; [complete] is `create(...).collect()`.
   ///
   /// The final chunk's `finishReason` is `tool_calls` when it carries tool
   /// calls. Otherwise it is `length` when the native llama.cpp backend stopped
@@ -2480,3 +2471,40 @@ BackendGenerationLimit? completionGenerationLimit(LlamaCompletionChunk chunk) =>
 /// taken while another model was loaded sees a greater value, even under the
 /// same backend handle.
 int modelUnloadEpoch(LlamaEngine engine) => engine._decisionHeadEpoch;
+
+/// One-shot completions for [LlamaEngine].
+extension LlamaEngineCompletionExtension on LlamaEngine {
+  /// Generates a reply to [messages] and returns it once it is complete.
+  ///
+  /// This is [LlamaEngine.create] collected with `collect()`; every argument
+  /// has the same meaning there. Append [LlamaCompletion.message] to
+  /// [messages] to continue the conversation. Use [LlamaEngine.create] to
+  /// stream the reply as it is generated.
+  Future<LlamaCompletion> complete(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    return create(
+      messages,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    ).collect();
+  }
+}

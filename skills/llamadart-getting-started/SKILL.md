@@ -86,18 +86,12 @@ Future<void> main() async {
     );
     print('runtime: ${await engine.getBackendName()}');
 
-    final StringBuffer output = StringBuffer();
-    await for (final chunk in engine.create(const [
+    final String output = await engine.create(const [
       LlamaChatMessage.fromText(
         role: LlamaChatRole.user,
         text: 'Say hello in five words.',
       ),
-    ], params: const GenerationParams(maxTokens: 32))) {
-      final String? text = chunk.choices.first.delta.content;
-      if (text != null) {
-        output.write(text);
-      }
-    }
+    ], params: const GenerationParams(maxTokens: 32)).text();
     print(output);
   } finally {
     await engine.dispose();

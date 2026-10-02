@@ -1,3 +1,4 @@
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:test/test.dart';
 
@@ -24,7 +25,10 @@ void main() {
       streamBatchTokenThreshold: 4,
       streamBatchByteThreshold: 256,
       grammarTriggers: [
-        const GenerationGrammarTrigger(type: 0, value: '<tool_call>'),
+        const GenerationGrammarTrigger.typed(
+          type: GrammarTriggerType.word,
+          value: '<tool_call>',
+        ),
       ],
       preservedTokens: const ['<tool_call>'],
     );
@@ -234,5 +238,70 @@ void main() {
 
     expect(updated.speculativeDecodingConfig, isNull);
     expect(updated.isSpeculativeDecodingEnabled, isFalse);
+  });
+
+  group('GrammarTriggerType', () {
+    test('carries the trigger type wire values', () {
+      expect(
+        {for (final type in GrammarTriggerType.values) type: type.wireValue},
+        {
+          GrammarTriggerType.word: 0,
+          GrammarTriggerType.token: 1,
+          GrammarTriggerType.pattern: 2,
+          GrammarTriggerType.patternFull: 3,
+        },
+      );
+      for (final type in GrammarTriggerType.values) {
+        expect(GrammarTriggerType.fromWireValue(type.wireValue), type);
+      }
+    });
+
+    test('rejects an unknown wire value', () {
+      for (final value in [-1, 4, 7]) {
+        expect(
+          () => GrammarTriggerType.fromWireValue(value),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('$value'),
+            ),
+          ),
+        );
+      }
+    });
+  });
+
+  group('GenerationGrammarTrigger', () {
+    test('typed carries its type and wire value', () {
+      for (final type in GrammarTriggerType.values) {
+        final trigger = GenerationGrammarTrigger.typed(
+          type: type,
+          value: 'v',
+          token: 5,
+        );
+        expect(trigger.triggerType, type);
+        expect(trigger.type, type.wireValue);
+        expect(trigger.value, 'v');
+        expect(trigger.token, 5);
+      }
+    });
+
+    test('the raw constructor maps a known type', () {
+      const trigger = GenerationGrammarTrigger(type: 3, value: 'x.*');
+
+      expect(trigger.type, 3);
+      expect(trigger.triggerType, GrammarTriggerType.patternFull);
+    });
+
+    test('the raw constructor rejects an unknown type when read', () {
+      const trigger = GenerationGrammarTrigger(type: 7, value: 'x');
+
+      expect(trigger.type, 7);
+      expect(
+        () => trigger.triggerType,
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
   });
 }

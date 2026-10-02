@@ -166,15 +166,13 @@ Future<String> answer({
     ),
   ];
 
-  final StringBuffer reply = StringBuffer();
-  await for (final LlamaCompletionChunk chunk in generator.create(
-    messages,
-    params: const GenerationParams(maxTokens: 128, temp: 0.2),
-    enableThinking: false,
-  )) {
-    reply.write(chunk.choices.first.delta.content ?? '');
-  }
-  return reply.toString();
+  return generator
+      .create(
+        messages,
+        params: const GenerationParams(maxTokens: 128, temp: 0.2),
+        enableThinking: false,
+      )
+      .text();
 }
 ```
 

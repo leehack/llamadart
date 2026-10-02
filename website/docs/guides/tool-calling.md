@@ -6,7 +6,7 @@ description: Define tools with ToolDefinition, control them with ToolChoice, and
 
 Pass `ToolDefinition`s to `engine.create` or `ChatSession.create`. The model's
 chat template renders them, and the parser returns the model's calls as
-`delta.toolCalls`. Your code runs the tools: nothing in `llamadart`, including
+`chunk.toolCalls`. Your code runs the tools: nothing in `llamadart`, including
 `ChatSession`, invokes a handler for you.
 
 ## Define a tool
@@ -30,8 +30,6 @@ final weatherTool = ToolDefinition(
 ## Run the tool-call loop
 
 ```dart
-import 'dart:convert';
-
 final engine = LlamaEngine(LlamaBackend());
 await engine.loadModel('model.gguf');
 final tools = [weatherTool];
@@ -41,25 +39,15 @@ var parts = <LlamaContentPart>[
   const LlamaTextContent('What is the weather in Seoul?'),
 ];
 for (var round = 0; round < 5; round++) {
-  final calls = <LlamaCompletionChunkToolCall>[];
-  await for (final chunk in session.create(parts, tools: tools)) {
-    final delta = chunk.choices.first.delta;
-    if (delta.content != null) print(delta.content);
-    calls.addAll(delta.toolCalls ?? const []);
-  }
-  if (calls.isEmpty) break;
+  final reply = await session.create(parts, tools: tools).collect();
+  if (reply.text.isNotEmpty) print(reply.text);
+  if (reply.toolCalls.isEmpty) break;
 
-  for (final call in calls) {
-    final name = call.function?.name ?? '';
-    final arguments = call.function?.arguments ?? '';
+  for (final call in reply.toolCalls) {
     Object? result;
     try {
-      final tool = tools.firstWhere((tool) => tool.name == name);
-      result = await tool.invoke(
-        arguments.isEmpty
-            ? const {}
-            : jsonDecode(arguments) as Map<String, dynamic>,
-      );
+      final tool = tools.firstWhere((tool) => tool.name == call.name);
+      result = await tool.invoke(call.arguments);
     } catch (error) {
       result = 'Error: $error';
     }
@@ -67,7 +55,7 @@ for (var round = 0; round < 5; round++) {
       LlamaChatMessage.withContent(
         role: LlamaChatRole.tool,
         content: [
-          LlamaToolResultContent(id: call.id, name: name, result: result),
+          LlamaToolResultContent(id: call.id, name: call.name, result: result),
         ],
       ),
     );
@@ -78,12 +66,15 @@ await engine.dispose();
 ```
 
 - Tool calls arrive complete, with JSON `arguments`, in the final chunk, whose
-  `finishReason` is `tool_calls`.
+  `chunk.finishReason` is `LlamaFinishReason.toolCalls`. `collect()` returns
+  them as `LlamaToolCallContent`s with decoded `arguments` (empty when they
+  are not a JSON object; `rawJson` keeps the generated text).
 - `ChatSession` stores the assistant's tool calls in its history.
   `session.create(const [])` continues from the tool results without a new
   user turn.
-- With `engine.create`, append the assistant message (a `LlamaToolCallContent`
-  per call) and the tool messages to your own list before the next call.
+- With `engine.create`, append the collected `completion.message` (a
+  `LlamaToolCallContent` per call) and the tool messages to your own list
+  before the next call.
 - Cap the rounds: a model can keep calling tools.
 
 `LlamaToolResultContent.result` may be any JSON-compatible value. Non-string

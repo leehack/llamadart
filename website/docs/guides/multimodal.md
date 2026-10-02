@@ -71,12 +71,8 @@ final message = LlamaChatMessage.withContent(
   ],
 );
 
-await for (final chunk in engine.create([message])) {
-  final text = chunk.choices.first.delta.content;
-  if (text != null) {
-    print(text);
-  }
-}
+final description = await engine.create([message]).text();
+print(description);
 ```
 
 On native `llama.cpp`, a request that carries image or audio parts and sets

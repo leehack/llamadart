@@ -53,8 +53,7 @@ class LlamaCliService {
   Future<String> chat(String text, {GenerationParams? params}) async {
     return _session
         .create([LlamaTextContent(text)], params: params, tools: _tools)
-        .map((chunk) => chunk.choices.first.delta.content ?? '')
-        .join();
+        .text();
   }
 
   /// Maximum number of consecutive tool-call rounds to prevent infinite loops.
@@ -84,18 +83,11 @@ class LlamaCliService {
         tools: _tools,
         toolChoice: isFirstTurn ? toolChoice : null,
       )) {
-        final delta = chunk.choices.first.delta;
-        final content = delta.content ?? '';
-        if (content.isNotEmpty) {
-          yield content;
+        if (chunk.text.isNotEmpty) {
+          yield chunk.text;
         }
 
-        final toolCalls = delta.toolCalls;
-        if (toolCalls == null) {
-          continue;
-        }
-
-        for (final call in toolCalls) {
+        for (final call in chunk.toolCalls) {
           final accumulator = toolCallAccumulators.putIfAbsent(
             call.index,
             _ToolCallAccumulator.new,

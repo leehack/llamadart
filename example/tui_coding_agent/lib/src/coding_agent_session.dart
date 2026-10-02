@@ -270,7 +270,7 @@ class CodingAgentSession {
         assistantStream.discard(onReset: resetAssistantDraft);
       }
 
-      String? finishReason;
+      LlamaFinishReason? finishReason;
       try {
         await for (final chunk in chat.create(
           <LlamaContentPart>[LlamaTextContent(request)],
@@ -283,17 +283,13 @@ class CodingAgentSession {
               ? const <String, dynamic>{'preserve_thinking': true}
               : null,
         )) {
-          if (chunk.choices.isEmpty) {
-            continue;
-          }
-          final choice = chunk.choices.first;
-          finishReason = choice.finishReason ?? finishReason;
-          final thinking = choice.delta.thinking;
-          if (thinking != null && thinking.isNotEmpty) {
+          finishReason = chunk.finishReason ?? finishReason;
+          final thinking = chunk.thinking;
+          if (thinking.isNotEmpty) {
             _emit(onEvent, SessionEvent.thinkingToken(thinking));
           }
-          final text = choice.delta.content;
-          if (text != null && text.isNotEmpty) {
+          final text = chunk.text;
+          if (text.isNotEmpty) {
             buffer.write(text);
             assistantStream.add(
               text,
@@ -327,7 +323,7 @@ class CodingAgentSession {
         );
         return;
       }
-      if (finishReason == 'length' || finishReason == 'max_tokens') {
+      if (finishReason == LlamaFinishReason.length) {
         discardAssistantDraft();
         _recordAbortedRequest(
           chat,

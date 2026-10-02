@@ -237,9 +237,8 @@ class ChatController {
         )
         .listen(
           (LlamaCompletionChunk chunk) {
-            final String? delta = chunk.choices.first.delta.content;
-            if (delta == null) return;
-            _pending.write(delta);
+            if (chunk.text.isEmpty) return;
+            _pending.write(chunk.text);
             _flushTimer ??= Timer(const Duration(milliseconds: 32), _flush);
           },
           onError: (Object error) {

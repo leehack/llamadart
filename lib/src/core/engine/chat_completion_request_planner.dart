@@ -148,8 +148,8 @@ class ChatCompletionRequestPlanner {
     final effectiveGrammarTriggers = hasTemplateGrammar
         ? templateResult.grammarTriggers
               .map(
-                (trigger) => GenerationGrammarTrigger(
-                  type: trigger.type,
+                (trigger) => GenerationGrammarTrigger.typed(
+                  type: GrammarTriggerType.fromWireValue(trigger.type),
                   value: trigger.value,
                   token: trigger.token,
                 ),

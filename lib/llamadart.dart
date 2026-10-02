@@ -19,24 +19,24 @@
 /// await engine.loadModel('path/to/model.gguf'); // or model.litertlm
 ///
 /// final session = ChatSession(engine);
-/// final response = StringBuffer();
 /// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
-///   final text = chunk.choices.first.delta.content;
-///   if (text != null) {
-///     response.write(text);
-///   }
+///   stdout.write(chunk.text);
 /// }
-/// print(response.toString());
+///
+/// final reply = await session.send('Say that again, shorter.');
+/// print(reply.text);
 ///
 /// await engine.dispose();
 /// ```
 library;
 
 // Engine & Chat
-export 'src/core/engine/engine.dart' show LlamaEngine;
+export 'src/core/engine/engine.dart'
+    show LlamaEngine, LlamaEngineCompletionExtension;
 export 'src/core/engine/engine_capabilities.dart';
 export 'src/core/engine/engine_observer.dart';
-export 'src/core/engine/chat_session.dart' show ChatSession;
+export 'src/core/engine/chat_session.dart'
+    show ChatSession, ChatSessionCompletionExtension;
 
 // Speech
 export 'src/core/speech/speech_to_text.dart';
@@ -126,6 +126,8 @@ export 'src/core/models/chat/chat_message.dart';
 export 'src/core/models/chat/content_part.dart';
 export 'src/core/models/chat/chat_role.dart';
 export 'src/core/models/chat/chat_template_result.dart';
+export 'src/core/models/chat/completion.dart'
+    show LlamaCompletion, LlamaCompletionStreamExtension;
 export 'src/core/models/chat/completion_chunk.dart';
 
 // Tools

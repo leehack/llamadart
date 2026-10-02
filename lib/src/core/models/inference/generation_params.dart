@@ -1,22 +1,53 @@
-/// Parameters controlling the token sampling and generation process.
+import '../../exceptions.dart';
+
+/// How a [GenerationGrammarTrigger] activates a lazy grammar.
+enum GrammarTriggerType {
+  /// The trigger value appears literally in the output. Wire value `0`.
+  word(0),
+
+  /// The model samples the token [GenerationGrammarTrigger.token], or the
+  /// token id the trigger value spells. Wire value `1`.
+  token(1),
+
+  /// The output matches the trigger value as a regular expression. Wire
+  /// value `2`.
+  pattern(2),
+
+  /// The whole output matches the trigger value as a regular expression.
+  /// Wire value `3`.
+  patternFull(3);
+
+  const GrammarTriggerType(this.wireValue);
+
+  /// The integer [GenerationGrammarTrigger.type] carries for this value.
+  final int wireValue;
+
+  /// Returns the value whose [wireValue] is [value].
+  ///
+  /// Throws [LlamaUnsupportedException] for any other integer.
+  static GrammarTriggerType fromWireValue(int value) {
+    for (final type in values) {
+      if (type.wireValue == value) return type;
+    }
+    throw LlamaUnsupportedException(
+      'Grammar trigger type $value is not supported; expected 0 (word), '
+      '1 (token), 2 (pattern) or 3 (patternFull). Use '
+      'GenerationGrammarTrigger.typed with a GrammarTriggerType.',
+    );
+  }
+}
+
+/// Lazy grammar activation trigger.
 ///
-/// Use [GenerationParams] to fine-tune how the model generates text, including
-/// randomness (temperature), sampling constraints (Top-K/Top-P), and
-/// architectural limits (max tokens).
-///
-/// Example:
 /// ```dart
-/// final params = GenerationParams(
-///   temp: 0.7,
-///   maxTokens: 1024,
-///   stopSequences: ['User:', '\n\n'],
-///   grammar: 'root ::= "yes" | "no"', // Force binary response
+/// const trigger = GenerationGrammarTrigger.typed(
+///   type: GrammarTriggerType.word,
+///   value: '<tool_call>',
 /// );
 /// ```
-/// Lazy grammar activation trigger.
 class GenerationGrammarTrigger {
-  /// Trigger type (0=word, 1=token, 2=pattern, 3=pattern_full).
-  final int type;
+  final GrammarTriggerType? _typedType;
+  final int _rawType;
 
   /// Trigger text value.
   final String value;
@@ -24,12 +55,42 @@ class GenerationGrammarTrigger {
   /// Trigger token id for token-based triggers.
   final int? token;
 
-  /// Creates a new grammar trigger.
+  /// Creates a grammar trigger from a raw trigger type (0=word, 1=token,
+  /// 2=pattern, 3=pattern_full).
+  ///
+  /// Any other [type] makes [triggerType] throw
+  /// [LlamaUnsupportedException], as does a llama.cpp lazy-grammar generation
+  /// that uses this trigger.
+  @Deprecated(
+    'Use GenerationGrammarTrigger.typed with a GrammarTriggerType. '
+    'This constructor will be removed in a future release.',
+  )
   const GenerationGrammarTrigger({
-    required this.type,
+    required int type,
     required this.value,
     this.token,
-  });
+  }) : _rawType = type,
+       _typedType = null;
+
+  /// Creates a grammar trigger of [type].
+  const GenerationGrammarTrigger.typed({
+    required GrammarTriggerType type,
+    required this.value,
+    this.token,
+  }) : _typedType = type,
+       _rawType = -1;
+
+  /// Trigger type wire value (0=word, 1=token, 2=pattern, 3=pattern_full).
+  ///
+  /// Prefer [triggerType].
+  int get type => _typedType?.wireValue ?? _rawType;
+
+  /// The trigger type.
+  ///
+  /// Throws [LlamaUnsupportedException] when this trigger was created with
+  /// a raw [type] that is not a [GrammarTriggerType] wire value.
+  GrammarTriggerType get triggerType =>
+      _typedType ?? GrammarTriggerType.fromWireValue(_rawType);
 }
 
 /// Backend-neutral speculative decoding strategy.
@@ -572,6 +633,20 @@ class ThinkingBudget {
 }
 
 /// Parameters controlling the token sampling and generation process.
+///
+/// Use [GenerationParams] to fine-tune how the model generates text, including
+/// randomness (temperature), sampling constraints (Top-K/Top-P), and
+/// architectural limits (max tokens).
+///
+/// Example:
+/// ```dart
+/// final params = GenerationParams(
+///   temp: 0.7,
+///   maxTokens: 1024,
+///   stopSequences: ['User:', '\n\n'],
+///   grammar: 'root ::= "yes" | "no"', // Force binary response
+/// );
+/// ```
 class GenerationParams {
   /// Default prompt prefix reuse behavior for native generation.
   static const bool defaultReusePromptPrefix = true;

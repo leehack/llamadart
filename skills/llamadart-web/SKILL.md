@@ -175,15 +175,10 @@ Single-turn prompt on LiteRT-LM web with only supported parameters:
 import 'package:llamadart/llamadart.dart';
 
 Future<String> askLiteRtLmWeb(LlamaEngine engine, String prompt) async {
-  final StringBuffer answer = StringBuffer();
-  await for (final LlamaCompletionChunk chunk in engine.create(
+  return engine.create(
     [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt)],
     params: const GenerationParams(maxTokens: 256, temp: 0.7, topK: 40),
-  )) {
-    final String? text = chunk.choices.first.delta.content;
-    if (text != null) answer.write(text);
-  }
-  return answer.toString();
+  ).text();
 }
 ```
 

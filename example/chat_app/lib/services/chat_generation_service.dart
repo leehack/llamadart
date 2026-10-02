@@ -242,14 +242,13 @@ class ChatGenerationService {
           break;
         }
 
-        final delta = chunk.choices.first.delta;
-        final content = delta.content ?? '';
-        final thinking = thinkingEnabled ? (delta.thinking ?? '') : '';
+        final content = chunk.text;
+        final thinking = thinkingEnabled ? chunk.thinking : '';
 
         if (!sawFirstToken &&
             (content.isNotEmpty ||
                 thinking.isNotEmpty ||
-                (delta.toolCalls?.isNotEmpty ?? false))) {
+                chunk.toolCalls.isNotEmpty)) {
           firstTokenLatencyMs = stopwatch.elapsedMilliseconds;
           sawFirstToken = true;
         }
