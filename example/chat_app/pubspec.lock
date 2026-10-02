@@ -428,6 +428,13 @@ packages:
       relative: true
     source: path
     version: "0.0.20"
+  llamadart_stable_diffusion_flutter:
+    dependency: "direct main"
+    description:
+      path: "../../packages/llamadart_stable_diffusion_flutter"
+      relative: true
+    source: path
+    version: "0.0.1"
   llamadart_validation:
     dependency: "direct main"
     description:

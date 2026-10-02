@@ -10,10 +10,12 @@ release tag, checksum and CRLF line endings. A companion manifest code change
 requires a reviewed hook contract update; copied tag declarations cannot
 authorize alternate framework URLs or target code.
 
-Apple llama.cpp companion selection validates the **resolved** package from
-the consumer/workspace `package_config.json`, including path and dependency
-overrides. Its package identity and maintained SwiftPM native pin must match
-the core hook pin before any in-process native asset is emitted. Updating a
+Apple llama.cpp and stable_diffusion companion selection validates the
+**resolved** package from the consumer/workspace `package_config.json`,
+including path and dependency overrides. Its package identity and maintained
+SwiftPM native pin must match the core hook pin (`llamaCppTag` or
+`stableDiffusionReleaseTag`) before any in-process native asset is emitted.
+Each companion has its own template hash in `hook/build.dart`. Updating a
 declared dependency constraint alone is insufficient: rerun `flutter pub get`
 and resolve the matching companion. Core native tag/path/backend overrides do
 not replace SwiftPM frameworks and cannot bypass this check.
@@ -42,7 +44,7 @@ bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 | --- | --- | --- |
 | llama.cpp / GGUF | `lib/src/hook/native_release_pins.dart` `llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
 | LiteRT-LM / `.litertlm` | `lib/src/hook/native_release_pins.dart` `liteRtLmReleaseTag` and per-bundle checksums, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
-| stable-diffusion.cpp (opt-in `stable_diffusion`) | `lib/src/hook/native_release_pins.dart` `stableDiffusionReleaseTag` and per-bundle checksums, repository `leehack/stable-diffusion-native` | None yet; Apple builds bundle the dylib through the hook, including Flutter builds that use the companion packages |
+| stable-diffusion.cpp (opt-in `stable_diffusion`) | `lib/src/hook/native_release_pins.dart` `stableDiffusionReleaseTag` and per-bundle checksums, repository `leehack/stable-diffusion-native` | `packages/llamadart_stable_diffusion_flutter/.../Package.swift` binary target URL/checksum |
 
 Preferred in-repo workflow:
 
@@ -146,15 +148,15 @@ fixes a replacement runtime must provide are listed in
 
 The opt-in `stable_diffusion` runtime is not wired into
 `sync_native_bindings.yml` yet; sync it by hand. `stable-diffusion-native`
-tags are `vMAJOR.MINOR.PATCH`, or `vMAJOR.MINOR.PATCH-N` for a rebuild, and
-its releases are GitHub prereleases, so name the tag explicitly.
+tags are `vMAJOR.MINOR.PATCH`, or `vMAJOR.MINOR.PATCH-N` for a rebuild; name
+the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.1.1 \
+  --stable-diffusion-tag v0.2.0 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.1.1
+  --stable-diffusion-tag v0.2.0
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
@@ -162,6 +164,10 @@ The pin sync reads the release `manifest.json`, requires it to match its GitHub
 asset digest, requires every runtime archive's manifest SHA-256 to match its
 GitHub digest, and rewrites `stableDiffusionReleaseTag`,
 `stableDiffusionVersion` and each pinned bundle's checksum and library. It
+also rewrites the `llamadart_stable_diffusion_flutter` `Package.swift` tag and
+checksum from the manifest's `xcframework` artifact, after checking that
+artifact against its GitHub digest, and records the pin in the companion
+README and CHANGELOG. It
 fails if a pinned bundle is no longer published or the tag moves backwards,
 and only notes new targets: a new target needs a `StableDiffusionBundleSpec`
 and a `stableDiffusionBundleForNativeBundle` mapping by hand.
@@ -228,8 +234,11 @@ version is newly referenced by current install docs:
 3. After merge, `release_on_prep_merge.yml` uses the release-prep PR merge as
    the publishing approval boundary and pushes each missing package-specific
    companion tag:
-   `llamadart_llama_cpp_flutter-v{{version}}` or
-   `llamadart_litert_lm_flutter-v{{version}}`.
+   `llamadart_llama_cpp_flutter-v{{version}}`,
+   `llamadart_litert_lm_flutter-v{{version}}` or
+   `llamadart_stable_diffusion_flutter-v{{version}}`. A package's first
+   version must already be published by hand; see
+   [Release workflow](./release-workflow).
 4. Wait for `publish_companion_pubdev.yml` to pass.
 5. Verify the version URL on pub.dev, for example
    `https://pub.dev/api/packages/llamadart_llama_cpp_flutter/versions/{{version}}`.

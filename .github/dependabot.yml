@@ -23,6 +23,12 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
+  - package-ecosystem: "pub"
+    directory: "/packages/llamadart_stable_diffusion_flutter"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
   # Action pins in the workflows CODEOWNERS already protects.
   - package-ecosystem: "github-actions"
     directory: "/"

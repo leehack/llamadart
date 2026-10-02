@@ -15,7 +15,7 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
-| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; arm64 only; validated on iPhone 16 Pro and SE 3 | Supported |
+| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
@@ -118,7 +118,7 @@ thinking-budget and speculative decoding rows for the loaded model. Guides:
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.5.0` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-6` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.1.1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental) |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag

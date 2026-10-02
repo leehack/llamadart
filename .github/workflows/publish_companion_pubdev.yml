@@ -5,6 +5,7 @@ on:
     tags:
       - 'llamadart_llama_cpp_flutter-v[0-9]+.[0-9]+.[0-9]+*'
       - 'llamadart_litert_lm_flutter-v[0-9]+.[0-9]+.[0-9]+*'
+      - 'llamadart_stable_diffusion_flutter-v[0-9]+.[0-9]+.[0-9]+*'
 
 jobs:
   publish-companion:
@@ -29,6 +30,10 @@ jobs:
             llamadart_litert_lm_flutter-v*)
               package_name="llamadart_litert_lm_flutter"
               package_path="packages/llamadart_litert_lm_flutter"
+              ;;
+            llamadart_stable_diffusion_flutter-v*)
+              package_name="llamadart_stable_diffusion_flutter"
+              package_path="packages/llamadart_stable_diffusion_flutter"
               ;;
             *)
               echo "Unsupported companion publish tag: $TAG_NAME" >&2

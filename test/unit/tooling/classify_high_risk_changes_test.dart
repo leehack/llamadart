@@ -107,6 +107,27 @@ void main() {
       );
     });
 
+    test(
+      'classifies every Flutter Apple companion as an artifact consumer',
+      () {
+        for (final companion in [
+          'llamadart_llama_cpp_flutter',
+          'llamadart_litert_lm_flutter',
+          'llamadart_stable_diffusion_flutter',
+        ]) {
+          final assessment = assessHighRiskFiles([
+            'packages/$companion/darwin/$companion/Package.swift',
+          ]);
+
+          expect(
+            assessment.surfaces,
+            contains(HighRiskSurface.artifactConsumer),
+            reason: companion,
+          );
+        }
+      },
+    );
+
     test('classifies release and regression-policy changes', () {
       final assessment = assessHighRiskFiles([
         '.github/workflows/release_on_prep_merge.yml',

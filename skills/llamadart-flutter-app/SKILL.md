@@ -90,20 +90,24 @@ or shipping runtimes the app does not use.
     not inject it. LiteRT-LM on web is single-turn text only (no
     `ChatSession`).
 - Apple SwiftPM linking uses the companion packages:
-  `llamadart_llama_cpp_flutter` (llama.cpp XCFrameworks) and
-  `llamadart_litert_lm_flutter` (LiteRT-LM iOS XCFrameworks). Use the companion
+  `llamadart_llama_cpp_flutter` (llama.cpp XCFrameworks),
+  `llamadart_litert_lm_flutter` (LiteRT-LM iOS XCFrameworks) and
+  `llamadart_stable_diffusion_flutter` (image generation). Use the companion
   version the llamadart README pairs with your core version. The build
   verifies the companion's runtime pin and fails on a mismatch; fix the
   version and rerun `flutter pub get`. Flutter macOS LiteRT-LM still uses the
   core hook's native assets.
-- When a companion is present, the installed companions pick the Apple
-  llama.cpp and LiteRT-LM runtime families and `llamadart_native_runtimes` is
-  otherwise ignored with a warning (only the experimental opt-in
-  `stable_diffusion` there still applies); the tag, repository, path and
-  backend user-defines do not change SwiftPM binaries either.
+- When the llama.cpp or LiteRT-LM companion is present, the installed
+  companions pick those Apple runtime families and `llamadart_native_runtimes`
+  is otherwise ignored with a warning; the tag, repository, path and backend
+  user-defines do not change SwiftPM binaries either. The stable_diffusion
+  companion is independent: it selects image generation on iOS and macOS and
+  leaves llama.cpp and LiteRT-LM where they were.
 - Image generation (`ImageGenerationEngine`) needs `stable_diffusion` added
-  to `llamadart_native_runtimes`; it is never bundled by default. Details are
-  in the llamadart-image-generation skill.
+  to `llamadart_native_runtimes`; it is never bundled by default. On iOS and
+  macOS add `llamadart_stable_diffusion_flutter` instead, since App Store
+  Connect rejects the iOS framework the hook bundles. Details are in the
+  llamadart-image-generation skill.
 - Native runtimes are downloaded by the build hook on the first
   `flutter run` or `flutter build` for each target; no C++ toolchain is
   needed. Expect a slower first build. After changing any

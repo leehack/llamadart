@@ -83,6 +83,12 @@ experimental and may change, and the runtime is opt-in.
 
   Keep `litert_lm` in the list if the app also loads `.litertlm` models.
 
+- **Flutter iOS/macOS apps** should add the
+  `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
+  which links the runtime through Swift Package Manager and selects it without
+  the entry above. Without it the hook bundles the runtime, and App Store
+  Connect rejects that iOS framework's `MinimumOSVersion`.
+
 - **Platforms:** Android arm64 (CPU), iOS and macOS (Metal), Linux arm64/x64
   and Windows x64 (CPU or Vulkan). Not available on the web yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).
@@ -157,6 +163,7 @@ dependencies:
   llamadart: ^0.9.0
   llamadart_llama_cpp_flutter: ^0.0.20 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.12 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.0.1 # Apple image generation
 ```
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime

@@ -19,6 +19,8 @@ const Map<String, String> _packagePubspecs = <String, String>{
       'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
   'llamadart_litert_lm_flutter':
       'packages/llamadart_litert_lm_flutter/pubspec.yaml',
+  'llamadart_stable_diffusion_flutter':
+      'packages/llamadart_stable_diffusion_flutter/pubspec.yaml',
 };
 
 const Map<String, List<String>> _currentDocDependencies =
@@ -27,11 +29,13 @@ const Map<String, List<String>> _currentDocDependencies =
         'llamadart',
         'llamadart_llama_cpp_flutter',
         'llamadart_litert_lm_flutter',
+        'llamadart_stable_diffusion_flutter',
       ],
       'website/docs/getting-started/installation.md': <String>[
         'llamadart',
         'llamadart_llama_cpp_flutter',
         'llamadart_litert_lm_flutter',
+        'llamadart_stable_diffusion_flutter',
       ],
       'packages/llamadart_llama_cpp_flutter/README.md': <String>[
         'llamadart',
@@ -40,6 +44,10 @@ const Map<String, List<String>> _currentDocDependencies =
       'packages/llamadart_litert_lm_flutter/README.md': <String>[
         'llamadart',
         'llamadart_litert_lm_flutter',
+      ],
+      'packages/llamadart_stable_diffusion_flutter/README.md': <String>[
+        'llamadart',
+        'llamadart_stable_diffusion_flutter',
       ],
     };
 
@@ -175,6 +183,12 @@ final List<CompanionSwiftPin> companionSwiftPins = <CompanionSwiftPin>[
     root: 'packages/llamadart_litert_lm_flutter',
     swiftTag: RegExp(r'let liteRtLmTag = "([^"]+)"'),
     nativeRepo: 'leehack/litert-lm-native',
+  ),
+  CompanionSwiftPin(
+    package: 'llamadart_stable_diffusion_flutter',
+    root: 'packages/llamadart_stable_diffusion_flutter',
+    swiftTag: RegExp(r'let stableDiffusionTag = "([^"]+)"'),
+    nativeRepo: 'leehack/stable-diffusion-native',
   ),
 ];
 

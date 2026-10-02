@@ -193,6 +193,7 @@ jobs:
           companion_paths=(
             packages/llamadart_llama_cpp_flutter
             packages/llamadart_litert_lm_flutter
+            packages/llamadart_stable_diffusion_flutter
           )
 
           for package_path in "${companion_paths[@]}"; do

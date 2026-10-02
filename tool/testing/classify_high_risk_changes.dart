@@ -168,7 +168,8 @@ bool _isArtifactConsumer(String path) {
       path == 'scripts/verify_chat_app_web_deployment.sh' ||
       path == 'example/chat_app/web/index.html' ||
       path.startsWith('packages/llamadart_llama_cpp_flutter/') ||
-      path.startsWith('packages/llamadart_litert_lm_flutter/');
+      path.startsWith('packages/llamadart_litert_lm_flutter/') ||
+      path.startsWith('packages/llamadart_stable_diffusion_flutter/');
 }
 
 bool _isReleaseAutomation(String path) {

@@ -28,7 +28,7 @@ void main() {
     });
 
     test('rejects an unpublished ABI before touching the library', () {
-      for (final abi in [Abi.androidX64, Abi.windowsArm64, Abi.iosX64]) {
+      for (final abi in [Abi.androidX64, Abi.windowsArm64, Abi.linuxArm]) {
         final api = _FakeApi();
         final status = probeStableDiffusionRuntime(abi: abi, api: api);
 
@@ -159,6 +159,14 @@ void main() {
       expect(accepted.isAvailable, isTrue);
     });
 
+    test('the x86_64 iOS simulator loads without a CPU feature check', () {
+      final api = _FakeApi();
+      final status = probeStableDiffusionRuntime(abi: Abi.iosX64, api: api);
+
+      expect(status.isAvailable, isTrue);
+      expect(api.calls, greaterThan(0));
+    });
+
     test('a missing native asset reports how to opt in', () {
       final status = probeStableDiffusionRuntime(
         abi: Abi.linuxX64,
@@ -246,6 +254,52 @@ void main() {
       );
 
       expect(message, contains('does not export the stable-diffusion.h API'));
+    });
+
+    test('names the Flutter Apple companion only on iOS and macOS', () {
+      const missingAsset =
+          "Couldn't resolve native function 'sd_version' in "
+          "'package:llamadart/stable_diffusion' : No asset with id "
+          "'package:llamadart/stable_diffusion' found.";
+      for (final platform in ['ios-arm64', 'macos-x64']) {
+        final message = stableDiffusionLoadFailure(
+          platform: platform,
+          error: ArgumentError(missingAsset),
+        ).message;
+        expect(
+          message,
+          allOf(
+            contains('not bundled for $platform'),
+            contains('llamadart_native_runtimes'),
+            contains('llamadart_stable_diffusion_flutter'),
+          ),
+          reason: platform,
+        );
+      }
+      expect(
+        messageFor(missingAsset),
+        isNot(contains('llamadart_stable_diffusion_flutter')),
+      );
+    });
+
+    test('an unlinked Apple framework points at Swift Package Manager', () {
+      final message = stableDiffusionLoadFailure(
+        platform: 'ios-arm64',
+        error: ArgumentError(
+          "Couldn't resolve native function 'sd_version' in "
+          "'package:llamadart/stable_diffusion' : Failed to lookup symbol "
+          "'sd_version': dlsym(RTLD_DEFAULT, sd_version): symbol not found",
+        ),
+      ).message;
+
+      expect(
+        message,
+        allOf(
+          contains('not linked into the process on ios-arm64'),
+          contains('flutter config --enable-swift-package-manager'),
+          contains('llamadart_stable_diffusion_flutter'),
+        ),
+      );
     });
 
     group('Windows error 126', () {

@@ -34,6 +34,8 @@ version alignment:
   Apple SPM-compatible companion packages.
 - `litert-lm-native` owns LiteRT-LM bridge artifacts for native-assets and
   Apple SPM-compatible companion packages.
+- `stable-diffusion-native` owns stable-diffusion.cpp runtime artifacts for
+  native-assets and the Apple SPM-compatible companion package.
 - If native versions changed, prefer the `Sync Native Version & Bindings`
   workflow PR over hand-editing core pins. It also updates Apple SPM companion
   package pins under `packages/` when Apple XCFramework releases changed.
@@ -150,8 +152,9 @@ Current workflows involved:
   publish companion packages.
 - `publish_companion_pubdev.yml`: publishes one companion package from a
   package-specific version tag after that package already exists on pub.dev:
-  `llamadart_llama_cpp_flutter-v{{version}}` or
-  `llamadart_litert_lm_flutter-v{{version}}`. Pub.dev automated publishing
+  `llamadart_llama_cpp_flutter-v{{version}}`,
+  `llamadart_litert_lm_flutter-v{{version}}` or
+  `llamadart_stable_diffusion_flutter-v{{version}}`. Pub.dev automated publishing
   cannot create a new package, so publish each companion's first version
   manually from a temporary copy, then configure automated publishing on that
   package's pub.dev Admin tab with the matching tag pattern. Use the same

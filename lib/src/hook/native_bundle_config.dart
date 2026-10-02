@@ -16,9 +16,10 @@
 /// stable_diffusion archive; [describeNativeLibrary] classifies a discovered
 /// file; [selectLibrariesForBundling] picks which ship;
 /// [codeAssetNameForLibrary] names each as a code asset. A Flutter Apple build
-/// depending on a companion package takes the llama_cpp and litert_lm
-/// families from it, not [selectNativeRuntimesForBundle]; stable_diffusion,
-/// which has no companion package, still comes from
+/// depending on the llama.cpp or LiteRT-LM companion package takes the
+/// llama_cpp and litert_lm families from it, not
+/// [selectNativeRuntimesForBundle]. stable_diffusion is decided on its own: the
+/// stable_diffusion companion selects it, and otherwise it still comes from
 /// [selectNativeRuntimesForBundle].
 ///
 /// User-facing docs: `website/docs/platforms/native-build-hooks.md` and
@@ -652,8 +653,7 @@ bool nativeRuntimeNamedForExactBundle({
 }
 
 /// The stable-diffusion-native release bundle for the llama.cpp [spec], or
-/// `null` when none is published (`android-x64`, `ios-x86_64-sim`,
-/// `windows-arm64`).
+/// `null` when none is published (`android-x64`, `windows-arm64`).
 ///
 /// Linux and Windows publish a CPU and a `-vulkan` archive; only one is
 /// bundled. [rawStableDiffusionBackendConfig]
@@ -677,6 +677,7 @@ String? stableDiffusionBundleForNativeBundle({
     'android-arm64' => 'android-arm64',
     'ios-arm64' => 'ios-arm64',
     'ios-arm64-sim' => 'ios-arm64-sim',
+    'ios-x86_64-sim' => 'ios-x64-sim',
     'macos-arm64' => 'macos-arm64',
     'macos-x86_64' => 'macos-x64',
     'linux-arm64' => 'linux-arm64',
