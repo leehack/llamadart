@@ -41,14 +41,20 @@ class LiteRtLmService {
   ///
   /// The service's own log records go through [LlamaLogger.instance] of the
   /// isolate it runs in; [setLogLevel] controls only the native runtime.
-  LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
-    : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
+  /// [linkParentDirectory] holds the private directories of
+  /// [LiteRtLmModelLink]s, the system temp directory by default.
+  LiteRtLmService({
+    LiteRtLmRuntimeClient Function()? clientFactory,
+    Directory? linkParentDirectory,
+  }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
+       _linkParentDirectory = linkParentDirectory;
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
+  final Directory? _linkParentDirectory;
   LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
-  String? _runtimeModelPath;
+  LiteRtLmModelLink? _modelLink;
   String? _activeBackend;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
@@ -95,12 +101,16 @@ class LiteRtLmService {
       params,
       backendOverride: backendOverride,
     );
-    final runtimeModelPath = await liteRtLmRuntimeModelPath(path);
+    final modelLink = await LiteRtLmModelLink.create(
+      path,
+      parent: _linkParentDirectory,
+    );
 
     _client?.dispose();
     _client = null;
+    _modelLink?.dispose();
     _modelPath = path;
-    _runtimeModelPath = runtimeModelPath;
+    _modelLink = modelLink;
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
@@ -119,8 +129,9 @@ class LiteRtLmService {
     _checkModelHandle(modelHandle);
     _client?.dispose();
     _client = null;
+    _modelLink?.dispose();
+    _modelLink = null;
     _modelPath = null;
-    _runtimeModelPath = null;
     _modelParams = null;
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
@@ -561,8 +572,9 @@ class LiteRtLmService {
   /// Releases all service-owned native resources.
   void dispose() {
     _disposeContextRuntimeState();
+    _modelLink?.dispose();
+    _modelLink = null;
     _modelPath = null;
-    _runtimeModelPath = null;
     _modelParams = null;
     _activeBackend = null;
     _workingAudioBackend = null;
@@ -651,7 +663,7 @@ class LiteRtLmService {
       );
       try {
         await client.initialize(
-          modelPath: _runtimeModelPath ?? modelPath,
+          modelPath: _modelLink?.path ?? modelPath,
           backend: backend,
           visionBackend: visionBackend,
           audioBackend: audioBackend,

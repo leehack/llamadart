@@ -722,7 +722,11 @@ void main() {
 
   test('loads a bundle by its header whatever its file name', () async {
     final client = _FakeLiteRtLmRuntimeClient();
-    final service = LiteRtLmService(clientFactory: () => client);
+    final links = await Directory('${tempDir.path}/links').create();
+    final service = LiteRtLmService(
+      clientFactory: () => client,
+      linkParentDirectory: links,
+    );
     const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
     final extensionless = File('${tempDir.path}/download');
     await extensionless.writeAsString('LITERTLM fake model');
@@ -740,6 +744,7 @@ void main() {
         service.loadModel(unknownContent.path, params),
         throwsArgumentError,
       );
+      expect(links.listSync(), isEmpty);
 
       final model = await service.loadModel(extensionless.path, params);
       expect(service.getMetadata(model)['general.name'], 'download');
@@ -753,8 +758,25 @@ void main() {
 
       final runtimePath = client.lastModelPath!;
       expect(runtimePath, endsWith('.litertlm'));
+      expect(File(runtimePath).parent.parent.path, links.path);
       expect(await Link(runtimePath).target(), extensionless.absolute.path);
-      await Link(runtimePath).delete();
+
+      final reloaded = await service.loadModel(extensionless.path, params);
+      expect(Link(runtimePath).existsSync(), isFalse);
+      expect(links.listSync(), hasLength(1));
+
+      service.freeModel(reloaded);
+      expect(links.listSync(), isEmpty);
+
+      await service.loadModel(extensionless.path, params);
+      expect(links.listSync(), hasLength(1));
+      await service.loadModel(modelFile.path, params);
+      expect(links.listSync(), isEmpty);
+
+      await service.loadModel(extensionless.path, params);
+      service.dispose();
+      expect(links.listSync(), isEmpty);
+      expect(extensionless.existsSync(), isTrue);
     } finally {
       service.dispose();
     }

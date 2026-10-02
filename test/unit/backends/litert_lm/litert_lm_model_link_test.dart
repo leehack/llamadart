@@ -9,68 +9,119 @@ import 'package:test/test.dart';
 
 void main() {
   late Directory tempDir;
-  late String links;
+  late Directory links;
+  late File model;
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('llamadart_link_');
-    links = '${tempDir.path}/links';
+    links = await Directory('${tempDir.path}/links').create();
+    model = File('${tempDir.path}/download');
+    await model.writeAsString('LITERTLM');
   });
 
   tearDown(() async {
     await tempDir.delete(recursive: true);
   });
 
-  test('passes a .litertlm path through unchanged', () async {
-    final path = '${tempDir.path}/Model.LITERTLM';
+  String nameOf(String path) => path.split(Platform.pathSeparator).last;
 
-    expect(await liteRtLmRuntimeModelPath(path, linkDirectory: links), path);
-    expect(Directory(links).existsSync(), isFalse);
+  test('does not link a path ending in lowercase .litertlm', () async {
+    expect(
+      await LiteRtLmModelLink.create(
+        '${tempDir.path}/model.litertlm',
+        parent: links,
+      ),
+      isNull,
+    );
+    expect(links.listSync(), isEmpty);
   });
 
-  test('links a bundle named without .litertlm and reuses the link', () async {
-    final model = File('${tempDir.path}/download');
-    await model.writeAsString('LITERTLM');
+  for (final name in ['download', 'MODEL.LITERTLM', 'model.gguf']) {
+    test('links $name in a new private directory', () async {
+      final file = File('${tempDir.path}/$name');
+      await file.writeAsString('LITERTLM');
 
-    final first = await liteRtLmRuntimeModelPath(
-      model.path,
-      linkDirectory: links,
-    );
-    final second = await liteRtLmRuntimeModelPath(
-      model.path,
-      linkDirectory: links,
-    );
+      final link = (await LiteRtLmModelLink.create(file.path, parent: links))!;
+      addTearDown(link.dispose);
 
-    expect(first, endsWith('.litertlm'));
-    expect(first, startsWith(links));
-    expect(second, first);
-    expect(await Link(first).target(), model.absolute.path);
-    expect(await File(first).readAsString(), 'LITERTLM');
+      expect(nameOf(link.path), startsWith('$name-'));
+      expect(link.path, endsWith('.litertlm'));
+      expect(await Link(link.path).target(), file.absolute.path);
+      expect(await File(link.path).readAsString(), 'LITERTLM');
+      final directory = Directory(File(link.path).parent.path);
+      expect(directory.parent.path, links.path);
+      expect(directory.statSync().modeString(), 'rwx------');
+    }, testOn: '!windows');
+  }
+
+  test(
+    'gives every load its own directory and disposes only the link',
+    () async {
+      final first = (await LiteRtLmModelLink.create(
+        model.path,
+        parent: links,
+      ))!;
+      final second = (await LiteRtLmModelLink.create(
+        model.path,
+        parent: links,
+      ))!;
+
+      expect(
+        File(first.path).parent.path,
+        isNot(File(second.path).parent.path),
+      );
+      expect(nameOf(first.path), nameOf(second.path));
+
+      first.dispose();
+      expect(Directory(File(first.path).parent.path).existsSync(), isFalse);
+      expect(Link(second.path).existsSync(), isTrue);
+      second.dispose();
+      first.dispose();
+      expect(links.listSync(), isEmpty);
+      expect(model.readAsStringSync(), 'LITERTLM');
+    },
+    testOn: '!windows',
+  );
+
+  test('names links of same-named files apart', () async {
+    final other = File('${tempDir.path}/other/download');
+    await other.create(recursive: true);
+
+    final a = (await LiteRtLmModelLink.create(model.path, parent: links))!;
+    final b = (await LiteRtLmModelLink.create(other.path, parent: links))!;
+    addTearDown(a.dispose);
+    addTearDown(b.dispose);
+
+    expect(nameOf(a.path), startsWith('download-'));
+    expect(nameOf(a.path), isNot(nameOf(b.path)));
   }, testOn: '!windows');
 
-  test('repoints a stale link', () async {
-    final model = File('${tempDir.path}/download');
-    await model.writeAsString('LITERTLM');
-    final path = await liteRtLmRuntimeModelPath(
-      model.path,
-      linkDirectory: links,
-    );
-    await Link(path).update('${tempDir.path}/other');
+  test('never reuses a directory planted under the parent', () async {
+    final planted = File('${tempDir.path}/attacker.gguf');
+    await planted.writeAsString('GGUF');
+    final first = (await LiteRtLmModelLink.create(model.path, parent: links))!;
+    final plantedName = nameOf(first.path);
+    first.dispose();
+    for (var i = 0; i < 8; i++) {
+      final dir = await Directory(
+        '${links.path}/llamadart_litert_lm_link_planted$i',
+      ).create();
+      await Link('${dir.path}/$plantedName').create(planted.path);
+    }
 
-    expect(
-      await liteRtLmRuntimeModelPath(model.path, linkDirectory: links),
-      path,
-    );
-    expect(await Link(path).target(), model.absolute.path);
+    final link = (await LiteRtLmModelLink.create(model.path, parent: links))!;
+    addTearDown(link.dispose);
+
+    expect(File(link.path).parent.path, isNot(contains('planted')));
+    expect(await File(link.path).readAsString(), 'LITERTLM');
   }, testOn: '!windows');
 
   test('reports a link it cannot create as unsupported', () async {
-    final model = File('${tempDir.path}/download');
-    await model.writeAsString('LITERTLM');
-    final blocker = File(links);
+    final blocker = File('${tempDir.path}/blocker');
     await blocker.writeAsString('not a directory');
 
     await expectLater(
-      liteRtLmRuntimeModelPath(model.path, linkDirectory: links),
+      LiteRtLmModelLink.create(model.path, parent: Directory(blocker.path)),
       throwsA(
         isA<LlamaUnsupportedException>().having(
           (e) => e.message,

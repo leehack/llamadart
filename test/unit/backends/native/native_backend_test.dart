@@ -8,7 +8,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
-import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
@@ -1114,7 +1115,8 @@ void main() {
       );
       final modelFile = File('${tempDir.path}/download');
       await modelFile.writeAsString('LITERTLM fake model');
-      final engine = LlamaEngine(LlamaBackend());
+      final links = await Directory('${tempDir.path}/links').create();
+      final engine = LlamaEngine(_routerWithLinkDirectory(links.path));
 
       try {
         await engine.loadModelSource(
@@ -1124,6 +1126,9 @@ void main() {
 
         expect(await engine.getBackendName(), 'LiteRT-LM cpu');
         expect((await engine.getMetadata())['general.name'], 'download');
+        expect(links.listSync(), hasLength(1));
+        await engine.unloadModel();
+        expect(links.listSync(), isEmpty);
       } finally {
         await engine.dispose();
         await tempDir.delete(recursive: true);
@@ -1137,7 +1142,8 @@ void main() {
     );
     final modelFile = File('${tempDir.path}/model.gguf');
     await modelFile.writeAsString('LITERTLM fake model');
-    final engine = LlamaEngine(LlamaBackend());
+    final links = await Directory('${tempDir.path}/links').create();
+    final engine = LlamaEngine(_routerWithLinkDirectory(links.path));
 
     try {
       await expectLater(
@@ -1150,6 +1156,9 @@ void main() {
         modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
       );
       expect(await engine.getBackendName(), 'LiteRT-LM cpu');
+      expect(links.listSync(), hasLength(1));
+      await engine.dispose();
+      expect(links.listSync(), isEmpty);
     } finally {
       await engine.dispose();
       await tempDir.delete(recursive: true);
@@ -1486,6 +1495,17 @@ class _LimitReportingFakeBackend extends _FakeBackend
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       limits[generation];
+}
+
+NativeAutoBackend _routerWithLinkDirectory(String links) {
+  return NativeAutoBackend(
+    liteRtLmFactory: () => LiteRtLmBackend(
+      workerEntryPoint: (sendPort) => runLiteRtLmWorkerForTesting(
+        sendPort,
+        LiteRtLmService(linkParentDirectory: Directory(links)),
+      ),
+    ),
+  );
 }
 
 class _FakeBackend
