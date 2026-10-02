@@ -193,6 +193,61 @@ class _RenderRecordingEngine extends LlamaEngine {
   }
 }
 
+/// Serves queued completion streams to [create] calls, then the real engine.
+class _ScriptedEngine extends LlamaEngine {
+  _ScriptedEngine(super.backend);
+
+  final List<Stream<LlamaCompletionChunk>> completions = [];
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    if (completions.isNotEmpty) return completions.removeAt(0);
+    return super.create(
+      messages,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    );
+  }
+}
+
+LlamaCompletionChunk _contentChunk(String content) =>
+    LlamaCompletionChunk.fromJson({
+      'id': 'c',
+      'object': 'chat.completion.chunk',
+      'created': 0,
+      'model': 'm',
+      'choices': [
+        {
+          'index': 0,
+          'delta': {'content': content},
+          'finish_reason': null,
+        },
+      ],
+    });
+
+LlamaChatMessage _text(LlamaChatRole role, String text) =>
+    LlamaChatMessage.fromText(role: role, text: text);
+
 // Rejects consecutive messages with the same role, as Gemma-style templates do.
 const _alternatingRolesTemplate =
     '{% for message in messages %}'
@@ -938,6 +993,7 @@ void main() {
       );
 
       expect(backend.generateCalls, 1);
+      expect(backend.lastPrompt, isNot(contains('U0')));
       expect(session.history, older);
 
       backend
@@ -947,6 +1003,168 @@ void main() {
 
       expect(backend.lastPrompt, endsWith('user: again\nassistant: '));
       expect(session.history.last.content, 'answer');
+    });
+
+    group('a request failing before its first chunk', () {
+      late _ScriptedEngine scripted;
+      late ChatSession scriptedSession;
+      late StreamController<LlamaCompletionChunk> pending;
+      final older = [
+        _text(LlamaChatRole.user, 'old question'),
+        _text(LlamaChatRole.assistant, 'old answer'),
+      ];
+
+      setUp(() async {
+        scripted = _ScriptedEngine(backend);
+        await scripted.loadModel('qwen-test.gguf');
+        scriptedSession = ChatSession(scripted);
+        older.forEach(scriptedSession.addMessage);
+        pending = StreamController<LlamaCompletionChunk>();
+        scripted.completions.add(pending.stream);
+      });
+
+      tearDown(() async {
+        await pending.close();
+        await scripted.dispose();
+      });
+
+      Future<void> failPending() async {
+        pending.addError(LlamaInferenceException('rejected'));
+        await pending.close();
+      }
+
+      test('keeps a reset made while it ran', () async {
+        scriptedSession.maxContextTokens = 60;
+        final done = scriptedSession.create([
+          const LlamaTextContent('new'),
+        ]).drain<void>();
+        await pumpEventQueue();
+        scriptedSession.reset();
+        await failPending();
+
+        await expectLater(done, throwsA(isA<LlamaInferenceException>()));
+        expect(scriptedSession.history, isEmpty);
+      });
+
+      test('keeps a message added while it ran', () async {
+        // The context check trims the older turn; with the history changed
+        // since, it stays trimmed.
+        scriptedSession.maxContextTokens = 60;
+        final done = scriptedSession.create([
+          const LlamaTextContent('new'),
+        ]).drain<void>();
+        await pumpEventQueue();
+        final note = _text(LlamaChatRole.user, 'note');
+        scriptedSession.addMessage(note);
+        await failPending();
+
+        await expectLater(done, throwsA(isA<LlamaInferenceException>()));
+        expect(scriptedSession.history, [note]);
+      });
+
+      test('keeps the reply of a concurrent request', () async {
+        final added = <LlamaChatMessage>[];
+        final failing = scriptedSession.create([
+          const LlamaTextContent('B'),
+        ]).drain<void>();
+        await pumpEventQueue();
+        scripted.completions.add(Stream.value(_contentChunk('reply A')));
+        await scriptedSession.create([
+          const LlamaTextContent('A'),
+        ], onMessageAdded: added.add).drain<void>();
+        await failPending();
+
+        await expectLater(failing, throwsA(isA<LlamaInferenceException>()));
+        expect(added.map((message) => message.content), ['A', 'reply A']);
+        expect(scriptedSession.history.map((message) => message.content), [
+          'old question',
+          'old answer',
+          'A',
+          'reply A',
+        ]);
+      });
+
+      test('undoes its turn when its subscription is cancelled', () async {
+        scriptedSession.maxContextTokens = 60;
+        final subscription = scriptedSession
+            .create([const LlamaTextContent('new')])
+            .listen(null);
+        await pumpEventQueue();
+        final cancelled = subscription.cancel();
+        // The engine's stream ends once its request is cancelled.
+        await pending.close();
+        await cancelled;
+
+        expect(scriptedSession.history, older);
+      });
+    });
+
+    group('a request ending after its first chunk', () {
+      late _ScriptedEngine scripted;
+      late ChatSession scriptedSession;
+
+      setUp(() async {
+        backend.chatTemplate = _alternatingRolesTemplate;
+        scripted = _ScriptedEngine(backend);
+        await scripted.loadModel('qwen-test.gguf');
+        scriptedSession = ChatSession(scripted);
+      });
+
+      tearDown(() => scripted.dispose());
+
+      Future<void> expectNextTurnAlternates() async {
+        backend.queueResponse('next answer');
+        await scriptedSession.create([
+          const LlamaTextContent('next'),
+        ]).drain<void>();
+        expect(backend.lastPrompt, endsWith('user: next\nassistant: '));
+        expect(scriptedSession.history.last.content, 'next answer');
+      }
+
+      test('records the partial reply when cancelled', () async {
+        final added = <LlamaChatMessage>[];
+        final controller = StreamController<LlamaCompletionChunk>();
+        addTearDown(controller.close);
+        scripted.completions.add(controller.stream);
+        controller
+          ..add(_contentChunk('Hel'))
+          ..add(_contentChunk('lo'));
+
+        final chunks = await scriptedSession
+            .create([const LlamaTextContent('hi')], onMessageAdded: added.add)
+            .take(2)
+            .toList();
+
+        expect(chunks, hasLength(2));
+        expect(added.map((message) => (message.role, message.content)), [
+          (LlamaChatRole.user, 'hi'),
+          (LlamaChatRole.assistant, 'Hello'),
+        ]);
+        expect(scriptedSession.history, added);
+        await expectNextTurnAlternates();
+      });
+
+      test('records the partial reply on an error', () async {
+        final controller = StreamController<LlamaCompletionChunk>();
+        scripted.completions.add(controller.stream);
+        controller
+          ..add(_contentChunk('Hel'))
+          ..addError(LlamaInferenceException('lost'));
+        unawaited(controller.close());
+
+        await expectLater(
+          scriptedSession.create([const LlamaTextContent('hi')]).drain<void>(),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+
+        expect(
+          scriptedSession.history.map(
+            (message) => (message.role, message.content),
+          ),
+          [(LlamaChatRole.user, 'hi'), (LlamaChatRole.assistant, 'Hel')],
+        );
+        await expectNextTurnAlternates();
+      });
     });
 
     test('a request failing its context check restores history', () async {
@@ -1007,6 +1225,10 @@ void main() {
 
       expect(backend.generateCalls, 0);
       expect(content.toString(), isEmpty);
+      expect(session.history.map((message) => message.role), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
     });
 
     test('a cancel after completion leaves the next turn intact', () async {

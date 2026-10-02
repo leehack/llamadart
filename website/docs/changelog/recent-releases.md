@@ -26,9 +26,11 @@ For canonical full release notes, use:
   ([#836](https://github.com/leehack/llamadart/issues/836),
   [#864](https://github.com/leehack/llamadart/issues/864)).
 - `ChatSession.create` takes `responseFormat`, and the new
-  `ChatSession.createStructuredJson` decodes the reply; a turn rejected
-  before its first chunk, such as a strict format on LiteRT-LM, leaves the
-  session history unchanged
+  `ChatSession.createStructuredJson` decodes the reply. A turn that fails or
+  is cancelled before its first chunk, such as a strict format on LiteRT-LM,
+  removes its user message from the history, and one cancelled or failing
+  mid-stream keeps the partial reply, so alternating-role templates keep
+  working
   ([#836](https://github.com/leehack/llamadart/issues/836),
   [#864](https://github.com/leehack/llamadart/issues/864)).
 - `LlamaCompletionChunk.model`, observer model names and load logs report

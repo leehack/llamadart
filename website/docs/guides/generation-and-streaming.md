@@ -300,9 +300,12 @@ fail early for strict structured output.
 `session.createStructuredJson(parts, output: output)` for multi-turn structured
 output; the JSON reply is kept in the session history like any other turn.
 An unrecognised format, or a strict one on a backend without grammar
-constraints, throws before the user message joins the history, and a request
-that fails before its first chunk leaves the history as it was, so a retry
-does not repeat the user turn.
+constraints, throws before the user message joins the history. A request that
+fails or is cancelled before its first chunk takes back its own user message
+(and any turns its context trimming dropped, if the history is otherwise
+unchanged), so a retry does not repeat the user turn. One that stops after its
+first chunk keeps the reply generated so far as the assistant turn, so roles
+keep alternating.
 
 ## `create(...)` flow at a glance
 

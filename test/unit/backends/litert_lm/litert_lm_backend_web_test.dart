@@ -329,6 +329,8 @@ void main() {
           'blob:',
         ),
         ('foo:alice:Pw7secret@example.com/m.litertlm', 'm.litertlm', 'foo:'),
+        ('https://user:p%40ss@example.com/m/p@ss.litertlm', null, 'https://'),
+        ('//user:Pw7secret@example.com/m/Pw7secret.litertlm', null, '//'),
       ]) {
         _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
         final backend = LiteRtLmBackend();

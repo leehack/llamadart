@@ -1396,9 +1396,10 @@ String? _modelUrlName(String url) {
 }
 
 /// The userinfo and password of [url] as the browser parses it, as written
-/// and percent-decoded.
+/// and percent-decoded. A protocol-relative [url] is read with an `https:`
+/// scheme.
 Set<String> _urlCredentials(String url) {
-  final parsed = _parsedUrl(url);
+  final parsed = _parsedUrl(url.startsWith('//') ? 'https:$url' : url);
   if (parsed == null) return const <String>{};
   final password = parsed.password;
   return <String>{
