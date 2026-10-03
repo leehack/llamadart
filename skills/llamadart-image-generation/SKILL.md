@@ -50,9 +50,11 @@ description: >-
   probes on a separate isolate): show a progress indicator until it
   completes, then `unsupportedReason` when `isSupported` is false.
   `ImageGenerationEngine.load` throws `LlamaUnsupportedException` in the same
-  cases. The synchronous `runtimeCapabilities()` returns the same result but
-  blocks the calling isolate on the first probe; do not call it from a UI
-  isolate before `checkRuntime()` has completed.
+  cases. There is no synchronous probe.
+- `await engine.capabilities` (an `EngineCapabilities`) reports the loaded
+  model's family and device, and unsupported once disposed; it never throws.
+  It changes only on `dispose()`, so read it once after `load` and keep it in
+  the widget state instead of awaiting it in `build`.
 - Models: `ImageGenerationModel(mainSource, components: [...])`. Every file
   is a `ModelSource` (`ModelSource.path`, an HTTP(S) URL or `hf://owner/repo@
   sha/file`); pin a commit. The library has no presets: the app owns each
@@ -148,12 +150,12 @@ description: >-
   convolutions leave the image identical; flash attention changes pixels
   slightly.
 - `load` loads weights eagerly, but GPU shaders compile on first use: the
-  first runtime probe in a process (`checkRuntime()`, `runtimeCapabilities()`
-  or `load()`) compiles the Metal library on Apple (about 16 s on an M4 Max
-  with an empty shader cache; only `runtimeCapabilities()` blocks the calling
-  isolate for it), and the first GPU image compiles its pipelines (12 s
-  on Linux Vulkan, 45 s on Windows Vulkan, against under 0.6 s warm). The OS
-  or driver caches them for later launches. Show progress.
+  first runtime probe in a process (`checkRuntime()` or `load()`, both off
+  the calling isolate) compiles the Metal library on Apple (about 16 s on an
+  M4 Max with an empty shader cache), and the first GPU image compiles its
+  pipelines (12 s on Linux Vulkan, 45 s on Windows Vulkan, against under
+  0.6 s warm). The OS or driver caches them for later launches. Show
+  progress.
 - `await engine.warmUp(width:, height:, guidanceScale:)` right after
   `load`, while the user writes the prompt, moves the pipeline compile off
   the first real image. Pass the size and guidance the app generates with,

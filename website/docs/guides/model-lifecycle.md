@@ -19,8 +19,13 @@ try {
 }
 ```
 
-`dispose()` unloads the model and releases the backend. Call `unloadModel()`
-instead when the engine will load another model.
+`dispose()` cancels running generations, unloads the model and releases the
+backend. It is final, on every engine: later calls return the same future,
+`isDisposed` is true, `capabilities` reports the engine as disposed, and a
+load or request throws `LlamaStateException`. A load still running when
+`dispose()` is called throws `LlamaStateException` too, and its model is
+unloaded. Call `unloadModel()` instead when the engine will load another
+model.
 
 On macOS Metal, ggml aborts a process that exits with a model, context,
 decision head or image model still loaded
