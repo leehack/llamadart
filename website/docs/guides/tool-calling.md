@@ -91,7 +91,7 @@ Every stop leaves the session ready for a new user turn, except
 | Stop | `session.history` |
 | --- | --- |
 | `completed` | Keeps the turn, ending with the answer. |
-| `cancelled` during the answer | Keeps the turn, ending with the partial answer. |
+| `cancelled` during the answer | Keeps the turn, ending with the partial answer. On native llama.cpp a cancel before the answer's first token also keeps the turn, ending with an empty answer. |
 | `unhandledToolCalls` | Keeps the turn, ending with the calls to answer. |
 | `maxRounds`, `contextExceeded`, other `cancelled` stops, or an error | Rolls the whole turn back, from its user message on. |
 
@@ -114,6 +114,11 @@ answer `result.pendingToolCalls`, and call
 
 On WebGPU a cancel ends generation with a stream error; the loop still
 reports it as `cancelled`.
+
+To start a new chat while the loop runs, call `engine.cancelGeneration()`
+before `session.reset()`, and await the loop first: a reset while a reply is
+generating can leave that reply in the new chat
+([#888](https://github.com/leehack/llamadart/issues/888)).
 
 ### Run the calls yourself
 

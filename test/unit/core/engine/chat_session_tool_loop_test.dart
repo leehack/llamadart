@@ -47,7 +47,18 @@ class _PersistingSession extends ChatSession {
   }
 }
 
-/// A `ChatSession` that only forwards its public members.
+/// A [ChatSession] subclass that stores a copy of each added message.
+class _CopyingSession extends ChatSession {
+  _CopyingSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) => super.addMessage(
+    LlamaChatMessage.withContent(role: message.role, content: message.parts),
+  );
+}
+
+/// A `ChatSession` that only forwards its public members, and whose [reset]
+/// drops the system prompt unless told otherwise.
 class _DelegatingSession implements ChatSession {
   _DelegatingSession(this._inner);
 
@@ -66,7 +77,7 @@ class _DelegatingSession implements ChatSession {
   void addMessage(LlamaChatMessage message) => _inner.addMessage(message);
 
   @override
-  void reset({bool keepSystemPrompt = true}) =>
+  void reset({bool keepSystemPrompt = false}) =>
       _inner.reset(keepSystemPrompt: keepSystemPrompt);
 
   @override
@@ -910,6 +921,22 @@ void main() {
       expect(session.history, isEmpty);
     });
 
+    test(
+      'reported as a stream error before the first reply rolls back',
+      () async {
+        engine.replies.add(() async* {
+          engine.cancelGeneration();
+          throw LlamaInferenceException('aborted');
+        });
+
+        final result = await session.sendWithTools('Hi', tools: const []);
+
+        expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+        expect(result.rolledBack, isTrue);
+        expect(session.history, isEmpty);
+      },
+    );
+
     test('before the next reply starts rolls the turn back', () async {
       engine.replies
         ..add(scriptedCalls([('a', 'weather', '{}')]))
@@ -1052,6 +1079,24 @@ void main() {
       expect(persisting.resets, 0);
     },
   );
+
+  test('a rollback removes the copies a subclass stored', () async {
+    final copying = _CopyingSession(engine);
+    engine.replies.add(scriptedCalls([('a', 'weather', '{}')]));
+
+    final result = await copying.sendWithTools(
+      'Weather',
+      tools: [
+        _tool('weather', (_) async {
+          engine.cancelGeneration();
+          return 'sunny';
+        }),
+      ],
+    );
+
+    expect(result.rolledBack, isTrue);
+    expect(copying.history, isEmpty);
+  });
 
   test('runs on a class that implements ChatSession', () async {
     engine.replies

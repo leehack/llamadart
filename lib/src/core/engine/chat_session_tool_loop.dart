@@ -59,9 +59,13 @@ enum LlamaToolLoopStopReason {
   /// rolled back.
   contextExceeded,
 
-  /// `LlamaEngine.cancelGeneration` was called while the loop ran. A partial
-  /// reply without tool calls stays in the history as the turn's answer;
-  /// otherwise the turn was rolled back.
+  /// `LlamaEngine.cancelGeneration` was called while the loop ran. A reply
+  /// without tool calls stays in the history as the turn's answer, even an
+  /// empty one; otherwise the turn was rolled back.
+  ///
+  /// A backend that ends a cancelled generation without an error, as native
+  /// llama.cpp does, still ends the reply when the cancel came before its
+  /// first token, so the turn stays with an empty answer.
   cancelled,
 }
 
@@ -208,8 +212,11 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// `completeWithTools(const [], ...)`. Templates such as Ministral 3's
   /// reject a user turn that follows unanswered calls or tool results. So
   /// the other stops that end without an answer (`maxRounds`,
-  /// `contextExceeded`, a cancel before an answer started) and any error
-  /// this call throws roll the whole turn back, from its user message on.
+  /// `contextExceeded`, a cancel that left no reply without tool calls) and
+  /// any error this call throws roll the whole turn back, from its user
+  /// message on. A cancel during a reply without tool calls keeps that reply
+  /// as the answer; on native llama.cpp that includes a cancel before the
+  /// reply's first token, which leaves an empty answer.
   /// For empty [parts] that is the open turn being continued, including the
   /// messages added before this call, such as the app's tool results.
   /// Messages that other callers added meanwhile stay. Older turns that
@@ -229,6 +236,12 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// also stops the loop with [LlamaToolLoopStopReason.cancelled]. An error
   /// thrown by [onMessageAdded], or one raised before the cancel, still
   /// fails this call.
+  ///
+  /// To start a new chat while the loop runs, call
+  /// `LlamaEngine.cancelGeneration` before [ChatSession.reset], and await
+  /// this call first: a reset while a reply is generating can leave that
+  /// reply in the new chat
+  /// ([#888](https://github.com/leehack/llamadart/issues/888)).
   ///
   /// [toolChoice] applies to the first request only; later rounds use
   /// [ToolChoice.auto] so the model can answer. The other arguments have the
@@ -365,8 +378,7 @@ extension ChatSessionToolLoopExtension on ChatSession {
                 ),
               ],
             );
-            addMessage(message);
-            turn.report(message);
+            turn.add(message);
           }
           rounds += 1;
 
@@ -416,6 +428,16 @@ class _ToolLoopTurn {
   /// Whether [error] was thrown by the app's `onMessageAdded`.
   bool isCallbackError(Object error) => identical(error, _callbackError);
 
+  /// Adds [message] with [ChatSession.addMessage] and reports the instance
+  /// the session stored, which an override may have copied, so a rollback
+  /// finds it.
+  void add(LlamaChatMessage message) {
+    final countBefore = _session.history.length;
+    _session.addMessage(message);
+    final history = _session.history;
+    report(history.length > countBefore ? history.last : message);
+  }
+
   void report(LlamaChatMessage message) {
     messages.add(message);
     _lastAdded = message;
@@ -440,7 +462,7 @@ class _ToolLoopTurn {
     }
     final rebuilt = _session.history.toList();
     _removeTurn(rebuilt, messages);
-    _session.reset();
+    _session.reset(keepSystemPrompt: true);
     rebuilt.forEach(_session.addMessage);
   }
 }

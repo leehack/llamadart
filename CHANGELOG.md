@@ -85,19 +85,24 @@
   ...)` run the model's tool calls with each `ToolDefinition.handler`,
   concurrently for parallel calls, until it answers, and return a
   `LlamaToolLoopResult` whose `stopReason` also reports `maxRounds`,
-  unhandled calls, context overflow and cancellation. `handler` is now
-  optional (a nullable field) for tools the app runs itself
+  unhandled calls, context overflow and cancellation
   ([#842](https://github.com/leehack/llamadart/issues/842)).
+- **Breaking:** `ToolDefinition.handler` is nullable, so tools the app runs
+  itself can leave it out; code that calls `tool.handler(params)` must check
+  it for null first ([#842](https://github.com/leehack/llamadart/issues/842)).
 - `GenerationGrammarTrigger.typed(type: GrammarTriggerType.word, ...)`
   replaces the raw-`int` constructor, now deprecated; an unknown raw trigger
   type throws `LlamaUnsupportedException` on llama.cpp instead of being
   ignored ([#844](https://github.com/leehack/llamadart/issues/844)).
-- **Deprecated:** LoRA adapters (`setLoraSource`, `removeLoraSource`,
+- LoRA adapters (`setLoraSource`, `removeLoraSource`,
   `LoraAdapterConfig.source`), speculative draft models
   (`SpeculativeDecodingConfig.draftModel`, `withDraftModel`,
-  `withDraftModelDownload`) and LiteRT-LM
-  ASR files (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they
-  download and cache like models; the `String` path forms are deprecated
+  `withDraftModelDownload`) and LiteRT-LM ASR files
+  (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they download
+  and cache like models
+  ([#852](https://github.com/leehack/llamadart/issues/852)).
+- **Deprecated:** the `String` path forms of LoRA adapters, speculative draft
+  models and LiteRT-LM ASR files
   ([#852](https://github.com/leehack/llamadart/issues/852)).
 - **Fixed:** `ImageGenerationEngine.load` no longer sends `download`'s
   `bearerToken` and headers to every host: remote files on more than one host
