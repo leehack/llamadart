@@ -151,7 +151,7 @@ export 'src/core/models/config/gpu_backend.dart';
 export 'src/core/models/config/gpu_device_info.dart';
 export 'src/core/models/config/flash_attention.dart';
 export 'src/core/models/config/kv_cache_type.dart';
-export 'src/core/models/config/lora_config.dart';
+export 'src/core/models/config/lora_config.dart' show LoraAdapterConfig;
 export 'src/core/models/diagnostics/model_file_type.dart';
 
 // Utils

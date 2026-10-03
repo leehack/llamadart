@@ -446,10 +446,11 @@ class TextToSpeechEngine {
   /// [DefaultModelDownloadManager]), main file first, before anything loads.
   /// [download] applies to every remote file: cache policy and directory,
   /// authentication, resume, retries and the cancel token. A local file
-  /// takes only the cancel token. The bearer token and headers never go to
-  /// more than one host: when they are set and the remote files are on
-  /// different hosts, [load] throws [LlamaArgumentException] before
-  /// downloading from the second one. [onProgress] reports the files
+  /// takes only the cancel token. The bearer token and headers are never
+  /// sent across hosts: when they are set and the remote files, or the URLs
+  /// the resolver returns for them, span more than one origin (scheme, host
+  /// and port), [load] throws [LlamaArgumentException] naming the origins
+  /// before downloading from another host. [onProgress] reports the files
   /// together: `receivedBytes` counts the files resolved so far plus the
   /// current download, and `totalBytes` is their combined size once every
   /// size is known. Adapters in [ModelParams.loras] given as sources

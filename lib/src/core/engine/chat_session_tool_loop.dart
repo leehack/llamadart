@@ -7,6 +7,7 @@ import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/completion.dart';
+import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
@@ -68,6 +69,14 @@ enum LlamaToolLoopStopReason {
   /// reply that parses stays as an empty answer. Check
   /// [LlamaToolLoopResult.rolledBack].
   cancelled,
+
+  /// The reply was cut off ([LlamaFinishReason.length]): it reached
+  /// `GenerationParams.maxTokens` or filled the context before the model
+  /// ended it. Its text may be an unfinished tool call or thinking rather
+  /// than an answer, so its calls were not run and the turn was rolled back.
+  /// [LlamaToolLoopResult.completion] keeps the partial reply; raise
+  /// `maxTokens` and send the turn again.
+  truncated,
 }
 
 /// The outcome of `ChatSession.sendWithTools`.
@@ -201,8 +210,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// The loop stops with a [LlamaToolLoopResult] when the model answers
   /// without a tool call, when it calls tools after [maxRounds] tool rounds,
   /// when a request did not fit its context budget (calls proposed from a
-  /// trimmed prompt are not run), or when `LlamaEngine.cancelGeneration` is
-  /// called. A cancel does not interrupt running tools. [maxRounds] must not
+  /// trimmed prompt are not run), when a reply is cut off at
+  /// `GenerationParams.maxTokens` or the end of the context, or when
+  /// `LlamaEngine.cancelGeneration` is called. A cancel does not interrupt running tools. [maxRounds] must not
   /// be negative, or this throws [LlamaArgumentException]; `0` returns the
   /// first reply's calls unrun.
   ///
@@ -213,7 +223,8 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// `completeWithTools(const [], ...)`. Templates such as Ministral 3's
   /// reject a user turn that follows unanswered calls or tool results. So
   /// the other stops that end without an answer (`maxRounds`,
-  /// `contextExceeded`, a cancel that left no reply without tool calls) and
+  /// `contextExceeded`, `truncated`, a cancel that left no reply without
+  /// tool calls) and
   /// any error this call throws roll the whole turn back, from its user
   /// message on. A cancel during a reply without tool calls keeps that reply
   /// as the answer, which can be empty when the cancel came before its first
@@ -333,17 +344,19 @@ extension ChatSessionToolLoopExtension on ChatSession {
             );
           }
 
-          if (reply.toolCalls.isEmpty) {
-            yield request.isCancelled()
-                ? stop(
-                    LlamaToolLoopStopReason.cancelled,
-                    rollBack: !turn.endsWithReply,
-                  )
-                : stop(LlamaToolLoopStopReason.completed, rollBack: false);
+          if (request.isCancelled()) {
+            yield stop(
+              LlamaToolLoopStopReason.cancelled,
+              rollBack: reply.toolCalls.isNotEmpty || !turn.endsWithReply,
+            );
             return;
           }
-          if (request.isCancelled()) {
-            yield stop(LlamaToolLoopStopReason.cancelled);
+          if (reply.finishReason == LlamaFinishReason.length) {
+            yield stop(LlamaToolLoopStopReason.truncated);
+            return;
+          }
+          if (reply.toolCalls.isEmpty) {
+            yield stop(LlamaToolLoopStopReason.completed, rollBack: false);
             return;
           }
           if (!lastRequestFitContext) {

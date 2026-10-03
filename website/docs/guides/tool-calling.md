@@ -48,6 +48,7 @@ switch (result.stopReason) {
   case LlamaToolLoopStopReason.unhandledToolCalls:
   case LlamaToolLoopStopReason.maxRounds:
   case LlamaToolLoopStopReason.contextExceeded:
+  case LlamaToolLoopStopReason.truncated:
   case LlamaToolLoopStopReason.cancelled:
     print('Stopped (${result.stopReason.name}): ${result.pendingToolCalls}');
 }
@@ -77,7 +78,11 @@ continues the current turn.
 - **Bounds:** after `maxRounds` tool rounds, further calls are returned
   unrun with `maxRounds`. Calls proposed from a prompt that did not fit the
   context budget (`session.lastRequestFitContext == false`) are not run
-  (`contextExceeded`).
+  (`contextExceeded`). A reply cut off at `GenerationParams.maxTokens` or the
+  end of the context (`finishReason` `length`) stops the loop with
+  `truncated`, without running its calls: its text may be an unfinished
+  tool call or thinking, not an answer. `result.completion` keeps it; raise
+  `maxTokens` and send the turn again.
 - **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
   Running tools finish first. A partial answer stays as the turn's reply.
 - `toolChoice` applies to the first request only, so `ToolChoice.required`
@@ -93,7 +98,7 @@ Every stop leaves the session ready for a new user turn, except
 | `completed` | Keeps the turn, ending with the answer. |
 | `cancelled` during the answer | Keeps the turn, ending with the partial answer. A cancel before the answer's first token may keep an empty answer or roll back, depending on timing, backend, template and parser; check `result.rolledBack`. |
 | `unhandledToolCalls` | Keeps the turn, ending with the calls to answer. |
-| `maxRounds`, `contextExceeded`, other `cancelled` stops, or an error | Rolls the whole turn back, from its user message on. |
+| `maxRounds`, `contextExceeded`, `truncated`, other `cancelled` stops, or an error | Rolls the whole turn back, from its user message on. |
 
 A rolled-back turn would otherwise end with unanswered calls or tool results,
 which some templates, such as Ministral 3's and Mistral Small 3.2's, cannot

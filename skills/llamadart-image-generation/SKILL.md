@@ -99,8 +99,9 @@ description: >-
   and directory, `bearerToken` or headers, retries and a `cancelToken` for
   every remote file; local files take only the cancel token. `bearerToken`
   and headers never cross hosts: remote files on more than one origin with
-  them set throw `LlamaArgumentException`. `sha256` is rejected
-  (`LlamaUnsupportedException`): there are several files.
+  them set throw `LlamaArgumentException`. `sha256` verifies a
+  single-file model and is rejected (`LlamaUnsupportedException`) once
+  there are components.
   `onProgress` reports `ModelDownloadProgress` across all files; cached and
   local files count as received, and `totalBytes` is `null` until every
   file size is known. A cancelled load throws `LlamaStateException`

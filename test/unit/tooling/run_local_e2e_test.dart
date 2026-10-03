@@ -1123,6 +1123,53 @@ void main() {
       );
     });
 
+    for (final scenario in [
+      'gemma4-mtp-smoke',
+      'native-embedding-benchmark',
+      'native-embedding-sweep',
+    ]) {
+      test('requires model path for $scenario dry-run', () async {
+        final result = await runLocalE2e([
+          '--scenario',
+          scenario,
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 64);
+        expect(
+          result.stderr,
+          contains('--model-path is required for $scenario'),
+        );
+      });
+    }
+
+    for (final scenario in [
+      'validation-harness',
+      'validation-voice-round-trip',
+      'validation-speech-stt',
+      'validation-speech-tts',
+      'validation-speech-litert-asr',
+    ]) {
+      test('resolves the validation package first for $scenario', () async {
+        final result = await runLocalE2e([
+          '--scenario',
+          scenario,
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        final commands = result.stdout
+            .split('\n')
+            .where((line) => line.startsWith('  cd '))
+            .toList();
+        expect(commands, hasLength(greaterThan(1)));
+        expect(
+          commands.first,
+          '  cd /repo/packages/llamadart_validation && dart pub get',
+        );
+      });
+    }
+
     test('requires model path for LiteRT-LM chat feature smoke', () async {
       final result = await runLocalE2e(const [
         '--scenario',

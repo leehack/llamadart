@@ -267,7 +267,7 @@ override is active. Two checks fail closed:
 
 - LoRA adapters need both `llama_adapter_get_alora_n_invocation_tokens` and
   `llama_adapter_get_alora_invocation_tokens`. Without a compatible pair,
-  `setLora` and loads with `ModelParams.loras` throw
+  `setLoraSource` and loads with `ModelParams.loras` throw
   `LlamaUnsupportedException` rather than activate an adapter whose type it
   cannot check.
 - DSpark speculative decoding (`SpeculativeDecodingConfig.draftDspark`) needs

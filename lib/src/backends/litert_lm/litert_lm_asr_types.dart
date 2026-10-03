@@ -70,9 +70,9 @@ class LiteRtLmAsrRuntimeConfig {
 
   /// Creates a LiteRT-LM ASR runtime configuration from local file paths.
   @Deprecated(
-    'Use LiteRtLmAsrRuntimeConfig.source with ModelSource.path(path), or '
-    'another ModelSource to download the files. This constructor will be '
-    'removed in a future release.',
+    'Use LiteRtLmAsrRuntimeConfig.source with ModelSource.path(path); load '
+    'remote files with SpeechToTextEngine.load and a LiteRtLmAsrAdapter. '
+    'This constructor will be removed in a future release.',
   )
   const LiteRtLmAsrRuntimeConfig({
     required String modelPath,

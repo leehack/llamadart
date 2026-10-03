@@ -953,15 +953,31 @@ void main() {
       expect(downloads.calls, isEmpty);
     });
 
-    test('a checksum in the load options is rejected before anything '
+    for (final (name, source) in [
+      ('local', _local(_model)),
+      ('remote', _remote),
+    ]) {
+      test('a checksum verifies a single $name file', () async {
+        final checksum = 'a' * 64;
+
+        await load(_sdxs(source), download: ModelLoadOptions(sha256: checksum));
+
+        expect(downloads.calls.single.$2.sha256, checksum);
+      });
+    }
+
+    test('a checksum for several files is rejected before anything '
         'downloads', () async {
       await expectLater(
-        load(_sdxs(_remote), download: ModelLoadOptions(sha256: 'a' * 64)),
+        load(
+          _sdxs(_remote, _remoteTaesd),
+          download: ModelLoadOptions(sha256: 'a' * 64),
+        ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
-            contains('ModelLoadOptions.sha256'),
+            allOf(contains('2 files'), contains('ModelLoadOptions.sha256')),
           ),
         ),
       );

@@ -100,6 +100,12 @@ ScriptedReply scriptedAnswer(String text) =>
       scriptedChunk(content: text, finishReason: 'stop'),
     ]);
 
+/// A reply that [GenerationParams.maxTokens] cut off after [text].
+ScriptedReply scriptedTruncated(String text) =>
+    () => Stream.fromIterable([
+      scriptedChunk(content: text, finishReason: 'length'),
+    ]);
+
 ScriptedReply scriptedCalls(
   List<(String id, String name, String arguments)> calls,
 ) =>

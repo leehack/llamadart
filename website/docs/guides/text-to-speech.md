@@ -70,10 +70,10 @@ takes `ModelLoadOptions` for every remote file, `onProgress:` reports both
 files together, `store:` takes a `ModelFileStore` with your own resolver or
 download manager, and `backend:` the `LlamaBackend` (by default
 `LlamaBackend()`). Both files resolve, model first, before anything loads;
-a local file takes only the cancel token. The bearer token and headers never
-go to more than one host: when they are set and the two remote files are on
-different hosts, `load` throws `LlamaArgumentException` before downloading
-from the second one. `ModelLoadOptions.sha256` throws
+a local file takes only the cancel token. The bearer token and headers are
+never sent across hosts: when they are set and the two remote files are on
+different origins (scheme, host and port), `load` throws
+`LlamaArgumentException` before downloading from another host. `ModelLoadOptions.sha256` throws
 `LlamaUnsupportedException`, since one checksum cannot cover both files. The
 load is atomic: when it throws, the engine is disposed, and downloaded files
 stay in the cache.

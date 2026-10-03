@@ -316,8 +316,8 @@ class ImageGenerationEngine {
   ///   [runtimeCapabilities]), including on the web; when
   ///   [ComputeDevice.gpu] is requested and the runtime reports no GPU, or
   ///   [ComputeDevice.npu] is requested; when [download] sets
-  ///   [ModelLoadOptions.sha256], which cannot apply to several files; and
-  ///   when a source sets [ModelSource.format] to [ModelFormat.liteRtLm].
+  ///   [ModelLoadOptions.sha256] for a model of more than one file (a
+  ///   single file is verified against it); and when a source sets [ModelSource.format] to [ModelFormat.liteRtLm].
   ///   Image files are classified by their headers, so [ModelSource.format]
   ///   is otherwise unused here.
   /// - [LlamaModelException] when a file is missing, is not an image-model
@@ -345,12 +345,6 @@ class ImageGenerationEngine {
       throw LlamaImageGenerationException(
         'ImageModelParams.threads must be 0 or greater.',
         params.threads,
-      );
-    }
-    if (download.sha256 != null) {
-      throw LlamaUnsupportedException(
-        'ImageGenerationEngine.load loads several files, so '
-        'ModelLoadOptions.sha256 cannot apply to them. Leave it unset.',
       );
     }
     final sources = [
