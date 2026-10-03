@@ -166,8 +166,8 @@ void main() {
       );
 
       await expectLater(
-        backend.generate(1, 'ok', unsendable).drain<void>(),
-        throwsA(isA<ArgumentError>()),
+        backend.generate(1, 'ok', unsendable),
+        emitsInOrder([emitsError(isA<ArgumentError>()), emitsDone]),
       );
       expect(
         await backend.generate(1, 'ok', const GenerationParams()).toList(),

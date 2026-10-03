@@ -2320,6 +2320,12 @@ class LlamaEngine {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     _ensureReady();
+    if (runtime == LlamaRuntime.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM has no runtime LoRA adapter API, so the adapter is not '
+        'downloaded.',
+      );
+    }
     final epoch = _modelEpoch;
     bool unloaded() => _modelEpoch != epoch;
     var options = download;
