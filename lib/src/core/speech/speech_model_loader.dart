@@ -1,16 +1,21 @@
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
+import '../models/config/lora_config.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/inference/model_params.dart';
 import '../models/model_file_store.dart';
 import '../models/model_load_options.dart';
-import '../models/model_resolver.dart';
 import '../models/model_source.dart';
 import '../models/model_target_file.dart';
 
 /// Loads [source] and then [projector] into a new [LlamaEngine] that the
 /// caller owns, then runs [verify] on it.
+///
+/// On a backend that loads files, both files resolve first through
+/// [resolveModelSourceFiles], so a local file takes only [download]'s cancel
+/// token and credentials never go to more than one host. A URL-loading
+/// backend fetches each file itself, as `LlamaEngine.loadModelSource` does.
 ///
 /// The load is atomic: when a file, [verify] or [download]'s cancel token
 /// fails it, the engine is disposed and the error rethrown.
@@ -25,35 +30,46 @@ Future<LlamaEngine> loadSpeechLlamaEngine({
   required LlamaBackend? backend,
   required Future<void> Function(LlamaEngine engine) verify,
 }) async {
-  rejectMultiFileSha256(
-    engineName,
-    download,
-    fileCount: projector == null ? 1 : 2,
-  );
+  final fileStore = store ?? ModelFileStore();
   final engine = LlamaEngine(
     backend ?? LlamaBackend(),
-    modelResolver: store?.resolver,
-    modelDownloadManager: store?.downloadManager,
-  );
-  final progress = SpeechFilesProgress(
-    onProgress,
-    fileCount: projector == null ? 1 : 2,
+    modelResolver: fileStore.resolver,
+    modelDownloadManager: fileStore.downloadManager,
   );
   try {
-    await engine.loadModelSource(
-      source,
-      modelParams: params,
-      options: download,
-      onProgress: progress.file(0),
-    );
-    if (projector != null) {
-      await engine.loadMultimodalProjectorSource(
+    if (engine.backend.supportsUrlLoading) {
+      await _loadFromUrls(
+        engine,
+        source,
         projector,
-        options: download,
-        onProgress: progress.file(1),
+        params,
+        download,
+        onProgress,
       );
+    } else {
+      final paths = await resolveModelSourceFiles(
+        [source, ?projector],
+        store: fileStore,
+        download: download,
+        operation: '$engineName model loading',
+        onProgress: onProgress,
+      );
+      final localOptions = ModelLoadOptions(cancelToken: download.cancelToken);
+      await engine.loadModelSource(
+        ModelSource.path(paths[0], format: source.format),
+        modelParams: _withLoraDownloads(params, download),
+        options: localOptions,
+      );
+      if (projector != null) {
+        await engine.loadMultimodalProjectorSource(
+          ModelSource.path(paths[1]),
+          options: localOptions,
+        );
+      }
     }
-    throwIfSpeechLoadCancelled(engineName, download);
+    if (download.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('$engineName model loading was cancelled.');
+    }
     await verify(engine);
     return engine;
   } catch (_) {
@@ -66,139 +82,62 @@ Future<LlamaEngine> loadSpeechLlamaEngine({
   }
 }
 
-/// Local paths of [sources], in order, resolved one at a time through
-/// [store]. Local files take only [download]'s cancel token.
-Future<List<String>> resolveSpeechModelFiles({
-  required String engineName,
-  required List<ModelSource> sources,
-  required ModelLoadOptions download,
-  required ModelDownloadProgressCallback? onProgress,
-  required ModelFileStore store,
-  required String assetType,
-}) async {
-  rejectMultiFileSha256(engineName, download, fileCount: sources.length);
-  final progress = SpeechFilesProgress(onProgress, fileCount: sources.length);
-  final localOptions = ModelLoadOptions(cancelToken: download.cancelToken);
-  final paths = <String>[];
-  for (final (index, source) in sources.indexed) {
-    final options = source.isLocal ? localOptions : download;
-    final fileProgress = progress.file(index);
-    final target = await store.resolver.resolve(
-      source,
-      ModelResolveRequest(options: options, onProgress: fileProgress),
-    );
-    final entry = await ensureModelTargetFile(
-      store.downloadManager,
-      source,
-      target,
-      options: options,
-      onProgress: fileProgress,
-      assetType: assetType,
-    );
-    throwIfSpeechLoadCancelled(engineName, download);
-    progress.resolved(index, entry.bytes);
-    paths.add(entry.filePath);
-  }
-  return paths;
-}
-
-/// Throws [LlamaUnsupportedException] when [download] sets a checksum for a
-/// load of more than one file.
-void rejectMultiFileSha256(
-  String engineName,
-  ModelLoadOptions download, {
-  required int fileCount,
-}) {
-  if (fileCount > 1 && download.sha256 != null) {
-    throw LlamaUnsupportedException(
-      '$engineName.load loads $fileCount files, so ModelLoadOptions.sha256 '
-      'cannot apply to them. Leave it unset.',
-    );
-  }
-}
-
-/// Throws [LlamaStateException] when [download]'s cancel token is cancelled.
-void throwIfSpeechLoadCancelled(String engineName, ModelLoadOptions download) {
-  if (download.cancelToken?.isCancelled ?? false) {
-    throw LlamaStateException('$engineName model loading was cancelled.');
-  }
-}
-
-/// Combines the progress of files loaded one after another into one
-/// callback.
-///
-/// Byte progress counts the bytes of earlier files plus the current one;
-/// the total is known once the last file reports its size and every earlier
-/// file reported its own. A file that reports only a fraction, as a web
-/// backend does, makes the combined progress a fraction of all files.
-class SpeechFilesProgress {
-  final ModelDownloadProgressCallback? _onProgress;
-  final int _fileCount;
-  final Map<int, int> _sizes = <int, int>{};
-
-  /// Creates a combiner reporting to [onProgress] for [fileCount] files.
-  SpeechFilesProgress(
-    ModelDownloadProgressCallback? onProgress, {
-    required int fileCount,
-  }) : _onProgress = onProgress,
-       _fileCount = fileCount;
-
-  /// The callback for the download of the file at [index], or null without
-  /// a callback.
-  ModelDownloadProgressCallback? file(int index) {
-    final onProgress = _onProgress;
-    if (onProgress == null) {
-      return null;
-    }
-    return (ModelDownloadProgress progress) {
-      final fraction = progress.fraction;
-      if (progress.receivedBytes == 0 &&
-          progress.totalBytes == null &&
-          fraction != null) {
-        onProgress(
-          ModelDownloadProgress.fraction((index + fraction) / _fileCount),
+Future<void> _loadFromUrls(
+  LlamaEngine engine,
+  ModelSource source,
+  ModelSource? projector,
+  ModelParams params,
+  ModelLoadOptions download,
+  ModelDownloadProgressCallback? onProgress,
+) async {
+  final fileCount = projector == null ? 1 : 2;
+  ModelDownloadProgressCallback? fileProgress(int index) => onProgress == null
+      ? null
+      : (progress) => onProgress(
+          ModelDownloadProgress.fraction(
+            (index + (progress.fraction ?? 0)) / fileCount,
+          ),
         );
-        return;
-      }
-      final total = progress.totalBytes;
-      if (total != null) {
-        _sizes[index] = total;
-      }
-      _report(index, progress.receivedBytes, total);
-    };
-  }
-
-  /// Reports that the file at [index], of [bytes] when known, is ready.
-  void resolved(int index, int? bytes) {
-    if (_onProgress == null) {
-      return;
-    }
-    if (bytes != null) {
-      _sizes[index] = bytes;
-    }
-    final size = _sizes[index];
-    _report(index, size ?? 0, size);
-  }
-
-  void _report(int index, int receivedBytes, int? currentTotal) {
-    var earlierBytes = 0;
-    var earlierKnown = true;
-    for (var earlier = 0; earlier < index; earlier++) {
-      final size = _sizes[earlier];
-      if (size == null) {
-        earlierKnown = false;
-      } else {
-        earlierBytes += size;
-      }
-    }
-    _onProgress!(
-      ModelDownloadProgress(
-        receivedBytes: earlierBytes + receivedBytes,
-        totalBytes:
-            index == _fileCount - 1 && earlierKnown && currentTotal != null
-            ? earlierBytes + currentTotal
-            : null,
-      ),
+  await engine.loadModelSource(
+    source,
+    modelParams: params,
+    options: download,
+    onProgress: fileProgress(0),
+  );
+  if (projector != null) {
+    await engine.loadMultimodalProjectorSource(
+      projector,
+      options: download,
+      onProgress: fileProgress(1),
     );
   }
 }
+
+/// [params] whose remote [ModelParams.loras] sources without their own
+/// download options take the non-secret parts of [download], as they would
+/// from `LlamaEngine.loadModelSource` with [download].
+ModelParams _withLoraDownloads(ModelParams params, ModelLoadOptions download) {
+  if (!params.loras.any(_inheritsDownload)) return params;
+  final adapterDownload = ModelLoadOptions(
+    cachePolicy: download.cachePolicy,
+    cacheDirectory: download.cacheDirectory,
+    cancelToken: download.cancelToken,
+    resume: download.resume,
+    maxRetries: download.maxRetries,
+  );
+  return params.copyWith(
+    loras: [
+      for (final lora in params.loras)
+        _inheritsDownload(lora)
+            ? LoraAdapterConfig.source(
+                lora.source!,
+                scale: lora.scale,
+                download: adapterDownload,
+              )
+            : lora,
+    ],
+  );
+}
+
+bool _inheritsDownload(LoraAdapterConfig lora) =>
+    lora.download == null && (lora.source?.isRemote ?? false);

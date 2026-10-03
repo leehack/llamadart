@@ -2,65 +2,115 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/speech_model_loader.dart';
 import 'package:test/test.dart';
 
+import '../engine/engine_test.dart' show MockLlamaBackend;
+
 void main() {
-  group('resolveSpeechModelFiles', () {
-    test('resolves files in order and combines their progress', () async {
-      final manager = _FakeDownloadManager();
-      final progress = <ModelDownloadProgress>[];
+  group('loadSpeechLlamaEngine', () {
+    late _LoaderBackend backend;
+    late _FakeDownloadManager manager;
+    late bool verified;
+
+    setUp(() {
+      backend = _LoaderBackend();
+      manager = _FakeDownloadManager();
+      verified = false;
+    });
+
+    Future<LlamaEngine> load(
+      ModelSource source,
+      ModelSource? projector, {
+      ModelLoadOptions download = ModelLoadOptions.defaults,
+      ModelParams params = const ModelParams(),
+    }) => loadSpeechLlamaEngine(
+      engineName: 'SpeechToTextEngine',
+      source: source,
+      projector: projector,
+      params: params,
+      download: download,
+      onProgress: null,
+      store: ModelFileStore(downloadManager: manager),
+      backend: backend,
+      verify: (_) async => verified = true,
+    );
+
+    test('gives a remote model the load options and a local projector only '
+        'the cancel token', () async {
+      final token = ModelDownloadCancelToken();
+      final download = ModelLoadOptions(
+        bearerToken: 'secret',
+        cacheDirectory: '/models',
+        cancelToken: token,
+      );
+
+      final engine = await load(
+        ModelSource.parse('https://models.example.com/asr.gguf'),
+        ModelSource.path('/models/mmproj-asr.gguf'),
+        download: download,
+      );
+
+      expect(backend.modelPath, '/cache/asr.gguf');
+      expect(backend.projectorPath, '/models/mmproj-asr.gguf');
+      expect(manager.remoteOptions('asr.gguf'), [same(download)]);
+      expect(manager.localOptions, isNotEmpty);
+      for (final options in manager.localOptions) {
+        expect(options.bearerToken, isNull);
+        expect(options.cacheDirectory, isNull);
+        expect(options.cancelToken, same(token));
+      }
+      expect(verified, isTrue);
+      await engine.dispose();
+    });
+
+    test('gives a remote projector the load options and a local model only '
+        'the cancel token', () async {
       final download = ModelLoadOptions(cacheDirectory: '/models');
 
-      final paths = await resolveSpeechModelFiles(
-        engineName: 'SpeechToTextEngine',
-        sources: [
-          ModelSource.parse('https://example.com/model.tflite'),
-          ModelSource.parse('https://example.com/tokenizer.json'),
-        ],
+      final engine = await load(
+        ModelSource.path('/models/asr.gguf'),
+        ModelSource.parse('https://models.example.com/mmproj-asr.gguf'),
         download: download,
-        onProgress: progress.add,
-        store: ModelFileStore(downloadManager: manager),
-        assetType: 'speech model',
       );
 
-      expect(paths, ['/cache/model.tflite', '/cache/tokenizer.json']);
-      expect(manager.options, everyElement(same(download)));
-      expect(
-        [for (final p in progress) (p.receivedBytes, p.totalBytes)],
-        [(50, null), (100, null), (150, 200), (200, 200)],
-      );
+      expect(backend.modelPath, '/models/asr.gguf');
+      expect(backend.projectorPath, '/cache/mmproj-asr.gguf');
+      expect(manager.remoteOptions('mmproj-asr.gguf'), [same(download)]);
+      expect(manager.localOptions, isNotEmpty);
+      for (final options in manager.localOptions) {
+        expect(options.cacheDirectory, isNull);
+      }
+      await engine.dispose();
     });
 
-    test('gives local files only the cancel token', () async {
-      final manager = _FakeDownloadManager();
-      final token = ModelDownloadCancelToken();
-
-      await resolveSpeechModelFiles(
-        engineName: 'SpeechToTextEngine',
-        sources: [ModelSource.path('/models/model.tflite')],
-        download: ModelLoadOptions(cacheDirectory: '/x', cancelToken: token),
-        onProgress: null,
-        store: ModelFileStore(downloadManager: manager),
-        assetType: 'speech model',
+    test('never sends credentials to a second host', () async {
+      await expectLater(
+        load(
+          ModelSource.parse('https://models.example.com/asr.gguf'),
+          ModelSource.parse('https://other.example.com/mmproj-asr.gguf'),
+          download: ModelLoadOptions(bearerToken: 'secret'),
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('other.example.com'), isNot(contains('secret'))),
+          ),
+        ),
       );
-
-      expect(manager.options.single.cacheDirectory, isNull);
-      expect(manager.options.single.cancelToken, same(token));
+      expect(manager.calls, isEmpty);
+      expect(backend.modelPath, isNull);
+      expect(backend.disposeCalls, 1);
     });
 
-    test('stops after a file when the load is cancelled', () async {
+    test('a load cancelled while the projector loads stops before verify '
+        'and is disposed', () async {
       final token = ModelDownloadCancelToken();
-      final manager = _FakeDownloadManager(onEnsure: token.cancel);
+      backend.onProjectorLoad = token.cancel;
 
       await expectLater(
-        resolveSpeechModelFiles(
-          engineName: 'SpeechToTextEngine',
-          sources: [
-            ModelSource.parse('https://example.com/model.tflite'),
-            ModelSource.parse('https://example.com/tokenizer.json'),
-          ],
+        load(
+          ModelSource.path('/models/asr.gguf'),
+          ModelSource.path('/models/mmproj-asr.gguf'),
           download: ModelLoadOptions(cancelToken: token),
-          onProgress: null,
-          store: ModelFileStore(downloadManager: manager),
-          assetType: 'speech model',
         ),
         throwsA(
           isA<LlamaStateException>().having(
@@ -70,97 +120,95 @@ void main() {
           ),
         ),
       );
-      expect(manager.options, hasLength(1));
+      expect(backend.projectorPath, '/models/mmproj-asr.gguf');
+      expect(verified, isFalse);
+      expect(backend.disposeCalls, 1);
     });
 
-    test('rejects one checksum for several files', () async {
-      await expectLater(
-        resolveSpeechModelFiles(
-          engineName: 'SpeechToTextEngine',
-          sources: [
-            ModelSource.parse('https://example.com/model.tflite'),
-            ModelSource.parse('https://example.com/tokenizer.json'),
+    test('remote LoRA adapters without their own options take only the '
+        'non-secret load options', () async {
+      final token = ModelDownloadCancelToken();
+      final own = ModelLoadOptions(bearerToken: 'adapter-token');
+
+      final engine = await load(
+        ModelSource.path('/models/asr.gguf'),
+        null,
+        download: ModelLoadOptions(
+          bearerToken: 'secret',
+          cacheDirectory: '/models',
+          maxRetries: 7,
+          cancelToken: token,
+        ),
+        params: ModelParams(
+          loras: [
+            LoraAdapterConfig.source(
+              ModelSource.parse('https://models.example.com/inherits.gguf'),
+            ),
+            LoraAdapterConfig.source(
+              ModelSource.parse('https://adapters.example.com/own.gguf'),
+              download: own,
+            ),
+            LoraAdapterConfig.source(ModelSource.path('/models/local.gguf')),
           ],
-          download: ModelLoadOptions(sha256: 'a' * 64),
-          onProgress: null,
-          store: ModelFileStore(downloadManager: _FakeDownloadManager()),
-          assetType: 'speech model',
-        ),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            startsWith('SpeechToTextEngine.load loads 2 files'),
-          ),
         ),
       );
+
+      final inherited = manager.remoteOptions('inherits.gguf').single;
+      expect(inherited.bearerToken, isNull);
+      expect(inherited.cacheDirectory, '/models');
+      expect(inherited.maxRetries, 7);
+      expect(inherited.cancelToken, same(token));
+      final ownOptions = manager.remoteOptions('own.gguf').single;
+      expect(ownOptions.bearerToken, 'adapter-token');
+      expect(ownOptions.cacheDirectory, isNull);
+      for (final options in manager.localOptions) {
+        expect(options.cacheDirectory, isNull);
+        expect(options.cancelToken, same(token));
+      }
+      expect(backend.modelParams!.loras.map((lora) => lora.path), [
+        '/cache/inherits.gguf',
+        '/cache/own.gguf',
+        '/models/local.gguf',
+      ]);
+      await engine.dispose();
     });
-  });
-
-  group('SpeechFilesProgress', () {
-    test('reports fraction-only progress as a fraction of all files', () {
-      final progress = <ModelDownloadProgress>[];
-      final files = SpeechFilesProgress(progress.add, fileCount: 2);
-
-      files.file(1)!(const ModelDownloadProgress.fraction(0.5));
-
-      expect(progress.single.fraction, 0.75);
-    });
-
-    test('keeps the total unknown while an earlier size is unknown', () {
-      final progress = <ModelDownloadProgress>[];
-      final files = SpeechFilesProgress(progress.add, fileCount: 2);
-
-      files.file(1)!(
-        const ModelDownloadProgress(receivedBytes: 4, totalBytes: 8),
-      );
-
-      expect(progress.single.receivedBytes, 4);
-      expect(progress.single.totalBytes, isNull);
-    });
-
-    test('passes one file through unchanged', () {
-      final progress = <ModelDownloadProgress>[];
-      final files = SpeechFilesProgress(progress.add, fileCount: 1);
-
-      files.file(0)!(
-        const ModelDownloadProgress(receivedBytes: 3, totalBytes: 9),
-      );
-
-      expect(progress.single.receivedBytes, 3);
-      expect(progress.single.totalBytes, 9);
-    });
-
-    test('does nothing without a callback', () {
-      final files = SpeechFilesProgress(null, fileCount: 2);
-
-      expect(files.file(0), isNull);
-      files.resolved(0, 10);
-    });
-  });
-
-  test('rejectMultiFileSha256 allows a checksum for one file', () {
-    rejectMultiFileSha256(
-      'TextToSpeechEngine',
-      ModelLoadOptions(sha256: 'a' * 64),
-      fileCount: 1,
-    );
-    expect(
-      () => rejectMultiFileSha256(
-        'TextToSpeechEngine',
-        ModelLoadOptions(sha256: 'a' * 64),
-        fileCount: 2,
-      ),
-      throwsA(isA<LlamaUnsupportedException>()),
-    );
   });
 }
 
-class _FakeDownloadManager implements ModelDownloadManager {
-  final void Function()? onEnsure;
-  final List<ModelLoadOptions> options = <ModelLoadOptions>[];
+class _LoaderBackend extends MockLlamaBackend {
+  ModelParams? modelParams;
+  void Function()? onProjectorLoad;
 
-  _FakeDownloadManager({this.onEnsure});
+  String? get modelPath => lastModelPath;
+
+  String? get projectorPath => lastMultimodalProjectorPath;
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) {
+    modelParams = params;
+    return super.modelLoad(path, params);
+  }
+
+  @override
+  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
+    onProjectorLoad?.call();
+    return super.multimodalContextCreate(modelHandle, mmProjPath);
+  }
+}
+
+class _FakeDownloadManager implements ModelDownloadManager {
+  final List<(ModelSource, ModelLoadOptions)> calls =
+      <(ModelSource, ModelLoadOptions)>[];
+
+  List<ModelLoadOptions> remoteOptions(String fileName) => [
+    for (final (source, options) in calls)
+      if (source.isRemote && source.fileName == fileName) options,
+  ];
+
+  List<ModelLoadOptions> get localOptions => [
+    for (final (source, options) in calls)
+      if (source.isLocal) options,
+  ];
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -168,18 +216,14 @@ class _FakeDownloadManager implements ModelDownloadManager {
     ModelLoadOptions options = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
   }) async {
-    this.options.add(options);
-    onEnsure?.call();
-    onProgress?.call(
-      const ModelDownloadProgress(receivedBytes: 50, totalBytes: 100),
-    );
+    calls.add((source, options));
     final fileName = source.fileName;
     final now = DateTime.utc(2026);
     return ModelCacheEntry(
       sourceCanonicalKey: fileName,
       cacheKey: fileName,
       fileName: fileName,
-      filePath: '/cache/$fileName',
+      filePath: source.path ?? '/cache/$fileName',
       createdAt: now,
       updatedAt: now,
       bytes: 100,

@@ -440,21 +440,32 @@ class TextToSpeechEngine {
   ///
   /// [load] creates the engine on [backend] (by default `LlamaBackend()`),
   /// loads [TextToSpeechModel.source] with [params] and then
-  /// [TextToSpeechModel.projector], as `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do, and checks
-  /// [capabilities]. Each file comes from its `ModelSource`, resolved by
-  /// [store]'s resolver and download manager (by default
-  /// [DefaultModelResolver] and [DefaultModelDownloadManager]), main file
-  /// first. [download] applies to every remote file: cache policy and
-  /// directory, authentication, resume, retries and the cancel token.
-  /// [onProgress] reports the files together: `receivedBytes` counts the
-  /// files resolved so far plus the current download, and `totalBytes` is
-  /// known once the last file's size and every earlier one's is.
+  /// [TextToSpeechModel.projector], and checks [capabilities]. Each file
+  /// comes from its `ModelSource`, resolved by [store]'s resolver and
+  /// download manager (by default [DefaultModelResolver] and
+  /// [DefaultModelDownloadManager]), main file first, before anything loads.
+  /// [download] applies to every remote file: cache policy and directory,
+  /// authentication, resume, retries and the cancel token. A local file
+  /// takes only the cancel token. The bearer token and headers never go to
+  /// more than one host: when they are set and the remote files are on
+  /// different hosts, [load] throws [LlamaArgumentException] before
+  /// downloading from the second one. [onProgress] reports the files
+  /// together: `receivedBytes` counts the files resolved so far plus the
+  /// current download, and `totalBytes` is their combined size once every
+  /// size is known. Adapters in [ModelParams.loras] given as sources
+  /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
+  /// backend, as on the web, fetches each file itself, as
+  /// `LlamaEngine.loadModelSource` and
+  /// `LlamaEngine.loadMultimodalProjectorSource` do, and [onProgress]
+  /// reports a fraction of both files.
   ///
-  /// The load is atomic: when it throws, the engine is disposed. Downloaded
-  /// files stay in the model cache. [dispose] disposes the engine.
+  /// The synthesizer owns the engine and a [backend] passed in: [dispose],
+  /// or a failed load, disposes both. The load is atomic: when it throws,
+  /// nothing stays loaded. Downloaded files stay in the model cache.
   ///
   /// Throws:
+  /// - [LlamaArgumentException] when [download] would send credentials to
+  ///   more than one host.
   /// - [LlamaUnsupportedException] when the loaded model cannot synthesize
   ///   speech with [TextToSpeechModel.adapter] (see [capabilities]), and when
   ///   [download] sets [ModelLoadOptions.sha256] for a model with a

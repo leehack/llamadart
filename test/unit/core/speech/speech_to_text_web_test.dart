@@ -310,6 +310,7 @@ void main() {
 
   test('load fetches the model and projector by URL on Web', () async {
     final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+    final progress = <ModelDownloadProgress>[];
     final recognizer = await SpeechToTextEngine.load(
       SpeechToTextModel(
         ModelSource.parse('https://example.com/qwen3-asr.gguf'),
@@ -318,8 +319,13 @@ void main() {
         ),
         adapter: const Qwen3AsrAdapter(),
       ),
+      onProgress: progress.add,
       backend: backend,
     );
+
+    expect(backend.modelUrl, 'https://example.com/qwen3-asr.gguf');
+    expect(backend.projectorUrl, 'https://example.com/qwen3-asr-mmproj.gguf');
+    expect([for (final p in progress) p.fraction], [0.25, 0.5]);
 
     final result = await recognizer.transcribeOnce(
       SpeechToTextRequest(
@@ -423,6 +429,8 @@ class _WebSpeechBackend
   String generationText;
   bool cancelCalled = false;
   int disposeCalls = 0;
+  String? modelUrl;
+  String? projectorUrl;
   String? lastPrompt;
   List<LlamaContentPart>? lastParts;
   GenerationParams? lastGenerationParams;
@@ -450,7 +458,12 @@ class _WebSpeechBackend
     String url,
     ModelParams params, {
     Function(double progress)? onProgress,
-  }) async => 1;
+  }) async {
+    modelUrl = url;
+    onProgress?.call(0.5);
+    onProgress?.call(1);
+    return 1;
+  }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async => 2;
@@ -459,7 +472,10 @@ class _WebSpeechBackend
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => 3;
+  ) async {
+    projectorUrl = mmProjPath;
+    return 3;
+  }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async => true;
