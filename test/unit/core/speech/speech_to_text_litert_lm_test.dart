@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -37,8 +38,8 @@ void main() {
     driver = _FakeLiteRtLmSpeechDriver();
     debugLiteRtLmSpeechToTextDriverOverride = driver;
     directory = await Directory.systemTemp.createTemp('llamadart_asr_');
-    modelPath = '${directory.path}/moonshine.tflite';
-    tokenizerPath = '${directory.path}/tokenizer.json';
+    modelPath = p.join(directory.path, 'moonshine.tflite');
+    tokenizerPath = p.join(directory.path, 'tokenizer.json');
     await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
     await File(tokenizerPath).writeAsString('{}');
   });

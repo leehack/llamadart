@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
     show BackendGenerationLimit, BackendGenerationLimitReporting;
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -962,8 +963,8 @@ void main() {
     setUp(() async {
       backend = _SpeechBackend();
       directory = await Directory.systemTemp.createTemp('llamadart_stt_');
-      modelPath = '${directory.path}/asr.gguf';
-      projectorPath = '${directory.path}/mmproj-asr.gguf';
+      modelPath = p.join(directory.path, 'asr.gguf');
+      projectorPath = p.join(directory.path, 'mmproj-asr.gguf');
       await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
       await File(projectorPath).writeAsBytes(<int>[4, 5]);
     });

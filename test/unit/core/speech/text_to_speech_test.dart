@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -382,8 +383,8 @@ void main() {
     setUp(() async {
       backend = _TextToSpeechBackend();
       directory = await Directory.systemTemp.createTemp('llamadart_tts_');
-      modelPath = '${directory.path}/tts.gguf';
-      projectorPath = '${directory.path}/mmproj-tts.gguf';
+      modelPath = p.join(directory.path, 'tts.gguf');
+      projectorPath = p.join(directory.path, 'mmproj-tts.gguf');
       await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
       await File(projectorPath).writeAsBytes(<int>[4, 5]);
     });
