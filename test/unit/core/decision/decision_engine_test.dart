@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
@@ -380,6 +381,7 @@ void main() {
       expect(capabilities.isSupported, isFalse);
       expect(capabilities.unsupportedReason, 'Load a model first.');
       expect(capabilities.backendName, 'Metal');
+      expect(capabilities.runtime, isNull);
       expect(backend.probedModels, isEmpty);
     });
 
@@ -390,6 +392,7 @@ void main() {
 
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.unsupportedReason, isNull);
+      expect(capabilities.runtime, LlamaRuntime.llamaCpp);
       expect(backend.probedModels, [engine.modelHandle]);
     });
 
@@ -404,6 +407,7 @@ void main() {
         capabilities.unsupportedReason,
         allOf(contains('probe failed'), contains('probe crashed')),
       );
+      expect(capabilities.runtime, LlamaRuntime.llamaCpp);
     });
 
     test(
@@ -1104,6 +1108,91 @@ void main() {
       expect(owned.disposeCalls, 1);
     });
 
+    test('a cancel during the encoder load loads no head', () async {
+      final cancelToken = ModelDownloadCancelToken();
+      debugDecisionBackendFactory = () =>
+          owned = _DecisionBackend(fixture)..onModelLoad = cancelToken.cancel;
+
+      await expectLater(
+        loadLaya(download: ModelLoadOptions(cancelToken: cancelToken)),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(owned.modelLoads, hasLength(1));
+      expect(owned.probedModels, isEmpty);
+      expect(owned.headLoads, isEmpty);
+      expect(owned.modelFrees, 1);
+      expect(owned.disposeCalls, 1);
+    });
+
+    test('a cancel from the last progress report loads nothing', () async {
+      final cancelToken = ModelDownloadCancelToken();
+
+      await expectLater(
+        loadLaya(
+          download: ModelLoadOptions(cancelToken: cancelToken),
+          onProgress: (progress) {
+            if (progress.receivedBytes == progress.totalBytes) {
+              cancelToken.cancel();
+            }
+          },
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(downloads.calls, hasLength(3));
+      expect(owned.modelLoads, isEmpty);
+      expect(owned.disposeCalls, 1);
+    });
+
+    test('rejects credentials for files on two hosts before contacting the '
+        'second, naming the hosts but not the credentials', () async {
+      final split = DecisionModel(
+        encoder: ModelSource.parse('https://a.example.com/laya-Q8_0.gguf'),
+        head: ModelSource.parse('https://b.example.com/laya-head.safetensors'),
+      );
+      for (final download in [
+        ModelLoadOptions(bearerToken: 'hf_secret'),
+        ModelLoadOptions(headers: const {'X-Key': 'hf_secret'}),
+      ]) {
+        await expectLater(
+          DecisionEngine.load(
+            split,
+            download: download,
+            store: ModelFileStore(downloadManager: downloads),
+          ),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('https://a.example.com:443'),
+                contains('https://b.example.com:443'),
+                isNot(contains('hf_secret')),
+              ),
+            ),
+          ),
+        );
+        expect(owned.modelLoads, isEmpty);
+        expect(owned.disposeCalls, 1);
+      }
+      expect(downloads.calls, isEmpty);
+
+      await expectLater(
+        DecisionEngine.load(
+          laya,
+          download: ModelLoadOptions(bearerToken: 'hf_secret'),
+          store: ModelFileStore(
+            resolver: _MirrorSecondResolver(),
+            downloadManager: downloads,
+          ),
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(downloads.calls.map((call) => call.$1.fileName), [
+        'laya-Q8_0.gguf',
+      ]);
+      expect(owned.modelLoads, isEmpty);
+    });
+
     test(
       'rejects settings it cannot apply before creating an engine',
       () async {
@@ -1322,6 +1411,123 @@ void main() {
       },
     );
 
+    test('a model reloaded during the download gets no head', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+      downloads.onEnsure = (_) async {
+        await engine.unloadModel();
+        await engine.loadModel('laya-Q8_0.gguf');
+      };
+
+      await expectLater(
+        DecisionEngine.attach(
+          engine,
+          head: ModelSource.parse('https://example.com/laya-head.safetensors'),
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('unloaded while the DecisionEngine was loading'),
+          ),
+        ),
+      );
+      expect(engine.isReady, isTrue);
+      expect(backend.headLoads, isEmpty);
+    });
+
+    test('a cancel from the last progress report loads no head', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+      final cancelToken = ModelDownloadCancelToken();
+
+      await expectLater(
+        DecisionEngine.attach(
+          engine,
+          head: ModelSource.parse('https://example.com/laya-head.safetensors'),
+          download: ModelLoadOptions(cancelToken: cancelToken),
+          onProgress: (progress) {
+            if (progress.receivedBytes == progress.totalBytes) {
+              cancelToken.cancel();
+            }
+          },
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(downloads.calls, hasLength(1));
+      expect(backend.headLoads, isEmpty);
+      expect(engine.isReady, isTrue);
+    });
+
+    test('verifies a local head against sha256', () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'llamadart_decision_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final head = File('${directory.path}/head.safetensors')
+        ..writeAsBytesSync([1, 2, 3]);
+      final checkedEngine = LlamaEngine(
+        backend,
+        modelDownloadManager: DefaultModelDownloadManager.appPrivate(
+          cacheDirectory: '${directory.path}/cache',
+        ),
+      );
+      await checkedEngine.loadModel('laya-Q8_0.gguf');
+
+      await expectLater(
+        DecisionEngine.attach(
+          checkedEngine,
+          head: ModelSource.path(head.path),
+          download: ModelLoadOptions(sha256: '0' * 64),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            contains('Checksum mismatch'),
+          ),
+        ),
+      );
+      expect(backend.headLoads, isEmpty);
+
+      final decisions = await DecisionEngine.attach(
+        checkedEngine,
+        head: ModelSource.path(head.path),
+        download: ModelLoadOptions(
+          sha256:
+              '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+        ),
+      );
+      await decisions.dispose();
+      expect(backend.headLoads, hasLength(1));
+    });
+
+    test('rejects credentials for a head and config on two hosts before '
+        'contacting either', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+
+      await expectLater(
+        DecisionEngine.attach(
+          engine,
+          head: ModelSource.parse(
+            'https://a.example.com/laya-head.safetensors',
+          ),
+          config: ModelSource.parse(
+            'https://b.example.com/rl_agent_config.json',
+          ),
+          download: ModelLoadOptions(headers: const {'X-Key': 'hf_secret'}),
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('b.example.com'), isNot(contains('hf_secret'))),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+      expect(backend.headLoads, isEmpty);
+      expect(engine.isReady, isTrue);
+    });
+
     test('capabilities turn unsupported once the model is unloaded', () async {
       await engine.loadModel('laya-Q8_0.gguf');
       final decisions = await DecisionEngine.attach(
@@ -1383,6 +1589,7 @@ class _DecisionBackend
   final List<(String, ModelParams)> modelLoads = [];
   final List<String> urlModelLoads = [];
   Object? headLoadError;
+  void Function()? onModelLoad;
   bool urlLoading = false;
   bool gpuSupported = true;
   int modelFrees = 0;
@@ -1406,6 +1613,7 @@ class _DecisionBackend
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     modelLoads.add((path, params));
+    onModelLoad?.call();
     _ready = true;
     return reuseModelHandle ? 1 : _nextModelHandle++;
   }
@@ -1608,6 +1816,25 @@ final class _Downloads extends ThrowingModelDownloadManager {
       bytes: size,
       createdAt: now,
       updatedAt: now,
+    );
+  }
+}
+
+/// Resolves the second remote source it sees to another host.
+final class _MirrorSecondResolver implements ModelResolver {
+  int _remotes = 0;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async {
+    if (source.isLocal) return LocalModelFile(source.path!);
+    _remotes += 1;
+    return RemoteModelUrl(
+      _remotes == 1
+          ? source.resolvedUri!
+          : Uri.parse('https://mirror.example.com/${source.fileName}'),
     );
   }
 }

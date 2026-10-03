@@ -92,7 +92,11 @@ final decisions = await DecisionEngine.load(
   the runtime default (llama.cpp uses 4).
 - `download:` takes `ModelLoadOptions` for every remote file: cache policy and
   directory, authentication, resume, retries and a cancel token.
-  `ModelLoadOptions.sha256` cannot apply to several files and throws.
+  `ModelLoadOptions.sha256` cannot apply to several files and throws. A
+  `bearerToken` or `headers` is never sent across hosts: with remote files on
+  more than one origin (scheme, host and port), the load throws
+  `LlamaArgumentException` before contacting another host, so host the files
+  together or load them without credentials.
   `store:` replaces the resolver and download manager, for example to keep
   weights in a directory the app chooses.
 - `onProgress` reports every file together, as one byte count.
@@ -126,8 +130,9 @@ final base = await DecisionEngine.attach(engine, head: baseHead);
 final tuned = await DecisionEngine.attach(engine, head: tunedHead);
 ```
 
-`attach` probes the loaded model before downloading anything, and applies
-`ModelLoadOptions.sha256` to the head when no config is passed.
+`attach` probes the loaded model before downloading anything. Without a
+config, `ModelLoadOptions.sha256` verifies the head, local or downloaded; with
+one it throws. Credentials follow the same one-origin rule as `load`.
 `DecisionEngine.capabilitiesFor(engine)` runs the same probe without loading.
 
 ## Ask questions

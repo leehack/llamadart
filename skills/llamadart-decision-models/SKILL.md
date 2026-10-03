@@ -55,7 +55,8 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   `LlamaUnsupportedException`.
 - `load` and `attach` throw `LlamaUnsupportedException` for a non-encoder
   model, `LlamaModelException` for a missing, unreadable or mismatched file,
-  and `LlamaStateException` when cancelled or when an attached engine's model
+  `LlamaArgumentException` when `download:` carries a `bearerToken` or
+  `headers` for files on more than one host, and `LlamaStateException` when cancelled or when an attached engine's model
   is unloaded meanwhile. Pass `config:` (Laya's `rl_agent_config.json`) only
   for heads without `laya.config` metadata, such as the official
   `convaiinnovations/laya` `model.safetensors`; heads exported by the training

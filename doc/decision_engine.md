@@ -63,7 +63,7 @@ Loading follows the shared engine pattern
 - `DecisionEngine.load(DecisionModel(encoder:, head:, config:), params:,
   download:, onProgress:, store:)` creates a `LlamaEngine` (backend from
   `LlamaBackend()`, resolver and download manager from `store`), resolves
-  every file through `ensureModelTargetFiles` before loading anything, loads
+  every file through `resolveModelSourceFiles` before loading anything, loads
   the encoder with `DecisionModelParams.encoderModelParams` (context 512, the
   device and threads), and attaches the head. It owns the engine: a failure
   disposes it, and `dispose()` frees the head and then the engine. Settings it
@@ -74,6 +74,10 @@ Loading follows the shared engine pattern
   probes the loaded model first, resolves the files through the engine's
   `modelResolver` and `modelDownloadManager`, then loads the head. It borrows
   the engine: `dispose()` frees only the head.
+- Both share `resolveModelSourceFiles` with `ImageGenerationEngine.load`, so a
+  single local or remote file is checked against `sha256`, and `bearerToken`
+  or `headers` with remote files on more than one origin throw
+  `LlamaArgumentException` before the next host is contacted.
 - On URL-loading backends (Web), files are not downloaded: a local target
   (`ModelSource.path`) passes through as a document-relative URL and a remote
   one as its resolved URL, and `rejectUnsupportedUrlBackendOptions` rejects
