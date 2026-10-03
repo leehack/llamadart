@@ -96,7 +96,7 @@ Loading follows the shared engine pattern
 ```text
 DecisionEngine (core, pure Dart)
   question -> texts -> engine.tokenize -> sequence ids + marker positions
-  LlamaEngine hooks: loadDecisionHeadBackend / runDecisionBackend / freeDecisionHeadBackend
+  LlamaEngineBackendHooks (backend.dart): loadDecisionHeadBackend / runDecisionBackend / freeDecisionHeadBackend
     BackendDecision (backend.dart, web-safe value types)
       NativeAutoBackend -> NativeLlamaBackend -> worker isolate -> LlamaCppService
         private encoder llama_context + safetensors head + ggml head graph
@@ -152,15 +152,15 @@ LiteRT-LM delegates report unsupported.
 
 ### Engine hooks (`lib/src/core/engine/engine.dart`)
 
-Plain public methods documented as low-level integration hooks, like the TTS
-trio. The capabilities hook checks `is! BackendDecision` before readiness, so
+Members of the `LlamaEngineBackendHooks` extension, exported from
+`package:llamadart/backend.dart`, like the TTS trio. Being extension members,
+a `LlamaEngine` subclass cannot override them; tests fake `BackendDecision`. The capabilities hook checks `is! BackendDecision` before readiness, so
 a backend without the contract reports a stable reason without a model.
 
 Backend handles are not unique over an engine's life: the worker numbers
-handles from 1, and a new worker starts after `LlamaEngine.dispose` followed by
-`loadModel`, or when a GGUF load follows a `.litertlm` load (which replaces the
-llama.cpp delegate even if it fails), so the first head after a restart gets
-the previous head's number. `loadDecisionHeadBackend` therefore returns the
+handles from 1, and a new worker starts when a GGUF load follows a
+`.litertlm` load (which replaces the llama.cpp delegate even if it fails), so
+the first head after a restart gets the previous head's number. `loadDecisionHeadBackend` therefore returns the
 head with an engine handle from a counter that never resets, mapped to the
 backend handle. `_unloadModel` forgets every mapping. A
 run with an unmapped engine handle throws `LlamaStateException` ("load the

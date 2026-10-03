@@ -206,6 +206,22 @@ void main() {
       expect(capabilities.unsupportedReason, contains('old native symbols'));
     });
 
+    test('reports audio as LlamaEngine.capabilities does when the runtime '
+        'cannot probe it', () async {
+      backend.audioProbeError = LlamaUnsupportedException('no mtmd audio');
+      await _loadSpeechModel(llamaEngine);
+
+      final capabilities = await speechEngine.capabilities;
+
+      expect((await llamaEngine.capabilities).supportsAudio, isFalse);
+      expect(await llamaEngine.supportsAudio, isFalse);
+      expect(capabilities.isSupported, isFalse);
+      expect(
+        capabilities.unsupportedReason,
+        'The loaded multimodal projector does not report audio support.',
+      );
+    });
+
     test(
       'normalizes Qwen3-ASR language prefix and emits one final event',
       () async {

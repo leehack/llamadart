@@ -64,9 +64,10 @@ Measured with the prototype on the same runtime, 512x512, one step, warm:
 
 `await ImageGenerationEngine.checkRuntime()` reports whether this build and
 device can generate images, and why not, without loading a model or blocking
-the calling isolate. `ImageGenerationEngine.runtimeCapabilities()` returns the
-same result synchronously, but its first call can block for seconds; see
+the calling isolate. Its first call in a process can take seconds; see
 [First-image latency and warm-up](#first-image-latency-and-warm-up).
+`ImageGenerationCapabilities` implements `EngineCapabilities`, like every
+engine's capabilities.
 
 ## Bundle the runtime
 
@@ -455,8 +456,8 @@ flow-matching models.
 
 ```dart
 final engine = await ImageGenerationEngine.load(model);
-print('${engine.capabilities.modelVersion} on '
-    '${engine.capabilities.backendName}');
+final capabilities = await engine.capabilities;
+print('${capabilities.modelVersion} on ${capabilities.backendName}');
 
 final task = await engine.generate(
   const ImageGenerationRequest(
@@ -532,11 +533,9 @@ attention where a device has no kernel for it.
 
 ggml compiles GPU shaders the first time a process needs them, in two places:
 
-- The first runtime probe in a process (`checkRuntime()`,
-  `runtimeCapabilities()` or `load()`) initializes the GPU backend. On Apple
-  GPUs this compiles ggml's Metal library. `checkRuntime()` and `load()` run
-  the probe on a separate isolate; `runtimeCapabilities()` runs it on the
-  calling isolate and blocks it.
+- The first runtime probe in a process (`checkRuntime()` or `load()`)
+  initializes the GPU backend. On Apple GPUs this compiles ggml's Metal
+  library. Both run the probe on a separate isolate.
 - The first generation on the GPU compiles the pipelines it runs.
 
 The operating system or GPU driver caches the compiled shaders on disk, so
@@ -592,16 +591,15 @@ completes:
 final capabilities = await ImageGenerationEngine.checkRuntime();
 ```
 
-With an empty shader cache on the M4 Max, `runtimeCapabilities()` stalled a
-10 ms timer on the calling isolate for the whole 16 s probe. During
-`checkRuntime()` the timer kept firing, with gaps of 13 to 31 ms in most
+With an empty shader cache on the M4 Max, probing on the calling isolate
+stalled a 10 ms timer for the whole 16 s probe. During `checkRuntime()` the
+timer kept firing, with gaps of 13 to 31 ms in most
 runs. One pause remains: a garbage collection on the calling isolate waits
 while the probe isolate loads the runtime library (0.4 to 0.5 s), so an
 allocating UI can pause once for up to that long (179 ms in the chat
 example's macOS E2E). Calls that overlap share one probe. The compiled
-library belongs to the process, so later probes, including
-`runtimeCapabilities()`, return at once. `load()` probes the same way and
-does not block the caller either.
+library belongs to the process, so later probes return at once. `load()`
+probes the same way and does not block the caller either.
 
 ## Progress phases
 
@@ -631,6 +629,10 @@ avoids by loading them eagerly.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
   `generateImage` then throws `LlamaStateException`.
 - `dispose()` is idempotent: later calls return the first call's future.
+  `isDisposed` turns true at the first call, and `await engine.capabilities`
+  then reports the engine as unsupported. `capabilities` never throws and
+  changes only on `dispose()`, so a Flutter app can read it once after
+  `load` and keep it in its state for `build`.
 - Free the model before a Flutter app quits: on macOS Metal, quitting with a
   model still loaded aborts the process. A Dart program that ends with the
   model loaded frees it on the way out and does not abort, unless it dies of

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'case_catalog.dart';

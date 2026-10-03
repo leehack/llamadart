@@ -13,6 +13,7 @@ import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
+import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
@@ -22,6 +23,7 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/model_format.dart';
 import '../../core/url_redaction.dart';
 import '../backend.dart';
+import '../web/webgpu_adapter_probe.dart';
 import 'litert_lm_sampler_params.dart';
 
 /// Web LiteRT-LM backend for `.litertlm` models.
@@ -81,9 +83,13 @@ class LiteRtLmBackend
   /// Creates a web LiteRT-LM backend.
   ///
   /// [initialSendPort] is accepted for API compatibility with the native
-  /// backend and ignored on web.
+  /// backend and ignored on web. [preferredBackend] (`cpu` or `gpu`) is
+  /// deprecated: set `ModelParams.device` instead. A load whose
+  /// `ModelParams.device` is not auto throws `LlamaUnsupportedException` when
+  /// [preferredBackend] is set.
   LiteRtLmBackend({
     Object? initialSendPort,
+    @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
     String? preferredBackend,
     String? moduleUrl,
     Duration? readyTimeout,
@@ -159,6 +165,13 @@ class LiteRtLmBackend
   }) async {
     _validateModelParams(params);
     final backend = _resolveBackendName(params);
+    if (params.device == ComputeDevice.gpu && !await webGpuAdapterAvailable()) {
+      throw LlamaUnsupportedException(
+        'ComputeDevice.gpu needs WebGPU for LiteRT-LM on the Web, but this '
+        'browser grants no WebGPU adapter. Use ComputeDevice.auto or cpu, or '
+        'a browser with WebGPU enabled.',
+      );
+    }
 
     onProgress?.call(0);
     final constructor = await _ensureEngineConstructor();
@@ -1161,8 +1174,9 @@ class LiteRtLmBackend
       'LiteRtLmBackend web does not support these native or '
       'llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM web load options are '
-      'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
-      'hints, and liteRtLmBackend CPU/GPU selection.',
+      'contextSize, chatTemplate, device or the deprecated liteRtLmBackend '
+      'for CPU/GPU selection, preferredBackend, and all-or-CPU gpuLayers '
+      'hints.',
     );
   }
 
@@ -1235,6 +1249,10 @@ class LiteRtLmBackend
   }
 
   String _resolveBackendName(ModelParams params) {
+    final device = _deviceBackendName(params);
+    if (device != null) {
+      return device;
+    }
     final explicit = _preferredBackend ?? params.liteRtLmBackend.nativeName;
     if (explicit != null) {
       if (explicit == 'npu') {
@@ -1248,7 +1266,37 @@ class LiteRtLmBackend
     return _backendNameForGpuPreference(params.preferredBackend);
   }
 
+  /// The backend an explicit [ModelParams.device] requires, or null for
+  /// [ComputeDevice.auto].
+  String? _deviceBackendName(ModelParams params) {
+    final device = params.device;
+    if (device == ComputeDevice.auto) {
+      return null;
+    }
+    if (_preferredBackend != null) {
+      throw LlamaUnsupportedException(
+        'ModelParams.device ${device.name} cannot be combined with the '
+        'deprecated LiteRtLmBackend(preferredBackend: $_preferredBackend). '
+        'Set only ModelParams.device.',
+      );
+    }
+    return switch (device) {
+      ComputeDevice.cpu => 'cpu',
+      ComputeDevice.gpu => 'gpu',
+      ComputeDevice.npu => throw LlamaUnsupportedException(
+        'ComputeDevice.npu is not available for LiteRT-LM on the Web, which '
+        'runs on the CPU or WebGPU; only LiteRT-LM on Android has an NPU '
+        'backend. Use ComputeDevice.auto, cpu or gpu.',
+      ),
+      ComputeDevice.auto => null,
+    };
+  }
+
   String? _explicitBackendName(ModelParams params) {
+    final device = _deviceBackendName(params);
+    if (device != null) {
+      return device;
+    }
     final explicit = params.liteRtLmBackend.nativeName;
     if (explicit != null) {
       return explicit;

@@ -178,9 +178,6 @@ class LiteRtLmAsrAdapter extends SpeechToTextAdapter {
   /// The model family's runtime metadata.
   final LiteRtLmAsrModelPreset preset;
 
-  /// Accelerator to run on.
-  final LiteRtLmAsrBackend backend;
-
   /// Native CPU worker count. Must fit a positive signed 32-bit integer.
   final int numberOfThreads;
 
@@ -200,7 +197,6 @@ class LiteRtLmAsrAdapter extends SpeechToTextAdapter {
   /// Creates the adapter for a [preset] model family.
   const LiteRtLmAsrAdapter(
     this.preset, {
-    this.backend = LiteRtLmAsrBackend.cpu,
     this.numberOfThreads = 4,
     this.maxBufferedAudio = const Duration(seconds: 30),
     this.overlapRatio = 0.4,

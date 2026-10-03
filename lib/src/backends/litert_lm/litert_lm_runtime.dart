@@ -64,6 +64,35 @@ String? liteRtLmStreamProxyCompatibilityError({
       'pinned runtime before using asynchronous generation.';
 }
 
+/// `litert_lm_engine_create` returned no engine for the requested backend,
+/// for example a GPU or NPU delegate this device cannot start.
+///
+/// A [StateError], as before, so callers matching on it keep working.
+class LiteRtLmEngineCreateError extends StateError {
+  /// Creates the error with the diagnostic [message].
+  LiteRtLmEngineCreateError(super.message);
+}
+
+/// Throws [LiteRtLmEngineCreateError] when `litert_lm_engine_create` returned
+/// no engine, that is when [engineAddress] is 0.
+///
+/// This is public only for unit tests; production callers should receive the
+/// error through [LiteRtLmRuntimeClient.initialize].
+void liteRtLmCheckEngineCreated(
+  int engineAddress, {
+  required String backend,
+  required String modelPath,
+}) {
+  if (engineAddress == 0) {
+    throw LiteRtLmEngineCreateError(
+      liteRtLmEngineCreateFailureMessage(
+        backend: backend,
+        modelPath: modelPath,
+      ),
+    );
+  }
+}
+
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
 /// This is public only for unit tests; production callers should receive the
@@ -852,14 +881,11 @@ class LiteRtLmRuntimeClient {
           _keepAlive(companionLibraries);
         }
       });
-      if (engineAddress == 0) {
-        throw StateError(
-          liteRtLmEngineCreateFailureMessage(
-            backend: resolvedBackend,
-            modelPath: modelPath,
-          ),
-        );
-      }
+      liteRtLmCheckEngineCreated(
+        engineAddress,
+        backend: resolvedBackend,
+        modelPath: modelPath,
+      );
       _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
     } finally {
       if (settings != nullptr) {
@@ -1078,39 +1104,6 @@ class LiteRtLmRuntimeClient {
     } finally {
       calloc.free(messagePtr);
     }
-  }
-
-  /// Returns the token count currently held by the active conversation KV cache.
-  @Deprecated(
-    'Has no callers in llamadart and will be removed in the next major '
-    'release. Open an issue if you depend on it.',
-  )
-  int conversationTokenCount() {
-    final bindings = _requireBindings();
-    final conversation = _requireConversation();
-    final count = bindings.conversationGetTokenCount(conversation);
-    if (count < 0) {
-      throw StateError(
-        'litert_lm_conversation_get_token_count returned $count',
-      );
-    }
-    return count;
-  }
-
-  /// Replaces the active conversation with a native clone of itself.
-  @Deprecated(
-    'Has no callers in llamadart and will be removed in the next major '
-    'release. Open an issue if you depend on it.',
-  )
-  void replaceConversationWithClone() {
-    final bindings = _requireBindings();
-    final conversation = _requireConversation();
-    final clone = bindings.conversationClone(conversation);
-    if (clone == nullptr) {
-      throw StateError('litert_lm_conversation_clone returned null');
-    }
-    bindings.conversationDelete(conversation);
-    _conversation = clone;
   }
 
   /// Streams generated text from the active conversation.
@@ -3408,12 +3401,6 @@ class _LiteRtLmBindings {
         void Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_delete');
 
-  late final conversationClone = _library
-      .lookupFunction<
-        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>),
-        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>)
-      >('litert_lm_conversation_clone');
-
   late final conversationOptionalArgsCreate = _library
       .lookupFunction<
         Pointer<_LiteRtLmConversationOptionalArgs> Function(),
@@ -3507,12 +3494,6 @@ class _LiteRtLmBindings {
         ),
         Pointer<_LiteRtLmBenchmarkInfo> Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_get_benchmark_info');
-
-  late final conversationGetTokenCount = _library
-      .lookupFunction<
-        Int Function(Pointer<_LiteRtLmConversation>),
-        int Function(Pointer<_LiteRtLmConversation>)
-      >('litert_lm_conversation_get_token_count');
 
   late final benchmarkInfoDelete = _library
       .lookupFunction<

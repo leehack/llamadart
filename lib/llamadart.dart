@@ -12,6 +12,10 @@
 ///   It automatically manages conversation history and context window limits.
 /// * [LlamaBackend]: The platform-agnostic interface for inference.
 ///
+/// Custom backends and their test fakes also import
+/// `package:llamadart/backend.dart`. The raw llama.cpp FFI is in
+/// `package:llamadart/llama_cpp_bindings.dart`, outside semantic versioning.
+///
 /// ### Simple Example
 ///
 /// ```dart
@@ -72,43 +76,16 @@ export 'src/core/template/chat_format.dart' show ChatFormat;
 export 'src/core/template/chat_parse_result.dart' show ChatParseResult;
 export 'src/core/template/chat_template_engine.dart' show ChatTemplateEngine;
 export 'src/core/template/chat_template_handler.dart' show ChatTemplateHandler;
+export 'src/core/template/template_render_context.dart'
+    show TemplateToolCallSerialization;
 
-// Backend (interface only)
+// Backend: the app-facing part. The custom-backend SPI is in
+// package:llamadart/backend.dart.
 export 'src/backends/backend.dart'
     show
         LlamaBackend,
-        BackendAvailability,
-        BackendDartLogLevel,
-        BackendDecision,
-        BackendDecisionCapabilities,
-        BackendDecisionHeadInfo,
-        BackendDecisionOutput,
-        BackendDecisionSequence,
-        BackendGenerationCapabilities,
-        BackendGenerationCapabilitiesSupport,
-        BackendGrammarConstraintsSupport,
-        BackendLazyGrammarSupport,
-        BackendGpuEnumeration,
-        BackendNativeChatGeneration,
-        BackendRuntimeDiagnostics,
-        BackendPromptSpeechToTextSupport,
-        BackendTextToSpeech,
-        BackendTextToSpeechCapabilities,
-        BackendTextToSpeechModel,
-        BackendTextToSpeechPhase,
-        BackendTextToSpeechProgress,
-        BackendTextToSpeechRequest,
-        BackendTextToSpeechResult,
-        BackendModelFileTypeDiagnostics,
         BackendPerfContextData,
-        BackendPerformanceDiagnostics,
-        BackendEmbeddings,
-        BackendEmbeddingsSupport,
-        BackendBatchEmbeddings,
-        BackendNextTokenScoring,
-        BackendNextTokenScoringSupport,
-        BackendStatePersistence,
-        BackendStatePersistenceSupport,
+        BackendTextToSpeechModel,
         StateLoadResult;
 
 // Models - Inference
@@ -158,29 +135,6 @@ export 'src/core/models/diagnostics/model_file_type.dart';
 export 'src/core/exceptions.dart';
 export 'src/core/cache_policy.dart' show hasPersistentCacheSensitiveUrlParts;
 
-// LiteRT-LM native APIs
-export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
-    if (dart.library.js_interop) 'src/backends/litert_lm/litert_lm_backend_web.dart'
-    if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart'
-    show LiteRtLmBackend;
-export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'
-    if (dart.library.io) 'src/backends/litert_lm/litert_lm_runtime.dart'
-    show
-        LiteRtLmRuntimeClient,
-        LiteRtLmRuntimeMetrics,
-        LiteRtLmRuntimeResult,
-        LiteRtLmAsrBackend,
-        LiteRtLmAsrModelPreset,
-        LiteRtLmAsrProcessResult,
-        LiteRtLmAsrProcessState,
-        LiteRtLmAsrPushResult,
-        LiteRtLmAsrRuntimeConfig,
-        LiteRtLmAsrRuntimeSession;
-
-// Deprecated compatibility aliases for the old benchmark API.
-export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'
-    if (dart.library.io) 'src/experimental/litert_lm/litert_lm_benchmark.dart';
-
-// Bindings - conditional export for web/native
-export 'src/backends/llama_cpp/bindings_stub.dart'
-    if (dart.library.io) 'src/backends/llama_cpp/bindings.dart';
+// LiteRT-LM speech-to-text configuration
+export 'src/backends/litert_lm/litert_lm_asr_types.dart'
+    show LiteRtLmAsrBackend, LiteRtLmAsrModelPreset, LiteRtLmAsrRuntimeConfig;

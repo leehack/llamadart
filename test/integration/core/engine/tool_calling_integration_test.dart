@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:test/test.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
 class MockLlamaBackend implements LlamaBackend, BackendAvailability {

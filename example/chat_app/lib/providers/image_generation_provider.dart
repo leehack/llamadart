@@ -110,6 +110,8 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   ImageGenerator? _generator;
   String? _generatorModelId;
+  // Read once after the load; it changes only when the engine is disposed.
+  ImageGenerationCapabilities? _generatorCapabilities;
   Future<ImageGenerator?>? _loading;
   Future<void>? _initializing;
   final Set<Future<void>> _disposals = <Future<void>>{};
@@ -223,11 +225,10 @@ class ImageGenerationProvider extends ChangeNotifier {
 
   /// Model family and device of the loaded engine, such as `SD 2.x on MTL0`.
   String? get loadedEngineLabel {
-    final generator = _generator;
-    if (generator == null) {
+    final capabilities = _generatorCapabilities;
+    if (_generator == null || capabilities == null) {
       return null;
     }
-    final capabilities = generator.capabilities;
     return [
       capabilities.modelVersion,
       capabilities.backendName,
@@ -523,12 +524,14 @@ class ImageGenerationProvider extends ChangeNotifier {
     final generator = await _generationService.load(
       installed.toGenerationModel(),
     );
+    final capabilities = _isClosed ? null : await generator.capabilities;
     if (_isClosed) {
       await _trackDisposal(generator.dispose());
       return null;
     }
     _generator = generator;
     _generatorModelId = installed.profile.id;
+    _generatorCapabilities = capabilities;
     return generator;
   }
 
@@ -568,6 +571,7 @@ class ImageGenerationProvider extends ChangeNotifier {
     final generator = _generator;
     _generator = null;
     _generatorModelId = null;
+    _generatorCapabilities = null;
     if (generator != null) {
       await _trackDisposal(generator.dispose());
     }

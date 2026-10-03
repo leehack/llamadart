@@ -844,7 +844,11 @@ void main() {
     await tester.pump();
 
     expect(
-      chatService.mockEngine.lastTextToSpeechRequest?.speakerAudioBytes,
+      chatService
+          .mockEngine
+          .mockBackend
+          .lastTextToSpeechRequest
+          ?.speakerAudioBytes,
       recorder.recordedBytes,
     );
     expect(provider.textToSpeechError, isNull);

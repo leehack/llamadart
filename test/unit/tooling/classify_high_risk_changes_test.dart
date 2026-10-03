@@ -90,6 +90,23 @@ void main() {
       },
     );
 
+    test('classifies every public entrypoint as an API surface', () {
+      for (final entrypoint in [
+        'lib/llamadart.dart',
+        'lib/backend.dart',
+        'lib/llama_cpp_bindings.dart',
+      ]) {
+        expect(
+          assessHighRiskFiles([entrypoint]).surfaces,
+          containsAll({
+            HighRiskSurface.structuredOutput,
+            HighRiskSurface.backendRuntime,
+          }),
+          reason: entrypoint,
+        );
+      }
+    });
+
     test('classifies backend, capability, and artifact consumers', () {
       final assessment = assessHighRiskFiles([
         'lib/src/backends/webgpu/webgpu_backend.dart',

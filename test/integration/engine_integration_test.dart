@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'package:test/test.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import '../test_helper.dart';
 
@@ -208,7 +209,7 @@ void main() async {
     test('Error when not initialized', () async {
       final freshBackend = LlamaBackend();
       final freshEngine = LlamaEngine(freshBackend);
-      expect(
+      await expectLater(
         freshEngine.create([
           const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
         ]),

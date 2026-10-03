@@ -73,7 +73,7 @@ void main() {
     final second = (await engine.generateImage(request)).elapsed;
 
     print(
-      'warm-up on ${engine.capabilities.backendName}: '
+      'warm-up on ${(await engine.capabilities).backendName}: '
       '${warmUp.elapsedMilliseconds} ms; first image '
       '${first.inMilliseconds} ms; second ${second.inMilliseconds} ms',
     );
@@ -161,7 +161,7 @@ void main() {
           File('$outputDir/sdxs-256-seed42.png').writeAsBytesSync(png);
         }
         expect(
-          engine.capabilities.backendName,
+          (await engine.capabilities).backendName,
           Platform.isMacOS ? startsWith('MTL') : isNotEmpty,
         );
       },
@@ -277,7 +277,7 @@ void main() {
       ),
     );
 
-    expect(engine.capabilities.modelVersion, contains('2.'));
+    expect((await engine.capabilities).modelVersion, contains('2.'));
     expect(result.images.single.pixels.toSet().length, greaterThan(64));
     if (outputDir != null) {
       File(
@@ -321,7 +321,7 @@ void main() {
 
     final image = result.images.single;
     print(
-      'SDXL-Lightning on ${engine.capabilities.backendName}: warm-up '
+      'SDXL-Lightning on ${(await engine.capabilities).backendName}: warm-up '
       '${warmUp.elapsedMilliseconds} ms; ${image.width}x${image.height} '
       'image ${result.elapsed.inMilliseconds} ms',
     );
@@ -421,7 +421,7 @@ void main() {
     );
 
     print(
-      'Split model ${engine.capabilities.modelVersion}: roles '
+      'Split model ${(await engine.capabilities).modelVersion}: roles '
       '${engine.roles.map((role, source) => MapEntry(role.name, source.fileName))}, '
       'loaded in $loaded ms, image ${result.elapsed.inMilliseconds} ms',
     );
@@ -451,7 +451,7 @@ void main() {
     await engine.dispose();
 
     await cancelled;
-    expect(engine.capabilities.isSupported, isFalse);
+    expect((await engine.capabilities).isSupported, isFalse);
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 }
 

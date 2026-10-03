@@ -55,7 +55,7 @@ Future<void> main(List<String> arguments) async {
       exitCode = 130;
       return;
     }
-    final capabilities = engine.capabilities;
+    final capabilities = await engine.capabilities;
     print(
       'Loaded ${capabilities.modelVersion} on ${capabilities.backendName} '
       'in ${loadTimer.elapsedMilliseconds} ms.',

@@ -116,8 +116,9 @@ description: >-
   `session.addPcm(chunk)` so native backpressure throttles the producer.
   Call `await session.finish()` to flush the last window, then
   `await session.done`. Inference runs in a worker isolate; direct
-  `LiteRtLmRuntimeClient` / `LiteRtLmAsrRuntimeSession` calls are synchronous
-  and must stay off a Flutter UI isolate.
+  `LiteRtLmRuntimeClient` / `LiteRtLmAsrRuntimeSession` calls (from
+  `package:llamadart/backend.dart`) are synchronous and must stay off a
+  Flutter UI isolate.
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
   `done` then reports `cancelled`, and `task.result` throws
   `LlamaStateException`. `task.cancel()` stops only that task; other requests

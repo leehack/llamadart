@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
+import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
 import '../models/download/model_download_manager.dart';
@@ -22,17 +23,22 @@ import 'image_generation_request.dart';
 import 'image_model_classifier.dart';
 import 'image_model_params.dart';
 
-/// Image-generation support of the runtime, and of a loaded engine.
-class ImageGenerationCapabilities {
+/// Image-generation support of the runtime, from
+/// `ImageGenerationEngine.checkRuntime`, and of a loaded engine, from
+/// `ImageGenerationEngine.capabilities`.
+class ImageGenerationCapabilities implements EngineCapabilities {
   /// Whether images can be generated.
+  @override
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
+  @override
   final String? unsupportedReason;
 
   /// Device the engine runs on, such as `MTL0`, `Vulkan0` or `CPU`. For
-  /// `ImageGenerationEngine.runtimeCapabilities`, the device
-  /// `ComputeDevice.auto` would pick.
+  /// `ImageGenerationEngine.checkRuntime`, the device `ComputeDevice.auto`
+  /// would pick.
+  @override
   final String? backendName;
 
   /// Every device the runtime reports, such as `MTL0`, `BLAS` and `CPU`.
@@ -207,32 +213,20 @@ class ImageGenerationEngine {
     this._backendName,
   );
 
-  /// Probes the bundled runtime without loading a model, on the calling
-  /// isolate.
+  /// Probes the bundled runtime without loading a model.
   ///
   /// Reports unsupported when the runtime is not bundled, the platform or CPU
   /// is not supported, or on the web.
   ///
   /// The first probe in a process initializes the GPU backend. With an empty
   /// Metal shader cache that compiles ggml's Metal library: about 16 s on an
-  /// M4 Max, during which this call blocks the calling isolate. macOS keeps
-  /// the result in its shader cache, so later launches take under 0.5 s, and
-  /// later probes in the process return at once. A call made while
-  /// [checkRuntime] or [load] is still probing blocks until that probe
-  /// finishes. From a UI isolate, use [checkRuntime] instead.
-  static ImageGenerationCapabilities runtimeCapabilities() =>
-      _capabilitiesOf(_driver.probe());
-
-  /// Probes the bundled runtime like [runtimeCapabilities], without blocking
-  /// the calling isolate.
-  ///
-  /// On native platforms the probe runs in a short-lived isolate, so the
-  /// first probe's GPU backend initialization (see [runtimeCapabilities])
-  /// does not freeze a UI isolate; the calling isolate can still pause once
-  /// for up to about 0.5 s while the probe isolate loads the runtime library.
-  /// Calls on this isolate, including [load], share a probe that is still
-  /// running, and all of them get its result or its error. On the web it
-  /// completes with the same unsupported result as [runtimeCapabilities].
+  /// M4 Max. macOS keeps the result in its shader cache, so later launches
+  /// take under 0.5 s, and later probes in the process return at once. On
+  /// native platforms the probe runs in a short-lived isolate, so it does not
+  /// freeze a UI isolate; the calling isolate can still pause once for up to
+  /// about 0.5 s while the probe isolate loads the runtime library. Calls on
+  /// this isolate, including [load], share a probe that is still running,
+  /// and all of them get its result or its error.
   static Future<ImageGenerationCapabilities> checkRuntime() async =>
       _capabilitiesOf(await _probeRuntime(_driver));
 
@@ -330,7 +324,7 @@ class ImageGenerationEngine {
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] when the runtime is unavailable (see
-  ///   [runtimeCapabilities]), including on the web; when
+  ///   [checkRuntime]), including on the web; when
   ///   [ComputeDevice.gpu] is requested and the runtime reports no GPU, or
   ///   [ComputeDevice.npu] is requested; when [download] sets
   ///   [ModelLoadOptions.sha256] for a model of more than one file (a
@@ -471,8 +465,12 @@ class ImageGenerationEngine {
     }
   }
 
-  /// Support of this engine; unsupported once disposed.
-  ImageGenerationCapabilities get capabilities {
+  /// Support of this engine and its loaded model; unsupported once
+  /// disposed. Never throws.
+  ///
+  /// It changes only when the engine is disposed, so a Flutter app can read
+  /// it once after [load] and keep it in its state.
+  Future<ImageGenerationCapabilities> get capabilities async {
     if (_disposal != null) {
       return const ImageGenerationCapabilities(
         isSupported: false,

@@ -109,8 +109,14 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
   return HighRiskAssessment(changedFiles: changedFiles, surfaces: surfaces);
 }
 
-bool _isStructuredOutput(String path) {
+bool _isPublicEntrypoint(String path) {
   return path == 'lib/llamadart.dart' ||
+      path == 'lib/backend.dart' ||
+      path == 'lib/llama_cpp_bindings.dart';
+}
+
+bool _isStructuredOutput(String path) {
+  return _isPublicEntrypoint(path) ||
       path.startsWith('lib/src/core/template/') ||
       path.startsWith('lib/src/core/grammar/') ||
       path.startsWith('lib/src/core/models/tools/') ||
@@ -144,7 +150,7 @@ bool _isStructuredOutputEvidence(String path) {
 }
 
 bool _isBackendRuntime(String path) {
-  return path == 'lib/llamadart.dart' ||
+  return _isPublicEntrypoint(path) ||
       path.startsWith('lib/src/backends/') ||
       path.startsWith('lib/src/core/engine/') ||
       path.startsWith('lib/src/core/models/') ||

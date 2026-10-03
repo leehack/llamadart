@@ -22,7 +22,7 @@ or shipping runtimes the app does not use.
   download token and `engine.cancelGeneration()`, then `engine.dispose()`.
   `State.dispose` is synchronous, so wrap the call in `unawaited(...)`.
   `dispose()` waits for an in-flight load or unload, then unloads the model
-  and releases the backend.
+  and releases the backend; that load then throws `LlamaStateException`.
 - Quitting a desktop app (Cmd-Q, closing the last window) does not run
   `State.dispose`. Also dispose `LlamaEngine`, `DecisionEngine` and
   `ImageGenerationEngine` instances from
@@ -129,7 +129,9 @@ or shipping runtimes the app does not use.
   through `llamadart_native_backends`. LiteRT-LM GPU on adapters with a
   128 MiB storage-buffer limit (for example Adreno 750) can load a larger
   model and then produce incoherent text without an error; offer
-  `LiteRtLmBackendPreference.cpu`. NPU needs a supporting SoC and bundle.
+  `ModelParams(device: ComputeDevice.cpu)`. `ComputeDevice.npu` needs a
+  supporting SoC and bundle, and throws `LlamaUnsupportedException` without
+  one.
 - Budget memory for phones: 1B-3B parameter models, a `contextSize` no larger
   than the app needs, and one loaded model at a time.
 

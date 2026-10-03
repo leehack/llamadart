@@ -55,12 +55,14 @@ class LiteRtLmBackend
 
   /// Creates a LiteRT-LM backend.
   ///
-  /// Prefer [ModelParams.liteRtLmBackend] when using the default
-  /// `LlamaBackend()` router. [preferredBackend] remains available for callers
-  /// that instantiate [LiteRtLmBackend] directly.
+  /// [preferredBackend] (`cpu`, `gpu` or `npu`) is deprecated: set
+  /// [ModelParams.device], which also works through the default
+  /// `LlamaBackend()` router. A load whose [ModelParams.device] is not auto
+  /// throws `LlamaUnsupportedException` when [preferredBackend] is set.
   /// [workerEntryPoint] substitutes the worker only for lifecycle tests.
   LiteRtLmBackend({
     SendPort? initialSendPort,
+    @Deprecated('Use ModelParams.device. This will be removed in 1.0.')
     String? preferredBackend,
     void Function(SendPort)? workerEntryPoint,
   }) : _preferredBackend = preferredBackend,

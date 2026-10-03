@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:llamadart/llama_cpp_bindings.dart';
 import 'package:llamadart/llamadart.dart';
 
 void main() {

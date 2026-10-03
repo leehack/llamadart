@@ -17,7 +17,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
 - Create one `LlamaEngine(LlamaBackend())` per loaded model and always
   `await engine.dispose()` when its owner goes away, in a `finally` block for
   scripts. In Flutter, create it in a long-lived owner (service, provider or
-  `State`), never in `build()`.
+  `State`), never in `build()`. `dispose()` is final: a later load or request
+  throws `LlamaStateException`, so use `unloadModel()` to switch models and a
+  new engine after `dispose()`.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless
   files load; a header contradicting the extension throws
@@ -43,8 +45,21 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `unloadModel()` before loading another model.
 - Check `engine.isReady` before inference. Log `engine.getBackendName()` in
   diagnostics so reports name the runtime actually used.
-- Pass `ModelParams(gpuLayers: 0)` to force CPU. Keep `contextSize` no larger
-  than the app needs: memory grows with it.
+- `ModelParams(device: ComputeDevice.cpu)` forces the CPU on every runtime.
+  `ComputeDevice.gpu` or `npu` runs there or throws
+  `LlamaUnsupportedException`, never on another device; native LiteRT-LM
+  reports a GPU or NPU delegate that fails to start from the first
+  generation or `tokenize`. Leave `device` at `auto` for each runtime's
+  default.
+  `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
+  deprecated. Keep `contextSize` no larger than the app needs: memory grows
+  with it.
+- Import only `package:llamadart/llamadart.dart` in app code. Custom
+  backends and backend test fakes (`implements LlamaBackend,
+  BackendTextToSpeech`, ...) and direct LiteRT-LM runtime access also import
+  `package:llamadart/backend.dart`. Avoid
+  `package:llamadart/llama_cpp_bindings.dart`: the raw FFI is native-only
+  and can change in any release.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.
@@ -109,17 +124,16 @@ Future<void> switchToLiteRtLm(LlamaEngine engine, String bundlePath) async {
   try {
     await engine.loadModel(
       bundlePath,
-      modelParams: const ModelParams(
-        liteRtLmBackend: LiteRtLmBackendPreference.gpu,
-      ),
+      modelParams: const ModelParams(device: ComputeDevice.gpu),
     );
-  } on LlamaModelException catch (error) {
-    print('GPU load failed, retrying on CPU: $error');
+    // Native LiteRT-LM starts the GPU delegate on its first use.
+    await engine.tokenize('warm up');
+  } on LlamaUnsupportedException catch (error) {
+    print('No LiteRT-LM GPU here, loading on the CPU: $error');
+    await engine.unloadModel();
     await engine.loadModel(
       bundlePath,
-      modelParams: const ModelParams(
-        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-      ),
+      modelParams: const ModelParams(device: ComputeDevice.cpu),
     );
   }
 }
