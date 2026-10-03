@@ -3,6 +3,7 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver_io.dart';
 import 'package:test/test.dart';

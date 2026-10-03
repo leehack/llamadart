@@ -2,7 +2,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package
 library;
 
-import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/backend.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -40,7 +40,6 @@ void main() {
 
     expect(configureThinkingTags, isA<void Function(LiteRtLmRuntimeClient)>());
     expect(LiteRtLmRuntimeClient.new, throwsUnsupportedError);
-    expect(LiteRtLmBenchmarkClient.new, throwsUnsupportedError);
   });
 
   test('exports LiteRT-LM web backend constructor on web', () async {

@@ -9,6 +9,18 @@ description: Choose between the high-level LlamaEngine and ChatSession API and t
 - **High-level API** (`LlamaEngine` + `ChatSession`) for most application code.
 - **Backend API** (`LlamaBackend`) for advanced runtime control.
 
+## Entrypoints
+
+| Import | Contents | Stability |
+| --- | --- | --- |
+| `package:llamadart/llamadart.dart` | The app API: engines, sessions, models, `LlamaBackend()` and errors. | Semantic versioning |
+| `package:llamadart/backend.dart` | The backend SPI: the optional `Backend*` interfaces, `LiteRtLmBackend`, `LiteRtLmRuntimeClient` and its ASR session types, and the `LlamaEngineBackendHooks` extension. | Semantic versioning |
+| `package:llamadart/llama_cpp_bindings.dart` | Raw llama.cpp, ggml and mtmd FFI bindings. Native only. | None: any llama.cpp update can change them |
+
+Apps need only the first. Import `backend.dart` next to it to implement a
+custom backend or a test fake (`implements LlamaBackend, BackendTextToSpeech`),
+or to drive LiteRT-LM directly.
+
 ## High-Level API
 
 Use this by default. It handles model lifecycle, template routing, streaming, and
@@ -64,8 +76,9 @@ streams.
 **Advantages:**
 - **Granular control**: Manage handles and pipeline steps directly.
 - **Integration flexibility**: Useful for specialized runtime integrations.
-- **Optional capabilities**: Backends can expose extra interfaces such as
-  `BackendStatePersistence` when a runtime supports native KV-cache snapshots.
+- **Optional capabilities**: Backends can expose extra interfaces from
+  `package:llamadart/backend.dart`, such as `BackendStatePersistence` when a
+  runtime supports native KV-cache snapshots.
 
 ```dart
 import 'dart:convert';

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/services/chat_service.dart';

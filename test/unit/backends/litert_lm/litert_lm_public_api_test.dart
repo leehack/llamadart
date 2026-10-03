@@ -1,8 +1,7 @@
 @TestOn('vm')
-// ignore_for_file: deprecated_member_use_from_same_package
 library;
 
-import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/backend.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -29,22 +28,5 @@ void main() {
     );
 
     client.dispose();
-  });
-
-  test('keeps deprecated LiteRT-LM benchmark names exported', () {
-    const metrics = LiteRtLmBenchmarkMetrics(
-      inputTokens: 3,
-      outputTokens: 5,
-      timeToFirstTokenSeconds: null,
-      initSeconds: null,
-      prefillTokensPerSecond: null,
-      decodeTokensPerSecond: null,
-      wallMilliseconds: 1250,
-    );
-    const result = LiteRtLmBenchmarkResult(text: 'hello', metrics: metrics);
-
-    expect(metrics, isA<LiteRtLmRuntimeMetrics>());
-    expect(result, isA<LiteRtLmRuntimeResult>());
-    expect(result.metrics, same(metrics));
   });
 }

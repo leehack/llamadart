@@ -7,6 +7,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';

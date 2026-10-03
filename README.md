@@ -315,6 +315,7 @@ bindings, runtime behavior, and docs have been validated together.
 | Score next-token log-probabilities | [Next-token scores](https://llamadart.leehack.com/docs/guides/generation-and-streaming#next-token-scores) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |
+| Write a custom backend or test fake (`package:llamadart/backend.dart`) | [API levels](https://llamadart.leehack.com/docs/guides/api-levels#entrypoints) |
 | Run Flutter Web / WebGPU | [WebGPU bridge](https://llamadart.leehack.com/docs/platforms/webgpu-bridge) |
 | Tune performance | [Performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning) |
 

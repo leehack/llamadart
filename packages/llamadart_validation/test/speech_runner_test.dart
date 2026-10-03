@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:fake_async/fake_async.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/speech_engine_lease.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
