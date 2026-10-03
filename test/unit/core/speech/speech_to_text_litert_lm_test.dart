@@ -122,6 +122,119 @@ void main() {
     await engine.dispose();
   });
 
+  test('downloads a remote model with the load options and gives a local '
+      'tokenizer only the cancel token', () async {
+    final source = ModelSource.parse('hf://owner/asr/moonshine.tflite');
+    final manager = _SourceDownloadManager();
+    final token = ModelDownloadCancelToken();
+    final download = ModelLoadOptions(
+      bearerToken: 'secret',
+      cacheDirectory: '/models',
+      cancelToken: token,
+    );
+
+    final engine = await SpeechToTextEngine.load(
+      SpeechToTextModel(
+        source,
+        tokenizer: ModelSource.path(tokenizerPath),
+        adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
+      ),
+      download: download,
+      store: ModelFileStore(downloadManager: manager),
+    );
+    await (await engine.startStream()).cancel();
+
+    expect(driver.lastConfig!.modelPath, '/cache/moonshine.tflite');
+    expect(driver.lastConfig!.tokenizerPath, tokenizerPath);
+    expect(manager.calls, hasLength(2));
+    expect(manager.calls[0].$1.cacheKey, source.cacheKey);
+    expect(manager.calls[0].$2, same(download));
+    expect(manager.calls[1].$2.bearerToken, isNull);
+    expect(manager.calls[1].$2.cacheDirectory, isNull);
+    expect(manager.calls[1].$2.cancelToken, same(token));
+    await engine.dispose();
+  });
+
+  test('never sends credentials to a second host', () async {
+    final manager = _SourceDownloadManager();
+
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.parse('https://models.example.com/asr/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://other.example.com/asr/tokenizer.json',
+          ),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        download: ModelLoadOptions(bearerToken: 'secret'),
+        store: ModelFileStore(downloadManager: manager),
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('other.example.com'), isNot(contains('secret'))),
+        ),
+      ),
+    );
+    expect(manager.calls, isEmpty);
+    expect(driver.startCalls, 0);
+  });
+
+  test('a token cancelled while the model downloads stops before the '
+      'tokenizer', () async {
+    final token = ModelDownloadCancelToken();
+    final manager = _SourceDownloadManager()..onEnsure = token.cancel;
+
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.parse('https://example.com/asr/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://example.com/asr/tokenizer.json',
+          ),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        download: ModelLoadOptions(cancelToken: token),
+        store: ModelFileStore(downloadManager: manager),
+      ),
+      throwsA(
+        isA<LlamaStateException>().having(
+          (error) => error.message,
+          'message',
+          'SpeechToTextEngine model loading was cancelled.',
+        ),
+      ),
+    );
+    expect(manager.calls, hasLength(1));
+    expect(driver.startCalls, 0);
+  });
+
+  test('a failed download fails the load and a later load retries', () async {
+    final manager = _SourceDownloadManager()..failNext = true;
+    final remote = SpeechToTextModel(
+      ModelSource.parse('https://example.com/asr/model.tflite'),
+      tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
+      adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
+    );
+    final store = ModelFileStore(downloadManager: manager);
+
+    await expectLater(
+      SpeechToTextEngine.load(remote, store: store),
+      throwsA(isA<LlamaModelException>()),
+    );
+    final engine = await SpeechToTextEngine.load(remote, store: store);
+    await (await engine.startStream()).cancel();
+
+    expect(driver.lastConfig!.tokenizerPath, '/cache/tokenizer.json');
+    await engine.dispose();
+  });
+
   test('reports combined progress for the model and tokenizer', () async {
     final progress = <ModelDownloadProgress>[];
 
@@ -307,6 +420,48 @@ void main() {
         throwsA(isA<LlamaUnsupportedException>()),
       );
       expect(driver.startCalls, 0);
+    });
+
+    test('rejects a remote model or tokenizer', () {
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        () => SpeechToTextEngine.liteRtLm(
+          LiteRtLmAsrRuntimeConfig.source(
+            model: ModelSource.path('/models/moonshine.tflite'),
+            tokenizer: ModelSource.parse(
+              'https://example.com/tokenizer.json?token=secret',
+            ),
+            modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('tokenizer'),
+              contains('SpeechToTextEngine.load'),
+              isNot(contains('secret')),
+            ),
+          ),
+        ),
+      );
+      expect(driver.probeCalls, 0);
+    });
+
+    test('opens a local source config', () async {
+      final local = LiteRtLmAsrRuntimeConfig.source(
+        model: ModelSource.path(modelPath),
+        tokenizer: ModelSource.path(tokenizerPath),
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      );
+      // ignore: deprecated_member_use_from_same_package
+      final engine = SpeechToTextEngine.liteRtLm(local);
+
+      await (await engine.startStream()).cancel();
+
+      expect(driver.lastConfig, same(local));
+      await engine.dispose();
     });
 
     test('forwards the config and native library override', () async {
@@ -621,4 +776,59 @@ class _FakeLiteRtLmSpeechWorker implements LiteRtLmSpeechToTextWorker {
       await dispose();
     }
   }
+}
+
+class _SourceDownloadManager implements ModelDownloadManager {
+  final List<(ModelSource, ModelLoadOptions)> calls =
+      <(ModelSource, ModelLoadOptions)>[];
+  bool failNext = false;
+  void Function()? onEnsure;
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    calls.add((source, options));
+    onEnsure?.call();
+    if (failNext) {
+      failNext = false;
+      throw LlamaModelException('Download failed.');
+    }
+    onProgress?.call(
+      const ModelDownloadProgress(receivedBytes: 1, totalBytes: 2),
+    );
+    return ModelCacheEntry(
+      sourceCanonicalKey: source.metadataSourceKey,
+      cacheKey: source.cacheKey,
+      fileName: source.fileName,
+      filePath: source.path ?? '/cache/${source.fileName}',
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+  }
+
+  @override
+  Future<void> clear({String? cacheDirectory}) async {}
+
+  @override
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async => null;
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async =>
+      const <ModelCacheEntry>[];
+
+  @override
+  Future<List<ModelCacheEntry>> prune({
+    Duration? maxAge,
+    int? maxBytes,
+    String? cacheDirectory,
+  }) async => const <ModelCacheEntry>[];
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
 }

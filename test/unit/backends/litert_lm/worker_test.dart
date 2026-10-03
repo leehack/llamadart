@@ -590,6 +590,37 @@ void main() {
       }
     });
 
+    test('forwards chat template kwargs to native chat generation', () async {
+      final service = _ChatKwargsCapturingService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final responses = await _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateChatRequest(
+            1,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            const GenerationParams(),
+            sendPort,
+            chatTemplateKwargs: const {
+              'source_lang_code': 'en',
+              'target_lang_code': 'ko',
+            },
+          ),
+        );
+
+        expect(responses.last, isA<LiteRtLmDoneResponse>());
+        expect(service.chatTemplateKwargs, {
+          'source_lang_code': 'en',
+          'target_lang_code': 'ko',
+        });
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test('reports generation failures as typed worker errors', () async {
       final service = _ThrowingGenerationLiteRtLmService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -953,6 +984,25 @@ class _StreamingLiteRtLmService extends LiteRtLmService {
     for (final chunk in chunks) {
       yield chunk;
     }
+  }
+}
+
+class _ChatKwargsCapturingService extends LiteRtLmService {
+  Map<String, dynamic>? chatTemplateKwargs;
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    this.chatTemplateKwargs = chatTemplateKwargs;
   }
 }
 

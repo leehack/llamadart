@@ -851,6 +851,44 @@ void main() {
     }
   });
 
+  test('sends deprecated language codes in chatTemplateKwargs', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationChunks: const [],
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await backend
+          .generateChat(
+            7,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            const GenerationParams(maxTokens: 5),
+            chatTemplateKwargs: const {'locale': 'en_CA'},
+            // ignore: deprecated_member_use_from_same_package
+            sourceLangCode: 'en',
+            // ignore: deprecated_member_use_from_same_package
+            targetLangCode: 'ko',
+          )
+          .drain<void>();
+
+      final request = worker.requests
+          .whereType<LiteRtLmGenerateChatRequest>()
+          .single;
+      expect(request.chatTemplateKwargs, {
+        'locale': 'en_CA',
+        'source_lang_code': 'en',
+        'target_lang_code': 'ko',
+      });
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test('keeps typed unsupported worker errors across the isolate', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],

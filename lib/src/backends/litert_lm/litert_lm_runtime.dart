@@ -2500,6 +2500,19 @@ final class _LiteRtLmAsrResult extends Struct {
 
 void _validateLiteRtLmAsrRuntimeConfig(LiteRtLmAsrRuntimeConfig runtimeConfig) {
   const maxInt32 = 0x7fffffff;
+  for (final (name, source) in [
+    ('model', runtimeConfig.model),
+    ('tokenizer', runtimeConfig.tokenizer),
+  ]) {
+    if (source != null && source.isRemote) {
+      throw LlamaUnsupportedException(
+        'The LiteRT-LM ASR runtime opens local files only, but the $name is '
+        'the remote source ${source.displayName}. Use '
+        'SpeechToTextEngine.load with a LiteRtLmAsrAdapter, which downloads '
+        'it first.',
+      );
+    }
+  }
   if (runtimeConfig.modelPath.trim().isEmpty) {
     throw ArgumentError.value(
       runtimeConfig.modelPath,

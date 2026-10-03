@@ -50,10 +50,19 @@ policy and directory, authentication, resume, retries and cancel token),
 `onProgress:` (one combined progress for all files), `store:` (a
 `ModelFileStore` with your own resolver or download manager), and, for a
 prompt adapter, `params:` (`ModelParams`) and `backend:` (by default
-`LlamaBackend()`). `ModelLoadOptions.sha256` throws
+`LlamaBackend()`). Every file resolves, main file first, before anything
+loads. A local file takes only the cancel token. The bearer token and headers
+never go to more than one host: when they are set and the remote files are on
+different hosts, `load` throws `LlamaArgumentException` before downloading
+from the second one, so load such files from one host or leave the
+credentials unset. `ModelLoadOptions.sha256` throws
 `LlamaUnsupportedException` for a model of more than one file. The load is
 atomic: when it throws, nothing stays loaded, and downloaded files stay in the
 cache.
+
+`load` takes ownership of a `backend:` you pass: the recognizer's `dispose()`,
+or a failed load, disposes it with the engine, so pass a backend that nothing
+else uses.
 
 ## Transcribe a file with Qwen3-ASR
 
@@ -228,8 +237,11 @@ await recognizer.dispose();
 
 `load` probes the LiteRT-LM ASR runtime before it downloads anything and
 throws `LlamaUnsupportedException` when the runtime is unavailable, including
-on Web. It then resolves the model and tokenizer to local files; each
-`transcribe` or `startStream` starts its own native session on them. The
+on Web. It then resolves the model and tokenizer, each a local path, an
+HTTP(S) URL or a Hugging Face file, to local files, model first, downloading
+remote ones into the model cache as described under
+[Load or attach](#load-or-attach); each `transcribe` or `startStream` starts its
+own native session on them. The
 adapter carries the runtime settings (`backend`, `numberOfThreads`,
 `maxBufferedAudio`, `overlapRatio`, and `libraryPath` for local validation),
 so `params:` and `backend:` must be null. A `LiteRtLmAsrAdapter` model takes
@@ -243,9 +255,8 @@ stable, while `pendingText` may change after the next inference window.
 TDT, Parakeet CTC, Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but
 callers must supply a matching model and tokenizer. The API does not capture a
 microphone or resample audio. Advanced callers can use `LiteRtLmRuntimeClient`
-and `LiteRtLmAsrRuntimeSession` with a `LiteRtLmAsrRuntimeConfig` of local
-paths directly, but those synchronous calls must not run on a Flutter UI
-isolate.
+and `LiteRtLmAsrRuntimeSession` directly with local files, but those
+synchronous calls must not run on a Flutter UI isolate.
 
 ## Cancel, dispose and concurrency
 

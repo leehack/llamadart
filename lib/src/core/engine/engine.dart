@@ -11,6 +11,7 @@ import 'engine_observer.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
+import '../models/config/lora_config.dart';
 import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
 import '../models/diagnostics/model_file_type.dart';
@@ -35,6 +36,7 @@ import '../models/model_target_file.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
+import '../template/handlers/translate_gemma_handler.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -100,6 +102,8 @@ class LlamaEngine {
   Map<String, String>? _cachedModelMetadata;
   String? _modelChatTemplate;
   final Map<int, int> _decisionHeadHandles = <int, int>{};
+  final Map<String, String> _loraLocations = <String, String>{};
+  final Map<String, String> _draftLocations = <String, String>{};
   int _nextDecisionHeadHandle = 1;
   int _decisionHeadEpoch = 0;
   late final GenerationCancellation _generationCancellation =
@@ -342,8 +346,16 @@ class LlamaEngine {
       LlamaLogger.instance.info(
         'Backend supports URL loading, attempting loadModelFromUrl.',
       );
+      // Resolves and records the adapters of modelParams itself.
       return _loadModelFromUrl(path, modelParams: modelParams, format: format);
     }
+
+    final loraLocations = <String, String>{};
+    modelParams = await _resolveLoraSources(
+      modelParams,
+      ModelLoadOptions.defaults,
+      loraLocations,
+    );
 
     final redactedPath = _redactedSource(path);
     try {
@@ -359,6 +371,7 @@ class LlamaEngine {
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
+      _loraLocations.addAll(loraLocations);
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedPath));
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
@@ -386,6 +399,11 @@ class LlamaEngine {
   /// use the native download/cache manager on file-backed backends, then load
   /// the cached local file. URL-capable web backends keep using
   /// [loadModelFromUrl] for unauthenticated prefer-cached requests.
+  ///
+  /// Adapters in [ModelParams.loras] given as [LoraAdapterConfig.source]
+  /// resolve after the model file, with their own
+  /// [LoraAdapterConfig.download] or only the non-secret parts of [options];
+  /// see [ModelParams.loras].
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
@@ -407,7 +425,16 @@ class LlamaEngine {
         onProgress: onProgress,
       );
       _throwIfSourceLoadCancelled(options);
-      return _loadSourceFile(entry.filePath, modelParams, source.format);
+      final loraLocations = <String, String>{};
+      final resolvedParams = await _resolveLoraSources(
+        modelParams,
+        options,
+        loraLocations,
+      );
+      _throwIfSourceLoadCancelled(options);
+      await _loadSourceFile(entry.filePath, resolvedParams, source.format);
+      if (_isReady) _loraLocations.addAll(loraLocations);
+      return;
     }
     switch (target) {
       case LocalModelFile():
@@ -636,6 +663,12 @@ class LlamaEngine {
         'loadModelFromUrl requires a backend that supports URL loading.',
       );
     }
+    final loraLocations = <String, String>{};
+    modelParams = await _resolveLoraSources(
+      modelParams,
+      ModelLoadOptions.defaults,
+      loraLocations,
+    );
 
     try {
       await backend.setLogLevel(LlamaLogging.nativeLevel);
@@ -652,6 +685,7 @@ class LlamaEngine {
       _contextHandle = await backend.contextCreate(_modelHandle!, modelParams);
       _modelChatTemplate = modelParams.chatTemplate;
       _isReady = true;
+      _loraLocations.addAll(loraLocations);
 
       LlamaLogger.instance.info(_modelLoadedMessage(modelName, redactedUrl));
     } catch (e, stackTrace) {
@@ -774,41 +808,55 @@ class LlamaEngine {
   }) {
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
-
-      final target = await modelResolver.resolve(
+      final location = await _resolveAuxiliarySource(
         source,
-        ModelResolveRequest(options: options, onProgress: onProgress),
+        options: options,
+        onProgress: onProgress,
+        assetType: 'multimodal projector',
       );
-
-      if (!backend.supportsUrlLoading) {
-        final entry = await ensureModelTargetFile(
-          modelDownloadManager,
-          source,
-          target,
-          options: options,
-          onProgress: onProgress,
-          assetType: 'multimodal projector',
-        );
-        return _loadMultimodalProjectorLocked(entry.filePath);
-      }
-      switch (target) {
-        case LocalModelFile():
-          throw LlamaUnsupportedException(
-            'Explicit local multimodal projector paths are not supported by URL-loading backends.',
-          );
-        case RemoteModelUrl(:final url, :final useBrowserCache):
-          if (!useBrowserCache) {
-            throw LlamaUnsupportedException(
-              'Remote multimodal projector loading without browser/backend cache is not supported yet.',
-            );
-          }
-          _rejectUnsupportedUrlBackendOptions(
-            options,
-            assetType: 'multimodal projector',
-          );
-          return _loadMultimodalProjectorLocked(url.toString());
-      }
+      return _loadMultimodalProjectorLocked(location);
     });
+  }
+
+  /// The local file, or on a URL-loading backend the URL, that the backend
+  /// loads for the auxiliary file [source] of [assetType], resolved as
+  /// [loadMultimodalProjectorSource] describes.
+  Future<String> _resolveAuxiliarySource(
+    ModelSource source, {
+    required ModelLoadOptions options,
+    ModelDownloadProgressCallback? onProgress,
+    required String assetType,
+  }) async {
+    final target = await modelResolver.resolve(
+      source,
+      ModelResolveRequest(options: options, onProgress: onProgress),
+    );
+
+    if (!backend.supportsUrlLoading) {
+      final entry = await ensureModelTargetFile(
+        modelDownloadManager,
+        source,
+        target,
+        options: options,
+        onProgress: onProgress,
+        assetType: assetType,
+      );
+      return entry.filePath;
+    }
+    switch (target) {
+      case LocalModelFile():
+        throw LlamaUnsupportedException(
+          'Explicit local $assetType paths are not supported by URL-loading backends.',
+        );
+      case RemoteModelUrl(:final url, :final useBrowserCache):
+        if (!useBrowserCache) {
+          throw LlamaUnsupportedException(
+            'Remote $assetType loading without browser/backend cache is not supported yet.',
+          );
+        }
+        _rejectUnsupportedUrlBackendOptions(options, assetType: assetType);
+        return url.toString();
+    }
   }
 
   Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {
@@ -914,6 +962,8 @@ class LlamaEngine {
     _isReady = false;
     _decisionHeadHandles.clear();
     _decisionHeadEpoch++;
+    _loraLocations.clear();
+    _draftLocations.clear();
     backend.cancelGeneration();
     SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
@@ -956,12 +1006,12 @@ class LlamaEngine {
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
-  /// For TranslateGemma-style templates, set [sourceLangCode] and
-  /// [targetLangCode] to control language metadata injected into user
-  /// content blocks.
-  ///
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
-  /// to llama.cpp `chat_template_kwargs`).
+  /// to llama.cpp `chat_template_kwargs`). TranslateGemma templates read their
+  /// language codes from it, as llama.cpp does:
+  /// `chatTemplateKwargs: {'source_lang_code': 'en', 'target_lang_code': 'ko'}`.
+  /// The deprecated [sourceLangCode] and [targetLangCode] set those keys,
+  /// replacing any in [chatTemplateKwargs].
   /// Use [templateNow] to set deterministic template time context.
   ///
   /// Pass [responseFormat] to request strict structured output through
@@ -1029,12 +1079,19 @@ class LlamaEngine {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
     final zone = Zone.current;
+    final templateKwargs = chatTemplateKwargsWithLanguageCodes(
+      chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+    );
     final operation = observers.isEmpty
         ? null
         : LlamaChatOperation(
@@ -1066,9 +1123,7 @@ class LlamaEngine {
           parallelToolCalls: parallelToolCalls,
           enableThinking: enableThinking,
           responseFormat: responseFormat,
-          sourceLangCode: sourceLangCode,
-          targetLangCode: targetLangCode,
-          chatTemplateKwargs: chatTemplateKwargs,
+          chatTemplateKwargs: templateKwargs,
           templateNow: templateNow,
           includeTokenCount: false,
         );
@@ -1101,9 +1156,7 @@ class LlamaEngine {
                 toolChoice: effectiveToolChoice,
                 parallelToolCalls: parallelToolCalls,
                 enableThinking: enableThinking,
-                chatTemplateKwargs: chatTemplateKwargs,
-                sourceLangCode: sourceLangCode,
-                targetLangCode: targetLangCode,
+                chatTemplateKwargs: templateKwargs,
                 templateNow: templateNow,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
@@ -1172,6 +1225,9 @@ class LlamaEngine {
   /// value produced by [output]'s decoder. Use [create] directly when you need
   /// to render tokens live; the returned stream can still be finalized with
   /// `await stream.parseStructuredJson(output)`.
+  ///
+  /// The deprecated [sourceLangCode] and [targetLangCode] behave as in
+  /// [create]; pass the codes in [chatTemplateKwargs] instead.
   Future<T> createStructuredJson<T>(
     List<LlamaChatMessage> messages, {
     required LlamaStructuredOutput<T> output,
@@ -1180,7 +1236,9 @@ class LlamaEngine {
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
@@ -1193,9 +1251,11 @@ class LlamaEngine {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       responseFormat: output.responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
-      chatTemplateKwargs: chatTemplateKwargs,
+      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+        chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+      ),
       templateNow: templateNow,
     ).parseStructuredJson(output);
   }
@@ -1219,14 +1279,13 @@ class LlamaEngine {
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
   /// wins.
   ///
-  /// For TranslateGemma-style templates, [sourceLangCode] and
-  /// [targetLangCode] are forwarded to the template renderer.
-  ///
   /// Set [includeTokenCount] to false to skip the prompt tokenization pass
   /// and reduce per-request overhead when token count is not needed.
   ///
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
-  /// to llama.cpp `chat_template_kwargs`).
+  /// to llama.cpp `chat_template_kwargs`), including TranslateGemma's
+  /// `source_lang_code` and `target_lang_code`; the deprecated
+  /// [sourceLangCode] and [targetLangCode] behave as in [create].
   /// Use [templateNow] to set deterministic template time context.
   ///
   Future<LlamaChatTemplateResult> chatTemplate(
@@ -1243,7 +1302,9 @@ class LlamaEngine {
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
     String? customTemplate,
+    @Deprecated("Use chatTemplateKwargs: {'source_lang_code': ...} instead.")
     String? sourceLangCode,
+    @Deprecated("Use chatTemplateKwargs: {'target_lang_code': ...} instead.")
     String? targetLangCode,
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1263,10 +1324,12 @@ class LlamaEngine {
       responseFormat: responseFormat,
       customTemplate: customTemplate,
       modelTemplate: _modelChatTemplate,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       includeTokenCount: includeTokenCount,
-      chatTemplateKwargs: chatTemplateKwargs,
+      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+        chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+      ),
       templateNow: templateNow,
     );
   }
@@ -1352,12 +1415,15 @@ class LlamaEngine {
     _ensureReady();
     await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
     if (request.isCancelled()) return;
+    final resolvedParams = await _resolveDraftModel(params, request);
+    if (resolvedParams == null) return;
+    _ensureReady();
 
     try {
       final stream = backend.generate(
         _contextHandle!,
         prompt,
-        params,
+        resolvedParams,
         parts: parts,
       );
 
@@ -1389,8 +1455,6 @@ class LlamaEngine {
     required bool parallelToolCalls,
     required bool enableThinking,
     Map<String, dynamic>? chatTemplateKwargs,
-    String? sourceLangCode,
-    String? targetLangCode,
     DateTime? templateNow,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
@@ -1398,19 +1462,20 @@ class LlamaEngine {
   }) async* {
     _ensureReady();
     if (request.isCancelled()) return;
+    final resolvedParams = await _resolveDraftModel(params, request);
+    if (resolvedParams == null) return;
+    _ensureReady();
 
     try {
       final stream = nativeBackend.generateChat(
         _contextHandle!,
         messages,
-        params,
+        resolvedParams,
         tools: tools,
         toolChoice: toolChoice,
         parallelToolCalls: parallelToolCalls,
         enableThinking: enableThinking,
         chatTemplateKwargs: chatTemplateKwargs,
-        sourceLangCode: sourceLangCode,
-        targetLangCode: targetLangCode,
         templateNow: templateNow,
       );
 
@@ -2208,6 +2273,14 @@ class LlamaEngine {
   // ============================================================
 
   /// Dynamically loads or updates a LoRA adapter's scale.
+  ///
+  /// [path] is a local file, or a URL on WebGPU, that the backend loads as
+  /// written.
+  @Deprecated(
+    'Use setLoraSource with ModelSource.path(path), or another ModelSource '
+    'to download the adapter. This method will be removed in a future '
+    'release.',
+  )
   Future<void> setLora(String path, {double scale = 1.0}) async {
     _ensureReady();
     try {
@@ -2217,13 +2290,288 @@ class LlamaEngine {
     }
   }
 
+  /// Applies the LoRA adapter at [source] with [scale], or changes the scale
+  /// of an adapter already applied from [source].
+  ///
+  /// [source] resolves as in [loadModelSource]: [modelResolver] resolves it,
+  /// and on file-backed backends [modelDownloadManager] checks a local file,
+  /// or downloads a remote one with [download] into the model cache,
+  /// resuming an interrupted download and reusing a cached file, reporting
+  /// to [onProgress]. [download]'s cancel token stops the download. On
+  /// URL-loading backends (WebGPU) a remote source goes to the runtime as a
+  /// URL, and options that need the package-managed download manager throw
+  /// [LlamaUnsupportedException], as for [loadMultimodalProjectorSource].
+  ///
+  /// Remove the adapter with [removeLoraSource] and the same [source].
+  /// Setting [source] again with options that resolve it to another file,
+  /// such as another cache directory, replaces the adapter applied from it.
+  ///
+  /// Throws [LlamaContextException] when no model is loaded,
+  /// [LlamaUnsupportedException] when the backend has no runtime LoRA API or
+  /// cannot load [source] as described above, [LlamaStateException] when
+  /// [download]'s cancel token cancels the download or the model is
+  /// unloaded before the adapter applies (unloading also stops the
+  /// download), and what the download manager throws for a missing file or
+  /// a failed download.
+  Future<void> setLoraSource(
+    ModelSource source, {
+    double scale = 1.0,
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    _ensureReady();
+    final epoch = _modelEpoch;
+    bool unloaded() => _modelEpoch != epoch;
+    var options = download;
+    if (!backend.supportsUrlLoading) {
+      final callerToken = download.cancelToken;
+      options = _withCancelToken(
+        download,
+        _LinkedCancelToken([
+          unloaded,
+          if (callerToken != null) () => callerToken.isCancelled,
+        ]),
+      );
+    }
+    final String location;
+    try {
+      location = await _resolveAuxiliarySource(
+        source,
+        options: options,
+        onProgress: onProgress,
+        assetType: 'LoRA adapter',
+      );
+    } on Object {
+      if (unloaded()) throw _loraModelChanged();
+      rethrow;
+    }
+    if (download.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('LoRA adapter loading was cancelled.');
+    }
+    if (unloaded()) throw _loraModelChanged();
+    _ensureReady();
+    final previous = _loraLocations[source.canonicalKey];
+    try {
+      await backend.setLoraAdapter(_contextHandle!, location, scale);
+      _loraLocations[source.canonicalKey] = location;
+      if (previous != null && previous != location) {
+        await backend.removeLoraAdapter(_contextHandle!, previous);
+      }
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('LoRA adapters', error);
+    }
+  }
+
+  static LlamaStateException _loraModelChanged() => LlamaStateException(
+    'The model was unloaded while its LoRA adapter loaded, so the adapter '
+    'was not applied.',
+  );
+
   /// Removes a specific LoRA adapter from the active session.
+  @Deprecated(
+    'Use removeLoraSource with the ModelSource the adapter was set from. '
+    'This method will be removed in a future release.',
+  )
   Future<void> removeLora(String path) async {
     _ensureReady();
     try {
       await backend.removeLoraAdapter(_contextHandle!, path);
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
+    }
+  }
+
+  /// Removes the LoRA adapter applied from [source], by [setLoraSource] or
+  /// [ModelParams.loras]. Does nothing when no adapter from [source] is
+  /// applied.
+  Future<void> removeLoraSource(ModelSource source) async {
+    _ensureReady();
+    final location = _loraLocations[source.canonicalKey] ?? source.path;
+    if (location == null) return;
+    try {
+      await backend.removeLoraAdapter(_contextHandle!, location);
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('LoRA adapters', error);
+    }
+    _loraLocations.remove(source.canonicalKey);
+  }
+
+  /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
+  /// resolved as [setLoraSource] resolves it, with the adapter's own
+  /// [LoraAdapterConfig.download], or else only the non-secret parts of the
+  /// model load's [options]. Records where each source resolved in
+  /// [locations], which the caller keeps once the model loads.
+  Future<ModelParams> _resolveLoraSources(
+    ModelParams params,
+    ModelLoadOptions options,
+    Map<String, String> locations,
+  ) async {
+    if (params.loras.every((lora) => lora.source == null)) return params;
+    final resolved = <LoraAdapterConfig>[];
+    for (final lora in params.loras) {
+      final source = lora.source;
+      if (source == null) {
+        resolved.add(lora);
+        continue;
+      }
+      final location = await _resolveAuxiliarySource(
+        source,
+        options: _loraDownloadOptions(source, lora.download, options),
+        assetType: 'LoRA adapter',
+      );
+      locations[source.canonicalKey] = location;
+      // A path config is what backends load and is not resolved again.
+      resolved.add(LoraAdapterConfig(path: location, scale: lora.scale));
+    }
+    return params.copyWith(loras: resolved);
+  }
+
+  /// The download options of the [ModelParams.loras] adapter at [source]:
+  /// its own [download] with the model load's cancel token linked, or
+  /// without them only the cache policy and directory, resume, retries and
+  /// cancel token of [load]. The model load's bearer token, headers and
+  /// checksum belong to the model's host and file, never an adapter's.
+  static ModelLoadOptions _loraDownloadOptions(
+    ModelSource source,
+    ModelLoadOptions? download,
+    ModelLoadOptions load,
+  ) {
+    final loadToken = load.cancelToken;
+    if (download != null) {
+      final ownToken = download.cancelToken;
+      if (loadToken == null || identical(ownToken, loadToken)) return download;
+      return _withCancelToken(
+        download,
+        ownToken == null
+            ? loadToken
+            : _LinkedCancelToken([
+                () => ownToken.isCancelled,
+                () => loadToken.isCancelled,
+              ]),
+      );
+    }
+    if (source.isLocal) return ModelLoadOptions(cancelToken: loadToken);
+    return ModelLoadOptions(
+      cachePolicy: load.cachePolicy,
+      cacheDirectory: load.cacheDirectory,
+      cancelToken: loadToken,
+      resume: load.resume,
+      maxRetries: load.maxRetries,
+    );
+  }
+
+  /// [params] with its [SpeculativeDecodingConfig.draftModel] resolved as
+  /// [setLoraSource] resolves a source, or null when [request] is cancelled
+  /// or the model is unloaded meanwhile.
+  ///
+  /// A draft model resolves once per loaded model, source, cache directory
+  /// and checksum; later generations reuse its file.
+  Future<GenerationParams?> _resolveDraftModel(
+    GenerationParams params,
+    GenerationRequest request,
+  ) async {
+    final config = params.speculativeDecodingConfig;
+    if (config == null) return params;
+    final source = config.draftModel;
+    if (source == null) {
+      // Download options apply only to the engine's own download; they can
+      // hold credentials and a cancel token that must not reach a backend
+      // or its worker isolate.
+      return identical(config.draftModelDownload, ModelLoadOptions.defaults)
+          ? params
+          : params.copyWith(
+              speculativeDecodingConfig: config.withDraftModelDownload(
+                ModelLoadOptions.defaults,
+              ),
+            );
+    }
+    final download = config.draftModelDownload;
+    final policy = download.cachePolicy;
+    if (policy == ModelCachePolicy.noCache ||
+        policy == ModelCachePolicy.refresh) {
+      throw LlamaUnsupportedException(
+        'SpeculativeDecodingConfig.draftModelDownload cannot use '
+        'ModelCachePolicy.${policy.name}: a draft model resolves once per '
+        'loaded model and generations reuse it. Use preferCached or '
+        'cacheOnly.',
+      );
+    }
+    final key = [
+      source.canonicalKey,
+      download.cachePolicy.name,
+      download.cacheDirectory ?? '',
+      download.sha256 ?? '',
+    ].join('\n');
+    var location = _draftLocations[key];
+    if (location == null) {
+      await _rejectUnsupportedDraftModel(config);
+      final epoch = _modelEpoch;
+      bool abandoned() => _modelEpoch != epoch || request.isCancelled();
+      var options = download;
+      if (!backend.supportsUrlLoading) {
+        final callerToken = download.cancelToken;
+        options = _withCancelToken(
+          download,
+          _LinkedCancelToken([
+            abandoned,
+            if (callerToken != null) () => callerToken.isCancelled,
+          ]),
+        );
+      }
+      try {
+        location = await _resolveAuxiliarySource(
+          source,
+          options: options,
+          assetType: 'speculative draft model',
+        );
+      } on Object {
+        if (abandoned()) return null;
+        rethrow;
+      }
+      if (abandoned()) return null;
+      _draftLocations[key] = location;
+    }
+    final resolved = backend.supportsUrlLoading
+        ? ModelSource.url(Uri.parse(location), fileName: source.fileName)
+        : ModelSource.path(location);
+    // The resolved file needs no download options, and the caller's bearer
+    // token, headers and cancel token must not reach the backend or its
+    // worker isolate.
+    return params.copyWith(
+      speculativeDecodingConfig: config.withDraftModel(resolved),
+    );
+  }
+
+  /// Throws [LlamaUnsupportedException] before a draft model downloads when
+  /// the active runtime could not use it: LiteRT-LM, which loads no external
+  /// draft model, or a backend that does not report every strategy of
+  /// [config].
+  Future<void> _rejectUnsupportedDraftModel(
+    SpeculativeDecodingConfig config,
+  ) async {
+    final candidate = backend;
+    if (candidate is BackendRuntimeIdentity &&
+        (candidate as BackendRuntimeIdentity).runtime ==
+            LlamaRuntime.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'LiteRT-LM cannot load an external speculative draft model, so '
+        'SpeculativeDecodingConfig.draftModel is not downloaded. Leave it '
+        'null.',
+      );
+    }
+    if (candidate is! BackendGenerationCapabilitiesSupport) return;
+    final supported =
+        (await _generationCapabilities()).speculativeDecodingStrategies;
+    final missing = [
+      for (final strategy in config.effectiveStrategies)
+        if (!supported.contains(strategy)) strategy.name,
+    ];
+    if (missing.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        'The active backend does not support speculative strategy '
+        '${missing.join(', ')}, so SpeculativeDecodingConfig.draftModel is '
+        'not downloaded.',
+      );
     }
   }
 
@@ -2235,6 +2583,7 @@ class LlamaEngine {
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
+    _loraLocations.clear();
   }
 
   // ============================================================
@@ -2370,6 +2719,8 @@ class LlamaEngine {
   }
 
   Future<void> _cleanupFailedLoadState() async {
+    _loraLocations.clear();
+    _draftLocations.clear();
     if (_contextHandle != null) {
       try {
         await backend.contextFree(_contextHandle!);
@@ -2439,6 +2790,20 @@ class LlamaEngine {
       );
     }
   }
+
+  static ModelLoadOptions _withCancelToken(
+    ModelLoadOptions options,
+    ModelDownloadCancelToken cancelToken,
+  ) => ModelLoadOptions(
+    cachePolicy: options.cachePolicy,
+    cacheDirectory: options.cacheDirectory,
+    sha256: options.sha256,
+    bearerToken: options.bearerToken,
+    headers: options.headers,
+    cancelToken: cancelToken,
+    resume: options.resume,
+    maxRetries: options.maxRetries,
+  );
 
   void _throwIfSourceLoadCancelled(ModelLoadOptions options) {
     if (options.cancelToken?.isCancelled ?? false) {
@@ -2534,8 +2899,6 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
     bool parallelToolCalls = false,
     bool enableThinking = true,
     Map<String, dynamic>? responseFormat,
-    String? sourceLangCode,
-    String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) {
@@ -2547,10 +2910,20 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       responseFormat: responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
     ).collect();
   }
+}
+
+/// Cancelled by its own [cancel] or when any of [_checks] reports
+/// cancellation, so the engine can stop a download for its own reasons
+/// without cancelling a caller's token.
+class _LinkedCancelToken extends ModelDownloadCancelToken {
+  final List<bool Function()> _checks;
+
+  _LinkedCancelToken(this._checks);
+
+  @override
+  bool get isCancelled => super.isCancelled || _checks.any((check) => check());
 }

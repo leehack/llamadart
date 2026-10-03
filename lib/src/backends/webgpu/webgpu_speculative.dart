@@ -214,14 +214,14 @@ WebGpuSpeculativeRequest? resolveWebGpuSpeculativeRequest(
   if (needsDraftModel && draftModelPath == null) {
     throw ArgumentError(
       'WebGPU ${webGpuSpeculativeStrategyNames[draftStrategy]} requires '
-      'draftModelPath.',
+      'SpeculativeDecodingConfig.draftModel.',
     );
   }
   if (draftStrategy == SpeculativeDecodingStrategy.mtp &&
       draftModelPath != null) {
     throw LlamaUnsupportedException(
       'WebGPU draft-mtp runs the loaded model\'s own MTP layers; the bridge '
-      'cannot load an external MTP draft model, so draftModelPath must be '
+      'cannot load an external MTP draft model, so draftModel must be '
       'null.',
     );
   }
@@ -233,7 +233,7 @@ WebGpuSpeculativeRequest? resolveWebGpuSpeculativeRequest(
     throw LlamaUnsupportedException(
       'WebGPU n-gram speculative decoding uses token history and does not '
       'support draftTokenMin, minProbability, draftSplitProbability, or '
-      'draftModelPath unless a draft-model strategy is also enabled, as on '
+      'draftModel unless a draft-model strategy is also enabled, as on '
       'native llama.cpp.',
     );
   }

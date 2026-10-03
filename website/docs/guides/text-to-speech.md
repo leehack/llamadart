@@ -69,12 +69,17 @@ the required TTS ABI or that the projector matches the model. `download:`
 takes `ModelLoadOptions` for every remote file, `onProgress:` reports both
 files together, `store:` takes a `ModelFileStore` with your own resolver or
 download manager, and `backend:` the `LlamaBackend` (by default
-`LlamaBackend()`). `ModelLoadOptions.sha256` throws
+`LlamaBackend()`). Both files resolve, model first, before anything loads;
+a local file takes only the cancel token. The bearer token and headers never
+go to more than one host: when they are set and the two remote files are on
+different hosts, `load` throws `LlamaArgumentException` before downloading
+from the second one. `ModelLoadOptions.sha256` throws
 `LlamaUnsupportedException`, since one checksum cannot cover both files. The
 load is atomic: when it throws, the engine is disposed, and downloaded files
 stay in the cache.
 
-The synthesizer owns the engine `load` created, and `dispose()` disposes it.
+The synthesizer owns the engine `load` created and a `backend:` you passed,
+and `dispose()`, or a failed load, disposes both.
 To share a `LlamaEngine` you loaded yourself, attach the adapter instead and
 check `capabilities` yourself; `dispose()` then leaves your engine loaded:
 

@@ -25,7 +25,10 @@ description: >-
     `capabilities`, and own what they load. They throw
     `LlamaUnsupportedException` when the model cannot do the task; when they
     throw, nothing stays loaded. `ModelLoadOptions.sha256` is rejected for
-    multi-file models.
+    multi-file models. A local file gets only the cancel token; `bearerToken`
+    and `headers` reach one host only, so remote files on two hosts with
+    them set throw `LlamaArgumentException`. A `backend:` passed to `load` is
+    owned and disposed with the engine.
   - `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())` and
     `TextToSpeechEngine.attach(engine, adapter: const Qwen3TtsAdapter())`
     borrow a `LlamaEngine` you loaded; check `capabilities` yourself.
@@ -34,7 +37,9 @@ description: >-
   - The `SpeechToTextEngine(engine, modelProfile:)`,
     `SpeechToTextEngine.liteRtLm` and `TextToSpeechEngine(engine,
     modelProfile:)` constructors and the `*ModelProfile` enums are
-    deprecated; do not use them.
+    deprecated; do not use them. Load LiteRT-LM ASR files, local or remote,
+    with `SpeechToTextEngine.load`; `LiteRtLmAsrRuntimeConfig` is only the
+    low-level runtime config of local files.
 - Pick the adapter by model family. The adapter is a required declaration;
   audio support alone never makes a model ASR:
   - Qwen3-ASR (whole file, one final transcript): `Qwen3AsrAdapter` with the

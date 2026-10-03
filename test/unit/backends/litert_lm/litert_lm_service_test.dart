@@ -2610,9 +2610,11 @@ void main() {
                 handler: (_) async => 'sunny',
               ).toJson(),
             ],
-            chatTemplateKwargs: const {'locale': 'en_CA'},
-            sourceLangCode: 'en',
-            targetLangCode: 'fr',
+            chatTemplateKwargs: const {
+              'locale': 'en_CA',
+              'source_lang_code': 'en',
+              'target_lang_code': 'fr',
+            },
             templateNow: DateTime.utc(2026, 6, 7, 12),
           )
           .toList();
@@ -3587,7 +3589,8 @@ void main() {
             'message',
             allOf(
               contains('speculativeDecodingConfig.strategy'),
-              contains('speculativeDecodingConfig.draftModelPath'),
+              contains('speculativeDecodingConfig.draftModel'),
+              isNot(contains('draftModelPath')),
             ),
           ),
         ),
@@ -3659,7 +3662,8 @@ void main() {
             'message',
             allOf(
               contains('speculativeDecodingConfig.draftTokenMax'),
-              contains('speculativeDecodingConfig.draftModelPath'),
+              contains('speculativeDecodingConfig.draftModel'),
+              isNot(contains('draftModelPath')),
             ),
           ),
         ),

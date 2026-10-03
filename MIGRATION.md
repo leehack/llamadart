@@ -88,6 +88,28 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: TranslateGemma language codes
+
+`LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
+`sourceLangCode` and `targetLangCode`. Pass the codes in
+`chatTemplateKwargs`, as llama.cpp's `chat_template_kwargs` does; the
+parameters still work for one minor release, with deprecation warnings:
+
+```dart
+// Before
+engine.create(messages, sourceLangCode: 'en', targetLangCode: 'ko');
+// After
+engine.create(
+  messages,
+  chatTemplateKwargs: const {'source_lang_code': 'en', 'target_lang_code': 'ko'},
+);
+```
+
+A code passed as a parameter replaces the same key in `chatTemplateKwargs`.
+A custom `BackendNativeChatGeneration` that read `sourceLangCode` or
+`targetLangCode` in `generateChat` gets them from `LlamaEngine` only in
+`chatTemplateKwargs` now.
+
 ## Unreleased: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,
@@ -193,11 +215,14 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
 
    Remote sources download into the model cache. `download:` takes
    `ModelLoadOptions` for every remote file and `onProgress:` reports the
-   files together; `ModelLoadOptions.sha256` throws
-   `LlamaUnsupportedException`, since one checksum cannot cover two files.
-   `params:` takes `ModelParams`, `store:` a `ModelFileStore` with your own
-   resolver or download manager, and `backend:` the `LlamaBackend`. When
-   `load` throws, nothing stays loaded.
+   files together; a local file takes only the cancel token, and
+   `bearerToken` and `headers` go to one host only, so remote files on two
+   hosts with them set throw `LlamaArgumentException`.
+   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
+   checksum cannot cover two files. `params:` takes `ModelParams`, `store:` a
+   `ModelFileStore` with your own resolver or download manager, and
+   `backend:` the `LlamaBackend`, which the speech engine then owns and
+   disposes. When `load` throws, nothing stays loaded.
 
    To share a `LlamaEngine` you load yourself, for example with chat, use
    `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())`.
@@ -230,8 +255,10 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
    `LlamaUnsupportedException` where it is unavailable, including on the web,
    where `SpeechToTextEngine.liteRtLm` returned a recognizer whose
    `capabilities` reported unsupported. `params:` and `backend:` must be
-   null. `LiteRtLmAsrRuntimeConfig` itself is unchanged for
-   `LiteRtLmRuntimeClient`.
+   null. The model and tokenizer can be URLs or Hugging Face files: `load`
+   downloads them with `download:` and `onProgress:` as in step 1.
+   `SpeechToTextEngine.liteRtLm` opens local files only and throws
+   `LlamaUnsupportedException` for a remote source.
 
 3. **Text to speech takes a `TextToSpeechModel`.**
 
@@ -274,6 +301,59 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
    and `synthesize` throw `LlamaStateException`, and `capabilities` reports
    unsupported. Code that used the deprecated constructors and disposed the
    `LlamaEngine` itself keeps working.
+## Unreleased: `ModelSource` for LoRA adapters, draft models and speech files
+
+LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
+`ModelSource`, so a remote file downloads into the model cache like a model.
+The `String` path forms still work for one minor release, with deprecation
+warnings:
+
+| Before | After |
+| --- | --- |
+| `engine.setLora(path, scale: s)` | `engine.setLoraSource(ModelSource.path(path), scale: s)` |
+| `engine.removeLora(path)` | `engine.removeLoraSource(ModelSource.path(path))` |
+| `LoraAdapterConfig(path: path, scale: s)` | `LoraAdapterConfig.source(ModelSource.path(path), scale: s)` |
+| `SpeculativeDecodingConfig.draftSimple(draftModelPath: path)` (and the other constructors) | `SpeculativeDecodingConfig.draftSimple(draftModel: ModelSource.path(path))` |
+| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)`; to recognize speech, `SpeechToTextEngine.load` as in [the speech migration](#unreleased-speech-engine-load-attach-and-adapters) |
+
+```dart
+// Before
+await engine.setLora('/models/lora/domain.gguf', scale: 0.7);
+final config = LiteRtLmAsrRuntimeConfig(
+  modelPath: '/models/moonshine_tiny.tflite',
+  tokenizerPath: '/models/tokenizer.json',
+  modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+);
+// After
+await engine.setLoraSource(
+  ModelSource.path('/models/lora/domain.gguf'),
+  scale: 0.7,
+);
+final config = LiteRtLmAsrRuntimeConfig.source(
+  model: ModelSource.path('/models/moonshine_tiny.tflite'),
+  tokenizer: ModelSource.path('/models/tokenizer.json'),
+  modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+);
+```
+
+- A local path, relative ones included, stays `ModelSource.path(path)`. On
+  WebGPU, where these paths were URLs, use `ModelSource.parse(url)`; a local
+  path there throws `LlamaUnsupportedException`.
+- For a page-relative URL on the web (such as `models/adapter.gguf`),
+  resolve it against the page: `ModelSource.url(Uri.base.resolve(path))`.
+- `ModelSource` and `const`: `ModelSource.path` is not a `const`
+  constructor, so drop `const` from a `ModelParams`, `GenerationParams` or
+  `LiteRtLmAsrRuntimeConfig` that now holds one.
+- Remove an adapter with the same source it was set from:
+  `removeLoraSource` matches sources, not paths.
+- `draftModelDownload`, `setLoraSource(download:, onProgress:)` and
+  `LoraAdapterConfig.source(source, download:)` set the download options
+  for remote files. Remote LiteRT-LM ASR files download through
+  `SpeechToTextEngine.load`; `LiteRtLmAsrRuntimeConfig` holds local files. A `ModelParams.loras` adapter never
+  takes the model load's bearer token, headers or `sha256`; give it its own
+  `download:` when its host needs credentials.
+- A draft model downloads once per loaded model; `draftModelDownload` rejects
+  `ModelCachePolicy.noCache` and `refresh`.
 
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 

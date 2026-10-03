@@ -38,8 +38,6 @@ class ChatTemplateRenderer {
     Map<String, dynamic>? responseFormat,
     String? customTemplate,
     String? modelTemplate,
-    String? sourceLangCode,
-    String? targetLangCode,
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
@@ -56,13 +54,6 @@ class ChatTemplateRenderer {
       metadata.remove('tokenizer.chat_template.tool_use');
     } else {
       templateSource = metadata['tokenizer.chat_template'];
-    }
-
-    if (sourceLangCode != null && sourceLangCode.isNotEmpty) {
-      metadata['source_lang_code'] = sourceLangCode;
-    }
-    if (targetLangCode != null && targetLangCode.isNotEmpty) {
-      metadata['target_lang_code'] = targetLangCode;
     }
 
     final effectiveResponseFormat =

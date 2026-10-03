@@ -14,6 +14,8 @@ import '../models/inference/generation_params.dart';
 import '../models/inference/model_params.dart';
 import '../models/model_file_store.dart';
 import '../models/model_load_options.dart';
+import '../models/model_source.dart';
+import '../models/model_target_file.dart';
 import 'litert_lm_speech_to_text_driver.dart';
 import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
@@ -616,6 +618,10 @@ class SpeechToTextEngine {
   /// float PCM and supports one active task per recognizer instance.
   /// [libraryPath] is an advanced local-validation override; packaged apps
   /// should omit it and use the runtime resolved by native assets.
+  ///
+  /// Throws [LlamaUnsupportedException] when [config] names a remote model
+  /// or tokenizer: this constructor opens local files only, and [load]
+  /// downloads remote ones.
   @Deprecated(
     'Use SpeechToTextEngine.load(SpeechToTextModel(model, tokenizer: '
     'tokenizer, adapter: LiteRtLmAsrAdapter(preset))). This constructor will '
@@ -625,7 +631,7 @@ class SpeechToTextEngine {
     LiteRtLmAsrRuntimeConfig config, {
     String? libraryPath,
   }) : this._liteRtLm(
-         config,
+         _localLiteRtLmConfig(config),
          debugLiteRtLmSpeechToTextDriverOverride ??
              createLiteRtLmSpeechToTextDriver(),
          LiteRtLmAsrAdapter(
@@ -644,18 +650,27 @@ class SpeechToTextEngine {
   /// Every file of [model] comes from its `ModelSource`, resolved by
   /// [store]'s resolver and download manager (by default
   /// [DefaultModelResolver] and [DefaultModelDownloadManager]), one at a
-  /// time, main file first. [download] applies to every remote file: cache
-  /// policy and directory, authentication, resume, retries and the cancel
-  /// token. [onProgress] reports the files together: `receivedBytes` counts
-  /// the files resolved so far plus the current download, and `totalBytes`
-  /// is known once the last file's size and every earlier one's is.
+  /// time, main file first, before anything loads. [download] applies to
+  /// every remote file: cache policy and directory, authentication, resume,
+  /// retries and the cancel token. A local file takes only the cancel token.
+  /// The bearer token and headers never go to more than one host: when they
+  /// are set and the remote files are on different hosts, [load] throws
+  /// [LlamaArgumentException] before downloading from the second one.
+  /// [onProgress] reports the files together: `receivedBytes` counts the
+  /// files resolved so far plus the current download, and `totalBytes` is
+  /// their combined size once every size is known.
   ///
   /// With a [SpeechToTextPromptAdapter], [load] creates a [LlamaEngine] on
   /// [backend] (by default `LlamaBackend()`), loads [SpeechToTextModel.source]
   /// with [params] (by default `ModelParams()`) and then
-  /// [SpeechToTextModel.projector], as `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do, and checks [capabilities].
-  /// [dispose] disposes that engine.
+  /// [SpeechToTextModel.projector], and checks [capabilities]. The recognizer
+  /// owns that engine and a [backend] passed in: [dispose], or a failed
+  /// load, disposes both. Adapters in [ModelParams.loras] given as sources
+  /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
+  /// backend, as on the web, fetches each file itself, as
+  /// `LlamaEngine.loadModelSource` and
+  /// `LlamaEngine.loadMultimodalProjectorSource` do, and [onProgress]
+  /// reports a fraction of both files.
   ///
   /// With a [LiteRtLmAsrAdapter], [load] probes the LiteRT-LM ASR runtime
   /// before any download and then resolves [SpeechToTextModel.source] and
@@ -669,8 +684,9 @@ class SpeechToTextEngine {
   ///
   /// Throws:
   /// - [LlamaArgumentException] when [model] lacks a file its adapter needs
-  ///   or has one it cannot use, or when [params] or [backend] is set for a
-  ///   [LiteRtLmAsrAdapter].
+  ///   or has one it cannot use, when [params] or [backend] is set for a
+  ///   [LiteRtLmAsrAdapter], or when [download] would send credentials to
+  ///   more than one host.
   /// - [LlamaUnsupportedException] when the loaded model cannot recognize
   ///   speech (see [capabilities]), when the LiteRT-LM ASR runtime is
   ///   unavailable, including on the web, and when [download] sets
@@ -756,18 +772,18 @@ class SpeechToTextEngine {
                 'Dedicated LiteRT-LM speech recognition is unavailable.',
           );
         }
-        final paths = await resolveSpeechModelFiles(
-          engineName: 'SpeechToTextEngine',
-          sources: [model.source, tokenizer],
-          download: download,
-          onProgress: onProgress,
+        final paths = await resolveModelSourceFiles(
+          [model.source, tokenizer],
           store: store ?? ModelFileStore(),
-          assetType: 'speech model',
+          download: download,
+          operation: 'SpeechToTextEngine model loading',
+          onProgress: onProgress,
+          assetType: 'speech recognition model',
         );
         return SpeechToTextEngine._liteRtLm(
-          LiteRtLmAsrRuntimeConfig(
-            modelPath: paths[0],
-            tokenizerPath: paths[1],
+          LiteRtLmAsrRuntimeConfig.source(
+            model: ModelSource.path(paths[0]),
+            tokenizer: ModelSource.path(paths[1]),
             modelPreset: adapter.preset,
             backend: adapter.backend,
             numberOfThreads: adapter.numberOfThreads,
@@ -807,6 +823,24 @@ class SpeechToTextEngine {
       'SpeechToTextModelProfile. Read adapter instead.',
     ),
   };
+
+  static LiteRtLmAsrRuntimeConfig _localLiteRtLmConfig(
+    LiteRtLmAsrRuntimeConfig config,
+  ) {
+    for (final (name, source) in [
+      ('model', config.model),
+      ('tokenizer', config.tokenizer),
+    ]) {
+      if (source != null && source.isRemote) {
+        throw LlamaUnsupportedException(
+          'SpeechToTextEngine.liteRtLm opens local files only, but the $name '
+          'is the remote source ${source.displayName}. Load remote LiteRT-LM '
+          'ASR files with SpeechToTextEngine.load and a LiteRtLmAsrAdapter.',
+        );
+      }
+    }
+    return config;
+  }
 
   bool get _usesLiteRtLm => _liteRtLmConfig != null;
 
