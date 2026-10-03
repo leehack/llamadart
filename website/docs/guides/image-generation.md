@@ -627,7 +627,8 @@ avoids by loading them eagerly.
   covers engines in one isolate; do not generate from several isolates at
   once.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
-  `generateImage` then throws `LlamaStateException`.
+  The task reports `cancelled`, and its `result` and `generateImage` throw
+  `LlamaStateException`, as does `generate` after `dispose()`.
 - `dispose()` is idempotent: later calls return the first call's future.
   `isDisposed` turns true at the first call, and `await engine.capabilities`
   then reports the engine as unsupported. `capabilities` never throws and

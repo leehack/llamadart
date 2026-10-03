@@ -278,8 +278,8 @@ assert(completion.state == SpeechToTextCompletionState.cancelled);
 Cancellation is cooperative: `task.cancel()` for whole-input recognition, or
 `await session.cancel()` for a LiteRT-LM session, which stops between native
 windows. `task.cancel()` stops only that task: on a prompt adapter it cancels
-the task's own generation, so other requests on the same `LlamaEngine` keep
-running. A session's `cancel()` returns a future because it ends a live input
+the task's own generation and no other request on the same `LlamaEngine`. A
+session's `cancel()` returns a future because it ends a live input
 stream and releases the native recognizer; a session has no single `result`. Cancelling or pausing an event subscription neither cancels nor
 throttles native inference; LiteRT-LM producers must await `addPcm` for input
 backpressure.

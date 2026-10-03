@@ -625,6 +625,7 @@ void main() {
         expect(completion.result, isNull);
         expect(await events, isEmpty);
         expect(task.isCancellationRequested, isTrue);
+        await expectLater(task.result, throwsA(isA<LlamaStateException>()));
 
         backend
           ..generationStream = null

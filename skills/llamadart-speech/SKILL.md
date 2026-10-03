@@ -121,8 +121,8 @@ description: >-
   Flutter UI isolate.
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
   `done` then reports `cancelled`, and `task.result` throws
-  `LlamaStateException`. `task.cancel()` stops only that task; other requests
-  on the same `LlamaEngine` keep running. A streaming session's `events`
+  `LlamaStateException`. `task.cancel()` stops only that task; it does not
+  cancel other requests on the same `LlamaEngine`. A streaming session's `events`
   still report a failure as a stream error (also on `session.done`), so give
   its `listen` an `onError`. Cancelling or pausing the `events`
   subscription does not stop or throttle inference. The speech engine's

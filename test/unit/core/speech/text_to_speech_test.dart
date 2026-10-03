@@ -274,6 +274,7 @@ void main() {
         expect(task.isCancellationRequested, isTrue);
         expect((await task.done).state, TextToSpeechCompletionState.cancelled);
         expect(await task.events.toList(), isEmpty);
+        await expectLater(task.result, throwsA(isA<LlamaStateException>()));
       });
     }
 

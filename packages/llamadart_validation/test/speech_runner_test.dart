@@ -2428,6 +2428,34 @@ void main() {
     },
   );
 
+  test(
+    'the public adapter throws the failure a started task reports',
+    () async {
+      final recognition = edgeAdapter(
+        failure: LlamaInferenceException('decode failed'),
+      );
+      await recognition.load();
+      await expectLater(
+        recognition.execute(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await recognition.dispose();
+
+      final engine = FakeSpeechEngine();
+      engine.speechBackend
+        ..textToSpeech = qwen3TtsCapabilities
+        ..onSynthesize = (_, _) async =>
+            throw LlamaTextToSpeechException('codec failed');
+      final synthesis = edgeAdapter(pack: 'tts', engine: engine);
+      await synthesis.load();
+      await expectLater(
+        synthesis.execute(),
+        throwsA(isA<LlamaTextToSpeechException>()),
+      );
+      await synthesis.dispose();
+    },
+  );
+
   test('a cancellation with no generation to cancel is refused', () async {
     final adapter = edgeAdapter(deltas: const [edgeReference]);
     await adapter.load();

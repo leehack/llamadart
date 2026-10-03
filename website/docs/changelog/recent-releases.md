@@ -17,8 +17,8 @@ For canonical full release notes, use:
   it from `done`, or from the new `result`, which returns the result or
   throws the failure, or `LlamaStateException` when the task is cancelled
   ([#850](https://github.com/leehack/llamadart/issues/850)).
-- **Fixed:** `SpeechToTextTask.cancel()` stops only that recognition; chat and
-  other requests on the same `LlamaEngine` keep running
+- **Fixed:** `SpeechToTextTask.cancel()` stops only that recognition; it no
+  longer cancels chat and other requests on the same `LlamaEngine`
   ([#850](https://github.com/leehack/llamadart/issues/850)).
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`

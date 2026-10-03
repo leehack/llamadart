@@ -1404,6 +1404,28 @@ void main() {
         throwsA(isA<LlamaStateException>()),
       );
     });
+
+    test('a dispose before generate is awaited still returns the task, '
+        'cancelled, with no error event', () async {
+      final engine = await load(_sdxs());
+      final gate = driver.session.gate = Completer<void>();
+      final starting = engine.generate(
+        const ImageGenerationRequest(prompt: 'a', steps: 4),
+      );
+
+      final disposal = engine.dispose();
+      gate.complete();
+      final task = await starting;
+      final events = task.events.toList();
+      await disposal;
+
+      expect(task.isCancellationRequested, isTrue);
+      expect(await events, everyElement(isA<ImageGenerationProgressEvent>()));
+      expect((await task.done).state, ImageGenerationCompletionState.cancelled);
+      await expectLater(task.result, throwsA(isA<LlamaStateException>()));
+      expect(driver.session.disposedAfterGenerate, isTrue);
+      expect(driver.session.stepsRun, 0);
+    });
   });
 
   group('warmUp', () {

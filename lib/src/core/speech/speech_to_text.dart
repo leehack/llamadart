@@ -486,8 +486,9 @@ class SpeechToTextTask {
   /// Whether cancellation has been requested.
   bool get isCancellationRequested => _cancelled;
 
-  /// Requests cooperative cancellation of this task. Other requests on the
-  /// same `LlamaEngine` keep running. Calling this more than once is safe.
+  /// Requests cooperative cancellation of this task. It does not cancel
+  /// other requests on the same `LlamaEngine`. Calling this more than once is
+  /// safe.
   void cancel() {
     if (_cancelled || _doneCompleter.isCompleted) {
       return;
@@ -1023,8 +1024,8 @@ class SpeechToTextEngine {
   /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
   /// fails with [LlamaSpeechTranscriptTruncatedException].
   ///
-  /// [SpeechToTextTask.cancel] stops only this task's generation: chat and
-  /// other requests on the same [LlamaEngine] keep running. [dispose],
+  /// [SpeechToTextTask.cancel] stops only this task's generation: it does
+  /// not cancel chat or other requests on the same [LlamaEngine]. [dispose],
   /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an active
   /// prompt-adapted task, which then reports
   /// [SpeechToTextCompletionState.cancelled] with no result.
