@@ -64,6 +64,35 @@ String? liteRtLmStreamProxyCompatibilityError({
       'pinned runtime before using asynchronous generation.';
 }
 
+/// `litert_lm_engine_create` returned no engine for the requested backend,
+/// for example a GPU or NPU delegate this device cannot start.
+///
+/// A [StateError], as before, so callers matching on it keep working.
+class LiteRtLmEngineCreateError extends StateError {
+  /// Creates the error with the diagnostic [message].
+  LiteRtLmEngineCreateError(super.message);
+}
+
+/// Throws [LiteRtLmEngineCreateError] when `litert_lm_engine_create` returned
+/// no engine, that is when [engineAddress] is 0.
+///
+/// This is public only for unit tests; production callers should receive the
+/// error through [LiteRtLmRuntimeClient.initialize].
+void liteRtLmCheckEngineCreated(
+  int engineAddress, {
+  required String backend,
+  required String modelPath,
+}) {
+  if (engineAddress == 0) {
+    throw LiteRtLmEngineCreateError(
+      liteRtLmEngineCreateFailureMessage(
+        backend: backend,
+        modelPath: modelPath,
+      ),
+    );
+  }
+}
+
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
 /// This is public only for unit tests; production callers should receive the
@@ -852,14 +881,11 @@ class LiteRtLmRuntimeClient {
           _keepAlive(companionLibraries);
         }
       });
-      if (engineAddress == 0) {
-        throw StateError(
-          liteRtLmEngineCreateFailureMessage(
-            backend: resolvedBackend,
-            modelPath: modelPath,
-          ),
-        );
-      }
+      liteRtLmCheckEngineCreated(
+        engineAddress,
+        backend: resolvedBackend,
+        modelPath: modelPath,
+      );
       _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
     } finally {
       if (settings != nullptr) {

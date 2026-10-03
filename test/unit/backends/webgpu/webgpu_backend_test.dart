@@ -14,6 +14,7 @@ import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, URL, document, window;
 
+import '../../../support/fake_navigator_gpu.dart';
 import '../../../support/fake_webgpu_decision_bridge.dart';
 import '../../../support/fake_webgpu_feature_bridge.dart';
 
@@ -1391,6 +1392,111 @@ void main() {
       );
 
       expect(requestedContextSizes, <int>[32768]);
+    });
+
+    group('ComputeDevice', () {
+      const url = 'https://example.com/model.gguf';
+      Matcher unsupported(String text) => throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('ComputeDevice.'), contains(text)),
+        ),
+      );
+
+      test('gpu needs a WebGPU adapter before the bridge loads', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.noAdapter));
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          unsupported('no WebGPU adapter'),
+        );
+        expect(requestedGpuLayerCounts, isEmpty);
+      });
+
+      test('gpu never retries on a CPU rung', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        failLoads(message: 'memory access out of bounds', firstAttempts: 1);
+
+        await backend.modelLoadFromUrl(
+          url,
+          const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 1,
+            device: ComputeDevice.gpu,
+          ),
+        );
+
+        expect(requestedGpuLayerCounts, <int?>[1, 1]);
+        expect(requestedContextSizes, <int>[4096, 2048]);
+      });
+
+      test('gpu throws and unloads when the runtime runs without GPU '
+          'layers', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        runtimeGpuActive = false;
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          unsupported('without GPU layers'),
+        );
+        expect(requestedGpuLayerCounts, <int?>[ModelParams.maxGpuLayers]);
+        expect(backend.isReady, isFalse);
+      });
+
+      test('auto keeps loading without WebGPU', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
+        runtimeGpuActive = false;
+
+        await backend.modelLoadFromUrl(url, const ModelParams());
+
+        expect(backend.isReady, isTrue);
+      });
+
+      test('cpu sends no GPU layers', () async {
+        await backend.modelLoadFromUrl(
+          url,
+          const ModelParams(device: ComputeDevice.cpu),
+        );
+
+        expect(lastRequestedGpuLayers, 0);
+      });
+
+      test('gpu on Safari with legacy bridge assets throws', () async {
+        addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+        globalContext.setProperty(
+          '__llamadartBridgeUserAgent'.toJS,
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 '
+                  '(KHTML, like Gecko) Version/17.5 Safari/605.1.15'
+              .toJS,
+        );
+
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          unsupported('Safari'),
+        );
+        expect(requestedGpuLayerCounts, isEmpty);
+      });
+
+      test('npu throws', () async {
+        await expectLater(
+          backend.modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.npu),
+          ),
+          unsupported('llama.cpp on the Web'),
+        );
+        expect(requestedGpuLayerCounts, isEmpty);
+      });
     });
 
     test('falls back to a CPU rung from a single GPU layer', () async {

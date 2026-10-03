@@ -44,9 +44,10 @@ Laya's `system_one` format (https://huggingface.co/convaiinnovations/laya):
   borrows the `LlamaEngine`: its `dispose()` frees only the head; dispose the
   heads before the `LlamaEngine`. `DecisionEngine.capabilitiesFor(engine)`
   probes a loaded `LlamaEngine` before attaching.
-- `DecisionModelParams.device`: `ComputeDevice.auto` (best GPU, else CPU),
-  `cpu`, or `gpu` (throws `LlamaUnsupportedException` without GPU support);
-  `npu` is unsupported. `threads` sets the encoder and head CPU threads.
+- `DecisionModelParams.device` maps to the encoder's `ModelParams.device`:
+  `ComputeDevice.auto` (best GPU, else CPU; CPU on Android), `cpu`, or `gpu`
+  (Vulkan on Android; the encoder load throws `LlamaUnsupportedException`
+  when it would run on the CPU); `npu` is unsupported. `threads` sets the encoder and head CPU threads.
 - Read `await decisions.capabilities` for `isSupported`, `backendName` and
   `runtime`; show `unsupportedReason` when it is false.
 - Runtimes: native llama.cpp is experimental (validated on macOS Metal and

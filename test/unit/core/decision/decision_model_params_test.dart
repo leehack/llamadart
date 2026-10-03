@@ -7,19 +7,21 @@ void main() {
       final params = const DecisionModelParams().encoderModelParams;
 
       expect(params.contextSize, 512);
+      expect(params.device, ComputeDevice.auto);
       expect(params.preferredBackend, GpuBackend.auto);
       expect(params.gpuLayers, ModelParams.maxGpuLayers);
       expect(params.numberOfThreads, 0);
       expect(params.numberOfThreadsBatch, 0);
     });
 
-    test('offloads every layer for ComputeDevice.gpu', () {
+    test('requires a GPU for ComputeDevice.gpu', () {
       final params = const DecisionModelParams(
         device: ComputeDevice.gpu,
       ).encoderModelParams;
 
-      expect(params.preferredBackend, GpuBackend.auto);
+      expect(params.device, ComputeDevice.gpu);
       expect(params.gpuLayers, ModelParams.maxGpuLayers);
+      expect(params.validate, returnsNormally);
     });
 
     test('keeps ComputeDevice.cpu off the GPU and applies threads', () {
@@ -29,8 +31,7 @@ void main() {
       ).encoderModelParams;
 
       expect(params.contextSize, 512);
-      expect(params.preferredBackend, GpuBackend.cpu);
-      expect(params.gpuLayers, 0);
+      expect(params.device, ComputeDevice.cpu);
       expect(params.numberOfThreads, 6);
       expect(params.numberOfThreadsBatch, 6);
     });

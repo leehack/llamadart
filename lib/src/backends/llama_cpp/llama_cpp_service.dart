@@ -17,6 +17,7 @@ import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
@@ -639,23 +640,28 @@ class LlamaCppService {
         SpeculativeDecodingStrategy.draftDspark,
       };
 
-  /// Creates the service; tests replace the runtime's first native call and
-  /// the host probes behind its Windows load diagnostics.
+  /// Creates the service; tests replace the runtime's first native call, the
+  /// host probes behind its Windows load diagnostics, and the raw
+  /// `ggml_backend_dev_type` values a [ComputeDevice.gpu] load checks for a
+  /// backend.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
     bool? isWindows,
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
+    List<int> Function(GpuBackend backend)? deviceTypes,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
-       _missingWindowsLibraries = missingWindowsLibraries;
+       _missingWindowsLibraries = missingWindowsLibraries,
+       _deviceTypesOverride = deviceTypes;
 
   final void Function() _backendInit;
   final Abi _abi;
   final bool _isWindows;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
+  final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -745,6 +751,41 @@ class LlamaCppService {
   final Map<int, _DecisionHead> _decisionHeads = <int, _DecisionHead>{};
 
   int _getHandle() => _nextHandle++;
+
+  /// Maps [ModelParams.device] onto the llama.cpp fields the load reads.
+  ///
+  /// [ComputeDevice.cpu] forces the CPU module (or BLAS when requested) and 0
+  /// GPU layers. [ComputeDevice.gpu] keeps the requested backend, except that
+  /// Android resolves [GpuBackend.auto] to Vulkan, since its `auto` means the
+  /// CPU. [ComputeDevice.npu] has no llama.cpp backend.
+  static ModelParams resolveComputeDeviceParams(
+    ModelParams modelParams, {
+    bool isAndroid = false,
+    String platform = 'this platform',
+  }) {
+    switch (modelParams.device) {
+      case ComputeDevice.auto:
+        return modelParams;
+      case ComputeDevice.cpu:
+        return modelParams.copyWith(
+          preferredBackend: modelParams.preferredBackend == GpuBackend.blas
+              ? GpuBackend.blas
+              : GpuBackend.cpu,
+          gpuLayers: 0,
+        );
+      case ComputeDevice.gpu:
+        if (isAndroid && modelParams.preferredBackend == GpuBackend.auto) {
+          return modelParams.copyWith(preferredBackend: GpuBackend.vulkan);
+        }
+        return modelParams;
+      case ComputeDevice.npu:
+        throw LlamaUnsupportedException(
+          'ComputeDevice.npu is not available for llama.cpp on $platform: '
+          'llama.cpp runs GGUF models on the CPU or a GPU, and only LiteRT-LM '
+          'on Android has an NPU backend. Use ComputeDevice.auto, cpu or gpu.',
+        );
+    }
+  }
 
   /// Resolves the effective backend preference for model loading.
   ///
@@ -1772,6 +1813,11 @@ class LlamaCppService {
   /// Returns a handle to the loaded model.
   /// Throws an [Exception] if the file does not exist or fails to load.
   int loadModel(String modelPath, ModelParams modelParams) {
+    modelParams = resolveComputeDeviceParams(
+      modelParams,
+      isAndroid: Platform.isAndroid,
+      platform: Platform.operatingSystem,
+    );
     final modelFileSize = _validateGgufModelFile(modelPath, 'Model');
 
     _applyConfiguredLogLevel();
@@ -1802,6 +1848,15 @@ class LlamaCppService {
       preferredDevices = _createPreferredDeviceList(GpuBackend.cpu);
       gpuLayers = 0;
       forcedCpuFallback = true;
+    }
+    if (modelParams.device == ComputeDevice.gpu &&
+        (forcedCpuFallback || !_hasGpuDevice(effectiveBackend))) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      throw LlamaUnsupportedException(
+        _noGpuMessage(effectiveBackend, forcedCpuFallback: forcedCpuFallback),
+      );
     }
     final mtmdUseGpu = resolveMtmdUseGpuForLoad(
       modelParams,
@@ -1870,6 +1925,44 @@ class LlamaCppService {
     }
 
     return handle;
+  }
+
+  /// Whether a GPU device of [backend], or any GPU device for
+  /// [GpuBackend.auto], is registered after the backend modules load.
+  bool _hasGpuDevice(GpuBackend backend) {
+    final types = (_deviceTypesOverride ?? _registeredDeviceTypes)(backend);
+    return types.any((type) {
+      return type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
+          type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
+    });
+  }
+
+  List<int> _registeredDeviceTypes(GpuBackend backend) {
+    final devices = backend == GpuBackend.auto
+        ? [
+            for (var i = 0; i < _ggmlBackendDevCount(); i++)
+              _ggmlBackendDevGet(i),
+          ]
+        : _resolvePreferredDevices(backend) ?? const <ggml_backend_dev_t>[];
+    return [
+      for (final device in devices)
+        if (device != nullptr) _ggmlBackendDevType(device),
+    ];
+  }
+
+  String _noGpuMessage(GpuBackend backend, {required bool forcedCpuFallback}) {
+    final platform = Platform.operatingSystem;
+    final requested = backend == GpuBackend.auto
+        ? 'a GPU'
+        : 'the ${backend.name} backend';
+    final reason = forcedCpuFallback
+        ? 'its backend module is not bundled. Add ${backend.name} to the '
+              'llamadart_native_backends hook user-define in your app '
+              'pubspec.yaml'
+        : 'no GPU device is available (devices: '
+              '${getBackendInfo().join(', ')})';
+    return 'ComputeDevice.gpu needs $requested for llama.cpp on $platform, '
+        'but $reason. Use ComputeDevice.auto to run on the CPU instead.';
   }
 
   int _validateGgufModelFile(String modelPath, String label) {
@@ -3707,6 +3800,11 @@ class LlamaCppService {
     if (model == null) {
       throw Exception("Invalid model handle");
     }
+    params = resolveComputeDeviceParams(
+      params,
+      isAndroid: Platform.isAndroid,
+      platform: Platform.operatingSystem,
+    );
 
     final ctxParams = llama_context_default_params();
     int nCtx = params.contextSize;
