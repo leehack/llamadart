@@ -78,11 +78,12 @@ no longer has model presets or `String` paths.
    generate with.
 
 3. **`load` takes `params:`, `download:`, `onProgress:` and `store:`.**
-   `ImageGenerationOptions` is now `ImageModelParams`, and
-   `ImageGenerationDevice` the shared `ComputeDevice`. `download:` takes
-   `ModelLoadOptions` for remote files (cache, auth, retries, cancellation);
-   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
-   checksum cannot cover several files. `store: ModelFileStore(resolver: ...,
+   `ImageGenerationOptions` is now `ImageModelParams` (the engine's
+   `options` getter is now `params`), and `ImageGenerationDevice` the shared
+   `ComputeDevice`. `download:` takes `ModelLoadOptions` for remote files
+   (cache, auth, retries, cancellation); `ModelLoadOptions.sha256` verifies a
+   single-file model and throws `LlamaUnsupportedException` for several
+   files, since one checksum cannot cover them. `store: ModelFileStore(resolver: ...,
    downloadManager: ...)` replaces the resolver and download manager.
 
 4. **Errors name files by position, not path.** A missing or unusable file
@@ -424,6 +425,20 @@ final config = LiteRtLmAsrRuntimeConfig.source(
 - A draft model downloads once per loaded model; `draftModelDownload` rejects
   `ModelCachePolicy.noCache` and `refresh`.
 
+## Unreleased: optional `ToolDefinition.handler`
+
+`ToolDefinition.handler` is a `ToolHandler?`, so a tool the app runs itself
+can leave it out. A direct call to the handler no longer compiles: call
+`invoke`, which throws `LlamaStateException` for a tool without a handler, or
+null-check `handler`:
+
+```dart
+// Before
+final result = await tool.handler(ToolParams(args));
+// After
+final result = await tool.invoke(args);
+```
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something
@@ -665,10 +680,8 @@ LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi');
 ## 3) Logging configuration moved off ModelParams
 
 - Removed: `ModelParams(logLevel: ...)`
-- Use engine-level controls instead:
-  - `await engine.setDartLogLevel(...)`
-  - `await engine.setNativeLogLevel(...)`
-  - or `await engine.setLogLevel(...)` to set both
+- Use `LlamaLogging.configure` instead: `level:` for Dart-side logs and
+  `nativeLevel:` for native logs (by default the same as `level:`)
 
 Example migration:
 
@@ -677,7 +690,7 @@ Example migration:
 await engine.loadModel(path, modelParams: ModelParams(logLevel: LlamaLogLevel.info));
 
 // After
-await engine.setNativeLogLevel(LlamaLogLevel.info);
+await LlamaLogging.configure(nativeLevel: LlamaLogLevel.info);
 await engine.loadModel(path);
 ```
 

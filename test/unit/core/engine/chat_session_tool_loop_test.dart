@@ -697,6 +697,91 @@ void main() {
     });
   });
 
+  group('a reply cut off at maxTokens', () {
+    test('mid tool call rolls the turn back without an answer', () async {
+      final earlier = [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ];
+      earlier.forEach(session.addMessage);
+      engine.replies.add(
+        scriptedTruncated('<tool_call>{"name": "weather", "argu'),
+      );
+
+      final result = await session.sendWithTools(
+        'Weather?',
+        tools: [_tool('weather', (_) async => fail('ran'))],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+      expect(result.completion.finishReason, LlamaFinishReason.length);
+      expect(result.text, '<tool_call>{"name": "weather", "argu');
+      expect(result.rounds, 0);
+      expect(result.pendingToolCalls, isEmpty);
+      expect(result.rolledBack, isTrue);
+      expect(session.history, orderedEquals(earlier));
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('after a tool round rolls back the whole turn', () async {
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(scriptedTruncated('It is sun'));
+      var runs = 0;
+
+      final result = await session.sendWithTools(
+        'Weather?',
+        tools: [_tool('weather', (_) async => runs += 1)],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+      expect(result.rounds, 1);
+      expect(runs, 1);
+      expect(result.rolledBack, isTrue);
+      expect(session.history, isEmpty);
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('does not run the calls it reports', () async {
+      engine.replies.add(
+        () => Stream.value(
+          scriptedChunk(
+            toolCalls: [
+              LlamaCompletionChunkToolCall(
+                index: 0,
+                id: 'a',
+                type: 'function',
+                function: LlamaCompletionChunkFunction(
+                  name: 'weather',
+                  arguments: '{}',
+                ),
+              ),
+            ],
+            finishReason: 'length',
+          ),
+        ),
+      );
+
+      final result = await session.sendWithTools(
+        'Weather?',
+        tools: [_tool('weather', (_) async => fail('ran'))],
+      );
+
+      expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+      expect(result.pendingToolCalls.single.id, 'a');
+      expect(result.rolledBack, isTrue);
+      expect(session.history, isEmpty);
+    });
+  });
+
   test('does not run calls proposed from a trimmed prompt', () async {
     session = ChatSession(engine, maxContextTokens: 256);
     engine.promptTokens = 10000;

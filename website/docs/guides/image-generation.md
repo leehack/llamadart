@@ -180,8 +180,9 @@ wrong file costs its download; it stays in the cache.
   headers never cross hosts: with them set, remote files on more than one
   origin (scheme, host and port) throw `LlamaArgumentException` before
   anything downloads from a second host.
-  `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since it
-  cannot name one of several files.
+  `ModelLoadOptions.sha256` verifies a single-file model; with components
+  it throws `LlamaUnsupportedException`, since it cannot name one of
+  several files.
 - A cancelled load throws `LlamaStateException`. Cancelling stops a
   download at once; the native load cannot be interrupted, so a cancel
   during it takes effect when it returns, and the model it loaded is freed.
@@ -699,7 +700,7 @@ does not fail the load.
 
 | Exception | When |
 | --- | --- |
-| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, or `ModelLoadOptions.sha256` set for `load` |
+| `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, or `ModelLoadOptions.sha256` set for a `load` of several files |
 | `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A rejected split model names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or `params:` |
 | `LlamaStateException` | The load's cancel token cancelled it, another generation or load is running, or the engine is disposed |

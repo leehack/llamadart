@@ -2392,11 +2392,15 @@ class LlamaEngine {
   /// applied.
   Future<void> removeLoraSource(ModelSource source) async {
     _ensureReady();
-    final location = _loraLocations[source.canonicalKey] ?? source.path;
+    final applied = _loraLocations[source.canonicalKey];
+    final location = applied ?? source.path;
     if (location == null) return;
     try {
       await backend.removeLoraAdapter(_contextHandle!, location);
     } on UnsupportedError catch (error) {
+      // Only the deprecated setLora applies an untracked path, and a backend
+      // without a runtime LoRA API rejects it.
+      if (applied == null) return;
       throw _unsupportedBackendOperation('LoRA adapters', error);
     }
     _loraLocations.remove(source.canonicalKey);
@@ -2405,18 +2409,21 @@ class LlamaEngine {
   /// [params] with every [LoraAdapterConfig.source] of [ModelParams.loras]
   /// resolved as [setLoraSource] resolves it, with the adapter's own
   /// [LoraAdapterConfig.download], or else only the non-secret parts of the
-  /// model load's [options]. Records where each source resolved in
-  /// [locations], which the caller keeps once the model loads.
+  /// model load's [options]. Records where each adapter resolved in
+  /// [locations], a path configuration under its [ModelSource.path], which
+  /// the caller keeps once the model loads.
   Future<ModelParams> _resolveLoraSources(
     ModelParams params,
     ModelLoadOptions options,
     Map<String, String> locations,
   ) async {
-    if (params.loras.every((lora) => lora.source == null)) return params;
     final resolved = <LoraAdapterConfig>[];
     for (final lora in params.loras) {
       final source = lora.source;
       if (source == null) {
+        if (lora.path.isNotEmpty) {
+          locations[ModelSource.path(lora.path).canonicalKey] = lora.path;
+        }
         resolved.add(lora);
         continue;
       }
@@ -2426,9 +2433,9 @@ class LlamaEngine {
         assetType: 'LoRA adapter',
       );
       locations[source.canonicalKey] = location;
-      // A path config is what backends load and is not resolved again.
-      resolved.add(LoraAdapterConfig(path: location, scale: lora.scale));
+      resolved.add(resolvedLoraAdapterConfig(location, lora.scale));
     }
+    if (params.loras.every((lora) => lora.source == null)) return params;
     return params.copyWith(loras: resolved);
   }
 

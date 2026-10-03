@@ -16,12 +16,14 @@ description: >-
   adds a `LlamaChatRole.tool` message per call with the call's id, and
   repeats until the model answers. Check `result.stopReason`
   (`LlamaToolLoopStopReason`): only `completed` means a final answer;
-  `maxRounds`, `unhandledToolCalls`, `contextExceeded` and `cancelled` leave
-  `result.pendingToolCalls` unrun. `completeWithTools(parts)` takes media
+  `maxRounds`, `unhandledToolCalls`, `contextExceeded`, `truncated` and
+  `cancelled` leave `result.pendingToolCalls` unrun. `truncated` means a
+  reply hit `GenerationParams.maxTokens` or the context end; its text may be
+  partial tool-call markup, so raise `maxTokens` and retry. `completeWithTools(parts)` takes media
   parts; `completeWithTools(const [])` continues the turn.
 - After a stop, the history is ready for a new user turn, except after
-  `unhandledToolCalls`. `maxRounds`, `contextExceeded`, a cancel that left
-  no answer, and any thrown error roll the whole turn back from its
+  `unhandledToolCalls`. `maxRounds`, `contextExceeded`, `truncated`, a
+  cancel that left no answer, and any thrown error roll the whole turn back from its
   user message, because templates such as Ministral 3's reject a user turn
   after unanswered calls or tool results. For `completeWithTools(const [])`
   that includes the open turn's earlier messages, such as your tool results.

@@ -124,7 +124,7 @@ await engine.loadModel('/path/to/another_model.gguf');
 `unloadModel()` also releases the multimodal projector and active LoRA
 adapters. Load the projector again after the new model; adapters listed in
 `ModelParams.loras` are applied again by each load, and adapters added with
-`setLora` must be set again.
+`setLoraSource` must be set again.
 
 ## Readiness and serialized loads
 

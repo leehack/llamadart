@@ -1,11 +1,13 @@
 import '../models/inference/generation_params.dart';
 import 'engine_observer.dart';
 
-/// What every llamadart engine reports about its support: whether it can
-/// run, why not, and the backend it runs on.
+/// What an engine reports about its support: whether it can run, why not,
+/// and the backend it runs on.
 ///
-/// Each engine's `capabilities` returns a subtype with its own fields, such
-/// as `SpeechToTextCapabilities` or `TextToSpeechCapabilities`.
+/// The `capabilities` of `LlamaEngine`, `SpeechToTextEngine` and
+/// `TextToSpeechEngine` return a subtype with its own fields:
+/// [LlamaEngineCapabilities], `SpeechToTextCapabilities` and
+/// `TextToSpeechCapabilities`.
 abstract interface class EngineCapabilities {
   /// Whether the engine can run requests now.
   bool get isSupported;

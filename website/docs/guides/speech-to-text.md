@@ -52,10 +52,10 @@ policy and directory, authentication, resume, retries and cancel token),
 prompt adapter, `params:` (`ModelParams`) and `backend:` (by default
 `LlamaBackend()`). Every file resolves, main file first, before anything
 loads. A local file takes only the cancel token. The bearer token and headers
-never go to more than one host: when they are set and the remote files are on
-different hosts, `load` throws `LlamaArgumentException` before downloading
-from the second one, so load such files from one host or leave the
-credentials unset. `ModelLoadOptions.sha256` throws
+are never sent across hosts: when they are set and the remote files span more
+than one origin (scheme, host and port), `load` throws
+`LlamaArgumentException` before downloading from another host, so load such
+files from one host or leave the credentials unset. `ModelLoadOptions.sha256` throws
 `LlamaUnsupportedException` for a model of more than one file. The load is
 atomic: when it throws, nothing stays loaded, and downloaded files stay in the
 cache.

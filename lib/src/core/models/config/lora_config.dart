@@ -38,6 +38,11 @@ class LoraAdapterConfig {
       source = null,
       download = null;
 
+  const LoraAdapterConfig._resolved(String path, this.scale)
+    : _path = path,
+      source = null,
+      download = null;
+
   /// Creates a LoRA adapter configuration for the adapter at [source].
   const LoraAdapterConfig.source(
     ModelSource this.source, {
@@ -53,3 +58,9 @@ class LoraAdapterConfig {
   /// straight to a native backend.
   String get path => _path ?? source!.path ?? source!.url.toString();
 }
+
+/// A configuration for the adapter file at [path], already resolved from a
+/// [LoraAdapterConfig.source], that backends load as written and
+/// `LlamaEngine` does not resolve again.
+LoraAdapterConfig resolvedLoraAdapterConfig(String path, double scale) =>
+    LoraAdapterConfig._resolved(path, scale);

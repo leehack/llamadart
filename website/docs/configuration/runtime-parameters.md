@@ -90,7 +90,7 @@ Important fields:
   scales once the model loads; an adapter that cannot be applied fails the
   load. WebGPU needs bridge assets `v0.1.54+`.
 
-For runtime LoRA control (`setLora`, `removeLora`, `clearLoras`), see
+For runtime LoRA control (`setLoraSource`, `removeLoraSource`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).
 
 ## LiteRT-LM runtime controls

@@ -176,6 +176,14 @@ class LocalE2eScenario {
       stepsBuilder(context);
 }
 
+LocalE2eCommandStep _prepareValidationPackage(LocalE2eRunContext context) =>
+    LocalE2eCommandStep(
+      workingDirectory: '${context.projectRoot}/packages/llamadart_validation',
+      executable: 'dart',
+      arguments: const ['pub', 'get'],
+      description: 'Prepare private suite',
+    );
+
 LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
     LocalE2eCommandStep(
       workingDirectory: context.projectRoot,
@@ -237,13 +245,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'Model-free validation runner, bundle and provider lifecycle checks.',
       requiresDevice: false,
       stepsBuilder: (context) => [
-        LocalE2eCommandStep(
-          workingDirectory:
-              '${context.projectRoot}/packages/llamadart_validation',
-          executable: 'dart',
-          arguments: const ['pub', 'get'],
-          description: 'Prepare private suite',
-        ),
+        _prepareValidationPackage(context),
         LocalE2eCommandStep(
           workingDirectory:
               '${context.projectRoot}/packages/llamadart_validation',
@@ -453,6 +455,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       description: 'Locked file STT -> Gemma 4 CPU -> TTS WAV round trip.',
       requiresDevice: false,
       stepsBuilder: (context) => [
+        _prepareValidationPackage(context),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
           executable: 'dart',
@@ -480,6 +483,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'Locked GGUF $pack pack with lifecycle and speech metrics.',
         requiresDevice: false,
         stepsBuilder: (context) => [
+          _prepareValidationPackage(context),
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
             executable: 'dart',
@@ -1529,7 +1533,10 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-lifecycle' ||
           scenario.name == 'litert-lm-chat-features-smoke' ||
-          scenario.name == 'native-prompt-cancel') &&
+          scenario.name == 'native-prompt-cancel' ||
+          scenario.name == 'gemma4-mtp-smoke' ||
+          scenario.name == 'native-embedding-benchmark' ||
+          scenario.name == 'native-embedding-sweep') &&
       parsed.modelPath == null) {
     return LocalE2eResult(
       64,

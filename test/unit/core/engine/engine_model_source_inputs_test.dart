@@ -110,6 +110,37 @@ void main() {
       expect(manager.calls, isEmpty);
     });
 
+    test('removeLoraSource does nothing on a backend without a LoRA API when '
+        'no adapter from the source is applied', () async {
+      final engine = LlamaEngine(
+        _NoLoraBackend(),
+        modelDownloadManager: _CacheManager({}),
+      );
+      await engine.loadModel('/models/model.litertlm');
+
+      await engine.removeLoraSource(localAdapter);
+      await engine.removeLoraSource(urlAdapter);
+    });
+
+    test('removeLoraSource reports a backend without a LoRA API that applied '
+        'a path adapter at load', () async {
+      final engine = LlamaEngine(
+        _NoLoraBackend(),
+        modelDownloadManager: _CacheManager({}),
+      );
+      await engine.loadModel(
+        '/models/model.litertlm',
+        modelParams: const ModelParams(
+          loras: [LoraAdapterConfig(path: '/models/local-adapter.gguf')],
+        ),
+      );
+
+      await expectLater(
+        engine.removeLoraSource(localAdapter),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
     test('setLoraSource stops at a cancelled download token', () async {
       final backend = _RecordingBackend();
       final manager = _CacheManager({hfAdapter: '/cache/a.gguf'});
@@ -1315,6 +1346,15 @@ class _RuntimeBackend extends _RecordingBackend
         thinkingBudget: false,
         speculativeDecodingStrategies: strategies,
       );
+}
+
+/// A LiteRT-LM backend, which has no runtime LoRA API.
+class _NoLoraBackend extends _RuntimeBackend {
+  _NoLoraBackend() : super(LlamaRuntime.liteRtLm);
+
+  @override
+  Future<void> removeLoraAdapter(int contextHandle, String path) =>
+      throw UnsupportedError('No runtime LoRA API.');
 }
 
 /// Waits for [gate] and then completes the download, ignoring cancellation.

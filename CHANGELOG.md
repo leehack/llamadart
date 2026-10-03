@@ -48,11 +48,15 @@
   components: [...]), params:, download:, onProgress:)` downloads every
   `ModelSource` into the model cache, with combined progress, cancellation
   and cache reuse, and detects each file's role from its header. Generation
-  settings move to `ImageGenerationRequest`. The model presets,
+  settings move to `ImageGenerationRequest`. `download`'s bearer token and
+  headers never reach more than one origin: such remote files throw
+  `LlamaArgumentException`. The model presets, `ImageGenerationModelFamily`,
   `ImageGenerationModelFiles`, `ImageGenerationDefaults`,
-  `ImageGenerationOptions` (now `ImageModelParams`) and `String` paths are
-  removed; `MIGRATION.md` maps each former preset to its files and request
-  settings.
+  `ImageGenerationOptions` (now `ImageModelParams`, and the engine's `options`
+  getter `params`), `ImageGenerationDevice` (now `ComputeDevice`) and `String`
+  paths are removed; `MIGRATION.md` maps each former preset to its files and
+  request settings
+  ([#883](https://github.com/leehack/llamadart/issues/883)).
 - **Behavior change:** `responseFormat` maps with an unknown `type` or
   key, such as `json_shema` or a misspelled `schma`, now throw
   `LlamaUnsupportedException` before generation instead of generating
@@ -108,8 +112,12 @@
   ...)` run the model's tool calls with each `ToolDefinition.handler`,
   concurrently for parallel calls, until it answers, and return a
   `LlamaToolLoopResult` whose `stopReason` also reports `maxRounds`,
-  unhandled calls, context overflow and cancellation
+  unhandled calls, context overflow, a reply cut off at `maxTokens`
+  (`truncated`, rolled back) and cancellation
   ([#842](https://github.com/leehack/llamadart/issues/842)).
+- **Breaking:** `ChatSession` gains `createStructuredJson`, and `LlamaEngine`
+  gains `runtime`, `capabilities`, `setLoraSource` and `removeLoraSource`, so
+  a class that `implements` either must add them.
 - **Breaking:** `ToolDefinition.handler` is nullable, so tools the app runs
   itself can leave it out; code that calls `tool.handler(params)` must check
   it for null first ([#842](https://github.com/leehack/llamadart/issues/842)).
@@ -127,10 +135,6 @@
 - **Deprecated:** the `String` path forms of LoRA adapters, speculative draft
   models and LiteRT-LM ASR files
   ([#852](https://github.com/leehack/llamadart/issues/852)).
-- **Fixed:** `ImageGenerationEngine.load` no longer sends `download`'s
-  `bearerToken` and headers to every host: remote files on more than one host
-  with them set throw `LlamaArgumentException`
-  ([#883](https://github.com/leehack/llamadart/issues/883)).
 
 ## 0.10.0
 

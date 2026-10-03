@@ -120,6 +120,22 @@ void main() {
         await expectNextTurnRenders();
       });
 
+      test('truncated mid tool call', () async {
+        engine.replies.add(scriptedTruncated('[TOOL_CALLS]weather[ARGS]{"ci'));
+        final result = await session.sendWithTools('Hi', tools: [weather]);
+        expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+        await expectNextTurnRenders();
+      });
+
+      test('truncated after a tool round', () async {
+        engine.replies
+          ..add(scriptedCalls([('call00001', 'weather', '{}')]))
+          ..add(scriptedTruncated('[THINK]The user asks'));
+        final result = await session.sendWithTools('Hi', tools: [weather]);
+        expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+        await expectNextTurnRenders();
+      });
+
       test('unhandledToolCalls, after the app answers the calls', () async {
         engine.replies
           ..add(scriptedCalls([('call00001', 'approve', '{}')]))
@@ -291,6 +307,18 @@ void main() {
             tools: tools,
           );
           expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+          await expectNextTurnRenders();
+        });
+
+        test('truncated', () async {
+          final tools = [approve];
+          await answerApproval(tools);
+          engine.replies.add(scriptedTruncated('Approv'));
+          final result = await session.completeWithTools(
+            const [],
+            tools: tools,
+          );
+          expect(result.stopReason, LlamaToolLoopStopReason.truncated);
           await expectNextTurnRenders();
         });
 
