@@ -88,20 +88,56 @@ await engine.loadModel('models/model-Q4_K_M.gguf');
 // .litertlm routes to LiteRT-LM.
 await engine.loadModel(
   'models/gemma-4-E2B-it.litertlm',
-  modelParams: const ModelParams(
-    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
-  ),
+  modelParams: const ModelParams(device: ComputeDevice.gpu),
 );
 ```
 
-`LiteRtLmBackendPreference.auto`, the default, follows `ModelParams`:
-`gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects CPU; a GPU
-`preferredBackend` (Vulkan, Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM
-GPU backend; and `preferredBackend: auto` selects GPU on Android, iOS, macOS
-and web, and CPU on Linux and Windows. Linux arm64 has no LiteRT-LM GPU
-backend, so a GPU selection there fails the load with `LlamaModelException`;
-set `liteRtLmBackend: cpu`. Windows arm64 has no LiteRT-LM runtime.
-`npu` is Android-only; LiteRT-LM web rejects it.
+## Choosing the device
+
+`ModelParams.device` picks the device for either runtime. `ComputeDevice.auto`,
+the default, keeps each runtime's own default:
+
+| Runtime | `ComputeDevice.auto` |
+| --- | --- |
+| llama.cpp native | Every layer on the best GPU backend that loads; the CPU when no GPU module or device is present, and on Android. |
+| llama.cpp Web | The bridge's default: WebGPU when the browser has it, otherwise the WebAssembly CPU runtime. |
+| LiteRT-LM native | GPU on Android, iOS and macOS; CPU on Linux and Windows. |
+| LiteRT-LM Web | WebGPU, without a probe. |
+| Image generation | The first GPU the stable-diffusion runtime reports, otherwise the CPU. |
+| Decision models | As llama.cpp, through the encoder's `ModelParams`. |
+
+Under `auto`, `preferredBackend` and `gpuLayers` still narrow the choice, as
+before: `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the CPU on
+both runtimes, and a GPU `preferredBackend` (Vulkan, Metal, CUDA, OpenCL or
+HIP) selects the LiteRT-LM GPU backend.
+
+`cpu`, `gpu` and `npu` are requirements. The model runs there, or the load
+throws `LlamaUnsupportedException` naming the device, runtime and platform; it
+never falls back to another device:
+
+- `cpu` loads no GPU layers and, on llama.cpp, only the CPU module.
+- `gpu` on llama.cpp needs a GPU module and device for `preferredBackend`, and
+  uses Vulkan on Android. On the Web it needs a WebGPU adapter and a bridge
+  that loads GPU layers. On LiteRT-LM it needs the GPU backend: Linux arm64 and
+  macOS x64 have none.
+- `npu` is LiteRT-LM on Android only.
+
+Native LiteRT-LM starts its runtime on the first call that needs it, such as
+the first generation, so a GPU or NPU delegate that fails to start throws
+`LlamaUnsupportedException` there rather than from the load. Windows arm64 has
+no LiteRT-LM runtime.
+
+`ModelParams.validate()`, which every `LlamaEngine` load calls before any
+download, throws `LlamaArgumentException` when `device` contradicts another
+field: `cpu` with a GPU `preferredBackend`, `gpu` or `npu` with a CPU or BLAS
+`preferredBackend` or `gpuLayers: 0`, or any explicit device with the
+deprecated `liteRtLmBackend`.
+
+`ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are deprecated
+and keep working until 1.0. Under `device: auto` they still choose the
+LiteRT-LM backend alone, for example to run llama.cpp on the CPU and LiteRT-LM
+on the GPU from one `ModelParams`, and an unavailable choice still throws
+`LlamaModelException`.
 
 Formats are not interchangeable: a GGUF file cannot run through LiteRT-LM, and
 a `.litertlm` bundle cannot run through llama.cpp. Load and generation
@@ -134,12 +170,13 @@ JavaScript runtime.
 
 Load-time controls differ by runtime:
 
+- Both: `device`.
 - GGUF / llama.cpp: `preferredBackend`, `gpuLayers`, `contextSize`,
   `chatTemplate`, `numberOfThreads` / `numberOfThreadsBatch`, `batchSize` /
   `microBatchSize`, `splitMode` / `mainGpu`, and the LoRA and
   state-persistence APIs.
-- `.litertlm` / LiteRT-LM: `liteRtLmBackend` (`auto`, `cpu`, `gpu`, or
-  Android-native `npu`), `contextSize`, `chatTemplate`, `numberOfThreads`, one
+- `.litertlm` / LiteRT-LM: the deprecated `liteRtLmBackend`, `contextSize`,
+  `chatTemplate`, `numberOfThreads`, one
   default-scale text LoRA adapter through `ModelParams.loras`, and the native
   `liteRtLm*` fields in
   [LiteRT-LM runtime controls](../configuration/runtime-parameters#litert-lm-runtime-controls).

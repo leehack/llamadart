@@ -20,6 +20,7 @@ import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -2496,6 +2497,48 @@ void main() {
       );
     });
 
+    test('throws for ComputeDevice.gpu instead of loading on CPU', () {
+      final service = LlamaCppService();
+      addTearDown(service.dispose);
+      if (service.getBackendInfo().join().toLowerCase().contains('cuda')) {
+        markTestSkipped('This process already registered a CUDA backend.');
+        return;
+      }
+      final moduleDir = Directory(path.join(tempDir.path, 'modules'))
+        ..createSync();
+      _writePrivateForTesting(
+        service,
+        '_backendModuleDirectory',
+        moduleDir.path,
+      );
+      final modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+
+      expect(
+        () => service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 512,
+            device: ComputeDevice.gpu,
+            preferredBackend: GpuBackend.cuda,
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('ComputeDevice.gpu'),
+              contains('cuda'),
+              contains(Platform.operatingSystem),
+            ),
+          ),
+        ),
+      );
+      expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+      expect(records, isEmpty);
+    });
+
     test('does not warn when CPU is requested', () {
       final service = LlamaCppService();
       addTearDown(service.dispose);
@@ -2512,6 +2555,146 @@ void main() {
       );
 
       expect(records, isEmpty);
+    });
+  });
+
+  group('ComputeDevice', () {
+    test('auto keeps every llama.cpp field', () {
+      const params = ModelParams(
+        preferredBackend: GpuBackend.vulkan,
+        gpuLayers: 12,
+      );
+
+      expect(
+        LlamaCppService.resolveComputeDeviceParams(params, isAndroid: true),
+        same(params),
+      );
+    });
+
+    test('cpu forces the CPU module and 0 GPU layers', () {
+      final resolved = LlamaCppService.resolveComputeDeviceParams(
+        const ModelParams(device: ComputeDevice.cpu),
+      );
+
+      expect(resolved.preferredBackend, GpuBackend.cpu);
+      expect(resolved.gpuLayers, 0);
+      expect(
+        LlamaCppService.shouldDisableContextGpuOffload(
+          resolved,
+          resolvedGpuLayers: LlamaCppService.resolveGpuLayersForLoad(resolved),
+        ),
+        isTrue,
+      );
+      expect(
+        LlamaCppService.resolveComputeDeviceParams(
+          const ModelParams(
+            device: ComputeDevice.cpu,
+            preferredBackend: GpuBackend.blas,
+          ),
+        ).preferredBackend,
+        GpuBackend.blas,
+      );
+    });
+
+    test('gpu resolves auto to Vulkan on Android only', () {
+      const params = ModelParams(device: ComputeDevice.gpu);
+
+      final android = LlamaCppService.resolveComputeDeviceParams(
+        params,
+        isAndroid: true,
+      );
+      expect(android.preferredBackend, GpuBackend.vulkan);
+      expect(android.gpuLayers, ModelParams.maxGpuLayers);
+      expect(
+        LlamaCppService.resolveGpuLayersForLoad(android, isAndroid: true),
+        ModelParams.maxGpuLayers,
+      );
+      expect(
+        LlamaCppService.shouldUseConservativeAndroidVulkanContextConfig(
+          android,
+          isAndroid: true,
+        ),
+        isTrue,
+      );
+      expect(LlamaCppService.resolveComputeDeviceParams(params), same(params));
+      expect(
+        LlamaCppService.resolveComputeDeviceParams(
+          const ModelParams(
+            device: ComputeDevice.gpu,
+            preferredBackend: GpuBackend.opencl,
+          ),
+          isAndroid: true,
+        ).preferredBackend,
+        GpuBackend.opencl,
+      );
+    });
+
+    test('npu throws LlamaUnsupportedException naming the platform', () {
+      expect(
+        () => LlamaCppService.resolveComputeDeviceParams(
+          const ModelParams(device: ComputeDevice.npu),
+          platform: 'linux',
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('ComputeDevice.npu'),
+              contains('llama.cpp'),
+              contains('linux'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    group('loads', () {
+      late Directory tempDir;
+      late String modelPath;
+
+      setUpAll(() => LlamaCppService().initializeBackend());
+
+      setUp(() {
+        tempDir = Directory.systemTemp.createTempSync('compute_device_');
+        modelPath = path.join(tempDir.path, 'llama.gguf');
+        writeSyntheticLlamaGguf(modelPath);
+      });
+
+      tearDown(() => tempDir.deleteSync(recursive: true));
+
+      test('cpu on the CPU with 0 GPU layers, whatever gpuLayers says', () {
+        final service = LlamaCppService();
+        addTearDown(service.dispose);
+
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512, device: ComputeDevice.cpu),
+        );
+        service.createContext(
+          handle,
+          const ModelParams(contextSize: 512, device: ComputeDevice.cpu),
+        );
+
+        expect(service.getActiveBackendName(), 'CPU');
+        expect(service.getResolvedGpuLayers(), 0);
+      });
+
+      test('gpu on a GPU, or throws and loads nothing', () {
+        final service = LlamaCppService();
+        addTearDown(service.dispose);
+        const params = ModelParams(contextSize: 512, device: ComputeDevice.gpu);
+
+        try {
+          service.loadModel(modelPath, params);
+        } on LlamaUnsupportedException catch (error) {
+          expect(error.message, contains('ComputeDevice.gpu'));
+          expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+          return;
+        }
+        expect(service.getActiveBackendName(), isNot(anyOf('CPU', 'BLAS')));
+        expect(service.getResolvedGpuLayers(), greaterThan(0));
+      });
     });
   });
 

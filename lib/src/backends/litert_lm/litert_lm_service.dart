@@ -7,6 +7,7 @@ import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
+import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
@@ -841,22 +842,37 @@ class LiteRtLmService {
     late LiteRtLmRuntimeClient client;
     var resolvedAudioBackend = requestedAudioBackend;
     try {
-      client = await initializeClient(requestedAudioBackend);
-    } catch (initialError, initialStackTrace) {
-      final canRetryWithCpuAudio =
-          resolvedAudioEnabled &&
-          requestedAudioBackend != null &&
-          requestedAudioBackend != liteRtLmCpuBackend;
-      if (!canRetryWithCpuAudio) {
+      try {
+        client = await initializeClient(requestedAudioBackend);
+      } catch (initialError, initialStackTrace) {
+        final canRetryWithCpuAudio =
+            resolvedAudioEnabled &&
+            requestedAudioBackend != null &&
+            requestedAudioBackend != liteRtLmCpuBackend;
+        if (!canRetryWithCpuAudio) {
+          rethrow;
+        }
+
+        try {
+          resolvedAudioBackend = liteRtLmCpuBackend;
+          client = await initializeClient(resolvedAudioBackend);
+        } catch (_) {
+          Error.throwWithStackTrace(initialError, initialStackTrace);
+        }
+      }
+    } on LiteRtLmEngineCreateError catch (error, stackTrace) {
+      final device = modelParams.device;
+      if (device != ComputeDevice.gpu && device != ComputeDevice.npu) {
         rethrow;
       }
-
-      try {
-        resolvedAudioBackend = liteRtLmCpuBackend;
-        client = await initializeClient(resolvedAudioBackend);
-      } catch (_) {
-        Error.throwWithStackTrace(initialError, initialStackTrace);
-      }
+      Error.throwWithStackTrace(
+        LlamaUnsupportedException(
+          'ComputeDevice.${device.name} was requested, but the LiteRT-LM '
+          '$backend backend failed to start on ${Platform.operatingSystem}: '
+          '${error.message} Use ComputeDevice.auto or cpu.',
+        ),
+        stackTrace,
+      );
     }
     _client = client;
     if (resolvedAudioEnabled) {
@@ -1053,6 +1069,26 @@ class LiteRtLmService {
   }
 
   String _resolveBackendName(ModelParams params, {String? backendOverride}) {
+    final device = params.device;
+    if (device != ComputeDevice.auto) {
+      if (backendOverride != null) {
+        throw LlamaUnsupportedException(
+          'ModelParams.device ${device.name} cannot be combined with the '
+          'deprecated LiteRtLmBackend(preferredBackend: $backendOverride). '
+          'Set only ModelParams.device.',
+        );
+      }
+      final backend = _deviceBackendName(device)!;
+      final available = getAvailableBackendInfo();
+      if (!available.contains(backend)) {
+        throw LlamaUnsupportedException(
+          'ComputeDevice.${device.name} is not available for LiteRT-LM on '
+          '${Platform.operatingSystem}. Available LiteRT-LM backends: '
+          '${available.join(', ')}. Use ComputeDevice.auto or cpu.',
+        );
+      }
+      return backend;
+    }
     final backend =
         normalizeLiteRtLmNativeBackendOverride(backendOverride) ??
         _backendNameFor(params);
@@ -1067,8 +1103,16 @@ class LiteRtLmService {
     return backend;
   }
 
+  static String? _deviceBackendName(ComputeDevice device) => switch (device) {
+    ComputeDevice.auto => null,
+    ComputeDevice.cpu => liteRtLmCpuBackend,
+    ComputeDevice.gpu => liteRtLmGpuBackend,
+    ComputeDevice.npu => liteRtLmNpuBackend,
+  };
+
   String _backendNameFor(ModelParams params) {
-    final explicit = params.liteRtLmBackend.nativeName;
+    final explicit =
+        _deviceBackendName(params.device) ?? params.liteRtLmBackend.nativeName;
     if (explicit != null) {
       return explicit;
     }
@@ -1143,8 +1187,9 @@ class LiteRtLmService {
     throw LlamaUnsupportedException(
       'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
-      'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
-      'hints, liteRtLmBackend for explicit CPU/GPU/NPU selection, '
+      'contextSize, chatTemplate, device or the deprecated liteRtLmBackend '
+      'for explicit CPU/GPU/NPU selection, preferredBackend, all-or-CPU '
+      'gpuLayers hints, '
       'numberOfThreads, one default-scale initial LoRA adapter, '
       'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
       'liteRtLmParallelFileSectionLoading, liteRtLmDispatchLibDir, '
@@ -1189,7 +1234,8 @@ class LiteRtLmService {
   }
 
   String? _explicitContextBackendName(ModelParams params) {
-    final explicit = params.liteRtLmBackend.nativeName;
+    final explicit =
+        _deviceBackendName(params.device) ?? params.liteRtLmBackend.nativeName;
     if (explicit != null) {
       return explicit;
     }

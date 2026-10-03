@@ -1,4 +1,5 @@
 import '../../exceptions.dart';
+import '../config/compute_device.dart';
 import '../config/flash_attention.dart';
 import '../config/gpu_backend.dart';
 import '../config/kv_cache_type.dart';
@@ -30,9 +31,11 @@ enum ModelSplitMode {
 
 /// Preferred LiteRT-LM runtime backend for `.litertlm` models.
 ///
-/// This is intentionally separate from [GpuBackend], which mirrors llama.cpp
-/// backends. LiteRT-LM exposes a smaller runtime selector: CPU, GPU, or the
-/// Android NPU delegate.
+/// Use [ModelParams.device], which every runtime honours and which throws
+/// `LlamaUnsupportedException` when the device is unavailable. This selector
+/// keeps working until 1.0, so a load can still pick a LiteRT-LM device apart
+/// from the llama.cpp one.
+@Deprecated('Use ModelParams.device. This will be removed in 1.0.')
 enum LiteRtLmBackendPreference {
   /// Let llamadart choose a platform default.
   auto(null),
@@ -101,21 +104,50 @@ class ModelParams {
   /// Context size (n_ctx) in tokens.
   final int contextSize;
 
+  /// Device to run the model on, for every runtime.
+  ///
+  /// [ComputeDevice.auto], the default, keeps each runtime's own default,
+  /// which [gpuLayers], [preferredBackend] and the deprecated
+  /// [liteRtLmBackend] narrow as before.
+  ///
+  /// An explicit device is honoured or the load throws
+  /// `LlamaUnsupportedException`; it never runs elsewhere:
+  /// - [ComputeDevice.cpu] loads no GPU layers and, on llama.cpp, only the
+  ///   CPU module, whatever [gpuLayers] and [preferredBackend] say.
+  /// - [ComputeDevice.gpu] on llama.cpp needs a GPU module and device for
+  ///   [preferredBackend] (Vulkan on Android when it is
+  ///   [GpuBackend.auto]), and on the Web an active WebGPU runtime. LiteRT-LM
+  ///   needs its GPU backend on this platform, and on the Web a WebGPU
+  ///   adapter.
+  /// - [ComputeDevice.npu] is LiteRT-LM on Android only.
+  ///
+  /// Native LiteRT-LM starts its runtime on the first call that needs it, so
+  /// a GPU or NPU that fails to start throws `LlamaUnsupportedException`
+  /// there. [validate] rejects a device that contradicts [preferredBackend],
+  /// [gpuLayers] or [liteRtLmBackend].
+  final ComputeDevice device;
+
   /// Number of model layers to offload to the GPU (n_gpu_layers).
   final int gpuLayers;
 
   /// Preferred GPU backend for inference.
   ///
-  /// On Linux and Windows, an explicit GPU backend whose module is missing
-  /// loads the model on CPU with 0 GPU layers and logs a
-  /// `LlamaLogLevel.warn` record through the Dart logger.
+  /// Under [ComputeDevice.auto], on Linux and Windows, an explicit GPU
+  /// backend whose module is missing loads the model on CPU with 0 GPU layers
+  /// and logs a `LlamaLogLevel.warn` record through the Dart logger. With
+  /// [device] set to [ComputeDevice.gpu] the load throws instead.
   final GpuBackend preferredBackend;
 
   /// Preferred LiteRT-LM runtime backend for `.litertlm` models.
   ///
   /// Defaults to [LiteRtLmBackendPreference.auto]. The llama.cpp
   /// [preferredBackend] field is still used for `.gguf` models and as an
-  /// automatic LiteRT-LM hint, but NPU is only expressible through this field.
+  /// automatic LiteRT-LM hint. An unavailable choice throws as it did in
+  /// 0.10.0, not `LlamaUnsupportedException`.
+  @Deprecated(
+    'Use device, which applies to every runtime. This will be removed in '
+    '1.0.',
+  )
   final LiteRtLmBackendPreference liteRtLmBackend;
 
   /// Native LiteRT-LM activation data type override.
@@ -356,8 +388,13 @@ class ModelParams {
   /// llama.cpp-incompatible combinations before passing to a load call.
   const ModelParams({
     this.contextSize = 4096,
+    this.device = ComputeDevice.auto,
     this.gpuLayers = maxGpuLayers,
     this.preferredBackend = GpuBackend.auto,
+    @Deprecated(
+      'Use device, which applies to every runtime. This will be removed in '
+      '1.0.',
+    )
     this.liteRtLmBackend = LiteRtLmBackendPreference.auto,
     this.liteRtLmActivationDataType,
     this.liteRtLmPrefillChunkSize,
@@ -390,11 +427,19 @@ class ModelParams {
 
   /// Validates the parameter combination. Throws [LlamaArgumentException]
   /// when a value is out of range or the combination is incompatible with
-  /// llama.cpp (a non-F16 KV cache requires flashAttention != disabled).
-  /// Model loads through `LlamaEngine` call it before the native call, so
-  /// callers don't have to remember it; call it directly to validate a
+  /// llama.cpp (a non-F16 KV cache requires flashAttention != disabled), or
+  /// when [device] contradicts another field:
+  /// - an explicit [device] with a [liteRtLmBackend] other than auto;
+  /// - [ComputeDevice.cpu] with a GPU [preferredBackend] (Vulkan, Metal,
+  ///   CUDA, OpenCL or HIP);
+  /// - [ComputeDevice.gpu] or [ComputeDevice.npu] with a CPU or BLAS
+  ///   [preferredBackend], or with [gpuLayers] set to 0.
+  ///
+  /// `LlamaEngine` model loads call it before any download or native call,
+  /// so callers don't have to remember it; call it directly to validate a
   /// `ModelParams` up front.
   void validate() {
+    _validateDevice();
     if (liteRtLmPrefillChunkSize != null && liteRtLmPrefillChunkSize! <= 0) {
       throw _invalid(
         'liteRtLmPrefillChunkSize',
@@ -442,6 +487,53 @@ class ModelParams {
     }
   }
 
+  void _validateDevice() {
+    if (device == ComputeDevice.auto) {
+      return;
+    }
+    if (liteRtLmBackend != LiteRtLmBackendPreference.auto) {
+      throw LlamaArgumentException(
+        'ModelParams.device ${device.name} cannot be combined with the '
+        'deprecated liteRtLmBackend ${liteRtLmBackend.name}. Set only device.',
+        name: 'liteRtLmBackend',
+        invalidValue: liteRtLmBackend.name,
+      );
+    }
+    final cpuBackend =
+        preferredBackend == GpuBackend.cpu ||
+        preferredBackend == GpuBackend.blas;
+    if (device == ComputeDevice.cpu) {
+      if (!cpuBackend && preferredBackend != GpuBackend.auto) {
+        throw LlamaArgumentException(
+          'ModelParams.device cpu cannot be combined with the GPU '
+          'preferredBackend ${preferredBackend.name}. Use GpuBackend.auto, '
+          'cpu or blas.',
+          name: 'preferredBackend',
+          invalidValue: preferredBackend.name,
+        );
+      }
+      return;
+    }
+    if (cpuBackend) {
+      throw LlamaArgumentException(
+        'ModelParams.device ${device.name} cannot be combined with '
+        'preferredBackend ${preferredBackend.name}, which runs on the CPU. '
+        'Use GpuBackend.auto or a GPU backend.',
+        name: 'preferredBackend',
+        invalidValue: preferredBackend.name,
+      );
+    }
+    if (gpuLayers == 0) {
+      throw LlamaArgumentException(
+        'ModelParams.device ${device.name} cannot be combined with '
+        'gpuLayers 0, which runs on the CPU. Leave gpuLayers at '
+        'ModelParams.maxGpuLayers or set a positive count.',
+        name: 'gpuLayers',
+        invalidValue: gpuLayers,
+      );
+    }
+  }
+
   static LlamaArgumentException _invalid(
     String name,
     Object? value,
@@ -461,8 +553,13 @@ class ModelParams {
   /// indistinguishable from "argument omitted, keep current value".
   ModelParams copyWith({
     int? contextSize,
+    ComputeDevice? device,
     int? gpuLayers,
     GpuBackend? preferredBackend,
+    @Deprecated(
+      'Use device, which applies to every runtime. This will be removed in '
+      '1.0.',
+    )
     LiteRtLmBackendPreference? liteRtLmBackend,
     LiteRtLmActivationDataType? liteRtLmActivationDataType,
     bool clearLiteRtLmActivationDataType = false,
@@ -506,6 +603,7 @@ class ModelParams {
   }) {
     return ModelParams(
       contextSize: contextSize ?? this.contextSize,
+      device: device ?? this.device,
       gpuLayers: gpuLayers ?? this.gpuLayers,
       preferredBackend: preferredBackend ?? this.preferredBackend,
       liteRtLmBackend: liteRtLmBackend ?? this.liteRtLmBackend,

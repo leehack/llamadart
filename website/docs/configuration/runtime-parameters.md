@@ -31,11 +31,16 @@ await engine.loadModel(
 Important fields:
 
 - `contextSize`: total context window.
+- `device`: `ComputeDevice.auto` (default), `cpu`, `gpu` or `npu`, for every
+  runtime. `auto` keeps each runtime's default; an explicit device runs there
+  or throws `LlamaUnsupportedException`, and `cpu` ignores `gpuLayers`. See
+  [Choosing the device](../guides/backend-selection#choosing-the-device).
 - `gpuLayers`: number of layers offloaded to GPU.
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).
   On Linux and Windows, an explicit GPU backend whose module is missing loads
   the model on CPU with 0 GPU layers and logs a Dart warning;
-  `getBackendName()` then reports `CPU`. See
+  `getBackendName()` then reports `CPU`. With `device: ComputeDevice.gpu` the
+  load throws `LlamaUnsupportedException` instead. See
   [When a requested backend is not bundled](../platforms/native-build-hooks#when-a-requested-backend-is-not-bundled).
 - `splitMode`: model tensor distribution mode passed through to llama.cpp
   `split_mode`. Defaults to upstream `layer` behavior.
@@ -101,7 +106,8 @@ runtime default.
 
 | Field | Effect |
 | --- | --- |
-| `liteRtLmBackend` | `auto` (default), `cpu`, `gpu`, or `npu` (Android). `auto` uses `cpu` when `gpuLayers` is `0`, otherwise it maps `preferredBackend`. |
+| `device` | `ComputeDevice.auto` (default), `cpu`, `gpu`, or `npu` (Android). `auto` uses `cpu` when `gpuLayers` is `0`, otherwise it maps `preferredBackend`. |
+| `liteRtLmBackend` | Deprecated until 1.0: use `device`. Under `device: auto` it still selects the LiteRT-LM backend alone. |
 | `liteRtLmActivationDataType` | Activation type override: `float32`, `float16`, `int16`, or `int8`. Forwarded to `litert_lm_engine_settings_set_activation_data_type`. |
 | `liteRtLmPrefillChunkSize` | Prefill chunk size for CPU dynamic models. Must be positive. |
 | `liteRtLmParallelFileSectionLoading` | `false` disables parallel `.litertlm` file-section loading, for diagnostics. `null` keeps parallel loading. |
@@ -115,8 +121,8 @@ LiteRT-LM rejects llama.cpp-specific fields such as `batchSize`,
 `numberOfThreadsBatch`, `splitMode`, `mainGpu` or KV-cache types: the load
 throws `LlamaUnsupportedException` naming each rejected field, so a GGUF
 tuning profile never appears to apply silently. LiteRT-LM web
-accepts `liteRtLmBackend` for CPU or GPU selection and rejects every other
-field in the table the same way.
+accepts `device` or `liteRtLmBackend` for CPU or GPU selection and rejects
+every other field in the table the same way.
 
 Benchmark load time, prefill and decode throughput, and output quality on the
 deployment device after changing the activation type or prefill chunk size.

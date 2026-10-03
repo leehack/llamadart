@@ -85,8 +85,20 @@ library load error and confirm the platform prerequisites.
 ## GPU crash or device loss
 
 Confirm the model runs on CPU first: load it with
-`preferredBackend: GpuBackend.cpu` and `gpuLayers: 0`. If CPU works, the
-failure is in the GPU backend or driver.
+`device: ComputeDevice.cpu`, which loads no GPU layers on either runtime. If
+CPU works, the failure is in the GPU backend or driver.
+
+### `ComputeDevice.gpu needs ...` or `ComputeDevice.npu is not available ...`
+
+`LlamaUnsupportedException`: `ModelParams.device` asked for a device this
+runtime and platform cannot provide, so the load stopped instead of running
+on the CPU. The message names the device, runtime and platform, and on
+llama.cpp the missing backend module or the devices found. Bundle the GPU
+module, use a browser with WebGPU, or load with `ComputeDevice.auto` to accept
+the runtime's default device. Native LiteRT-LM reports a GPU or NPU delegate
+that fails to start from the first generation. The deprecated
+`liteRtLmBackend` still throws `LlamaModelException` for an unavailable
+backend; catch `LlamaException` to handle both.
 
 ### Vulkan driver crashes in the cooperative-matrix path
 
@@ -118,7 +130,7 @@ With only Mesa llvmpipe (the runtime logs `Selected adapter: llvmpipe ...
 adapterType=CPU / Software`), LiteRT-LM `v0.17.0-6` loads the model and answers
 the first prompts, then segfaults in `libvulkan_lvp.so` and takes the process
 down. There is no load error to fall back from, so hosts with Mesa but no
-vendor ICD must use `liteRtLmBackend: LiteRtLmBackendPreference.cpu`
+vendor ICD must use `device: ComputeDevice.cpu`
 ([#572](https://github.com/leehack/llamadart/issues/572)).
 
 ## Wrong or garbled GPU output

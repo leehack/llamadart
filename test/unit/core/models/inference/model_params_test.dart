@@ -1,4 +1,5 @@
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/kv_cache_type.dart';
@@ -10,6 +11,7 @@ void main() {
     const params = ModelParams();
 
     expect(params.contextSize, 4096);
+    expect(params.device, ComputeDevice.auto);
     expect(params.gpuLayers, ModelParams.maxGpuLayers);
     expect(params.preferredBackend, GpuBackend.auto);
     expect(params.liteRtLmBackend, LiteRtLmBackendPreference.auto);
@@ -81,6 +83,7 @@ void main() {
   test('ModelParams copyWith updates selected fields', () {
     const params = ModelParams(contextSize: 1024);
     final updated = params.copyWith(
+      device: ComputeDevice.gpu,
       gpuLayers: 2,
       preferredBackend: GpuBackend.metal,
       liteRtLmBackend: LiteRtLmBackendPreference.npu,
@@ -97,6 +100,7 @@ void main() {
     );
 
     expect(updated.contextSize, 1024);
+    expect(updated.device, ComputeDevice.gpu);
     expect(updated.gpuLayers, 2);
     expect(updated.preferredBackend, GpuBackend.metal);
     expect(updated.liteRtLmBackend, LiteRtLmBackendPreference.npu);
@@ -164,6 +168,7 @@ void main() {
   test('ModelParams copyWith preserves unspecified fields', () {
     const original = ModelParams(
       contextSize: 3072,
+      device: ComputeDevice.cpu,
       gpuLayers: 8,
       preferredBackend: GpuBackend.cuda,
       liteRtLmBackend: LiteRtLmBackendPreference.gpu,
@@ -194,6 +199,7 @@ void main() {
     final updated = original.copyWith(gpuLayers: 12);
 
     expect(updated.contextSize, 3072);
+    expect(updated.device, ComputeDevice.cpu);
     expect(updated.gpuLayers, 12);
     expect(updated.preferredBackend, GpuBackend.cuda);
     expect(updated.liteRtLmBackend, LiteRtLmBackendPreference.gpu);
@@ -242,6 +248,108 @@ void main() {
               ),
         ),
       );
+    });
+  });
+
+  group('validate(): device', () {
+    Matcher rejects(String name, Object? value, String text) => throwsA(
+      isA<LlamaArgumentException>()
+          .having((e) => e.name, 'name', name)
+          .having((e) => e.invalidValue, 'invalidValue', value)
+          .having((e) => e.message, 'message', contains(text)),
+    );
+
+    test('auto accepts every llama.cpp and LiteRT-LM hint', () {
+      for (final backend in GpuBackend.values) {
+        for (final liteRtLm in LiteRtLmBackendPreference.values) {
+          expect(
+            ModelParams(
+              preferredBackend: backend,
+              gpuLayers: 0,
+              liteRtLmBackend: liteRtLm,
+            ).validate,
+            returnsNormally,
+          );
+        }
+      }
+    });
+
+    test('an explicit device rejects the deprecated liteRtLmBackend', () {
+      for (final device in [
+        ComputeDevice.cpu,
+        ComputeDevice.gpu,
+        ComputeDevice.npu,
+      ]) {
+        for (final liteRtLm in [
+          LiteRtLmBackendPreference.cpu,
+          LiteRtLmBackendPreference.gpu,
+          LiteRtLmBackendPreference.npu,
+        ]) {
+          expect(
+            ModelParams(device: device, liteRtLmBackend: liteRtLm).validate,
+            rejects('liteRtLmBackend', liteRtLm.name, 'Set only device'),
+            reason: '$device with $liteRtLm',
+          );
+        }
+      }
+    });
+
+    test('cpu rejects a GPU preferredBackend', () {
+      for (final backend in [
+        GpuBackend.vulkan,
+        GpuBackend.metal,
+        GpuBackend.cuda,
+        GpuBackend.opencl,
+        GpuBackend.hip,
+      ]) {
+        expect(
+          ModelParams(
+            device: ComputeDevice.cpu,
+            preferredBackend: backend,
+          ).validate,
+          rejects('preferredBackend', backend.name, 'device cpu'),
+        );
+      }
+      for (final backend in [
+        GpuBackend.auto,
+        GpuBackend.cpu,
+        GpuBackend.blas,
+      ]) {
+        expect(
+          ModelParams(
+            device: ComputeDevice.cpu,
+            preferredBackend: backend,
+          ).validate,
+          returnsNormally,
+        );
+      }
+      expect(
+        const ModelParams(device: ComputeDevice.cpu, gpuLayers: 33).validate,
+        returnsNormally,
+      );
+    });
+
+    test('gpu and npu reject a CPU preferredBackend or 0 GPU layers', () {
+      for (final device in [ComputeDevice.gpu, ComputeDevice.npu]) {
+        for (final backend in [GpuBackend.cpu, GpuBackend.blas]) {
+          expect(
+            ModelParams(device: device, preferredBackend: backend).validate,
+            rejects('preferredBackend', backend.name, 'runs on the CPU'),
+          );
+        }
+        expect(
+          ModelParams(device: device, gpuLayers: 0).validate,
+          rejects('gpuLayers', 0, 'gpuLayers 0'),
+        );
+        expect(
+          ModelParams(
+            device: device,
+            preferredBackend: GpuBackend.metal,
+            gpuLayers: 20,
+          ).validate,
+          returnsNormally,
+        );
+      }
     });
   });
 

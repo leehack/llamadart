@@ -439,6 +439,73 @@ final result = await tool.handler(ToolParams(args));
 final result = await tool.invoke(args);
 ```
 
+## Unreleased: one `ComputeDevice` for every engine
+
+`ModelParams.device` takes a `ComputeDevice` and applies to llama.cpp and
+LiteRT-LM, as `ImageModelParams.device` and `DecisionModelParams.device`
+already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
+`LiteRtLmBackend(preferredBackend:)` are deprecated and keep working until
+1.0.
+
+1. **Replace the LiteRT-LM selector with `device`.**
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LiteRtLmBackend(preferredBackend: 'gpu'));
+   await engine.loadModel(
+     path,
+     modelParams: const ModelParams(
+       liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+     ),
+   );
+   // After
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModel(
+     path,
+     modelParams: const ModelParams(device: ComputeDevice.gpu),
+   );
+   ```
+
+   `ComputeDevice.auto`, the default, keeps each runtime's default device, so
+   code that sets neither field is unchanged. Setting `device` together with
+   `liteRtLmBackend` throws `LlamaArgumentException`; setting it with
+   `LiteRtLmBackend(preferredBackend:)` throws `LlamaUnsupportedException`.
+
+2. **An explicit device is a requirement.** With `device: cpu`, `gpu` or
+   `npu`, a device the runtime and platform cannot provide throws
+   `LlamaUnsupportedException`, not the `LlamaModelException` the deprecated
+   selector throws, and nothing falls back to another device:
+   - llama.cpp `gpu` without a GPU module or device, which `preferredBackend`
+     used to load on the CPU with a warning, now throws; on Android `gpu`
+     uses Vulkan, which `auto` does not.
+   - On the Web, `gpu` needs a WebGPU adapter, and the llama.cpp bridge no
+     longer retries a failed GPU load on the CPU.
+   - Native LiteRT-LM creates its engine on first use, so a GPU or NPU
+     delegate that fails to start throws from the first generation or
+     tokenizer call.
+
+   Use `ComputeDevice.auto` to accept the runtime's default, or catch
+   `LlamaException` to cover the old and new types.
+
+3. **One `device` covers both runtimes.** Under `auto`, `gpuLayers` and
+   `preferredBackend` still choose the LiteRT-LM backend as before. To run
+   llama.cpp on the CPU and LiteRT-LM on the GPU from one `ModelParams`, keep
+   the deprecated `liteRtLmBackend` with `device: auto`, or pick the params
+   from `ModelSource.format`.
+
+4. **`ModelParams.validate()` runs before the download.** `loadModel`,
+   `loadModelSource` and `loadModelFromUrl` call it first, so an invalid
+   combination throws `LlamaArgumentException` before anything downloads,
+   where it used to fail the backend load as `LlamaModelException`. New
+   rules reject `device: cpu` with a GPU `preferredBackend`, and `gpu` or
+   `npu` with a CPU or BLAS `preferredBackend` or `gpuLayers: 0`.
+
+5. **Decision models.** `DecisionModelParams.encoderModelParams` now carries
+   `device` instead of `preferredBackend: GpuBackend.cpu` and `gpuLayers: 0`
+   for `cpu`. `DecisionModelParams(device: ComputeDevice.gpu)` no longer asks
+   the backend for GPU support before loading: the encoder loads on a GPU or
+   the load throws `LlamaUnsupportedException`.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

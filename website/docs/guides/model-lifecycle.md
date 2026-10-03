@@ -74,11 +74,15 @@ lifecycle:
 ```dart
 await engine.loadModel(
   '/path/to/gemma-4-E2B-it.litertlm',
-  modelParams: const ModelParams(
-    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
-  ),
+  modelParams: const ModelParams(device: ComputeDevice.gpu),
 );
 ```
+
+`ComputeDevice.gpu` requires a GPU: when the platform has no LiteRT-LM GPU
+backend, or its delegate fails to start, the load or the first generation
+throws `LlamaUnsupportedException`. Leave `device` at `ComputeDevice.auto` to
+use each runtime's default; [Choosing the device](./backend-selection#choosing-the-device)
+lists them.
 
 Native `.litertlm` loads use the LiteRT-LM runtime bundled by the build hook.
 Web `.litertlm` URLs use the `@litert-lm/core` JavaScript runtime: before

@@ -64,6 +64,15 @@ String? liteRtLmStreamProxyCompatibilityError({
       'pinned runtime before using asynchronous generation.';
 }
 
+/// `litert_lm_engine_create` returned no engine for the requested backend,
+/// for example a GPU or NPU delegate this device cannot start.
+///
+/// A [StateError], as before, so callers matching on it keep working.
+class LiteRtLmEngineCreateError extends StateError {
+  /// Creates the error with the diagnostic [message].
+  LiteRtLmEngineCreateError(super.message);
+}
+
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
 /// This is public only for unit tests; production callers should receive the
@@ -853,7 +862,7 @@ class LiteRtLmRuntimeClient {
         }
       });
       if (engineAddress == 0) {
-        throw StateError(
+        throw LiteRtLmEngineCreateError(
           liteRtLmEngineCreateFailureMessage(
             backend: resolvedBackend,
             modelPath: modelPath,
