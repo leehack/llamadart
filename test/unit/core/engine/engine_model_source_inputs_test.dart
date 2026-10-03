@@ -89,6 +89,27 @@ void main() {
       expect(manager.calls, isEmpty);
     });
 
+    test('LiteRT-LM rejects setLoraSource before it downloads', () async {
+      final manager = _CacheManager({hfAdapter: '/cache/style.gguf'});
+      final engine = LlamaEngine(
+        _RuntimeBackend(LlamaRuntime.liteRtLm),
+        modelDownloadManager: manager,
+      );
+      await engine.loadModel('/models/model.litertlm');
+
+      await expectLater(
+        engine.setLoraSource(hfAdapter),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('LiteRT-LM has no runtime LoRA adapter API'),
+          ),
+        ),
+      );
+      expect(manager.calls, isEmpty);
+    });
+
     test('setLoraSource stops at a cancelled download token', () async {
       final backend = _RecordingBackend();
       final manager = _CacheManager({hfAdapter: '/cache/a.gguf'});
