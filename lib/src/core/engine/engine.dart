@@ -324,7 +324,9 @@ class LlamaEngine {
   /// Loads a model from a local [path].
   ///
   /// Optionally provide [ModelParams] to configure context size, GPU offloading,
-  /// and more.
+  /// the [ModelParams.device], and more. [ModelParams.validate] runs first and
+  /// throws [LlamaArgumentException]; an explicit device that is unavailable
+  /// throws [LlamaUnsupportedException].
   ///
   /// The default native backend reads the file header to choose llama.cpp for
   /// GGUF or LiteRT-LM for a `.litertlm` bundle, so the file name needs no
@@ -348,6 +350,7 @@ class LlamaEngine {
       path,
       modelParams,
       () => _withModelLifecycle('load a model', () async {
+        modelParams.validate();
         await _loadModel(path, modelParams: modelParams, format: format);
         _throwIfDisposedDuringLoad();
         await _captureObservedModel(path);
@@ -426,6 +429,9 @@ class LlamaEngine {
   /// resolve after the model file, with their own
   /// [LoraAdapterConfig.download] or only the non-secret parts of [options];
   /// see [ModelParams.loras].
+  ///
+  /// [ModelParams.validate] runs before anything resolves or downloads and
+  /// throws [LlamaArgumentException].
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
@@ -433,6 +439,7 @@ class LlamaEngine {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     _throwIfDisposed();
+    modelParams.validate();
     final target = await modelResolver.resolve(
       source,
       ModelResolveRequest(options: options, onProgress: onProgress),
@@ -519,6 +526,7 @@ class LlamaEngine {
       url,
       modelParams,
       () => _withModelLifecycle('load a model from URL', () async {
+        modelParams.validate();
         await _loadModelFromUrl(
           url,
           modelParams: modelParams,
@@ -2119,79 +2127,6 @@ class LlamaEngine {
     );
   }
 
-  /// Returns backend-native text-to-speech capabilities for the loaded model.
-  ///
-  /// This is the low-level integration hook used by `TextToSpeechEngine`.
-  /// Applications should prefer that typed API instead of calling this method
-  /// directly.
-  Future<BackendTextToSpeechCapabilities>
-  get backendTextToSpeechCapabilities async {
-    if (isDisposed) {
-      return const BackendTextToSpeechCapabilities(
-        isSupported: false,
-        unsupportedReason: _disposedMessage,
-      );
-    }
-    if (!_isReady || _contextHandle == null || _mmContextHandle == null) {
-      return const BackendTextToSpeechCapabilities(
-        isSupported: false,
-        unsupportedReason:
-            'Load a model and its text-to-speech projector first.',
-      );
-    }
-    final candidate = backend;
-    if (candidate is! BackendTextToSpeech) {
-      return const BackendTextToSpeechCapabilities(
-        isSupported: false,
-        unsupportedReason:
-            'The active backend does not expose dedicated text-to-speech.',
-      );
-    }
-    final textToSpeechBackend = candidate as BackendTextToSpeech;
-    return textToSpeechBackend.textToSpeechCapabilities(
-      _contextHandle!,
-      _mmContextHandle!,
-    );
-  }
-
-  /// Runs backend-native text-to-speech for `TextToSpeechEngine`.
-  ///
-  /// Applications should prefer `TextToSpeechEngine.synthesize`, which adds
-  /// validation, task ownership, cancellation, and typed completion handling.
-  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
-    BackendTextToSpeechRequest request, {
-    void Function(BackendTextToSpeechProgress progress)? onProgress,
-  }) {
-    _ensureReady();
-    final mmContextHandle = _mmContextHandle;
-    if (mmContextHandle == null) {
-      throw LlamaStateException(
-        'Load a text-to-speech multimodal projector first.',
-      );
-    }
-    final candidate = backend;
-    if (candidate is! BackendTextToSpeech) {
-      throw LlamaUnsupportedException(
-        'The active backend does not expose dedicated text-to-speech.',
-      );
-    }
-    final textToSpeechBackend = candidate as BackendTextToSpeech;
-    return textToSpeechBackend.synthesizeTextToSpeech(
-      _contextHandle!,
-      mmContextHandle,
-      request,
-      onProgress: onProgress,
-    );
-  }
-
-  /// Cancels backend-native synthesis started by `TextToSpeechEngine`.
-  void cancelTextToSpeechBackend() {
-    final candidate = backend;
-    if (candidate is BackendTextToSpeech) {
-      (candidate as BackendTextToSpeech).cancelTextToSpeech();
-    }
-  }
-
   /// Returns the optional [GenerationParams] controls that the loaded model's
   /// runtime applies.
   ///
@@ -2226,113 +2161,6 @@ class LlamaEngine {
     }
     return (candidate as BackendGenerationCapabilitiesSupport)
         .generationCapabilities();
-  }
-
-  /// Returns decision-model support for the loaded model.
-  ///
-  /// This is the low-level integration hook used by `DecisionEngine`.
-  /// Applications should prefer `DecisionEngine.capabilitiesFor`.
-  Future<BackendDecisionCapabilities> get backendDecisionCapabilities async {
-    if (isDisposed) {
-      return const BackendDecisionCapabilities(
-        isSupported: false,
-        unsupportedReason: _disposedMessage,
-      );
-    }
-    final candidate = backend;
-    if (candidate is! BackendDecision) {
-      return const BackendDecisionCapabilities(
-        isSupported: false,
-        unsupportedReason:
-            'The active backend does not expose decision models.',
-      );
-    }
-    final modelHandle = _modelHandle;
-    if (!_isReady || modelHandle == null) {
-      return const BackendDecisionCapabilities(
-        isSupported: false,
-        unsupportedReason: 'Load a model first.',
-      );
-    }
-    return (candidate as BackendDecision).decisionCapabilities(modelHandle);
-  }
-
-  /// Loads the decision head at [headPath] for the loaded model.
-  ///
-  /// This is the low-level integration hook used by `DecisionEngine`.
-  /// [configPath] names a JSON config for head files without `laya.config`
-  /// metadata. The returned [BackendDecisionHeadInfo.handle] is an engine
-  /// handle that this engine never reuses, not the backend's own handle; pass
-  /// it to [runDecisionBackend] and [freeDecisionHeadBackend]. The head stays
-  /// usable until it is freed or the model is unloaded; on Web, a bridge that
-  /// restarts its runtime frees it too.
-  Future<BackendDecisionHeadInfo> loadDecisionHeadBackend(
-    String headPath, {
-    String? configPath,
-  }) async {
-    final decisionBackend = _decisionBackend();
-    _ensureReady(requireContext: false);
-    final epoch = _decisionHeadEpoch;
-    final head = await decisionBackend.decisionHeadLoad(
-      _modelHandle!,
-      headPath,
-      configPath: configPath,
-    );
-    if (epoch != _decisionHeadEpoch) {
-      await decisionBackend
-          .decisionHeadFree(head.handle)
-          .catchError((Object _) {});
-      throw LlamaStateException(
-        'The model was unloaded while its decision head was loading. Load '
-        'the model and the DecisionEngine again.',
-      );
-    }
-    final handle = _nextDecisionHeadHandle++;
-    _decisionHeadHandles[handle] = head.handle;
-    return BackendDecisionHeadInfo(
-      handle: handle,
-      hiddenSize: head.hiddenSize,
-      clsToken: head.clsToken,
-      sepToken: head.sepToken,
-      maskToken: head.maskToken,
-      maskText: head.maskText,
-      configJson: head.configJson,
-      deviceName: head.deviceName,
-    );
-  }
-
-  /// Runs [sequences] through the decision head [headHandle].
-  ///
-  /// This is the low-level integration hook used by `DecisionEngine`, which
-  /// builds the sequences and decodes the outputs. [headHandle] is a handle
-  /// returned by [loadDecisionHeadBackend]. Throws [LlamaStateException] when
-  /// it is not loaded on this engine, such as after it was freed or its model
-  /// was unloaded, and on Web when a bridge runtime restart freed it.
-  Future<List<BackendDecisionOutput>> runDecisionBackend(
-    int headHandle,
-    List<BackendDecisionSequence> sequences,
-  ) async {
-    final backendHandle = _decisionHeadHandles[headHandle];
-    if (backendHandle == null) {
-      throw LlamaStateException(
-        'Decision head $headHandle is not loaded on this engine; it was '
-        'freed, its model was unloaded, or it was never loaded. Load the '
-        'DecisionEngine again.',
-      );
-    }
-    return _decisionBackend().decisionRun(backendHandle, sequences);
-  }
-
-  /// Frees the decision head [headHandle].
-  ///
-  /// This is the low-level integration hook used by `DecisionEngine`.
-  /// [headHandle] is a handle returned by [loadDecisionHeadBackend]. Does
-  /// nothing when it is not loaded on this engine, such as after it was freed
-  /// or its model was unloaded.
-  Future<void> freeDecisionHeadBackend(int headHandle) async {
-    final backendHandle = _decisionHeadHandles.remove(headHandle);
-    if (backendHandle == null) return;
-    await _decisionBackend().decisionHeadFree(backendHandle);
   }
 
   BackendDecision _decisionBackend() {
@@ -2679,12 +2507,6 @@ class LlamaEngine {
   // ============================================================
   // BACKEND UTILITIES
   // ============================================================
-
-  /// Internal model handle.
-  int? get modelHandle => _modelHandle;
-
-  /// Internal context handle.
-  int? get contextHandle => _contextHandle;
 
   /// Returns the name of the active GPU backend.
   ///
@@ -3050,6 +2872,201 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
     ).collect();
+  }
+}
+
+/// Low-level hooks that `TextToSpeechEngine`, `DecisionEngine` and backend
+/// integrations use on a [LlamaEngine].
+///
+/// Applications should use those engines instead. These are extension
+/// members, not instance members, so a subclass of [LlamaEngine] cannot
+/// override them: fake a backend that implements the matching `Backend*`
+/// interface instead.
+extension LlamaEngineBackendHooks on LlamaEngine {
+  /// Internal model handle.
+  int? get modelHandle => _modelHandle;
+
+  /// Internal context handle.
+  int? get contextHandle => _contextHandle;
+
+  /// Returns backend-native text-to-speech capabilities for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `TextToSpeechEngine`.
+  /// Applications should prefer that typed API instead of calling this method
+  /// directly.
+  Future<BackendTextToSpeechCapabilities>
+  get backendTextToSpeechCapabilities async {
+    if (isDisposed) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: LlamaEngine._disposedMessage,
+      );
+    }
+    if (!_isReady || _contextHandle == null || _mmContextHandle == null) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'Load a model and its text-to-speech projector first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendTextToSpeech) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active backend does not expose dedicated text-to-speech.',
+      );
+    }
+    final textToSpeechBackend = candidate as BackendTextToSpeech;
+    return textToSpeechBackend.textToSpeechCapabilities(
+      _contextHandle!,
+      _mmContextHandle!,
+    );
+  }
+
+  /// Runs backend-native text-to-speech for `TextToSpeechEngine`.
+  ///
+  /// Applications should prefer `TextToSpeechEngine.synthesize`, which adds
+  /// validation, task ownership, cancellation, and typed completion handling.
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    _ensureReady();
+    final mmContextHandle = _mmContextHandle;
+    if (mmContextHandle == null) {
+      throw LlamaStateException(
+        'Load a text-to-speech multimodal projector first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendTextToSpeech) {
+      throw LlamaUnsupportedException(
+        'The active backend does not expose dedicated text-to-speech.',
+      );
+    }
+    final textToSpeechBackend = candidate as BackendTextToSpeech;
+    return textToSpeechBackend.synthesizeTextToSpeech(
+      _contextHandle!,
+      mmContextHandle,
+      request,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Cancels backend-native synthesis started by `TextToSpeechEngine`.
+  void cancelTextToSpeechBackend() {
+    final candidate = backend;
+    if (candidate is BackendTextToSpeech) {
+      (candidate as BackendTextToSpeech).cancelTextToSpeech();
+    }
+  }
+
+  /// Returns decision-model support for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// Applications should prefer `DecisionEngine.capabilitiesFor`.
+  Future<BackendDecisionCapabilities> get backendDecisionCapabilities async {
+    if (isDisposed) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason: LlamaEngine._disposedMessage,
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendDecision) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active backend does not expose decision models.',
+      );
+    }
+    final modelHandle = _modelHandle;
+    if (!_isReady || modelHandle == null) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason: 'Load a model first.',
+      );
+    }
+    return (candidate as BackendDecision).decisionCapabilities(modelHandle);
+  }
+
+  /// Loads the decision head at [headPath] for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// [configPath] names a JSON config for head files without `laya.config`
+  /// metadata. The returned [BackendDecisionHeadInfo.handle] is an engine
+  /// handle that this engine never reuses, not the backend's own handle; pass
+  /// it to [runDecisionBackend] and [freeDecisionHeadBackend]. The head stays
+  /// usable until it is freed or the model is unloaded; on Web, a bridge that
+  /// restarts its runtime frees it too.
+  Future<BackendDecisionHeadInfo> loadDecisionHeadBackend(
+    String headPath, {
+    String? configPath,
+  }) async {
+    final decisionBackend = _decisionBackend();
+    _ensureReady(requireContext: false);
+    final epoch = _decisionHeadEpoch;
+    final head = await decisionBackend.decisionHeadLoad(
+      _modelHandle!,
+      headPath,
+      configPath: configPath,
+    );
+    if (epoch != _decisionHeadEpoch) {
+      await decisionBackend
+          .decisionHeadFree(head.handle)
+          .catchError((Object _) {});
+      throw LlamaStateException(
+        'The model was unloaded while its decision head was loading. Load '
+        'the model and the DecisionEngine again.',
+      );
+    }
+    final handle = _nextDecisionHeadHandle++;
+    _decisionHeadHandles[handle] = head.handle;
+    return BackendDecisionHeadInfo(
+      handle: handle,
+      hiddenSize: head.hiddenSize,
+      clsToken: head.clsToken,
+      sepToken: head.sepToken,
+      maskToken: head.maskToken,
+      maskText: head.maskText,
+      configJson: head.configJson,
+      deviceName: head.deviceName,
+    );
+  }
+
+  /// Runs [sequences] through the decision head [headHandle].
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`, which
+  /// builds the sequences and decodes the outputs. [headHandle] is a handle
+  /// returned by [loadDecisionHeadBackend]. Throws [LlamaStateException] when
+  /// it is not loaded on this engine, such as after it was freed or its model
+  /// was unloaded, and on Web when a bridge runtime restart freed it.
+  Future<List<BackendDecisionOutput>> runDecisionBackend(
+    int headHandle,
+    List<BackendDecisionSequence> sequences,
+  ) async {
+    final backendHandle = _decisionHeadHandles[headHandle];
+    if (backendHandle == null) {
+      throw LlamaStateException(
+        'Decision head $headHandle is not loaded on this engine; it was '
+        'freed, its model was unloaded, or it was never loaded. Load the '
+        'DecisionEngine again.',
+      );
+    }
+    return _decisionBackend().decisionRun(backendHandle, sequences);
+  }
+
+  /// Frees the decision head [headHandle].
+  ///
+  /// This is the low-level integration hook used by `DecisionEngine`.
+  /// [headHandle] is a handle returned by [loadDecisionHeadBackend]. Does
+  /// nothing when it is not loaded on this engine, such as after it was freed
+  /// or its model was unloaded.
+  Future<void> freeDecisionHeadBackend(int headHandle) async {
+    final backendHandle = _decisionHeadHandles.remove(headHandle);
+    if (backendHandle == null) return;
+    await _decisionBackend().decisionHeadFree(backendHandle);
   }
 }
 

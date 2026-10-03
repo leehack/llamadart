@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:test/test.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
     show
@@ -1397,6 +1398,58 @@ void main() {
         expect(progressEvents.single.fraction, 0.5);
       },
     );
+
+    test('every loader rejects an invalid ModelParams.device combination '
+        'with LlamaArgumentException before any I/O', () async {
+      final source = ModelSource.url(
+        Uri.parse('https://example.com/model.gguf'),
+      );
+      final downloadManager = MockModelDownloadManager(
+        ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/model.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          bytes: 12,
+        ),
+      );
+      final nativeBackend = MockLlamaBackend();
+      final nativeEngine = LlamaEngine(
+        nativeBackend,
+        modelDownloadManager: downloadManager,
+      );
+      const params = ModelParams(device: ComputeDevice.gpu, gpuLayers: 0);
+      final invalid = throwsA(
+        isA<LlamaArgumentException>().having(
+          (e) => e.name,
+          'name',
+          'gpuLayers',
+        ),
+      );
+
+      await expectLater(
+        nativeEngine.loadModelSource(source, modelParams: params),
+        invalid,
+      );
+      await expectLater(
+        nativeEngine.loadModel('model.gguf', modelParams: params),
+        invalid,
+      );
+      await expectLater(
+        nativeEngine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+          modelParams: params,
+        ),
+        invalid,
+      );
+
+      expect(downloadManager.ensureModelCalls, 0);
+      expect(nativeBackend.modelLoadCalls, 0);
+      expect(nativeBackend.modelLoadFromUrlCalls, 0);
+      expect(nativeEngine.isReady, isFalse);
+    });
 
     test(
       'native loadModelSource skips model load when download is cancelled',

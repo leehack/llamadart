@@ -255,8 +255,9 @@ stable, while `pendingText` may change after the next inference window.
 TDT, Parakeet CTC, Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but
 callers must supply a matching model and tokenizer. The API does not capture a
 microphone or resample audio. Advanced callers can use `LiteRtLmRuntimeClient`
-and `LiteRtLmAsrRuntimeSession` directly with local files, but those
-synchronous calls must not run on a Flutter UI isolate.
+and `LiteRtLmAsrRuntimeSession` from `package:llamadart/backend.dart` directly
+with local files, but those synchronous calls must not run on a Flutter UI
+isolate.
 
 ## Cancel, dispose and concurrency
 

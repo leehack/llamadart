@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -108,6 +109,8 @@ void main() {
       expect(backend.lastRequest?.speakerAudioBytes, speakerBytes);
       expect(backend.lastRequest?.maxFrames, 64);
       expect(backend.lastRequest?.seed, 7);
+      expect(backend.lastSynthesisContextHandle, 2);
+      expect(backend.lastSynthesisMmContextHandle, 3);
 
       final wav = finalEvent.result.toWavBytes();
       expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
@@ -672,6 +675,8 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
   int disposeCalls = 0;
   ModelParams? lastModelParams;
   BackendTextToSpeechRequest? lastRequest;
+  int? lastSynthesisContextHandle;
+  int? lastSynthesisMmContextHandle;
 
   @override
   bool get isReady => _ready;
@@ -720,6 +725,8 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     lastRequest = request;
+    lastSynthesisContextHandle = contextHandle;
+    lastSynthesisMmContextHandle = mmContextHandle;
     if (!synthesisStarted.isCompleted) {
       synthesisStarted.complete();
     }

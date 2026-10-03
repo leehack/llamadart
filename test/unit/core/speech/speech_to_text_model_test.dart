@@ -47,7 +47,6 @@ void main() {
     );
 
     expect(adapter.name, 'LiteRT-LM ASR');
-    expect(adapter.backend, config.backend);
     expect(adapter.numberOfThreads, config.numberOfThreads);
     expect(adapter.maxBufferedAudio, config.maxBufferedAudio);
     expect(adapter.overlapRatio, config.overlapRatio);

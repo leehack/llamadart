@@ -214,7 +214,9 @@ Use this checklist in native sync PRs:
 - Ensure each changed companion package README and CHANGELOG native-pin note
   names the new native repo tag when package contents change.
 - Regenerate `lib/src/backends/llama_cpp/bindings.dart` whenever the
-  `llamadart-native` header bundle changed.
+  `llamadart-native` header bundle changed. Only
+  `package:llamadart/llama_cpp_bindings.dart` exports it, outside semantic
+  versioning, so a regeneration never changes the app API.
 - Update public docs that mention the pinned native versions or source table.
 
 ## Companion package release handoff

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 

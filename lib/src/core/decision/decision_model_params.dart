@@ -1,16 +1,16 @@
 import '../models/config/compute_device.dart';
-import '../models/config/gpu_backend.dart';
 import '../models/inference/model_params.dart';
 
 /// Runtime settings of a decision model: `params:` of `DecisionEngine.load`.
 class DecisionModelParams {
-  /// Device to run the encoder and head on.
+  /// Device to run the encoder and head on, as `ModelParams.device`.
   ///
   /// [ComputeDevice.auto] offloads every layer to the best GPU the backend
-  /// reports, otherwise uses the CPU. [ComputeDevice.gpu] does the same, but
-  /// `DecisionEngine.load` throws `LlamaUnsupportedException` when the
-  /// backend reports no GPU support. [ComputeDevice.npu] is not supported and
-  /// throws `LlamaUnsupportedException`.
+  /// loads, otherwise uses the CPU; on Android it uses the CPU.
+  /// [ComputeDevice.gpu] runs on a GPU (Vulkan on Android) or
+  /// `DecisionEngine.load` throws `LlamaUnsupportedException` from the
+  /// encoder load. [ComputeDevice.npu] is not supported and throws
+  /// `LlamaUnsupportedException`.
   final ComputeDevice device;
 
   /// CPU threads of the encoder and the head. `0` uses the runtime default.
@@ -27,14 +27,10 @@ class DecisionModelParams {
   /// and [threads] applied.
   ///
   /// Load the encoder with them before `DecisionEngine.attach`.
-  ModelParams get encoderModelParams {
-    final cpu = device == ComputeDevice.cpu;
-    return ModelParams(
-      contextSize: 512,
-      preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
-      gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
-      numberOfThreads: threads,
-      numberOfThreadsBatch: threads,
-    );
-  }
+  ModelParams get encoderModelParams => ModelParams(
+    contextSize: 512,
+    device: device,
+    numberOfThreads: threads,
+    numberOfThreadsBatch: threads,
+  );
 }

@@ -42,6 +42,16 @@ const List<_BoundaryScope> _scopes = <_BoundaryScope>[
     forbiddenUris: <String>{'dart:io', 'dart:ffi'},
   ),
   _BoundaryScope(
+    name: 'backend-entrypoint',
+    targetPath: 'lib/backend.dart',
+    forbiddenUris: <String>{'dart:io', 'dart:ffi'},
+  ),
+  _BoundaryScope(
+    name: 'bindings-entrypoint',
+    targetPath: 'lib/llama_cpp_bindings.dart',
+    forbiddenUris: <String>{'dart:io', 'dart:ffi'},
+  ),
+  _BoundaryScope(
     name: 'web-backend',
     targetPath: 'lib/src/backends/web',
     forbiddenUris: <String>{'dart:io', 'dart:ffi', 'package:ffi/ffi.dart'},

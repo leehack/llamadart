@@ -96,7 +96,7 @@ Loading follows the shared engine pattern
 ```text
 DecisionEngine (core, pure Dart)
   question -> texts -> engine.tokenize -> sequence ids + marker positions
-  LlamaEngine hooks: loadDecisionHeadBackend / runDecisionBackend / freeDecisionHeadBackend
+  LlamaEngineBackendHooks (backend.dart): loadDecisionHeadBackend / runDecisionBackend / freeDecisionHeadBackend
     BackendDecision (backend.dart, web-safe value types)
       NativeAutoBackend -> NativeLlamaBackend -> worker isolate -> LlamaCppService
         private encoder llama_context + safetensors head + ggml head graph
@@ -152,8 +152,9 @@ LiteRT-LM delegates report unsupported.
 
 ### Engine hooks (`lib/src/core/engine/engine.dart`)
 
-Plain public methods documented as low-level integration hooks, like the TTS
-trio. The capabilities hook checks `is! BackendDecision` before readiness, so
+Members of the `LlamaEngineBackendHooks` extension, exported from
+`package:llamadart/backend.dart`, like the TTS trio. Being extension members,
+a `LlamaEngine` subclass cannot override them; tests fake `BackendDecision`. The capabilities hook checks `is! BackendDecision` before readiness, so
 a backend without the contract reports a stable reason without a model.
 
 Backend handles are not unique over an engine's life: the worker numbers

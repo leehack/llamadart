@@ -5,6 +5,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'package:test/test.dart';
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import '../test_helper.dart';
 

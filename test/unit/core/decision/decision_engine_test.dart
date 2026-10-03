@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/core/decision/decision_engine.dart';
@@ -998,8 +999,7 @@ void main() {
       final (path, params) = owned.modelLoads.single;
       expect(path, '/cache/laya-Q8_0.gguf');
       expect(params.contextSize, 512);
-      expect(params.gpuLayers, 0);
-      expect(params.preferredBackend, GpuBackend.cpu);
+      expect(params.device, ComputeDevice.cpu);
       expect(params.numberOfThreadsBatch, 3);
       expect(owned.headLoads.single, (
         1,
@@ -1250,7 +1250,18 @@ void main() {
       },
     );
 
-    test('ComputeDevice.gpu without GPU support loads nothing', () async {
+    test('ComputeDevice.gpu reaches the encoder load as ModelParams.device, '
+        'without a pre-load GPU query', () async {
+      final decisions = await loadLaya(
+        params: const DecisionModelParams(device: ComputeDevice.gpu),
+      );
+      addTearDown(decisions.dispose);
+
+      expect(owned.modelLoads.single.$2.device, ComputeDevice.gpu);
+      expect(owned.gpuSupportQueries, 0);
+    });
+
+    test('ComputeDevice.gpu the encoder load rejects loads nothing', () async {
       debugDecisionBackendFactory = () =>
           owned = _DecisionBackend(fixture)..gpuSupported = false;
 
@@ -1258,7 +1269,7 @@ void main() {
         loadLaya(params: const DecisionModelParams(device: ComputeDevice.gpu)),
         throwsA(isA<LlamaUnsupportedException>()),
       );
-      expect(downloads.calls, isEmpty);
+      expect(owned.headLoads, isEmpty);
       expect(owned.disposeCalls, 1);
     });
 
@@ -1629,6 +1640,7 @@ class _DecisionBackend
   void Function()? onModelLoad;
   bool urlLoading = false;
   bool gpuSupported = true;
+  int gpuSupportQueries = 0;
   int modelFrees = 0;
   int disposeCalls = 0;
 
@@ -1642,7 +1654,10 @@ class _DecisionBackend
   LlamaRuntime? get runtime => _ready ? LlamaRuntime.llamaCpp : null;
 
   @override
-  Future<bool> isGpuSupported() async => gpuSupported;
+  Future<bool> isGpuSupported() async {
+    gpuSupportQueries++;
+    return gpuSupported;
+  }
 
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {}
@@ -1650,6 +1665,9 @@ class _DecisionBackend
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     modelLoads.add((path, params));
+    if (params.device == ComputeDevice.gpu && !gpuSupported) {
+      throw LlamaUnsupportedException('No GPU device for llama.cpp.');
+    }
     onModelLoad?.call();
     _ready = true;
     return reuseModelHandle ? 1 : _nextModelHandle++;

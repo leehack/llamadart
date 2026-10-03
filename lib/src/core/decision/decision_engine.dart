@@ -229,7 +229,7 @@ class DecisionEngine {
   ///
   /// Throws:
   /// - [LlamaUnsupportedException] for [ComputeDevice.npu]; for
-  ///   [ComputeDevice.gpu] when the backend reports no GPU support; when
+  ///   [ComputeDevice.gpu] when the encoder cannot load on a GPU; when
   ///   [download] sets [ModelLoadOptions.sha256], which cannot apply to
   ///   several files; when the encoder's [ModelSource.format] is
   ///   [ModelFormat.liteRtLm]; on Web for a [download] option the backend
@@ -287,13 +287,6 @@ class DecisionEngine {
       modelDownloadManager: files.downloadManager,
     );
     try {
-      if (params.device == ComputeDevice.gpu &&
-          !await engine.isGpuSupported()) {
-        throw LlamaUnsupportedException(
-          'ComputeDevice.gpu was requested, but the backend reports no GPU '
-          'support. Use ComputeDevice.auto or ComputeDevice.cpu.',
-        );
-      }
       final targets = await _fileTargets(
         engine,
         [model.encoder, model.head, ?model.config],

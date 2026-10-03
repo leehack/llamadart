@@ -161,7 +161,7 @@ no longer has model presets or `String` paths.
 `LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
 `sourceLangCode` and `targetLangCode`. Pass the codes in
 `chatTemplateKwargs`, as llama.cpp's `chat_template_kwargs` does; the
-parameters still work for one minor release, with deprecation warnings:
+parameters keep working, with deprecation warnings, until 1.0:
 
 ```dart
 // Before
@@ -229,8 +229,8 @@ directory for every default download, set
 
 3. **One logging API.** `LlamaLogging.configure` sets the Dart-side level,
    the native level (defaulting to the Dart-side level) and the handler for
-   the whole library. The old calls still work for one minor release, with
-   deprecation warnings:
+   the whole library. The old calls keep working, with deprecation warnings,
+   until 1.0:
 
    | Before | After |
    | --- | --- |
@@ -250,7 +250,7 @@ directory for every default download, set
 pattern: `load` takes a model of `ModelSource` files and owns what it loads,
 and an adapter, not a profile enum, says how to run the model. The old
 constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
-`modelProfile` getters still work for one release, with deprecation warnings.
+`modelProfile` getters keep working, with deprecation warnings, until 1.0.
 
 1. **Load the model, or attach to an engine you keep.** `load` creates a
    `LlamaEngine`, loads the model and projector, checks `capabilities`, and
@@ -375,8 +375,7 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
 `ModelSource`, so a remote file downloads into the model cache like a model.
-The `String` path forms still work for one minor release, with deprecation
-warnings:
+The `String` path forms keep working, with deprecation warnings, until 1.0:
 
 | Before | After |
 | --- | --- |
@@ -438,6 +437,168 @@ final result = await tool.handler(ToolParams(args));
 // After
 final result = await tool.invoke(args);
 ```
+
+## Unreleased: app, backend and bindings entrypoints
+
+`package:llamadart/llamadart.dart` is now the app API only. Code that loads
+models, generates and uses the speech, image and decision engines needs no
+change. Custom backends, backend test fakes and raw runtime access import one
+of two new libraries.
+
+1. **Raw llama.cpp FFI: `package:llamadart/llama_cpp_bindings.dart`.** The
+   ffigen bindings (`llama_backend_init`, `llama_decode`, `ggml_*`, `mtmd_*`
+   and their structs) are no longer in the app API. They are native only, and
+   any release that updates llama.cpp can change them:
+
+   ```dart
+   import 'package:llamadart/llama_cpp_bindings.dart';
+   import 'package:llamadart/llamadart.dart';
+   ```
+
+2. **Backend SPI: `package:llamadart/backend.dart`.** These names move there:
+   - `BackendAvailability`, `BackendBatchEmbeddings`, `BackendDartLogLevel`,
+     `BackendDecision`, `BackendDecisionCapabilities`,
+     `BackendDecisionHeadInfo`, `BackendDecisionOutput`,
+     `BackendDecisionSequence`, `BackendEmbeddings`,
+     `BackendEmbeddingsSupport`, `BackendGenerationCapabilities`,
+     `BackendGenerationCapabilitiesSupport`, `BackendGpuEnumeration`,
+     `BackendGrammarConstraintsSupport`, `BackendLazyGrammarSupport`,
+     `BackendModelFileTypeDiagnostics`, `BackendNativeChatGeneration`,
+     `BackendNextTokenScoring`, `BackendNextTokenScoringSupport`,
+     `BackendPerformanceDiagnostics`, `BackendPromptSpeechToTextSupport`,
+     `BackendRuntimeDiagnostics`, `BackendStatePersistence`,
+     `BackendStatePersistenceSupport`, `BackendTextToSpeech`,
+     `BackendTextToSpeechCapabilities`, `BackendTextToSpeechPhase`,
+     `BackendTextToSpeechProgress`, `BackendTextToSpeechRequest` and
+     `BackendTextToSpeechResult`.
+   - `LiteRtLmBackend`, `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics` and
+     `LiteRtLmRuntimeResult`.
+   - `LiteRtLmAsrRuntimeSession`, `LiteRtLmAsrPushResult`,
+     `LiteRtLmAsrProcessResult` and `LiteRtLmAsrProcessState`.
+
+   `LlamaBackend`, `BackendPerfContextData`, `BackendTextToSpeechModel`,
+   `StateLoadResult`, `LiteRtLmAsrBackend`, `LiteRtLmAsrModelPreset` and
+   `LiteRtLmAsrRuntimeConfig` stay in the app API; `backend.dart` exports the
+   first four too. Add the import next to the app one:
+
+   ```dart
+   import 'package:llamadart/backend.dart';
+   import 'package:llamadart/llamadart.dart';
+   ```
+
+3. **Engine hooks are extension members.** `modelHandle`, `contextHandle`,
+   `backendTextToSpeechCapabilities`, `synthesizeTextToSpeechBackend`,
+   `cancelTextToSpeechBackend`, `backendDecisionCapabilities`,
+   `loadDecisionHeadBackend`, `runDecisionBackend` and
+   `freeDecisionHeadBackend` move from `LlamaEngine` to the
+   `LlamaEngineBackendHooks` extension in `backend.dart`. Calls keep working
+   once `backend.dart` is imported. A `LlamaEngine` subclass that overrode
+   one no longer intercepts it, and the analyzer reports only an
+   `override_on_non_overriding_member` warning. A fake that
+   `implements LlamaEngine` is bypassed the same way wherever it is typed as
+   `LlamaEngine`, as inside `TextToSpeechEngine` and `DecisionEngine`: the
+   extension runs instead of the fake's members and reads engine state the
+   fake lacks, so the call fails with `NoSuchMethodError`. In both cases, fake
+   at the backend instead:
+
+   ```dart
+   // Before
+   class FakeEngine extends LlamaEngine {
+     FakeEngine() : super(LlamaBackend());
+     @override
+     Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+       BackendTextToSpeechRequest request, {
+       void Function(BackendTextToSpeechProgress progress)? onProgress,
+     }) async => fakeResult;
+   }
+   // After
+   class FakeBackend implements LlamaBackend, BackendTextToSpeech {
+     @override
+     Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+       int contextHandle,
+       int mmContextHandle,
+       BackendTextToSpeechRequest request, {
+       void Function(BackendTextToSpeechProgress progress)? onProgress,
+     }) async => fakeResult;
+     // ... the rest of LlamaBackend and BackendTextToSpeech
+   }
+   ```
+
+4. **Removed deprecated APIs.** `LiteRtLmBenchmarkClient`,
+   `LiteRtLmBenchmarkMetrics` and `LiteRtLmBenchmarkResult` are gone; use
+   `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics` and
+   `LiteRtLmRuntimeResult`. `LiteRtLmRuntimeClient.conversationTokenCount`
+   and `replaceConversationWithClone` are gone with no replacement.
+
+## Unreleased: one `ComputeDevice` for every engine
+
+`ModelParams.device` takes a `ComputeDevice` and applies to llama.cpp and
+LiteRT-LM, as `ImageModelParams.device` and `DecisionModelParams.device`
+already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
+`LiteRtLmBackend(preferredBackend:)` are deprecated and keep working until
+1.0.
+
+1. **Replace the LiteRT-LM selector with `device`.**
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LiteRtLmBackend(preferredBackend: 'gpu'));
+   await engine.loadModel(
+     path,
+     modelParams: const ModelParams(
+       liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+     ),
+   );
+   // After
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModel(
+     path,
+     modelParams: const ModelParams(device: ComputeDevice.gpu),
+   );
+   ```
+
+   `ComputeDevice.auto`, the default, keeps each runtime's default device, so
+   code that sets neither field is unchanged. Setting `device` together with
+   `liteRtLmBackend` throws `LlamaArgumentException`; setting it with
+   `LiteRtLmBackend(preferredBackend:)` throws `LlamaUnsupportedException`.
+   Code that still constructs `LiteRtLmBackend` imports it from
+   `package:llamadart/backend.dart`, as the section above describes.
+
+2. **An explicit device is a requirement.** With `device: cpu`, `gpu` or
+   `npu`, a device the runtime and platform cannot provide throws
+   `LlamaUnsupportedException`, not the `LlamaModelException` the deprecated
+   selector throws, and nothing falls back to another device:
+   - llama.cpp `gpu` without a GPU module or device, which `preferredBackend`
+     used to load on the CPU with a warning, now throws; on Android `gpu`
+     uses Vulkan, which `auto` does not.
+   - On the Web, `gpu` needs a WebGPU adapter, and the llama.cpp bridge no
+     longer retries a failed GPU load on the CPU.
+   - Native LiteRT-LM creates its engine on first use, so a GPU or NPU
+     delegate that fails to start throws from the first generation or
+     tokenizer call.
+
+   Use `ComputeDevice.auto` to accept the runtime's default, or catch
+   `LlamaException` to cover the old and new types.
+
+3. **One `device` covers both runtimes.** Under `auto`, `gpuLayers` and
+   `preferredBackend` still choose the LiteRT-LM backend as before. To run
+   llama.cpp on the CPU and LiteRT-LM on the GPU from one `ModelParams`, keep
+   the deprecated `liteRtLmBackend` with `device: auto`, or pick the params
+   from `ModelSource.format`.
+
+4. **`ModelParams.validate()` runs before the download.** `loadModel`,
+   `loadModelSource` and `loadModelFromUrl` call it first, so an invalid
+   combination throws `LlamaArgumentException` before anything downloads,
+   where it used to fail the backend load as `LlamaModelException`. New
+   rules reject `device: cpu` with a GPU `preferredBackend`, and `gpu` or
+   `npu` with a CPU or BLAS `preferredBackend`, `gpuLayers: 0`, or
+   `splitMode: ModelSplitMode.none` with a negative `mainGpu`.
+
+5. **Decision models.** `DecisionModelParams.encoderModelParams` now carries
+   `device` instead of `preferredBackend: GpuBackend.cpu` and `gpuLayers: 0`
+   for `cpu`. `DecisionModelParams(device: ComputeDevice.gpu)` no longer asks
+   the backend for GPU support before loading: the encoder loads on a GPU or
+   the load throws `LlamaUnsupportedException`.
 
 ## Unreleased: shared capabilities and terminal dispose
 

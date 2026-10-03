@@ -1,5 +1,23 @@
 ## Unreleased
 
+- `ModelParams.device` (`ComputeDevice`) selects the device for every
+  runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
+  or `npu` runs there or throws `LlamaUnsupportedException` instead of
+  falling back to another device
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
+- **Deprecated:** `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference`
+  and `LiteRtLmBackend(preferredBackend:)`; use `ModelParams.device`. They
+  still work until 1.0
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
+- **Behavior change:** `DecisionModelParams(device: ComputeDevice.gpu)` runs
+  the encoder on a GPU, Vulkan on Android, or throws
+  `LlamaUnsupportedException` from the encoder load; it ran on the CPU on
+  Android and threw before loading where GPU modules load with the model
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
+- **Behavior change:** `LlamaEngine` loads run `ModelParams.validate()` before
+  any download or native call, so an invalid combination throws
+  `LlamaArgumentException` instead of `LlamaModelException`
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
 - **Breaking:** `ModelParams.validate()` throws `LlamaArgumentException`,
   `ModelDownloadController` throws `LlamaArgumentException` or
   `LlamaStateException`, and Web backend calls before a model load throw
@@ -29,7 +47,7 @@
   (`Qwen3AsrAdapter`, `LiteRtLmAsrAdapter`, `Qwen3TtsAdapter`, or your own
   `SpeechToTextPromptAdapter`) replace `SpeechToTextModelProfile`,
   `TextToSpeechModelProfile`, the `modelProfile` constructors and
-  `SpeechToTextEngine.liteRtLm`, which still work for one release
+  `SpeechToTextEngine.liteRtLm`, which keep working until 1.0
   ([#848](https://github.com/leehack/llamadart/issues/848)).
 - **Breaking:** `SpeechToTextEngine` gains `dispose()`, `isDisposed`,
   `adapter` and `transcribeOnce`, and `TextToSpeechEngine` gains `dispose()`,
@@ -154,6 +172,27 @@
 - **Deprecated:** the `String` path forms of LoRA adapters, speculative draft
   models and LiteRT-LM ASR files
   ([#852](https://github.com/leehack/llamadart/issues/852)).
+- **Breaking:** `package:llamadart/llamadart.dart` is the app API. The raw
+  ffigen bindings move to `package:llamadart/llama_cpp_bindings.dart` (native
+  only, outside semantic versioning), and the custom-backend SPI moves to the
+  new `package:llamadart/backend.dart`: every `Backend*` type except
+  `BackendPerfContextData` and `BackendTextToSpeechModel`, `LiteRtLmBackend`,
+  `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics`, `LiteRtLmRuntimeResult`,
+  `LiteRtLmAsrRuntimeSession`, `LiteRtLmAsrPushResult`,
+  `LiteRtLmAsrProcessResult` and `LiteRtLmAsrProcessState`. The app API now
+  exports `TemplateToolCallSerialization`
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
+- **Breaking:** the `LlamaEngine` text-to-speech and decision hooks,
+  `modelHandle` and `contextHandle` move to the `LlamaEngineBackendHooks`
+  extension in `package:llamadart/backend.dart`, so neither a subclass nor an
+  `implements LlamaEngine` fake can override them; fake a backend that
+  implements `BackendTextToSpeech` or `BackendDecision` instead
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
+- **Breaking:** the deprecated `LiteRtLmBenchmarkClient`,
+  `LiteRtLmBenchmarkMetrics`, `LiteRtLmBenchmarkResult`,
+  `LiteRtLmRuntimeClient.conversationTokenCount` and
+  `LiteRtLmRuntimeClient.replaceConversationWithClone` are removed
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
 
 ## 0.10.0
 

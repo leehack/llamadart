@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -14,6 +15,7 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/kv_cache_type.dart';
@@ -747,6 +749,147 @@ void main() {
     } finally {
       service.dispose();
     }
+  });
+
+  group('ModelParams.device', () {
+    Matcher unsupported(List<String> parts) => throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (e) => e.message,
+        'message',
+        allOf([for (final part in parts) contains(part)]),
+      ),
+    );
+
+    test('selects the LiteRT-LM backend it names', () async {
+      late _FakeLiteRtLmRuntimeClient client;
+      final service = LiteRtLmService(
+        clientFactory: () => client = _FakeLiteRtLmRuntimeClient(),
+      );
+      try {
+        for (final (device, backend) in [
+          (ComputeDevice.cpu, 'cpu'),
+          if (service.getAvailableBackendInfo().contains('gpu'))
+            (ComputeDevice.gpu, 'gpu'),
+        ]) {
+          final params = ModelParams(device: device);
+          final model = await service.loadModel(modelFile.path, params);
+          service.createContext(model, params);
+          await service.tokenize(model, 'hi', true);
+
+          expect(service.getActiveBackendName(), 'LiteRT-LM $backend');
+          expect(client.lastBackend, backend);
+          service.freeModel(model);
+        }
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('an unavailable device throws LlamaUnsupportedException', () async {
+      final service = LiteRtLmService();
+      try {
+        for (final device in [
+          if (!Platform.isAndroid) ComputeDevice.npu,
+          if (!service.getAvailableBackendInfo().contains('gpu'))
+            ComputeDevice.gpu,
+        ]) {
+          await expectLater(
+            service.loadModel(modelFile.path, ModelParams(device: device)),
+            unsupported([
+              'ComputeDevice.${device.name}',
+              Platform.operatingSystem,
+            ]),
+          );
+        }
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('an explicit device rejects the deprecated constructor '
+        'preferredBackend', () async {
+      final service = LiteRtLmService();
+      try {
+        await expectLater(
+          service.loadModel(
+            modelFile.path,
+            const ModelParams(device: ComputeDevice.cpu),
+            backendOverride: 'cpu',
+          ),
+          unsupported(['Set only ModelParams.device']),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test(
+      'a GPU engine that fails to start throws '
+      'LlamaUnsupportedException, and auto keeps the runtime error',
+      () async {
+        if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+          markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+          return;
+        }
+        for (final device in [ComputeDevice.gpu, ComputeDevice.auto]) {
+          final service = LiteRtLmService(
+            clientFactory: () => _FakeLiteRtLmRuntimeClient(
+              initializeError: LiteRtLmEngineCreateError(
+                'delegate init failed.',
+              ),
+            ),
+          );
+          try {
+            final params = ModelParams(
+              device: device,
+              preferredBackend: GpuBackend.metal,
+            );
+            final model = await service.loadModel(modelFile.path, params);
+            service.createContext(model, params);
+
+            await expectLater(
+              service.tokenize(model, 'hi', true),
+              device == ComputeDevice.gpu
+                  ? unsupported([
+                      'ComputeDevice.gpu',
+                      'gpu engine',
+                      Platform.operatingSystem,
+                      'model file',
+                      'delegate init failed',
+                    ])
+                  : throwsA(isA<LiteRtLmEngineCreateError>()),
+            );
+          } finally {
+            service.dispose();
+          }
+        }
+      },
+    );
+
+    test('a GPU load whose runtime library cannot open keeps the runtime '
+        'error', () async {
+      if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+        markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+        return;
+      }
+      final service = LiteRtLmService(
+        clientFactory: () => _FakeLiteRtLmRuntimeClient(
+          initializeError: ArgumentError('Failed to load dynamic library'),
+        ),
+      );
+      try {
+        const params = ModelParams(device: ComputeDevice.gpu);
+        final model = await service.loadModel(modelFile.path, params);
+        service.createContext(model, params);
+
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsArgumentError,
+        );
+      } finally {
+        service.dispose();
+      }
+    });
   });
 
   test('rejects explicit backend changes during context creation', () async {

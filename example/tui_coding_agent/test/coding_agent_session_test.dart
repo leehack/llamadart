@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_tui_coding_agent/src/coding_agent_config.dart';
 import 'package:llamadart_tui_coding_agent/src/coding_agent_session.dart';
