@@ -108,7 +108,7 @@ void main() {
     expect(setup.threads, 3);
   });
 
-  group('LayaSetup.modelParams', () {
+  group('LayaSetup.params', () {
     LayaSetup setup(GpuBackend backend) => LayaSetup(
       backbone: ModelSource.path('b.gguf'),
       head: ModelSource.path('h.safetensors'),
@@ -116,19 +116,14 @@ void main() {
       threads: 6,
     );
 
-    test('uses a 512-token context and the threads for batches', () {
-      final params = setup(GpuBackend.auto).modelParams;
-      expect(params.contextSize, 512);
-      expect(params.numberOfThreadsBatch, 6);
-      expect(params.numberOfThreads, 6);
-      expect(params.preferredBackend, GpuBackend.auto);
-      expect(params.gpuLayers, ModelParams.maxGpuLayers);
+    test('runs on the best device with the threads', () {
+      final params = setup(GpuBackend.auto).params;
+      expect(params.device, ComputeDevice.auto);
+      expect(params.threads, 6);
     });
 
-    test('offloads no layers on the CPU', () {
-      final params = setup(GpuBackend.cpu).modelParams;
-      expect(params.preferredBackend, GpuBackend.cpu);
-      expect(params.gpuLayers, 0);
+    test('runs on the CPU for the CPU backend', () {
+      expect(setup(GpuBackend.cpu).params.device, ComputeDevice.cpu);
     });
   });
 }

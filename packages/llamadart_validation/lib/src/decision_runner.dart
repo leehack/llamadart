@@ -3,8 +3,8 @@ part of 'runner.dart';
 /// Decision-model boundary of a [ValidationEngine], separate so that other
 /// adapters need not implement it.
 abstract interface class DecisionValidationEngine {
-  /// Probes decision support and, when supported, loads the prepared head as
-  /// the current `DecisionEngine`, disposing the previous one. With
+  /// Probes decision support and, when supported, attaches the prepared head
+  /// as the current `DecisionEngine`, disposing the previous one. With
   /// [missingHead], loads a head location that does not exist and keeps the
   /// current one.
   Future<Map<String, dynamic>> loadDecision({bool missingHead = false});
@@ -49,10 +49,11 @@ mixin _PublicDecisionValidation implements DecisionValidationEngine {
       await _decisions?.dispose();
       _decisions = null;
     }
-    final loaded = await DecisionEngine.load(
+    final config = decisionConfig;
+    final loaded = await DecisionEngine.attach(
       _engine,
-      headPath: missingHead ? '$_head.missing' : _head,
-      configPath: decisionConfig,
+      head: ModelSource.parse(missingHead ? '$_head.missing' : _head),
+      config: config == null ? null : ModelSource.parse(config),
     );
     if (missingHead) {
       await loaded.dispose();

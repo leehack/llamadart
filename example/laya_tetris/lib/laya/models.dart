@@ -79,14 +79,11 @@ class LayaSetup {
   /// CPU threads of the encoder and the head.
   final int threads;
 
-  /// Engine parameters: a 512-token context, as the decision path needs no
-  /// larger one, and [threads] as the batch threads that decisions use.
-  ModelParams get modelParams => ModelParams(
-    contextSize: 512,
-    preferredBackend: backend,
-    gpuLayers: backend == GpuBackend.cpu ? 0 : ModelParams.maxGpuLayers,
-    numberOfThreads: threads,
-    numberOfThreadsBatch: threads,
+  /// Decision model parameters: the CPU for [GpuBackend.cpu], otherwise the
+  /// best available device, and [threads].
+  DecisionModelParams get params => DecisionModelParams(
+    device: backend == GpuBackend.cpu ? ComputeDevice.cpu : ComputeDevice.auto,
+    threads: threads,
   );
 }
 
@@ -139,9 +136,9 @@ class LayaModels {
   LayaHeads get heads => LayaHeads(base: base, tuned: tuned);
 
   /// Downloads missing files through [downloads], then loads the backbone of
-  /// [setup] into one [LlamaEngine] and each head as a [DecisionEngine] on it.
-  /// A backend that loads URLs, such as the WebGPU bridge, fetches the files
-  /// itself.
+  /// [setup] into one [LlamaEngine] and attaches each head to it as a
+  /// [DecisionEngine]. A backend that loads URLs, such as the WebGPU bridge,
+  /// fetches the files itself.
   ///
   /// A tuned head that fails to download or load is reported in [tunedError]
   /// and leaves [tuned] null; every other failure disposes the engine and
@@ -172,17 +169,12 @@ class LayaModels {
       ModelSource source,
     ) async {
       onStatus?.call('Loading ${source.fileName}', null);
-      final url = source.resolvedUri;
-      if (url != null && engine.backend.supportsUrlLoading) {
-        return DecisionEngine.load(engine, headPath: '$url');
-      }
-      final entry = await engine.modelDownloadManager.ensureModel(
-        source,
-        options: options,
+      return DecisionEngine.attach(
+        engine,
+        head: source,
+        download: options,
         onProgress: progressOf(source),
       );
-      onStatus?.call('Loading ${source.fileName}', null);
-      return DecisionEngine.load(engine, headPath: entry.filePath);
     }
 
     final heads = <DecisionEngine>[];
@@ -197,14 +189,10 @@ class LayaModels {
       onStatus?.call('Loading ${setup.backbone.fileName}', null);
       await engine.loadModelSource(
         setup.backbone,
-        modelParams: setup.modelParams,
+        modelParams: setup.params.encoderModelParams,
         options: options,
         onProgress: progressOf(setup.backbone),
       );
-      final capabilities = await DecisionEngine.capabilitiesFor(engine);
-      if (!capabilities.isSupported) {
-        throw LlamaUnsupportedException(capabilities.unsupportedReason!);
-      }
       final base = await loadHead(engine, setup.head);
       heads.add(base);
       DecisionEngine? tuned;

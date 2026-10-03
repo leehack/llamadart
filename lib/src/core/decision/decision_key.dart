@@ -102,7 +102,8 @@ extension DecisionResultKeys on DecisionResult {
   R answerOf<R extends Object?>(DecisionKey<R> key) => key._readFrom(this);
 }
 
-/// Key of a choice question whose options stand for values of type [T].
+/// Key of a pick-one question ([ChoiceQuestion]) whose options stand for
+/// values of type [T].
 ///
 /// Reading it gives a [ChoiceOf] with the chosen option's value.
 final class ChoiceKey<T extends Object?> extends DecisionKey<ChoiceOf<T>> {
@@ -254,14 +255,16 @@ final class ChoiceOf<T extends Object?> {
     for (final label in values.keys) answer.probabilities[label]!,
   ]);
 
-  /// Confidence in the answer, from 0 to 1.
+  /// How sure the model is of the answer, from 0 to 1; see
+  /// [DecisionAnswer.confidence].
   double get confidence => answer.confidence;
 
-  /// Probability of the act head's first action.
+  /// Laya's action signal; see [DecisionAnswer.actProbability].
   double get actProbability => answer.actProbability;
 }
 
-/// Key of a score question; reading it gives the [ScoreAnswer].
+/// Key of a rating question ([ScoreQuestion]); reading it gives the
+/// [ScoreAnswer].
 final class ScoreKey extends DecisionKey<ScoreAnswer> {
   /// Creates a key for [question].
   ScoreKey(super.id, this.question) : super._();
@@ -295,7 +298,8 @@ final class ScoreKey extends DecisionKey<ScoreAnswer> {
   }
 }
 
-/// Key of a noul question; reading it gives the [NoulAnswer].
+/// Key of a yes/no question ([NoulQuestion]); reading it gives the
+/// [NoulAnswer].
 final class NoulKey extends DecisionKey<NoulAnswer> {
   /// Creates a key for [question].
   NoulKey(super.id, this.question) : super._();

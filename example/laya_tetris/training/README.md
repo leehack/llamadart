@@ -79,8 +79,9 @@ well below 0.75, change `SEED` in the first cell and run all cells again.
     --tuned-head training/laya-head-tetris.safetensors
   ```
 
-- **Your code:** `DecisionEngine.load(engine, headPath: ...)`. The file carries
-  Laya's config as `laya.config` metadata, so no `configPath` is needed.
+- **Your code:** `DecisionEngine.attach(engine, head: ModelSource.path(...))`,
+  or `DecisionModel.head` with `DecisionEngine.load`. The file carries Laya's
+  config as `laya.config` metadata, so no config is needed.
 
 ## Backbone GGUF from the official checkpoint
 

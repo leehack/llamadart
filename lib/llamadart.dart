@@ -57,7 +57,10 @@ export 'src/core/image/image_generation_request.dart'
     show ImageGenerationRequest;
 
 // Decision models
-export 'src/core/decision/decision_engine.dart';
+export 'src/core/decision/decision_engine.dart'
+    show DecisionCapabilities, DecisionEngine, DecisionModelInfo;
+export 'src/core/decision/decision_model.dart';
+export 'src/core/decision/decision_model_params.dart';
 export 'src/core/decision/decision_key.dart';
 export 'src/core/decision/decision_question.dart';
 export 'src/core/decision/decision_result.dart';

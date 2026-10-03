@@ -39,13 +39,16 @@ void main() {
 
   setUp(() {
     backend = _Backend(fixture);
-    engine = LlamaEngine(backend);
+    engine = LlamaEngine(backend, modelDownloadManager: _LocalFiles());
   });
   tearDown(() => engine.dispose());
 
   Future<DecisionEngine> load() async {
     await engine.loadModel('laya-Q8_0.gguf');
-    return DecisionEngine.load(engine, headPath: 'laya-head.safetensors');
+    return DecisionEngine.attach(
+      engine,
+      head: ModelSource.path('laya-head.safetensors'),
+    );
   }
 
   final department = ChoiceKey.enumOf(
@@ -372,4 +375,24 @@ class _Backend implements LlamaBackend, BackendDecision {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Takes every local file as present, so heads need no file on disk.
+final class _LocalFiles extends ThrowingModelDownloadManager {
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    final now = DateTime.utc(2026);
+    return ModelCacheEntry(
+      sourceCanonicalKey: source.canonicalKey,
+      cacheKey: source.cacheKey,
+      fileName: source.fileName,
+      filePath: source.path!,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
 }

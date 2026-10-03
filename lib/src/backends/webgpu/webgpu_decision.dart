@@ -145,7 +145,7 @@ class WebGpuDecisionHeads {
       var message = _errorText(error, <String>[
         headUrl,
         resolvedHeadUrl,
-      ]).replaceAll('Pass configJson ', 'Pass configPath ');
+      ]).replaceAll(_bridgeConfigHint, _configHint);
       if (resolvedConfigUrl != null) {
         message = message.replaceAll(
           'config in configJson ',
@@ -332,6 +332,11 @@ class WebGpuDecisionHeads {
       actLogits: (actLogits as JSFloat32Array).toDart,
     );
   }
+
+  static const String _bridgeConfigHint =
+      "Pass configJson with the head's rl_agent_config.json.";
+  static const String _configHint =
+      "Pass the head's rl_agent_config.json as its config.";
 
   static Future<String> _fetchConfigText(String url, String sourceUrl) async {
     final message =

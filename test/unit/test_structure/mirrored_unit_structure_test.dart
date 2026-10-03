@@ -10,6 +10,7 @@ import 'package:test/test.dart';
 /// exist under `lib/src` and to have no mirrored file under `test/unit`.
 const Set<String> behaviorlessSources = <String>{
   'backends/webgpu/interop.dart',
+  'core/decision/decision_model.dart',
   'core/image/image_generation_driver.dart',
   'core/image/image_generation_model.dart',
   'core/image/image_model_params.dart',
