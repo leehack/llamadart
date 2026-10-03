@@ -250,7 +250,7 @@ directory for every default download, set
 pattern: `load` takes a model of `ModelSource` files and owns what it loads,
 and an adapter, not a profile enum, says how to run the model. The old
 constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
-`modelProfile` getters still work for one release, with deprecation warnings.
+`modelProfile` getters keep working, with deprecation warnings, until 1.0.
 
 1. **Load the model, or attach to an engine you keep.** `load` creates a
    `LlamaEngine`, loads the model and projector, checks `capabilities`, and
