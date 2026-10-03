@@ -1080,39 +1080,6 @@ class LiteRtLmRuntimeClient {
     }
   }
 
-  /// Returns the token count currently held by the active conversation KV cache.
-  @Deprecated(
-    'Has no callers in llamadart and will be removed in the next major '
-    'release. Open an issue if you depend on it.',
-  )
-  int conversationTokenCount() {
-    final bindings = _requireBindings();
-    final conversation = _requireConversation();
-    final count = bindings.conversationGetTokenCount(conversation);
-    if (count < 0) {
-      throw StateError(
-        'litert_lm_conversation_get_token_count returned $count',
-      );
-    }
-    return count;
-  }
-
-  /// Replaces the active conversation with a native clone of itself.
-  @Deprecated(
-    'Has no callers in llamadart and will be removed in the next major '
-    'release. Open an issue if you depend on it.',
-  )
-  void replaceConversationWithClone() {
-    final bindings = _requireBindings();
-    final conversation = _requireConversation();
-    final clone = bindings.conversationClone(conversation);
-    if (clone == nullptr) {
-      throw StateError('litert_lm_conversation_clone returned null');
-    }
-    bindings.conversationDelete(conversation);
-    _conversation = clone;
-  }
-
   /// Streams generated text from the active conversation.
   Stream<String> generate(String prompt, {int? maxOutputTokens}) {
     return generateMessageJson(
@@ -3408,12 +3375,6 @@ class _LiteRtLmBindings {
         void Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_delete');
 
-  late final conversationClone = _library
-      .lookupFunction<
-        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>),
-        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>)
-      >('litert_lm_conversation_clone');
-
   late final conversationOptionalArgsCreate = _library
       .lookupFunction<
         Pointer<_LiteRtLmConversationOptionalArgs> Function(),
@@ -3507,12 +3468,6 @@ class _LiteRtLmBindings {
         ),
         Pointer<_LiteRtLmBenchmarkInfo> Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_get_benchmark_info');
-
-  late final conversationGetTokenCount = _library
-      .lookupFunction<
-        Int Function(Pointer<_LiteRtLmConversation>),
-        int Function(Pointer<_LiteRtLmConversation>)
-      >('litert_lm_conversation_get_token_count');
 
   late final benchmarkInfoDelete = _library
       .lookupFunction<

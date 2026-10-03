@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/decision/decision_decoder.dart';
 import 'package:llamadart/src/core/decision/decision_sequence.dart';

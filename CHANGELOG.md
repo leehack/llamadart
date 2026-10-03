@@ -135,6 +135,27 @@
 - **Deprecated:** the `String` path forms of LoRA adapters, speculative draft
   models and LiteRT-LM ASR files
   ([#852](https://github.com/leehack/llamadart/issues/852)).
+- **Breaking:** `package:llamadart/llamadart.dart` is the app API. The raw
+  ffigen bindings move to `package:llamadart/llama_cpp_bindings.dart` (native
+  only, outside semantic versioning), and the custom-backend SPI moves to the
+  new `package:llamadart/backend.dart`: every `Backend*` type except
+  `BackendPerfContextData` and `BackendTextToSpeechModel`, `LiteRtLmBackend`,
+  `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics`, `LiteRtLmRuntimeResult`,
+  `LiteRtLmAsrRuntimeSession`, `LiteRtLmAsrPushResult`,
+  `LiteRtLmAsrProcessResult` and `LiteRtLmAsrProcessState`. The app API now
+  exports `TemplateToolCallSerialization`
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
+- **Breaking:** the `LlamaEngine` text-to-speech and decision hooks,
+  `modelHandle` and `contextHandle` move to the `LlamaEngineBackendHooks`
+  extension in `package:llamadart/backend.dart`, so a subclass can no longer
+  override them; fake a backend that implements `BackendTextToSpeech` or
+  `BackendDecision` instead
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
+- **Breaking:** the deprecated `LiteRtLmBenchmarkClient`,
+  `LiteRtLmBenchmarkMetrics`, `LiteRtLmBenchmarkResult`,
+  `LiteRtLmRuntimeClient.conversationTokenCount` and
+  `LiteRtLmRuntimeClient.replaceConversationWithClone` are removed
+  ([#355](https://github.com/leehack/llamadart/issues/355)).
 
 ## 0.10.0
 

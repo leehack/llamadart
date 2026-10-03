@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 
 const _nativePath = 'lib/src/backends/litert_lm/litert_lm_runtime.dart';
 const _stubPath = 'lib/src/backends/litert_lm/litert_lm_runtime_stub.dart';
-const _barrelPath = 'lib/llamadart.dart';
+const _barrelPath = 'lib/backend.dart';
 
 void main() {
   final native = _Source(File(_nativePath).readAsStringSync());

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:llamadart/llama_cpp_bindings.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_cli_example/llamadart_cli.dart';
 

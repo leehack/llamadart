@@ -45,6 +45,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
   diagnostics so reports name the runtime actually used.
 - Pass `ModelParams(gpuLayers: 0)` to force CPU. Keep `contextSize` no larger
   than the app needs: memory grows with it.
+- Import only `package:llamadart/llamadart.dart` in app code. Custom
+  backends and backend test fakes (`implements LlamaBackend,
+  BackendTextToSpeech`, ...) and direct LiteRT-LM runtime access also import
+  `package:llamadart/backend.dart`. Avoid
+  `package:llamadart/llama_cpp_bindings.dart`: the raw FFI is native-only
+  and can change in any release.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.

@@ -439,6 +439,94 @@ final result = await tool.handler(ToolParams(args));
 final result = await tool.invoke(args);
 ```
 
+## Unreleased: app, backend and bindings entrypoints
+
+`package:llamadart/llamadart.dart` is now the app API only. Code that loads
+models, generates and uses the speech, image and decision engines needs no
+change. Custom backends, backend test fakes and raw runtime access import one
+of two new libraries.
+
+1. **Raw llama.cpp FFI: `package:llamadart/llama_cpp_bindings.dart`.** The
+   ffigen bindings (`llama_backend_init`, `llama_decode`, `ggml_*`, `mtmd_*`
+   and their structs) are no longer in the app API. They are native only, and
+   any release that updates llama.cpp can change them:
+
+   ```dart
+   import 'package:llamadart/llama_cpp_bindings.dart';
+   import 'package:llamadart/llamadart.dart';
+   ```
+
+2. **Backend SPI: `package:llamadart/backend.dart`.** These names move there:
+   - `BackendAvailability`, `BackendBatchEmbeddings`, `BackendDartLogLevel`,
+     `BackendDecision`, `BackendDecisionCapabilities`,
+     `BackendDecisionHeadInfo`, `BackendDecisionOutput`,
+     `BackendDecisionSequence`, `BackendEmbeddings`,
+     `BackendEmbeddingsSupport`, `BackendGenerationCapabilities`,
+     `BackendGenerationCapabilitiesSupport`, `BackendGpuEnumeration`,
+     `BackendGrammarConstraintsSupport`, `BackendLazyGrammarSupport`,
+     `BackendModelFileTypeDiagnostics`, `BackendNativeChatGeneration`,
+     `BackendNextTokenScoring`, `BackendNextTokenScoringSupport`,
+     `BackendPerformanceDiagnostics`, `BackendPromptSpeechToTextSupport`,
+     `BackendRuntimeDiagnostics`, `BackendStatePersistence`,
+     `BackendStatePersistenceSupport`, `BackendTextToSpeech`,
+     `BackendTextToSpeechCapabilities`, `BackendTextToSpeechPhase`,
+     `BackendTextToSpeechProgress`, `BackendTextToSpeechRequest` and
+     `BackendTextToSpeechResult`.
+   - `LiteRtLmBackend`, `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics` and
+     `LiteRtLmRuntimeResult`.
+   - `LiteRtLmAsrRuntimeSession`, `LiteRtLmAsrPushResult`,
+     `LiteRtLmAsrProcessResult` and `LiteRtLmAsrProcessState`.
+
+   `LlamaBackend`, `BackendPerfContextData`, `BackendTextToSpeechModel`,
+   `StateLoadResult`, `LiteRtLmAsrBackend`, `LiteRtLmAsrModelPreset` and
+   `LiteRtLmAsrRuntimeConfig` stay in the app API; `backend.dart` exports the
+   first four too. Add the import next to the app one:
+
+   ```dart
+   import 'package:llamadart/backend.dart';
+   import 'package:llamadart/llamadart.dart';
+   ```
+
+3. **Engine hooks are extension members.** `modelHandle`, `contextHandle`,
+   `backendTextToSpeechCapabilities`, `synthesizeTextToSpeechBackend`,
+   `cancelTextToSpeechBackend`, `backendDecisionCapabilities`,
+   `loadDecisionHeadBackend`, `runDecisionBackend` and
+   `freeDecisionHeadBackend` move from `LlamaEngine` to the
+   `LlamaEngineBackendHooks` extension in `backend.dart`. Calls keep working
+   once `backend.dart` is imported. A `LlamaEngine` subclass that overrode
+   one no longer intercepts it, and the analyzer reports only an
+   `override_on_non_overriding_member` warning, so fake at the backend
+   instead:
+
+   ```dart
+   // Before
+   class FakeEngine extends LlamaEngine {
+     FakeEngine() : super(LlamaBackend());
+     @override
+     Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+       BackendTextToSpeechRequest request, {
+       void Function(BackendTextToSpeechProgress progress)? onProgress,
+     }) async => fakeResult;
+   }
+   // After
+   class FakeBackend implements LlamaBackend, BackendTextToSpeech {
+     @override
+     Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+       int contextHandle,
+       int mmContextHandle,
+       BackendTextToSpeechRequest request, {
+       void Function(BackendTextToSpeechProgress progress)? onProgress,
+     }) async => fakeResult;
+     // ... the rest of LlamaBackend and BackendTextToSpeech
+   }
+   ```
+
+4. **Removed deprecated APIs.** `LiteRtLmBenchmarkClient`,
+   `LiteRtLmBenchmarkMetrics` and `LiteRtLmBenchmarkResult` are gone; use
+   `LiteRtLmRuntimeClient`, `LiteRtLmRuntimeMetrics` and
+   `LiteRtLmRuntimeResult`. `LiteRtLmRuntimeClient.conversationTokenCount`
+   and `replaceConversationWithClone` are gone with no replacement.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

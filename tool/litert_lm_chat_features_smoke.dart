@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 
 import 'audio_chat_smoke_support.dart';
