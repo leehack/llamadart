@@ -161,7 +161,7 @@ no longer has model presets or `String` paths.
 `LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
 `sourceLangCode` and `targetLangCode`. Pass the codes in
 `chatTemplateKwargs`, as llama.cpp's `chat_template_kwargs` does; the
-parameters still work for one minor release, with deprecation warnings:
+parameters keep working, with deprecation warnings, until 1.0:
 
 ```dart
 // Before
@@ -229,8 +229,8 @@ directory for every default download, set
 
 3. **One logging API.** `LlamaLogging.configure` sets the Dart-side level,
    the native level (defaulting to the Dart-side level) and the handler for
-   the whole library. The old calls still work for one minor release, with
-   deprecation warnings:
+   the whole library. The old calls keep working, with deprecation warnings,
+   until 1.0:
 
    | Before | After |
    | --- | --- |
@@ -250,7 +250,7 @@ directory for every default download, set
 pattern: `load` takes a model of `ModelSource` files and owns what it loads,
 and an adapter, not a profile enum, says how to run the model. The old
 constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
-`modelProfile` getters still work for one release, with deprecation warnings.
+`modelProfile` getters keep working, with deprecation warnings, until 1.0.
 
 1. **Load the model, or attach to an engine you keep.** `load` creates a
    `LlamaEngine`, loads the model and projector, checks `capabilities`, and
@@ -375,8 +375,7 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
 `ModelSource`, so a remote file downloads into the model cache like a model.
-The `String` path forms still work for one minor release, with deprecation
-warnings:
+The `String` path forms keep working, with deprecation warnings, until 1.0:
 
 | Before | After |
 | --- | --- |

@@ -29,7 +29,7 @@
   (`Qwen3AsrAdapter`, `LiteRtLmAsrAdapter`, `Qwen3TtsAdapter`, or your own
   `SpeechToTextPromptAdapter`) replace `SpeechToTextModelProfile`,
   `TextToSpeechModelProfile`, the `modelProfile` constructors and
-  `SpeechToTextEngine.liteRtLm`, which still work for one release
+  `SpeechToTextEngine.liteRtLm`, which keep working until 1.0
   ([#848](https://github.com/leehack/llamadart/issues/848)).
 - **Breaking:** `SpeechToTextEngine` gains `dispose()`, `isDisposed`,
   `adapter` and `transcribeOnce`, and `TextToSpeechEngine` gains `dispose()`,
