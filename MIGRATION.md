@@ -88,6 +88,73 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: decision engine load and attach
+
+`DecisionEngine` follows the shared engine pattern, and the `String`-path
+`DecisionEngine.load(engine, headPath:, configPath:)` is removed.
+
+1. **Keep your engine: switch to `attach`.** The one-line change:
+
+   ```dart
+   // Before
+   final decisions = await DecisionEngine.load(
+     engine,
+     headPath: headPath,
+     configPath: configPath,
+   );
+   // After
+   final decisions = await DecisionEngine.attach(
+     engine,
+     head: ModelSource.path(headPath),
+     config: configPath == null ? null : ModelSource.path(configPath),
+   );
+   ```
+
+   The head and config now resolve through the engine's download manager,
+   so `hf://` and URL sources work too, and a missing local file throws
+   `LlamaModelException` before the head loads. `dispose()` still frees only
+   the head. On Web a path is still a URL resolved against the document base
+   URL; a `blob:` URL goes in `ModelSource.path` too.
+
+2. **Or let `load` own the engine.** Describe the files as `ModelSource`s;
+   `load` downloads them, loads the encoder with the 512-token context
+   decisions need, and loads the head. `dispose()` frees everything:
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModelSource(
+     encoder,
+     modelParams: const ModelParams(contextSize: 512, gpuLayers: 0),
+   );
+   final headFile = await engine.modelDownloadManager.ensureModel(head);
+   final decisions = await DecisionEngine.load(
+     engine,
+     headPath: headFile.filePath,
+   );
+   // ...
+   await decisions.dispose();
+   await engine.dispose();
+   // After
+   final decisions = await DecisionEngine.load(
+     DecisionModel(encoder: encoder, head: head),
+     params: const DecisionModelParams(device: ComputeDevice.cpu),
+   );
+   // ...
+   await decisions.dispose();
+   ```
+
+   `configPath:` becomes `DecisionModel.config`. `download:` takes
+   `ModelLoadOptions`, `store:` a `ModelFileStore` (for example
+   `ModelFileStore(downloadManager: myManager)`), and `onProgress` reports all
+   files together. Read the backend name from `await decisions.capabilities`.
+   To load an encoder yourself for `attach`, use
+   `const DecisionModelParams().encoderModelParams`.
+
+3. **Missing-config hint.** The error for a head without `laya.config`
+   metadata now asks for "the head's rl_agent_config.json as its config"
+   instead of naming `configPath`; match on `laya.config` if you parse it.
+
 ## Unreleased: TranslateGemma language codes
 
 `LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate

@@ -212,13 +212,13 @@ four threads, run `C01.load`, then:
 
 | Case | Public API | Passes when |
 | --- | --- | --- |
-| `D01.head` | `DecisionEngine.capabilitiesFor`, `DecisionEngine.load` | Supported; head device `CPU` for the CPU profile, otherwise not `CPU` and the backend name contains the profile backend |
+| `D01.head` | `DecisionEngine.capabilitiesFor`, `DecisionEngine.attach` | Supported; head device `CPU` for the CPU profile, otherwise not `CPU` and the backend name contains the profile backend |
 | `D02.tokenizer` | `LlamaEngine.tokenize(addSpecial: false)` | Exact ids for all 97 reference texts |
 | `D03.logits` | `loadDecisionHeadBackend`, `runDecisionBackend` | The 24 reference sequences, run in one call, give every marker logit within 0.25 |
 | `D04.answers` | `systemOne`, one call per reference case (15 calls, 24 questions) | Answers match, as below |
 | `D05.batch` | `systemOneBatch` with the 15 requests | Answers match, as below |
-| `D06.reload` | `dispose`, `load`, `unloadModel`, `loadModel`, `load` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
-| `D07.guards` | `load` with a missing head, `systemOne` with U+0000 in the state | `LlamaModelException`, `LlamaDecisionException`, then the first case's answers match |
+| `D06.reload` | `dispose`, `attach`, `unloadModel`, `loadModel`, `attach` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
+| `D07.guards` | `attach` with a missing head, `systemOne` with U+0000 in the state | `LlamaModelException`, `LlamaDecisionException`, then the first case's answers match |
 
 Answers match when the type, probability key order, model `laya-rl-agent`
 and `usage.input_tokens` are exact; confidence, act probability, each

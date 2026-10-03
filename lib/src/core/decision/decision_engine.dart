@@ -3,23 +3,41 @@ import 'dart:typed_data';
 
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
+import '../engine/engine_observer.dart';
 import '../exceptions.dart';
+import '../models/config/compute_device.dart';
+import '../models/download/model_download_manager.dart';
+import '../models/model_file_store.dart';
+import '../models/model_format.dart';
+import '../models/model_load_options.dart';
+import '../models/model_resolver.dart';
+import '../models/model_source.dart';
+import '../models/model_target_file.dart';
 import 'decision_decoder.dart';
 import 'decision_key.dart';
+import 'decision_model.dart';
+import 'decision_model_params.dart';
 import 'decision_question.dart';
 import 'decision_result.dart';
 import 'decision_sequence.dart';
 
-/// Decision-model support of a [LlamaEngine].
+/// Test-only backend factory for the engines `DecisionEngine.load` creates.
+LlamaBackend Function()? debugDecisionBackendFactory;
+
+/// Decision-model support of a [LlamaEngine], or of a loaded
+/// [DecisionEngine].
 class DecisionCapabilities {
   /// Creates a capability snapshot.
   const DecisionCapabilities({
     required this.isSupported,
     this.unsupportedReason,
     this.backendName,
+    this.runtime,
   });
 
-  /// Whether the engine's backend and loaded model can run decision heads.
+  /// Whether decisions can run: for [DecisionEngine.capabilitiesFor], whether
+  /// the engine's backend and loaded model can run decision heads; for
+  /// [DecisionEngine.capabilities], whether the engine can answer now.
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
@@ -27,9 +45,15 @@ class DecisionCapabilities {
 
   /// Active runtime backend label, when the backend reports one.
   final String? backendName;
+
+  /// The runtime of the loaded encoder, [LlamaRuntime.llamaCpp] for a
+  /// supported one, or null when no model is loaded or a custom backend does
+  /// not report it.
+  final LlamaRuntime? runtime;
 }
 
-/// Limits and placement of a loaded decision model.
+/// Sequence limits of a loaded decision model and the device its head runs
+/// on.
 class DecisionModelInfo {
   /// Creates a model description.
   const DecisionModelInfo({
@@ -54,27 +78,48 @@ class DecisionModelInfo {
 
 /// Answers typed questions about a state with a Laya-style decision model.
 ///
-/// A decision model is a bidirectional encoder, loaded into the
-/// [LlamaEngine] as a GGUF, plus a decision head loaded by [load]. Each
-/// question is answered in one encoder pass without generating text. Load the
-/// engine with the backbone GGUF; `ModelParams(contextSize: 512)` is
-/// recommended because the decision path does not use the engine's own
-/// context.
+/// A decision model is a bidirectional encoder GGUF, run by a [LlamaEngine],
+/// plus a decision head; see [DecisionModel]. Each question is answered in
+/// one encoder pass without generating text.
+///
+/// [load] creates the [LlamaEngine], loads the whole model and owns it:
+/// [dispose] frees everything. [attach] loads a head on an engine that
+/// already holds the encoder, for example to share one encoder between
+/// several heads, and borrows it: [dispose] frees only the head.
+///
+/// The API keeps the names of TypeSafe's Jev API
+/// (<https://docs.typesafe.ai/>) and Laya's `system_one` format
+/// (<https://huggingface.co/convaiinnovations/laya>):
+///
+/// - *System One* ([systemOne]): answer typed questions about an input in one
+///   fast encoder pass per question, without generating text.
+/// - *state*: the text or JSON being judged ([DecisionRequest.state]).
+/// - *instructions*: the question text ([DecisionQuestion.instructions]).
+/// - *criteria*: a question's options: labels with descriptions, ordered
+///   levels, or descriptions of yes and no.
+/// - *choice*: pick one option ([ChoiceQuestion], [ChoiceAnswer]).
+/// - *score*: rate on ordered levels; the answer is the expected level, so it
+///   can fall between levels ([ScoreQuestion], [ScoreAnswer]).
+/// - *noul*: yes/no; the answer is the probability that the statement is
+///   true ([NoulQuestion], [NoulAnswer.noul]).
+/// - *confidence*: how sure the model is of an answer, from 0 to 1
+///   ([DecisionAnswer.confidence]).
+/// - *act probability*: Laya's action signal, which Laya documents as
+///   carrying no usable signal yet ([DecisionAnswer.actProbability]).
 ///
 /// Supported on native llama.cpp backends, and on Web with llama-web-bridge
 /// assets that include the decision API (apiVersion 1). With bridge assets
 /// without decision API version 1, and with the LiteRT-LM backends, [load]
-/// throws [LlamaUnsupportedException].
+/// and [attach] throw [LlamaUnsupportedException].
 ///
 /// ```dart
-/// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel(
-///   'laya-Q8_0.gguf',
-///   modelParams: const ModelParams(contextSize: 512),
-/// );
 /// final decisions = await DecisionEngine.load(
-///   engine,
-///   headPath: 'laya-head.safetensors',
+///   DecisionModel(
+///     encoder: ModelSource.parse('hf://fr0stbit3/laya-gguf/laya-Q8_0.gguf'),
+///     head: ModelSource.parse(
+///       'hf://fr0stbit3/laya-gguf/laya-head.safetensors',
+///     ),
+///   ),
 /// );
 /// final result = await decisions.systemOne(
 ///   state: 'Billed twice for March.',
@@ -86,23 +131,30 @@ class DecisionModelInfo {
 /// await decisions.dispose();
 /// ```
 class DecisionEngine {
-  DecisionEngine._(this._engine, this._head, this._config, this._modelEpoch)
-    : info = DecisionModelInfo(
-        hiddenSize: _head.hiddenSize,
-        maxTokens: _config.maxTokens,
-        headMaxTokens: _config.headMaxTokens,
-        deviceName: _head.deviceName,
-      ),
-      _spec = DecisionSequenceSpec(
-        clsToken: _head.clsToken,
-        sepToken: _head.sepToken,
-        maskToken: _head.maskToken,
-        maskText: _head.maskText,
-        maxTokens: _config.maxTokens,
-        headMaxTokens: _config.headMaxTokens,
-      );
+  DecisionEngine._(
+    this._engine,
+    this._head,
+    this._config,
+    this._modelEpoch, {
+    required bool ownsEngine,
+  }) : _ownsEngine = ownsEngine,
+       info = DecisionModelInfo(
+         hiddenSize: _head.hiddenSize,
+         maxTokens: _config.maxTokens,
+         headMaxTokens: _config.headMaxTokens,
+         deviceName: _head.deviceName,
+       ),
+       _spec = DecisionSequenceSpec(
+         clsToken: _head.clsToken,
+         sepToken: _head.sepToken,
+         maskToken: _head.maskToken,
+         maskText: _head.maskText,
+         maxTokens: _config.maxTokens,
+         headMaxTokens: _config.headMaxTokens,
+       );
 
   final LlamaEngine _engine;
+  final bool _ownsEngine;
   final BackendDecisionHeadInfo _head;
   final DecisionHeadConfig _config;
   final int? _modelEpoch;
@@ -111,7 +163,7 @@ class DecisionEngine {
   Completer<void>? _idle;
   Future<void>? _disposal;
 
-  /// Reports whether [load] can load a decision head on [engine] now.
+  /// Reports whether [attach] can load a decision head on [engine] now.
   ///
   /// A failed probe is reported as unsupported with its error.
   static Future<DecisionCapabilities> capabilitiesFor(
@@ -126,6 +178,7 @@ class DecisionEngine {
         isSupported: false,
         unsupportedReason: 'The decision capability probe failed: $error',
         backendName: backendName,
+        runtime: engine.runtime,
       );
     }
     return DecisionCapabilities(
@@ -134,30 +187,218 @@ class DecisionEngine {
           ? null
           : _unsupportedReason(capabilities),
       backendName: backendName,
+      runtime: engine.runtime,
     );
   }
 
-  /// Loads the decision head at [headPath] for the model loaded in [engine].
+  /// Loads [model] into a new [LlamaEngine] that the returned engine owns.
   ///
-  /// [configPath] names Laya's `rl_agent_config.json` for head files without
-  /// `laya.config` metadata, such as the official checkpoint. On Web both are
-  /// URLs resolved against the document base URL: the bridge fetches the
-  /// head, and the config is fetched in the page and passed to the bridge as
-  /// text. Throws [LlamaUnsupportedException] when the backend or model
-  /// cannot run decision heads; [LlamaModelException] when the head file or
-  /// its config cannot be read, is malformed, or does not fit the encoder;
-  /// [LlamaContextException] when the head's encoder context cannot be
-  /// created; and [LlamaStateException] when the model is unloaded during the
-  /// load, or on Web when the bridge rejects the load as disposed, busy or
-  /// cancelled. When a backend returns a head whose config or mask text fails
-  /// validation, the head is freed and [LlamaDecisionException] is thrown.
+  /// Every file of [model] comes from its `ModelSource`, resolved like
+  /// `LlamaEngine.loadModelSource`: [store]'s resolver (by default
+  /// [DefaultModelResolver]) resolves it, and its download manager (by
+  /// default [DefaultModelDownloadManager]) checks a local file, or downloads
+  /// a remote one into the model cache, resuming an interrupted download and
+  /// reusing a cached file. Files resolve one at a time, encoder first, and
+  /// all before anything loads. [download] applies to every remote file:
+  /// cache policy and directory, authentication, resume, retries and the
+  /// cancel token. Local files take only the cancel token. Its bearer token
+  /// and headers are never sent across hosts: when they are set and the
+  /// remote files, or the URLs the resolver returns for them, span more than
+  /// one origin (scheme, host and port), the load throws before contacting
+  /// another host. [onProgress] reports the files together: `receivedBytes`
+  /// counts every file resolved so far plus the bytes of the current
+  /// download; `totalBytes` is the combined size once every size is known,
+  /// and `null` before.
+  ///
+  /// On Web the backend fetches each file itself: a local path is a URL
+  /// relative to the document base URL, [download] must leave every option
+  /// at its default, and [onProgress] reports only the encoder fetch, as a
+  /// fraction.
+  ///
+  /// The encoder loads with [DecisionModelParams.encoderModelParams] of
+  /// [params], then the head. [download]'s cancel token is checked again
+  /// after each file resolves, after the encoder loads and after the head
+  /// loads.
+  ///
+  /// The load is atomic: when it throws, the engine it created is disposed
+  /// and nothing stays loaded. Downloaded files stay in the model cache.
+  ///
+  /// Throws:
+  /// - [LlamaUnsupportedException] for [ComputeDevice.npu]; for
+  ///   [ComputeDevice.gpu] when the backend reports no GPU support; when
+  ///   [download] sets [ModelLoadOptions.sha256], which cannot apply to
+  ///   several files; when the encoder's [ModelSource.format] is
+  ///   [ModelFormat.liteRtLm]; on Web for a [download] option the backend
+  ///   fetch cannot apply; and when the backend or encoder cannot run
+  ///   decision heads.
+  /// - [LlamaArgumentException] for a negative [DecisionModelParams.threads],
+  ///   and when [download] sets a bearer token or headers for remote files on
+  ///   more than one origin; the message names the origins, never the
+  ///   credentials.
+  /// - [LlamaModelException] when a file is missing or cannot be downloaded,
+  ///   when the encoder cannot load, and when the head or its config cannot
+  ///   be read, is malformed, or does not fit the encoder.
+  /// - [LlamaContextException] when the head's encoder context cannot be
+  ///   created.
+  /// - [LlamaStateException] when [download]'s cancel token cancels the
+  ///   load.
+  /// - [LlamaDecisionException] when the head's config or mask text fails
+  ///   validation.
   static Future<DecisionEngine> load(
-    LlamaEngine engine, {
-    required String headPath,
-    String? configPath,
+    DecisionModel model, {
+    DecisionModelParams params = const DecisionModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelFileStore? store,
   }) async {
+    if (params.device == ComputeDevice.npu) {
+      throw LlamaUnsupportedException(
+        'DecisionEngine runs on the CPU or a GPU; ComputeDevice.npu is not '
+        'supported. Use ComputeDevice.auto.',
+      );
+    }
+    if (params.threads < 0) {
+      throw LlamaArgumentException(
+        'DecisionModelParams.threads must be 0 or greater.',
+        name: 'threads',
+        invalidValue: params.threads,
+      );
+    }
+    if (download.sha256 != null) {
+      throw LlamaUnsupportedException(
+        'DecisionEngine.load loads several files, so ModelLoadOptions.sha256 '
+        'cannot apply to them. Leave it unset.',
+      );
+    }
+    if (model.encoder.format == ModelFormat.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'A decision encoder is a GGUF run by llama.cpp, so it cannot be '
+        'ModelFormat.liteRtLm.',
+      );
+    }
+    final files = store ?? ModelFileStore();
+    final engine = LlamaEngine(
+      (debugDecisionBackendFactory ?? LlamaBackend.new)(),
+      modelResolver: files.resolver,
+      modelDownloadManager: files.downloadManager,
+    );
+    try {
+      if (params.device == ComputeDevice.gpu &&
+          !await engine.isGpuSupported()) {
+        throw LlamaUnsupportedException(
+          'ComputeDevice.gpu was requested, but the backend reports no GPU '
+          'support. Use ComputeDevice.auto or ComputeDevice.cpu.',
+        );
+      }
+      final targets = await _fileTargets(
+        engine,
+        [model.encoder, model.head, ?model.config],
+        download,
+        onProgress,
+      );
+      _throwIfCancelled(download);
+      final modelParams = params.encoderModelParams;
+      if (engine.backend.supportsUrlLoading) {
+        await engine.loadModelFromUrl(
+          targets[0],
+          modelParams: modelParams,
+          onProgress: onProgress == null
+              ? null
+              : (double fraction) =>
+                    onProgress(ModelDownloadProgress.fraction(fraction)),
+        );
+      } else {
+        await engine.loadModel(targets[0], modelParams: modelParams);
+      }
+      _throwIfCancelled(download);
+      final modelEpoch = modelUnloadEpoch(engine);
+      await _probe(engine, modelEpoch);
+      final decisions = await _loadHead(
+        engine,
+        targets[1],
+        targets.length > 2 ? targets[2] : null,
+        modelEpoch,
+        ownsEngine: true,
+      );
+      _throwIfCancelled(download);
+      return decisions;
+    } catch (_) {
+      try {
+        await engine.dispose();
+      } catch (_) {}
+      rethrow;
+    }
+  }
+
+  /// Loads [head] on [engine], which already holds the encoder, and borrows
+  /// [engine]: [dispose] frees only the head.
+  ///
+  /// Load the encoder with [DecisionModelParams.encoderModelParams], or at
+  /// least a small context such as `ModelParams(contextSize: 512)`, since
+  /// decisions run in the head's own encoder context. Several heads can be
+  /// attached to one engine.
+  ///
+  /// [config] is Laya's `rl_agent_config.json`, for a head file without
+  /// `laya.config` metadata. [head] and [config] resolve through [engine]'s
+  /// `modelResolver` and `modelDownloadManager`, with [download] and
+  /// [onProgress] as in [load]: credentials go to one origin only. When
+  /// [config] is null, [ModelLoadOptions.sha256] verifies [head], whether it
+  /// is a local file or a download. The decision capability probe runs
+  /// before anything downloads. On Web the backend fetches both files, as in
+  /// [load], and [onProgress] is not called.
+  ///
+  /// When it throws, any head it loaded is freed and [engine] keeps its
+  /// model. Throws [LlamaUnsupportedException] when the backend or the
+  /// loaded model cannot run decision heads, including when no model is
+  /// loaded, when [download] sets [ModelLoadOptions.sha256] with a [config],
+  /// and on Web for a [download] option the backend fetch cannot apply;
+  /// [LlamaArgumentException] when [download] sets a bearer token or headers
+  /// for remote files on more than one origin; [LlamaModelException] when a
+  /// file is missing, cannot be downloaded or fails its checksum, or the head
+  /// or its config cannot be read, is malformed, or does not fit the
+  /// encoder; [LlamaContextException] when the head's encoder context
+  /// cannot be created; [LlamaStateException] when [download]'s cancel token
+  /// cancels it, when the model is unloaded during it, or on Web when the
+  /// bridge rejects the load as disposed, busy or cancelled; and
+  /// [LlamaDecisionException] when the head's config or mask text fails
+  /// validation.
+  static Future<DecisionEngine> attach(
+    LlamaEngine engine, {
+    required ModelSource head,
+    ModelSource? config,
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    if (config != null && download.sha256 != null) {
+      throw LlamaUnsupportedException(
+        'DecisionEngine.attach loads a head and a config, so '
+        'ModelLoadOptions.sha256 cannot apply to both. Leave it unset.',
+      );
+    }
     final modelEpoch = engine.isReady ? modelUnloadEpoch(engine) : null;
-    final BackendDecisionHeadInfo head;
+    await _probe(engine, modelEpoch);
+    final targets = await _fileTargets(
+      engine,
+      [head, ?config],
+      download,
+      onProgress,
+    );
+    _throwIfCancelled(download);
+    if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
+      throw LlamaStateException(_loadInterruptedMessage);
+    }
+    return _loadHead(
+      engine,
+      targets[0],
+      targets.length > 1 ? targets[1] : null,
+      modelEpoch,
+      ownsEngine: false,
+    );
+  }
+
+  /// Throws unless [engine] can load a decision head on the model it held at
+  /// [modelEpoch].
+  static Future<void> _probe(LlamaEngine engine, int? modelEpoch) async {
     try {
       final capabilities = await engine.backendDecisionCapabilities;
       if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
@@ -166,6 +407,23 @@ class DecisionEngine {
       if (!capabilities.isSupported) {
         throw LlamaUnsupportedException(_unsupportedReason(capabilities));
       }
+    } on LlamaStateException {
+      rethrow;
+    } catch (error, stackTrace) {
+      _throwIfInterrupted(engine, modelEpoch, error, stackTrace);
+      rethrow;
+    }
+  }
+
+  static Future<DecisionEngine> _loadHead(
+    LlamaEngine engine,
+    String headPath,
+    String? configPath,
+    int? modelEpoch, {
+    required bool ownsEngine,
+  }) async {
+    final BackendDecisionHeadInfo head;
+    try {
       head = await engine.loadDecisionHeadBackend(
         headPath,
         configPath: configPath,
@@ -173,12 +431,7 @@ class DecisionEngine {
     } on LlamaStateException {
       rethrow;
     } catch (error, stackTrace) {
-      if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
-        Error.throwWithStackTrace(
-          LlamaStateException(_loadInterruptedMessage, error),
-          stackTrace,
-        );
-      }
+      _throwIfInterrupted(engine, modelEpoch, error, stackTrace);
       rethrow;
     }
     try {
@@ -193,6 +446,7 @@ class DecisionEngine {
         head,
         decodeDecisionHeadConfig(head.configJson),
         modelEpoch,
+        ownsEngine: ownsEngine,
       );
     } catch (error, stackTrace) {
       await engine
@@ -202,13 +456,98 @@ class DecisionEngine {
     }
   }
 
+  /// Local paths of [sources] on file-backed backends; on URL-loading
+  /// backends, the URLs or document-relative paths the backend fetches.
+  static Future<List<String>> _fileTargets(
+    LlamaEngine engine,
+    List<ModelSource> sources,
+    ModelLoadOptions download,
+    ModelDownloadProgressCallback? onProgress,
+  ) async {
+    if (!engine.backend.supportsUrlLoading) {
+      return resolveModelSourceFiles(
+        sources,
+        store: ModelFileStore(
+          resolver: engine.modelResolver,
+          downloadManager: engine.modelDownloadManager,
+        ),
+        download: download,
+        operation: _loadingOperation,
+        onProgress: onProgress,
+        assetType: 'decision model',
+      );
+    }
+    rejectUnsupportedUrlBackendOptions(download, assetType: 'decision model');
+    final request = ModelResolveRequest(options: download);
+    return [
+      for (final source in sources)
+        switch (await engine.modelResolver.resolve(source, request)) {
+          LocalModelFile(:final path) => path,
+          RemoteModelUrl(:final url, useBrowserCache: true) => '$url',
+          RemoteModelUrl() => throw LlamaUnsupportedException(
+            'Remote decision model loading without browser/backend cache is '
+            'not supported yet.',
+          ),
+        },
+    ];
+  }
+
+  static void _throwIfCancelled(ModelLoadOptions download) {
+    if (download.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('$_loadingOperation was cancelled.');
+    }
+  }
+
+  static void _throwIfInterrupted(
+    LlamaEngine engine,
+    int? modelEpoch,
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    if (modelEpoch != null && !_hasModel(engine, modelEpoch)) {
+      Error.throwWithStackTrace(
+        LlamaStateException(_loadInterruptedMessage, error),
+        stackTrace,
+      );
+    }
+  }
+
+  /// Whether this engine can answer now, and on which backend and runtime.
+  ///
+  /// Unsupported once [dispose] has been called, and once the model it was
+  /// loaded for is unloaded. On Web a bridge runtime restart, which frees the
+  /// head, shows only when a call throws [LlamaStateException].
+  Future<DecisionCapabilities> get capabilities async {
+    DecisionCapabilities? unavailable() => isDisposed
+        ? const DecisionCapabilities(
+            isSupported: false,
+            unsupportedReason: 'The DecisionEngine is disposed.',
+          )
+        : !_hasModel(_engine, _modelEpoch)
+        ? const DecisionCapabilities(
+            isSupported: false,
+            unsupportedReason: _modelUnloadedMessage,
+          )
+        : null;
+    if (unavailable() case final reason?) return reason;
+    final runtime = _engine.runtime;
+    final backendName = await _backendNameOf(_engine);
+    return unavailable() ??
+        DecisionCapabilities(
+          isSupported: true,
+          backendName: backendName,
+          runtime: runtime,
+        );
+  }
+
   /// Limits and device of the loaded model.
   final DecisionModelInfo info;
 
   /// Whether [dispose] has been called.
   bool get isDisposed => _disposal != null;
 
-  /// Answers [questions] about [state], as Laya's `system_one`.
+  /// Answers each question about [state] in one fast encoder pass per
+  /// question, without generating text (Laya's `system_one`).
   ///
   /// [state] is text, or a JSON-like value encoded as JSON text. Throws
   /// [LlamaDecisionException] for invalid questions and for text that
@@ -218,8 +557,8 @@ class DecisionEngine {
   /// engine's model is unloaded. A call running during an unload throws it
   /// too, unless its sequences already reached the backend; that call returns
   /// answers from the unloaded model. On Web it is also thrown once the bridge
-  /// restarts its runtime, which frees the head; load the DecisionEngine
-  /// again.
+  /// restarts its runtime, which frees the head; load or attach the
+  /// DecisionEngine again.
   ///
   /// To read answers as typed values, build [questions] with
   /// [DecisionKey.questionsOf] and read them with
@@ -234,7 +573,8 @@ class DecisionEngine {
     return results.single;
   });
 
-  /// Answers every request in [requests], in order.
+  /// Answers the questions of several states at once, in one backend call,
+  /// in order.
   ///
   /// All questions are validated and tokenized before the model runs, and
   /// all sequences run in one backend call. The call answers [requests] as
@@ -245,17 +585,22 @@ class DecisionEngine {
     return _track(() => _answer(snapshot));
   }
 
-  /// Frees the decision head after in-flight calls finish.
+  /// Frees the decision head after in-flight calls finish, then the
+  /// [LlamaEngine] when [load] created it.
   ///
-  /// Idempotent. Calls made after it throw [LlamaStateException]. The
-  /// [LlamaEngine] and its model stay loaded.
+  /// Idempotent. Calls made after it throw [LlamaStateException]. An engine
+  /// passed to [attach] stays loaded.
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {
     if (_activeCalls > 0) {
       await (_idle = Completer<void>()).future;
     }
-    await _engine.freeDecisionHeadBackend(_head.handle);
+    try {
+      await _engine.freeDecisionHeadBackend(_head.handle);
+    } finally {
+      if (_ownsEngine) await _engine.dispose();
+    }
   }
 
   Future<T> _track<T>(Future<T> Function() call) async {
@@ -367,6 +712,8 @@ class DecisionEngine {
     }
     return results;
   }
+
+  static const String _loadingOperation = 'Decision model loading';
 
   static const String _loadInterruptedMessage =
       'The model was unloaded while the DecisionEngine was loading. Load the '

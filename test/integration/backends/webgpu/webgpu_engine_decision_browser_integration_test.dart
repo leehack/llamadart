@@ -6,8 +6,9 @@ import 'dart:js_interop';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
+import 'package:llamadart/src/core/decision/decision_engine.dart';
 import 'package:test/test.dart';
-import 'package:web/web.dart' show Blob, BlobPropertyBag, URL;
+import 'package:web/web.dart' show Blob, BlobPropertyBag, URL, document;
 
 import '../../../support/fake_webgpu_decision_bridge.dart';
 
@@ -16,23 +17,23 @@ void main() {
   late bool withDecisionApi;
   late LlamaEngine engine;
 
+  LlamaBackend fakeBackend() => WebAutoBackend(
+    webGpuFactory: () => WebGpuLlamaBackend(
+      bridgeFactory: ([config]) {
+        final fake = FakeDecisionBridge(
+          withDecisionApi: withDecisionApi,
+          withModelApi: true,
+        );
+        bridges.add(fake);
+        return fake.bridge;
+      },
+    ),
+  );
+
   setUp(() {
     bridges = <FakeDecisionBridge>[];
     withDecisionApi = true;
-    engine = LlamaEngine(
-      WebAutoBackend(
-        webGpuFactory: () => WebGpuLlamaBackend(
-          bridgeFactory: ([config]) {
-            final fake = FakeDecisionBridge(
-              withDecisionApi: withDecisionApi,
-              withModelApi: true,
-            );
-            bridges.add(fake);
-            return fake.bridge;
-          },
-        ),
-      ),
-    );
+    engine = LlamaEngine(fakeBackend());
   });
 
   tearDown(() => engine.dispose());
@@ -54,9 +55,9 @@ void main() {
     await loadModel();
 
     final capabilities = await DecisionEngine.capabilitiesFor(engine);
-    final decisions = await DecisionEngine.load(
+    final decisions = await DecisionEngine.attach(
       engine,
-      headPath: 'laya-head.safetensors',
+      head: ModelSource.path('laya-head.safetensors'),
     );
     final result = await decisions.systemOne(
       state: 'Billed twice.',
@@ -94,9 +95,9 @@ void main() {
 
   test('reads typed keys from Web results', () async {
     await loadModel();
-    final decisions = await DecisionEngine.load(
+    final decisions = await DecisionEngine.attach(
       engine,
-      headPath: 'laya-head.safetensors',
+      head: ModelSource.path('laya-head.safetensors'),
     );
     addTearDown(decisions.dispose);
     final department = ChoiceKey.enumOf(
@@ -137,7 +138,7 @@ void main() {
     );
   });
 
-  test('fetches configPath in the page', () async {
+  test('fetches the config in the page', () async {
     const config = '{"max_len": 48, "head_max_len": 24}';
     final url = URL.createObjectURL(
       Blob(<JSAny>[config.toJS].toJS, BlobPropertyBag(type: 'text/plain')),
@@ -145,15 +146,77 @@ void main() {
     addTearDown(() => URL.revokeObjectURL(url));
     await loadModel();
 
-    final decisions = await DecisionEngine.load(
+    final decisions = await DecisionEngine.attach(
       engine,
-      headPath: 'model.safetensors',
-      configPath: url,
+      head: ModelSource.path('model.safetensors'),
+      config: ModelSource.path(url),
     );
 
     expect(bridges.single.loadedConfigs, [config]);
     expect(decisions.info.maxTokens, 48);
     expect(decisions.info.headMaxTokens, 24);
+  });
+
+  test(
+    'attach passes document-relative and blob sources to the bridge',
+    () async {
+      const config = '{"max_len": 48, "head_max_len": 24}';
+      final url = URL.createObjectURL(
+        Blob(<JSAny>[config.toJS].toJS, BlobPropertyBag(type: 'text/plain')),
+      );
+      addTearDown(() => URL.revokeObjectURL(url));
+      await loadModel();
+
+      final decisions = await DecisionEngine.attach(
+        engine,
+        head: ModelSource.path('models/model.safetensors'),
+        config: ModelSource.path(url),
+      );
+      await decisions.dispose();
+
+      final fake = bridges.single;
+      expect(
+        fake.calls.singleWhere((call) => call.startsWith('load ')),
+        'load ${URL('models/model.safetensors', document.baseURI).href}',
+      );
+      expect(fake.loadedConfigs, [config]);
+      expect(decisions.info.maxTokens, 48);
+      expect(fake.disposeCalls, 0);
+      expect(engine.isReady, isTrue);
+    },
+  );
+
+  test('load owns a Web engine and frees it on dispose', () async {
+    debugDecisionBackendFactory = fakeBackend;
+    addTearDown(() => debugDecisionBackendFactory = null);
+
+    final decisions = await DecisionEngine.load(
+      DecisionModel(
+        encoder: ModelSource.parse('https://example.com/laya-Q8_0.gguf'),
+        head: ModelSource.parse('https://example.com/laya-head.safetensors'),
+      ),
+    );
+    final capabilities = await decisions.capabilities;
+    final result = await decisions.systemOne(
+      state: 'Billed twice.',
+      questions: questions,
+    );
+    await decisions.dispose();
+
+    final fake = bridges.single;
+    expect(capabilities.isSupported, isTrue);
+    expect(capabilities.runtime, LlamaRuntime.llamaCpp);
+    expect(
+      fake.calls,
+      contains('loadModel https://example.com/laya-Q8_0.gguf'),
+    );
+    expect(
+      fake.calls,
+      contains('load https://example.com/laya-head.safetensors'),
+    );
+    expect(result.choices['department']!.choice, 'billing');
+    expect(fake.liveHandles, isEmpty);
+    expect(fake.disposeCalls, 1);
   });
 
   test('reports bridge assets without the decision API', () async {
@@ -169,7 +232,10 @@ void main() {
       'decision API (apiVersion 1); the loaded bridge does not expose it.',
     );
     await expectLater(
-      DecisionEngine.load(engine, headPath: 'laya-head.safetensors'),
+      DecisionEngine.attach(
+        engine,
+        head: ModelSource.path('laya-head.safetensors'),
+      ),
       throwsA(isA<LlamaUnsupportedException>()),
     );
   });
@@ -179,7 +245,10 @@ void main() {
     bridges.single.capabilitiesApiVersion = 2;
 
     await expectLater(
-      DecisionEngine.load(engine, headPath: 'laya-head.safetensors'),
+      DecisionEngine.attach(
+        engine,
+        head: ModelSource.path('laya-head.safetensors'),
+      ),
       throwsA(
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,
@@ -195,7 +264,7 @@ void main() {
   });
 
   test(
-    'a cancelled capability probe fails load with LlamaStateException',
+    'a cancelled capability probe fails attach with LlamaStateException',
     () async {
       await loadModel();
       bridges.single.capabilitiesError =
@@ -206,7 +275,10 @@ void main() {
       expect(capabilities.isSupported, isFalse);
       expect(capabilities.unsupportedReason, contains('was cancelled'));
       await expectLater(
-        DecisionEngine.load(engine, headPath: 'laya-head.safetensors'),
+        DecisionEngine.attach(
+          engine,
+          head: ModelSource.path('laya-head.safetensors'),
+        ),
         throwsA(
           isA<LlamaStateException>().having(
             (error) => error.message,
@@ -222,9 +294,9 @@ void main() {
     'a head fails with LlamaStateException after the model unloads',
     () async {
       await loadModel();
-      final decisions = await DecisionEngine.load(
+      final decisions = await DecisionEngine.attach(
         engine,
-        headPath: 'laya-head.safetensors',
+        head: ModelSource.path('laya-head.safetensors'),
       );
 
       await engine.unloadModel();

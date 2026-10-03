@@ -31,6 +31,13 @@
   `TextToSpeechModelProfile`, the `modelProfile` constructors and
   `SpeechToTextEngine.liteRtLm`, which still work for one release
   ([#848](https://github.com/leehack/llamadart/issues/848)).
+- **Breaking:** `DecisionEngine.load(DecisionModel(encoder:, head:,
+  config:), params:, download:, onProgress:)` loads a decision model from
+  `ModelSource`s into an engine it owns, atomically, and `dispose()` frees it
+  all; `DecisionEngine.attach(engine, head:, config:)` adds a head to a loaded
+  `LlamaEngine`; decision engines report an instance `capabilities`. The
+  `String`-path `load(engine, headPath:, configPath:)` is removed; use
+  `attach` ([#847](https://github.com/leehack/llamadart/issues/847)).
 - **Breaking (Preview):** image generation follows the shared engine
   pattern: `ImageGenerationEngine.load(ImageGenerationModel(source,
   components: [...]), params:, download:, onProgress:)` downloads every

@@ -41,7 +41,7 @@ Vulkan figures come from the native CLI. See
 Qwen3-ASR accepts WAV, MP3 and FLAC; real-model checks cover all three on
 native macOS and in headless Chromium. LiteRT-LM ASR is CPU-only streaming
 recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
-`DecisionEngine.load` throws `LlamaUnsupportedException`. See
+`DecisionEngine.load` and `attach` throw `LlamaUnsupportedException`. See
 [Speech to text](../guides/speech-to-text#choose-an-approach),
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
