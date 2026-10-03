@@ -89,6 +89,59 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: one task shape for image and speech engines
+
+`ImageGenerationTask`, `SpeechToTextTask` and `TextToSpeechTask` share one
+shape: `events` carries progress only, `done` reports how the task ended and
+never throws, the new `result` returns the result or throws, and `cancel()`
+stops only that task.
+
+1. **`ImageGenerationEngine.generate` returns a `Future` (Preview).** Await
+   it for the task; invalid requests, a disposed engine and a running
+   generation now fail that future instead of throwing synchronously. The
+   one-generation slot is still taken when `generate` is called.
+
+   ```dart
+   // Before
+   final task = engine.generate(request);
+   // After
+   final task = await engine.generate(request);
+   ```
+
+2. **Task `events` no longer carry errors.** A failed task closes `events`
+   without a final event. Code that caught the failure from the stream (an
+   `onError` handler, or `try` around `await for`) reads it from `result`
+   or `done` instead:
+
+   ```dart
+   // Before
+   try {
+     await for (final event in task.events) {
+       if (event is TextToSpeechFinalEvent) save(event.result);
+     }
+   } on LlamaException catch (error) {
+     report(error);
+   }
+   // After
+   task.events.listen(showProgress);
+   try {
+     save(await task.result);
+   } on LlamaException catch (error) {
+     report(error); // LlamaStateException when the task was cancelled
+   }
+   ```
+
+   `SpeechToTextStreamingSession` is unchanged: its `events` still report a
+   failure as a stream error as well as through `done`, and its `cancel()`
+   returns a `Future`, because it ends a live input stream rather than one
+   result.
+
+3. **`SpeechToTextTask.cancel()` stops only its own task.** A prompt-adapter
+   task used to call `LlamaEngine.cancelGeneration`, which also ended chat,
+   tool-loop and other requests on the same engine. It now cancels only the
+   task's own generation. Call `LlamaEngine.cancelGeneration` yourself if you
+   relied on that.
+
 ## Unreleased: decision engine load and attach
 
 `DecisionEngine` follows the shared engine pattern, and the `String`-path

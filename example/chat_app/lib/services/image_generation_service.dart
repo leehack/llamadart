@@ -21,7 +21,7 @@ abstract interface class ImageGenerator {
 
   /// Starts one generation; throws what [ImageGenerationEngine.generate]
   /// throws.
-  ImageGenerationRun generate(ImageGenerationRequest request);
+  Future<ImageGenerationRun> generate(ImageGenerationRequest request);
 
   /// Cancels a running generation and frees the model.
   Future<void> dispose();
@@ -29,10 +29,11 @@ abstract interface class ImageGenerator {
 
 /// One running generation, mirroring [ImageGenerationTask].
 abstract interface class ImageGenerationRun {
-  /// Progress events followed by one final event.
+  /// Progress events followed by one final event; never an error.
   Stream<ImageGenerationEvent> get events;
 
-  /// Completes once the generation succeeds, is cancelled, or fails.
+  /// Completes once the generation succeeds, is cancelled, or fails; never
+  /// with an error.
   Future<ImageGenerationCompletion> get done;
 
   /// Requests cancellation.
@@ -58,8 +59,8 @@ class _EngineImageGenerator implements ImageGenerator {
   ImageGenerationCapabilities get capabilities => _engine.capabilities;
 
   @override
-  ImageGenerationRun generate(ImageGenerationRequest request) =>
-      _TaskImageGenerationRun(_engine.generate(request));
+  Future<ImageGenerationRun> generate(ImageGenerationRequest request) async =>
+      _TaskImageGenerationRun(await _engine.generate(request));
 
   @override
   Future<void> dispose() => _engine.dispose();

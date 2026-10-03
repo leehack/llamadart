@@ -965,7 +965,7 @@ class FakeImageGenerator implements ImageGenerator {
       );
 
   @override
-  ImageGenerationRun generate(ImageGenerationRequest request) {
+  Future<ImageGenerationRun> generate(ImageGenerationRequest request) async {
     if (generateError case final error?) {
       throw error;
     }

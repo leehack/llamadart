@@ -1,5 +1,16 @@
 ## Unreleased
 
+- **Breaking (Preview):** `ImageGenerationEngine.generate` returns
+  `Future<ImageGenerationTask>`; await it before reading `events` or calling
+  `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).
+- **Breaking:** `ImageGenerationTask`, `SpeechToTextTask` and
+  `TextToSpeechTask` no longer report a failure as an error on `events`; read
+  it from `done`, or from the new `result`, which returns the result or
+  throws the failure, or `LlamaStateException` when the task is cancelled
+  ([#850](https://github.com/leehack/llamadart/issues/850)).
+- **Fixed:** `SpeechToTextTask.cancel()` stops only that recognition; chat and
+  other requests on the same `LlamaEngine` keep running
+  ([#850](https://github.com/leehack/llamadart/issues/850)).
 - **Breaking:** `ModelParams.validate()` throws `LlamaArgumentException`,
   `ModelDownloadController` throws `LlamaArgumentException` or
   `LlamaStateException`, and Web backend calls before a model load throw

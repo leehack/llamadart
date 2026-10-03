@@ -129,25 +129,27 @@ final task = await recognizer.transcribe(
     contextPrompt: 'llamadart, Qwen3-ASR',
   ),
 );
+task.events.listen((event) {
+  if (event is SpeechToTextPartialEvent) {
+    print('partial: ${event.text}');
+  }
+});
 
 try {
-  await for (final event in task.events) {
-    if (event is SpeechToTextFinalEvent) {
-      print(event.result.text);
-    }
-  }
+  final result = await task.result;
+  print(result.text);
 } on LlamaException catch (error) {
-  print('Recognition failed: $error');
+  print('Recognition failed or was cancelled: $error');
 }
-
-final completion = await task.done;
-print(completion.state);
 ```
 
 `transcribe` itself throws typed input, state, or unsupported errors when
 preflight fails before a task can start. After startup, `events` is a
-single-subscription stream: runtime failure is emitted as a stream error and
-the same terminal condition is available through `task.done`.
+single-subscription stream of progress that never emits an error: a
+prompt adapter emits one `SpeechToTextFinalEvent`, and LiteRT-LM emits
+partial events first. `task.result` returns the transcript or throws the
+failure, or `LlamaStateException` when the task is cancelled; `task.done`
+reports the same outcome as a `SpeechToTextCompletion` and never throws.
 
 ## Add a model family
 
@@ -217,13 +219,17 @@ final recognizer = await SpeechToTextEngine.load(
 );
 
 final session = await recognizer.startStream();
-final events = session.events.listen((event) {
-  if (event is SpeechToTextPartialEvent) {
-    print('stable=${event.confirmedText} pending=${event.pendingText}');
-  } else if (event is SpeechToTextFinalEvent) {
-    print('final=${event.result.text}');
-  }
-});
+final events = session.events.listen(
+  (event) {
+    if (event is SpeechToTextPartialEvent) {
+      print('stable=${event.confirmedText} pending=${event.pendingText}');
+    } else if (event is SpeechToTextFinalEvent) {
+      print('final=${event.result.text}');
+    }
+  },
+  // A session's events report a failure as an error too; done carries it.
+  onError: (Object _) {},
+);
 
 for (final chunk in mono16KhzFloatPcmChunks) {
   await session.addPcm(chunk);
@@ -270,7 +276,10 @@ assert(completion.state == SpeechToTextCompletionState.cancelled);
 
 Cancellation is cooperative: `task.cancel()` for whole-input recognition, or
 `await session.cancel()` for a LiteRT-LM session, which stops between native
-windows. Cancelling or pausing an event subscription neither cancels nor
+windows. `task.cancel()` stops only that task: on a prompt adapter it cancels
+the task's own generation, so other requests on the same `LlamaEngine` keep
+running. A session's `cancel()` returns a future because it ends a live input
+stream and releases the native recognizer; a session has no single `result`. Cancelling or pausing an event subscription neither cancels nor
 throttles native inference; LiteRT-LM producers must await `addPcm` for input
 backpressure.
 

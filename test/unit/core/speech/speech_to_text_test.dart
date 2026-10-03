@@ -232,6 +232,7 @@ void main() {
         expect(finalEvent.result.segments.single.text, finalEvent.result.text);
         expect(completion.state, SpeechToTextCompletionState.completed);
         expect(completion.result, same(finalEvent.result));
+        expect(await task.result, same(finalEvent.result));
         expect(backend.lastParts, hasLength(2));
         expect(backend.lastParts!.first, isA<LlamaTextContent>());
         expect(
@@ -303,24 +304,20 @@ void main() {
       final task = await speechEngine.transcribe(
         const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
       );
-      final streamError = Completer<Object>();
-      task.events.listen(
-        (_) {},
-        onError: (Object error) => streamError.complete(error),
-      );
+      expect(await task.events.toList(), isEmpty);
       final completion = await task.done;
 
+      expect(completion.state, SpeechToTextCompletionState.failed);
+      expect(completion.result, isNull);
       expect(
-        await streamError.future,
+        completion.error,
         isA<LlamaSpeechException>().having(
           (error) => error.message,
           'message',
           contains('empty transcript'),
         ),
       );
-      expect(completion.state, SpeechToTextCompletionState.failed);
-      expect(completion.result, isNull);
-      expect(completion.error, isA<LlamaSpeechException>());
+      await expectLater(task.result, throwsA(same(completion.error)));
 
       backend.generationText = 'Recovered transcript.';
       final retry = await speechEngine.transcribe(
@@ -479,7 +476,56 @@ void main() {
 
       expect(await task.events.toList(), isEmpty);
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
-      expect(backend.cancelGenerationCalls, 1);
+      await expectLater(
+        task.result,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Speech recognition was cancelled.',
+          ),
+        ),
+      );
+      expect(backend.cancelGenerationCalls, 0);
+    });
+
+    test('cancel stops only its own task, and a chat on the same engine '
+        'keeps running', () async {
+      await _loadSpeechModel(llamaEngine);
+      final transcription = StreamController<List<int>>();
+      final chat = StreamController<List<int>>();
+      addTearDown(() {
+        unawaited(transcription.close());
+        unawaited(chat.close());
+      });
+      final chatStarted = Completer<void>();
+      backend
+        ..generationFor = (prompt) {
+          if (!prompt.contains('Hello chat')) {
+            return transcription.stream;
+          }
+          chatStarted.complete();
+          return chat.stream;
+        }
+        // Like llama.cpp, a backend-wide cancel also ends the queued chat.
+        ..onCancelGeneration = () => unawaited(chat.close());
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      await backend.generationStarted.future;
+      final reply = ChatSession(llamaEngine).send('Hello chat');
+      await chatStarted.future;
+
+      task.cancel();
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      expect(transcription.hasListener, isFalse);
+      expect(chat.isClosed, isFalse);
+
+      chat.add(utf8.encode('still running'));
+      await chat.close();
+      expect((await reply).text, 'still running');
+      expect(backend.cancelGenerationCalls, 0);
     });
 
     test('frees the engine lease before the task reports done', () async {
@@ -504,40 +550,6 @@ void main() {
       expect((await next.done).state, SpeechToTextCompletionState.completed);
     });
 
-    test(
-      'keeps cancellation authoritative when backend cancel throws',
-      () async {
-        backend
-          ..blockGeneration = true
-          ..onCancelGeneration = () {
-            throw StateError('synchronous backend cancellation failure');
-          };
-        await _loadSpeechModel(llamaEngine);
-
-        final task = await speechEngine.transcribe(
-          const SpeechToTextRequest(
-            audio: SpeechAudioFileInput('/tmp/test.wav'),
-          ),
-        );
-        await backend.generationStarted.future;
-
-        expect(task.cancel, returnsNormally);
-        backend.releaseGeneration();
-
-        expect(await task.events.toList(), isEmpty);
-        expect((await task.done).state, SpeechToTextCompletionState.cancelled);
-        expect(backend.cancelGenerationCalls, 1);
-
-        backend.onCancelGeneration = null;
-        final retry = await speechEngine.transcribe(
-          const SpeechToTextRequest(
-            audio: SpeechAudioFileInput('/tmp/retry.wav'),
-          ),
-        );
-        expect((await retry.done).result?.text, 'transcript');
-      },
-    );
-
     test('cancels while the native chat template is being prepared', () async {
       await _loadSpeechModel(llamaEngine);
       backend.blockMetadata = true;
@@ -553,7 +565,7 @@ void main() {
       expect(await task.events.toList(), isEmpty);
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
       expect(backend.generationStarted.isCompleted, isFalse);
-      expect(backend.cancelGenerationCalls, 1);
+      expect(backend.cancelGenerationCalls, 0);
 
       final retry = await speechEngine.transcribe(
         const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
@@ -649,21 +661,16 @@ void main() {
 
     test('awaits stream cleanup before releasing the backend lease', () async {
       await _loadSpeechModel(llamaEngine);
-      final generationRelease = Completer<void>();
       final cleanupStarted = Completer<void>();
       final cleanupRelease = Completer<void>();
-      Stream<List<int>> generationStream() async* {
-        try {
-          await generationRelease.future;
-        } finally {
+      final generation = StreamController<List<int>>(
+        onCancel: () {
           cleanupStarted.complete();
-          await cleanupRelease.future;
-        }
-      }
-
-      backend
-        ..generationStream = generationStream()
-        ..onCancelGeneration = () => generationRelease.complete();
+          return cleanupRelease.future;
+        },
+      );
+      addTearDown(() => unawaited(generation.close()));
+      backend.generationStream = generation.stream;
 
       final task = await speechEngine.transcribe(
         const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
@@ -689,9 +696,7 @@ void main() {
       cleanupRelease.complete();
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
 
-      backend
-        ..generationStream = null
-        ..onCancelGeneration = null;
+      backend.generationStream = null;
       final retry = await speechEngine.transcribe(
         const SpeechToTextRequest(
           audio: SpeechAudioFileInput('/tmp/retry.wav'),
@@ -823,18 +828,13 @@ void main() {
             audio: SpeechAudioFileInput('/tmp/long.wav'),
           ),
         );
-        final events = <SpeechToTextEvent>[];
-        final streamError = Completer<Object>();
-        task.events.listen(
-          events.add,
-          onError: (Object error) => streamError.complete(error),
-        );
+        final events = task.events.toList();
 
         final completion = await task.done;
 
         expect(completion.state, SpeechToTextCompletionState.failed);
         expect(completion.result, isNull);
-        expect(events, isEmpty);
+        expect(await events, isEmpty);
         final error = completion.error;
         expect(error, isA<LlamaSpeechTranscriptTruncatedException>());
         error as LlamaSpeechTranscriptTruncatedException;
@@ -848,7 +848,7 @@ void main() {
                 : 'maxOutputTokens',
           ),
         );
-        expect(await streamError.future, same(error));
+        await expectLater(task.result, throwsA(same(error)));
       });
     }
 
@@ -913,21 +913,9 @@ void main() {
             audio: SpeechAudioFileInput('/tmp/test.wav'),
           ),
         );
-        final streamError = Completer<Object>();
-        task.events.listen(
-          (_) {},
-          onError: (Object error) => streamError.complete(error),
-        );
+        expect(await task.events.toList(), isEmpty);
         final completion = await task.done;
 
-        expect(
-          await streamError.future,
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            'first generation failure',
-          ),
-        );
         expect(
           completion.error,
           isA<LlamaUnsupportedException>().having(
@@ -964,23 +952,19 @@ void main() {
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
     });
 
-    test('returns typed failure completion and stream error', () async {
+    test('reports a failure through done and result, not events', () async {
       backend.generationError = StateError('decoder failed');
       await _loadSpeechModel(llamaEngine);
       final task = await speechEngine.transcribe(
         const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
       );
 
-      final streamError = Completer<Object>();
-      task.events.listen(
-        (_) {},
-        onError: (Object error) => streamError.complete(error),
-      );
+      expect(await task.events.toList(), isEmpty);
       final completion = await task.done;
 
-      expect(await streamError.future, isA<LlamaInferenceException>());
       expect(completion.state, SpeechToTextCompletionState.failed);
       expect(completion.error, isA<LlamaInferenceException>());
+      await expectLater(task.result, throwsA(same(completion.error)));
     });
   });
 
@@ -1338,6 +1322,7 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
   List<String>? generationChunks;
   Object? generationError;
   Stream<List<int>>? generationStream;
+  Stream<List<int>> Function(String prompt)? generationFor;
   void Function()? onCancelGeneration;
   bool blockGeneration = false;
   bool blockAudioProbe = false;
@@ -1452,13 +1437,23 @@ class _SpeechBackend implements LlamaBackend, BackendGenerationLimitReporting {
     if (!generationStarted.isCompleted) {
       generationStarted.complete();
     }
-    final stream = generationStream ?? _defaultGenerationStream();
+    final stream =
+        generationFor?.call(prompt) ??
+        generationStream ??
+        _defaultGenerationStream();
     final limit = generationLimit;
     if (limit != null) {
       _generationLimits[stream] = limit;
     }
     return stream;
   }
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) async => utf8.encode(text);
 
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>

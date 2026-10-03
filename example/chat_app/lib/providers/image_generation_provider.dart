@@ -444,7 +444,7 @@ class ImageGenerationProvider extends ChangeNotifier {
       _stage = ImageGenerationStage.generating;
       _notify();
 
-      final run = generator.generate(
+      final run = await generator.generate(
         ImageGenerationRequest(
           prompt: prompt,
           negativePrompt: negativePrompt,
@@ -456,12 +456,15 @@ class ImageGenerationProvider extends ChangeNotifier {
         ),
       );
       _run = run;
+      if (_cancelRequested) {
+        run.cancel();
+      }
       subscription = run.events.listen((event) {
         if (event is ImageGenerationProgressEvent) {
           _progress = event;
           _notify();
         }
-      }, onError: (Object _, StackTrace _) {});
+      });
       final completion = await run.done;
       switch (completion.state) {
         case ImageGenerationCompletionState.completed:

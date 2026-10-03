@@ -61,41 +61,35 @@ Future<void> main(List<String> arguments) async {
       'in ${loadTimer.elapsedMilliseconds} ms.',
     );
 
-    final running = task = engine.generate(options.request);
+    final running = task = await engine.generate(options.request);
     await for (final event in running.events) {
-      switch (event) {
-        case ImageGenerationProgressEvent(
-          :final phase,
-          :final step,
-          :final steps,
-          :final imageIndex,
-          :final imageCount,
-        ):
-          final image = imageCount > 1 ? ' image ${imageIndex + 1}' : '';
-          stdout.write('\r${phase.name}$image $step/$steps\x1B[K');
-        case ImageGenerationFinalEvent(:final result):
-          stdout.writeln();
-          for (final (index, image) in result.images.indexed) {
-            final path = options.outputPathFor(index);
-            File(path).writeAsBytesSync(image.toPng());
-            print(
-              'Wrote $path (${image.width}x${image.height}, seed '
-              '${result.seed + index}).',
-            );
-          }
-          print('Generated in ${result.elapsed.inMilliseconds} ms.');
+      if (event case ImageGenerationProgressEvent(
+        :final phase,
+        :final step,
+        :final steps,
+        :final imageIndex,
+        :final imageCount,
+      )) {
+        final image = imageCount > 1 ? ' image ${imageIndex + 1}' : '';
+        stdout.write('\r${phase.name}$image $step/$steps\x1B[K');
       }
     }
-    if ((await running.done).state ==
-        ImageGenerationCompletionState.cancelled) {
-      print('Cancelled.');
-      exitCode = 130;
+    final result = await running.result;
+    stdout.writeln();
+    for (final (index, image) in result.images.indexed) {
+      final path = options.outputPathFor(index);
+      File(path).writeAsBytesSync(image.toPng());
+      print(
+        'Wrote $path (${image.width}x${image.height}, seed '
+        '${result.seed + index}).',
+      );
     }
+    print('Generated in ${result.elapsed.inMilliseconds} ms.');
   } on LlamaUnsupportedException catch (error) {
     stderr.writeln('\nCannot generate images here: ${error.message}');
     exitCode = 2;
   } on LlamaStateException catch (error) {
-    if (cancelLoad.isCancelled) {
+    if (cancelLoad.isCancelled || (task?.isCancellationRequested ?? false)) {
       print('Cancelled.');
       exitCode = 130;
     } else {

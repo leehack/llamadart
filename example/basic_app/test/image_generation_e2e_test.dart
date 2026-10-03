@@ -127,7 +127,7 @@ void main() {
     test(
       'generates a 256x256 image in one step with labelled progress',
       () async {
-        final task = engine.generate(
+        final task = await engine.generate(
           const ImageGenerationRequest(
             prompt: 'a red fox in autumn leaves',
             width: 256,
@@ -186,15 +186,16 @@ void main() {
 
     test('a cancel before sampling and a cancel mid-run both stop, and the '
         'engine keeps working', () async {
-      final early = engine.generate(
+      final early = await engine.generate(
         const ImageGenerationRequest(prompt: 'a forest', steps: 20),
-      )..cancel();
+      );
+      early.cancel();
       expect(
         (await early.done).state,
         ImageGenerationCompletionState.cancelled,
       );
 
-      final running = engine.generate(
+      final running = await engine.generate(
         const ImageGenerationRequest(prompt: 'a forest', steps: 20),
       );
       var lastSamplingStep = 0;
@@ -229,12 +230,12 @@ void main() {
     });
 
     test('rejects a second generation or load while one runs', () async {
-      final running = engine.generate(
+      final running = await engine.generate(
         const ImageGenerationRequest(prompt: 'a', width: 256, height: 256),
       );
 
-      expect(
-        () => engine.generate(const ImageGenerationRequest(prompt: 'b')),
+      await expectLater(
+        engine.generate(const ImageGenerationRequest(prompt: 'b')),
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(

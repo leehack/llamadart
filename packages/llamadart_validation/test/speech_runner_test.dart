@@ -242,12 +242,26 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-  }) async* {
-    final generation = generations++;
-    for (final delta in deltas) {
-      if (!await _awaitToken(generation)) return;
-      yield completionChunk(delta);
-    }
+  }) {
+    late final StreamController<LlamaCompletionChunk> controller;
+    controller = StreamController<LlamaCompletionChunk>(
+      onListen: () async {
+        final generation = generations++;
+        for (final delta in deltas) {
+          if (!await _awaitToken(generation)) break;
+          controller.add(completionChunk(delta));
+        }
+        await controller.close();
+      },
+      // A subscription cancel stops only this generation, as on llama.cpp,
+      // and completes once the generation acknowledges it.
+      onCancel: () {
+        final running = _running;
+        _acknowledgeCancel();
+        return running?.future;
+      },
+    );
+    return controller.stream;
   }
 
   @override

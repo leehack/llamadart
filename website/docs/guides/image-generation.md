@@ -458,7 +458,7 @@ final engine = await ImageGenerationEngine.load(model);
 print('${engine.capabilities.modelVersion} on '
     '${engine.capabilities.backendName}');
 
-final task = engine.generate(
+final task = await engine.generate(
   const ImageGenerationRequest(
     prompt: 'a red fox in autumn leaves',
     steps: 1,
@@ -466,20 +466,25 @@ final task = engine.generate(
     seed: 42,
   ),
 );
-await for (final event in task.events) {
-  switch (event) {
-    case ImageGenerationProgressEvent(:final phase, :final step, :final steps):
-      print('$phase $step/$steps');
-    case ImageGenerationFinalEvent(:final result):
-      final png = result.images.first.toPng();
-      print('${png.length} PNG bytes, seed ${result.seed}');
+task.events.listen((event) {
+  if (event
+      case ImageGenerationProgressEvent(:final phase, :final step, :final steps)) {
+    print('$phase $step/$steps');
   }
-}
+});
+final result = await task.result;
+final png = result.images.first.toPng();
+print('${png.length} PNG bytes, seed ${result.seed}');
 await engine.dispose();
 ```
 
-`engine.generateImage(request)` is the one-call form; it returns the
-`ImageGenerationResult` or throws the failure.
+`generate` returns the running `ImageGenerationTask` once the request passes
+its checks. `task.events` carries progress and never an error. `task.result`
+returns the images, or throws the failure, or `LlamaStateException` when the
+task is cancelled; `task.done` reports the same outcome as an
+`ImageGenerationCompletion` and never throws.
+`engine.generateImage(request)` is the one-call form of
+`(await engine.generate(request)).result`.
 
 - Width and height are multiples of 8 from 64 to 2048, and default to 512.
   Use the model's native size: 512x512 for SDXS and SD-Turbo, 1024x1024 for
@@ -495,8 +500,8 @@ await engine.dispose();
   image `i` of `count` used `seed + i`. The same seed, size, steps and model
   reproduce the same pixels.
 - `GeneratedImage.pixels` holds row-major RGB bytes; `toPng()` encodes them.
-- Invalid requests throw `LlamaImageGenerationException` before a task
-  starts.
+- Invalid requests make `generate` throw `LlamaImageGenerationException`
+  before a task starts.
 
 `load` loads every weight up front. The first image in a process can still be
 slow while the GPU compiles shaders; see
@@ -614,9 +619,10 @@ avoids by loading them eagerly.
 
 ## Cancellation, concurrency and disposal
 
-- `task.cancel()` stops before the next sampling step or before decoding, and
-  `task.done` then reports `cancelled`. A cancel issued before the runtime
-  starts is honored too.
+- `task.cancel()` stops before the next sampling step or before decoding;
+  `task.done` then reports `cancelled` and `task.result` throws
+  `LlamaStateException`. A cancel issued before the runtime starts is honored
+  too.
 - stable-diffusion.cpp reports progress through one process-wide callback, so
   one generation or model load runs at a time. Another `generate` or `load`
   meanwhile throws `LlamaStateException`, even on a different engine. The guard

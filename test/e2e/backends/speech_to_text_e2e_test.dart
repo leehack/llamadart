@@ -132,20 +132,12 @@ void main() {
                 maxOutputTokens: 512,
               ),
             );
-            final errors = <Object>[];
-            final invalidEvents = <SpeechToTextEvent>[];
-            await invalid.events
-                .listen(invalidEvents.add, onError: errors.add)
-                .asFuture<void>()
-                .catchError((Object error) {
-                  errors.add(error);
-                });
+            final invalidEvents = await invalid.events.toList();
             expect(
               (await invalid.done).state,
               SpeechToTextCompletionState.failed,
             );
-            expect(errors, hasLength(1));
-            expect(errors.single, isA<LlamaException>());
+            await expectLater(invalid.result, throwsA(isA<LlamaException>()));
             expect(invalidEvents.whereType<SpeechToTextFinalEvent>(), isEmpty);
             await verifyTranscript();
           }

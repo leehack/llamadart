@@ -445,43 +445,56 @@ class _CancelledSpeechToTextCompletion extends SpeechToTextCompletion {
 class SpeechToTextTask {
   final StreamController<SpeechToTextEvent> _eventsController;
   final Completer<SpeechToTextCompletion> _doneCompleter;
-  final void Function() _onCancel;
+  final void Function()? _onCancel;
   void Function()? _cancelTokenStream;
   bool _cancelled = false;
 
-  SpeechToTextTask._({required void Function() onCancel})
+  SpeechToTextTask._({void Function()? onCancel})
     : _onCancel = onCancel,
       _eventsController = StreamController<SpeechToTextEvent>(),
       _doneCompleter = Completer<SpeechToTextCompletion>();
 
   /// Recognition events.
   ///
-  /// This is a single-subscription stream. Runtime failures are emitted as a
-  /// stream error and are also reported by [done] as a failed completion.
+  /// This is a single-subscription stream. It carries recognition progress
+  /// only and never emits an error: a failed or cancelled task closes it
+  /// without a final event, and [done] and [result] report why.
   /// Prompt-adapted recognition emits one [SpeechToTextFinalEvent]. Dedicated
   /// backends can emit [SpeechToTextPartialEvent] updates first.
   Stream<SpeechToTextEvent> get events => _eventsController.stream;
 
-  /// Completes once the task succeeds, is cancelled, or fails.
+  /// Completes once the task succeeds, is cancelled, or fails. It never
+  /// completes with an error.
   Future<SpeechToTextCompletion> get done => _doneCompleter.future;
+
+  /// The final transcript.
+  ///
+  /// Throws the task's [LlamaException] when it fails, and
+  /// [LlamaStateException] when it is cancelled.
+  Future<SpeechToTextResult> get result => _result;
+
+  late final Future<SpeechToTextResult> _result = done.then(
+    (completion) => switch (completion.state) {
+      SpeechToTextCompletionState.completed => completion.result!,
+      SpeechToTextCompletionState.failed => throw completion.error!,
+      SpeechToTextCompletionState.cancelled => throw LlamaStateException(
+        'Speech recognition was cancelled.',
+      ),
+    },
+  );
 
   /// Whether cancellation has been requested.
   bool get isCancellationRequested => _cancelled;
 
-  /// Requests cooperative cancellation. Calling this more than once is safe.
+  /// Requests cooperative cancellation of this task. Other requests on the
+  /// same `LlamaEngine` keep running. Calling this more than once is safe.
   void cancel() {
     if (_cancelled || _doneCompleter.isCompleted) {
       return;
     }
     _cancelled = true;
-    try {
-      _onCancel();
-    } catch (_) {
-      // Cancellation is authoritative; the task runner still owns cleanup and
-      // terminal completion when a backend cancellation hook fails.
-    } finally {
-      _cancelTokenStream?.call();
-    }
+    _onCancel?.call();
+    _cancelTokenStream?.call();
   }
 }
 
@@ -489,6 +502,11 @@ class SpeechToTextTask {
 ///
 /// Callers must await each [addPcm] operation. This applies bounded input
 /// backpressure while native inference runs in a worker isolate.
+///
+/// Unlike [SpeechToTextTask], a session has no single result to await: it
+/// ends a live input stream, so [cancel] returns a future that completes
+/// once the native recognizer is released, and [events] reports a runtime
+/// failure as a stream error as well as through [done].
 abstract interface class SpeechToTextStreamingSession {
   /// Partial and final transcript events.
   ///
@@ -991,21 +1009,26 @@ class SpeechToTextEngine {
     );
   }
 
-  /// Starts recognition for one complete audio input.
+  /// Starts recognition for one complete audio input and returns the running
+  /// task.
   ///
-  /// A [SpeechToTextPromptAdapter] accepts encoded files or bytes. Dedicated
-  /// LiteRT-LM ASR accepts [SpeechAudioPcmInput] and emits any intermediate
-  /// partial events before its final result. Invalid input and unsupported
-  /// preflight checks throw before a task is returned; failures after
-  /// startup are reported by the task. Throws [LlamaStateException] after
+  /// A [SpeechToTextPromptAdapter] accepts encoded files or bytes, and its
+  /// task emits one [SpeechToTextFinalEvent]. Dedicated LiteRT-LM ASR
+  /// accepts [SpeechAudioPcmInput] and emits any intermediate
+  /// [SpeechToTextPartialEvent] updates before its final result. Invalid
+  /// input and unsupported preflight checks throw before a task is returned;
+  /// failures after startup are reported by [SpeechToTextTask.done] and
+  /// [SpeechToTextTask.result]. Throws [LlamaStateException] after
   /// [dispose].
   ///
   /// On native llama.cpp, a prompt-adapted task that reaches the context
   /// size or [SpeechToTextRequest.maxOutputTokens] before the transcript ends
   /// fails with [LlamaSpeechTranscriptTruncatedException].
   ///
-  /// [dispose], [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an
-  /// active prompt-adapted task, which then reports
+  /// [SpeechToTextTask.cancel] stops only this task's generation: chat and
+  /// other requests on the same [LlamaEngine] keep running. [dispose],
+  /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel an active
+  /// prompt-adapted task, which then reports
   /// [SpeechToTextCompletionState.cancelled] with no result.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
     _throwIfDisposed();
@@ -1032,8 +1055,9 @@ class SpeechToTextEngine {
         );
       }
 
-      final engine = _engine!;
-      final task = SpeechToTextTask._(onCancel: engine.cancelGeneration);
+      // Cancelling the task's own token subscription stops its generation;
+      // LlamaEngine.cancelGeneration would also stop other requests.
+      final task = SpeechToTextTask._();
       lease.onUnload(_leaseOwner, task.cancel);
       _activeTask = task;
       unawaited(_runPromptAdapterTask(task, request));
@@ -1049,16 +1073,9 @@ class SpeechToTextEngine {
   /// Throws what [transcribe] throws, the failure of the task, or
   /// [LlamaStateException] when the task is cancelled, as [dispose] and
   /// [LlamaEngine.unloadModel] do.
-  Future<SpeechToTextResult> transcribeOnce(SpeechToTextRequest request) async {
-    final completion = await (await transcribe(request)).done;
-    return switch (completion.state) {
-      SpeechToTextCompletionState.completed => completion.result!,
-      SpeechToTextCompletionState.failed => throw completion.error!,
-      SpeechToTextCompletionState.cancelled => throw LlamaStateException(
-        'Speech recognition was cancelled.',
-      ),
-    };
-  }
+  Future<SpeechToTextResult> transcribeOnce(
+    SpeechToTextRequest request,
+  ) async => (await transcribe(request)).result;
 
   /// Starts an incremental dedicated-ASR session.
   ///
@@ -1167,7 +1184,8 @@ class SpeechToTextEngine {
   ) async {
     final subscription = session.events.listen(
       task._eventsController.add,
-      onError: task._eventsController.addError,
+      // session.done reports the failure.
+      onError: (Object _) {},
     );
     try {
       await session.addPcm(samples);
@@ -1178,7 +1196,7 @@ class SpeechToTextEngine {
       if (!task._doneCompleter.isCompleted) {
         task._doneCompleter.complete(completion);
       }
-    } catch (error, stackTrace) {
+    } catch (error) {
       try {
         await session.cancel();
       } catch (_) {
@@ -1188,7 +1206,6 @@ class SpeechToTextEngine {
         _completeCancelled(task);
       } else {
         final speechError = _speechError(error);
-        task._eventsController.addError(speechError, stackTrace);
         if (!task._doneCompleter.isCompleted) {
           task._doneCompleter.complete(
             SpeechToTextCompletion.failed(speechError),
@@ -1443,13 +1460,12 @@ class SpeechToTextEngine {
       task._eventsController.add(SpeechToTextFinalEvent(result));
       unawaited(task._eventsController.close());
       task._doneCompleter.complete(SpeechToTextCompletion.completed(result));
-    } catch (error, stackTrace) {
+    } catch (error) {
       if (task.isCancellationRequested) {
         _completeCancelled(task);
         return;
       }
       final speechError = _speechError(error);
-      task._eventsController.addError(speechError, stackTrace);
       unawaited(task._eventsController.close());
       task._doneCompleter.complete(SpeechToTextCompletion.failed(speechError));
     } finally {
