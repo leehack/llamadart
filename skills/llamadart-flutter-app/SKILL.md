@@ -22,7 +22,7 @@ or shipping runtimes the app does not use.
   download token and `engine.cancelGeneration()`, then `engine.dispose()`.
   `State.dispose` is synchronous, so wrap the call in `unawaited(...)`.
   `dispose()` waits for an in-flight load or unload, then unloads the model
-  and releases the backend.
+  and releases the backend; that load then throws `LlamaStateException`.
 - Quitting a desktop app (Cmd-Q, closing the last window) does not run
   `State.dispose`. Also dispose `LlamaEngine`, `DecisionEngine` and
   `ImageGenerationEngine` instances from

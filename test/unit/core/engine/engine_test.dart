@@ -2164,6 +2164,8 @@ void main() {
       expect(backend.modelLoadCalls, loadCalls);
       expect(backend.cancelGenerationCalls, cancelCalls);
       expect(backend.disposeCalls, 1);
+      expect(await engine.getMetadata(), isEmpty);
+      expect(await engine.getContextSize(), 0);
       expect(await engine.supportsVision, isFalse);
       expect(await engine.supportsAudio, isFalse);
       expect(
@@ -2383,6 +2385,26 @@ void main() {
         expect(await engine.supportsVision, isFalse);
         expect(await engine.supportsAudio, isFalse);
         expect(engine.isReady, isTrue);
+      },
+    );
+
+    test(
+      'supportsVision is false when the model unloads during the probe',
+      () async {
+        final probeBackend = _GatedVisionProbeBackend();
+        final probeEngine = LlamaEngine(probeBackend);
+        addTearDown(probeEngine.dispose);
+        await probeEngine.loadModel('qwen-test.gguf');
+        await probeEngine.loadMultimodalProjector('proj.gguf');
+        final gate = probeBackend.visionGate = Completer<void>();
+
+        final probe = probeEngine.supportsVision;
+        await Future<void>.delayed(Duration.zero);
+        final unload = probeEngine.unloadModel();
+        gate.complete();
+        await unload;
+
+        expect(await probe, isFalse);
       },
     );
 
@@ -5360,5 +5382,15 @@ class _GatedProjectorBackend extends MockLlamaBackend {
   @override
   Future<void> multimodalContextFree(int mmContextHandle) async {
     multimodalContextFreeCalls += 1;
+  }
+}
+
+class _GatedVisionProbeBackend extends MockLlamaBackend {
+  Completer<void>? visionGate;
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async {
+    await visionGate?.future;
+    return true;
   }
 }

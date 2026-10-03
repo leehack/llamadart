@@ -69,7 +69,10 @@ For canonical full release notes, use:
 - **Breaking:** `LlamaEngine.dispose()` is idempotent and terminal, like
   every other engine's: each call returns the same future, and afterwards
   loads, requests and `DecisionEngine.attach` throw `LlamaStateException`
-  while `capabilities` reports the engine as disposed. A load running when it is called throws
+  while `capabilities` reports the engine as disposed. `getBackendName`,
+  `getAvailableBackends`, `isGpuSupported`, `getVramInfo`, `listGpuDevices`
+  and `getResolvedGpuLayers` used to answer after `dispose()` and now throw
+  `LlamaStateException` too. A load running when it is called throws
   `LlamaStateException`, and its model is unloaded. `LlamaEngine` gains
   `isDisposed`, so a class that `implements` it must add it
   ([#851](https://github.com/leehack/llamadart/issues/851)).

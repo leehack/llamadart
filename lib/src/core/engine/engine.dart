@@ -947,9 +947,12 @@ class LlamaEngine {
   /// cancels running generations, and disposes [backend].
   ///
   /// Idempotent: every call returns the same future. Terminal: afterwards,
-  /// loads and requests throw [LlamaStateException], [capabilities] reports
-  /// the engine as disposed, and [unloadModel] and [cancelGeneration] do
-  /// nothing. A load running when this is called throws
+  /// loads, requests and the backend queries [getBackendName],
+  /// [getAvailableBackends], [isGpuSupported], [getVramInfo],
+  /// [listGpuDevices] and [getResolvedGpuLayers] throw
+  /// [LlamaStateException]; [capabilities] reports the engine as disposed;
+  /// model queries such as [getMetadata] and [getContextSize] return their
+  /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A load running when this is called throws
   /// [LlamaStateException] once it finishes, and its model is unloaded; a
   /// download that [loadModelSource] started runs to its end first.
   Future<void> dispose() => _disposal ??= _dispose();
@@ -2684,12 +2687,16 @@ class LlamaEngine {
   int? get contextHandle => _contextHandle;
 
   /// Returns the name of the active GPU backend.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<String> getBackendName() async {
     _throwIfDisposed();
     return backend.getBackendName();
   }
 
   /// Returns backend options available for user selection.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<String> getAvailableBackends() async {
     _throwIfDisposed();
     final candidate = backend;
@@ -2710,6 +2717,8 @@ class LlamaEngine {
   }
 
   /// Returns resolved GPU layers for the active model load when available.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<int?> getResolvedGpuLayers() async {
     _throwIfDisposed();
     final candidate = backend;
@@ -2755,12 +2764,16 @@ class LlamaEngine {
   }
 
   /// Returns true if the current hardware and backend support GPU acceleration.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<bool> isGpuSupported() async {
     _throwIfDisposed();
     return backend.isGpuSupported();
   }
 
   /// Returns total and free VRAM in bytes.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<({int total, int free})> getVramInfo() async {
     _throwIfDisposed();
     return backend.getVramInfo();
@@ -2770,6 +2783,8 @@ class LlamaEngine {
   /// otherwise an empty list. With an empty [probeBackends] only
   /// already-registered backends are inspected (no backend module is loaded);
   /// pass backends to opt into loading just those before enumerating.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<List<GpuDeviceInfo>> listGpuDevices({
     List<GpuBackend> probeBackends = const [],
   }) async {

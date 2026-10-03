@@ -467,7 +467,12 @@ final result = await tool.invoke(args);
    throws `LlamaStateException` (requests used to throw
    `LlamaContextException`), `DecisionEngine.attach` throws
    `LlamaStateException`, and `capabilities` reports the engine as disposed.
-   `unloadModel` and `cancelGeneration` do nothing. To switch models, call
+   The backend queries `getBackendName`, `getAvailableBackends`,
+   `isGpuSupported`, `getVramInfo`, `listGpuDevices` and
+   `getResolvedGpuLayers`, which used to answer after `dispose`, now throw
+   `LlamaStateException`; read them before disposing. Model queries such as
+   `getMetadata` and `getContextSize` return their no-model values, as
+   before. `unloadModel` and `cancelGeneration` do nothing. To switch models, call
    `unloadModel` and load again; to start over after `dispose`, create a new
    `LlamaEngine`. A load running when `dispose` is called now throws
    `LlamaStateException` instead of completing, and its model is unloaded.
