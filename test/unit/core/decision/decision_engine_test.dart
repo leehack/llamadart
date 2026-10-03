@@ -945,6 +945,40 @@ void main() {
       expect(backend.freed, [_headHandle]);
       expect(backend.runs, isEmpty);
     });
+
+    test(
+      'throw LlamaStateException or do nothing on a disposed engine',
+      () async {
+        await engine.loadModel('laya-Q8_0.gguf');
+        final head = await engine.loadDecisionHeadBackend(_headPath);
+        await engine.dispose();
+
+        await expectLater(
+          engine.loadDecisionHeadBackend(_headPath),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+        await expectLater(
+          engine.runDecisionBackend(head.handle, const []),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await engine.freeDecisionHeadBackend(head.handle);
+        expect(
+          (await engine.backendDecisionCapabilities).unsupportedReason,
+          contains('disposed'),
+        );
+        expect(engine.modelHandle, isNull);
+        expect(engine.contextHandle, isNull);
+        expect(backend.headLoads, hasLength(1));
+        expect(backend.runs, isEmpty);
+        expect(backend.freed, isEmpty);
+      },
+    );
   });
 
   group('load with a DecisionModel', () {

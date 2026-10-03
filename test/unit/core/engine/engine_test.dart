@@ -2231,6 +2231,36 @@ void main() {
       );
     });
 
+    test('a disposed engine throws LlamaStateException before it validates '
+        'ModelParams', () async {
+      await engine.dispose();
+      const invalid = ModelParams(device: ComputeDevice.gpu, gpuLayers: 0);
+      expect(invalid.validate, throwsA(isA<LlamaArgumentException>()));
+
+      for (final load in <Future<void> Function()>[
+        () => engine.loadModel('qwen-test.gguf', modelParams: invalid),
+        () => engine.loadModelFromUrl(
+          'https://example.com/m.gguf',
+          modelParams: invalid,
+        ),
+        () => engine.loadModelSource(
+          ModelSource.path('/models/m.gguf'),
+          modelParams: invalid,
+        ),
+      ]) {
+        await expectLater(
+          load(),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+      }
+    });
+
     test('dispose releases backend even when unload fails', () async {
       final failingBackend = MockLlamaBackend(failContextFree: true);
       final failingEngine = LlamaEngine(failingBackend);
