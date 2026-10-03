@@ -561,6 +561,8 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    code that sets neither field is unchanged. Setting `device` together with
    `liteRtLmBackend` throws `LlamaArgumentException`; setting it with
    `LiteRtLmBackend(preferredBackend:)` throws `LlamaUnsupportedException`.
+   Code that still constructs `LiteRtLmBackend` imports it from
+   `package:llamadart/backend.dart`, as the section above describes.
 
 2. **An explicit device is a requirement.** With `device: cpu`, `gpu` or
    `npu`, a device the runtime and platform cannot provide throws
