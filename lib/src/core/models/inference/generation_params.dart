@@ -1,4 +1,6 @@
 import '../../exceptions.dart';
+import '../model_load_options.dart';
+import '../model_source.dart';
 
 /// How a [GenerationGrammarTrigger] activates a lazy grammar.
 enum GrammarTriggerType {
@@ -183,13 +185,56 @@ class SpeculativeDecodingConfig {
   /// `null` lets the backend choose its default.
   final double? draftSplitProbability;
 
-  /// Optional draft model path for speculative decoding modes that use a
-  /// separate drafter model, such as llama.cpp `--model-draft` with
-  /// `draft-simple`, `draft-eagle3`, `draft-mtp`, `draft-dflash`, or
-  /// `draft-dspark`.
+  final String? _draftModelPath;
+
+  /// Optional draft model for speculative decoding modes that use a separate
+  /// drafter model, such as llama.cpp `--model-draft` with `draft-simple`,
+  /// `draft-eagle3`, `draft-mtp`, `draft-dflash`, or `draft-dspark`: a local
+  /// path, an HTTP(S) URL or a Hugging Face file.
   ///
   /// Leave null for models that carry their own MTP layers.
-  final String? draftModelPath;
+  ///
+  /// `LlamaEngine` resolves it when the first generation that uses it starts,
+  /// before the request reaches the backend, as
+  /// `LlamaEngine.loadModelSource` resolves a model: its `modelResolver` and
+  /// `modelDownloadManager` check a local file, or download a remote one
+  /// with [draftModelDownload] into the model cache, or reuse the cached
+  /// file. On WebGPU the runtime fetches the URL itself. Later generations
+  /// on the same loaded model reuse that file for the same source, cache
+  /// directory and checksum, so the download and any checksum check run
+  /// once per loaded model; unloading or reloading the model resolves it
+  /// again. Cancelling the generation, or unloading the model, stops the
+  /// download. LiteRT-LM, and a backend that does not report every strategy
+  /// of this configuration, throw `LlamaUnsupportedException` before
+  /// anything downloads. The download reports no progress; to show
+  /// progress, download the file first with
+  /// `engine.modelDownloadManager.ensureModel(draftModel, options:
+  /// draftModelDownload, onProgress: ...)`, and the generation then reuses
+  /// the cached file.
+  ///
+  /// Strategies that use a separate drafter, such as `draftSimple`, need it
+  /// at run time: the backend throws when it is null.
+  final ModelSource? draftModel;
+
+  /// Download options for [draftModel]: cache policy and directory,
+  /// authentication, checksum, resume, retries and cancel token. A local
+  /// [draftModel] takes only [ModelLoadOptions.sha256] and the cancel token,
+  /// as [ModelLoadOptions] describes. [ModelCachePolicy.noCache] and
+  /// [ModelCachePolicy.refresh] throw `LlamaUnsupportedException`, since the
+  /// draft model resolves once per loaded model. They apply only to the
+  /// download `LlamaEngine` runs: backends receive the configuration with
+  /// default options, so credentials and the cancel token stay in the
+  /// calling isolate.
+  final ModelLoadOptions draftModelDownload;
+
+  /// The draft model file that backends load: the deprecated path a caller
+  /// set, the path of a local [draftModel], or the URL of a remote one.
+  ///
+  /// A remote [draftModel] becomes a file only when `LlamaEngine` downloads
+  /// it, so pass a configuration with a remote [draftModel] through
+  /// `LlamaEngine`, not straight to a native backend.
+  String? get draftModelPath =>
+      _draftModelPath ?? draftModel?.path ?? draftModel?.url.toString();
 
   /// Lookup n-gram size for n-gram self-speculative decoding.
   ///
@@ -232,7 +277,13 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    this.draftModelPath,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
     this.ngramSize,
     this.ngramSizeN,
     this.ngramSizeM,
@@ -242,7 +293,12 @@ class SpeculativeDecodingConfig {
     this.ngramTokenMax,
     this.ngramCacheStaticPath,
     this.ngramCacheDynamicPath,
-  }) : assert(draftTokenMax == null || draftTokenMax >= 0),
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
        assert(ngramSize == null || ngramSize > 0),
        assert(ngramSizeN == null || ngramSizeN > 0),
@@ -268,7 +324,9 @@ class SpeculativeDecodingConfig {
       draftTokenMin = null,
       minProbability = null,
       draftSplitProbability = null,
-      draftModelPath = null,
+      _draftModelPath = null,
+      draftModel = null,
+      draftModelDownload = ModelLoadOptions.defaults,
       ngramSize = null,
       ngramSizeN = null,
       ngramSizeM = null,
@@ -285,8 +343,19 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    this.draftModelPath,
-  }) : strategy = SpeculativeDecodingStrategy.mtp,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.mtp,
        strategies = const [SpeculativeDecodingStrategy.mtp],
        ngramSize = null,
        ngramSizeN = null,
@@ -314,8 +383,19 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    required this.draftModelPath,
-  }) : strategy = SpeculativeDecodingStrategy.draftSimple,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.draftSimple,
        strategies = const [SpeculativeDecodingStrategy.draftSimple],
        ngramSize = null,
        ngramSizeN = null,
@@ -343,8 +423,19 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    required this.draftModelPath,
-  }) : strategy = SpeculativeDecodingStrategy.draftEagle3,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.draftEagle3,
        strategies = const [SpeculativeDecodingStrategy.draftEagle3],
        ngramSize = null,
        ngramSizeN = null,
@@ -372,8 +463,19 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    required this.draftModelPath,
-  }) : strategy = SpeculativeDecodingStrategy.draftDflash,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.draftDflash,
        strategies = const [SpeculativeDecodingStrategy.draftDflash],
        ngramSize = null,
        ngramSizeN = null,
@@ -398,7 +500,7 @@ class SpeculativeDecodingConfig {
   /// Enables experimental upstream llama.cpp `draft-dspark` decoding.
   ///
   /// This is an opt-in strategy and is never selected automatically. Native
-  /// llama.cpp requires [draftModelPath] to identify a compatible external
+  /// llama.cpp requires [draftModel] to identify a compatible external
   /// DSpark draft GGUF. Validate deterministic output, acceptance, and warmed
   /// throughput for the exact target, draft, and backend before production
   /// use. LiteRT-LM rejects this strategy, WebGPU rejects it unless its bridge
@@ -409,8 +511,19 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    required this.draftModelPath,
-  }) : strategy = SpeculativeDecodingStrategy.draftDspark,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.draftDspark,
        strategies = const [SpeculativeDecodingStrategy.draftDspark],
        ngramSize = null,
        ngramSizeN = null,
@@ -447,7 +560,9 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
-       draftModelPath = null,
+       _draftModelPath = null,
+       draftModel = null,
+       draftModelDownload = ModelLoadOptions.defaults,
        ngramSize = ngramSizeN ?? ngramSize,
        ngramSizeN = ngramSizeN ?? ngramSize,
        ngramMatch = null,
@@ -473,7 +588,9 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
-       draftModelPath = null,
+       _draftModelPath = null,
+       draftModel = null,
+       draftModelDownload = ModelLoadOptions.defaults,
        ngramSize = ngramSizeN ?? ngramSize,
        ngramSizeN = ngramSizeN ?? ngramSize,
        ngramMatch = null,
@@ -499,7 +616,9 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
-       draftModelPath = null,
+       _draftModelPath = null,
+       draftModel = null,
+       draftModelDownload = ModelLoadOptions.defaults,
        ngramSize = ngramSizeN ?? ngramSize,
        ngramSizeN = ngramSizeN ?? ngramSize,
        ngramMatch = null,
@@ -524,7 +643,9 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
-       draftModelPath = null,
+       _draftModelPath = null,
+       draftModel = null,
+       draftModelDownload = ModelLoadOptions.defaults,
        ngramSize = null,
        ngramSizeN = null,
        ngramSizeM = null,
@@ -546,7 +667,9 @@ class SpeculativeDecodingConfig {
        draftTokenMin = null,
        minProbability = null,
        draftSplitProbability = null,
-       draftModelPath = null,
+       _draftModelPath = null,
+       draftModel = null,
+       draftModelDownload = ModelLoadOptions.defaults,
        ngramSize = null,
        ngramSizeN = null,
        ngramSizeM = null,
@@ -566,7 +689,13 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftSplitProbability,
-    this.draftModelPath,
+    @Deprecated(
+      'Use draftModel with ModelSource.path(path) or another ModelSource. '
+      'This parameter will be removed in a future release.',
+    )
+    String? draftModelPath,
+    this.draftModel,
+    this.draftModelDownload = ModelLoadOptions.defaults,
     this.ngramSize,
     this.ngramSizeN,
     this.ngramSizeM,
@@ -576,7 +705,12 @@ class SpeculativeDecodingConfig {
     this.ngramTokenMax,
     this.ngramCacheStaticPath,
     this.ngramCacheDynamicPath,
-  }) : strategy = SpeculativeDecodingStrategy.backendDefault,
+  }) : _draftModelPath = draftModelPath,
+       assert(
+         draftModelPath == null || draftModel == null,
+         'Set draftModel or the deprecated draftModelPath, not both.',
+       ),
+       strategy = SpeculativeDecodingStrategy.backendDefault,
        assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
        assert(ngramSize == null || ngramSize > 0),
@@ -594,6 +728,56 @@ class SpeculativeDecodingConfig {
          draftSplitProbability == null ||
              (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
+
+  /// A copy of this configuration with [draftModel] and its
+  /// [draftModelDownload] in place of its draft model, download options or
+  /// deprecated path, keeping every other setting.
+  SpeculativeDecodingConfig withDraftModel(
+    ModelSource draftModel, {
+    ModelLoadOptions draftModelDownload = ModelLoadOptions.defaults,
+  }) => SpeculativeDecodingConfig._copy(
+    this,
+    draftModel: draftModel,
+    draftModelPath: null,
+    draftModelDownload: draftModelDownload,
+  );
+
+  /// A copy of this configuration with [draftModelDownload] in place of its
+  /// download options, keeping every other setting.
+  ///
+  /// `LlamaEngine` sends backends a copy with the default options: the
+  /// caller's options, which can hold credentials and a cancel token, only
+  /// apply to the download the engine runs.
+  SpeculativeDecodingConfig withDraftModelDownload(
+    ModelLoadOptions draftModelDownload,
+  ) => SpeculativeDecodingConfig._copy(
+    this,
+    draftModel: draftModel,
+    draftModelPath: _draftModelPath,
+    draftModelDownload: draftModelDownload,
+  );
+
+  SpeculativeDecodingConfig._copy(
+    SpeculativeDecodingConfig config, {
+    required this.draftModel,
+    required String? draftModelPath,
+    required this.draftModelDownload,
+  }) : strategy = config.strategy,
+       strategies = config.strategies,
+       draftTokenMax = config.draftTokenMax,
+       draftTokenMin = config.draftTokenMin,
+       minProbability = config.minProbability,
+       draftSplitProbability = config.draftSplitProbability,
+       _draftModelPath = draftModelPath,
+       ngramSize = config.ngramSize,
+       ngramSizeN = config.ngramSizeN,
+       ngramSizeM = config.ngramSizeM,
+       ngramMinHits = config.ngramMinHits,
+       ngramMatch = config.ngramMatch,
+       ngramTokenMin = config.ngramTokenMin,
+       ngramTokenMax = config.ngramTokenMax,
+       ngramCacheStaticPath = config.ngramCacheStaticPath,
+       ngramCacheDynamicPath = config.ngramCacheDynamicPath;
 
   /// Effective strategy list for backends that support upstream-style mixing.
   List<SpeculativeDecodingStrategy> get effectiveStrategies =>

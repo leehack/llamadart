@@ -176,6 +176,60 @@ directory for every default download, set
    engine changes every engine, and `LlamaEngine.configureLogging` also updates
    running worker isolates.
 
+## Unreleased: `ModelSource` for LoRA adapters, draft models and speech files
+
+LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
+`ModelSource`, so a remote file downloads into the model cache like a model.
+The `String` path forms still work for one minor release, with deprecation
+warnings:
+
+| Before | After |
+| --- | --- |
+| `engine.setLora(path, scale: s)` | `engine.setLoraSource(ModelSource.path(path), scale: s)` |
+| `engine.removeLora(path)` | `engine.removeLoraSource(ModelSource.path(path))` |
+| `LoraAdapterConfig(path: path, scale: s)` | `LoraAdapterConfig.source(ModelSource.path(path), scale: s)` |
+| `SpeculativeDecodingConfig.draftSimple(draftModelPath: path)` (and the other constructors) | `SpeculativeDecodingConfig.draftSimple(draftModel: ModelSource.path(path))` |
+| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)` |
+
+```dart
+// Before
+await engine.setLora('/models/lora/domain.gguf', scale: 0.7);
+final config = LiteRtLmAsrRuntimeConfig(
+  modelPath: '/models/moonshine_tiny.tflite',
+  tokenizerPath: '/models/tokenizer.json',
+  modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+);
+// After
+await engine.setLoraSource(
+  ModelSource.path('/models/lora/domain.gguf'),
+  scale: 0.7,
+);
+final config = LiteRtLmAsrRuntimeConfig.source(
+  model: ModelSource.path('/models/moonshine_tiny.tflite'),
+  tokenizer: ModelSource.path('/models/tokenizer.json'),
+  modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+);
+```
+
+- A local path, relative ones included, stays `ModelSource.path(path)`. On
+  WebGPU, where these paths were URLs, use `ModelSource.parse(url)`; a local
+  path there throws `LlamaUnsupportedException`.
+- For a page-relative URL on the web (such as `models/adapter.gguf`),
+  resolve it against the page: `ModelSource.url(Uri.base.resolve(path))`.
+- `ModelSource` and `const`: `ModelSource.path` is not a `const`
+  constructor, so drop `const` from a `ModelParams`, `GenerationParams` or
+  `LiteRtLmAsrRuntimeConfig` that now holds one.
+- Remove an adapter with the same source it was set from:
+  `removeLoraSource` matches sources, not paths.
+- `draftModelDownload`, `setLoraSource(download:, onProgress:)`,
+  `LoraAdapterConfig.source(source, download:)` and
+  `SpeechToTextEngine.liteRtLm(config, download:, onProgress:, store:)` set
+  the download options for remote files. A `ModelParams.loras` adapter never
+  takes the model load's bearer token, headers or `sha256`; give it its own
+  `download:` when its host needs credentials.
+- A draft model downloads once per loaded model; `draftModelDownload` rejects
+  `ModelCachePolicy.noCache` and `refresh`.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

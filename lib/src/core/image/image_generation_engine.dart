@@ -265,7 +265,11 @@ class ImageGenerationEngine {
   /// download and reusing a cached file. Files resolve one at a time, main
   /// file first. [download] applies to every remote file: cache policy and
   /// directory, authentication, resume, retries and the cancel token. Local
-  /// files take only the cancel token.
+  /// files take only the cancel token. Its bearer token and headers are never
+  /// sent across hosts: when they are set and the remote files span more than
+  /// one origin (scheme, host and port), the load throws
+  /// [LlamaArgumentException] naming the origins before downloading from a
+  /// second host.
   ///
   /// Each file's role then comes from its header (GGUF metadata and tensor
   /// names, or the safetensors header), unless the model sets it, so files
@@ -324,6 +328,8 @@ class ImageGenerationEngine {
   ///   download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
+  /// - [LlamaArgumentException] when [download] sets a bearer token or
+  ///   headers for remote files on more than one origin.
   static Future<ImageGenerationEngine> load(
     ImageGenerationModel model, {
     ImageModelParams params = const ImageModelParams(),
@@ -367,13 +373,14 @@ class ImageGenerationEngine {
     };
 
     final effectiveStore = store ?? ModelFileStore();
-    final paths = await _resolveFiles(
+    final paths = await resolveModelSourceFiles(
       sources,
-      knownSizes,
-      download,
-      onProgress,
-      effectiveStore.resolver,
-      effectiveStore.downloadManager,
+      store: effectiveStore,
+      download: download,
+      onProgress: onProgress,
+      operation: 'Image model loading',
+      knownSizes: knownSizes,
+      assetType: 'image model',
     );
     void throwIfCancelled() {
       if (download.cancelToken?.isCancelled ?? false) {
@@ -697,67 +704,6 @@ class ImageGenerationEngine {
     ImageModelRole.t5xxl: 't5xxl',
     ImageModelRole.llm: 'llm',
   };
-
-  /// Local paths of [sources], in order, resolved one at a time.
-  static Future<List<String>> _resolveFiles(
-    List<ModelSource> sources,
-    Map<int, int> knownSizes,
-    ModelLoadOptions loadOptions,
-    ModelDownloadProgressCallback? onProgress,
-    ModelResolver resolver,
-    ModelDownloadManager manager,
-  ) async {
-    final sizes = Map<int, int>.of(knownSizes);
-    var resolvedBytes = 0;
-    void report(int currentBytes) {
-      if (onProgress == null) {
-        return;
-      }
-      final total = sizes.length == sources.length
-          ? sizes.values.fold<int>(0, (sum, size) => sum + size)
-          : null;
-      onProgress(
-        ModelDownloadProgress(
-          receivedBytes: resolvedBytes + currentBytes,
-          totalBytes: total,
-        ),
-      );
-    }
-
-    final localOptions = ModelLoadOptions(cancelToken: loadOptions.cancelToken);
-    final files = <String>[];
-    for (final (index, source) in sources.indexed) {
-      final fileOptions = source.isLocal ? localOptions : loadOptions;
-      final fileProgress = onProgress == null
-          ? null
-          : (ModelDownloadProgress progress) {
-              if (progress.totalBytes case final total?) {
-                sizes.putIfAbsent(index, () => total);
-              }
-              report(progress.receivedBytes);
-            };
-      final target = await resolver.resolve(
-        source,
-        ModelResolveRequest(options: fileOptions, onProgress: fileProgress),
-      );
-      final entry = await ensureModelTargetFile(
-        manager,
-        source,
-        target,
-        options: fileOptions,
-        onProgress: fileProgress,
-        assetType: 'image model',
-      );
-      files.add(entry.filePath);
-      final bytes = entry.bytes ?? sizes[index];
-      if (bytes != null) {
-        sizes[index] = bytes;
-      }
-      resolvedBytes += bytes ?? 0;
-      report(0);
-    }
-    return files;
-  }
 
   static ImageGenerationDriver get _driver =>
       debugImageGenerationDriverOverride ?? createImageGenerationDriver();

@@ -57,9 +57,9 @@ class _IoLiveSpeechTranscriptionService
         );
       }
       final speechEngine = SpeechToTextEngine.liteRtLm(
-        LiteRtLmAsrRuntimeConfig(
-          modelPath: modelPath,
-          tokenizerPath: tokenizerPath,
+        LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.path(modelPath),
+          tokenizer: ModelSource.path(tokenizerPath),
           modelPreset: preset,
         ),
       );

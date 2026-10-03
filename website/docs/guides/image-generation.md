@@ -176,7 +176,10 @@ wrong file costs its download; it stays in the cache.
 - `download:` (`ModelLoadOptions`, as for `LlamaEngine.loadModelSource`)
   applies to every remote file: cache policy and directory, `bearerToken` and
   headers (for example for a gated repository), resume, retries and the
-  cancel token. Local files take only the cancel token.
+  cancel token. Local files take only the cancel token. `bearerToken` and
+  headers never cross hosts: with them set, remote files on more than one
+  origin (scheme, host and port) throw `LlamaArgumentException` before
+  anything downloads from a second host.
   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since it
   cannot name one of several files.
 - A cancelled load throws `LlamaStateException`. Cancelling stops a

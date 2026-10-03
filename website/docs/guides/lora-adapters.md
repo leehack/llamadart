@@ -15,9 +15,38 @@ separate training workflow, then adapters are loaded at inference time.
 
 `LlamaEngine` exposes three LoRA operations:
 
-- `setLora(path, scale: ...)`: load or update an adapter scale.
-- `removeLora(path)`: remove one adapter from the active set.
+- `setLoraSource(source, scale: ...)`: load an adapter or update its scale.
+- `removeLoraSource(source)`: remove one adapter from the active set.
 - `clearLoras()`: remove all active adapters from the current context.
+
+An adapter is a `ModelSource`, like a model: a local path
+(`ModelSource.path`), an HTTP(S) URL or a Hugging Face file
+(`ModelSource.parse('hf://owner/repo/adapter.gguf')`). The `String` path forms
+`setLora(path)`, `removeLora(path)` and `LoraAdapterConfig(path: ...)` are
+deprecated.
+
+## Downloading adapters
+
+On native backends `setLoraSource` checks a local file, or downloads a remote
+adapter into the model cache with its `download` options, resuming an
+interrupted download and reusing a cached file:
+
+```dart
+final adapter = ModelSource.parse('hf://owner/repo/domain-lora.gguf');
+final cancel = ModelDownloadCancelToken();
+
+await engine.setLoraSource(
+  adapter,
+  scale: 0.7,
+  download: ModelLoadOptions(cancelToken: cancel),
+  onProgress: (progress) => print('${progress.receivedBytes} bytes'),
+);
+```
+
+- `onProgress` reports the download; cancelling the token stops it and
+  `setLoraSource` throws `LlamaStateException`.
+- On WebGPU a remote source goes to the bridge as a URL, and a local path
+  throws `LlamaUnsupportedException`.
 
 ## Basic runtime flow
 
@@ -30,7 +59,10 @@ Future<void> main() async {
   try {
     await engine.loadModel('/models/base-model.gguf');
 
-    await engine.setLora('/models/lora/domain.gguf', scale: 0.7);
+    await engine.setLoraSource(
+      ModelSource.path('/models/lora/domain.gguf'),
+      scale: 0.7,
+    );
 
     final answer = await engine.create(
       const [
@@ -54,18 +86,34 @@ Pass adapters as `ModelParams.loras` to apply them as part of the load:
 ```dart
 await engine.loadModel(
   '/models/base-model.gguf',
-  modelParams: const ModelParams(
+  modelParams: ModelParams(
     loras: [
-      LoraAdapterConfig(path: '/models/lora/style.gguf', scale: 0.35),
-      LoraAdapterConfig(path: '/models/lora/domain.gguf', scale: 0.70),
+      LoraAdapterConfig.source(
+        ModelSource.path('/models/lora/style.gguf'),
+        scale: 0.35,
+      ),
+      LoraAdapterConfig.source(
+        ModelSource.parse('hf://owner/repo/domain-lora.gguf'),
+        scale: 0.70,
+      ),
     ],
   ),
 );
 ```
 
+- `LlamaEngine` resolves each adapter source in list order before the model
+  loads, as `setLoraSource` does, with the adapter's own options:
+  `LoraAdapterConfig.source(source, download: ModelLoadOptions(...))`.
+  Without them an adapter takes only the non-secret options of the load
+  (cache policy and directory, resume, retries and cancel token). The load's
+  bearer token, headers and `sha256` never reach an adapter's host, so set an
+  adapter's own `download` when it needs authentication. Adapter downloads
+  report no progress, and a failed one fails the load.
+
 - On llama.cpp, native and WebGPU, each adapter is applied in list order at
-  its scale, exactly as `setLora(path, scale: ...)` would, once the model is
-  loaded. `setLora`, `removeLora` and `clearLoras` can change them afterwards.
+  its scale, exactly as `setLoraSource(source, scale: ...)` would, once the
+  model is loaded. `setLoraSource`, `removeLoraSource` and `clearLoras` can
+  change them afterwards.
 - If an adapter cannot be applied, the load fails and the model is unloaded:
   an aLoRA adapter, or WebGPU bridge assets without runtime LoRA, throw
   `LlamaUnsupportedException`; any other failure, such as a missing file or an
@@ -80,12 +128,17 @@ await engine.loadModel(
 You can activate multiple adapters on the same loaded model:
 
 ```dart
-await engine.setLora('/models/lora/style.gguf', scale: 0.35);
-await engine.setLora('/models/lora/domain.gguf', scale: 0.70);
+final style = ModelSource.path('/models/lora/style.gguf');
+final domain = ModelSource.path('/models/lora/domain.gguf');
+
+await engine.setLoraSource(style, scale: 0.35);
+await engine.setLoraSource(domain, scale: 0.70);
 ```
 
-- Calling `setLora(...)` again with the same path updates scale.
-- Use `removeLora(path)` to disable one adapter.
+- Calling `setLoraSource(...)` again with the same source updates scale. When
+  its options resolve the source to another file, such as another
+  `cacheDirectory`, that file replaces the adapter applied from the source.
+- Use `removeLoraSource(source)` to disable one adapter.
 - Use `clearLoras()` to reset to base model behavior.
 
 ## Training your own LoRA adapters
@@ -101,7 +154,7 @@ Recommended workflow:
 3. Export adapter artifacts from training.
 4. Convert adapter artifacts into llama.cpp-compatible GGUF adapter files.
 5. Validate outputs in a native test run, then load adapters with
-   `ModelParams.loras` or `setLora(...)`.
+   `ModelParams.loras` or `setLoraSource(...)`.
 
 Practical compatibility checks:
 
@@ -123,7 +176,7 @@ every adapter from the start of generation, so an aLoRA adapter used this way
 would change output without any error — the failure is silent and looks like a
 badly behaved LoRA.
 
-`engine.setLora`, and a load with `ModelParams.loras`, inspect each adapter
+`engine.setLoraSource`, and a load with `ModelParams.loras`, inspect each adapter
 after loading it and throw `LlamaUnsupportedException` for an aLoRA adapter:
 
 ```text
@@ -145,9 +198,9 @@ Custom native runtimes must export the aLoRA metadata functions; see
 
 - LoRA activation is tied to the active context.
 - `unloadModel()` or `dispose()` releases model/context resources and clears
-  active adapter state, including changes made with `setLora`.
+  active adapter state, including changes made with `setLoraSource`.
 - Each load applies its `ModelParams.loras`; re-apply adapters set with
-  `setLora` after reloading a model.
+  `setLoraSource` after reloading a model.
 
 ## Platform notes
 
@@ -161,8 +214,8 @@ Custom native runtimes must export the aLoRA metadata functions; see
   `getLoraAdapterCapabilities()` reports support
   (bridge assets `v0.1.54+`, the default pin among them;
   [llama-web-bridge#142](https://github.com/leehack/llama-web-bridge/pull/142)).
-  The path is a URL; the bridge downloads each adapter once per
-  model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
+  The adapter source is a remote URL or `hf://` file; the bridge downloads
+  each adapter once per model load. An aLoRA adapter throws `LlamaUnsupportedException`, and an
   adapter it cannot load, such as one for another base model, throws
   `LlamaModelException`. On older bridge assets every WebGPU LoRA call, and
   every load with `ModelParams.loras`, throws `LlamaUnsupportedException`.
@@ -171,8 +224,8 @@ Custom native runtimes must export the aLoRA metadata functions; see
 
 ## Troubleshooting
 
-- If `setLora(...)` or a load with `ModelParams.loras` fails, verify the
-  adapter path is accessible at runtime.
+- If `setLoraSource(...)` or a load with `ModelParams.loras` fails, verify the
+  adapter file or URL is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
 - When behavior seems unchanged, confirm you are testing on a llama.cpp/GGUF
   target, native or WebGPU with capable bridge assets, and not a LiteRT-LM

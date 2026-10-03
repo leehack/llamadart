@@ -22,8 +22,10 @@ description: >-
     over a `LlamaEngine` with the Qwen3-ASR GGUF and its mmproj loaded. Native
     llama.cpp, or WebGPU with bridge assets `v0.1.30+`.
   - LiteRT-LM ASR (live partials, then a final transcript):
-    `SpeechToTextEngine.liteRtLm(LiteRtLmAsrRuntimeConfig(...))` with a local
-    `.tflite` model and tokenizer JSON. Native only, CPU only
+    `SpeechToTextEngine.liteRtLm(LiteRtLmAsrRuntimeConfig.source(...))` with
+    a `.tflite` model and tokenizer JSON as `ModelSource`s; remote ones are
+    downloaded into the model cache before the first task (`download`,
+    `onProgress`, `store` on `liteRtLm`). The path constructor is deprecated. Native only, CPU only
     (`LiteRtLmAsrBackend.cpu`). Presets: `parakeetTdt0_6bV3`,
     `parakeetCtc0_6b`, `moonshineTiny`, `whisperTiny`, `qwen3Asr0_6b`; the
     files must match the preset. It does not use any loaded chat model.
@@ -170,9 +172,9 @@ import 'package:llamadart/llamadart.dart';
 
 Future<String?> dictate(Stream<Float32List> mono16KhzChunks) async {
   final SpeechToTextEngine recognizer = SpeechToTextEngine.liteRtLm(
-    const LiteRtLmAsrRuntimeConfig(
-      modelPath: '/models/moonshine_tiny.tflite',
-      tokenizerPath: '/models/tokenizer.json',
+    LiteRtLmAsrRuntimeConfig.source(
+      model: ModelSource.path('/models/moonshine_tiny.tflite'),
+      tokenizer: ModelSource.path('/models/tokenizer.json'),
       modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
     ),
   );

@@ -1278,7 +1278,7 @@ class LiteRtLmService {
       unsupported.add('speculativeDecodingConfig.draftSplitProbability');
     }
     if (config.draftModelPath != null) {
-      unsupported.add('speculativeDecodingConfig.draftModelPath');
+      unsupported.add('speculativeDecodingConfig.draftModel');
     }
     if (config.ngramSize != null) {
       unsupported.add('speculativeDecodingConfig.ngramSize');
