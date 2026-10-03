@@ -130,6 +130,36 @@ void main() {
       }
       expect(disposed, isTrue);
     });
+
+    test('a load racing dispose throws LlamaStateException and dispose '
+        'frees its model', () async {
+      if (modelPath.isEmpty) {
+        return;
+      }
+      final engine = LlamaEngine(LlamaBackend());
+      const params = ModelParams(
+        contextSize: 512,
+        gpuLayers: 0,
+        numberOfThreads: 2,
+        numberOfThreadsBatch: 2,
+      );
+      final load = engine.loadModel(modelPath, modelParams: params);
+      final disposal = engine.dispose();
+
+      expect(engine.dispose(), same(disposal));
+      await expectLater(load, throwsA(isA<LlamaStateException>()));
+      await disposal.timeout(const Duration(seconds: 30));
+      expect(engine.isDisposed, isTrue);
+      expect(engine.isReady, isFalse);
+      expect(
+        (await engine.capabilities).unsupportedReason,
+        contains('disposed'),
+      );
+      await expectLater(
+        engine.loadModel(modelPath, modelParams: params),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
   });
 
   group('generation right after a cancel (native)', () {

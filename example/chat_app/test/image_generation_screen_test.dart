@@ -957,7 +957,7 @@ class FakeImageGenerator implements ImageGenerator {
   FakeImageGenerator(this.generateError);
 
   @override
-  ImageGenerationCapabilities get capabilities =>
+  Future<ImageGenerationCapabilities> get capabilities async =>
       const ImageGenerationCapabilities(
         isSupported: true,
         backendName: 'CPU',

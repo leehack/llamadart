@@ -283,6 +283,30 @@ void main() {
       expect(backend.cancelCalls, 0);
     });
 
+    test('the backend hooks report or reject a disposed engine', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      await llamaEngine.dispose();
+
+      final capabilities = await llamaEngine.backendTextToSpeechCapabilities;
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('disposed'));
+      expect(
+        () => llamaEngine.synthesizeTextToSpeechBackend(
+          const BackendTextToSpeechRequest(text: 'Hello.'),
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+      expect(backend.lastRequest, isNull);
+      expect(llamaEngine.modelHandle, isNull);
+      expect(llamaEngine.contextHandle, isNull);
+    });
+
     test('a synthesizer disposed during preflight starts no task', () async {
       await _loadTextToSpeechModel(llamaEngine);
       backend.blockCapabilities = true;

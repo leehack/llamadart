@@ -88,6 +88,7 @@ class LlamaEngine {
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
+  Future<void>? _disposal;
   bool _isReadyState = false;
   // Changes on every load and unload, so a probe that awaits can tell whether
   // the model it started on is still the loaded one.
@@ -202,15 +203,21 @@ class LlamaEngine {
   /// What this engine and its loaded model support, as the loaded model's
   /// runtime reports it.
   ///
-  /// Before a model loads, [LlamaEngineCapabilities.isSupported] is false
-  /// and every capability is false, as it is when a model loads or unloads
-  /// while the snapshot is read. Read it again after loading or unloading a
-  /// model or multimodal projector.
+  /// Before a model loads and after [dispose],
+  /// [LlamaEngineCapabilities.isSupported] is false and every capability is
+  /// false, as it is when a model loads or unloads while the snapshot is
+  /// read; [LlamaEngineCapabilities.unsupportedReason] says which. Read it
+  /// again after loading or unloading a model or multimodal projector.
   Future<LlamaEngineCapabilities> get capabilities async {
+    const disposed = LlamaEngineCapabilities(
+      isSupported: false,
+      unsupportedReason: _disposedMessage,
+    );
     const notLoaded = LlamaEngineCapabilities(
       isSupported: false,
       unsupportedReason: 'No model is loaded. Call loadModel first.',
     );
+    if (isDisposed) return disposed;
     if (!_isReady || _modelHandle == null) {
       return notLoaded;
     }
@@ -229,24 +236,13 @@ class LlamaEngine {
     );
     final lazyGrammar =
         grammar && ChatCompletionRequestPlanner.supportsLazyGrammar(candidate);
-    final mmContextHandle = _mmContextHandle;
 
     final BackendGenerationCapabilities generation;
-    final ({bool vision, bool audio}) directMedia;
-    final bool projectorVision;
-    final bool projectorAudio;
+    final ({bool vision, bool audio}) media;
     String? backendName;
     try {
       generation = await _generationCapabilities();
-      directMedia = candidate is BackendDirectMediaInput
-          ? await (candidate as BackendDirectMediaInput).directMediaInput()
-          : (vision: false, audio: false);
-      projectorVision =
-          mmContextHandle != null &&
-          await _probeMedia(() => candidate.supportsVision(mmContextHandle));
-      projectorAudio =
-          mmContextHandle != null &&
-          await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+      media = await _mediaSupport();
       try {
         backendName = await candidate.getBackendName();
       } catch (error, stackTrace) {
@@ -257,17 +253,19 @@ class LlamaEngine {
         );
       }
     } catch (_) {
+      if (isDisposed) return disposed;
       if (_modelEpoch != epoch) return notLoaded;
       rethrow;
     }
+    if (isDisposed) return disposed;
     // A load or unload while probing would mix two models' answers.
     if (_modelEpoch != epoch) return notLoaded;
     return LlamaEngineCapabilities(
       isSupported: true,
       backendName: backendName,
       runtime: runtime,
-      supportsVision: directMedia.vision || projectorVision,
-      supportsAudio: directMedia.audio || projectorAudio,
+      supportsVision: media.vision,
+      supportsAudio: media.audio,
       supportsEmbeddings: embeddings,
       supportsNextTokenScoring: nextTokenScoring,
       supportsMultiTurnChat: multiTurnChat,
@@ -285,6 +283,29 @@ class LlamaEngine {
       ),
     );
   }
+
+  /// The media inputs the loaded model takes: direct media of the runtime,
+  /// or what the loaded multimodal projector reports.
+  Future<({bool vision, bool audio})> _mediaSupport() async {
+    final candidate = backend;
+    final mmContextHandle = _mmContextHandle;
+    final direct = candidate is BackendDirectMediaInput
+        ? await (candidate as BackendDirectMediaInput).directMediaInput()
+        : (vision: false, audio: false);
+    final vision =
+        direct.vision ||
+        mmContextHandle != null &&
+            await _probeMedia(() => candidate.supportsVision(mmContextHandle));
+    final audio =
+        direct.audio ||
+        mmContextHandle != null &&
+            await _probeMedia(() => candidate.supportsAudio(mmContextHandle));
+    return (vision: vision, audio: audio);
+  }
+
+  /// Whether a model is loaded and still the one loaded at [epoch].
+  bool _isLoadedAt(int epoch) =>
+      !isDisposed && _isReady && _modelHandle != null && _modelEpoch == epoch;
 
   /// A media probe that cannot run reports no support instead of throwing.
   Future<bool> _probeMedia(Future<bool> Function() probe) async {
@@ -331,6 +352,7 @@ class LlamaEngine {
       () => _withModelLifecycle('load a model', () async {
         modelParams.validate();
         await _loadModel(path, modelParams: modelParams, format: format);
+        _throwIfDisposedDuringLoad();
         await _captureObservedModel(path);
       }),
     );
@@ -416,6 +438,7 @@ class LlamaEngine {
     ModelLoadOptions options = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
   }) async {
+    _throwIfDisposed();
     modelParams.validate();
     final target = await modelResolver.resolve(
       source,
@@ -510,6 +533,7 @@ class LlamaEngine {
           onProgress: onProgress,
           format: format,
         );
+        _throwIfDisposedDuringLoad();
         await _captureObservedModel(url);
       }),
     );
@@ -900,6 +924,7 @@ class LlamaEngine {
         _redactedErrorDetails(e, mmProjPath),
       );
     }
+    _throwIfDisposedDuringLoad();
   }
 
   /// Unloads the active multimodal projector while keeping the model loaded.
@@ -923,8 +948,24 @@ class LlamaEngine {
     }
   }
 
-  /// Releases all allocated resources.
-  Future<void> dispose() async {
+  /// Whether [dispose] has been called.
+  bool get isDisposed => _disposal != null;
+
+  /// Waits for a model load or unload in progress, unloads the model, which
+  /// cancels running generations, and disposes [backend].
+  ///
+  /// Idempotent: every call returns the same future. Terminal: afterwards,
+  /// loads, requests and the backend queries [getBackendName],
+  /// [getAvailableBackends], [isGpuSupported], [getVramInfo],
+  /// [listGpuDevices] and [getResolvedGpuLayers] throw
+  /// [LlamaStateException]; [capabilities] reports the engine as disposed;
+  /// model queries such as [getMetadata] and [getContextSize] return their
+  /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A load running when this is called throws
+  /// [LlamaStateException] once it finishes, and its model is unloaded; a
+  /// download that [loadModelSource] started runs to its end first.
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
     unregisterLoggingBackend(backend);
     final activeLifecycle = _modelLifecycleOperation;
     if (activeLifecycle != null) {
@@ -939,7 +980,11 @@ class LlamaEngine {
     Object? unloadError;
     StackTrace? unloadStackTrace;
     try {
-      await unloadModel();
+      await _withModelLifecycle(
+        'unload the current model',
+        _unloadModel,
+        whileDisposing: true,
+      );
     } catch (error, stackTrace) {
       unloadError = error;
       unloadStackTrace = stackTrace;
@@ -960,7 +1005,10 @@ class LlamaEngine {
   }
 
   /// Unloads the currently loaded model and frees its resources.
+  ///
+  /// Does nothing after [dispose].
   Future<void> unloadModel() {
+    if (isDisposed) return Future<void>.value();
     return _withModelLifecycle('unload the current model', _unloadModel);
   }
 
@@ -1577,7 +1625,10 @@ class LlamaEngine {
   ///
   /// A stream that has not reached the backend yet ends without generating.
   /// A stream listened to after this call is not affected.
+  ///
+  /// Does nothing after [dispose].
   void cancelGeneration() {
+    if (isDisposed) return;
     _generationCancellation.cancel();
     backend.cancelGeneration();
   }
@@ -1983,18 +2034,32 @@ class LlamaEngine {
   /// Whether a multimodal projector is loaded.
   bool get hasMultimodalProjector => _mmContextHandle != null;
 
-  /// Whether the loaded model supports vision.
-  Future<bool> get supportsVision async =>
-      _mmContextHandle != null &&
-      await backend.supportsVision(_mmContextHandle!);
-
-  /// Whether the loaded model supports audio.
+  /// Whether the loaded model takes image input, as
+  /// [LlamaEngineCapabilities.supportsVision] of [capabilities] reports it.
   ///
-  /// On the native llama.cpp backend, throws [LlamaUnsupportedException] only
-  /// when the runtime cannot run an mtmd function this package calls.
-  Future<bool> get supportsAudio async =>
-      _mmContextHandle != null &&
-      await backend.supportsAudio(_mmContextHandle!);
+  /// False when no model is loaded, after [dispose], and when the model
+  /// loads or unloads during the probe.
+  Future<bool> get supportsVision async => (await _loadedMediaSupport()).vision;
+
+  /// Whether the loaded model takes audio input, as
+  /// [LlamaEngineCapabilities.supportsAudio] of [capabilities] reports it.
+  ///
+  /// False when no model is loaded, after [dispose], and when the model
+  /// loads or unloads during the probe.
+  Future<bool> get supportsAudio async => (await _loadedMediaSupport()).audio;
+
+  Future<({bool vision, bool audio})> _loadedMediaSupport() async {
+    const none = (vision: false, audio: false);
+    final epoch = _modelEpoch;
+    if (!_isLoadedAt(epoch)) return none;
+    try {
+      final media = await _mediaSupport();
+      return _isLoadedAt(epoch) ? media : none;
+    } catch (_) {
+      if (!_isLoadedAt(epoch)) return none;
+      rethrow;
+    }
+  }
 
   /// Whether video input is consumable through the public Dart generation API.
   ///
@@ -2444,10 +2509,18 @@ class LlamaEngine {
   // ============================================================
 
   /// Returns the name of the active GPU backend.
-  Future<String> getBackendName() => backend.getBackendName();
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<String> getBackendName() async {
+    _throwIfDisposed();
+    return backend.getBackendName();
+  }
 
   /// Returns backend options available for user selection.
-  Future<String> getAvailableBackends() {
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<String> getAvailableBackends() async {
+    _throwIfDisposed();
     final candidate = backend;
     if (candidate is BackendAvailability) {
       return (candidate as BackendAvailability).getAvailableBackends();
@@ -2466,12 +2539,15 @@ class LlamaEngine {
   }
 
   /// Returns resolved GPU layers for the active model load when available.
-  Future<int?> getResolvedGpuLayers() {
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<int?> getResolvedGpuLayers() async {
+    _throwIfDisposed();
     final candidate = backend;
     if (candidate is BackendRuntimeDiagnostics) {
       return (candidate as BackendRuntimeDiagnostics).getResolvedGpuLayers();
     }
-    return Future<int?>.value(null);
+    return null;
   }
 
   /// Returns model file type or quantization metadata when available.
@@ -2510,25 +2586,38 @@ class LlamaEngine {
   }
 
   /// Returns true if the current hardware and backend support GPU acceleration.
-  Future<bool> isGpuSupported() => backend.isGpuSupported();
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<bool> isGpuSupported() async {
+    _throwIfDisposed();
+    return backend.isGpuSupported();
+  }
 
   /// Returns total and free VRAM in bytes.
-  Future<({int total, int free})> getVramInfo() => backend.getVramInfo();
+  ///
+  /// Throws [LlamaStateException] after [dispose].
+  Future<({int total, int free})> getVramInfo() async {
+    _throwIfDisposed();
+    return backend.getVramInfo();
+  }
 
   /// Lists GPU-class devices when the active backend supports enumeration,
   /// otherwise an empty list. With an empty [probeBackends] only
   /// already-registered backends are inspected (no backend module is loaded);
   /// pass backends to opt into loading just those before enumerating.
+  ///
+  /// Throws [LlamaStateException] after [dispose].
   Future<List<GpuDeviceInfo>> listGpuDevices({
     List<GpuBackend> probeBackends = const [],
-  }) {
+  }) async {
+    _throwIfDisposed();
     final candidate = backend;
     if (candidate is BackendGpuEnumeration) {
       return (candidate as BackendGpuEnumeration).listGpuDevices(
         probeBackends: probeBackends,
       );
     }
-    return Future.value(const []);
+    return const [];
   }
 
   // ============================================================
@@ -2547,8 +2636,10 @@ class LlamaEngine {
 
   Future<void> _withModelLifecycle(
     String operation,
-    Future<void> Function() action,
-  ) async {
+    Future<void> Function() action, {
+    bool whileDisposing = false,
+  }) async {
+    if (!whileDisposing) _throwIfDisposed();
     if (_modelLifecycleOperation != null) {
       throw LlamaStateException(
         'Cannot $operation while another model lifecycle operation is in progress.',
@@ -2642,6 +2733,7 @@ class LlamaEngine {
 
   /// Validates engine is ready for inference.
   void _ensureReady({bool requireContext = true}) {
+    _throwIfDisposed();
     if (!_isReady) {
       throw LlamaContextException(
         'Engine not ready: no model is loaded. Call loadModelSource() first.',
@@ -2649,6 +2741,23 @@ class LlamaEngine {
     }
     if (requireContext && _contextHandle == null) {
       throw LlamaContextException("Context not initialized.");
+    }
+  }
+
+  static const String _disposedMessage =
+      'The LlamaEngine is disposed. Create a new LlamaEngine.';
+
+  void _throwIfDisposed() {
+    if (isDisposed) throw LlamaStateException(_disposedMessage);
+  }
+
+  /// Throws when [dispose] was called while a load ran; [dispose] then
+  /// unloads what it loaded.
+  void _throwIfDisposedDuringLoad() {
+    if (isDisposed) {
+      throw LlamaStateException(
+        'The LlamaEngine was disposed while loading, so the load was undone.',
+      );
     }
   }
 
@@ -2787,6 +2896,12 @@ extension LlamaEngineBackendHooks on LlamaEngine {
   /// directly.
   Future<BackendTextToSpeechCapabilities>
   get backendTextToSpeechCapabilities async {
+    if (isDisposed) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: LlamaEngine._disposedMessage,
+      );
+    }
     if (!_isReady || _contextHandle == null || _mmContextHandle == null) {
       return const BackendTextToSpeechCapabilities(
         isSupported: false,
@@ -2852,6 +2967,12 @@ extension LlamaEngineBackendHooks on LlamaEngine {
   /// This is the low-level integration hook used by `DecisionEngine`.
   /// Applications should prefer `DecisionEngine.capabilitiesFor`.
   Future<BackendDecisionCapabilities> get backendDecisionCapabilities async {
+    if (isDisposed) {
+      return const BackendDecisionCapabilities(
+        isSupported: false,
+        unsupportedReason: LlamaEngine._disposedMessage,
+      );
+    }
     final candidate = backend;
     if (candidate is! BackendDecision) {
       return const BackendDecisionCapabilities(

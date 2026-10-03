@@ -2030,33 +2030,236 @@ void main() {
       expect(unloadingEngine.contextHandle, isNull);
     });
 
-    test(
-      'dispose waits for active lifecycle before unloading backend resources',
-      () async {
-        final loadGate = Completer<void>();
-        final slowBackend = MockLlamaBackend(modelLoadDelay: loadGate.future);
-        final slowEngine = LlamaEngine(slowBackend);
+    test('a load racing dispose throws LlamaStateException and dispose '
+        'unloads its model', () async {
+      final loadGate = Completer<void>();
+      final slowBackend = MockLlamaBackend(modelLoadDelay: loadGate.future);
+      final slowEngine = LlamaEngine(slowBackend);
 
-        final load = slowEngine.loadModel('qwen-test.gguf');
-        await Future<void>.delayed(Duration.zero);
+      final load = slowEngine.loadModel('qwen-test.gguf');
+      await Future<void>.delayed(Duration.zero);
 
-        final dispose = slowEngine.dispose();
-        await Future<void>.delayed(Duration.zero);
+      final dispose = slowEngine.dispose();
+      await Future<void>.delayed(Duration.zero);
 
-        expect(slowBackend.disposeCalls, 0);
-        expect(slowBackend.contextFreeCalls, 0);
-        expect(slowBackend.modelFreeCalls, 0);
+      expect(slowEngine.isDisposed, isTrue);
+      expect(slowBackend.disposeCalls, 0);
+      expect(slowBackend.contextFreeCalls, 0);
+      expect(slowBackend.modelFreeCalls, 0);
 
-        loadGate.complete();
-        await load;
-        await dispose;
+      loadGate.complete();
+      await expectLater(
+        load,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed while loading'),
+          ),
+        ),
+      );
+      await dispose;
 
-        expect(slowBackend.contextFreeCalls, 1);
-        expect(slowBackend.modelFreeCalls, 1);
-        expect(slowBackend.disposeCalls, 1);
-        expect(slowEngine.isReady, isFalse);
-      },
-    );
+      expect(slowBackend.modelLoadCalls, 1);
+      expect(slowBackend.contextFreeCalls, 1);
+      expect(slowBackend.modelFreeCalls, 1);
+      expect(slowBackend.disposeCalls, 1);
+      expect(slowEngine.isReady, isFalse);
+      final capabilities = await slowEngine.capabilities;
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('disposed'));
+    });
+
+    test('a URL load racing dispose throws LlamaStateException and dispose '
+        'unloads its model', () async {
+      final loadGate = Completer<void>();
+      final urlBackend = MockLlamaBackend(
+        urlLoadingSupported: true,
+        modelLoadFromUrlDelay: loadGate.future,
+      );
+      final urlEngine = LlamaEngine(urlBackend);
+
+      final load = urlEngine.loadModelFromUrl('https://example.com/m.gguf');
+      await Future<void>.delayed(Duration.zero);
+      final dispose = urlEngine.dispose();
+      loadGate.complete();
+
+      await expectLater(load, throwsA(isA<LlamaStateException>()));
+      await dispose;
+      expect(urlBackend.modelLoadFromUrlCalls, 1);
+      expect(urlBackend.modelFreeCalls, 1);
+      expect(urlBackend.disposeCalls, 1);
+    });
+
+    test('a source load whose download outlives dispose throws '
+        'LlamaStateException without loading', () async {
+      final source = ModelSource.url(
+        Uri.parse('https://example.com/model.gguf'),
+      );
+      final entry = ModelCacheEntry(
+        sourceCanonicalKey: source.metadataSourceKey,
+        cacheKey: source.cacheKey,
+        fileName: source.fileName,
+        filePath: '/cache/model.gguf',
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      );
+      final downloadGate = Completer<void>();
+      final downloadStarted = Completer<void>();
+      final sourceBackend = MockLlamaBackend();
+      final sourceEngine = LlamaEngine(
+        sourceBackend,
+        modelDownloadManager: ControlledModelDownloadManager(
+          entries: [entry],
+          gatesByCacheKey: {source.cacheKey: downloadGate},
+          startedByCacheKey: {source.cacheKey: downloadStarted},
+        ),
+      );
+
+      final load = sourceEngine.loadModelSource(source);
+      await downloadStarted.future;
+      await sourceEngine.dispose();
+      downloadGate.complete();
+
+      await expectLater(
+        load,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+      expect(sourceBackend.modelLoadCalls, 0);
+      expect(sourceBackend.disposeCalls, 1);
+    });
+
+    test('a projector load racing dispose throws LlamaStateException and '
+        'dispose frees the projector', () async {
+      final projectorGate = Completer<void>();
+      final projectorBackend = _GatedProjectorBackend(projectorGate.future);
+      final projectorEngine = LlamaEngine(projectorBackend);
+      await projectorEngine.loadModel('qwen-test.gguf');
+
+      final load = projectorEngine.loadMultimodalProjector('mmproj.gguf');
+      await Future<void>.delayed(Duration.zero);
+      final dispose = projectorEngine.dispose();
+      projectorGate.complete();
+
+      await expectLater(load, throwsA(isA<LlamaStateException>()));
+      await dispose;
+      expect(projectorBackend.multimodalContextCreateCalls, 1);
+      expect(projectorBackend.multimodalContextFreeCalls, 1);
+      expect(projectorEngine.hasMultimodalProjector, isFalse);
+      expect(projectorBackend.disposeCalls, 1);
+    });
+
+    test('dispose is idempotent and returns the same future', () async {
+      await engine.loadModel('qwen-test.gguf');
+
+      final first = engine.dispose();
+      final second = engine.dispose();
+      expect(second, same(first));
+      await first;
+      await engine.dispose();
+
+      expect(engine.isDisposed, isTrue);
+      expect(backend.disposeCalls, 1);
+      expect(backend.modelFreeCalls, 1);
+    });
+
+    test('dispose is terminal: later loads and requests throw '
+        'LlamaStateException', () async {
+      await engine.loadModel('qwen-test.gguf');
+      await engine.dispose();
+      final loadCalls = backend.modelLoadCalls;
+      final cancelCalls = backend.cancelGenerationCalls;
+      const user = LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'hi',
+      );
+
+      for (final operation in <Future<Object?> Function()>[
+        () => engine.loadModel('qwen-test.gguf'),
+        () => engine.loadModelFromUrl('https://example.com/m.gguf'),
+        () => engine.loadModelSource(ModelSource.path('/models/m.gguf')),
+        () => engine.loadMultimodalProjector('mmproj.gguf'),
+        () => engine.loadMultimodalProjectorSource(
+          ModelSource.path('/models/mmproj.gguf'),
+        ),
+        () => engine.setLoraSource(ModelSource.path('/models/lora.gguf')),
+        () => engine.create([user]).drain<void>(),
+        () => engine.generate('hi').drain<void>(),
+        () => engine.complete([user]),
+        () => engine.tokenize('hi'),
+        () => engine.getBackendName(),
+        () => engine.getAvailableBackends(),
+        () => engine.isGpuSupported(),
+        () => engine.getVramInfo(),
+        () => engine.listGpuDevices(),
+        () => engine.getResolvedGpuLayers(),
+      ]) {
+        await expectLater(
+          operation(),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+      }
+
+      await engine.unloadModel();
+      engine.cancelGeneration();
+      expect(backend.modelLoadCalls, loadCalls);
+      expect(backend.cancelGenerationCalls, cancelCalls);
+      expect(backend.disposeCalls, 1);
+      expect(await engine.getMetadata(), isEmpty);
+      expect(await engine.getContextSize(), 0);
+      expect(await engine.supportsVision, isFalse);
+      expect(await engine.supportsAudio, isFalse);
+      expect(
+        (await engine.backendDecisionCapabilities).unsupportedReason,
+        contains('disposed'),
+      );
+      expect(
+        (await engine.backendTextToSpeechCapabilities).unsupportedReason,
+        contains('disposed'),
+      );
+    });
+
+    test('a disposed engine throws LlamaStateException before it validates '
+        'ModelParams', () async {
+      await engine.dispose();
+      const invalid = ModelParams(device: ComputeDevice.gpu, gpuLayers: 0);
+      expect(invalid.validate, throwsA(isA<LlamaArgumentException>()));
+
+      for (final load in <Future<void> Function()>[
+        () => engine.loadModel('qwen-test.gguf', modelParams: invalid),
+        () => engine.loadModelFromUrl(
+          'https://example.com/m.gguf',
+          modelParams: invalid,
+        ),
+        () => engine.loadModelSource(
+          ModelSource.path('/models/m.gguf'),
+          modelParams: invalid,
+        ),
+      ]) {
+        await expectLater(
+          load(),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+      }
+    });
 
     test('dispose releases backend even when unload fails', () async {
       final failingBackend = MockLlamaBackend(failContextFree: true);
@@ -2265,6 +2468,26 @@ void main() {
         expect(await engine.supportsVision, isFalse);
         expect(await engine.supportsAudio, isFalse);
         expect(engine.isReady, isTrue);
+      },
+    );
+
+    test(
+      'supportsVision is false when the model unloads during the probe',
+      () async {
+        final probeBackend = _GatedVisionProbeBackend();
+        final probeEngine = LlamaEngine(probeBackend);
+        addTearDown(probeEngine.dispose);
+        await probeEngine.loadModel('qwen-test.gguf');
+        await probeEngine.loadMultimodalProjector('proj.gguf');
+        final gate = probeBackend.visionGate = Completer<void>();
+
+        final probe = probeEngine.supportsVision;
+        await Future<void>.delayed(Duration.zero);
+        final unload = probeEngine.unloadModel();
+        gate.complete();
+        await unload;
+
+        expect(await probe, isFalse);
       },
     );
 
@@ -5221,5 +5444,36 @@ class _SourceEchoBackend extends MockLlamaBackend {
     return Exception(
       'File not found: $source (${uri.userInfo} ${uri.query} ${uri.fragment})',
     );
+  }
+}
+
+class _GatedProjectorBackend extends MockLlamaBackend {
+  _GatedProjectorBackend(this._gate);
+
+  final Future<void> _gate;
+  int multimodalContextFreeCalls = 0;
+
+  @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async {
+    await _gate;
+    return super.multimodalContextCreate(modelHandle, mmProjPath);
+  }
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async {
+    multimodalContextFreeCalls += 1;
+  }
+}
+
+class _GatedVisionProbeBackend extends MockLlamaBackend {
+  Completer<void>? visionGate;
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async {
+    await visionGate?.future;
+    return true;
   }
 }

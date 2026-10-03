@@ -35,9 +35,8 @@ description: >-
 - For a GGUF model they report the loaded projector; for a native `.litertlm`
   bundle they report the modalities the bundle declares, which can
   under-report, so treat `false` there as unknown rather than absent. The
-  older
-  `engine.supportsVision` and `engine.supportsAudio` getters report the GGUF
-  projector only and are `false` for `.litertlm` bundles.
+  `engine.supportsVision` and `engine.supportsAudio` getters report the same
+  values as `capabilities`.
 - Always check before sending media to a GGUF model. With no projector loaded,
   image or audio parts throw `LlamaUnsupportedException` on llama.cpp, native
   and WebGPU.

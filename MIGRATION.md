@@ -600,6 +600,50 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    the backend for GPU support before loading: the encoder loads on a GPU or
    the load throws `LlamaUnsupportedException`.
 
+## Unreleased: shared capabilities and terminal dispose
+
+1. **Image capabilities are async; `runtimeCapabilities()` is removed.**
+   `ImageGenerationEngine.capabilities` returns a `Future`, like every other
+   engine's. It changes only when the engine is disposed, so read it once
+   after `load` and keep it, for example in a Flutter `State`, instead of
+   reading it in `build`. Probe the runtime before loading with
+   `checkRuntime()`, which runs off the calling isolate:
+
+   ```dart
+   // Before
+   final runtime = ImageGenerationEngine.runtimeCapabilities();
+   print(engine.capabilities.backendName);
+   // After
+   final runtime = await ImageGenerationEngine.checkRuntime();
+   final capabilities = await engine.capabilities;
+   print(capabilities.backendName);
+   ```
+
+   `ImageGenerationCapabilities` and `DecisionCapabilities` now implement
+   `EngineCapabilities`, so code that reads `isSupported`,
+   `unsupportedReason` and `backendName` can take any engine's capabilities.
+
+2. **`LlamaEngine.dispose()` is terminal.** A second call returns the same
+   future instead of disposing the backend again. After it, a load or request
+   throws `LlamaStateException` (requests used to throw
+   `LlamaContextException`), `DecisionEngine.attach` throws
+   `LlamaStateException`, and `capabilities` reports the engine as disposed.
+   The backend queries `getBackendName`, `getAvailableBackends`,
+   `isGpuSupported`, `getVramInfo`, `listGpuDevices` and
+   `getResolvedGpuLayers`, which used to answer after `dispose`, now throw
+   `LlamaStateException`; read them before disposing. Model queries such as
+   `getMetadata` and `getContextSize` return their no-model values, as
+   before. `unloadModel` and `cancelGeneration` do nothing. To switch models, call
+   `unloadModel` and load again; to start over after `dispose`, create a new
+   `LlamaEngine`. A load running when `dispose` is called now throws
+   `LlamaStateException` instead of completing, and its model is unloaded.
+   A class that `implements LlamaEngine` must add `bool get isDisposed`.
+
+3. **`supportsVision` and `supportsAudio` agree with `capabilities`.** On a
+   LiteRT-LM bundle that takes media directly, they are now true without a
+   multimodal projector. When the runtime cannot probe a projector, they
+   are false instead of throwing `LlamaUnsupportedException`.
+
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 
 No public signature changes, but several calls now return or throw something

@@ -158,10 +158,9 @@ a `LlamaEngine` subclass cannot override them; tests fake `BackendDecision`. The
 a backend without the contract reports a stable reason without a model.
 
 Backend handles are not unique over an engine's life: the worker numbers
-handles from 1, and a new worker starts after `LlamaEngine.dispose` followed by
-`loadModel`, or when a GGUF load follows a `.litertlm` load (which replaces the
-llama.cpp delegate even if it fails), so the first head after a restart gets
-the previous head's number. `loadDecisionHeadBackend` therefore returns the
+handles from 1, and a new worker starts when a GGUF load follows a
+`.litertlm` load (which replaces the llama.cpp delegate even if it fails), so
+the first head after a restart gets the previous head's number. `loadDecisionHeadBackend` therefore returns the
 head with an engine handle from a counter that never resets, mapped to the
 backend handle. `_unloadModel` forgets every mapping. A
 run with an unmapped engine handle throws `LlamaStateException` ("load the

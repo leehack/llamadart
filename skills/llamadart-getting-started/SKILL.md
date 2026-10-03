@@ -17,7 +17,9 @@ Linux and web. Full docs: https://llamadart.leehack.com
 - Create one `LlamaEngine(LlamaBackend())` per loaded model and always
   `await engine.dispose()` when its owner goes away, in a `finally` block for
   scripts. In Flutter, create it in a long-lived owner (service, provider or
-  `State`), never in `build()`.
+  `State`), never in `build()`. `dispose()` is final: a later load or request
+  throws `LlamaStateException`, so use `unloadModel()` to switch models and a
+  new engine after `dispose()`.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless
   files load; a header contradicting the extension throws

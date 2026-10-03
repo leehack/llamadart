@@ -386,6 +386,18 @@ void main() {
       expect(backend.probedModels, isEmpty);
     });
 
+    test('reports a disposed engine as unsupported', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+      await engine.dispose();
+
+      final EngineCapabilities capabilities =
+          await DecisionEngine.capabilitiesFor(engine);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('disposed'));
+      expect(backend.probedModels, isEmpty);
+    });
+
     test('reports the backend probe for the loaded model', () async {
       await engine.loadModel('laya-Q8_0.gguf');
 
@@ -933,6 +945,40 @@ void main() {
       expect(backend.freed, [_headHandle]);
       expect(backend.runs, isEmpty);
     });
+
+    test(
+      'throw LlamaStateException or do nothing on a disposed engine',
+      () async {
+        await engine.loadModel('laya-Q8_0.gguf');
+        final head = await engine.loadDecisionHeadBackend(_headPath);
+        await engine.dispose();
+
+        await expectLater(
+          engine.loadDecisionHeadBackend(_headPath),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              contains('disposed'),
+            ),
+          ),
+        );
+        await expectLater(
+          engine.runDecisionBackend(head.handle, const []),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await engine.freeDecisionHeadBackend(head.handle);
+        expect(
+          (await engine.backendDecisionCapabilities).unsupportedReason,
+          contains('disposed'),
+        );
+        expect(engine.modelHandle, isNull);
+        expect(engine.contextHandle, isNull);
+        expect(backend.headLoads, hasLength(1));
+        expect(backend.runs, isEmpty);
+        expect(backend.freed, isEmpty);
+      },
+    );
   });
 
   group('load with a DecisionModel', () {
@@ -1028,12 +1074,15 @@ void main() {
       final decisions = await loadLaya();
       addTearDown(decisions.dispose);
 
-      final capabilities = await decisions.capabilities;
+      final EngineCapabilities capabilities = await decisions.capabilities;
 
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.unsupportedReason, isNull);
       expect(capabilities.backendName, 'Metal');
-      expect(capabilities.runtime, LlamaRuntime.llamaCpp);
+      expect(
+        (capabilities as DecisionCapabilities).runtime,
+        LlamaRuntime.llamaCpp,
+      );
     });
 
     test('an unsupported encoder leaves nothing loaded', () async {
@@ -1321,6 +1370,28 @@ void main() {
         '/models/rl_agent_config.json',
       ));
       expect(decisions.info.maxTokens, 512);
+    });
+
+    test('throws LlamaStateException on a disposed engine before resolving '
+        'files', () async {
+      await engine.loadModel('laya-Q8_0.gguf');
+      await engine.dispose();
+
+      await expectLater(
+        DecisionEngine.attach(
+          engine,
+          head: ModelSource.parse('https://example.com/laya-head.safetensors'),
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+      expect(backend.headLoads, isEmpty);
     });
 
     test('borrows the engine: dispose frees only the head', () async {

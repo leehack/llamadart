@@ -4,10 +4,12 @@ import 'engine_observer.dart';
 /// What an engine reports about its support: whether it can run, why not,
 /// and the backend it runs on.
 ///
-/// The `capabilities` of `LlamaEngine`, `SpeechToTextEngine` and
-/// `TextToSpeechEngine` return a subtype with its own fields:
-/// [LlamaEngineCapabilities], `SpeechToTextCapabilities` and
-/// `TextToSpeechCapabilities`.
+/// Every engine's `capabilities` is a `Future` of a subtype with its own
+/// fields: [LlamaEngineCapabilities], `SpeechToTextCapabilities`,
+/// `TextToSpeechCapabilities`, `ImageGenerationCapabilities` and
+/// `DecisionCapabilities`. It reports an engine that cannot run, has no
+/// model loaded or is disposed as unsupported, with the reason, instead of
+/// throwing.
 abstract interface class EngineCapabilities {
   /// Whether the engine can run requests now.
   bool get isSupported;

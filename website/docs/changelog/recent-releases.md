@@ -84,6 +84,25 @@ For canonical full release notes, use:
   paths are removed; `MIGRATION.md` maps each former preset to its files and
   request settings
   ([#883](https://github.com/leehack/llamadart/issues/883)).
+- **Breaking:** `LlamaEngine.dispose()` is idempotent and terminal, like
+  every other engine's: each call returns the same future, and afterwards
+  loads, requests and `DecisionEngine.attach` throw `LlamaStateException`
+  while `capabilities` reports the engine as disposed. `getBackendName`,
+  `getAvailableBackends`, `isGpuSupported`, `getVramInfo`, `listGpuDevices`
+  and `getResolvedGpuLayers` used to answer after `dispose()` and now throw
+  `LlamaStateException` too. A load running when it is called throws
+  `LlamaStateException`, and its model is unloaded. `LlamaEngine` gains
+  `isDisposed`, so a class that `implements` it must add it
+  ([#851](https://github.com/leehack/llamadart/issues/851)).
+- **Breaking (Preview):** `ImageGenerationEngine.capabilities` is async, and
+  `ImageGenerationEngine.runtimeCapabilities()` is removed; use
+  `checkRuntime()`. `ImageGenerationCapabilities` and `DecisionCapabilities`
+  implement `EngineCapabilities`
+  ([#851](https://github.com/leehack/llamadart/issues/851)).
+- **Behavior change:** `LlamaEngine.supportsVision` and `supportsAudio` report
+  what `capabilities` reports: true for a LiteRT-LM bundle that takes media
+  directly, and false instead of throwing when the runtime cannot probe the
+  projector ([#851](https://github.com/leehack/llamadart/issues/851)).
 - **Behavior change:** `responseFormat` maps with an unknown `type` or
   key, such as `json_shema` or a misspelled `schma`, now throw
   `LlamaUnsupportedException` before generation instead of generating

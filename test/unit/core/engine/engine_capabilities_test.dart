@@ -212,9 +212,12 @@ void main() {
     final withProjector = await engine.capabilities;
     expect(withProjector.supportsVision, isTrue);
     expect(withProjector.supportsAudio, isFalse);
+    expect(await engine.supportsVision, isTrue);
+    expect(await engine.supportsAudio, isFalse);
 
     await engine.unloadMultimodalProjector();
     expect((await engine.capabilities).supportsVision, isFalse);
+    expect(await engine.supportsVision, isFalse);
 
     await engine.unloadModel();
     expect(engine.runtime, isNull);
@@ -240,6 +243,9 @@ void main() {
     expect(capabilities.runtime, LlamaRuntime.liteRtLm);
     expect(capabilities.supportsVision, isTrue);
     expect(capabilities.supportsAudio, isTrue);
+    expect(engine.hasMultimodalProjector, isFalse);
+    expect(await engine.supportsVision, isTrue);
+    expect(await engine.supportsAudio, isTrue);
     expect(capabilities.supportsEmbeddings, isFalse);
     expect(capabilities.supportsNextTokenScoring, isFalse);
     expect(capabilities.supportsMultiTurnChat, isTrue);
@@ -396,5 +402,46 @@ void main() {
     expect(capabilities.backendName, isNull);
     expect(capabilities.supportsVision, isFalse);
     expect(capabilities.supportsAudio, isFalse);
+    expect(await engine.supportsVision, isFalse);
+    expect(await engine.supportsAudio, isFalse);
+  });
+
+  test('reports a disposed engine without probing the backend', () async {
+    final backend = _RuntimeBackend(
+      runtime: LlamaRuntime.liteRtLm,
+      generation: _liteRtLmNativeGeneration,
+      directMedia: (vision: true, audio: true),
+    );
+    final engine = await loaded(backend);
+    await engine.dispose();
+    backend.generationGate = Completer<void>();
+
+    final capabilities = await engine.capabilities;
+
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, contains('disposed'));
+    expect(capabilities.runtime, isNull);
+    expect(capabilities.supportsVision, isFalse);
+    expect(await engine.supportsVision, isFalse);
+    expect(await engine.supportsAudio, isFalse);
+  });
+
+  test('reports disposed when the engine is disposed while capabilities '
+      'are read', () async {
+    final backend = _RuntimeBackend(
+      runtime: LlamaRuntime.llamaCpp,
+      generation: _llamaCppGeneration,
+    );
+    final engine = await loaded(backend);
+    final gate = backend.generationGate = Completer<void>();
+
+    final pending = engine.capabilities;
+    final disposal = engine.dispose();
+    gate.complete();
+    await disposal;
+    final capabilities = await pending;
+
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, contains('disposed'));
   });
 }

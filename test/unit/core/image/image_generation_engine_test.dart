@@ -82,72 +82,37 @@ void main() {
     debugImageGenerationDriverOverride = null;
   });
 
-  group('runtimeCapabilities', () {
-    test('reports the devices and the device auto would pick', () {
-      final capabilities = ImageGenerationEngine.runtimeCapabilities();
-
-      expect(capabilities.isSupported, isTrue);
-      expect(capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
-      expect(capabilities.backendName, 'MTL0');
-      expect(capabilities.runtimeVersion, 'master-929');
-      expect(capabilities.modelVersion, isNull);
-      expect(capabilities.maxConcurrentTasks, 1);
-    });
-
-    test('reports why the runtime is unavailable', () {
-      driver.status = StableDiffusionRuntimeStatus.unavailable(
-        LlamaUnsupportedException('stable_diffusion runtime is not bundled'),
-      );
-
-      final capabilities = ImageGenerationEngine.runtimeCapabilities();
-
-      expect(capabilities.isSupported, isFalse);
-      expect(capabilities.unsupportedReason, contains('not bundled'));
-      expect(capabilities.deviceNames, isEmpty);
-    });
-  });
-
   group('checkRuntime', () {
-    void expectSameCapabilities(
-      ImageGenerationCapabilities actual,
-      ImageGenerationCapabilities expected,
-    ) {
-      expect(actual.isSupported, expected.isSupported);
-      expect(actual.unsupportedReason, expected.unsupportedReason);
-      expect(actual.backendName, expected.backendName);
-      expect(actual.deviceNames, expected.deviceNames);
-      expect(actual.runtimeVersion, expected.runtimeVersion);
-      expect(actual.modelVersion, expected.modelVersion);
-      expect(actual.supportsCancellation, expected.supportsCancellation);
-      expect(actual.maxConcurrentTasks, expected.maxConcurrentTasks);
-    }
-
-    test('reports what runtimeCapabilities reports, probing in the '
-        'background', () async {
+    test('reports the devices and the device auto would pick, probing in '
+        'the background', () async {
       final capabilities = await ImageGenerationEngine.checkRuntime();
 
       expect(driver.backgroundProbes, 1);
       expect(driver.syncProbes, 0);
+      expect(capabilities.isSupported, isTrue);
+      expect(capabilities.unsupportedReason, isNull);
+      expect(capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
       expect(capabilities.backendName, 'MTL0');
-      expectSameCapabilities(
-        capabilities,
-        ImageGenerationEngine.runtimeCapabilities(),
-      );
+      expect(capabilities.runtimeVersion, 'master-929');
+      expect(capabilities.modelVersion, isNull);
+      expect(capabilities.supportsCancellation, isTrue);
+      expect(capabilities.maxConcurrentTasks, 1);
     });
 
-    test('reports why the runtime is unavailable, like '
-        'runtimeCapabilities', () async {
+    test('reports why the runtime is unavailable', () async {
       driver.status = StableDiffusionRuntimeStatus.unavailable(
         LlamaUnsupportedException('stable_diffusion runtime is not bundled'),
       );
 
-      final capabilities = await ImageGenerationEngine.checkRuntime();
+      final EngineCapabilities capabilities =
+          await ImageGenerationEngine.checkRuntime();
 
       expect(capabilities.isSupported, isFalse);
       expect(capabilities.unsupportedReason, contains('not bundled'));
-      expectSameCapabilities(
-        capabilities,
-        ImageGenerationEngine.runtimeCapabilities(),
+      expect(capabilities.backendName, isNull);
+      expect(
+        (capabilities as ImageGenerationCapabilities).deviceNames,
+        isEmpty,
       );
     });
 
@@ -203,7 +168,7 @@ void main() {
 
       expect(driver.backgroundProbes, 1);
       expect(driver.syncProbes, 0);
-      expect(engine.capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
+      expect((await engine.capabilities).deviceNames, ['MTL0', 'BLAS', 'CPU']);
     });
 
     test('throws the probe reason and loads nothing when the runtime is '
@@ -235,17 +200,18 @@ void main() {
       expect(config.files, {'model': _model, 'taesd': _taesd});
       expect(config.backend, 'cpu');
       expect(config.threads, 4);
-      expect(engine.capabilities.backendName, 'CPU');
-      expect(engine.capabilities.modelVersion, 'SD 2.x');
-      expect(engine.capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
-      expect(engine.capabilities.supportsCancellation, isTrue);
+      final capabilities = await engine.capabilities;
+      expect(capabilities.backendName, 'CPU');
+      expect(capabilities.modelVersion, 'SD 2.x');
+      expect(capabilities.deviceNames, ['MTL0', 'BLAS', 'CPU']);
+      expect(capabilities.supportsCancellation, isTrue);
     });
 
     test('auto leaves the device to the runtime and reports its GPU', () async {
       final engine = await load(_sdxs());
 
       expect(driver.started.single.backend, isNull);
-      expect(engine.capabilities.backendName, 'MTL0');
+      expect((await engine.capabilities).backendName, 'MTL0');
     });
 
     test('assigns split files their roles from their headers, in any '
@@ -446,7 +412,7 @@ void main() {
       );
 
       expect(driver.started.single.backend, 'gpu');
-      expect(engine.capabilities.backendName, 'Vulkan0');
+      expect((await engine.capabilities).backendName, 'Vulkan0');
     });
 
     test('gpu without a GPU device throws LlamaUnsupportedException', () async {
@@ -472,7 +438,7 @@ void main() {
       expect(driver.started, isEmpty);
 
       final engine = await load(_sdxs());
-      expect(engine.capabilities.backendName, 'CPU');
+      expect((await engine.capabilities).backendName, 'CPU');
     });
 
     test('a missing file throws LlamaModelException naming its position, '
@@ -591,7 +557,7 @@ void main() {
 
       driver.startGate = null;
       final engine = await load(_sdxs());
-      expect(engine.capabilities.isSupported, isTrue);
+      expect((await engine.capabilities).isSupported, isTrue);
     });
 
     test('a cancel during header classification starts nothing', () async {
@@ -624,7 +590,7 @@ void main() {
       driver.startError = null;
       final engine = await load(_sdxs());
       expect(driver.started.single.files, {'model': _model});
-      expect(engine.capabilities.isSupported, isTrue);
+      expect((await engine.capabilities).isSupported, isTrue);
     });
 
     test('passes each role to the runtime under its runtime name', () async {
@@ -694,7 +660,7 @@ void main() {
 
       expect(engine.isDisposed, isTrue);
       expect(driver.session.disposeCalls, 1);
-      expect(engine.capabilities.isSupported, isFalse);
+      expect((await engine.capabilities).isSupported, isFalse);
     });
   });
 
@@ -1418,7 +1384,7 @@ void main() {
       expect(driver.session.stepsRun, 0);
       await engine.dispose();
       expect(driver.session.disposeCalls, 1);
-      expect(engine.capabilities.isSupported, isFalse);
+      expect((await engine.capabilities).isSupported, isFalse);
       expect(
         () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
         throwsA(isA<LlamaStateException>()),

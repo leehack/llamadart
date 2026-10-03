@@ -209,7 +209,7 @@ void main() async {
     test('Error when not initialized', () async {
       final freshBackend = LlamaBackend();
       final freshEngine = LlamaEngine(freshBackend);
-      expect(
+      await expectLater(
         freshEngine.create([
           const LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
         ]),

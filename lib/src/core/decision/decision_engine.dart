@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
+import '../engine/engine_capabilities.dart';
 import '../engine/engine_observer.dart';
 import '../exceptions.dart';
 import '../models/config/compute_device.dart';
@@ -26,7 +27,7 @@ LlamaBackend Function()? debugDecisionBackendFactory;
 
 /// Decision-model support of a [LlamaEngine], or of a loaded
 /// [DecisionEngine].
-class DecisionCapabilities {
+class DecisionCapabilities implements EngineCapabilities {
   /// Creates a capability snapshot.
   const DecisionCapabilities({
     required this.isSupported,
@@ -38,12 +39,15 @@ class DecisionCapabilities {
   /// Whether decisions can run: for [DecisionEngine.capabilitiesFor], whether
   /// the engine's backend and loaded model can run decision heads; for
   /// [DecisionEngine.capabilities], whether the engine can answer now.
+  @override
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
+  @override
   final String? unsupportedReason;
 
   /// Active runtime backend label, when the backend reports one.
+  @override
   final String? backendName;
 
   /// The runtime of the loaded encoder, [LlamaRuntime.llamaCpp] for a
@@ -350,11 +354,11 @@ class DecisionEngine {
   /// file is missing, cannot be downloaded or fails its checksum, or the head
   /// or its config cannot be read, is malformed, or does not fit the
   /// encoder; [LlamaContextException] when the head's encoder context
-  /// cannot be created; [LlamaStateException] when [download]'s cancel token
-  /// cancels it, when the model is unloaded during it, or on Web when the
-  /// bridge rejects the load as disposed, busy or cancelled; and
-  /// [LlamaDecisionException] when the head's config or mask text fails
-  /// validation.
+  /// cannot be created; [LlamaStateException] when [engine] is disposed,
+  /// when [download]'s cancel token cancels it, when the model is unloaded
+  /// during it, or on Web when the bridge rejects the load as disposed, busy
+  /// or cancelled; and [LlamaDecisionException] when the head's config or
+  /// mask text fails validation.
   static Future<DecisionEngine> attach(
     LlamaEngine engine, {
     required ModelSource head,
@@ -362,6 +366,11 @@ class DecisionEngine {
     ModelLoadOptions download = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
   }) async {
+    if (engine.isDisposed) {
+      throw LlamaStateException(
+        'DecisionEngine.attach needs a LlamaEngine that is not disposed.',
+      );
+    }
     if (config != null && download.sha256 != null) {
       throw LlamaUnsupportedException(
         'DecisionEngine.attach loads a head and a config, so '

@@ -17,7 +17,7 @@ abstract interface class ImageGenerationService {
 /// A loaded image model.
 abstract interface class ImageGenerator {
   /// Support of the loaded engine, including the device it runs on.
-  ImageGenerationCapabilities get capabilities;
+  Future<ImageGenerationCapabilities> get capabilities;
 
   /// Starts one generation; throws what [ImageGenerationEngine.generate]
   /// throws.
@@ -55,7 +55,7 @@ class _EngineImageGenerator implements ImageGenerator {
   _EngineImageGenerator(this._engine);
 
   @override
-  ImageGenerationCapabilities get capabilities => _engine.capabilities;
+  Future<ImageGenerationCapabilities> get capabilities => _engine.capabilities;
 
   @override
   ImageGenerationRun generate(ImageGenerationRequest request) =>
