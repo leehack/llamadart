@@ -497,7 +497,8 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    combination throws `LlamaArgumentException` before anything downloads,
    where it used to fail the backend load as `LlamaModelException`. New
    rules reject `device: cpu` with a GPU `preferredBackend`, and `gpu` or
-   `npu` with a CPU or BLAS `preferredBackend` or `gpuLayers: 0`.
+   `npu` with a CPU or BLAS `preferredBackend`, `gpuLayers: 0`, or
+   `splitMode: ModelSplitMode.none` with a negative `mainGpu`.
 
 5. **Decision models.** `DecisionModelParams.encoderModelParams` now carries
    `device` instead of `preferredBackend: GpuBackend.cpu` and `gpuLayers: 0`

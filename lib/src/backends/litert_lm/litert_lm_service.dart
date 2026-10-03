@@ -867,9 +867,11 @@ class LiteRtLmService {
       }
       Error.throwWithStackTrace(
         LlamaUnsupportedException(
-          'ComputeDevice.${device.name} was requested, but the LiteRT-LM '
-          '$backend backend failed to start on ${Platform.operatingSystem}: '
-          '${error.message} Use ComputeDevice.auto or cpu.',
+          'ComputeDevice.${device.name} was requested, but LiteRT-LM could '
+          'not create a $backend engine on ${Platform.operatingSystem}. '
+          'Either the $backend backend cannot start here or the model file '
+          'cannot be loaded; the runtime does not say which. '
+          '${error.message} Load with ComputeDevice.cpu to tell them apart.',
         ),
         stackTrace,
       );

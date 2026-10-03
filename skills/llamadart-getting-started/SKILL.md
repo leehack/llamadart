@@ -47,7 +47,8 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `ComputeDevice.gpu` or `npu` runs there or throws
   `LlamaUnsupportedException`, never on another device; native LiteRT-LM
   reports a GPU or NPU delegate that fails to start from the first
-  generation. Leave `device` at `auto` for each runtime's default.
+  generation or `tokenize`. Leave `device` at `auto` for each runtime's
+  default.
   `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
   deprecated. Keep `contextSize` no larger than the app needs: memory grows
   with it.
@@ -117,8 +118,11 @@ Future<void> switchToLiteRtLm(LlamaEngine engine, String bundlePath) async {
       bundlePath,
       modelParams: const ModelParams(device: ComputeDevice.gpu),
     );
+    // Native LiteRT-LM starts the GPU delegate on its first use.
+    await engine.tokenize('warm up');
   } on LlamaUnsupportedException catch (error) {
     print('No LiteRT-LM GPU here, loading on the CPU: $error');
+    await engine.unloadModel();
     await engine.loadModel(
       bundlePath,
       modelParams: const ModelParams(device: ComputeDevice.cpu),

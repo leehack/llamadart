@@ -33,7 +33,9 @@ Important fields:
 - `contextSize`: total context window.
 - `device`: `ComputeDevice.auto` (default), `cpu`, `gpu` or `npu`, for every
   runtime. `auto` keeps each runtime's default; an explicit device runs there
-  or throws `LlamaUnsupportedException`, and `cpu` ignores `gpuLayers`. See
+  or throws `LlamaUnsupportedException`. On llama.cpp, `cpu` ignores
+  `gpuLayers`; LiteRT-LM rejects a `gpuLayers` other than `0` or
+  `ModelParams.maxGpuLayers` with any device. See
   [Choosing the device](../guides/backend-selection#choosing-the-device).
 - `gpuLayers`: number of layers offloaded to GPU.
 - `preferredBackend`: backend preference (`auto`, `vulkan`, `metal`, etc).

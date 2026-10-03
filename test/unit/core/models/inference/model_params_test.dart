@@ -351,6 +351,51 @@ void main() {
         );
       }
     });
+
+    test('gpu and npu reject a negative mainGpu with splitMode none', () {
+      for (final device in [ComputeDevice.gpu, ComputeDevice.npu]) {
+        for (final mainGpu in [-1, -2]) {
+          expect(
+            ModelParams(
+              device: device,
+              splitMode: ModelSplitMode.none,
+              mainGpu: mainGpu,
+            ).validate,
+            rejects('mainGpu', mainGpu, 'splitMode none and mainGpu'),
+            reason: '$device with mainGpu $mainGpu',
+          );
+        }
+        expect(
+          ModelParams(
+            device: device,
+            splitMode: ModelSplitMode.none,
+            mainGpu: 0,
+          ).validate,
+          returnsNormally,
+        );
+        // llama.cpp reads main_gpu only under split_mode NONE.
+        for (final splitMode in [ModelSplitMode.layer, ModelSplitMode.row]) {
+          expect(
+            ModelParams(
+              device: device,
+              splitMode: splitMode,
+              mainGpu: -1,
+            ).validate,
+            returnsNormally,
+          );
+        }
+      }
+      for (final device in [ComputeDevice.auto, ComputeDevice.cpu]) {
+        expect(
+          ModelParams(
+            device: device,
+            splitMode: ModelSplitMode.none,
+            mainGpu: -1,
+          ).validate,
+          returnsNormally,
+        );
+      }
+    });
   });
 
   group('validate(): non-F16 KV requires flash attention', () {

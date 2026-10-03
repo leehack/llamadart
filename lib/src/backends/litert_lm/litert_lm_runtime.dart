@@ -73,6 +73,26 @@ class LiteRtLmEngineCreateError extends StateError {
   LiteRtLmEngineCreateError(super.message);
 }
 
+/// Throws [LiteRtLmEngineCreateError] when `litert_lm_engine_create` returned
+/// no engine, that is when [engineAddress] is 0.
+///
+/// This is public only for unit tests; production callers should receive the
+/// error through [LiteRtLmRuntimeClient.initialize].
+void liteRtLmCheckEngineCreated(
+  int engineAddress, {
+  required String backend,
+  required String modelPath,
+}) {
+  if (engineAddress == 0) {
+    throw LiteRtLmEngineCreateError(
+      liteRtLmEngineCreateFailureMessage(
+        backend: backend,
+        modelPath: modelPath,
+      ),
+    );
+  }
+}
+
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
 /// This is public only for unit tests; production callers should receive the
@@ -861,14 +881,11 @@ class LiteRtLmRuntimeClient {
           _keepAlive(companionLibraries);
         }
       });
-      if (engineAddress == 0) {
-        throw LiteRtLmEngineCreateError(
-          liteRtLmEngineCreateFailureMessage(
-            backend: resolvedBackend,
-            modelPath: modelPath,
-          ),
-        );
-      }
+      liteRtLmCheckEngineCreated(
+        engineAddress,
+        backend: resolvedBackend,
+        modelPath: modelPath,
+      );
       _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
     } finally {
       if (settings != nullptr) {

@@ -123,15 +123,18 @@ never falls back to another device:
 - `npu` is LiteRT-LM on Android only.
 
 Native LiteRT-LM starts its runtime on the first call that needs it, such as
-the first generation, so a GPU or NPU delegate that fails to start throws
-`LlamaUnsupportedException` there rather than from the load. Windows arm64 has
-no LiteRT-LM runtime.
+the first generation or `tokenize`, so a GPU or NPU delegate that fails to
+start throws `LlamaUnsupportedException` there rather than from the load. The
+runtime does not say why it could not start, so under `gpu` or `npu` a
+corrupt or truncated `.litertlm` file throws the same exception, whose
+message names both causes. Windows arm64 has no LiteRT-LM runtime.
 
 `ModelParams.validate()`, which every `LlamaEngine` load calls before any
 download, throws `LlamaArgumentException` when `device` contradicts another
 field: `cpu` with a GPU `preferredBackend`, `gpu` or `npu` with a CPU or BLAS
-`preferredBackend` or `gpuLayers: 0`, or any explicit device with the
-deprecated `liteRtLmBackend`.
+`preferredBackend`, `gpuLayers: 0`, or `splitMode: ModelSplitMode.none` with a
+negative `mainGpu` (which llama.cpp runs on the CPU), or any explicit device
+with the deprecated `liteRtLmBackend`.
 
 `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are deprecated
 and keep working until 1.0. Under `device: auto` they still choose the

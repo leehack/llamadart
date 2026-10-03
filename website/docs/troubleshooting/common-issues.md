@@ -96,7 +96,9 @@ on the CPU. The message names the device, runtime and platform, and on
 llama.cpp the missing backend module or the devices found. Bundle the GPU
 module, use a browser with WebGPU, or load with `ComputeDevice.auto` to accept
 the runtime's default device. Native LiteRT-LM reports a GPU or NPU delegate
-that fails to start from the first generation. The deprecated
+that fails to start from the first generation or `tokenize`; a corrupt or
+truncated `.litertlm` file fails the same way, so if `ComputeDevice.cpu` also
+fails, replace the file. The deprecated
 `liteRtLmBackend` still throws `LlamaModelException` for an unavailable
 backend; catch `LlamaException` to handle both.
 

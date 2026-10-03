@@ -112,8 +112,9 @@ class ModelParams {
   ///
   /// An explicit device is honoured or the load throws
   /// `LlamaUnsupportedException`; it never runs elsewhere:
-  /// - [ComputeDevice.cpu] loads no GPU layers and, on llama.cpp, only the
-  ///   CPU module, whatever [gpuLayers] and [preferredBackend] say.
+  /// - [ComputeDevice.cpu] loads no GPU layers. On llama.cpp it loads only
+  ///   the CPU module, whatever [gpuLayers] and [preferredBackend] say;
+  ///   LiteRT-LM still rejects a [gpuLayers] other than 0 or [maxGpuLayers].
   /// - [ComputeDevice.gpu] on llama.cpp needs a GPU module and device for
   ///   [preferredBackend] (Vulkan on Android when it is
   ///   [GpuBackend.auto]), and on the Web an active WebGPU runtime. LiteRT-LM
@@ -124,7 +125,7 @@ class ModelParams {
   /// Native LiteRT-LM starts its runtime on the first call that needs it, so
   /// a GPU or NPU that fails to start throws `LlamaUnsupportedException`
   /// there. [validate] rejects a device that contradicts [preferredBackend],
-  /// [gpuLayers] or [liteRtLmBackend].
+  /// [gpuLayers], [mainGpu] or [liteRtLmBackend].
   final ComputeDevice device;
 
   /// Number of model layers to offload to the GPU (n_gpu_layers).
@@ -204,8 +205,9 @@ class ModelParams {
   /// This is passed through to llama.cpp `llama_model_params.main_gpu`.
   /// Backend-specific device ordering is defined by llama.cpp and the active
   /// backend. Upstream llama.cpp uses this value to select the single GPU when
-  /// [splitMode] is [ModelSplitMode.none]. Defaults to 0 to preserve
-  /// llama.cpp's default behavior.
+  /// [splitMode] is [ModelSplitMode.none], where a negative value loads the
+  /// model on the CPU. Defaults to 0 to preserve llama.cpp's default
+  /// behavior.
   final int mainGpu;
 
   /// Initial LoRA adapters to load along with the model.
@@ -433,7 +435,8 @@ class ModelParams {
   /// - [ComputeDevice.cpu] with a GPU [preferredBackend] (Vulkan, Metal,
   ///   CUDA, OpenCL or HIP);
   /// - [ComputeDevice.gpu] or [ComputeDevice.npu] with a CPU or BLAS
-  ///   [preferredBackend], or with [gpuLayers] set to 0.
+  ///   [preferredBackend], with [gpuLayers] set to 0, or with [splitMode]
+  ///   [ModelSplitMode.none] and a negative [mainGpu].
   ///
   /// `LlamaEngine` model loads call it before any download or native call,
   /// so callers don't have to remember it; call it directly to validate a
@@ -530,6 +533,17 @@ class ModelParams {
         'ModelParams.maxGpuLayers or set a positive count.',
         name: 'gpuLayers',
         invalidValue: gpuLayers,
+      );
+    }
+    // llama.cpp reads main_gpu only under split_mode NONE, where a negative
+    // value drops every device and loads the whole model on the CPU.
+    if (splitMode == ModelSplitMode.none && mainGpu < 0) {
+      throw LlamaArgumentException(
+        'ModelParams.device ${device.name} cannot be combined with splitMode '
+        'none and mainGpu $mainGpu, which llama.cpp runs on the CPU. Set '
+        'mainGpu to a GPU index (0 or more).',
+        name: 'mainGpu',
+        invalidValue: mainGpu,
       );
     }
   }

@@ -852,8 +852,9 @@ void main() {
               device == ComputeDevice.gpu
                   ? unsupported([
                       'ComputeDevice.gpu',
-                      'LiteRT-LM gpu',
+                      'gpu engine',
                       Platform.operatingSystem,
+                      'model file',
                       'delegate init failed',
                     ])
                   : throwsA(isA<LiteRtLmEngineCreateError>()),

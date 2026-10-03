@@ -628,6 +628,28 @@ void main() {
     );
   });
 
+  test('a null engine from engine create throws LiteRtLmEngineCreateError', () {
+    expect(
+      () => liteRtLmCheckEngineCreated(
+        0,
+        backend: 'gpu',
+        modelPath: '/models/gemma-4-E2B-it.litertlm',
+      ),
+      throwsA(
+        isA<LiteRtLmEngineCreateError>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('backend "gpu"'), contains('gemma-4-E2B-it.litertlm')),
+        ),
+      ),
+    );
+    liteRtLmCheckEngineCreated(
+      0x1000,
+      backend: 'gpu',
+      modelPath: '/models/gemma-4-E2B-it.litertlm',
+    );
+  });
+
   test(
     'LiteRtLmRuntimeClient validates counts before native initialization',
     () {

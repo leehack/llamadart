@@ -640,23 +640,28 @@ class LlamaCppService {
         SpeculativeDecodingStrategy.draftDspark,
       };
 
-  /// Creates the service; tests replace the runtime's first native call and
-  /// the host probes behind its Windows load diagnostics.
+  /// Creates the service; tests replace the runtime's first native call, the
+  /// host probes behind its Windows load diagnostics, and the raw
+  /// `ggml_backend_dev_type` values a [ComputeDevice.gpu] load checks for a
+  /// backend.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
     bool? isWindows,
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
+    List<int> Function(GpuBackend backend)? deviceTypes,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
-       _missingWindowsLibraries = missingWindowsLibraries;
+       _missingWindowsLibraries = missingWindowsLibraries,
+       _deviceTypesOverride = deviceTypes;
 
   final void Function() _backendInit;
   final Abi _abi;
   final bool _isWindows;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
+  final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -1925,18 +1930,24 @@ class LlamaCppService {
   /// Whether a GPU device of [backend], or any GPU device for
   /// [GpuBackend.auto], is registered after the backend modules load.
   bool _hasGpuDevice(GpuBackend backend) {
+    final types = (_deviceTypesOverride ?? _registeredDeviceTypes)(backend);
+    return types.any((type) {
+      return type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
+          type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
+    });
+  }
+
+  List<int> _registeredDeviceTypes(GpuBackend backend) {
     final devices = backend == GpuBackend.auto
         ? [
             for (var i = 0; i < _ggmlBackendDevCount(); i++)
               _ggmlBackendDevGet(i),
           ]
         : _resolvePreferredDevices(backend) ?? const <ggml_backend_dev_t>[];
-    return devices.any((device) {
-      if (device == nullptr) return false;
-      final type = _ggmlBackendDevType(device);
-      return type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value ||
-          type == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
-    });
+    return [
+      for (final device in devices)
+        if (device != nullptr) _ggmlBackendDevType(device),
+    ];
   }
 
   String _noGpuMessage(GpuBackend backend, {required bool forcedCpuFallback}) {

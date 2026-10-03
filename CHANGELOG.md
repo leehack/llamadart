@@ -1,11 +1,14 @@
 ## Unreleased
 
-- **Deprecated:** `ModelParams.device` (`ComputeDevice`) selects the device
-  for every runtime: `auto` keeps each runtime's default, and an explicit
-  `cpu`, `gpu` or `npu` runs there or throws `LlamaUnsupportedException`
-  instead of falling back to another device. `ModelParams.liteRtLmBackend`,
-  `LiteRtLmBackendPreference` and `LiteRtLmBackend(preferredBackend:)` still
-  work until 1.0 ([#849](https://github.com/leehack/llamadart/issues/849)).
+- `ModelParams.device` (`ComputeDevice`) selects the device for every
+  runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
+  or `npu` runs there or throws `LlamaUnsupportedException` instead of
+  falling back to another device
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
+- **Deprecated:** `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference`
+  and `LiteRtLmBackend(preferredBackend:)`; use `ModelParams.device`. They
+  still work until 1.0
+  ([#849](https://github.com/leehack/llamadart/issues/849)).
 - **Behavior change:** `DecisionModelParams(device: ComputeDevice.gpu)` runs
   the encoder on a GPU, Vulkan on Android, or throws
   `LlamaUnsupportedException` from the encoder load; it ran on the CPU on

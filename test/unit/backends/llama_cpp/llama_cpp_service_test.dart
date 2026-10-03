@@ -2695,6 +2695,91 @@ void main() {
         expect(service.getActiveBackendName(), isNot(anyOf('CPU', 'BLAS')));
         expect(service.getResolvedGpuLayers(), greaterThan(0));
       });
+
+      test('gpu throws when no device is a GPU or integrated GPU', () {
+        final requested = <GpuBackend>[];
+        final service = LlamaCppService(
+          deviceTypes: (backend) {
+            requested.add(backend);
+            return [
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value,
+            ];
+          },
+        );
+        addTearDown(service.dispose);
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('ComputeDevice.gpu needs a GPU'),
+                contains('no GPU device is available'),
+              ),
+            ),
+          ),
+        );
+        expect(requested, [GpuBackend.auto]);
+        expect(_readPrivateForTesting<Map>(service, '_models'), isEmpty);
+      });
+
+      for (final type in [
+        ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU,
+        ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU,
+      ]) {
+        test('gpu loads when a device is a ${type.name}', () {
+          final service = LlamaCppService(
+            deviceTypes: (_) => [
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+              type.value,
+            ],
+          );
+          addTearDown(service.dispose);
+
+          expect(
+            service.loadModel(
+              modelPath,
+              const ModelParams(contextSize: 512, device: ComputeDevice.gpu),
+            ),
+            isPositive,
+          );
+        });
+      }
+
+      test('createContext applies the device of its own params', () {
+        final service = LlamaCppService();
+        addTearDown(service.dispose);
+        final handle = service.loadModel(
+          modelPath,
+          const ModelParams(contextSize: 512),
+        );
+
+        final context = service.createContext(
+          handle,
+          const ModelParams(contextSize: 512, device: ComputeDevice.cpu),
+        );
+
+        final contextParams =
+            _readPrivateForTesting<Map<int, llama_context_params>>(
+              service,
+              '_contextParams',
+            )[context]!;
+        expect(contextParams.offload_kqv, isFalse);
+        expect(contextParams.op_offload, isFalse);
+        expect(
+          () => service.createContext(
+            handle,
+            const ModelParams(contextSize: 512, device: ComputeDevice.npu),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      });
     });
   });
 
