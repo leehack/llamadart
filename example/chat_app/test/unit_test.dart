@@ -758,12 +758,21 @@ void main() {
       expect(ttsProvider.textToSpeechError, isNull);
       expect(ttsProvider.textToSpeechResult?.samples, isNotEmpty);
       expect(ttsProvider.textToSpeechResult?.sampleRateHz, 24000);
-      expect(mockEngine.lastTextToSpeechRequest?.text, 'Hello from llamadart.');
-      expect(mockEngine.lastTextToSpeechRequest?.language, 'en');
-      expect(mockEngine.lastTextToSpeechRequest?.speakerAudioBytes, [1, 2, 3]);
-      expect(mockEngine.lastTextToSpeechRequest?.topK, 40);
-      expect(mockEngine.lastTextToSpeechRequest?.topP, 0.95);
-      expect(mockEngine.lastTextToSpeechRequest?.maxFrames, kIsWeb ? 96 : 512);
+      expect(
+        mockEngine.mockBackend.lastTextToSpeechRequest?.text,
+        'Hello from llamadart.',
+      );
+      expect(mockEngine.mockBackend.lastTextToSpeechRequest?.language, 'en');
+      expect(
+        mockEngine.mockBackend.lastTextToSpeechRequest?.speakerAudioBytes,
+        [1, 2, 3],
+      );
+      expect(mockEngine.mockBackend.lastTextToSpeechRequest?.topK, 40);
+      expect(mockEngine.mockBackend.lastTextToSpeechRequest?.topP, 0.95);
+      expect(
+        mockEngine.mockBackend.lastTextToSpeechRequest?.maxFrames,
+        kIsWeb ? 96 : 512,
+      );
     });
 
     test('Web TTS abort reports an actionable recovery message', () async {
@@ -779,7 +788,7 @@ void main() {
       addTearDown(ttsProvider.dispose);
       await ttsProvider.loadModel();
       final resultCompleter = Completer<BackendTextToSpeechResult>();
-      mockEngine.textToSpeechResultCompleter = resultCompleter;
+      mockEngine.mockBackend.textToSpeechResultCompleter = resultCompleter;
 
       final pending = ttsProvider.synthesizeSpeech('Hello.');
       await Future<void>.delayed(Duration.zero);
@@ -814,14 +823,14 @@ void main() {
           truncated: false,
         );
         final resultCompleter = Completer<BackendTextToSpeechResult>();
-        mockEngine.textToSpeechResultCompleter = resultCompleter;
+        mockEngine.mockBackend.textToSpeechResultCompleter = resultCompleter;
 
         final pending = ttsProvider.synthesizeSpeech('Stale utterance.');
         await Future<void>.delayed(Duration.zero);
         expect(ttsProvider.isSynthesizingSpeech, isTrue);
 
         ttsProvider.createConversation();
-        expect(mockEngine.textToSpeechCancelled, isTrue);
+        expect(mockEngine.mockBackend.textToSpeechCancelled, isTrue);
         expect(ttsProvider.isSynthesizingSpeech, isTrue);
         expect(ttsProvider.canSynthesizeSpeech, isFalse);
         expect(ttsProvider.textToSpeechResult, isNull);

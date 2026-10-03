@@ -104,13 +104,102 @@ class FakeEdgeSpeech extends FakeSpeech implements SpeechEdgeCaseAdapter {
   }
 }
 
-class FakeSpeechEngine implements LlamaEngine {
+const qwen3TtsCapabilities = BackendTextToSpeechCapabilities(
+  isSupported: true,
+  model: BackendTextToSpeechModel.qwen3Tts,
+  sampleRateHz: 24000,
+  channelCount: 1,
+  supportsLanguage: true,
+  supportsCancellation: true,
+);
+
+/// Serves fake model, context and projector handles, and runs text-to-speech
+/// through [onSynthesize] and [onCancel].
+class FakeSpeechBackend implements LlamaBackend, BackendTextToSpeech {
+  BackendTextToSpeechCapabilities textToSpeech =
+      const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: 'This fake does not synthesize speech.',
+      );
+  Future<BackendTextToSpeechResult> Function(
+    BackendTextToSpeechRequest request,
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  )?
+  onSynthesize;
+  void Function()? onCancel;
+
+  @override
+  bool get isReady => true;
+
+  @override
+  bool get supportsUrlLoading => false;
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) async => 1;
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async => 2;
+
+  @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async => 3;
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async {}
+
+  @override
+  Future<void> contextFree(int contextHandle) async {}
+
+  @override
+  Future<void> modelFree(int modelHandle) async {}
+
+  @override
+  void cancelGeneration() {}
+
+  @override
+  Future<void> dispose() async {}
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => textToSpeech;
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    final synthesize = onSynthesize;
+    if (synthesize == null) {
+      throw UnsupportedError('This fake does not synthesize speech');
+    }
+    return synthesize(request, onProgress);
+  }
+
+  @override
+  void cancelTextToSpeech() => onCancel?.call();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Loads its model and projector through [FakeSpeechBackend] once and keeps
+/// them, so a teardown fake can model its own unload and dispose.
+class FakeSpeechEngine extends LlamaEngine {
   FakeSpeechEngine({
     this.deltas = const <String>[],
     this.failure,
     this.tokenDelay = Duration.zero,
     this.laterTokenDelay,
-  });
+  }) : super(FakeSpeechBackend());
   final List<String> deltas;
   final Object? failure;
   final Duration tokenDelay;
@@ -120,8 +209,7 @@ class FakeSpeechEngine implements LlamaEngine {
   var generations = 0;
   var disposals = 0;
 
-  @override
-  bool get isReady => true;
+  FakeSpeechBackend get speechBackend => backend as FakeSpeechBackend;
 
   @override
   Future<bool> get supportsAudio async => true;
@@ -139,11 +227,18 @@ class FakeSpeechEngine implements LlamaEngine {
   Future<void> loadModel(
     String path, {
     ModelParams modelParams = const ModelParams(),
-  }) async => loaded.add(path);
+  }) async {
+    loaded.add(path);
+    if (!isReady) await super.loadModel(path, modelParams: modelParams);
+  }
 
   @override
-  Future<void> loadMultimodalProjector(String mmProjPath) async =>
-      loaded.add(mmProjPath);
+  Future<void> loadMultimodalProjector(String mmProjPath) async {
+    loaded.add(mmProjPath);
+    if (!hasMultimodalProjector) {
+      await super.loadMultimodalProjector(mmProjPath);
+    }
+  }
 
   @override
   void cancelGeneration() {}
@@ -178,9 +273,6 @@ class FakeSpeechEngine implements LlamaEngine {
       yield completionChunk(delta);
     }
   }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 LlamaCompletionChunk completionChunk(String delta) => LlamaCompletionChunk(
@@ -200,7 +292,12 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
   CancellableSpeechEngine({
     required this.completedTokenDelays,
     this.cancelAckDelay = Duration.zero,
-  }) : super(deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans']);
+  }) : super(deltas: const ['and ', 'so ', 'my ', 'fellow ', 'americans']) {
+    speechBackend
+      ..textToSpeech = qwen3TtsCapabilities
+      ..onSynthesize = _synthesize
+      ..onCancel = _acknowledgeCancel;
+  }
   final List<Duration> completedTokenDelays;
   final Duration cancelAckDelay;
   Completer<void>? _running;
@@ -227,9 +324,6 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
   void cancelGeneration() => _acknowledgeCancel();
 
   @override
-  void cancelTextToSpeechBackend() => _acknowledgeCancel();
-
-  @override
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
@@ -250,23 +344,10 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
     }
   }
 
-  @override
-  Future<BackendTextToSpeechCapabilities>
-  get backendTextToSpeechCapabilities async =>
-      const BackendTextToSpeechCapabilities(
-        isSupported: true,
-        model: BackendTextToSpeechModel.qwen3Tts,
-        sampleRateHz: 24000,
-        channelCount: 1,
-        supportsLanguage: true,
-        supportsCancellation: true,
-      );
-
-  @override
-  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
-    BackendTextToSpeechRequest request, {
+  Future<BackendTextToSpeechResult> _synthesize(
+    BackendTextToSpeechRequest request,
     void Function(BackendTextToSpeechProgress progress)? onProgress,
-  }) async {
+  ) async {
     final generation = generations++;
     for (var frame = 0; frame < deltas.length; frame++) {
       if (!await _awaitToken(generation)) break;
@@ -421,7 +502,12 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
   SynthesisSpeechEngine({
     this.decodeHonoursCancel = true,
     this.teardownCancels = true,
-  });
+  }) {
+    speechBackend
+      ..textToSpeech = qwen3TtsCapabilities
+      ..onSynthesize = _synthesize
+      ..onCancel = _cancel;
+  }
   final bool decodeHonoursCancel;
   final bool teardownCancels;
   static const naturalFrames = 20;
@@ -443,8 +529,7 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     timer.cancel();
   }
 
-  @override
-  void cancelTextToSpeechBackend() {
+  void _cancel() {
     _cancelled = true;
     final wake = _wake;
     if (wake != null && !wake.isCompleted) wake.complete();
@@ -463,23 +548,10 @@ class SynthesisSpeechEngine extends FakeSpeechEngine {
     disposals++;
   }
 
-  @override
-  Future<BackendTextToSpeechCapabilities>
-  get backendTextToSpeechCapabilities async =>
-      const BackendTextToSpeechCapabilities(
-        isSupported: true,
-        model: BackendTextToSpeechModel.qwen3Tts,
-        sampleRateHz: 24000,
-        channelCount: 1,
-        supportsLanguage: true,
-        supportsCancellation: true,
-      );
-
-  @override
-  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
-    BackendTextToSpeechRequest request, {
+  Future<BackendTextToSpeechResult> _synthesize(
+    BackendTextToSpeechRequest request,
     void Function(BackendTextToSpeechProgress progress)? onProgress,
-  }) async {
+  ) async {
     _cancelled = false;
     requestedFrames.add(request.maxFrames);
     final frames = math.min(naturalFrames, request.maxFrames);
@@ -610,7 +682,7 @@ class LimitedRecognitionEngine extends FakeSpeechEngine {
     String path, {
     ModelParams modelParams = const ModelParams(),
   }) async {
-    loaded.add(path);
+    await super.loadModel(path, modelParams: modelParams);
     contextSizes.add(_contextSize = modelParams.contextSize);
   }
 

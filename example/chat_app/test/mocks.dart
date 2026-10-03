@@ -10,7 +10,12 @@ class MockLlamaBackend
     implements
         LlamaBackend,
         BackendAvailability,
-        BackendPromptSpeechToTextSupport {
+        BackendPromptSpeechToTextSupport,
+        BackendTextToSpeech {
+  BackendTextToSpeechRequest? lastTextToSpeechRequest;
+  bool textToSpeechCancelled = false;
+  Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
+
   @override
   bool get isReady => true;
   @override
@@ -113,6 +118,52 @@ class MockLlamaBackend
   }) async {
     return messages.map((m) => "${m['role']}: ${m['content']}").join('\n');
   }
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => const BackendTextToSpeechCapabilities(
+    isSupported: true,
+    model: BackendTextToSpeechModel.qwen3Tts,
+    sampleRateHz: 24000,
+    channelCount: 1,
+    supportsLanguage: true,
+    supportsSpeakerReference: true,
+    supportsCancellation: true,
+  );
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    lastTextToSpeechRequest = request;
+    onProgress?.call(
+      const BackendTextToSpeechProgress(
+        phase: BackendTextToSpeechPhase.generating,
+        promptTokensRemaining: 0,
+        framesGenerated: 2,
+        truncated: false,
+      ),
+    );
+    final result = BackendTextToSpeechResult(
+      samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 2,
+      truncated: false,
+    );
+    final completer = textToSpeechResultCompleter;
+    return completer == null ? result : completer.future;
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    textToSpeechCancelled = true;
+  }
 }
 
 class MockLlamaEngine extends LlamaEngine {
@@ -132,9 +183,6 @@ class MockLlamaEngine extends LlamaEngine {
   String? lastLoadedModelPath;
   String? lastLoadedMmprojPath;
   String? lastLoadedModelUrl;
-  BackendTextToSpeechRequest? lastTextToSpeechRequest;
-  bool textToSpeechCancelled = false;
-  Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
 
   LlamaEngineCapabilities loadedCapabilities = const LlamaEngineCapabilities(
     isSupported: true,
@@ -152,6 +200,8 @@ class MockLlamaEngine extends LlamaEngine {
   );
 
   MockLlamaEngine() : super(MockLlamaBackend());
+
+  MockLlamaBackend get mockBackend => backend as MockLlamaBackend;
 
   @override
   Future<LlamaEngineCapabilities> get capabilities async => initialized
@@ -171,7 +221,14 @@ class MockLlamaEngine extends LlamaEngine {
   }) async {
     lastLoadedModelPath = path;
     lastModelParams = modelParams;
+    await _loadBackendModel(path, modelParams);
     initialized = true;
+  }
+
+  Future<void> _loadBackendModel(String path, ModelParams modelParams) async {
+    if (!super.isReady) {
+      await super.loadModel(path, modelParams: modelParams);
+    }
   }
 
   @override
@@ -182,6 +239,7 @@ class MockLlamaEngine extends LlamaEngine {
   }) async {
     lastLoadedModelUrl = url;
     lastModelParams = modelParams;
+    await _loadBackendModel(url, modelParams);
     initialized = true;
   }
 
@@ -189,12 +247,14 @@ class MockLlamaEngine extends LlamaEngine {
   Future<void> loadMultimodalProjector(String mmProjPath) async {
     loadMultimodalProjectorCalls += 1;
     lastLoadedMmprojPath = mmProjPath;
+    await super.loadMultimodalProjector(mmProjPath);
     mmprojLoaded = true;
   }
 
   @override
   Future<void> unloadMultimodalProjector() async {
     unloadMultimodalProjectorCalls += 1;
+    await super.unloadMultimodalProjector();
     mmprojLoaded = false;
   }
 
@@ -285,49 +345,6 @@ class MockLlamaEngine extends LlamaEngine {
   @override
   Future<BackendPerfContextData?> getPerformanceContext() async =>
       performanceContext;
-
-  @override
-  Future<BackendTextToSpeechCapabilities>
-  get backendTextToSpeechCapabilities async =>
-      const BackendTextToSpeechCapabilities(
-        isSupported: true,
-        model: BackendTextToSpeechModel.qwen3Tts,
-        sampleRateHz: 24000,
-        channelCount: 1,
-        supportsLanguage: true,
-        supportsSpeakerReference: true,
-        supportsCancellation: true,
-      );
-
-  @override
-  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
-    BackendTextToSpeechRequest request, {
-    void Function(BackendTextToSpeechProgress progress)? onProgress,
-  }) async {
-    lastTextToSpeechRequest = request;
-    onProgress?.call(
-      const BackendTextToSpeechProgress(
-        phase: BackendTextToSpeechPhase.generating,
-        promptTokensRemaining: 0,
-        framesGenerated: 2,
-        truncated: false,
-      ),
-    );
-    final result = BackendTextToSpeechResult(
-      samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
-      sampleRateHz: 24000,
-      channelCount: 1,
-      framesGenerated: 2,
-      truncated: false,
-    );
-    final completer = textToSpeechResultCompleter;
-    return completer == null ? result : completer.future;
-  }
-
-  @override
-  void cancelTextToSpeechBackend() {
-    textToSpeechCancelled = true;
-  }
 }
 
 class MockSettingsService implements SettingsService {
