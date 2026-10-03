@@ -36,6 +36,7 @@ void main() {
       return;
     }
 
+    final backend = LlamaBackend();
     final synthesizer = await TextToSpeechEngine.load(
       TextToSpeechModel(
         ModelSource.path(modelPath),
@@ -47,7 +48,9 @@ void main() {
         preferredBackend: GpuBackend.cpu,
         gpuLayers: 0,
       ),
+      backend: backend,
     );
+    expect(backend.isReady, isTrue);
     try {
       final result = await synthesizer.synthesizeOnce(
         const TextToSpeechRequest(
@@ -64,7 +67,35 @@ void main() {
       await synthesizer.dispose();
     }
     expect(synthesizer.isDisposed, isTrue);
-    expect((await synthesizer.capabilities).isSupported, isFalse);
+    expect(backend.isReady, isFalse);
+    final disposed = await synthesizer.capabilities;
+    expect(disposed.isSupported, isFalse);
+    expect(disposed.unsupportedReason, 'The TextToSpeechEngine is disposed.');
+  });
+
+  test('load disposes a model it cannot use and its backend', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    if (modelPath == null) {
+      return;
+    }
+
+    final backend = LlamaBackend();
+    await expectLater(
+      TextToSpeechEngine.load(
+        TextToSpeechModel(
+          ModelSource.path(modelPath),
+          adapter: const Qwen3TtsAdapter(),
+        ),
+        params: const ModelParams(
+          contextSize: 4096,
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 0,
+        ),
+        backend: backend,
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(backend.isReady, isFalse);
   });
 
   test('synthesizes a playable WAV through the public API', () async {

@@ -168,6 +168,7 @@ void main() {
       return;
     }
 
+    final backend = LlamaBackend();
     final recognizer = await SpeechToTextEngine.load(
       SpeechToTextModel(
         ModelSource.path(modelPath),
@@ -179,7 +180,9 @@ void main() {
         preferredBackend: GpuBackend.cpu,
         gpuLayers: 0,
       ),
+      backend: backend,
     );
+    expect(backend.isReady, isTrue);
     try {
       final result = await recognizer.transcribeOnce(
         SpeechToTextRequest(
@@ -192,7 +195,35 @@ void main() {
       await recognizer.dispose();
     }
     expect(recognizer.isDisposed, isTrue);
-    expect((await recognizer.capabilities).isSupported, isFalse);
+    expect(backend.isReady, isFalse);
+    final disposed = await recognizer.capabilities;
+    expect(disposed.isSupported, isFalse);
+    expect(disposed.unsupportedReason, 'The SpeechToTextEngine is disposed.');
+  });
+
+  test('load disposes a model it cannot use and its backend', () async {
+    final modelPath = _requiredFile(_modelPathKey);
+    if (modelPath == null) {
+      return;
+    }
+
+    final backend = LlamaBackend();
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          adapter: const Qwen3AsrAdapter(),
+        ),
+        params: const ModelParams(
+          contextSize: 4096,
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 0,
+        ),
+        backend: backend,
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(backend.isReady, isFalse);
   });
 
   test('rejects a projector made for another model family', () async {

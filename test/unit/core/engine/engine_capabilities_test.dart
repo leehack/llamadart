@@ -151,6 +151,22 @@ void main() {
     expect(capabilities.speculativeDecodingStrategies, isEmpty);
   });
 
+  test('reads as the shared EngineCapabilities', () async {
+    final engine = await loaded(
+      _RuntimeBackend(
+        runtime: LlamaRuntime.llamaCpp,
+        generation: _llamaCppGeneration,
+        backendName: 'Metal',
+      ),
+    );
+
+    final EngineCapabilities capabilities = await engine.capabilities;
+
+    expect(capabilities.isSupported, isTrue);
+    expect(capabilities.unsupportedReason, isNull);
+    expect(capabilities.backendName, 'Metal');
+  });
+
   test('reports a llama.cpp runtime with a vision projector', () async {
     final engine = await loaded(
       _RuntimeBackend(
