@@ -63,9 +63,10 @@ enum LlamaToolLoopStopReason {
   /// without tool calls stays in the history as the turn's answer, even an
   /// empty one; otherwise the turn was rolled back.
   ///
-  /// A backend that ends a cancelled generation without an error, as native
-  /// llama.cpp does, still ends the reply when the cancel came before its
-  /// first token, so the turn stays with an empty answer.
+  /// Which of the two a cancel near the start of a reply gives depends on
+  /// its timing, the backend, the chat template and its parser: an empty
+  /// reply that parses stays as an empty answer. Check
+  /// [LlamaToolLoopResult.rolledBack].
   cancelled,
 }
 
@@ -215,8 +216,10 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// `contextExceeded`, a cancel that left no reply without tool calls) and
   /// any error this call throws roll the whole turn back, from its user
   /// message on. A cancel during a reply without tool calls keeps that reply
-  /// as the answer; on native llama.cpp that includes a cancel before the
-  /// reply's first token, which leaves an empty answer.
+  /// as the answer, which can be empty when the cancel came before its first
+  /// token; whether such a cancel keeps an empty answer or rolls back
+  /// depends on timing, backend, template and parser, so check
+  /// [LlamaToolLoopResult.rolledBack].
   /// For empty [parts] that is the open turn being continued, including the
   /// messages added before this call, such as the app's tool results.
   /// Messages that other callers added meanwhile stay. Older turns that
@@ -238,8 +241,8 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// fails this call.
   ///
   /// To start a new chat while the loop runs, call
-  /// `LlamaEngine.cancelGeneration` before [ChatSession.reset], and await
-  /// this call first: a reset while a reply is generating can leave that
+  /// `LlamaEngine.cancelGeneration`, await this call, then call
+  /// [ChatSession.reset]: a reset while a reply is generating can leave that
   /// reply in the new chat
   /// ([#888](https://github.com/leehack/llamadart/issues/888)).
   ///
@@ -419,6 +422,7 @@ class _ToolLoopTurn {
   /// The open turn a continuation picks up, then every message the loop
   /// added.
   final List<LlamaChatMessage> messages = [];
+  final List<LlamaChatMessage> _appended = [];
   LlamaChatMessage? _lastAdded;
   Object? _callbackError;
 
@@ -428,14 +432,25 @@ class _ToolLoopTurn {
   /// Whether [error] was thrown by the app's `onMessageAdded`.
   bool isCallbackError(Object error) => identical(error, _callbackError);
 
-  /// Adds [message] with [ChatSession.addMessage] and reports the instance
-  /// the session stored, which an override may have copied, so a rollback
-  /// finds it.
+  /// Adds [message] with [ChatSession.addMessage] and reports it.
+  ///
+  /// Every instance the call appended to the stored history is also
+  /// removed on a rollback, since an override may store a copy or append
+  /// more messages.
   void add(LlamaChatMessage message) {
-    final countBefore = _session.history.length;
+    List<LlamaChatMessage> stored() =>
+        mutableChatSessionHistory(_session) ?? _session.history;
+    final countBefore = stored().length;
     _session.addMessage(message);
-    final history = _session.history;
-    report(history.length > countBefore ? history.last : message);
+    final after = stored();
+    if (after.length > countBefore) {
+      _appended.addAll(
+        after
+            .sublist(countBefore)
+            .where((stored) => !identical(stored, message)),
+      );
+    }
+    report(message);
   }
 
   void report(LlamaChatMessage message) {
@@ -455,13 +470,14 @@ class _ToolLoopTurn {
   /// [ChatSession.addMessage] or [ChatSession.reset]; a class that only
   /// implements [ChatSession] is rebuilt through those two methods.
   void rollBack() {
+    final turn = [...messages, ..._appended];
     final history = mutableChatSessionHistory(_session);
     if (history != null) {
-      _removeTurn(history, messages);
+      _removeTurn(history, turn);
       return;
     }
     final rebuilt = _session.history.toList();
-    _removeTurn(rebuilt, messages);
+    _removeTurn(rebuilt, turn);
     _session.reset(keepSystemPrompt: true);
     rebuilt.forEach(_session.addMessage);
   }

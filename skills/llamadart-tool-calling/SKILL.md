@@ -29,10 +29,11 @@ description: >-
   rollback does not call `addMessage` or `reset`); `result.messages` keeps
   the turn's messages, including results of tools that ran. To resume, add
   them back, answer `pendingToolCalls` and call `completeWithTools(const [])`.
-  A cancel during the answer keeps the partial answer, on WebGPU too; on
-  native llama.cpp a cancel before the answer's first token keeps an empty
-  answer. For a new chat, call `engine.cancelGeneration()` before
-  `session.reset()` and await the loop first: a reset during generation can
+  A cancel during the answer keeps the partial answer, on WebGPU too; a
+  cancel before its first token may keep an empty answer or roll back,
+  depending on timing, backend, template and parser, so check
+  `result.rolledBack`. For a new chat, call `engine.cancelGeneration()`,
+  await the loop, then call `session.reset()`: a reset during generation can
   leave the cancelled reply in the new chat
   ([#888](https://github.com/leehack/llamadart/issues/888)).
 - `handler` is optional. Leave it out for a tool the app runs itself (user

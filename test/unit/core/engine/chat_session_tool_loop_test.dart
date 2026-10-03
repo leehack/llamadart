@@ -52,9 +52,52 @@ class _CopyingSession extends ChatSession {
   _CopyingSession(super.engine) : super(maxContextTokens: 0);
 
   @override
-  void addMessage(LlamaChatMessage message) => super.addMessage(
-    LlamaChatMessage.withContent(role: message.role, content: message.parts),
-  );
+  void addMessage(LlamaChatMessage message) =>
+      super.addMessage(_copyOf(message));
+}
+
+LlamaChatMessage _copyOf(LlamaChatMessage message) =>
+    LlamaChatMessage.withContent(role: message.role, content: message.parts);
+
+/// A [ChatSession] subclass whose [history] returns copies.
+class _CopyingViewSession extends ChatSession {
+  _CopyingViewSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  List<LlamaChatMessage> get history =>
+      List.unmodifiable(super.history.map(_copyOf));
+}
+
+/// A [_CopyingViewSession] that stores a note after each tool result.
+class _NotingSession extends _CopyingViewSession {
+  _NotingSession(super.engine);
+
+  final List<LlamaChatMessage> notes = [];
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    super.addMessage(message);
+    if (message.role == LlamaChatRole.tool) {
+      final note = _text(LlamaChatRole.system, 'note');
+      notes.add(note);
+      super.addMessage(note);
+    }
+  }
+}
+
+/// A [ChatSession] subclass that keeps only the last two messages when a
+/// tool result is added.
+class _WindowSession extends ChatSession {
+  _WindowSession(super.engine) : super(maxContextTokens: 0);
+
+  @override
+  void addMessage(LlamaChatMessage message) {
+    super.addMessage(message);
+    if (message.role != LlamaChatRole.tool) return;
+    final kept = history.skip(history.length - 2).toList();
+    reset();
+    kept.forEach(super.addMessage);
+  }
 }
 
 /// A `ChatSession` that only forwards its public members, and whose [reset]
@@ -1096,6 +1139,58 @@ void main() {
 
     expect(result.rolledBack, isTrue);
     expect(copying.history, isEmpty);
+  });
+
+  group('a rollback on a subclass', () {
+    Future<LlamaToolLoopResult> stopAtMaxRounds(ChatSession session) {
+      engine.replies
+        ..add(scriptedCalls([('a', 'weather', '{}')]))
+        ..add(scriptedCalls([('b', 'weather', '{}')]));
+      return session.sendWithTools(
+        'Weather',
+        tools: [_tool('weather', (_) async => 'sunny')],
+        maxRounds: 1,
+      );
+    }
+
+    test('whose history returns copies removes the turn', () async {
+      final viewing = _CopyingViewSession(engine);
+
+      final result = await stopAtMaxRounds(viewing);
+
+      expect(result.rolledBack, isTrue);
+      expect(viewing.history, isEmpty);
+    });
+
+    test('removes what its addMessage appended after a result', () async {
+      final noting = _NotingSession(engine);
+
+      final result = await stopAtMaxRounds(noting);
+
+      expect(result.rolledBack, isTrue);
+      expect(noting.history, isEmpty);
+      expect(noting.notes, hasLength(1));
+      expect(_roles(result.messages), [
+        LlamaChatRole.user,
+        LlamaChatRole.assistant,
+        LlamaChatRole.tool,
+        LlamaChatRole.assistant,
+      ]);
+    });
+
+    test('whose addMessage shrinks the history removes the turn', () async {
+      final windowed = _WindowSession(engine);
+      [
+        _text(LlamaChatRole.user, 'Hi'),
+        _text(LlamaChatRole.assistant, 'Hello'),
+      ].forEach(windowed.addMessage);
+
+      final result = await stopAtMaxRounds(windowed);
+
+      expect(result.stopReason, LlamaToolLoopStopReason.maxRounds);
+      expect(result.rolledBack, isTrue);
+      expect(windowed.history, isEmpty);
+    });
   });
 
   test('runs on a class that implements ChatSession', () async {
