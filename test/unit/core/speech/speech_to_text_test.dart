@@ -126,6 +126,36 @@ void main() {
       );
     });
 
+    test('a recognizer disposed during preflight starts no task', () async {
+      backend.blockAudioProbe = true;
+      await _loadSpeechModel(llamaEngine);
+
+      final pending = speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
+      );
+      await backend.audioProbeStarted.future;
+      await speechEngine.dispose();
+      backend.releaseAudioProbe();
+
+      await expectLater(pending, throwsA(isA<LlamaStateException>()));
+      expect(backend.generationStarted.isCompleted, isFalse);
+    });
+
+    test(
+      'a disposed recognizer rejects a request before validating it',
+      () async {
+        await _loadSpeechModel(llamaEngine);
+        await speechEngine.dispose();
+
+        await expectLater(
+          speechEngine.transcribe(
+            SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+      },
+    );
+
     test('rejects PCM input before starting a prompt-adapter task', () async {
       await _loadSpeechModel(llamaEngine);
 
@@ -1160,6 +1190,7 @@ void main() {
           ),
         ),
       );
+      expect(backend.disposeCalls, 1);
       await expectLater(
         SpeechToTextEngine.load(
           model(),
@@ -1169,6 +1200,7 @@ void main() {
         throwsA(isA<LlamaUnsupportedException>()),
       );
       expect(backend.lastModelParams, isNull);
+      expect(backend.disposeCalls, 2);
     });
 
     test('attach borrows the engine and dispose leaves it loaded', () async {
@@ -1183,11 +1215,14 @@ void main() {
         const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/a.wav')),
       );
       await backend.generationStarted.future;
+      var taskDone = false;
+      unawaited(task.done.then((_) => taskDone = true));
 
       final disposal = recognizer.dispose();
       backend.releaseGeneration();
       await disposal;
 
+      expect(taskDone, isTrue);
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
       expect(llamaEngine.isReady, isTrue);
       expect(backend.disposeCalls, 0);

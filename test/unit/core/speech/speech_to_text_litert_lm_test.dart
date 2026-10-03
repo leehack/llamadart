@@ -301,6 +301,18 @@ void main() {
         ),
       ),
     );
+    final backend = _DisposeCountingBackend();
+    await expectLater(
+      SpeechToTextEngine.load(model(), backend: backend),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'backend',
+        ),
+      ),
+    );
+    expect(backend.disposeCalls, 1);
     expect(driver.probeCalls, 0);
   });
 
@@ -832,4 +844,16 @@ class _SourceDownloadManager implements ModelDownloadManager {
 
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
+}
+
+class _DisposeCountingBackend implements LlamaBackend {
+  int disposeCalls = 0;
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls++;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -31,6 +31,11 @@
   `TextToSpeechModelProfile`, the `modelProfile` constructors and
   `SpeechToTextEngine.liteRtLm`, which still work for one release
   ([#848](https://github.com/leehack/llamadart/issues/848)).
+- **Breaking:** `SpeechToTextEngine` gains `dispose()`, `isDisposed`,
+  `adapter` and `transcribeOnce`, and `TextToSpeechEngine` gains `dispose()`,
+  `isDisposed`, `adapter` and `synthesizeOnce`, so a class that `implements`
+  either must add them
+  ([#848](https://github.com/leehack/llamadart/issues/848)).
 - **Breaking:** `DecisionEngine.load(DecisionModel(encoder:, head:,
   config:), params:, download:, onProgress:)` loads a decision model from
   `ModelSource`s into an engine it owns, atomically, and `dispose()` frees it

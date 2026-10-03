@@ -669,8 +669,10 @@ class SpeechToTextEngine {
   /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
   /// backend, as on the web, fetches each file itself, as
   /// `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do, and [onProgress]
-  /// reports a fraction of both files.
+  /// `LlamaEngine.loadMultimodalProjectorSource` do. [onProgress] then
+  /// reports only the main file's fetch, as a fraction from 0 to 0.5 of the
+  /// two files when there is a projector; the projector fetch reports no
+  /// progress.
   ///
   /// With a [LiteRtLmAsrAdapter], [load] probes the LiteRT-LM ASR runtime
   /// before any download and then resolves [SpeechToTextModel.source] and
@@ -705,10 +707,13 @@ class SpeechToTextEngine {
     switch (model.adapter) {
       case final SpeechToTextPromptAdapter adapter:
         if (model.tokenizer != null) {
-          throw LlamaArgumentException(
-            'A ${adapter.name} model takes no tokenizer file; the tokenizer '
-            'is part of the model. Leave SpeechToTextModel.tokenizer unset.',
-            name: 'model.tokenizer',
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'A ${adapter.name} model takes no tokenizer file; the tokenizer '
+              'is part of the model. Leave SpeechToTextModel.tokenizer unset.',
+              name: 'model.tokenizer',
+            ),
           );
         }
         late final SpeechToTextEngine recognizer;
@@ -740,24 +745,33 @@ class SpeechToTextEngine {
       case final LiteRtLmAsrAdapter adapter:
         final tokenizer = model.tokenizer;
         if (tokenizer == null) {
-          throw LlamaArgumentException(
-            'Dedicated LiteRT-LM ASR needs the model\'s tokenizer JSON. Set '
-            'SpeechToTextModel.tokenizer.',
-            name: 'model.tokenizer',
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'Dedicated LiteRT-LM ASR needs the model\'s tokenizer JSON. Set '
+              'SpeechToTextModel.tokenizer.',
+              name: 'model.tokenizer',
+            ),
           );
         }
         if (model.projector != null) {
-          throw LlamaArgumentException(
-            'Dedicated LiteRT-LM ASR takes no multimodal projector. Leave '
-            'SpeechToTextModel.projector unset.',
-            name: 'model.projector',
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'Dedicated LiteRT-LM ASR takes no multimodal projector. Leave '
+              'SpeechToTextModel.projector unset.',
+              name: 'model.projector',
+            ),
           );
         }
         if (params != null || backend != null) {
-          throw LlamaArgumentException(
-            'params and backend apply to models that run on LlamaEngine. Set '
-            'dedicated LiteRT-LM ASR settings on LiteRtLmAsrAdapter.',
-            name: params != null ? 'params' : 'backend',
+          await _rejectLoad(
+            backend,
+            LlamaArgumentException(
+              'params and backend apply to models that run on LlamaEngine. '
+              'Set dedicated LiteRT-LM ASR settings on LiteRtLmAsrAdapter.',
+              name: params != null ? 'params' : 'backend',
+            ),
           );
         }
         final driver =
@@ -796,6 +810,20 @@ class SpeechToTextEngine {
           support: Future<LiteRtLmSpeechToTextSupport>.value(support),
         );
     }
+  }
+
+  /// Disposes the [backend] that [load] took ownership of, then throws
+  /// [error].
+  static Future<Never> _rejectLoad(
+    LlamaBackend? backend,
+    LlamaArgumentException error,
+  ) async {
+    try {
+      await backend?.dispose();
+    } catch (_) {
+      // The argument error is the one the caller needs.
+    }
+    throw error;
   }
 
   /// Runs [adapter] on [engine], which the caller loaded and keeps owning.

@@ -280,6 +280,34 @@ void main() {
       expect(backend.cancelCalls, 0);
     });
 
+    test('a synthesizer disposed during preflight starts no task', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      backend.blockCapabilities = true;
+
+      final pending = speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Hello.'),
+      );
+      await backend.capabilityProbeStarted.future;
+      await speechEngine.dispose();
+      backend.releaseCapabilities();
+
+      await expectLater(pending, throwsA(isA<LlamaStateException>()));
+      expect(backend.synthesisStarted.isCompleted, isFalse);
+    });
+
+    test(
+      'a disposed synthesizer rejects a request before validating it',
+      () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        await speechEngine.dispose();
+
+        await expectLater(
+          speechEngine.synthesize(const TextToSpeechRequest(text: '   ')),
+          throwsA(isA<LlamaStateException>()),
+        );
+      },
+    );
+
     test('validates input and sampling before capability lookup', () async {
       await _loadTextToSpeechModel(llamaEngine);
 
@@ -552,9 +580,12 @@ void main() {
         const TextToSpeechRequest(text: 'Hello.'),
       );
       await backend.synthesisStarted.future;
+      var taskDone = false;
+      unawaited(task.done.then((_) => taskDone = true));
 
       await synthesizer.dispose();
 
+      expect(taskDone, isTrue);
       expect((await task.done).state, TextToSpeechCompletionState.cancelled);
       expect(llamaEngine.isReady, isTrue);
       expect(backend.disposeCalls, 0);

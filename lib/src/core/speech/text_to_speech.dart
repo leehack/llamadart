@@ -456,8 +456,10 @@ class TextToSpeechEngine {
   /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
   /// backend, as on the web, fetches each file itself, as
   /// `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do, and [onProgress]
-  /// reports a fraction of both files.
+  /// `LlamaEngine.loadMultimodalProjectorSource` do. [onProgress] then
+  /// reports only the main file's fetch, as a fraction from 0 to 0.5 of the
+  /// two files when there is a projector; the projector fetch reports no
+  /// progress.
   ///
   /// The synthesizer owns the engine and a [backend] passed in: [dispose],
   /// or a failed load, disposes both. The load is atomic: when it throws,

@@ -367,7 +367,9 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
    created. It is safe to call twice. Afterwards `transcribe`, `startStream`
    and `synthesize` throw `LlamaStateException`, and `capabilities` reports
    unsupported. Code that used the deprecated constructors and disposed the
-   `LlamaEngine` itself keeps working.
+   `LlamaEngine` itself keeps working. A class that `implements` `SpeechToTextEngine` or
+   `TextToSpeechEngine`, such as a test fake, must add `dispose()`,
+   `isDisposed`, `adapter` and `transcribeOnce` or `synthesizeOnce`.
 ## Unreleased: `ModelSource` for LoRA adapters, draft models and speech files
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
