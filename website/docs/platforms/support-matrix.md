@@ -46,16 +46,29 @@ recognition. Decision models run on llama.cpp and WebGPU only; on LiteRT-LM
 [Text to speech](../guides/text-to-speech) and
 [Decision models](../guides/decision-models).
 
-`LiteRtLmBackendPreference.auto`, the default, follows `ModelParams`:
-`gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects CPU; a GPU
-`preferredBackend` (Vulkan, Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM
-GPU backend; and `preferredBackend: auto` selects GPU on Android, iOS, macOS
-and web, and CPU on Linux and Windows. Linux arm64 has no LiteRT-LM GPU
-backend, so a GPU selection there fails the load with `LlamaModelException`;
-set `liteRtLmBackend: cpu`. Windows arm64 has no LiteRT-LM runtime. On Linux x64
-and Windows x64, GPU uses the LiteRT-LM GPU backend, not CUDA; set
-`liteRtLmBackend: cpu` on hosts without a hardware Vulkan driver. NPU is
-Android-only; web rejects it.
+## Compute device
+
+`ModelParams.device` (`ComputeDevice`) applies to every runtime. `auto` keeps
+each runtime's default; `cpu`, `gpu` and `npu` run there or throw
+`LlamaUnsupportedException`, never on another device. See
+[Choosing the device](../guides/backend-selection#choosing-the-device).
+
+| Runtime | `auto` | `gpu` | `npu` |
+| --- | --- | --- | --- |
+| Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, and on Android | Needs a GPU module and device; Vulkan on Android | Throws |
+| WebGPU (llama.cpp) | WebGPU when available, else the WebAssembly CPU runtime | Needs a WebGPU adapter and GPU layers after load; no CPU retry | Throws |
+| Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
+| LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
+| Image generation | First GPU reported, else CPU | Needs a GPU; Android and the CPU builds have none | Throws |
+| LiteRT-LM ASR | CPU | Not selectable | Not selectable |
+
+Under `auto`, `gpuLayers: 0` or a CPU or BLAS `preferredBackend` selects the
+CPU on both llama.cpp and LiteRT-LM, and a GPU `preferredBackend` (Vulkan,
+Metal, CUDA, OpenCL or HIP) selects the LiteRT-LM GPU backend. On Linux x64
+and Windows x64, the LiteRT-LM GPU backend is not CUDA; use `device: cpu` on
+hosts without a hardware Vulkan driver. Windows arm64 has no LiteRT-LM
+runtime. The deprecated `liteRtLmBackend` selector works until 1.0; an
+unavailable choice there throws `LlamaModelException`.
 
 ## Features by runtime
 

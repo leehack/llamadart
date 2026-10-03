@@ -636,7 +636,6 @@ class SpeechToTextEngine {
              createLiteRtLmSpeechToTextDriver(),
          LiteRtLmAsrAdapter(
            config.modelPreset,
-           backend: config.backend,
            numberOfThreads: config.numberOfThreads,
            maxBufferedAudio: config.maxBufferedAudio,
            overlapRatio: config.overlapRatio,
@@ -801,7 +800,6 @@ class SpeechToTextEngine {
             model: ModelSource.path(paths[0]),
             tokenizer: ModelSource.path(paths[1]),
             modelPreset: adapter.preset,
-            backend: adapter.backend,
             numberOfThreads: adapter.numberOfThreads,
             maxBufferedAudio: adapter.maxBufferedAudio,
             overlapRatio: adapter.overlapRatio,

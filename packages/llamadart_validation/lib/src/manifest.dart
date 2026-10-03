@@ -520,20 +520,25 @@ class ValidationProfile {
   }
 
   /// Configuration actually passed to the public model loader.
-  ModelParams get loadParams => ModelParams(
-    contextSize: contextSize,
-    gpuLayers: backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
-    preferredBackend: runtime != 'gguf'
-        ? GpuBackend.cpu
-        : backend == 'webgpu'
-        ? GpuBackend.auto
-        : GpuBackend.values.byName(backend),
-    liteRtLmBackend: runtime == 'litert'
-        ? LiteRtLmBackendPreference.values.byName(backend)
-        : LiteRtLmBackendPreference.auto,
-    numberOfThreads: threads,
-    numberOfThreadsBatch: runtime == 'litert' ? 0 : threads,
-  );
+  ModelParams get loadParams {
+    final device = runtime == 'litert'
+        ? ComputeDevice.values.byName(backend)
+        : ComputeDevice.auto;
+    final requiresAccelerator =
+        device == ComputeDevice.gpu || device == ComputeDevice.npu;
+    return ModelParams(
+      contextSize: contextSize,
+      device: device,
+      gpuLayers: backend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
+      preferredBackend: runtime != 'gguf'
+          ? (requiresAccelerator ? GpuBackend.auto : GpuBackend.cpu)
+          : backend == 'webgpu'
+          ? GpuBackend.auto
+          : GpuBackend.values.byName(backend),
+      numberOfThreads: threads,
+      numberOfThreadsBatch: runtime == 'litert' ? 0 : threads,
+    );
+  }
 
   /// Requested sampler; NPU retains compiled runtime defaults instead.
   GenerationParams get generationParams => GenerationParams(

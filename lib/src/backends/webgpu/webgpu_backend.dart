@@ -11,6 +11,7 @@ import '../../core/engine/engine_observer.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
+import '../../core/models/config/compute_device.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
@@ -20,6 +21,7 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../backend.dart';
 import '../model_params_loras.dart';
+import '../web/webgpu_adapter_probe.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
@@ -698,6 +700,7 @@ class WebGpuLlamaBackend
   List<({int contextSize, int gpuLayers})> _buildLoadAttempts({
     required int requestedContextSize,
     required int requestedGpuLayers,
+    required bool allowCpuFallback,
   }) {
     final contextCandidates = <int>[
       requestedContextSize,
@@ -727,7 +730,7 @@ class WebGpuLlamaBackend
         ));
       }
 
-      if (requestedGpuLayers > 0) {
+      if (requestedGpuLayers > 0 && allowCpuFallback) {
         final cpuKey = '$normalizedContext|0';
         if (seen.add(cpuKey)) {
           attempts.add((contextSize: normalizedContext, gpuLayers: 0));
@@ -1087,6 +1090,7 @@ class WebGpuLlamaBackend
     int requestedGpuLayers,
     int? requestedThreads,
     bool remoteFetchBackendOptedIn,
+    bool requireGpu,
     JSFunction? progressCallback,
   })
   _prepareUrlLoad(
@@ -1095,6 +1099,14 @@ class WebGpuLlamaBackend
     Function(double progress)? onProgress,
   ) {
     params.validate();
+    if (params.device == ComputeDevice.npu) {
+      throw LlamaUnsupportedException(
+        'ComputeDevice.npu is not available for llama.cpp on the Web, which '
+        'runs on WebGPU or the WebAssembly CPU runtime; only LiteRT-LM on '
+        'Android has an NPU backend. Use ComputeDevice.auto, cpu or gpu.',
+      );
+    }
+    final requireGpu = params.device == ComputeDevice.gpu;
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
     final remoteFetchBackendOptedIn = _isRemoteFetchBackendOptedIn();
@@ -1102,7 +1114,9 @@ class WebGpuLlamaBackend
     final requestedThreads = params.numberOfThreads > 0
         ? params.numberOfThreads
         : null;
-    var requestedGpuLayers = params.preferredBackend == GpuBackend.cpu
+    var requestedGpuLayers =
+        params.preferredBackend == GpuBackend.cpu ||
+            params.device == ComputeDevice.cpu
         ? 0
         : params.gpuLayers;
 
@@ -1110,6 +1124,13 @@ class WebGpuLlamaBackend
         _isSafariBrowser() &&
         !_allowSafariWebGpu() &&
         !_bridgeSupportsAdaptiveSafariGpu()) {
+      if (requireGpu) {
+        throw LlamaUnsupportedException(
+          'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but these '
+          'bridge assets run Safari on the CPU. Use bridge assets with '
+          'adaptive Safari GPU probe support, or ComputeDevice.auto.',
+        );
+      }
       requestedGpuLayers = 0;
       _emitConsoleText(
         LlamaLogLevel.warn,
@@ -1159,6 +1180,7 @@ class WebGpuLlamaBackend
       requestedGpuLayers: requestedGpuLayers,
       requestedThreads: requestedThreads,
       remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
+      requireGpu: requireGpu,
       progressCallback: progressCallback,
     );
   }
@@ -1170,12 +1192,21 @@ class WebGpuLlamaBackend
     Function(double progress)? onProgress,
   }) async {
     final setup = _prepareUrlLoad(url, params, onProgress);
+    if (setup.requireGpu && !await webGpuAdapterAvailable()) {
+      throw LlamaUnsupportedException(
+        'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but this '
+        'browser grants no WebGPU adapter. Use ComputeDevice.auto or cpu, or '
+        'a browser with WebGPU enabled.',
+      );
+    }
     _loraAdapters.forget();
     _completionCapabilities = _noCompletionCapabilities;
     final loadAttempts = _buildLoadAttempts(
       requestedContextSize: params.contextSize,
       requestedGpuLayers: setup.requestedGpuLayers,
+      allowCpuFallback: !setup.requireGpu,
     );
+    LlamaUnsupportedException? gpuInactive;
     final cachedWebModel = await _isModelResponseCachedForUrl(url);
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
@@ -1246,6 +1277,13 @@ class WebGpuLlamaBackend
         if (loadPromise != null) {
           await loadPromise.toDart;
         }
+        if (setup.requireGpu && bridge.isGpuActive() != true) {
+          throw gpuInactive = LlamaUnsupportedException(
+            'ComputeDevice.gpu needs WebGPU for llama.cpp on the Web, but the '
+            'runtime loaded the model without GPU layers. Use '
+            'ComputeDevice.auto or cpu.',
+          );
+        }
 
         if (index > 0) {
           _emitConsoleText(
@@ -1264,6 +1302,10 @@ class WebGpuLlamaBackend
         _completionCapabilities = await _probeCompletionCapabilities(bridge);
         return 1;
       } catch (e) {
+        if (identical(e, gpuInactive)) {
+          await _safeDisposeBridge();
+          rethrow;
+        }
         lastError = e;
         Map<String, String> runtimeHints = const <String, String>{};
         if (bridgeForAttempt != null) {

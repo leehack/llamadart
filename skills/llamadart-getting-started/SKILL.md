@@ -43,8 +43,15 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `unloadModel()` before loading another model.
 - Check `engine.isReady` before inference. Log `engine.getBackendName()` in
   diagnostics so reports name the runtime actually used.
-- Pass `ModelParams(gpuLayers: 0)` to force CPU. Keep `contextSize` no larger
-  than the app needs: memory grows with it.
+- `ModelParams(device: ComputeDevice.cpu)` forces the CPU on every runtime.
+  `ComputeDevice.gpu` or `npu` runs there or throws
+  `LlamaUnsupportedException`, never on another device; native LiteRT-LM
+  reports a GPU or NPU delegate that fails to start from the first
+  generation or `tokenize`. Leave `device` at `auto` for each runtime's
+  default.
+  `ModelParams.liteRtLmBackend` and `LiteRtLmBackendPreference` are
+  deprecated. Keep `contextSize` no larger than the app needs: memory grows
+  with it.
 - Catch the `LlamaException` hierarchy (`LlamaModelException`,
   `LlamaStateException`, `LlamaUnsupportedException`, ...) rather than
   `Exception`.
@@ -109,17 +116,16 @@ Future<void> switchToLiteRtLm(LlamaEngine engine, String bundlePath) async {
   try {
     await engine.loadModel(
       bundlePath,
-      modelParams: const ModelParams(
-        liteRtLmBackend: LiteRtLmBackendPreference.gpu,
-      ),
+      modelParams: const ModelParams(device: ComputeDevice.gpu),
     );
-  } on LlamaModelException catch (error) {
-    print('GPU load failed, retrying on CPU: $error');
+    // Native LiteRT-LM starts the GPU delegate on its first use.
+    await engine.tokenize('warm up');
+  } on LlamaUnsupportedException catch (error) {
+    print('No LiteRT-LM GPU here, loading on the CPU: $error');
+    await engine.unloadModel();
     await engine.loadModel(
       bundlePath,
-      modelParams: const ModelParams(
-        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
-      ),
+      modelParams: const ModelParams(device: ComputeDevice.cpu),
     );
   }
 }

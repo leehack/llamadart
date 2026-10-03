@@ -12,6 +12,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/compute_device.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -20,6 +21,8 @@ import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart';
+
+import '../../../support/fake_navigator_gpu.dart';
 
 void main() {
   setUp(_clearGlobals);
@@ -1209,6 +1212,107 @@ void main() {
       }
     },
   );
+
+  group('ModelParams.device', () {
+    const url = 'https://example.com/gemma-4-E2B-it-web.litertlm';
+    late List<int> createdBackends;
+
+    setUp(() {
+      createdBackends = <int>[];
+      _installFakeEngine(
+        onCreate: (settings) => createdBackends.add(
+          (settings.getProperty('backend'.toJS) as JSNumber).toDartInt,
+        ),
+        chunks: const <JSAny?>[],
+      );
+    });
+
+    test('gpu probes WebGPU and runs on the GPU', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.adapter));
+
+      await LiteRtLmBackend().modelLoadFromUrl(
+        url,
+        const ModelParams(device: ComputeDevice.gpu),
+      );
+
+      expect(createdBackends, [2]);
+    });
+
+    for (final gpu in [FakeWebGpu.missing, FakeWebGpu.noAdapter]) {
+      test('gpu without a WebGPU adapter (${gpu.name}) throws before the '
+          'engine starts', () async {
+        addTearDown(fakeNavigatorGpu(gpu));
+
+        await expectLater(
+          LiteRtLmBackend().modelLoadFromUrl(
+            url,
+            const ModelParams(device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('ComputeDevice.gpu'), contains('WebGPU')),
+            ),
+          ),
+        );
+        expect(createdBackends, isEmpty);
+      });
+    }
+
+    test('auto keeps the GPU default without a probe', () async {
+      addTearDown(fakeNavigatorGpu(FakeWebGpu.missing));
+
+      await LiteRtLmBackend().modelLoadFromUrl(url, const ModelParams());
+
+      expect(createdBackends, [2]);
+    });
+
+    test('cpu runs on the CPU', () async {
+      await LiteRtLmBackend().modelLoadFromUrl(
+        url,
+        const ModelParams(device: ComputeDevice.cpu),
+      );
+
+      expect(createdBackends, [3]);
+    });
+
+    test('npu throws LlamaUnsupportedException', () async {
+      await expectLater(
+        LiteRtLmBackend().modelLoadFromUrl(
+          url,
+          const ModelParams(device: ComputeDevice.npu),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('ComputeDevice.npu'),
+          ),
+        ),
+      );
+      expect(createdBackends, isEmpty);
+    });
+
+    test(
+      'an explicit device rejects the deprecated preferredBackend',
+      () async {
+        await expectLater(
+          LiteRtLmBackend(
+            preferredBackend: 'cpu',
+          ).modelLoadFromUrl(url, const ModelParams(device: ComputeDevice.cpu)),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('Set only ModelParams.device'),
+            ),
+          ),
+        );
+        expect(createdBackends, isEmpty);
+      },
+    );
+  });
 
   test('rejects non-LiteRT model sources before loading runtime', () async {
     final backend = LiteRtLmBackend(readyTimeout: Duration.zero);

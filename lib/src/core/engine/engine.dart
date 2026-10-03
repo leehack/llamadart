@@ -303,7 +303,9 @@ class LlamaEngine {
   /// Loads a model from a local [path].
   ///
   /// Optionally provide [ModelParams] to configure context size, GPU offloading,
-  /// and more.
+  /// the [ModelParams.device], and more. [ModelParams.validate] runs first and
+  /// throws [LlamaArgumentException]; an explicit device that is unavailable
+  /// throws [LlamaUnsupportedException].
   ///
   /// The default native backend reads the file header to choose llama.cpp for
   /// GGUF or LiteRT-LM for a `.litertlm` bundle, so the file name needs no
@@ -327,6 +329,7 @@ class LlamaEngine {
       path,
       modelParams,
       () => _withModelLifecycle('load a model', () async {
+        modelParams.validate();
         await _loadModel(path, modelParams: modelParams, format: format);
         await _captureObservedModel(path);
       }),
@@ -404,12 +407,16 @@ class LlamaEngine {
   /// resolve after the model file, with their own
   /// [LoraAdapterConfig.download] or only the non-secret parts of [options];
   /// see [ModelParams.loras].
+  ///
+  /// [ModelParams.validate] runs before anything resolves or downloads and
+  /// throws [LlamaArgumentException].
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
     ModelLoadOptions options = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
   }) async {
+    modelParams.validate();
     final target = await modelResolver.resolve(
       source,
       ModelResolveRequest(options: options, onProgress: onProgress),
@@ -496,6 +503,7 @@ class LlamaEngine {
       url,
       modelParams,
       () => _withModelLifecycle('load a model from URL', () async {
+        modelParams.validate();
         await _loadModelFromUrl(
           url,
           modelParams: modelParams,

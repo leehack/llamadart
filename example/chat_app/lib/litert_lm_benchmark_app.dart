@@ -357,7 +357,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   }
 
   Future<void> _runLiteRtBenchmark(String modelPath) async {
-    final engine = LlamaEngine(LiteRtLmBackend(preferredBackend: _backend));
+    final engine = LlamaEngine(LiteRtLmBackend());
     try {
       _append('=== LiteRT-LM / llamadart backend ===');
       _append('Initializing LiteRT-LM:');
@@ -374,8 +374,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         modelPath,
         modelParams: ModelParams(
           contextSize: _maxTokens,
-          preferredBackend: _preferredGpuBackendForLiteRt(_backend),
-          liteRtLmBackend: _liteRtLmBackendPreference(_backend),
+          device: _computeDevice(_backend),
         ),
       );
       loadSw.stop();
@@ -492,20 +491,12 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
     }
   }
 
-  GpuBackend _preferredGpuBackendForLiteRt(String backend) {
+  ComputeDevice _computeDevice(String backend) {
     return switch (backend) {
-      'cpu' => GpuBackend.cpu,
-      'gpu' => Platform.isMacOS ? GpuBackend.metal : GpuBackend.vulkan,
-      _ => GpuBackend.auto,
-    };
-  }
-
-  LiteRtLmBackendPreference _liteRtLmBackendPreference(String backend) {
-    return switch (backend) {
-      'cpu' => LiteRtLmBackendPreference.cpu,
-      'gpu' => LiteRtLmBackendPreference.gpu,
-      'npu' => LiteRtLmBackendPreference.npu,
-      _ => LiteRtLmBackendPreference.auto,
+      'cpu' => ComputeDevice.cpu,
+      'gpu' => ComputeDevice.gpu,
+      'npu' => ComputeDevice.npu,
+      _ => ComputeDevice.auto,
     };
   }
 
