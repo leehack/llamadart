@@ -3994,7 +3994,7 @@ class LlamaCppService {
     if (requiresExternalDraft && draftModelPath == null) {
       throw ArgumentError(
         'llama.cpp ${uniqueStrategies.map((s) => _llamaCppSpeculativeTypeNames[s]).join(', ')} '
-        'requires draftModelPath.',
+        'requires SpeculativeDecodingConfig.draftModel.',
       );
     }
 
@@ -4013,7 +4013,7 @@ class LlamaCppService {
       throw LlamaUnsupportedException(
         'llama.cpp n-gram speculative decoding uses token history and does '
         'not support draftTokenMin, minProbability, draftSplitProbability, or '
-        'draftModelPath unless a draft-model strategy is also enabled.',
+        'draftModel unless a draft-model strategy is also enabled.',
       );
     }
 
@@ -4122,7 +4122,7 @@ class LlamaCppService {
       throw LlamaUnsupportedException(
         'Bundled MTP speculative decoding requires the model to be loaded '
         'with ModelParams(loadMtp: true). Reload the target model with MTP '
-        'tensors enabled, or provide a compatible external draftModelPath.',
+        'tensors enabled, or provide a compatible external draftModel.',
       );
     }
   }

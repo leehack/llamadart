@@ -120,12 +120,6 @@ class LiteRtLmGenerateChatRequest extends LiteRtLmWorkerRequest {
   /// Additional native template/context values.
   final Map<String, dynamic>? chatTemplateKwargs;
 
-  /// Optional source language code.
-  final String? sourceLangCode;
-
-  /// Optional target language code.
-  final String? targetLangCode;
-
   /// Optional deterministic template time.
   final DateTime? templateNow;
 
@@ -140,8 +134,6 @@ class LiteRtLmGenerateChatRequest extends LiteRtLmWorkerRequest {
     this.parallelToolCalls = false,
     this.enableThinking = true,
     this.chatTemplateKwargs,
-    this.sourceLangCode,
-    this.targetLangCode,
     this.templateNow,
   });
 }

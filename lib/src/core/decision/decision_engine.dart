@@ -201,10 +201,14 @@ class DecisionEngine {
   /// reusing a cached file. Files resolve one at a time, encoder first, and
   /// all before anything loads. [download] applies to every remote file:
   /// cache policy and directory, authentication, resume, retries and the
-  /// cancel token. Local files take only the cancel token. [onProgress]
-  /// reports the files together: `receivedBytes` counts every file resolved
-  /// so far plus the bytes of the current download; `totalBytes` is the
-  /// combined size once every size is known, and `null` before.
+  /// cancel token. Local files take only the cancel token. Its bearer token
+  /// and headers are never sent across hosts: when they are set and the
+  /// remote files, or the URLs the resolver returns for them, span more than
+  /// one origin (scheme, host and port), the load throws before contacting
+  /// another host. [onProgress] reports the files together: `receivedBytes`
+  /// counts every file resolved so far plus the bytes of the current
+  /// download; `totalBytes` is the combined size once every size is known,
+  /// and `null` before.
   ///
   /// On Web the backend fetches each file itself: a local path is a URL
   /// relative to the document base URL, [download] must leave every option
@@ -213,7 +217,7 @@ class DecisionEngine {
   ///
   /// The encoder loads with [DecisionModelParams.encoderModelParams] of
   /// [params], then the head. [download]'s cancel token is checked again
-  /// after the files resolve, after the encoder loads and after the head
+  /// after each file resolves, after the encoder loads and after the head
   /// loads.
   ///
   /// The load is atomic: when it throws, the engine it created is disposed
@@ -227,7 +231,10 @@ class DecisionEngine {
   ///   [ModelFormat.liteRtLm]; on Web for a [download] option the backend
   ///   fetch cannot apply; and when the backend or encoder cannot run
   ///   decision heads.
-  /// - [LlamaArgumentException] for a negative [DecisionModelParams.threads].
+  /// - [LlamaArgumentException] for a negative [DecisionModelParams.threads],
+  ///   and when [download] sets a bearer token or headers for remote files on
+  ///   more than one origin; the message names the origins, never the
+  ///   credentials.
   /// - [LlamaModelException] when a file is missing or cannot be downloaded,
   ///   when the encoder cannot load, and when the head or its config cannot
   ///   be read, is malformed, or does not fit the encoder.
@@ -334,19 +341,22 @@ class DecisionEngine {
   /// [config] is Laya's `rl_agent_config.json`, for a head file without
   /// `laya.config` metadata. [head] and [config] resolve through [engine]'s
   /// `modelResolver` and `modelDownloadManager`, with [download] and
-  /// [onProgress] as in [load]; [ModelLoadOptions.sha256] applies to [head]
-  /// when [config] is null. The decision capability probe runs before
-  /// anything downloads. On Web the backend fetches both files, as in [load],
-  /// and [onProgress] is not called.
+  /// [onProgress] as in [load]: credentials go to one origin only. When
+  /// [config] is null, [ModelLoadOptions.sha256] verifies [head], whether it
+  /// is a local file or a download. The decision capability probe runs
+  /// before anything downloads. On Web the backend fetches both files, as in
+  /// [load], and [onProgress] is not called.
   ///
   /// When it throws, any head it loaded is freed and [engine] keeps its
   /// model. Throws [LlamaUnsupportedException] when the backend or the
   /// loaded model cannot run decision heads, including when no model is
   /// loaded, when [download] sets [ModelLoadOptions.sha256] with a [config],
   /// and on Web for a [download] option the backend fetch cannot apply;
-  /// [LlamaModelException] when a file is missing or cannot be downloaded,
-  /// or the head or its config cannot be read, is malformed, or does not fit
-  /// the encoder; [LlamaContextException] when the head's encoder context
+  /// [LlamaArgumentException] when [download] sets a bearer token or headers
+  /// for remote files on more than one origin; [LlamaModelException] when a
+  /// file is missing, cannot be downloaded or fails its checksum, or the head
+  /// or its config cannot be read, is malformed, or does not fit the
+  /// encoder; [LlamaContextException] when the head's encoder context
   /// cannot be created; [LlamaStateException] when [download]'s cancel token
   /// cancels it, when the model is unloaded during it, or on Web when the
   /// bridge rejects the load as disposed, busy or cancelled; and
@@ -455,11 +465,14 @@ class DecisionEngine {
     ModelDownloadProgressCallback? onProgress,
   ) async {
     if (!engine.backend.supportsUrlLoading) {
-      return ensureModelTargetFiles(
+      return resolveModelSourceFiles(
         sources,
-        resolver: engine.modelResolver,
-        manager: engine.modelDownloadManager,
-        options: download,
+        store: ModelFileStore(
+          resolver: engine.modelResolver,
+          downloadManager: engine.modelDownloadManager,
+        ),
+        download: download,
+        operation: _loadingOperation,
         onProgress: onProgress,
         assetType: 'decision model',
       );
@@ -481,7 +494,7 @@ class DecisionEngine {
 
   static void _throwIfCancelled(ModelLoadOptions download) {
     if (download.cancelToken?.isCancelled ?? false) {
-      throw LlamaStateException('Decision model loading was cancelled.');
+      throw LlamaStateException('$_loadingOperation was cancelled.');
     }
   }
 
@@ -699,6 +712,8 @@ class DecisionEngine {
     }
     return results;
   }
+
+  static const String _loadingOperation = 'Decision model loading';
 
   static const String _loadInterruptedMessage =
       'The model was unloaded while the DecisionEngine was loading. Load the '

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../../backends/litert_lm/litert_lm_runtime.dart';
 import '../exceptions.dart';
+import '../models/model_source.dart';
 import 'litert_lm_speech_to_text_driver.dart';
 
 const String _incompleteBpeSequenceDetails =
@@ -351,9 +352,9 @@ void _liteRtLmSpeechWorkerMain(SendPort mainPort) {
             );
           }
           session = runtime!.createAsrSession(
-            LiteRtLmAsrRuntimeConfig(
-              modelPath: payload['modelPath'] as String,
-              tokenizerPath: payload['tokenizerPath'] as String,
+            LiteRtLmAsrRuntimeConfig.source(
+              model: ModelSource.path(payload['modelPath'] as String),
+              tokenizer: ModelSource.path(payload['tokenizerPath'] as String),
               modelPreset:
                   LiteRtLmAsrModelPreset.values[payload['modelPreset'] as int],
               backend: LiteRtLmAsrBackend.values[payload['backend'] as int],

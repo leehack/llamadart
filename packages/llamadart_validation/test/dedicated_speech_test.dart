@@ -113,9 +113,9 @@ class Session implements SpeechToTextStreamingSession {
 void main() {
   PublicDedicatedSpeechAdapter adapter(Recognizer recognizer) =>
       PublicDedicatedSpeechAdapter(
-        config: const LiteRtLmAsrRuntimeConfig(
-          modelPath: 'fixture',
-          tokenizerPath: 'fixture',
+        config: LiteRtLmAsrRuntimeConfig.source(
+          model: ModelSource.path('fixture'),
+          tokenizer: ModelSource.path('fixture'),
           modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
         ),
         wav: File('assets/speech/jfk.wav').readAsBytesSync(),

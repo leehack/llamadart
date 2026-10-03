@@ -1,4 +1,5 @@
 import 'package:test/test.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/models/tools/tool_params.dart';
@@ -67,6 +68,26 @@ void main() {
 
       final result = await tool.invoke({'name': 'Alice'});
       expect(result, 'Hello Alice');
+    });
+
+    test('ToolDefinition without a handler cannot be invoked', () async {
+      const tool = ToolDefinition(
+        name: 'approve',
+        description: 'Run by the app',
+        parameters: [],
+      );
+
+      expect(tool.handler, isNull);
+      await expectLater(
+        tool.invoke(const {}),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (e) => e.message,
+            'message',
+            contains('"approve"'),
+          ),
+        ),
+      );
     });
 
     test('ToolParams safe accessors', () {

@@ -1,5 +1,7 @@
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
+import 'package:llamadart/src/core/models/model_load_options.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -188,6 +190,96 @@ void main() {
     expect(dspark.minProbability, 0.25);
     expect(dspark.draftSplitProbability, 0.1);
     expect(dspark.draftModelPath, 'dspark.gguf');
+  });
+
+  test('SpeculativeDecodingConfig names a draftModel source as the path '
+      'backends load', () {
+    final local = SpeculativeDecodingConfig.draftSimple(
+      draftModel: ModelSource.path('/models/draft.gguf'),
+    );
+    final options = ModelLoadOptions(bearerToken: 'token');
+    final remote = SpeculativeDecodingConfig.draftEagle3(
+      draftModel: ModelSource.parse('hf://owner/repo/eagle.gguf'),
+      draftModelDownload: options,
+    );
+    const legacy = SpeculativeDecodingConfig.mtp(
+      draftModelPath: 'relative/mtp.gguf',
+    );
+
+    expect(local.draftModelPath, '/models/draft.gguf');
+    expect(local.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(
+      remote.draftModelPath,
+      'https://huggingface.co/owner/repo/resolve/main/eagle.gguf'
+      '?download=true',
+    );
+    expect(remote.draftModelDownload, same(options));
+    expect(legacy.draftModelPath, 'relative/mtp.gguf');
+    expect(legacy.draftModel, isNull);
+    expect(const SpeculativeDecodingConfig.ngramMod().draftModel, isNull);
+    expect(
+      const SpeculativeDecodingConfig.ngramMod().draftModelDownload,
+      same(ModelLoadOptions.defaults),
+    );
+  });
+
+  test('SpeculativeDecodingConfig.withDraftModel replaces only the draft '
+      'model and its download options', () {
+    final options = ModelLoadOptions(cacheDirectory: '/cache');
+    const legacy = SpeculativeDecodingConfig.mixed(
+      strategies: [
+        SpeculativeDecodingStrategy.ngramMod,
+        SpeculativeDecodingStrategy.draftSimple,
+      ],
+      draftTokenMax: 6,
+      draftModelPath: 'old.gguf',
+      ngramMatch: 3,
+    );
+    final remote = SpeculativeDecodingConfig.draftSimple(
+      draftModel: ModelSource.parse('hf://owner/repo/draft.gguf'),
+      draftModelDownload: options,
+    );
+    final local = ModelSource.path('/models/new.gguf');
+
+    final fromLegacy = legacy.withDraftModel(local);
+    final fromRemote = remote.withDraftModel(local);
+
+    expect(fromLegacy.draftModel, same(local));
+    expect(fromLegacy.draftModelPath, '/models/new.gguf');
+    expect(fromLegacy.strategies, legacy.strategies);
+    expect(fromLegacy.draftTokenMax, 6);
+    expect(fromLegacy.ngramMatch, 3);
+    expect(fromRemote.draftModelPath, '/models/new.gguf');
+    expect(fromRemote.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(
+      remote
+          .withDraftModel(local, draftModelDownload: options)
+          .draftModelDownload,
+      same(options),
+    );
+    expect(fromRemote.strategy, SpeculativeDecodingStrategy.draftSimple);
+  });
+
+  test('SpeculativeDecodingConfig.withDraftModelDownload keeps the draft '
+      'model or path', () {
+    final options = ModelLoadOptions(bearerToken: 'token');
+    final source = ModelSource.path('/models/draft.gguf');
+    final withSource = SpeculativeDecodingConfig.draftSimple(
+      draftModel: source,
+      draftModelDownload: options,
+      draftTokenMax: 3,
+    ).withDraftModelDownload(ModelLoadOptions.defaults);
+    final withPath = const SpeculativeDecodingConfig.mtp(
+      draftModelPath: 'relative/mtp.gguf',
+    ).withDraftModelDownload(options);
+
+    expect(withSource.draftModel, same(source));
+    expect(withSource.draftModelDownload, same(ModelLoadOptions.defaults));
+    expect(withSource.draftTokenMax, 3);
+    expect(withPath.draftModel, isNull);
+    expect(withPath.draftModelPath, 'relative/mtp.gguf');
+    expect(withPath.draftModelDownload, same(options));
+    expect(withPath.strategy, SpeculativeDecodingStrategy.mtp);
   });
 
   test('SpeculativeDecodingConfig stores ngram-mod and cache controls', () {

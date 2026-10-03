@@ -180,9 +180,20 @@ class ModelParams {
   ///
   /// llama.cpp backends apply every adapter at its [LoraAdapterConfig.scale],
   /// in list order, once the model and its context are created, as
-  /// `LlamaEngine.setLora` would; `setLora`, `removeLora` and `clearLoras`
-  /// can change them afterwards. Each load applies the list again. On WebGPU
-  /// this needs bridge assets `v0.1.54+` whose runtime LoRA API reports
+  /// `LlamaEngine.setLoraSource` would; `setLoraSource`, `removeLoraSource`
+  /// and `clearLoras` can change them afterwards. Each load applies the list
+  /// again.
+  ///
+  /// `LlamaEngine` resolves each [LoraAdapterConfig.source] before the model
+  /// loads, as `setLoraSource` does, in list order, with the adapter's own
+  /// [LoraAdapterConfig.download]. Without one, an adapter takes only the
+  /// non-secret options of the load (`loadModelSource`'s `options`, or
+  /// defaults for `loadModel` and `loadModelFromUrl`): cache policy and
+  /// directory, resume, retries and cancel token. The load's bearer token,
+  /// headers and checksum never reach an adapter's host. Adapter downloads
+  /// report no progress; a failed one fails the load before the model loads.
+  ///
+  /// On WebGPU this needs bridge assets `v0.1.54+` whose runtime LoRA API reports
   /// support. When an adapter cannot be applied the load fails, and a load
   /// through `LlamaEngine` leaves no model loaded. An unsupported adapter,
   /// such as an aLoRA adapter, or older bridge assets throw

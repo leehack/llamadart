@@ -514,6 +514,9 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
     String? draftModelPath,
   }) async {
     final engine = LlamaEngine(LlamaBackend());
+    final draftModel = draftModelPath == null
+        ? null
+        : ModelSource.path(draftModelPath);
     try {
       final backendPreference = resolveLlamaCppBenchmarkBackend(_llamaBackend);
       _append('');
@@ -549,9 +552,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
                 maxTokens: _outputTokens,
                 seed: 1,
                 speculativeDecodingConfig: _speculative
-                    ? SpeculativeDecodingConfig.mtp(
-                        draftModelPath: draftModelPath,
-                      )
+                    ? SpeculativeDecodingConfig.mtp(draftModel: draftModel)
                     : null,
               ),
             )
@@ -571,7 +572,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
             maxTokens: _outputTokens,
             seed: 1,
             speculativeDecodingConfig: _speculative
-                ? SpeculativeDecodingConfig.mtp(draftModelPath: draftModelPath)
+                ? SpeculativeDecodingConfig.mtp(draftModel: draftModel)
                 : null,
           ),
         )) {

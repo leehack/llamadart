@@ -22,6 +22,7 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/inference/next_token_scores.dart';
+import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:test/test.dart';
@@ -148,6 +149,29 @@ void main() {
       expect(
         () => backend.embedBatch(1, const <String>['boom']),
         throwsException,
+      );
+    });
+
+    test('a generation whose request cannot reach the worker fails alone and '
+        'the next one runs', () async {
+      final port = RawReceivePort();
+      addTearDown(port.close);
+      final unsendable = GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig(
+          strategies: const [SpeculativeDecodingStrategy.ngramMod],
+          draftModelDownload: ModelLoadOptions(
+            cancelToken: _PortCancelToken(port),
+          ),
+        ),
+      );
+
+      await expectLater(
+        backend.generate(1, 'ok', unsendable).drain<void>(),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        await backend.generate(1, 'ok', const GenerationParams()).toList(),
+        isNotEmpty,
       );
     });
 
@@ -2433,4 +2457,11 @@ final class _RecordingAllocator implements Allocator {
       malloc.free(Pointer<Uint8>.fromAddress(address));
     }
   }
+}
+
+/// A cancel token that, like one built on a port, cannot cross an isolate.
+class _PortCancelToken extends ModelDownloadCancelToken {
+  _PortCancelToken(this.port);
+
+  final RawReceivePort port;
 }

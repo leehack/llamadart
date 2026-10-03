@@ -5994,7 +5994,9 @@ void main() {
             isA<ArgumentError>().having(
               (error) => '${error.message}',
               'message',
-              contains('draft-eagle3 requires draftModelPath'),
+              contains(
+                'draft-eagle3 requires SpeculativeDecodingConfig.draftModel',
+              ),
             ),
           ),
           const SpeculativeDecodingConfig.draftSimple(draftModelPath: ' '):
@@ -6124,7 +6126,7 @@ void main() {
               const SpeculativeDecodingConfig.mtp(draftModelPath: 'mtp.gguf'),
             ),
           ),
-          llamaUnsupported(contains('draftModelPath must be null')),
+          llamaUnsupported(contains('draftModel must be null')),
         );
         expect(fake().draftLoads, isEmpty);
       });

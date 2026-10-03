@@ -91,15 +91,15 @@ the same terminal condition is available through `task.done`.
 ## Stream live audio with LiteRT-LM
 
 LiteRT-LM's dedicated ASR engines (added in LiteRT-LM v0.16) consume PCM
-windows instead of an audio part in normal chat. Configure the local
+windows instead of an audio part in normal chat. Configure the
 model/tokenizer pair, start a stream, and await every input push so bounded
 native backpressure can throttle the producer.
 
 ```dart
 final recognizer = SpeechToTextEngine.liteRtLm(
-  const LiteRtLmAsrRuntimeConfig(
-    modelPath: '/models/moonshine_tiny.tflite',
-    tokenizerPath: '/models/tokenizer.json',
+  LiteRtLmAsrRuntimeConfig.source(
+    model: ModelSource.path('/models/moonshine_tiny.tflite'),
+    tokenizer: ModelSource.path('/models/tokenizer.json'),
     modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
   ),
 );
@@ -127,6 +127,20 @@ await events.cancel();
 print(completion.state);
 ```
 
+`model` and `tokenizer` are `ModelSource`s, so either can also be an HTTP(S)
+URL or a Hugging Face file. Before the first task the recognizer checks local
+files, or downloads remote ones into the model cache, model first, with the
+optional `download` options of `SpeechToTextEngine.liteRtLm`; `onProgress`
+reports both files together and `store` overrides the default
+`ModelFileStore`. `download` applies to both remote files, but its bearer
+token and headers never cross hosts: with them set, files on two different
+hosts throw `LlamaArgumentException`. Its `sha256` cannot name two files and
+throws `LlamaUnsupportedException`. A failed download fails that task and the next
+task tries again; once the cancel token is cancelled every task fails.
+Later tasks reuse the resolved files. The deprecated
+`LiteRtLmAsrRuntimeConfig(modelPath: ..., tokenizerPath: ...)` constructor
+takes local paths only.
+
 The session runs synchronous inference in a worker isolate. `confirmedText` is
 stable, while `pendingText` may change after the next inference window.
 `finish` flushes a partial final window.
@@ -135,8 +149,8 @@ stable, while `pendingText` may change after the next inference window.
 TDT, Parakeet CTC, Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but
 callers must supply a matching model and tokenizer. The API does not capture a
 microphone or resample audio. Advanced callers can use `LiteRtLmRuntimeClient`
-and `LiteRtLmAsrRuntimeSession` directly, but those synchronous calls must not
-run on a Flutter UI isolate.
+and `LiteRtLmAsrRuntimeSession` directly with local files, but those
+synchronous calls must not run on a Flutter UI isolate.
 
 ## Cancel and concurrency
 

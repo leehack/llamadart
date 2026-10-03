@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../../core/models/model_source.dart';
+
 /// LiteRT-LM ASR model families whose runtime metadata is versioned by the
 /// native bridge.
 enum LiteRtLmAsrModelPreset {
@@ -31,11 +33,21 @@ enum LiteRtLmAsrBackend {
 
 /// Configuration for a dedicated LiteRT-LM ASR session.
 class LiteRtLmAsrRuntimeConfig {
-  /// Local `.tflite` speech-recognition model path.
-  final String modelPath;
+  final String? _modelPath;
+  final String? _tokenizerPath;
 
-  /// Local tokenizer JSON path matching [modelPath].
-  final String tokenizerPath;
+  /// The `.tflite` speech-recognition model: a local path, an HTTP(S) URL or
+  /// a Hugging Face file.
+  ///
+  /// `SpeechToTextEngine.liteRtLm` checks a local file, or downloads a remote
+  /// one into the model cache, before its first task. Null for a
+  /// configuration made with the deprecated path constructor.
+  final ModelSource? model;
+
+  /// The tokenizer JSON matching [model], from the same kinds of source.
+  ///
+  /// Null for a configuration made with the deprecated path constructor.
+  final ModelSource? tokenizer;
 
   /// Model-family metadata preset.
   final LiteRtLmAsrModelPreset modelPreset;
@@ -55,16 +67,50 @@ class LiteRtLmAsrRuntimeConfig {
   /// Fraction of each inference window retained for transcript reconciliation.
   final double overlapRatio;
 
-  /// Creates a LiteRT-LM ASR runtime configuration.
+  /// Creates a LiteRT-LM ASR runtime configuration from local file paths.
+  @Deprecated(
+    'Use LiteRtLmAsrRuntimeConfig.source with ModelSource.path(path), or '
+    'another ModelSource to download the files. This constructor will be '
+    'removed in a future release.',
+  )
   const LiteRtLmAsrRuntimeConfig({
-    required this.modelPath,
-    required this.tokenizerPath,
+    required String modelPath,
+    required String tokenizerPath,
     required this.modelPreset,
     this.backend = LiteRtLmAsrBackend.cpu,
     this.numberOfThreads = 4,
     this.maxBufferedAudio = const Duration(seconds: 30),
     this.overlapRatio = 0.4,
-  });
+  }) : _modelPath = modelPath,
+       _tokenizerPath = tokenizerPath,
+       model = null,
+       tokenizer = null;
+
+  /// Creates a LiteRT-LM ASR runtime configuration for the [model] and
+  /// [tokenizer] files.
+  const LiteRtLmAsrRuntimeConfig.source({
+    required ModelSource this.model,
+    required ModelSource this.tokenizer,
+    required this.modelPreset,
+    this.backend = LiteRtLmAsrBackend.cpu,
+    this.numberOfThreads = 4,
+    this.maxBufferedAudio = const Duration(seconds: 30),
+    this.overlapRatio = 0.4,
+  }) : _modelPath = null,
+       _tokenizerPath = null;
+
+  /// The model file that the runtime opens: the path given to the deprecated
+  /// constructor, the path of a local [model], or the URL of a remote one.
+  ///
+  /// The runtime opens local files only, and rejects a remote [model] that
+  /// `SpeechToTextEngine.liteRtLm` has not downloaded.
+  String get modelPath => _modelPath ?? _location(model!);
+
+  /// The tokenizer file that the runtime opens, as [modelPath] describes.
+  String get tokenizerPath => _tokenizerPath ?? _location(tokenizer!);
+
+  static String _location(ModelSource source) =>
+      source.path ?? source.url.toString();
 }
 
 /// Result of pushing PCM into a bounded native ASR session.

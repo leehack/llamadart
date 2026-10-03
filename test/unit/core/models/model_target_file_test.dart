@@ -2,6 +2,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
+import 'package:llamadart/src/core/models/model_file_store.dart';
 import 'package:llamadart/src/core/models/model_format.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
 import 'package:llamadart/src/core/models/model_resolver.dart';
@@ -131,49 +132,221 @@ void main() {
     );
     expect(manager.calls, isEmpty);
   });
+  group('resolveModelSourceFiles', () {
+    final remote = ModelSource.parse('hf://owner/repo/model.tflite');
+    final local = ModelSource.path('/models/tokenizer.json');
 
-  group('ensureModelTargetFiles', () {
-    test('resolves in order, giving local files only the cancel token, and '
-        'reports combined progress', () async {
-      manager.remoteSize = 100;
-      final cancelToken = ModelDownloadCancelToken();
-      final options = ModelLoadOptions(
-        cancelToken: cancelToken,
-        bearerToken: 'secret',
-        maxRetries: 1,
+    Future<List<String>> resolve(
+      List<ModelSource> sources, {
+      ModelLoadOptions download = ModelLoadOptions.defaults,
+      ModelDownloadProgressCallback? onProgress,
+      Map<int, int> knownSizes = const {},
+    }) => resolveModelSourceFiles(
+      sources,
+      store: ModelFileStore(downloadManager: manager),
+      download: download,
+      operation: 'Test loading',
+      onProgress: onProgress,
+      knownSizes: knownSizes,
+    );
+
+    test(
+      'resolves files in order, a local one with the cancel token only',
+      () async {
+        final token = ModelDownloadCancelToken();
+        final download = ModelLoadOptions(
+          bearerToken: 'secret',
+          cancelToken: token,
+        );
+
+        final paths = await resolve([remote, local], download: download);
+
+        expect(paths, ['/cache/model.tflite', '/cache/tokenizer.json']);
+        final [(first, remoteOptions, _), (second, localOptions, _)] =
+            manager.calls;
+        expect(first.kind, ModelSourceKind.huggingFace);
+        expect(remoteOptions, same(download));
+        expect(second.path, '/models/tokenizer.json');
+        expect(localOptions.bearerToken, isNull);
+        expect(localOptions.cancelToken, same(token));
+      },
+    );
+
+    test('rejects a checksum for several files before resolving any, and '
+        'keeps it for one', () async {
+      final download = ModelLoadOptions(sha256: 'a' * 64);
+
+      await expectLater(
+        resolve([remote, local], download: download),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'Test loading uses 2 files, so ModelLoadOptions.sha256 cannot '
+                'apply to them. Leave it unset.',
+          ),
+        ),
       );
-      final progress = <(int, int?)>[];
+      expect(manager.calls, isEmpty);
 
-      final paths = await ensureModelTargetFiles(
-        [
-          ModelSource.path('/models/a.gguf'),
-          ModelSource.parse('https://example.com/b.safetensors'),
-        ],
-        resolver: const DefaultModelResolver(),
-        manager: manager,
-        options: options,
-        onProgress: (p) => progress.add((p.receivedBytes, p.totalBytes)),
-        knownSizes: const {0: 10},
-      );
-
-      expect(paths, ['/cache/a.gguf', '/cache/b.safetensors']);
-      final [(_, localOptions, _), (_, remoteOptions, _)] = manager.calls;
-      expect(localOptions.cancelToken, same(cancelToken));
-      expect(localOptions.bearerToken, isNull);
-      expect(localOptions.maxRetries, ModelLoadOptions.defaults.maxRetries);
-      expect(remoteOptions, same(options));
-      expect(progress, [(10, null), (60, 110), (110, 110), (110, 110)]);
+      await resolve([remote], download: download);
+      expect(manager.calls.single.$2, same(download));
     });
+
+    test('verifies a single local file against the checksum', () async {
+      final download = ModelLoadOptions(sha256: 'a' * 64);
+
+      await resolve([local], download: download);
+
+      expect(manager.calls.single.$2.sha256, 'a' * 64);
+    });
+
+    test('rejects credentials for remote files on more than one host before '
+        'downloading, naming the hosts but not the credentials', () async {
+      final other = ModelSource.url(
+        Uri.parse('https://other.example.com/vae.gguf'),
+      );
+      for (final download in [
+        ModelLoadOptions(bearerToken: 'hf_secret'),
+        ModelLoadOptions(headers: const {'X-Key': 'hf_secret'}),
+      ]) {
+        await expectLater(
+          resolve([remote, local, other], download: download),
+          throwsA(
+            isA<LlamaArgumentException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('https://huggingface.co:443'),
+                contains('https://other.example.com:443'),
+                isNot(contains('hf_secret')),
+              ),
+            ),
+          ),
+        );
+      }
+      expect(manager.calls, isEmpty);
+    });
+
+    test('sends credentials to remote files on one host, and to none when a '
+        'resolver moves a file to another host', () async {
+      final sibling = ModelSource.parse('hf://owner/repo/tokenizer.json');
+      final download = ModelLoadOptions(bearerToken: 'hf_secret');
+
+      await resolve([remote, local, sibling], download: download);
+      expect(manager.calls.map((call) => call.$2.bearerToken), [
+        'hf_secret',
+        null,
+        'hf_secret',
+      ]);
+      manager.calls.clear();
+
+      await expectLater(
+        resolveModelSourceFiles(
+          [remote, sibling],
+          store: ModelFileStore(
+            resolver: _MirrorSecondResolver(),
+            downloadManager: manager,
+          ),
+          download: download,
+          operation: 'Test loading',
+        ),
+        throwsA(isA<LlamaArgumentException>()),
+      );
+      expect(manager.calls, hasLength(1));
+    });
+
+    test('stops after a file when the cancel token is cancelled', () async {
+      final token = ModelDownloadCancelToken();
+      manager.onEnsure = token.cancel;
+
+      await expectLater(
+        resolve([
+          remote,
+          local,
+        ], download: ModelLoadOptions(cancelToken: token)),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Test loading was cancelled.',
+          ),
+        ),
+      );
+      expect(manager.calls, hasLength(1));
+    });
+
+    test(
+      'reports byte progress with a total once every size is known',
+      () async {
+        manager
+          ..progress = {
+            'model.tflite': const [
+              ModelDownloadProgress(receivedBytes: 4, totalBytes: 10),
+            ],
+            'tokenizer.json': const [],
+          }
+          ..bytes = {'model.tflite': 10};
+        final progress = <ModelDownloadProgress>[];
+
+        await resolve(
+          [remote, local],
+          onProgress: progress.add,
+          knownSizes: const {1: 5},
+        );
+
+        expect(progress.map((p) => (p.receivedBytes, p.totalBytes)), [
+          (4, 15),
+          (10, 15),
+          (15, 15),
+        ]);
+      },
+    );
+
+    test('reports no total while a size is unknown', () async {
+      final progress = <ModelDownloadProgress>[];
+
+      await resolve([remote, local], onProgress: progress.add);
+
+      expect(progress.map((p) => (p.receivedBytes, p.totalBytes)), [
+        (0, null),
+        (0, null),
+      ]);
+    });
+
+    test(
+      'combines fraction-only progress into a fraction of all files',
+      () async {
+        manager.progress = {
+          'model.tflite': const [ModelDownloadProgress.fraction(0.5)],
+        };
+        final progress = <ModelDownloadProgress>[];
+
+        await resolve([
+          remote,
+          remote.withResolvedUri(
+            Uri.parse('https://mirror.example.com/model.tflite'),
+          ),
+        ], onProgress: progress.add);
+
+        expect(
+          progress
+              .where((p) => p.totalBytes == null && p.receivedBytes == 0)
+              .map((p) => p.fraction)
+              .whereType<double>(),
+          [0.25, 0.75],
+        );
+      },
+    );
   });
 }
 
 final class _RecordingManager extends ThrowingModelDownloadManager {
   final List<(ModelSource, ModelLoadOptions, ModelDownloadProgressCallback?)>
   calls = [];
-
-  /// Size of every remote file, reported as two progress events; `null`
-  /// reports none.
-  int? remoteSize;
+  void Function()? onEnsure;
+  Map<String, List<ModelDownloadProgress>> progress = const {};
+  Map<String, int> bytes = const {};
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -182,14 +355,9 @@ final class _RecordingManager extends ThrowingModelDownloadManager {
     ModelDownloadProgressCallback? onProgress,
   }) async {
     calls.add((source, options, onProgress));
-    final size = source.isRemote ? remoteSize : null;
-    if (size != null) {
-      onProgress?.call(
-        ModelDownloadProgress(receivedBytes: size ~/ 2, totalBytes: size),
-      );
-      onProgress?.call(
-        ModelDownloadProgress(receivedBytes: size, totalBytes: size),
-      );
+    onEnsure?.call();
+    for (final event in progress[source.fileName] ?? const []) {
+      onProgress?.call(event);
     }
     final now = DateTime.utc(2026);
     return ModelCacheEntry(
@@ -197,9 +365,28 @@ final class _RecordingManager extends ThrowingModelDownloadManager {
       cacheKey: source.cacheKey,
       fileName: source.fileName,
       filePath: '/cache/${source.fileName}',
-      bytes: size,
+      bytes: bytes[source.fileName],
       createdAt: now,
       updatedAt: now,
+    );
+  }
+}
+
+/// Resolves the second remote source it sees to another host.
+final class _MirrorSecondResolver implements ModelResolver {
+  int _remotes = 0;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async {
+    if (source.isLocal) return LocalModelFile(source.path!);
+    _remotes += 1;
+    return RemoteModelUrl(
+      _remotes == 1
+          ? source.resolvedUri!
+          : Uri.parse('https://mirror.example.com/${source.fileName}'),
     );
   }
 }

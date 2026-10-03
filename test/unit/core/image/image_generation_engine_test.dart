@@ -787,6 +787,31 @@ void main() {
       expect(localOptions.cacheDirectory, isNull);
     });
 
+    test('credentials for remote files on more than one host are rejected '
+        'before anything downloads', () async {
+      final otherHost = ModelSource.url(
+        Uri.parse('https://cdn.example.com/taesd.safetensors'),
+      );
+
+      await expectLater(
+        load(
+          _sdxs(_remote, otherHost),
+          download: ModelLoadOptions(bearerToken: 'hf_secret'),
+        ),
+        throwsA(
+          isA<LlamaArgumentException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('https://cdn.example.com:443'),
+              isNot(contains('hf_secret')),
+            ),
+          ),
+        ),
+      );
+      expect(downloads.calls, isEmpty);
+    });
+
     test('reports progress across files, counting cached ones as '
         'received', () async {
       downloads.remoteSizes

@@ -567,6 +567,52 @@ void main() {
     }
   });
 
+  test('merges deprecated language codes for a LiteRT-LM delegate', () async {
+    final requests = <LiteRtLmGenerateChatRequest>[];
+    final port = ReceivePort();
+    port.listen((message) {
+      if (message is LiteRtLmModelLoadRequest) {
+        message.sendPort.send(LiteRtLmHandleResponse(1));
+      } else if (message is LiteRtLmGenerateChatRequest) {
+        requests.add(message);
+        message.sendPort.send(LiteRtLmDoneResponse());
+      } else if (message is LiteRtLmWorkerRequest) {
+        message.sendPort.send(LiteRtLmDoneResponse());
+      }
+    });
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _FakeBackend(handle: 11),
+      liteRtLmFactory: () => LiteRtLmBackend(initialSendPort: port.sendPort),
+    );
+
+    try {
+      await backend.modelLoad('model.litertlm', const ModelParams());
+      await backend
+          .generateChat(
+            1,
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            const GenerationParams(),
+            chatTemplateKwargs: const {'locale': 'en_CA'},
+            // ignore: deprecated_member_use_from_same_package
+            sourceLangCode: 'en',
+            // ignore: deprecated_member_use_from_same_package
+            targetLangCode: 'ko',
+          )
+          .drain<void>();
+
+      expect(requests.single.chatTemplateKwargs, {
+        'locale': 'en_CA',
+        'source_lang_code': 'en',
+        'target_lang_code': 'ko',
+      });
+    } finally {
+      await backend.dispose();
+      port.close();
+    }
+  });
+
   test('falls back when delegate lacks optional capabilities', () async {
     final llama = _FakeBackend(handle: 11);
     final backend = NativeAutoBackend(

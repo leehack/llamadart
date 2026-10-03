@@ -727,9 +727,9 @@ void main() {
             requireNonSilent: true,
           );
 
-          final runtimeConfig = LiteRtLmAsrRuntimeConfig(
-            modelPath: config.liteRtAsrModelPath,
-            tokenizerPath: config.liteRtAsrTokenizerPath,
+          final runtimeConfig = LiteRtLmAsrRuntimeConfig.source(
+            model: ModelSource.path(config.liteRtAsrModelPath),
+            tokenizer: ModelSource.path(config.liteRtAsrTokenizerPath),
             modelPreset: config.liteRtAsrPreset,
           );
 
