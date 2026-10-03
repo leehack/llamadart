@@ -187,9 +187,29 @@ Future<void> main(List<String> args) async {
             maxTokens: 64,
           );
 
+    final capabilities = await engine.capabilities;
+    final mediaSupport = (
+      vision: capabilities.supportsVision,
+      audio: capabilities.supportsAudio,
+    );
+    final mediaGetters = (
+      vision: await engine.supportsVision,
+      audio: await engine.supportsAudio,
+    );
+    if (mediaGetters != mediaSupport) {
+      throw StateError(
+        'supportsVision and supportsAudio report $mediaGetters, but '
+        'capabilities reports $mediaSupport.',
+      );
+    }
+
     final result = {
       'backendName': await engine.getBackendName(),
       'requestedLiteRtLmBackend': backend.name,
+      'mediaSupport': {
+        'vision': mediaSupport.vision,
+        'audio': mediaSupport.audio,
+      },
       'format': requiredTemplate.format,
       'plain': plain.toJson(),
       'thinking': thinking.toJson(),
