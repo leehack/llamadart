@@ -161,7 +161,7 @@ no longer has model presets or `String` paths.
 `LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
 `sourceLangCode` and `targetLangCode`. Pass the codes in
 `chatTemplateKwargs`, as llama.cpp's `chat_template_kwargs` does; the
-parameters still work for one minor release, with deprecation warnings:
+parameters keep working, with deprecation warnings, until 1.0:
 
 ```dart
 // Before
@@ -229,8 +229,8 @@ directory for every default download, set
 
 3. **One logging API.** `LlamaLogging.configure` sets the Dart-side level,
    the native level (defaulting to the Dart-side level) and the handler for
-   the whole library. The old calls still work for one minor release, with
-   deprecation warnings:
+   the whole library. The old calls keep working, with deprecation warnings,
+   until 1.0:
 
    | Before | After |
    | --- | --- |
@@ -375,8 +375,7 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
 `ModelSource`, so a remote file downloads into the model cache like a model.
-The `String` path forms still work for one minor release, with deprecation
-warnings:
+The `String` path forms keep working, with deprecation warnings, until 1.0:
 
 | Before | After |
 | --- | --- |
