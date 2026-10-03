@@ -49,7 +49,9 @@ class ChatSession {
   int? maxContextTokens;
 
   /// Creates a new [ChatSession] wrapping the given [engine].
-  ChatSession(this._engine, {this.maxContextTokens, this.systemPrompt});
+  ChatSession(this._engine, {this.maxContextTokens, this.systemPrompt}) {
+    _mutableHistories[this] = _history;
+  }
 
   /// The underlying engine instance.
   LlamaEngine get engine => _engine;
@@ -130,7 +132,8 @@ class ChatSession {
   /// generated so far is added as the assistant turn, so roles keep
   /// alternating.
   ///
-  /// Example with tools:
+  /// To run the tools' handlers until the model answers, use
+  /// `sendWithTools`. Running the calls yourself:
   /// ```dart
   /// final reply = await session.create(
   ///   [LlamaTextContent('What time is it?')],
@@ -618,6 +621,15 @@ class _TurnEdits {
     if (index >= 0) _history.removeAt(index);
   }
 }
+
+final Expando<List<LlamaChatMessage>> _mutableHistories = Expando(
+  'llamadart.chatSessionHistory',
+);
+
+/// Package-internal: the list behind [ChatSession.history], or `null` for a
+/// class that implements [ChatSession] without extending it.
+List<LlamaChatMessage>? mutableChatSessionHistory(ChatSession session) =>
+    _mutableHistories[session];
 
 /// One-shot replies for [ChatSession].
 extension ChatSessionCompletionExtension on ChatSession {

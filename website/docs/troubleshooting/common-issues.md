@@ -227,6 +227,7 @@ Raise `contextSize`, or shorten the message, tool results or media input.
 1. Use `ToolChoice.auto` before forcing `required`.
 2. Lower the temperature for tool-calling requests.
 3. Validate the tool schema and required parameters.
-4. Make sure your loop appends tool result messages.
+4. Make sure your loop appends tool result messages, or use
+   `session.sendWithTools`, which does.
 
 See [Tool calling](../guides/tool-calling).

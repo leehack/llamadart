@@ -90,6 +90,13 @@ For canonical full release notes, use:
   assistant `message`); and the one-shot `engine.complete(messages)` and
   `session.send('...')`
   ([#840](https://github.com/leehack/llamadart/issues/840)).
+- `session.sendWithTools(text, tools: ...)` and `completeWithTools(parts,
+  ...)` run the model's tool calls with each `ToolDefinition.handler`,
+  concurrently for parallel calls, until it answers, and return a
+  `LlamaToolLoopResult` whose `stopReason` also reports `maxRounds`,
+  unhandled calls, context overflow and cancellation. `handler` is now
+  optional (a nullable field) for tools the app runs itself
+  ([#842](https://github.com/leehack/llamadart/issues/842)).
 - `GenerationGrammarTrigger.typed(type: GrammarTriggerType.word, ...)`
   replaces the raw-`int` constructor, now deprecated; an unknown raw trigger
   type throws `LlamaUnsupportedException` on llama.cpp instead of being

@@ -35,7 +35,8 @@ for each target.
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
-- Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
+- Streaming chat completions, llama.cpp thinking budgets, tool-call parsing
+  and a `ChatSession.sendWithTools` loop that runs tool handlers,
   multimodal GGUF projectors, structured JSON output, embeddings, next-token
   log-probabilities, LoRA, state persistence, per-request token usage and
   timings, operation observers for tracing and metrics, and runtime

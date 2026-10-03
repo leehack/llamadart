@@ -2,26 +2,56 @@
 name: llamadart-tool-calling
 description: >-
   Use when adding tool or function calling to a llamadart app: defining
-  ToolDefinition and ToolParam, running the tool-call loop with ChatSession or
-  engine.create, choosing ToolChoice, or debugging models that ignore or
-  malform tool calls.
+  ToolDefinition and ToolParam, running the tool-call loop with
+  ChatSession.sendWithTools or by hand, choosing ToolChoice, or debugging
+  models that ignore or malform tool calls.
 ---
 
 # Tool calling with llamadart
 
 ## Guidelines
 
-- Pass `tools:` to `ChatSession.create` or `engine.create`. The model's chat
-  template renders them and the parser returns calls in `chunk.toolCalls`.
-  llamadart never runs a handler for you: the app executes each call.
+- Prefer `session.sendWithTools(text, tools: ..., maxRounds: ...)`: it runs
+  each call's `ToolDefinition.handler` (concurrently for parallel calls),
+  adds a `LlamaChatRole.tool` message per call with the call's id, and
+  repeats until the model answers. Check `result.stopReason`
+  (`LlamaToolLoopStopReason`): only `completed` means a final answer;
+  `maxRounds`, `unhandledToolCalls`, `contextExceeded` and `cancelled` leave
+  `result.pendingToolCalls` unrun. `completeWithTools(parts)` takes media
+  parts; `completeWithTools(const [])` continues the turn.
+- After a stop, the history is ready for a new user turn, except after
+  `unhandledToolCalls`. `maxRounds`, `contextExceeded`, a cancel before an
+  answer started, and any thrown error roll the whole turn back from its
+  user message, because templates such as Ministral 3's reject a user turn
+  after unanswered calls or tool results. For `completeWithTools(const [])`
+  that includes the open turn's earlier messages, such as your tool results.
+  Turns trimmed for context are not restored. Check `result.rolledBack` (a
+  rollback does not call `addMessage` or `reset`); `result.messages` keeps
+  the turn's messages, including results of tools that ran. To resume, add
+  them back, answer `pendingToolCalls` and call `completeWithTools(const [])`.
+  A cancel during the answer keeps the partial answer, on WebGPU too.
+- `handler` is optional. Leave it out for a tool the app runs itself (user
+  approval, remote execution): give `onToolCall`, or let the loop stop with
+  `unhandledToolCalls`, add a result for every pending call with
+  `session.addMessage(...)` (even to decline it) and call
+  `completeWithTools(const [], tools: ...)`. The turn stays open until then.
+- In the loop, a throwing tool, an unknown tool name or non-object arguments
+  become the tool result `{'error': message}` so the model can recover. That
+  puts the exception text into the prompt and history: pass `onToolError` to
+  shape or redact that result, or rethrow from it to fail the loop.
+  `toolChoice` applies only to the first request.
+- `ChatSession.create` and `engine.create` only return calls in
+  `chunk.toolCalls`; use them by hand to stream replies or to run tools
+  outside the loop.
 - Tool calls arrive complete, with JSON-encoded `arguments`, in the final
   chunk; its `chunk.finishReason` is `LlamaFinishReason.toolCalls`. Collect
   the whole stream with `collect()` (or use `engine.complete` /
   `session.send`): `LlamaCompletion.toolCalls` holds `LlamaToolCallContent`
   entries with decoded `arguments` (empty when they are not a JSON object;
   `rawJson` keeps the text).
-- Invoke through `tool.invoke(call.arguments)`, which wraps the arguments in
-  `ToolParams` for typed access; it does not validate them. Read required
+- By hand, invoke through `tool.invoke(call.arguments)`, which wraps the
+  arguments in `ToolParams` for typed access; it does not validate them, and
+  throws `LlamaStateException` for a tool without a handler. Read required
   arguments with `getRequired*`, which throws when one is missing. Catch errors
   and return them to the model as the tool result rather than crashing the
   loop.
@@ -33,7 +63,8 @@ description: >-
   `session.create(const [])`. With `engine.create`, append the collected
   `completion.message` (it carries one `LlamaToolCallContent` per call) and
   the tool messages to your own list.
-- Always cap the number of tool rounds; a model can call tools forever.
+- Always cap the number of tool rounds (`maxRounds`, default 5); a model can
+  call tools forever.
 - `ToolChoice.auto` lets the model decide, `ToolChoice.required` forces a call
   and `ToolChoice.none` disables tools for one request.
 - Tool quality depends on the model and its template. Templates without a
@@ -70,43 +101,43 @@ final ToolDefinition weatherTool = ToolDefinition(
   },
 );
 
-Future<void> runTools(LlamaEngine engine, String question) async {
-  final List<ToolDefinition> tools = [weatherTool];
+Future<String?> runTools(LlamaEngine engine, String question) async {
   final ChatSession session = ChatSession(engine);
-
-  List<LlamaContentPart> parts = [LlamaTextContent(question)];
-  for (int round = 0; round < 5; round++) {
-    final LlamaCompletion reply = await session
-        .create(parts, tools: tools)
-        .collect();
-    if (reply.text.isNotEmpty) print(reply.text);
-    if (reply.toolCalls.isEmpty) break;
-
-    for (final LlamaToolCallContent call in reply.toolCalls) {
-      Object? result;
-      try {
-        final ToolDefinition tool = tools.firstWhere(
-          (t) => t.name == call.name,
-        );
-        result = await tool.invoke(call.arguments);
-      } catch (error) {
-        result = 'Error: $error';
-      }
-      session.addMessage(
-        LlamaChatMessage.withContent(
-          role: LlamaChatRole.tool,
-          content: [
-            LlamaToolResultContent(
-              id: call.id,
-              name: call.name,
-              result: result,
-            ),
-          ],
-        ),
-      );
-    }
-    parts = const [];
+  final LlamaToolLoopResult result = await session.sendWithTools(
+    question,
+    tools: [weatherTool],
+    maxRounds: 5,
+  );
+  if (result.stopReason != LlamaToolLoopStopReason.completed) {
+    print('Stopped: ${result.stopReason.name}');
+    return null;
   }
+  return result.text;
+}
+```
+
+Run a tool that needs approval in the app instead of a handler:
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+const ToolDefinition deleteFileTool = ToolDefinition(
+  name: 'delete_file',
+  description: 'Delete a file in the workspace',
+  parameters: [],
+);
+
+Future<LlamaToolLoopResult> runWithApproval(
+  ChatSession session,
+  String request,
+  Future<bool> Function(LlamaToolCallContent call) approve,
+) {
+  return session.sendWithTools(
+    request,
+    tools: [deleteFileTool],
+    onToolCall: (LlamaToolCallContent call) async =>
+        await approve(call) ? {'deleted': true} : {'error': 'Denied by user'},
+  );
 }
 ```
 
