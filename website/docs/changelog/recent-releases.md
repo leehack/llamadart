@@ -156,8 +156,8 @@ For canonical full release notes, use:
   ([#355](https://github.com/leehack/llamadart/issues/355)).
 - **Breaking:** the `LlamaEngine` text-to-speech and decision hooks,
   `modelHandle` and `contextHandle` move to the `LlamaEngineBackendHooks`
-  extension in `package:llamadart/backend.dart`, so a subclass can no longer
-  override them; fake a backend that implements `BackendTextToSpeech` or
+  extension in `package:llamadart/backend.dart`, so neither a subclass nor an
+  `implements LlamaEngine` fake can override them; fake a backend that implements `BackendTextToSpeech` or
   `BackendDecision` instead
   ([#355](https://github.com/leehack/llamadart/issues/355)).
 - **Breaking:** the deprecated `LiteRtLmBenchmarkClient`,

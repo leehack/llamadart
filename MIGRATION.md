@@ -495,8 +495,12 @@ of two new libraries.
    `LlamaEngineBackendHooks` extension in `backend.dart`. Calls keep working
    once `backend.dart` is imported. A `LlamaEngine` subclass that overrode
    one no longer intercepts it, and the analyzer reports only an
-   `override_on_non_overriding_member` warning, so fake at the backend
-   instead:
+   `override_on_non_overriding_member` warning. A fake that
+   `implements LlamaEngine` is bypassed the same way wherever it is typed as
+   `LlamaEngine`, as inside `TextToSpeechEngine` and `DecisionEngine`: the
+   extension runs instead of the fake's members and reads engine state the
+   fake lacks, so the call fails with `NoSuchMethodError`. In both cases, fake
+   at the backend instead:
 
    ```dart
    // Before
