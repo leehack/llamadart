@@ -496,9 +496,9 @@ void main() {
                 );
               }
 
-              final recognizer = SpeechToTextEngine(
+              final recognizer = SpeechToTextEngine.attach(
                 engine,
-                modelProfile: SpeechToTextModelProfile.qwen3Asr,
+                adapter: const Qwen3AsrAdapter(),
               );
               final caps = await awaitBounded(
                 recognizer.capabilities,
@@ -674,9 +674,9 @@ void main() {
           );
           await runWithSpeechCleanup(
             body: () => _transcribeExact(
-              recognizer: SpeechToTextEngine(
+              recognizer: SpeechToTextEngine.attach(
                 reloadEngine,
-                modelProfile: SpeechToTextModelProfile.qwen3Asr,
+                adapter: const Qwen3AsrAdapter(),
               ),
               audioPath: config.asrAudioPath,
               expectedTranscript: config.asrExpectedTranscript,
@@ -727,13 +727,17 @@ void main() {
             requireNonSilent: true,
           );
 
-          final runtimeConfig = LiteRtLmAsrRuntimeConfig.source(
-            model: ModelSource.path(config.liteRtAsrModelPath),
+          final liteRtModel = SpeechToTextModel(
+            ModelSource.path(config.liteRtAsrModelPath),
             tokenizer: ModelSource.path(config.liteRtAsrTokenizerPath),
-            modelPreset: config.liteRtAsrPreset,
+            adapter: LiteRtLmAsrAdapter(config.liteRtAsrPreset),
           );
 
-          final liteRtEngine = SpeechToTextEngine.liteRtLm(runtimeConfig);
+          final liteRtEngine = await awaitBounded(
+            SpeechToTextEngine.load(liteRtModel),
+            _modelLoadTimeout,
+            'row2.load',
+          );
           final caps = await awaitBounded(
             liteRtEngine.capabilities,
             _cleanupTimeout,
@@ -903,8 +907,18 @@ void main() {
             },
           );
 
+          await awaitBounded(
+            liteRtEngine.dispose(),
+            _cleanupTimeout,
+            'row2.dispose',
+          );
+
           // Fresh recognizer and session over the same pinned files.
-          final reloadEngine = SpeechToTextEngine.liteRtLm(runtimeConfig);
+          final reloadEngine = await awaitBounded(
+            SpeechToTextEngine.load(liteRtModel),
+            _modelLoadTimeout,
+            'row2.reload.load',
+          );
           final reloadSession = await awaitBounded(
             reloadEngine.startStream(),
             _streamTimeout,
@@ -974,6 +988,11 @@ void main() {
               }
             },
           );
+          await awaitBounded(
+            reloadEngine.dispose(),
+            _cleanupTimeout,
+            'row2.reload.dispose',
+          );
 
           return SpeechE2ERowResult(
             id: 'litert_lm_streaming_asr',
@@ -1015,9 +1034,9 @@ void main() {
               );
               await runWithSpeechCleanup(
                 body: () async {
-                  final synthesizer = TextToSpeechEngine(
+                  final synthesizer = TextToSpeechEngine.attach(
                     engine,
-                    modelProfile: TextToSpeechModelProfile.qwen3Tts,
+                    adapter: const Qwen3TtsAdapter(),
                   );
                   final caps = await awaitBounded(
                     synthesizer.capabilities,
@@ -1274,9 +1293,9 @@ void main() {
               await runWithSpeechCleanup(
                 body: () async {
                   final reloadTask = await awaitBounded(
-                    TextToSpeechEngine(
+                    TextToSpeechEngine.attach(
                       reloadEngine,
-                      modelProfile: TextToSpeechModelProfile.qwen3Tts,
+                      adapter: const Qwen3TtsAdapter(),
                     ).synthesize(
                       TextToSpeechRequest(
                         text: config.ttsText,
@@ -1359,9 +1378,9 @@ void main() {
               );
               await runWithSpeechCleanup(
                 body: () => _transcribeExact(
-                  recognizer: SpeechToTextEngine(
+                  recognizer: SpeechToTextEngine.attach(
                     asrEngine,
-                    modelProfile: SpeechToTextModelProfile.qwen3Asr,
+                    adapter: const Qwen3AsrAdapter(),
                   ),
                   audioPath: config.ttsOutputPath,
                   expectedTranscript: config.ttsExpectedTranscript,
@@ -1442,9 +1461,9 @@ void main() {
                 SpeechE2EBackendKind.liteRtLm,
               );
 
-              final synthesizer = TextToSpeechEngine(
+              final synthesizer = TextToSpeechEngine.attach(
                 engine,
-                modelProfile: TextToSpeechModelProfile.qwen3Tts,
+                adapter: const Qwen3TtsAdapter(),
               );
               final caps = await awaitBounded(
                 synthesizer.capabilities,

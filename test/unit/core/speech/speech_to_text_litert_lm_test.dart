@@ -2,14 +2,19 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
   late _FakeLiteRtLmSpeechDriver driver;
+  late Directory directory;
+  late String modelPath;
+  late String tokenizerPath;
 
   const config = LiteRtLmAsrRuntimeConfig(
     modelPath: '/models/moonshine.tflite',
@@ -17,18 +22,36 @@ void main() {
     modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
   );
 
-  setUp(() {
+  SpeechToTextModel model({
+    LiteRtLmAsrAdapter adapter = const LiteRtLmAsrAdapter(
+      LiteRtLmAsrModelPreset.moonshineTiny,
+    ),
+  }) => SpeechToTextModel(
+    ModelSource.path(modelPath),
+    tokenizer: ModelSource.path(tokenizerPath),
+    adapter: adapter,
+  );
+
+  Future<SpeechToTextEngine> load() => SpeechToTextEngine.load(model());
+
+  setUp(() async {
     driver = _FakeLiteRtLmSpeechDriver();
     debugLiteRtLmSpeechToTextDriverOverride = driver;
+    directory = await Directory.systemTemp.createTemp('llamadart_asr_');
+    modelPath = p.join(directory.path, 'moonshine.tflite');
+    tokenizerPath = p.join(directory.path, 'tokenizer.json');
+    await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+    await File(tokenizerPath).writeAsString('{}');
   });
 
   tearDown(() async {
     debugLiteRtLmSpeechToTextDriverOverride = null;
     await driver.close();
+    await directory.delete(recursive: true);
   });
 
   test('reports dedicated streaming PCM capabilities', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
 
     final capabilities = await engine.capabilities;
 
@@ -49,130 +72,143 @@ void main() {
     expect(driver.probeCalls, 1);
   });
 
-  test('reports a version-skewed native runtime as unsupported', () async {
+  test('refuses a version-skewed runtime before resolving files', () async {
     driver.support = const LiteRtLmSpeechToTextSupport(
       isSupported: false,
       unsupportedReason: 'missing v0.16 ASR ABI',
     );
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    await File(modelPath).delete();
 
-    final capabilities = await engine.capabilities;
-
-    expect(capabilities.isSupported, isFalse);
-    expect(capabilities.unsupportedReason, contains('v0.16'));
     await expectLater(
-      engine.startStream(),
-      throwsA(isA<LlamaUnsupportedException>()),
+      load(),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          'missing v0.16 ASR ABI',
+        ),
+      ),
     );
     expect(driver.startCalls, 0);
   });
 
-  test('resolves model and tokenizer sources before the first task and '
-      'reuses them', () async {
-    final model = ModelSource.parse('hf://owner/asr/moonshine.tflite');
+  test('starts sessions on the resolved files with adapter settings', () async {
+    final engine = await SpeechToTextEngine.load(
+      model(
+        adapter: const LiteRtLmAsrAdapter(
+          LiteRtLmAsrModelPreset.whisperTiny,
+          numberOfThreads: 2,
+          maxBufferedAudio: Duration(seconds: 10),
+          overlapRatio: 0.25,
+          libraryPath: '/runtime/libLiteRtLm.so',
+        ),
+      ),
+    );
+
+    await engine.capabilities;
+    final session = await engine.startStream();
+    await session.cancel();
+
+    final started = driver.lastConfig!;
+    expect(started.modelPath, modelPath);
+    expect(started.tokenizerPath, tokenizerPath);
+    expect(started.modelPreset, LiteRtLmAsrModelPreset.whisperTiny);
+    expect(started.numberOfThreads, 2);
+    expect(started.maxBufferedAudio, const Duration(seconds: 10));
+    expect(started.overlapRatio, 0.25);
+    expect(driver.lastProbeLibraryPath, '/runtime/libLiteRtLm.so');
+    expect(driver.lastStartLibraryPath, '/runtime/libLiteRtLm.so');
+    expect(driver.probeCalls, 1);
+    expect(engine.adapter, isA<LiteRtLmAsrAdapter>());
+    await engine.dispose();
+  });
+
+  test('downloads a remote model with the load options and gives a local '
+      'tokenizer only the cancel token', () async {
+    final source = ModelSource.parse('hf://owner/asr/moonshine.tflite');
     final manager = _SourceDownloadManager();
     final token = ModelDownloadCancelToken();
     final download = ModelLoadOptions(
       bearerToken: 'secret',
+      cacheDirectory: '/models',
       cancelToken: token,
     );
-    final progress = <ModelDownloadProgress>[];
-    final engine = SpeechToTextEngine.liteRtLm(
-      LiteRtLmAsrRuntimeConfig.source(
-        model: model,
-        tokenizer: ModelSource.path('/models/tokenizer.json'),
-        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
-        numberOfThreads: 2,
+
+    final engine = await SpeechToTextEngine.load(
+      SpeechToTextModel(
+        source,
+        tokenizer: ModelSource.path(tokenizerPath),
+        adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
       ),
       download: download,
-      onProgress: progress.add,
       store: ModelFileStore(downloadManager: manager),
     );
-
-    await (await engine.startStream()).cancel();
     await (await engine.startStream()).cancel();
 
-    final started = driver.lastStartConfig!;
-    expect(started.modelPath, '/cache/moonshine.tflite');
-    expect(started.tokenizerPath, '/models/tokenizer.json');
-    expect(started.numberOfThreads, 2);
-    expect(started.modelPreset, LiteRtLmAsrModelPreset.moonshineTiny);
-    expect(driver.startCalls, 2);
+    expect(driver.lastConfig!.modelPath, '/cache/moonshine.tflite');
+    expect(driver.lastConfig!.tokenizerPath, tokenizerPath);
     expect(manager.calls, hasLength(2));
-    expect(manager.calls[0].$1.cacheKey, model.cacheKey);
+    expect(manager.calls[0].$1.cacheKey, source.cacheKey);
     expect(manager.calls[0].$2, same(download));
     expect(manager.calls[1].$2.bearerToken, isNull);
+    expect(manager.calls[1].$2.cacheDirectory, isNull);
     expect(manager.calls[1].$2.cancelToken, same(token));
-    expect(progress, isNotEmpty);
+    await engine.dispose();
   });
 
-  test(
-    'a failed source download fails the task and the next task retries',
-    () async {
-      final manager = _SourceDownloadManager()..failNext = true;
-      final engine = SpeechToTextEngine.liteRtLm(
-        LiteRtLmAsrRuntimeConfig.source(
-          model: ModelSource.parse('https://example.com/asr/model.tflite'),
-          tokenizer: ModelSource.parse(
-            'https://example.com/asr/tokenizer.json',
-          ),
-          modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
-        ),
-        store: ModelFileStore(downloadManager: manager),
-      );
-
-      await expectLater(
-        engine.startStream(),
-        throwsA(isA<LlamaModelException>()),
-      );
-      expect(driver.startCalls, 0);
-
-      await (await engine.startStream()).cancel();
-      expect(driver.lastStartConfig!.tokenizerPath, '/cache/tokenizer.json');
-    },
-  );
-
-  test('rejects one checksum for both files before downloading', () async {
+  test('never sends credentials to a second host', () async {
     final manager = _SourceDownloadManager();
-    final engine = SpeechToTextEngine.liteRtLm(
-      LiteRtLmAsrRuntimeConfig.source(
-        model: ModelSource.parse('https://example.com/asr/model.tflite'),
-        tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
-        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
-      ),
-      download: ModelLoadOptions(sha256: 'a' * 64),
-      store: ModelFileStore(downloadManager: manager),
-    );
 
     await expectLater(
-      engine.startStream(),
-      throwsA(isA<LlamaUnsupportedException>()),
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.parse('https://models.example.com/asr/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://other.example.com/asr/tokenizer.json',
+          ),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        download: ModelLoadOptions(bearerToken: 'secret'),
+        store: ModelFileStore(downloadManager: manager),
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('other.example.com'), isNot(contains('secret'))),
+        ),
+      ),
     );
     expect(manager.calls, isEmpty);
     expect(driver.startCalls, 0);
   });
 
   test('a token cancelled while the model downloads stops before the '
-      'tokenizer and the worker', () async {
+      'tokenizer', () async {
     final token = ModelDownloadCancelToken();
     final manager = _SourceDownloadManager()..onEnsure = token.cancel;
-    final engine = SpeechToTextEngine.liteRtLm(
-      LiteRtLmAsrRuntimeConfig.source(
-        model: ModelSource.parse('https://example.com/asr/model.tflite'),
-        tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
-        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
-      ),
-      download: ModelLoadOptions(cancelToken: token),
-      store: ModelFileStore(downloadManager: manager),
-    );
 
     await expectLater(
-      engine.startStream(),
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.parse('https://example.com/asr/model.tflite'),
+          tokenizer: ModelSource.parse(
+            'https://example.com/asr/tokenizer.json',
+          ),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        download: ModelLoadOptions(cancelToken: token),
+        store: ModelFileStore(downloadManager: manager),
+      ),
       throwsA(
         isA<LlamaStateException>().having(
           (error) => error.message,
           'message',
-          'Speech model loading was cancelled.',
+          'SpeechToTextEngine model loading was cancelled.',
         ),
       ),
     );
@@ -180,23 +216,296 @@ void main() {
     expect(driver.startCalls, 0);
   });
 
-  test('forwards an advanced native library override', () async {
-    final engine = SpeechToTextEngine.liteRtLm(
-      config,
-      libraryPath: '/runtime/libLiteRtLm.so',
+  test('a failed download fails the load and a later load retries', () async {
+    final manager = _SourceDownloadManager()..failNext = true;
+    final remote = SpeechToTextModel(
+      ModelSource.parse('https://example.com/asr/model.tflite'),
+      tokenizer: ModelSource.parse('https://example.com/asr/tokenizer.json'),
+      adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
+    );
+    final store = ModelFileStore(downloadManager: manager);
+
+    await expectLater(
+      SpeechToTextEngine.load(remote, store: store),
+      throwsA(isA<LlamaModelException>()),
+    );
+    final engine = await SpeechToTextEngine.load(remote, store: store);
+    await (await engine.startStream()).cancel();
+
+    expect(driver.lastConfig!.tokenizerPath, '/cache/tokenizer.json');
+    await engine.dispose();
+  });
+
+  test('reports combined progress for the model and tokenizer', () async {
+    final progress = <ModelDownloadProgress>[];
+
+    final engine = await SpeechToTextEngine.load(
+      model(),
+      onProgress: progress.add,
     );
 
-    await engine.capabilities;
-    final session = await engine.startStream();
-    await session.cancel();
+    expect(progress, isNotEmpty);
+    expect(progress.last.receivedBytes, 5);
+    expect(progress.last.totalBytes, 5);
+    await engine.dispose();
+  });
 
-    expect(driver.lastProbeLibraryPath, '/runtime/libLiteRtLm.so');
-    expect(driver.lastStartLibraryPath, '/runtime/libLiteRtLm.so');
-    expect(driver.probeCalls, 1);
+  test('rejects a model without a tokenizer or with a projector', () async {
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'model.tokenizer',
+        ),
+      ),
+    );
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path(modelPath),
+          tokenizer: ModelSource.path(tokenizerPath),
+          projector: ModelSource.path(tokenizerPath),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+      ),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'model.projector',
+        ),
+      ),
+    );
+    expect(driver.probeCalls, 0);
+  });
+
+  test('rejects LlamaEngine params and backends', () async {
+    await expectLater(
+      SpeechToTextEngine.load(model(), params: const ModelParams()),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'params',
+        ),
+      ),
+    );
+    final backend = _DisposeCountingBackend();
+    await expectLater(
+      SpeechToTextEngine.load(model(), backend: backend),
+      throwsA(
+        isA<LlamaArgumentException>().having(
+          (error) => error.name,
+          'name',
+          'backend',
+        ),
+      ),
+    );
+    expect(backend.disposeCalls, 1);
+    expect(driver.probeCalls, 0);
+  });
+
+  test('rejects a checksum for the two files', () async {
+    await expectLater(
+      SpeechToTextEngine.load(
+        model(),
+        download: ModelLoadOptions(sha256: 'a' * 64),
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+    expect(driver.startCalls, 0);
+  });
+
+  test('fails the load when a local file is missing', () async {
+    await File(tokenizerPath).delete();
+
+    await expectLater(load(), throwsA(isA<LlamaException>()));
+    expect(driver.startCalls, 0);
+  });
+
+  test('a cancelled load leaves no engine', () async {
+    final token = ModelDownloadCancelToken()..cancel();
+
+    await expectLater(
+      SpeechToTextEngine.load(
+        model(),
+        download: ModelLoadOptions(cancelToken: token),
+      ),
+      throwsA(isA<LlamaException>()),
+    );
+    expect(driver.startCalls, 0);
+  });
+
+  test('dispose cancels an active stream and is idempotent', () async {
+    final engine = await load();
+    final session = await engine.startStream();
+
+    await Future.wait<void>(<Future<void>>[engine.dispose(), engine.dispose()]);
+
+    expect(engine.isDisposed, isTrue);
+    expect((await session.done).state, SpeechToTextCompletionState.cancelled);
+    expect(driver.worker.cancelCalls, 1);
+    expect(driver.worker.disposeCalls, 1);
+    final capabilities = await engine.capabilities;
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, contains('disposed'));
+    await expectLater(
+      engine.startStream(),
+      throwsA(isA<LlamaStateException>()),
+    );
+    await expectLater(
+      engine.transcribe(
+        SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16))),
+      ),
+      throwsA(isA<LlamaStateException>()),
+    );
+  });
+
+  test('dispose ends an active transcription task', () async {
+    final engine = await load();
+    driver.blockWorkerPush = true;
+    final task = await engine.transcribe(
+      SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16))),
+    );
+    final events = task.events.toList();
+    await Future<void>.delayed(Duration.zero);
+
+    await engine.dispose();
+
+    expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+    await events;
+    expect(driver.worker.disposed, isTrue);
+  });
+
+  test('a stream started while disposing is cancelled', () async {
+    final engine = await load();
+    driver.blockStart = true;
+    final starting = engine.startStream();
+    await Future<void>.delayed(Duration.zero);
+
+    final disposal = engine.dispose();
+    driver.releaseStart();
+
+    await expectLater(starting, throwsA(isA<LlamaStateException>()));
+    await disposal;
+    expect(driver.worker.cancelCalls, 1);
+    expect(driver.worker.disposed, isTrue);
+  });
+
+  test('transcribeOnce returns the final result', () async {
+    final engine = await load();
+
+    final result = await engine.transcribeOnce(
+      SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
+    );
+
+    expect(result.text, 'hello world');
+    expect(result.audioDuration, const Duration(seconds: 1));
+    await engine.dispose();
+  });
+
+  group('deprecated liteRtLm constructor', () {
+    test('reports a version-skewed native runtime as unsupported', () async {
+      driver.support = const LiteRtLmSpeechToTextSupport(
+        isSupported: false,
+        unsupportedReason: 'missing v0.16 ASR ABI',
+      );
+      // ignore: deprecated_member_use_from_same_package
+      final engine = SpeechToTextEngine.liteRtLm(config);
+
+      final capabilities = await engine.capabilities;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('v0.16'));
+      await expectLater(
+        engine.startStream(),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(driver.startCalls, 0);
+    });
+
+    test('rejects a remote model or tokenizer', () {
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        () => SpeechToTextEngine.liteRtLm(
+          LiteRtLmAsrRuntimeConfig.source(
+            model: ModelSource.path('/models/moonshine.tflite'),
+            tokenizer: ModelSource.parse(
+              'https://example.com/tokenizer.json?token=secret',
+            ),
+            modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('tokenizer'),
+              contains('SpeechToTextEngine.load'),
+              isNot(contains('secret')),
+            ),
+          ),
+        ),
+      );
+      expect(driver.probeCalls, 0);
+    });
+
+    test('opens a local source config', () async {
+      final local = LiteRtLmAsrRuntimeConfig.source(
+        model: ModelSource.path(modelPath),
+        tokenizer: ModelSource.path(tokenizerPath),
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      );
+      // ignore: deprecated_member_use_from_same_package
+      final engine = SpeechToTextEngine.liteRtLm(local);
+
+      await (await engine.startStream()).cancel();
+
+      expect(driver.lastConfig, same(local));
+      await engine.dispose();
+    });
+
+    test('forwards the config and native library override', () async {
+      // ignore: deprecated_member_use_from_same_package
+      final engine = SpeechToTextEngine.liteRtLm(
+        config,
+        libraryPath: '/runtime/libLiteRtLm.so',
+      );
+
+      final session = await engine.startStream();
+      await session.cancel();
+
+      expect(driver.lastConfig, same(config));
+      expect(driver.lastProbeLibraryPath, '/runtime/libLiteRtLm.so');
+      expect(driver.lastStartLibraryPath, '/runtime/libLiteRtLm.so');
+      expect(
+        (engine.adapter as LiteRtLmAsrAdapter).preset,
+        LiteRtLmAsrModelPreset.moonshineTiny,
+      );
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        engine.modelProfile,
+        // ignore: deprecated_member_use_from_same_package
+        SpeechToTextModelProfile.liteRtLmDedicated,
+      );
+      await engine.dispose();
+    });
   });
 
   test('streams partial text and produces a final result', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
     final session = await engine.startStream();
     final eventsFuture = session.events.toList();
 
@@ -221,7 +530,7 @@ void main() {
   });
 
   test('transcribes complete PCM through the dedicated backend', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
 
     final task = await engine.transcribe(
       SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
@@ -236,7 +545,7 @@ void main() {
   });
 
   test('applies async input backpressure and preserves push order', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
     final session = await engine.startStream();
     driver.worker.blockPush = true;
 
@@ -252,7 +561,7 @@ void main() {
   });
 
   test('allows only one active dedicated task per engine', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
     final first = await engine.startStream();
 
     await expectLater(
@@ -269,7 +578,7 @@ void main() {
   test(
     'turns a push failure into terminal state and releases the engine',
     () async {
-      final engine = SpeechToTextEngine.liteRtLm(config);
+      final engine = await load();
       final session = await engine.startStream();
       driver.worker.pushError = StateError('native inference failed');
 
@@ -291,7 +600,7 @@ void main() {
   );
 
   test('cancels a dedicated session idempotently', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
     final session = await engine.startStream();
 
     await session.cancel();
@@ -303,7 +612,7 @@ void main() {
   });
 
   test('rejects encoded inputs and incompatible PCM metadata', () async {
-    final engine = SpeechToTextEngine.liteRtLm(config);
+    final engine = await load();
 
     await expectLater(
       engine.transcribe(
@@ -357,8 +666,17 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
   int startCalls = 0;
   String? lastProbeLibraryPath;
   String? lastStartLibraryPath;
-  LiteRtLmAsrRuntimeConfig? lastStartConfig;
+  LiteRtLmAsrRuntimeConfig? lastConfig;
+  bool blockStart = false;
+  bool blockWorkerPush = false;
+  final Completer<void> _startRelease = Completer<void>();
   _FakeLiteRtLmSpeechWorker worker = _FakeLiteRtLmSpeechWorker();
+
+  void releaseStart() {
+    if (!_startRelease.isCompleted) {
+      _startRelease.complete();
+    }
+  }
 
   @override
   Future<LiteRtLmSpeechToTextSupport> probeSupport({
@@ -376,8 +694,11 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
   }) async {
     startCalls++;
     lastStartLibraryPath = libraryPath;
-    lastStartConfig = config;
-    worker = _FakeLiteRtLmSpeechWorker();
+    lastConfig = config;
+    worker = _FakeLiteRtLmSpeechWorker()..blockPush = blockWorkerPush;
+    if (blockStart) {
+      await _startRelease.future;
+    }
     return worker;
   }
 
@@ -523,4 +844,16 @@ class _SourceDownloadManager implements ModelDownloadManager {
 
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
+}
+
+class _DisposeCountingBackend implements LlamaBackend {
+  int disposeCalls = 0;
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls++;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

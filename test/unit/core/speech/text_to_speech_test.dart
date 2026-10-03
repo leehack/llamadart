@@ -2,9 +2,11 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -16,9 +18,9 @@ void main() {
     setUp(() {
       backend = _TextToSpeechBackend();
       llamaEngine = LlamaEngine(backend);
-      speechEngine = TextToSpeechEngine(
+      speechEngine = TextToSpeechEngine.attach(
         llamaEngine,
-        modelProfile: TextToSpeechModelProfile.qwen3Tts,
+        adapter: const Qwen3TtsAdapter(),
       );
     });
 
@@ -152,9 +154,9 @@ void main() {
     test('shares the lease across separate TTS wrappers', () async {
       await _loadTextToSpeechModel(llamaEngine);
       backend.blockSynthesis = true;
-      final other = TextToSpeechEngine(
+      final other = TextToSpeechEngine.attach(
         llamaEngine,
-        modelProfile: TextToSpeechModelProfile.qwen3Tts,
+        adapter: const Qwen3TtsAdapter(),
       );
 
       final first = await speechEngine.synthesize(
@@ -172,9 +174,9 @@ void main() {
     test('shares the engine lease with typed speech recognition', () async {
       await _loadTextToSpeechModel(llamaEngine);
       backend.blockSynthesis = true;
-      final recognizer = SpeechToTextEngine(
+      final recognizer = SpeechToTextEngine.attach(
         llamaEngine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
 
       final synthesis = await speechEngine.synthesize(
@@ -278,6 +280,34 @@ void main() {
       expect(backend.cancelCalls, 0);
     });
 
+    test('a synthesizer disposed during preflight starts no task', () async {
+      await _loadTextToSpeechModel(llamaEngine);
+      backend.blockCapabilities = true;
+
+      final pending = speechEngine.synthesize(
+        const TextToSpeechRequest(text: 'Hello.'),
+      );
+      await backend.capabilityProbeStarted.future;
+      await speechEngine.dispose();
+      backend.releaseCapabilities();
+
+      await expectLater(pending, throwsA(isA<LlamaStateException>()));
+      expect(backend.synthesisStarted.isCompleted, isFalse);
+    });
+
+    test(
+      'a disposed synthesizer rejects a request before validating it',
+      () async {
+        await _loadTextToSpeechModel(llamaEngine);
+        await speechEngine.dispose();
+
+        await expectLater(
+          speechEngine.synthesize(const TextToSpeechRequest(text: '   ')),
+          throwsA(isA<LlamaStateException>()),
+        );
+      },
+    );
+
     test('validates input and sampling before capability lookup', () async {
       await _loadTextToSpeechModel(llamaEngine);
 
@@ -371,6 +401,246 @@ void main() {
       expect((await retry.done).state, TextToSpeechCompletionState.completed);
     });
   });
+
+  group('TextToSpeechEngine.load and attach', () {
+    late _TextToSpeechBackend backend;
+    late Directory directory;
+    late String modelPath;
+    late String projectorPath;
+
+    setUp(() async {
+      backend = _TextToSpeechBackend();
+      directory = await Directory.systemTemp.createTemp('llamadart_tts_');
+      modelPath = p.join(directory.path, 'tts.gguf');
+      projectorPath = p.join(directory.path, 'mmproj-tts.gguf');
+      await File(modelPath).writeAsBytes(<int>[1, 2, 3]);
+      await File(projectorPath).writeAsBytes(<int>[4, 5]);
+    });
+
+    tearDown(() => directory.delete(recursive: true));
+
+    TextToSpeechModel model({
+      TextToSpeechAdapter adapter = const Qwen3TtsAdapter(),
+    }) => TextToSpeechModel(
+      ModelSource.path(modelPath),
+      projector: ModelSource.path(projectorPath),
+      adapter: adapter,
+    );
+
+    test('owns the engine it loads and frees it on dispose', () async {
+      final synthesizer = await TextToSpeechEngine.load(
+        model(),
+        params: const ModelParams(contextSize: 1024),
+        backend: backend,
+      );
+
+      expect(synthesizer.adapter, isA<Qwen3TtsAdapter>());
+      expect(backend.lastModelParams?.contextSize, 1024);
+      final capabilities = await synthesizer.capabilities;
+      expect(capabilities, isA<EngineCapabilities>());
+      expect(capabilities.isSupported, isTrue);
+      final result = await synthesizer.synthesizeOnce(
+        const TextToSpeechRequest(text: 'Hello.', language: 'English'),
+      );
+      expect(result.samples, hasLength(5));
+      expect(backend.lastRequest?.language, 'en');
+
+      await Future.wait<void>(<Future<void>>[
+        synthesizer.dispose(),
+        synthesizer.dispose(),
+      ]);
+
+      expect(synthesizer.isDisposed, isTrue);
+      expect(backend.disposeCalls, 1);
+      final disposed = await synthesizer.capabilities;
+      expect(disposed.isSupported, isFalse);
+      expect(disposed.unsupportedReason, 'The TextToSpeechEngine is disposed.');
+      await expectLater(
+        synthesizer.synthesize(const TextToSpeechRequest(text: 'Hi.')),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
+
+    test('dispose cancels a running task before freeing the engine', () async {
+      backend.blockSynthesis = true;
+      final synthesizer = await TextToSpeechEngine.load(
+        model(),
+        backend: backend,
+      );
+      final result = synthesizer.synthesizeOnce(
+        const TextToSpeechRequest(text: 'Hello.'),
+      );
+      await backend.synthesisStarted.future;
+
+      final failure = expectLater(
+        result,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Speech synthesis was cancelled.',
+          ),
+        ),
+      );
+      await synthesizer.dispose();
+      await failure;
+      expect(backend.cancelCalls, 1);
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('synthesizeOnce throws the task failure', () async {
+      backend.synthesisError = LlamaTextToSpeechException('native failure');
+      final synthesizer = await TextToSpeechEngine.load(
+        model(),
+        backend: backend,
+      );
+
+      await expectLater(
+        synthesizer.synthesizeOnce(const TextToSpeechRequest(text: 'Hello.')),
+        throwsA(isA<LlamaTextToSpeechException>()),
+      );
+      await synthesizer.dispose();
+    });
+
+    test(
+      'a projector the adapter does not drive leaves nothing loaded',
+      () async {
+        await expectLater(
+          TextToSpeechEngine.load(
+            model(adapter: const _OtherTtsAdapter()),
+            backend: backend,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              'The loaded projector is not a supported Other-TTS projector.',
+            ),
+          ),
+        );
+        expect(backend.disposeCalls, 1);
+        expect(backend.isReady, isFalse);
+      },
+    );
+
+    test('a runtime without text-to-speech leaves nothing loaded', () async {
+      backend.capabilities = const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: 'No audio-generation projector.',
+      );
+
+      await expectLater(
+        TextToSpeechEngine.load(model(), backend: backend),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'No audio-generation projector.',
+          ),
+        ),
+      );
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('a cancelled load leaves nothing loaded', () async {
+      final token = ModelDownloadCancelToken()..cancel();
+
+      await expectLater(
+        TextToSpeechEngine.load(
+          model(),
+          download: ModelLoadOptions(cancelToken: token),
+          backend: backend,
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('rejects a checksum for the model and projector', () async {
+      await expectLater(
+        TextToSpeechEngine.load(
+          model(),
+          download: ModelLoadOptions(sha256: 'a' * 64),
+          backend: backend,
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(backend.lastModelParams, isNull);
+    });
+
+    test('attach borrows the engine and dispose leaves it loaded', () async {
+      backend.blockSynthesis = true;
+      final llamaEngine = LlamaEngine(backend);
+      await _loadTextToSpeechModel(llamaEngine);
+      final synthesizer = TextToSpeechEngine.attach(
+        llamaEngine,
+        adapter: const Qwen3TtsAdapter(),
+      );
+      final task = await synthesizer.synthesize(
+        const TextToSpeechRequest(text: 'Hello.'),
+      );
+      await backend.synthesisStarted.future;
+      var taskDone = false;
+      unawaited(task.done.then((_) => taskDone = true));
+
+      await synthesizer.dispose();
+
+      expect(taskDone, isTrue);
+      expect((await task.done).state, TextToSpeechCompletionState.cancelled);
+      expect(llamaEngine.isReady, isTrue);
+      expect(backend.disposeCalls, 0);
+      await llamaEngine.dispose();
+    });
+
+    test('runs a custom adapter language table', () async {
+      final synthesizer = await TextToSpeechEngine.load(
+        model(adapter: const _OtherTtsAdapter(acceptsQwen3: true)),
+        backend: backend,
+      );
+
+      final capabilities = await synthesizer.capabilities;
+      expect(capabilities.supportedLanguages, <String>{'xx'});
+      await synthesizer.synthesizeOnce(
+        const TextToSpeechRequest(text: 'Hello.', language: ' Other '),
+      );
+      expect(backend.lastRequest?.language, 'xx');
+      await expectLater(
+        synthesizer.synthesize(
+          const TextToSpeechRequest(text: 'Hello.', language: 'en'),
+        ),
+        throwsA(isA<LlamaTextToSpeechException>()),
+      );
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        () => synthesizer.modelProfile,
+        throwsA(isA<LlamaStateException>()),
+      );
+      await synthesizer.dispose();
+    });
+
+    test('the deprecated constructor attaches Qwen3-TTS', () async {
+      final llamaEngine = LlamaEngine(backend);
+      await _loadTextToSpeechModel(llamaEngine);
+      // ignore: deprecated_member_use_from_same_package
+      final synthesizer = TextToSpeechEngine(
+        llamaEngine,
+        // ignore: deprecated_member_use_from_same_package
+        modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      );
+
+      expect(synthesizer.adapter, isA<Qwen3TtsAdapter>());
+      expect(
+        // ignore: deprecated_member_use_from_same_package
+        synthesizer.modelProfile,
+        // ignore: deprecated_member_use_from_same_package
+        TextToSpeechModelProfile.qwen3Tts,
+      );
+      expect((await synthesizer.capabilities).isSupported, isTrue);
+      await synthesizer.dispose();
+      expect(llamaEngine.isReady, isTrue);
+      await llamaEngine.dispose();
+    });
+  });
 }
 
 Future<void> _loadTextToSpeechModel(LlamaEngine engine) async {
@@ -399,6 +669,8 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
   final Completer<void> _capabilityRelease = Completer<void>();
   final Completer<void> _synthesisRelease = Completer<void>();
   int cancelCalls = 0;
+  int disposeCalls = 0;
+  ModelParams? lastModelParams;
   BackendTextToSpeechRequest? lastRequest;
 
   @override
@@ -409,6 +681,7 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
+    lastModelParams = params;
     _ready = true;
     return 1;
   }
@@ -519,6 +792,7 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
 
   @override
   Future<void> dispose() async {
+    disposeCalls++;
     _ready = false;
   }
 
@@ -527,4 +801,27 @@ class _TextToSpeechBackend implements LlamaBackend, BackendTextToSpeech {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _OtherTtsAdapter extends TextToSpeechAdapter {
+  final bool acceptsQwen3;
+
+  const _OtherTtsAdapter({this.acceptsQwen3 = false});
+
+  @override
+  String get name => 'Other-TTS';
+
+  @override
+  Set<String> get supportedLanguages => const <String>{'xx'};
+
+  @override
+  bool supportsModel(BackendTextToSpeechModel? model) => acceptsQwen3;
+
+  @override
+  String normalizeLanguage(String language) {
+    if (language.toLowerCase() != 'other') {
+      throw LlamaTextToSpeechException('Unsupported language $language.');
+    }
+    return 'xx';
+  }
 }

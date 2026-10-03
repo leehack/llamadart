@@ -41,13 +41,16 @@ for each target.
   log-probabilities, LoRA, state persistence, per-request token usage and
   timings, operation observers for tracing and metrics, and runtime
   diagnostics where the active backend supports them.
-- Experimental typed speech recognition through `SpeechToTextEngine`:
-  llama.cpp whole-file Qwen3-ASR (validated up to 30 seconds per input) on
-  native and validated WebGPU bridge assets, plus worker-isolated, CPU-only
-  native LiteRT-LM streaming ASR with bounded 16 kHz PCM input and partial
-  transcripts.
-- Experimental typed Qwen3-TTS synthesis on native llama.cpp through
-  `TextToSpeechEngine`, returning complete PCM with WAV encoding.
+- Experimental typed speech recognition through `SpeechToTextEngine.load`
+  or `attach`, with a model adapter: llama.cpp whole-file Qwen3-ASR
+  (`Qwen3AsrAdapter`, validated up to 30 seconds per input) on native and
+  validated WebGPU bridge assets, your own `SpeechToTextPromptAdapter` for
+  other audio chat models, plus worker-isolated, CPU-only native LiteRT-LM
+  streaming ASR (`LiteRtLmAsrAdapter`) with bounded 16 kHz PCM input and
+  partial transcripts.
+- Experimental typed Qwen3-TTS synthesis on native llama.cpp and WebGPU
+  bridge assets through `TextToSpeechEngine.load` or `attach`
+  (`Qwen3TtsAdapter`), returning complete PCM with WAV encoding.
 - **Preview:** on-device text-to-image generation through
   `ImageGenerationEngine` on native targets; see
   [Image generation (Preview)](#image-generation-preview).

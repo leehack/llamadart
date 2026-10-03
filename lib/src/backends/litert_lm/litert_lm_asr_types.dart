@@ -39,9 +39,10 @@ class LiteRtLmAsrRuntimeConfig {
   /// The `.tflite` speech-recognition model: a local path, an HTTP(S) URL or
   /// a Hugging Face file.
   ///
-  /// `SpeechToTextEngine.liteRtLm` checks a local file, or downloads a remote
-  /// one into the model cache, before its first task. Null for a
-  /// configuration made with the deprecated path constructor.
+  /// The runtime opens local files only. `SpeechToTextEngine.load` with a
+  /// `LiteRtLmAsrAdapter` downloads remote files into the model cache and
+  /// builds this configuration from them. Null for a configuration made
+  /// with the deprecated path constructor.
   final ModelSource? model;
 
   /// The tokenizer JSON matching [model], from the same kinds of source.
@@ -102,8 +103,8 @@ class LiteRtLmAsrRuntimeConfig {
   /// The model file that the runtime opens: the path given to the deprecated
   /// constructor, the path of a local [model], or the URL of a remote one.
   ///
-  /// The runtime opens local files only, and rejects a remote [model] that
-  /// `SpeechToTextEngine.liteRtLm` has not downloaded.
+  /// The runtime opens local files only and rejects a remote [model]; load
+  /// remote files with `SpeechToTextEngine.load`.
   String get modelPath => _modelPath ?? _location(model!);
 
   /// The tokenizer file that the runtime opens, as [modelPath] describes.

@@ -33,15 +33,17 @@ Future<void> main(List<String> args) async {
   final fixture = await _readPcm16MonoWav(audioPath);
   final libraryPath = Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']
       ?.trim();
-  final recognizer = SpeechToTextEngine.liteRtLm(
-    LiteRtLmAsrRuntimeConfig(
-      modelPath: modelPath,
-      tokenizerPath: tokenizerPath,
-      modelPreset: preset,
+  final recognizer = await SpeechToTextEngine.load(
+    SpeechToTextModel(
+      ModelSource.path(modelPath),
+      tokenizer: ModelSource.path(tokenizerPath),
+      adapter: LiteRtLmAsrAdapter(
+        preset,
+        libraryPath: libraryPath == null || libraryPath.isEmpty
+            ? null
+            : libraryPath,
+      ),
     ),
-    libraryPath: libraryPath == null || libraryPath.isEmpty
-        ? null
-        : libraryPath,
   );
   final stopwatch = Stopwatch()..start();
   SpeechToTextStreamingSession? session;
@@ -94,6 +96,7 @@ Future<void> main(List<String> args) async {
     print('RESULT litert_lm_asr ${jsonEncode(result)}');
   } finally {
     await session?.cancel();
+    await recognizer.dispose();
   }
 }
 

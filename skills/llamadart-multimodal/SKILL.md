@@ -80,8 +80,10 @@ description: >-
   - Local file paths are native-only; on web pass browser file bytes or URLs.
   - LiteRT-LM on web is text-only.
 - `LlamaAudioContent` is generic audio routed through generation, not a
-  transcript API. For transcription use `SpeechToTextEngine` (Speech to Text
-  guide).
+  transcript API. For transcription use `SpeechToTextEngine.load` or
+  `SpeechToTextEngine.attach` with a model adapter, such as
+  `Qwen3AsrAdapter` or your own `SpeechToTextPromptAdapter` (llamadart-speech
+  skill).
 
 ## Examples
 

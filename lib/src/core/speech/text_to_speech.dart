@@ -3,13 +3,24 @@ import 'dart:typed_data';
 
 import '../../backends/backend.dart';
 import '../engine/engine.dart';
+import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
+import '../models/download/model_download_manager.dart';
+import '../models/inference/model_params.dart';
+import '../models/model_file_store.dart';
+import '../models/model_load_options.dart';
 import 'speech_engine_lease.dart';
+import 'speech_model_loader.dart';
 import 'speech_to_text.dart';
+import 'text_to_speech_model.dart';
 import 'text_to_speech_platform_stub.dart'
     if (dart.library.js_interop) 'text_to_speech_platform_web.dart';
 
 /// Model-specific adapter selected by [TextToSpeechEngine].
+@Deprecated(
+  'Use a TextToSpeechAdapter such as Qwen3TtsAdapter. This enum will be '
+  'removed in a future release.',
+)
 enum TextToSpeechModelProfile {
   /// Qwen3-TTS with its matching llama.cpp audio-generation projector.
   qwen3Tts,
@@ -34,9 +45,11 @@ class TextToSpeechRequest {
 
   /// Optional language name or code accepted by the loaded model.
   ///
-  /// The Qwen3-TTS profile accepts the canonical two-letter codes reported by
-  /// [TextToSpeechCapabilities.supportedLanguages] and normalizes their common
-  /// English names, such as `English` to `en` and `Korean` to `ko`.
+  /// The adapter maps it to a code the model takes, see
+  /// [TextToSpeechAdapter.normalizeLanguage]. [Qwen3TtsAdapter] accepts the
+  /// two-letter codes reported by [TextToSpeechCapabilities.supportedLanguages]
+  /// and their English names, such as `English` for `en` and `Korean` for
+  /// `ko`.
   final String? language;
 
   /// Optional encoded speaker-reference audio.
@@ -81,14 +94,17 @@ class TextToSpeechRequest {
 }
 
 /// Runtime text-to-speech capabilities for the loaded engine.
-class TextToSpeechCapabilities {
+class TextToSpeechCapabilities implements EngineCapabilities {
   /// Whether [TextToSpeechEngine.synthesize] can be used now.
+  @override
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
+  @override
   final String? unsupportedReason;
 
   /// Active runtime backend label.
+  @override
   final String? backendName;
 
   /// Backend implementation used for synthesis.
@@ -106,7 +122,8 @@ class TextToSpeechCapabilities {
   /// Whether a language can be supplied with the request.
   final bool supportsLanguage;
 
-  /// Canonical language codes accepted by the selected model profile.
+  /// Canonical language codes accepted by the adapter, see
+  /// [TextToSpeechAdapter.supportedLanguages].
   final Set<String> supportedLanguages;
 
   /// Whether speaker-reference audio can be supplied.
@@ -363,54 +380,173 @@ class TextToSpeechTask {
   }
 }
 
-/// Typed text-to-speech API backed by a loaded [LlamaEngine].
+/// Typed text-to-speech API backed by a [LlamaEngine].
 ///
-/// Supports Qwen3-TTS on native llama.cpp and compatible WebGPU bridge
-/// runtimes with the matching audio-generation projector. It reports progress
-/// and cancellation, but PCM becomes available only after generation has
-/// completed.
+/// [load] loads a [TextToSpeechModel] and owns the engine it creates;
+/// [attach] runs a [TextToSpeechAdapter] on a `LlamaEngine` the caller loaded
+/// and keeps owning. The runtime generates audio natively on llama.cpp and
+/// through compatible WebGPU bridge runtimes, with the model's
+/// audio-generation projector. It reports progress and cancellation, but PCM
+/// becomes available only after generation has completed.
+///
+/// ```dart
+/// final synthesizer = await TextToSpeechEngine.load(
+///   TextToSpeechModel(
+///     ModelSource.parse('hf://owner/repo/tts-model.gguf'),
+///     projector: ModelSource.parse('hf://owner/repo/mmproj-tts-model.gguf'),
+///     adapter: const Qwen3TtsAdapter(),
+///   ),
+/// );
+/// try {
+///   final result = await synthesizer.synthesizeOnce(
+///     const TextToSpeechRequest(text: 'Hello.', language: 'en'),
+///   );
+///   final wav = result.toWavBytes();
+/// } finally {
+///   await synthesizer.dispose();
+/// }
+/// ```
 class TextToSpeechEngine {
   static const String _leaseOwner = 'text-to-speech';
-  static const Map<String, String> _qwen3LanguageAliases = <String, String>{
-    'chinese': 'zh',
-    'english': 'en',
-    'french': 'fr',
-    'german': 'de',
-    'italian': 'it',
-    'japanese': 'ja',
-    'korean': 'ko',
-    'portuguese': 'pt',
-    'russian': 'ru',
-    'spanish': 'es',
-  };
-  static const Set<String> _qwen3LanguageCodes = <String>{
-    'zh',
-    'en',
-    'ja',
-    'ko',
-    'de',
-    'fr',
-    'ru',
-    'pt',
-    'es',
-    'it',
-  };
 
   final LlamaEngine _engine;
+  final bool _ownsEngine;
   final SpeechEngineLease _engineLease;
+  TextToSpeechTask? _activeTask;
+  Future<void>? _disposal;
 
-  /// Model-specific adapter selected by the caller.
-  final TextToSpeechModelProfile modelProfile;
+  /// What drives the model.
+  final TextToSpeechAdapter adapter;
+
+  TextToSpeechEngine._(this._engine, this.adapter, {required bool ownsEngine})
+    : _ownsEngine = ownsEngine,
+      _engineLease = SpeechEngineLease.forEngine(_engine);
 
   /// Creates a synthesizer over an existing loaded engine.
   ///
   /// Only one typed speech task may use the underlying [LlamaEngine] at a time.
-  TextToSpeechEngine(LlamaEngine engine, {required this.modelProfile})
-    : _engine = engine,
-      _engineLease = SpeechEngineLease.forEngine(engine);
+  @Deprecated(
+    'Use TextToSpeechEngine.attach(engine, adapter: const Qwen3TtsAdapter()), '
+    'or TextToSpeechEngine.load. This constructor will be removed in a future '
+    'release.',
+  )
+  TextToSpeechEngine(
+    LlamaEngine engine, {
+    required TextToSpeechModelProfile modelProfile,
+  }) : this._(engine, const Qwen3TtsAdapter(), ownsEngine: false);
 
-  /// Discovers synthesis support for the active runtime, model, and projector.
+  /// Loads [model] into a new [LlamaEngine] and returns a synthesizer that
+  /// owns it.
+  ///
+  /// [load] creates the engine on [backend] (by default `LlamaBackend()`),
+  /// loads [TextToSpeechModel.source] with [params] and then
+  /// [TextToSpeechModel.projector], and checks [capabilities]. Each file
+  /// comes from its `ModelSource`, resolved by [store]'s resolver and
+  /// download manager (by default [DefaultModelResolver] and
+  /// [DefaultModelDownloadManager]), main file first, before anything loads.
+  /// [download] applies to every remote file: cache policy and directory,
+  /// authentication, resume, retries and the cancel token. A local file
+  /// takes only the cancel token. The bearer token and headers never go to
+  /// more than one host: when they are set and the remote files are on
+  /// different hosts, [load] throws [LlamaArgumentException] before
+  /// downloading from the second one. [onProgress] reports the files
+  /// together: `receivedBytes` counts the files resolved so far plus the
+  /// current download, and `totalBytes` is their combined size once every
+  /// size is known. Adapters in [ModelParams.loras] given as sources
+  /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
+  /// backend, as on the web, fetches each file itself, as
+  /// `LlamaEngine.loadModelSource` and
+  /// `LlamaEngine.loadMultimodalProjectorSource` do. [onProgress] then
+  /// reports only the main file's fetch, as a fraction from 0 to 0.5 of the
+  /// two files when there is a projector; the projector fetch reports no
+  /// progress.
+  ///
+  /// The synthesizer owns the engine and a [backend] passed in: [dispose],
+  /// or a failed load, disposes both. The load is atomic: when it throws,
+  /// nothing stays loaded. Downloaded files stay in the model cache.
+  ///
+  /// Throws:
+  /// - [LlamaArgumentException] when [download] would send credentials to
+  ///   more than one host.
+  /// - [LlamaUnsupportedException] when the loaded model cannot synthesize
+  ///   speech with [TextToSpeechModel.adapter] (see [capabilities]), and when
+  ///   [download] sets [ModelLoadOptions.sha256] for a model with a
+  ///   projector.
+  /// - [LlamaStateException] when [download]'s cancel token cancels the load.
+  /// - What `LlamaEngine.loadModelSource`, the resolver and the download
+  ///   manager throw for a file that fails to download or load.
+  static Future<TextToSpeechEngine> load(
+    TextToSpeechModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelFileStore? store,
+    LlamaBackend? backend,
+  }) async {
+    late final TextToSpeechEngine synthesizer;
+    await loadSpeechLlamaEngine(
+      engineName: 'TextToSpeechEngine',
+      source: model.source,
+      projector: model.projector,
+      params: params,
+      download: download,
+      onProgress: onProgress,
+      store: store,
+      backend: backend,
+      verify: (engine) async {
+        synthesizer = TextToSpeechEngine._(
+          engine,
+          model.adapter,
+          ownsEngine: true,
+        );
+        final capabilities = await synthesizer.capabilities;
+        if (!capabilities.isSupported) {
+          throw LlamaUnsupportedException(
+            capabilities.unsupportedReason ??
+                'The loaded model cannot synthesize speech.',
+          );
+        }
+      },
+    );
+    return synthesizer;
+  }
+
+  /// Runs [adapter] on [engine], which the caller loaded and keeps owning.
+  ///
+  /// The engine needs a loaded model and its audio-generation projector;
+  /// read [capabilities] to check. [dispose] cancels this synthesizer's task
+  /// but leaves [engine] loaded. Only one typed speech task may use the
+  /// underlying engine at a time.
+  static TextToSpeechEngine attach(
+    LlamaEngine engine, {
+    required TextToSpeechAdapter adapter,
+  }) => TextToSpeechEngine._(engine, adapter, ownsEngine: false);
+
+  /// Model-specific adapter selected by the caller.
+  ///
+  /// Throws [LlamaStateException] for an adapter other than
+  /// [Qwen3TtsAdapter], which has no profile.
+  @Deprecated('Read adapter instead.')
+  TextToSpeechModelProfile get modelProfile => switch (adapter) {
+    Qwen3TtsAdapter() => TextToSpeechModelProfile.qwen3Tts,
+    _ => throw LlamaStateException(
+      'This TextToSpeechEngine runs ${adapter.name}, which has no '
+      'TextToSpeechModelProfile. Read adapter instead.',
+    ),
+  };
+
+  /// Whether [dispose] has been called.
+  bool get isDisposed => _disposal != null;
+
+  /// Discovers synthesis support for the active runtime, model, and
+  /// projector; unsupported once disposed.
   Future<TextToSpeechCapabilities> get capabilities async {
+    if (_disposal != null) {
+      return const TextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: 'The TextToSpeechEngine is disposed.',
+      );
+    }
     String? backendName;
     try {
       backendName = await _engine.getBackendName();
@@ -435,12 +571,12 @@ class TextToSpeechEngine {
         backendName: backendName,
       );
     }
-    if (modelProfile == TextToSpeechModelProfile.qwen3Tts &&
-        backendCapabilities.model != BackendTextToSpeechModel.qwen3Tts) {
+    if (!adapter.supportsModel(backendCapabilities.model)) {
       return TextToSpeechCapabilities(
         isSupported: false,
         unsupportedReason:
-            'The loaded projector is not a supported Qwen3-TTS projector.',
+            'The loaded projector is not a supported ${adapter.name} '
+            'projector.',
         backendName: backendName,
       );
     }
@@ -461,7 +597,7 @@ class TextToSpeechEngine {
           : const <SpeechAudioInputKind>{},
       supportsLanguage: backendCapabilities.supportsLanguage,
       supportedLanguages: backendCapabilities.supportsLanguage
-          ? _qwen3LanguageCodes
+          ? adapter.supportedLanguages
           : const <String>{},
       supportsSpeakerReference: backendCapabilities.supportsSpeakerReference,
       supportsIncrementalAudio: false,
@@ -475,7 +611,10 @@ class TextToSpeechEngine {
   ///
   /// Invalid input and unsupported preflight checks throw before the task is
   /// returned. Failures after backend startup are reported through the task.
+  /// Throws [LlamaStateException] after [dispose]; [dispose] cancels a
+  /// running task.
   Future<TextToSpeechTask> synthesize(TextToSpeechRequest request) async {
+    _throwIfDisposed();
     _validateRequest(request);
     if (!_engineLease.acquire(_leaseOwner)) {
       throw LlamaStateException(
@@ -486,6 +625,7 @@ class TextToSpeechEngine {
 
     try {
       final currentCapabilities = await capabilities;
+      _throwIfDisposed();
       if (!currentCapabilities.isSupported) {
         throw LlamaUnsupportedException(
           currentCapabilities.unsupportedReason ??
@@ -512,11 +652,50 @@ class TextToSpeechEngine {
         onCancel: _engine.cancelTextToSpeechBackend,
       );
       _engineLease.onUnload(_leaseOwner, task.cancel);
+      _activeTask = task;
       unawaited(_runTask(task, request, normalizedLanguage));
       return task;
     } catch (_) {
       _engineLease.release(_leaseOwner);
       rethrow;
+    }
+  }
+
+  /// Synthesizes [request] and returns the complete audio.
+  ///
+  /// Throws what [synthesize] throws, the failure of the task, or
+  /// [LlamaStateException] when the task is cancelled, as [dispose] and
+  /// [LlamaEngine.unloadModel] do.
+  Future<TextToSpeechResult> synthesizeOnce(TextToSpeechRequest request) async {
+    final completion = await (await synthesize(request)).done;
+    return switch (completion.state) {
+      TextToSpeechCompletionState.completed => completion.result!,
+      TextToSpeechCompletionState.failed => throw completion.error!,
+      TextToSpeechCompletionState.cancelled => throw LlamaStateException(
+        'Speech synthesis was cancelled.',
+      ),
+    };
+  }
+
+  /// Cancels a running task, waits for it to stop, and disposes the
+  /// [LlamaEngine] that [load] created. An engine passed to [attach] stays
+  /// loaded. Calling this more than once is safe.
+  Future<void> dispose() => _disposal ??= _dispose();
+
+  Future<void> _dispose() async {
+    final task = _activeTask;
+    if (task != null) {
+      task.cancel();
+      await task.done;
+    }
+    if (_ownsEngine) {
+      await _engine.dispose();
+    }
+  }
+
+  void _throwIfDisposed() {
+    if (_disposal != null) {
+      throw LlamaStateException('The TextToSpeechEngine is disposed.');
     }
   }
 
@@ -656,6 +835,9 @@ class TextToSpeechEngine {
       // The lease must be free before `done` completes, otherwise a caller
       // that awaits it cannot start the next task.
       _engineLease.release(_leaseOwner);
+      if (identical(_activeTask, task)) {
+        _activeTask = null;
+      }
       if (outcome != null && !task._doneCompleter.isCompleted) {
         task._doneCompleter.complete(outcome);
       }
@@ -663,21 +845,11 @@ class TextToSpeechEngine {
   }
 
   String? _normalizeLanguage(String? language) {
-    final normalized = language?.trim().toLowerCase();
-    if (normalized == null || normalized.isEmpty) {
+    final trimmed = language?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
       return null;
     }
-    if (modelProfile == TextToSpeechModelProfile.qwen3Tts) {
-      final code = _qwen3LanguageAliases[normalized] ?? normalized;
-      if (!_qwen3LanguageCodes.contains(code)) {
-        throw LlamaTextToSpeechException(
-          'Unsupported Qwen3-TTS language `$language`. Use one of: '
-          '${_qwen3LanguageCodes.join(', ')}.',
-        );
-      }
-      return code;
-    }
-    return normalized;
+    return adapter.normalizeLanguage(trimmed);
   }
 
   void _closeCancelledEvents(TextToSpeechTask task) {

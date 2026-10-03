@@ -2508,7 +2508,8 @@ void _validateLiteRtLmAsrRuntimeConfig(LiteRtLmAsrRuntimeConfig runtimeConfig) {
       throw LlamaUnsupportedException(
         'The LiteRT-LM ASR runtime opens local files only, but the $name is '
         'the remote source ${source.displayName}. Use '
-        'SpeechToTextEngine.liteRtLm, which downloads it first.',
+        'SpeechToTextEngine.load with a LiteRtLmAsrAdapter, which downloads '
+        'it first.',
       );
     }
   }

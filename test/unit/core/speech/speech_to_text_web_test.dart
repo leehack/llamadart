@@ -11,9 +11,9 @@ import 'package:test/test.dart';
 void main() {
   test('old or unvalidated Web bridge remains unsupported', () async {
     final engine = await _loadedEngine(promptSpeechToTextSupported: false);
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     final capabilities = await recognizer.capabilities;
@@ -25,9 +25,9 @@ void main() {
 
   test('validated Web bridge advertises WAV, MP3 and FLAC bytes', () async {
     final engine = await _loadedEngine(promptSpeechToTextSupported: true);
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     final capabilities = await recognizer.capabilities;
@@ -61,9 +61,9 @@ void main() {
       await engine.loadMultimodalProjector(
         'https://example.com/qwen3-asr-mmproj.gguf',
       );
-      final recognizer = SpeechToTextEngine(
+      final recognizer = SpeechToTextEngine.attach(
         engine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
 
       final task = await recognizer.transcribe(
@@ -92,9 +92,9 @@ void main() {
     await engine.loadMultimodalProjector(
       'https://example.com/qwen3-asr-mmproj.gguf',
     );
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     final task = await recognizer.transcribe(
@@ -137,9 +137,9 @@ void main() {
     await engine.loadMultimodalProjector(
       'https://example.com/qwen3-asr-mmproj.gguf',
     );
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     final task = await recognizer.transcribe(
@@ -193,9 +193,9 @@ void main() {
     await engine.loadMultimodalProjector(
       'https://example.com/qwen3-asr-mmproj.gguf',
     );
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     final task = await recognizer.transcribe(
@@ -228,9 +228,9 @@ void main() {
       await engine.loadMultimodalProjector(
         'https://example.com/qwen3-asr-mmproj.gguf',
       );
-      final recognizer = SpeechToTextEngine(
+      final recognizer = SpeechToTextEngine.attach(
         engine,
-        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        adapter: const Qwen3AsrAdapter(),
       );
 
       final task = await recognizer.transcribe(
@@ -255,9 +255,9 @@ void main() {
 
   test('Web rejects local paths and unvalidated encoded formats', () async {
     final engine = await _loadedEngine(promptSpeechToTextSupported: true);
-    final recognizer = SpeechToTextEngine(
+    final recognizer = SpeechToTextEngine.attach(
       engine,
-      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      adapter: const Qwen3AsrAdapter(),
     );
 
     await expectLater(
@@ -308,7 +308,85 @@ void main() {
     await engine.dispose();
   });
 
+  test('load fetches the model and projector by URL on Web', () async {
+    final backend = _WebSpeechBackend(promptSpeechToTextSupported: true);
+    final progress = <ModelDownloadProgress>[];
+    final recognizer = await SpeechToTextEngine.load(
+      SpeechToTextModel(
+        ModelSource.parse('https://example.com/qwen3-asr.gguf'),
+        projector: ModelSource.parse(
+          'https://example.com/qwen3-asr-mmproj.gguf',
+        ),
+        adapter: const Qwen3AsrAdapter(),
+      ),
+      onProgress: progress.add,
+      backend: backend,
+    );
+
+    expect(backend.modelUrl, 'https://example.com/qwen3-asr.gguf');
+    expect(backend.projectorUrl, 'https://example.com/qwen3-asr-mmproj.gguf');
+    expect([for (final p in progress) p.fraction], [0.25, 0.5]);
+
+    final result = await recognizer.transcribeOnce(
+      SpeechToTextRequest(
+        audio: SpeechAudioBytesInput(
+          Uint8List.fromList(<int>[1, 2, 3]),
+          format: const SpeechAudioFormat(encoding: 'wav'),
+        ),
+      ),
+    );
+
+    expect(result.text, 'Hello.');
+    await recognizer.dispose();
+    expect(backend.disposeCalls, 1);
+  });
+
+  test('load disposes an engine that cannot recognize speech', () async {
+    final backend = _WebSpeechBackend(promptSpeechToTextSupported: false);
+
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.parse('https://example.com/qwen3-asr.gguf'),
+          projector: ModelSource.parse(
+            'https://example.com/qwen3-asr-mmproj.gguf',
+          ),
+          adapter: const Qwen3AsrAdapter(),
+        ),
+        backend: backend,
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('v0.1.30'),
+        ),
+      ),
+    );
+    expect(backend.disposeCalls, 1);
+  });
+
   test('dedicated LiteRT-LM speech remains unsupported on Web', () async {
+    await expectLater(
+      SpeechToTextEngine.load(
+        SpeechToTextModel(
+          ModelSource.path('/models/moonshine.tflite'),
+          tokenizer: ModelSource.path('/models/tokenizer.json'),
+          adapter: const LiteRtLmAsrAdapter(
+            LiteRtLmAsrModelPreset.moonshineTiny,
+          ),
+        ),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('native runtime'),
+        ),
+      ),
+    );
+
+    // ignore: deprecated_member_use_from_same_package
     final engine = SpeechToTextEngine.liteRtLm(
       const LiteRtLmAsrRuntimeConfig(
         modelPath: '/models/moonshine.tflite',
@@ -350,6 +428,9 @@ class _WebSpeechBackend
   final Completer<void> partialSent = Completer<void>();
   String generationText;
   bool cancelCalled = false;
+  int disposeCalls = 0;
+  String? modelUrl;
+  String? projectorUrl;
   String? lastPrompt;
   List<LlamaContentPart>? lastParts;
   GenerationParams? lastGenerationParams;
@@ -377,7 +458,12 @@ class _WebSpeechBackend
     String url,
     ModelParams params, {
     Function(double progress)? onProgress,
-  }) async => 1;
+  }) async {
+    modelUrl = url;
+    onProgress?.call(0.5);
+    onProgress?.call(1);
+    return 1;
+  }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async => 2;
@@ -386,7 +472,10 @@ class _WebSpeechBackend
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => 3;
+  ) async {
+    projectorUrl = mmProjPath;
+    return 3;
+  }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async => true;
@@ -459,7 +548,9 @@ class _WebSpeechBackend
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    disposeCalls++;
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

@@ -29,6 +29,22 @@ For canonical full release notes, use:
   `setDartLogLevel` and `setNativeLogLevel`; levels are now library-wide, so
   the last call wins and reaches every running engine's worker, including the
   default native backend's ([#845](https://github.com/leehack/llamadart/issues/845)).
+- **Deprecated:** speech engines follow the shared engine pattern:
+  `SpeechToTextEngine.load(SpeechToTextModel(...))` and
+  `TextToSpeechEngine.load(TextToSpeechModel(...))` download every
+  `ModelSource` and own what they load, `attach(engine, adapter:)` borrows a
+  loaded `LlamaEngine`, `dispose()` cancels the running task, and
+  `transcribeOnce` and `synthesizeOnce` return the final result. Adapters
+  (`Qwen3AsrAdapter`, `LiteRtLmAsrAdapter`, `Qwen3TtsAdapter`, or your own
+  `SpeechToTextPromptAdapter`) replace `SpeechToTextModelProfile`,
+  `TextToSpeechModelProfile`, the `modelProfile` constructors and
+  `SpeechToTextEngine.liteRtLm`, which still work for one release
+  ([#848](https://github.com/leehack/llamadart/issues/848)).
+- **Breaking:** `SpeechToTextEngine` gains `dispose()`, `isDisposed`,
+  `adapter` and `transcribeOnce`, and `TextToSpeechEngine` gains `dispose()`,
+  `isDisposed`, `adapter` and `synthesizeOnce`, so a class that `implements`
+  either must add them
+  ([#848](https://github.com/leehack/llamadart/issues/848)).
 - **Breaking:** `DecisionEngine.load(DecisionModel(encoder:, head:,
   config:), params:, download:, onProgress:)` loads a decision model from
   `ModelSource`s into an engine it owns, atomically, and `dispose()` frees it
@@ -113,9 +129,9 @@ For canonical full release notes, use:
 - LoRA adapters (`setLoraSource`, `removeLoraSource`,
   `LoraAdapterConfig.source`), speculative draft models
   (`SpeculativeDecodingConfig.draftModel`, `withDraftModel`,
-  `withDraftModelDownload`) and LiteRT-LM ASR files
-  (`LiteRtLmAsrRuntimeConfig.source`) take a `ModelSource`, so they download
-  and cache like models
+  `withDraftModelDownload`) take a `ModelSource`, so they download and cache
+  like models, and `LiteRtLmAsrRuntimeConfig.source` takes local
+  `ModelSource` files
   ([#852](https://github.com/leehack/llamadart/issues/852)).
 - **Deprecated:** the `String` path forms of LoRA adapters, speculative draft
   models and LiteRT-LM ASR files

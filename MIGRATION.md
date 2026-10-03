@@ -243,6 +243,133 @@ directory for every default download, set
    engine changes every engine, and `LlamaEngine.configureLogging` also updates
    running worker isolates.
 
+## Unreleased: speech engine load, attach and adapters
+
+`SpeechToTextEngine` and `TextToSpeechEngine` follow the shared engine
+pattern: `load` takes a model of `ModelSource` files and owns what it loads,
+and an adapter, not a profile enum, says how to run the model. The old
+constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
+`modelProfile` getters still work for one release, with deprecation warnings.
+
+1. **Load the model, or attach to an engine you keep.** `load` creates a
+   `LlamaEngine`, loads the model and projector, checks `capabilities`, and
+   throws `LlamaUnsupportedException` when the model cannot recognize speech.
+   `dispose()` then disposes that engine:
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModel('/models/Qwen3-ASR-0.6B-Q8_0.gguf');
+   await engine.loadMultimodalProjector('/models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf');
+   final recognizer = SpeechToTextEngine(
+     engine,
+     modelProfile: SpeechToTextModelProfile.qwen3Asr,
+   );
+   // After
+   final recognizer = await SpeechToTextEngine.load(
+     SpeechToTextModel(
+       ModelSource.path('/models/Qwen3-ASR-0.6B-Q8_0.gguf'),
+       projector: ModelSource.path('/models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf'),
+       adapter: const Qwen3AsrAdapter(),
+     ),
+   );
+   try {
+     final result = await recognizer.transcribeOnce(request);
+   } finally {
+     await recognizer.dispose();
+   }
+   ```
+
+   Remote sources download into the model cache. `download:` takes
+   `ModelLoadOptions` for every remote file and `onProgress:` reports the
+   files together; a local file takes only the cancel token, and
+   `bearerToken` and `headers` go to one host only, so remote files on two
+   hosts with them set throw `LlamaArgumentException`.
+   `ModelLoadOptions.sha256` throws `LlamaUnsupportedException`, since one
+   checksum cannot cover two files. `params:` takes `ModelParams`, `store:` a
+   `ModelFileStore` with your own resolver or download manager, and
+   `backend:` the `LlamaBackend`, which the speech engine then owns and
+   disposes. When `load` throws, nothing stays loaded.
+
+   To share a `LlamaEngine` you load yourself, for example with chat, use
+   `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())`.
+   Its `dispose()` cancels its task and leaves the engine loaded.
+
+2. **Dedicated LiteRT-LM ASR is a model with a `LiteRtLmAsrAdapter`.** The
+   runtime settings of `LiteRtLmAsrRuntimeConfig` and `libraryPath` move to
+   the adapter, and the files become `ModelSource`s:
+
+   ```dart
+   // Before
+   final recognizer = SpeechToTextEngine.liteRtLm(
+     const LiteRtLmAsrRuntimeConfig(
+       modelPath: '/models/moonshine_tiny.tflite',
+       tokenizerPath: '/models/tokenizer.json',
+       modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+     ),
+   );
+   // After
+   final recognizer = await SpeechToTextEngine.load(
+     SpeechToTextModel(
+       ModelSource.path('/models/moonshine_tiny.tflite'),
+       tokenizer: ModelSource.path('/models/tokenizer.json'),
+       adapter: const LiteRtLmAsrAdapter(LiteRtLmAsrModelPreset.moonshineTiny),
+     ),
+   );
+   ```
+
+   `load` probes the runtime before it downloads anything and throws
+   `LlamaUnsupportedException` where it is unavailable, including on the web,
+   where `SpeechToTextEngine.liteRtLm` returned a recognizer whose
+   `capabilities` reported unsupported. `params:` and `backend:` must be
+   null. The model and tokenizer can be URLs or Hugging Face files: `load`
+   downloads them with `download:` and `onProgress:` as in step 1.
+   `SpeechToTextEngine.liteRtLm` opens local files only and throws
+   `LlamaUnsupportedException` for a remote source.
+
+3. **Text to speech takes a `TextToSpeechModel`.**
+
+   ```dart
+   // Before
+   final synthesizer = TextToSpeechEngine(
+     engine,
+     modelProfile: TextToSpeechModelProfile.qwen3Tts,
+   );
+   // After, loading the files
+   final synthesizer = await TextToSpeechEngine.load(
+     TextToSpeechModel(
+       ModelSource.parse('hf://owner/repo/tts-model.gguf'),
+       projector: ModelSource.parse('hf://owner/repo/mmproj-tts-model.gguf'),
+       adapter: const Qwen3TtsAdapter(),
+     ),
+   );
+   // After, keeping your engine
+   final synthesizer = TextToSpeechEngine.attach(
+     engine,
+     adapter: const Qwen3TtsAdapter(),
+   );
+   ```
+
+4. **Profiles become adapters.**
+
+   | Before | After |
+   | --- | --- |
+   | `SpeechToTextEngine(engine, modelProfile: SpeechToTextModelProfile.qwen3Asr)` | `SpeechToTextEngine.attach(engine, adapter: const Qwen3AsrAdapter())`, or `load` |
+   | `SpeechToTextEngine.liteRtLm(config, libraryPath: path)` | `SpeechToTextEngine.load(SpeechToTextModel(model, tokenizer: tokenizer, adapter: LiteRtLmAsrAdapter(preset, libraryPath: path)))` |
+   | `TextToSpeechEngine(engine, modelProfile: TextToSpeechModelProfile.qwen3Tts)` | `TextToSpeechEngine.attach(engine, adapter: const Qwen3TtsAdapter())`, or `load` |
+   | `recognizer.modelProfile`, `synthesizer.modelProfile` | `recognizer.adapter`, `synthesizer.adapter` |
+
+   The deprecated `modelProfile` getters throw `LlamaStateException` for an
+   adapter with no profile, such as your own `SpeechToTextPromptAdapter`.
+
+5. **Dispose the speech engine.** `dispose()` is new: it cancels a running
+   task or stream, waits for it to stop, and disposes the engine `load`
+   created. It is safe to call twice. Afterwards `transcribe`, `startStream`
+   and `synthesize` throw `LlamaStateException`, and `capabilities` reports
+   unsupported. Code that used the deprecated constructors and disposed the
+   `LlamaEngine` itself keeps working. A class that `implements` `SpeechToTextEngine` or
+   `TextToSpeechEngine`, such as a test fake, must add `dispose()`,
+   `isDisposed`, `adapter` and `transcribeOnce` or `synthesizeOnce`.
 ## Unreleased: `ModelSource` for LoRA adapters, draft models and speech files
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
@@ -256,7 +383,7 @@ warnings:
 | `engine.removeLora(path)` | `engine.removeLoraSource(ModelSource.path(path))` |
 | `LoraAdapterConfig(path: path, scale: s)` | `LoraAdapterConfig.source(ModelSource.path(path), scale: s)` |
 | `SpeculativeDecodingConfig.draftSimple(draftModelPath: path)` (and the other constructors) | `SpeculativeDecodingConfig.draftSimple(draftModel: ModelSource.path(path))` |
-| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)` |
+| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)`; to recognize speech, `SpeechToTextEngine.load` as in [the speech migration](#unreleased-speech-engine-load-attach-and-adapters) |
 
 ```dart
 // Before
@@ -288,10 +415,10 @@ final config = LiteRtLmAsrRuntimeConfig.source(
   `LiteRtLmAsrRuntimeConfig` that now holds one.
 - Remove an adapter with the same source it was set from:
   `removeLoraSource` matches sources, not paths.
-- `draftModelDownload`, `setLoraSource(download:, onProgress:)`,
-  `LoraAdapterConfig.source(source, download:)` and
-  `SpeechToTextEngine.liteRtLm(config, download:, onProgress:, store:)` set
-  the download options for remote files. A `ModelParams.loras` adapter never
+- `draftModelDownload`, `setLoraSource(download:, onProgress:)` and
+  `LoraAdapterConfig.source(source, download:)` set the download options
+  for remote files. Remote LiteRT-LM ASR files download through
+  `SpeechToTextEngine.load`; `LiteRtLmAsrRuntimeConfig` holds local files. A `ModelParams.loras` adapter never
   takes the model load's bearer token, headers or `sha256`; give it its own
   `download:` when its host needs credentials.
 - A draft model downloads once per loaded model; `draftModelDownload` rejects

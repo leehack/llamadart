@@ -166,7 +166,7 @@ void main() {
           'message',
           allOf(
             contains('tokenizer'),
-            contains('SpeechToTextEngine.liteRtLm'),
+            contains('SpeechToTextEngine.load'),
             isNot(contains('secret')),
           ),
         ),
