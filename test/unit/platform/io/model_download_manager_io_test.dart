@@ -1595,6 +1595,88 @@ void main() {
       expect(File(entry.filePath).readAsStringSync(), 'eventual-model');
     });
 
+    for (final location in [
+      'ftp://alice:RedirectPassword@cdn.example.com/m.gguf?X-Amz-Signature=RedirectSignature',
+      'http://[invalid/m.gguf?token=RedirectSignature',
+    ]) {
+      test('redirect failures redact every URL hop and snapshot', () async {
+        final redirect = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => redirect.close(force: true));
+        var requestCount = 0;
+        final requests = redirect.listen((request) {
+          requestCount++;
+          request.response
+            ..statusCode = HttpStatus.found
+            ..headers.set(HttpHeaders.locationHeader, location);
+          unawaited(request.response.close());
+        });
+        addTearDown(requests.cancel);
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(
+          Uri.parse(
+            'http://alice:RedirectPassword@127.0.0.1:${redirect.port}/RedirectPassword.gguf?token=OriginalSignature',
+          ),
+        );
+        final controller = ModelDownloadController(manager: manager);
+        addTearDown(controller.dispose);
+        final safe = allOf(
+          isNot(contains('RedirectPassword')),
+          isNot(contains('RedirectSignature')),
+          isNot(contains('OriginalSignature')),
+        );
+        await expectLater(
+          controller.start(source, options: ModelLoadOptions(maxRetries: 2)),
+          throwsA(
+            isA<LlamaModelException>().having((e) => '$e', 'safe error', safe),
+          ),
+        );
+        expect(controller.snapshot.errorMessage, safe);
+        expect(requestCount, 1);
+      });
+    }
+
+    test(
+      'a transient IO failure retries and preserves a successful download',
+      () async {
+        final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(socket.close);
+        var requestCount = 0;
+        final connections = socket.listen((client) {
+          addTearDown(client.destroy);
+          var handled = false;
+          final input = client.listen((_) {
+            if (handled) return;
+            handled = true;
+            requestCount++;
+            if (requestCount == 1) {
+              client.destroy();
+            } else {
+              client.write(
+                'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nmodel',
+              );
+              unawaited(client.flush().then((_) => client.close()));
+            }
+          }, onError: (_) {});
+          addTearDown(input.cancel);
+        });
+        addTearDown(connections.cancel);
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(
+          Uri.parse('http://127.0.0.1:${socket.port}/m.gguf?token=RetrySecret'),
+        );
+        final entry = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(maxRetries: 1),
+        );
+        expect(requestCount, 2);
+        expect(File(entry.filePath).readAsStringSync(), 'model');
+      },
+    );
+
     test('keeps URL secrets out of a failed download', () async {
       final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(socket.close);
