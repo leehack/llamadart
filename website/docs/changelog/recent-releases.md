@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed LiteRT-LM speech recognition startup failures hanging indefinitely;
+  failed workers now release their resources and allow another attempt.
+
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
   or `npu` runs there or throws `LlamaUnsupportedException` instead of
