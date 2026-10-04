@@ -27,7 +27,7 @@ Future<void> main(List<String> arguments) async {
     loadMtp: loadBundledMtp,
   );
   final speculativeModelParams = baselineModelParams.copyWith(
-    speculativeRollbackTokenMax: options.maxSpeculativeDraftCapacity,
+    speculativeRollbackTokenMax: _maxRollbackCapacity(benchmarkCases),
   );
 
   final backend = LlamaBackend();
@@ -383,8 +383,35 @@ List<String> debugBuildBenchmarkCaseNamesForTesting(List<String> arguments) {
 ///
 /// Intended for unit tests of option semantics.
 int debugResolveSpeculativeRollbackCapacityForTesting(List<String> arguments) {
-  return _BenchmarkOptions.parse(arguments).maxSpeculativeDraftCapacity;
+  return _maxRollbackCapacity(
+    _buildBenchmarkCases(_BenchmarkOptions.parse(arguments)),
+  );
 }
+
+int _maxRollbackCapacity(List<_BenchmarkCase> cases) => cases.fold<int>(0, (
+  max,
+  benchmarkCase,
+) {
+  final config = benchmarkCase.speculativeDecodingConfig;
+  if (config == null) return max;
+  final strategies = config.strategies.isEmpty
+      ? [config.strategy]
+      : config.strategies;
+  for (final strategy in strategies) {
+    final capacity = switch (strategy) {
+      SpeculativeDecodingStrategy.ngramSimple ||
+      SpeculativeDecodingStrategy.ngramMapK ||
+      SpeculativeDecodingStrategy.ngramMapK4v => config.ngramSizeM ?? 48,
+      SpeculativeDecodingStrategy.ngramMod =>
+        config.ngramTokenMax ?? config.draftTokenMax ?? 64,
+      SpeculativeDecodingStrategy.ngramCache => config.draftTokenMax ?? 8,
+      SpeculativeDecodingStrategy.backendDefault => config.draftTokenMax ?? 64,
+      _ => config.draftTokenMax ?? 3,
+    };
+    if (capacity > max) max = capacity;
+  }
+  return max;
+});
 
 /// Resolves whether the target model must load bundled MTP tensors.
 ///
@@ -1115,19 +1142,6 @@ class _BenchmarkOptions {
     1,
     (max, value) => value > max ? value : max,
   );
-
-  int get maxNgramSizeM =>
-      ngramSizeMValues.fold<int>(1, (max, value) => value > max ? value : max);
-
-  int get maxSpeculativeDraftCapacity {
-    final draftMax = maxDraftTokenMax;
-    final ngramMax = maxNgramSizeM;
-    final ngramTokenMax = this.ngramTokenMax;
-    final ngramEffectiveMax = ngramTokenMax != null && ngramTokenMax > ngramMax
-        ? ngramTokenMax
-        : ngramMax;
-    return draftMax > ngramEffectiveMax ? draftMax : ngramEffectiveMax;
-  }
 
   String requiredDraftModelPath(String requestedCase) {
     final path = draftModelPath;

@@ -228,21 +228,34 @@ Knobs:
 - `loadMtp` (`ModelParams`): keep it `false` unless bundled MTP tensors will
   be used, because loading them costs memory. An external MTP draft model
   loads as MTP automatically.
-- `speculativeRollbackTokenMax` (`ModelParams`): set it to at least the MTP
-  draft token max for architectures that need rollback snapshots, such as
-  Qwen3.5 MTP.
+- `speculativeRollbackTokenMax` (`ModelParams`): native llama.cpp rejects
+  nonzero reservations for recurrent/hybrid models, including LFM2 and Qwen3.5,
+  before creating a context. Its public API cannot establish a safe graph-node
+  budget for rollback snapshots, and excessive reservations can abort the
+  process. Keep the default `0` for ordinary generation. Speculative strategies
+requiring recurrent rollback remain unsupported until a native runtime can
+  validate that budget; a small value measured on one model is not a safe bound
+  for other models. Nonrecurrent targets retain native handling. WebGPU retains
+  its separate bridge capability contract.
 
 Draftless n-gram strategies depend on the workload. On prompts with little
 repetition they can produce no drafts and run slower than baseline; measured
 results are in
 [Backend benchmarks](./backend-benchmarks#llamacpp-upstream-speculative-parity-check).
 
+The speculative benchmark reserves the maximum effective draft length among
+the selected cases. Draft-model cases do not inherit the default n-gram window
+of 48, and an n-gram window does not inherit an unused draft or `ngramTokenMax`
+setting. Selecting only `baseline` reserves no rollback snapshots. This removes
+unrelated reservations; it does not make recurrent/hybrid reservations safe.
+
 ### DSpark
 
 DSpark (`SpeculativeDecodingConfig.draftDspark(draftModel: ...)`) is an
 experimental, opt-in llama.cpp external-draft strategy mapped to upstream
 `draft-dspark`. The default `v0.5.0` runtime supports it, including
-speculators-format checkpoints and LFM2 target/draft pairs. It is never
+speculators-format checkpoints. Native recurrent/hybrid target pairs such as
+LFM2 remain subject to the rollback restriction above. It is never
 selected automatically, and support still depends on the target, draft and
 backend. If speculative initialization fails, the `LlamaUnsupportedException`
 names the minimum native tag, `b10356`.

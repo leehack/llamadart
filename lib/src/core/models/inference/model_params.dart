@@ -313,11 +313,15 @@ class ModelParams {
 
   /// llama.cpp recurrent-state rollback snapshots per sequence (`n_rs_seq`).
   ///
-  /// Set this to at least the MTP draft token max when using llama.cpp MTP
-  /// speculative decoding with architectures that need bounded rollback
-  /// snapshots, such as Qwen3.5 MTP. The default `0` preserves legacy context
-  /// memory use. llama.cpp may clamp this to zero for unsupported
-  /// architectures.
+  /// The default `0` preserves ordinary context memory use. Native llama.cpp
+  /// rejects nonzero values for recurrent or hybrid models, including LFM2
+  /// and Qwen3.5, with [LlamaUnsupportedException] before context creation:
+  /// the native API cannot establish a safe rollback graph-node budget.
+  /// Speculative decoding that requires those snapshots is unsupported on
+  /// these models until the native runtime can validate the graph capacity.
+  /// Nonrecurrent models retain native handling; llama.cpp may clamp the
+  /// value to zero for architectures without recurrent rollback.
+  /// Other backends, including WebGPU, have their own capability contract.
   final int speculativeRollbackTokenMax;
 
   /// Whether llama.cpp should memory-map model weights. Default `true`.

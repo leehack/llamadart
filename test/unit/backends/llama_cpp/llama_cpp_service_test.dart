@@ -34,6 +34,61 @@ import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 void main() {
+  group('recurrent rollback reservation policy', () {
+    for (final (isRecurrent, isHybrid) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      for (final capacity in [0, 1, 48]) {
+        test('capacity=$capacity recurrent=$isRecurrent hybrid=$isHybrid', () {
+          void validate() => _invokePrivateForTesting<Object?>(
+            LlamaCppService(),
+            '_validateRollbackReservation',
+            [ModelParams(speculativeRollbackTokenMax: capacity)],
+            {#isRecurrent: isRecurrent, #isHybrid: isHybrid},
+          );
+          if (capacity == 0 || (!isRecurrent && !isHybrid)) {
+            expect(validate, returnsNormally);
+          } else {
+            expect(
+              validate,
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'actionable diagnostic',
+                  allOf(
+                    contains('speculativeRollbackTokenMax=$capacity'),
+                    contains('graph'),
+                    contains('speculativeRollbackTokenMax=0'),
+                  ),
+                ),
+              ),
+            );
+          }
+        });
+      }
+    }
+
+    test('production context creation retains nonrecurrent reservations', () {
+      final temp = Directory.systemTemp.createTempSync(
+        'rollback_nonrecurrent_',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      final model = writeSyntheticLlamaGguf(path.join(temp.path, 'llama.gguf'));
+      const params = ModelParams(
+        contextSize: 512,
+        gpuLayers: 0,
+        speculativeRollbackTokenMax: 48,
+      );
+      final handle = service.loadModel(model.path, params);
+      expect(service.createContext(handle, params), greaterThan(0));
+    });
+  });
+
   test('preserved template tokens remain excluded from native text stops', () {
     final stops = _invokePrivateForTesting<List<String>>(
       LlamaCppService(),

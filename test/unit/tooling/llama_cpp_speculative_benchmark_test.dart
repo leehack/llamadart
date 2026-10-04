@@ -145,6 +145,63 @@ void main() {
       expect(capacity, 64);
     });
 
+    for (final (cases, expected) in <(String, int)>[
+      ('baseline', 0),
+      ('baseline,draft-dspark', 2),
+      ('draft-simple', 2),
+      ('draft-eagle3', 2),
+      ('draft-mtp', 2),
+      ('draft-dflash', 2),
+      ('backend-default', 2),
+      ('ngram-cache', 2),
+      ('ngram-mod', 7),
+      ('ngram-simple', 48),
+      ('ngram-map-k', 48),
+      ('ngram-map-k4v', 48),
+      ('mixed-ngram', 48),
+      ('mixed-ngram-mtp', 7),
+      ('mixed-ngram-draft-simple', 7),
+    ]) {
+      test('rollback capacity uses only selected $cases strategies', () {
+        final capacity = speculative_benchmark
+            .debugResolveSpeculativeRollbackCapacityForTesting([
+              '--model',
+              'target.gguf',
+              '--draft-model',
+              'draft.gguf',
+              '--cases',
+              cases,
+              '--draft-token-max',
+              '1,2',
+              '--ngram-token-max',
+              '7',
+              '--ngram-cache-build-static-path',
+              'unused-cache.bin',
+            ]);
+        expect(capacity, expected);
+      });
+    }
+
+    test(
+      'unused draft and ngram-mod capacities do not inflate an m-gram sweep',
+      () {
+        final capacity = speculative_benchmark
+            .debugResolveSpeculativeRollbackCapacityForTesting([
+              '--model',
+              'target.gguf',
+              '--cases',
+              'ngram-simple',
+              '--draft-token-max',
+              '128',
+              '--ngram-token-max',
+              '256',
+              '--ngram-size-m',
+              '8,16',
+            ]);
+        expect(capacity, 16);
+      },
+    );
+
     test('loads bundled MTP only when no external draft is supplied', () {
       expect(
         speculative_benchmark.debugShouldLoadBundledMtpForTesting(const [

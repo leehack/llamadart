@@ -3791,6 +3791,25 @@ class LlamaCppService {
     }
   }
 
+  void _validateRollbackReservation(
+    ModelParams params, {
+    required bool isRecurrent,
+    required bool isHybrid,
+  }) {
+    if (params.speculativeRollbackTokenMax == 0 ||
+        (!isRecurrent && !isHybrid)) {
+      return;
+    }
+    throw LlamaUnsupportedException(
+      'Native llama.cpp recurrent/hybrid models cannot safely reserve '
+      'speculativeRollbackTokenMax=${params.speculativeRollbackTokenMax}: '
+      'the native API does not expose a validated rollback graph-node budget. '
+      'Use speculativeRollbackTokenMax=0 for ordinary generation. '
+      'Speculative decoding that needs recurrent rollback is unsupported '
+      'until the native runtime can validate the required graph capacity.',
+    );
+  }
+
   /// Creates an inference context for the specified [modelHandle].
   ///
   /// Returns a handle to the created context.
@@ -3805,6 +3824,13 @@ class LlamaCppService {
       isAndroid: Platform.isAndroid,
       platform: Platform.operatingSystem,
     );
+    if (params.speculativeRollbackTokenMax > 0) {
+      _validateRollbackReservation(
+        params,
+        isRecurrent: llama_model_is_recurrent(model.pointer),
+        isHybrid: llama_model_is_hybrid(model.pointer),
+      );
+    }
 
     final ctxParams = llama_context_default_params();
     int nCtx = params.contextSize;
