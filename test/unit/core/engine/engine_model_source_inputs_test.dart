@@ -258,7 +258,16 @@ void main() {
           ('/cache/tone.gguf', 0.75),
         ],
       );
-      expect(manager.calls[0].options, same(options));
+      final modelOptions = manager.calls[0].options;
+      expect(modelOptions.bearerToken, options.bearerToken);
+      expect(modelOptions.headers, options.headers);
+      expect(modelOptions.sha256, options.sha256);
+      expect(modelOptions.cachePolicy, options.cachePolicy);
+      expect(modelOptions.cacheDirectory, options.cacheDirectory);
+      expect(modelOptions.resume, options.resume);
+      expect(modelOptions.maxRetries, options.maxRetries);
+      expect(modelOptions.cancelToken, isNot(same(token)));
+      expect(modelOptions.cancelToken!.isCancelled, isFalse);
       final inherited = manager.calls[1].options;
       expect(inherited.bearerToken, isNull);
       expect(inherited.headers, isEmpty);
@@ -267,18 +276,21 @@ void main() {
       expect(inherited.cacheDirectory, '/models/cache');
       expect(inherited.resume, isFalse);
       expect(inherited.maxRetries, 5);
-      expect(inherited.cancelToken, same(token));
+      expect(inherited.cancelToken, same(modelOptions.cancelToken));
       final local = manager.calls[2].options;
       expect(local.bearerToken, isNull);
       expect(local.cachePolicy, ModelCachePolicy.preferCached);
       expect(local.cacheDirectory, isNull);
-      expect(local.cancelToken, same(token));
+      expect(local.cancelToken, same(modelOptions.cancelToken));
       final own = manager.calls[3].options;
       expect(own.bearerToken, 'ADAPTER-TOKEN');
       expect(own.headers, isEmpty);
       expect(own.cacheDirectory, isNull);
       expect(own.cancelToken!.isCancelled, isFalse);
       token.cancel();
+      expect(modelOptions.cancelToken!.isCancelled, isTrue);
+      expect(inherited.cancelToken!.isCancelled, isTrue);
+      expect(local.cancelToken!.isCancelled, isTrue);
       expect(own.cancelToken!.isCancelled, isTrue);
 
       await engine.removeLoraSource(urlAdapter);

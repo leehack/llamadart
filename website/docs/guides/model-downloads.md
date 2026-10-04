@@ -178,6 +178,15 @@ checkpoint and the load throws `LlamaStateException`, which is never retried.
 Other download failures are typically `LlamaModelException`; check
 `cancelToken.isCancelled` in the `catch` to tell a cancel from a failure.
 
+Disposing the engine also cancels package-managed downloads from `setModel`
+and the deprecated `loadModelSource`, including `ModelParams.loras` adapters.
+The load promptly throws `LlamaStateException`, even if a custom resolver or
+download manager ignores cancellation, and no late result loads a model.
+The manager receives a linked token; disposal leaves the caller's model and
+adapter tokens unchanged. The underlying transfer stops at its next
+cancellation checkpoint and can retain a partial file for resume, but never
+promotes a cancelled download to a complete cached file.
+
 `download` applies to every remote file of the load. A local
 `ModelSource.path(...)` takes only the cancel token and, when the model has no
 projector, `sha256`. `ModelDownloadManager.ensureModel(...)` called directly

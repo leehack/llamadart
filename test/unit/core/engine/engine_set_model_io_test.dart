@@ -200,6 +200,65 @@ void main() {
       expect(cachedModels(), isEmpty);
     });
 
+    for (final isAdapter in [false, true]) {
+      final label = isAdapter ? 'adapter' : 'model';
+      test('legacy disposal cancels an HTTP $label transfer without caching '
+          'a complete file or loading the backend', () async {
+        final source = remote();
+        final callerToken = ModelDownloadCancelToken();
+        final adapterToken = ModelDownloadCancelToken();
+        final engine = LlamaEngine(
+          backend,
+          modelDownloadManager: store.downloadManager,
+        );
+        final loading = engine.loadModelSource(
+          isAdapter ? ModelSource.path(local('first.gguf').path) : source,
+          options: ModelLoadOptions(cancelToken: callerToken),
+          modelParams: ModelParams(
+            loras: isAdapter
+                ? [
+                    LoraAdapterConfig.source(
+                      source,
+                      download: ModelLoadOptions(cancelToken: adapterToken),
+                    ),
+                  ]
+                : [],
+          ),
+        );
+        final outcome = expectLater(
+          loading,
+          throwsA(isA<LlamaStateException>()),
+        );
+        try {
+          // Wait until the actual manager consumes the first response chunk,
+          // rather than merely until the server sends it.
+          await downloads.bytesReceived(source);
+          await engine.dispose();
+          await outcome.timeout(const Duration(seconds: 5));
+
+          expect(callerToken.isCancelled, isFalse);
+          expect(adapterToken.isCancelled, isFalse);
+          expect(backend.modelLoadCalls, 0);
+          expect(backend.disposeCalls, 1);
+          expect(engine.isReady, isFalse);
+          expect(cachedModels(), isEmpty);
+        } finally {
+          if (!finish.isCompleted) finish.complete();
+          await outcome;
+          await downloads.settled;
+          await engine.dispose();
+        }
+        expect(cachedModels(), isEmpty);
+        final partials = directory
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => p.basename(file.path) == 'big.gguf.part');
+        expect(partials, hasLength(1));
+        expect(await partials.single.length(), 4);
+        expect(backend.modelLoadCalls, 0);
+      });
+    }
+
     test("the caller's cancel token stops the download and the loaded model "
         'stays', () async {
       final first = local('first.gguf');
@@ -266,6 +325,10 @@ class _TrackingManager implements ModelDownloadManager {
   final ModelDownloadManager _manager;
   final List<Future<void>> _downloads = <Future<void>>[];
   int running = 0;
+  final Map<String, Completer<void>> _firstBytes = {};
+
+  Future<void> bytesReceived(ModelSource source) =>
+      _firstBytes.putIfAbsent(source.cacheKey, Completer<void>.new).future;
 
   Future<void> get settled => Future.wait(_downloads);
 
@@ -279,7 +342,16 @@ class _TrackingManager implements ModelDownloadManager {
     final download = _manager.ensureModel(
       source,
       options: options,
-      onProgress: onProgress,
+      onProgress: (progress) {
+        if (progress.receivedBytes > 0) {
+          final received = _firstBytes.putIfAbsent(
+            source.cacheKey,
+            Completer<void>.new,
+          );
+          if (!received.isCompleted) received.complete();
+        }
+        onProgress?.call(progress);
+      },
     );
     _downloads.add(
       download.then<void>((_) {}, onError: (_) {}).whenComplete(() {

@@ -23,6 +23,11 @@ Linux and web. Full docs: https://llamadart.leehack.com
   long-lived owner (service, provider or `State`), never in `build()`.
   `dispose()` is final: a later load or request throws `LlamaStateException`,
   so use `setModel` to switch models and a new engine after `dispose()`.
+  Disposal promptly rejects a running `setModel` or deprecated
+  `loadModelSource` and cancels its package-managed model/LoRA downloads.
+  Caller-owned cancel tokens remain unchanged; transfers stop cooperatively
+  at their next checkpoint. Custom resolvers/managers must poll the linked
+  token they receive, even though disposal no longer waits for their work.
 - `LlamaBackend()` routes by model format: LiteRT-LM bundles run on LiteRT-LM
   and GGUF on llama.cpp. Native targets read the file header, so extensionless
   files load; a header contradicting the extension throws

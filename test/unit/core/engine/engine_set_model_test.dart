@@ -1076,6 +1076,239 @@ void main() {
   });
 
   group('deprecated loaders', () {
+    for (final blocked in [remoteModel, adapter]) {
+      final label = blocked == remoteModel ? 'model' : 'adapter';
+      for (final failsLate in [false, true]) {
+        test('dispose cancels a legacy $label download without cancelling '
+            'caller tokens, even when it ${failsLate ? 'fails' : 'returns'} '
+            'late', () async {
+          final backend = _Backend();
+          final manager = _Manager(
+            cacheFiles(),
+            gated: {blocked},
+            failing: failsLate ? {blocked} : {},
+            ignoresCancel: true,
+          );
+          final engine = LlamaEngine(backend, modelDownloadManager: manager);
+          final callerToken = ModelDownloadCancelToken();
+          final adapterToken = ModelDownloadCancelToken();
+          final loading = engine.loadModelSource(
+            remoteModel,
+            options: ModelLoadOptions(cancelToken: callerToken),
+            modelParams: ModelParams(
+              loras: [
+                LoraAdapterConfig.source(
+                  adapter,
+                  download: ModelLoadOptions(cancelToken: adapterToken),
+                ),
+              ],
+            ),
+          );
+          final outcome = expectLater(
+            loading,
+            throwsA(isA<LlamaStateException>()),
+          );
+          try {
+            await manager.started(blocked);
+            final token = manager.options.last.cancelToken!;
+            expect(token.isCancelled, isFalse);
+
+            await engine.dispose();
+
+            expect(token.isCancelled, isTrue);
+            expect(callerToken.isCancelled, isFalse);
+            expect(adapterToken.isCancelled, isFalse);
+            await outcome.timeout(const Duration(seconds: 5));
+            expect(backend.events, isEmpty);
+            expect(backend.disposeCalls, 1);
+          } finally {
+            manager.release(blocked);
+            await outcome;
+            await engine.dispose();
+          }
+          await pumpEventQueue();
+          expect(backend.events, isEmpty);
+          expect(engine.isReady, isFalse);
+          if (blocked == remoteModel) {
+            expect(manager.sources, [remoteModel.cacheKey]);
+          }
+        });
+      }
+
+      test('dispose stops a cooperative legacy $label download', () async {
+        final backend = _Backend();
+        final manager = _Manager(cacheFiles(), polling: {blocked});
+        final engine = LlamaEngine(backend, modelDownloadManager: manager);
+        final callerToken = ModelDownloadCancelToken();
+        final loading = engine.loadModelSource(
+          remoteModel,
+          options: ModelLoadOptions(cancelToken: callerToken),
+          modelParams: ModelParams(loras: [LoraAdapterConfig.source(adapter)]),
+        );
+        final outcome = expectLater(
+          loading,
+          throwsA(isA<LlamaStateException>()),
+        );
+        try {
+          await manager.started(blocked);
+          final token = manager.options.last.cancelToken!;
+          await engine.dispose();
+
+          expect(token.isCancelled, isTrue);
+          expect(callerToken.isCancelled, isFalse);
+          await outcome.timeout(const Duration(seconds: 5));
+          expect(backend.events, isEmpty);
+          expect(engine.isReady, isFalse);
+        } finally {
+          callerToken.cancel();
+          await outcome;
+          await engine.dispose();
+        }
+      });
+
+      test(
+        'caller cancellation still stops a legacy $label download',
+        () async {
+          final backend = _Backend();
+          final manager = _Manager(cacheFiles(), polling: {blocked});
+          final engine = LlamaEngine(backend, modelDownloadManager: manager);
+          final token = ModelDownloadCancelToken();
+          final loading = engine.loadModelSource(
+            remoteModel,
+            options: ModelLoadOptions(cancelToken: token),
+            modelParams: ModelParams(
+              loras: [LoraAdapterConfig.source(adapter)],
+            ),
+          );
+          final outcome = expectLater(
+            loading,
+            throwsA(isA<LlamaStateException>()),
+          );
+          await manager.started(blocked);
+          token.cancel();
+          await outcome;
+
+          expect(backend.events, isEmpty);
+          expect(engine.isDisposed, isFalse);
+          await engine.dispose();
+        },
+      );
+    }
+
+    test(
+      'dispose abandons every legacy resolution alongside setModel',
+      () async {
+        final backend = _Backend();
+        final sources = [remoteModel, otherModel, adapter];
+        final manager = _Manager(
+          cacheFiles(),
+          gated: sources.toSet(),
+          ignoresCancel: true,
+        );
+        final engine = LlamaEngine(backend, modelDownloadManager: manager);
+        final outcomes = [
+          for (final source in sources.take(2))
+            expectLater(
+              engine.loadModelSource(source),
+              throwsA(isA<LlamaStateException>()),
+            ),
+          expectLater(
+            engine.setModel(LlamaModel(adapter)),
+            throwsA(isA<LlamaStateException>()),
+          ),
+        ];
+        try {
+          await Future.wait(sources.map(manager.started));
+          await engine.dispose();
+
+          expect(
+            manager.options.map((options) => options.cancelToken?.isCancelled),
+            everyElement(isTrue),
+          );
+          await Future.wait(outcomes).timeout(const Duration(seconds: 5));
+          expect(backend.disposeCalls, 1);
+        } finally {
+          for (final source in sources) {
+            manager.release(source);
+          }
+          await Future.wait(outcomes);
+          await engine.dispose();
+        }
+        await pumpEventQueue();
+        expect(backend.events, isEmpty);
+        expect(engine.isReady, isFalse);
+      },
+    );
+
+    for (final failsLate in [false, true]) {
+      test(
+        'dispose abandons a legacy resolver that '
+        '${failsLate ? 'fails' : 'returns'} late before any download',
+        () async {
+          final backend = _Backend();
+          final manager = _Manager(cacheFiles());
+          final resolver = _GatedResolver(failsLate: failsLate);
+          final engine = LlamaEngine(
+            backend,
+            modelResolver: resolver,
+            modelDownloadManager: manager,
+          );
+          final callerToken = ModelDownloadCancelToken();
+          final outcome = expectLater(
+            engine.loadModelSource(
+              remoteModel,
+              options: ModelLoadOptions(cancelToken: callerToken),
+            ),
+            throwsA(isA<LlamaStateException>()),
+          );
+          try {
+            await resolver.started.future;
+            await engine.dispose();
+
+            expect(resolver.token!.isCancelled, isTrue);
+            expect(callerToken.isCancelled, isFalse);
+            await outcome.timeout(const Duration(seconds: 5));
+          } finally {
+            resolver.release.complete();
+            await outcome;
+            await engine.dispose();
+          }
+          await pumpEventQueue();
+          expect(manager.sources, isEmpty);
+          expect(backend.events, isEmpty);
+        },
+      );
+    }
+
+    test('a legacy resolver that disposes synchronously rejects the load '
+        'without waiting for its result', () async {
+      final backend = _Backend();
+      final manager = _Manager(cacheFiles());
+      final resolver = _GatedResolver(failsLate: false);
+      late final LlamaEngine engine;
+      resolver.onResolve = () => unawaited(engine.dispose());
+      engine = LlamaEngine(
+        backend,
+        modelResolver: resolver,
+        modelDownloadManager: manager,
+      );
+      final outcome = expectLater(
+        engine.loadModelSource(remoteModel),
+        throwsA(isA<LlamaStateException>()),
+      );
+      try {
+        await resolver.started.future;
+        await outcome.timeout(const Duration(seconds: 5));
+      } finally {
+        resolver.release.complete();
+        await outcome;
+        await engine.dispose();
+      }
+      await pumpEventQueue();
+      expect(manager.sources, isEmpty);
+      expect(backend.events, isEmpty);
+    });
+
     test('loadModelSource throws for a loaded engine before it resolves or '
         'downloads', () async {
       final manager = _Manager(cacheFiles());
@@ -1510,6 +1743,29 @@ class _Manager implements ModelDownloadManager {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _GatedResolver implements ModelResolver {
+  _GatedResolver({required this.failsLate});
+
+  final bool failsLate;
+  void Function()? onResolve;
+  final Completer<void> started = Completer<void>();
+  final Completer<void> release = Completer<void>();
+  ModelDownloadCancelToken? token;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async {
+    token = request.options.cancelToken;
+    onResolve?.call();
+    started.complete();
+    await release.future;
+    if (failsLate) throw LlamaModelException('Resolver failed late.');
+    return const DefaultModelResolver().resolve(source, request);
+  }
 }
 
 class _CountingResolver implements ModelResolver {
