@@ -49,7 +49,9 @@ description: >-
   without directories or hosts, or `llama_model`. Compare it with the file
   name, and set your own model id on OpenAI-compatible responses: a URL whose
   last segment is a token reports that token (unless it repeats the URL's
-  userinfo credential).
+  userinfo credential). LiteRT-LM Web omits a URL-derived name when its decoded
+  basename contains URL delimiters, preventing encoded query text from becoming
+  model metadata.
 - For strict JSON, use `LlamaStructuredOutput` with
   `engine.createStructuredJson`; it constrains decoding with a grammar and
   validates the final output; `session.createStructuredJson(parts, output:)`

@@ -282,6 +282,8 @@ void main() {
       ('https://example.com/m/qwen%20100%25.litertlm', 'qwen 100%.litertlm'),
       ('https://example.com/m/qwen 100%.litertlm', 'qwen 100%.litertlm'),
       ('https://example.com/m%C3.litertlm', null),
+      ('https://example.com/m%3Ftoken%3DMetadataSecret.litertlm', null),
+      ('https://example.com/m%2FMetadataSecret.litertlm', null),
     ]) {
       _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
       final backend = LiteRtLmBackend();

@@ -4,6 +4,9 @@
   before any output; structured JSON cancellation now reports a state error.
   A model change during draft-model resolution also rolls back the turn;
   resets during context preparation preserve the replacement conversation.
+- Redacted URL credentials and signed query strings from redirected download
+  failures, download snapshots and invalid model-source errors, including
+  slashless URLs; LiteRT-LM Web model names reject decoded URL delimiters.
 
 - **Breaking (Preview):** `ImageGenerationEngine.generate` returns
   `Future<ImageGenerationTask>`; await it before reading `events` or calling

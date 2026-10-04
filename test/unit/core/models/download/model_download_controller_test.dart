@@ -1,10 +1,37 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
   group('ModelDownloadController', () {
+    test('snapshots redact bare and JSON-escaped source secrets', () async {
+      const url =
+          'https://alice:SnapshotPassword@example.com/model.gguf?token=SnapshotTokenValue';
+      final source = ModelSource.url(Uri.parse(url));
+      final manager = _FakeDownloadManager()
+        ..error = LlamaModelException(
+          '${jsonEncode(url).replaceAll('/', r'\/')} token=SnapshotTokenValue password SnapshotPassword '
+          r'ftp:\/\/bob:RedirectSecret@cdn.example.com/m.gguf?sig=OtherSecret',
+        );
+      final controller = ModelDownloadController(manager: manager);
+      addTearDown(controller.dispose);
+      await expectLater(
+        controller.start(source),
+        throwsA(isA<LlamaModelException>()),
+      );
+      expect(
+        controller.snapshot.errorMessage,
+        allOf(
+          isNot(contains('SnapshotPassword')),
+          isNot(contains('SnapshotTokenValue')),
+          isNot(contains('RedirectSecret')),
+          isNot(contains('OtherSecret')),
+        ),
+      );
+    });
+
     test(
       'returns cached remote entries without reporting a download',
       () async {
