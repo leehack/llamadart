@@ -80,6 +80,73 @@ void main() {
     );
   }
 
+  for (final device in [ComputeDevice.auto, ComputeDevice.cpu]) {
+    for (final operation in ['unload', 'dispose', 'replace']) {
+      test(
+        '$operation cancels a real GGUF tool-loop answer (${device.name})',
+        skip: skip,
+        () async {
+          final observer = _FirstReplyObserver();
+          final params = ModelParams(contextSize: 2048, device: device);
+          final engine = await LlamaEngine.load(
+            gguf(),
+            params: params,
+            observers: [observer],
+          );
+          addTearDown(engine.dispose);
+          final session = ChatSession(engine, maxContextTokens: 0);
+          final running = session.sendWithTools(
+            'Count from 1 to 1000, writing each number on a new line.',
+            tools: const [],
+            enableThinking: false,
+            params: const GenerationParams(
+              maxTokens: 1024,
+              streamBatchTokenThreshold: 1,
+              streamBatchByteThreshold: 1,
+            ),
+          );
+          await observer.firstReply.future.timeout(const Duration(seconds: 30));
+          switch (operation) {
+            case 'unload':
+              await engine.unloadModel();
+            case 'dispose':
+              await engine.dispose();
+            case 'replace':
+              await engine.setModel(gguf(), params: params);
+          }
+          final result = await running;
+          expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+          expect(result.text, isNotEmpty);
+          expect(result.rolledBack, isFalse);
+          expect(session.history.last.role, LlamaChatRole.assistant);
+          expect(session.history.last.content, result.text);
+
+          if (operation == 'unload') {
+            await engine.setModel(gguf(), params: params);
+          }
+          if (operation != 'dispose') {
+            session.reset();
+            final next = await session.sendWithTools(
+              'Say hello.',
+              tools: const [],
+              enableThinking: false,
+              params: const GenerationParams(maxTokens: 16),
+            );
+            // A short sampling budget may truncate a valid fresh reply.
+            expect(
+              next.stopReason,
+              isIn([
+                LlamaToolLoopStopReason.completed,
+                LlamaToolLoopStopReason.truncated,
+              ]),
+            );
+            expect(next.text, isNotEmpty);
+          }
+        },
+      );
+    }
+  }
+
   test(
     'a projector that does not fit the model leaves nothing loaded',
     skip: skip,
@@ -330,4 +397,31 @@ void main() {
       },
     );
   });
+}
+
+final class _FirstReplyObserver extends LlamaEngineObserver {
+  final firstReply = Completer<void>();
+
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation operation) =>
+      operation is LlamaChatOperation ? _ReplyObserver(firstReply) : null;
+}
+
+final class _ReplyObserver extends LlamaOperationObserver {
+  _ReplyObserver(this.firstReply);
+
+  final Completer<void> firstReply;
+
+  @override
+  void onChunk(LlamaCompletionChunk chunk) {
+    if (!firstReply.isCompleted &&
+        chunk.choices.any(
+          (choice) => choice.delta.content?.isNotEmpty ?? false,
+        )) {
+      firstReply.complete();
+    }
+  }
+
+  @override
+  void onEnd(LlamaOperationResult result) {}
 }

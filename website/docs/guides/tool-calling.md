@@ -84,7 +84,8 @@ continues the current turn.
   `truncated`, without running its calls: its text may be an unfinished
   tool call or thinking, not an answer. `result.completion` keeps it; raise
   `maxTokens` and send the turn again.
-- **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
+- **Cancel:** `engine.cancelGeneration()`, model unload or replacement, and
+  engine disposal stop the loop with `cancelled`.
   Running tools finish first. A partial answer stays as the turn's reply.
 - `toolChoice` applies to the first request only, so `ToolChoice.required`
   forces one call and later rounds can answer.

@@ -23,6 +23,11 @@ or shipping runtimes the app does not use.
   `State.dispose` is synchronous, so wrap the call in `unawaited(...)`.
   `dispose()` waits for an in-flight load or unload, then unloads the model
   and releases the backend; that load then throws `LlamaStateException`.
+  Model unload, replacement, and disposal also cancel active chat-session
+  requests: partial replies stay in history, while requests stopped before
+  output roll back and throw `LlamaStateException`. Tool loops report
+  `LlamaToolLoopStopReason.cancelled`, wait for running handlers, and roll back
+  unfinished tool turns before another model request.
 - Quitting a desktop app (Cmd-Q, closing the last window) does not run
   `State.dispose`. Also dispose `LlamaEngine`, `DecisionEngine` and
   `ImageGenerationEngine` instances from

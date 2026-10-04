@@ -177,6 +177,13 @@ before that point leaves the old model loaded; one after it leaves nothing
 loaded. On web the runtime fetches the files during the load, after the old
 model is unloaded.
 
+Unload, replacement, and disposal stop active chat-session requests with the
+same cancellation behavior as `cancelGeneration()`. A partial reply stays in
+history; a request stopped before any reply rolls back and throws
+`LlamaStateException`. Tool loops report `LlamaToolLoopStopReason.cancelled`;
+running tool handlers finish, and unfinished tool turns roll back before
+another model request.
+
 Replacing or unloading a model also releases its multimodal projector and
 active LoRA adapters. Pass the new model's projector as
 `LlamaModel(source, projector: ...)`; adapters listed in `ModelParams.loras`
@@ -186,6 +193,10 @@ be set again. `unloadModel()` frees the model without loading another.
 ## Readiness and serialized loads
 
 - Check `engine.isReady` before inference.
+- A standalone projector load throws `LlamaStateException` if the model is
+  unloaded, replaced, or disposed while its context is being created. Model
+  teardown waits for that context to be released. Prefer
+  `setModel(LlamaModel(source, projector: ...))` to load both together.
 - `setModel` and `unloadModel` do not queue. While a `setModel` runs, another
   `setModel` or an `unloadModel` throws `LlamaStateException`. Stop the
   running load with its `download` cancel token, or serialize model switches
