@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed LiteRT-LM speech recognition startup failures hanging indefinitely;
+  failed workers now release their resources and allow another attempt.
 - Kept cancelled replies out of reset chats and rolled back turns cancelled
   before any output; structured JSON cancellation now reports a state error.
   A model change during draft-model resolution also rolls back the turn;
