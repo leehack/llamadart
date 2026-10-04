@@ -32,12 +32,11 @@ description: >-
   the turn's messages, including results of tools that ran. To resume, add
   them back, answer `pendingToolCalls` and call `completeWithTools(const [])`.
   A cancel during the answer keeps the partial answer, on WebGPU too; a
-  cancel before its first token may keep an empty answer or roll back,
-  depending on timing, backend, template and parser, so check
-  `result.rolledBack`. For a new chat, call `engine.cancelGeneration()`,
-  await the loop, then call `session.reset()`: a reset during generation can
-  leave the cancelled reply in the new chat
-  ([#888](https://github.com/leehack/llamadart/issues/888)).
+  cancel before any reply content rolls back; empty terminal chunks are not
+  an answer. Check `result.rolledBack`. For a new chat, call
+  `engine.cancelGeneration()` and `session.reset()`: a late reply from the
+  old turn is not added to the reset history. Await the old loop before
+  starting another generation on the same engine.
 - `handler` is optional. Leave it out for a tool the app runs itself (user
   approval, remote execution): give `onToolCall`, or let the loop stop with
   `unhandledToolCalls`, add a result for every pending call with

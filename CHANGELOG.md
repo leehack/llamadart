@@ -1,5 +1,10 @@
 ## Unreleased
 
+- Kept cancelled replies out of reset chats and rolled back turns cancelled
+  before any output; structured JSON cancellation now reports a state error.
+  A model change during draft-model resolution also rolls back the turn;
+  resets during context preparation preserve the replacement conversation.
+
 - **Breaking (Preview):** `ImageGenerationEngine.generate` returns
   `Future<ImageGenerationTask>`; await it before reading `events` or calling
   `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).
