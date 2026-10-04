@@ -12,16 +12,18 @@ import 'engine_test.dart' show MockLlamaBackend;
 
 void main() {
   late Directory directory;
+  late _TrackingManager downloads;
   late ModelFileStore store;
   late MockLlamaBackend backend;
 
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('llamadart_set_model_');
-    store = ModelFileStore(
-      downloadManager: DefaultModelDownloadManager.appPrivate(
+    downloads = _TrackingManager(
+      DefaultModelDownloadManager.appPrivate(
         cacheDirectory: p.join(directory.path, 'cache'),
       ),
     );
+    store = ModelFileStore(downloadManager: downloads);
     backend = MockLlamaBackend();
   });
 
@@ -165,8 +167,9 @@ void main() {
 
       await engine.dispose();
       await outcome;
+      expect(downloads.running, 1);
       finish.complete();
-      await pumpEventQueue(times: 50);
+      await downloads.settled;
 
       expect(backend.modelLoadCalls, 0);
       expect(backend.disposeCalls, 1);
@@ -230,4 +233,39 @@ void main() {
       await engine.dispose();
     });
   });
+}
+
+/// Runs the package download manager and tells when its downloads have
+/// ended, so a test can wait for one the engine no longer awaits.
+class _TrackingManager implements ModelDownloadManager {
+  _TrackingManager(this._manager);
+
+  final ModelDownloadManager _manager;
+  final List<Future<void>> _downloads = <Future<void>>[];
+  int running = 0;
+
+  Future<void> get settled => Future.wait(_downloads);
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) {
+    running += 1;
+    final download = _manager.ensureModel(
+      source,
+      options: options,
+      onProgress: onProgress,
+    );
+    _downloads.add(
+      download.then<void>((_) {}, onError: (_) {}).whenComplete(() {
+        running -= 1;
+      }),
+    );
+    return download;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
