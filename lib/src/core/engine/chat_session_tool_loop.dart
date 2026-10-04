@@ -60,7 +60,8 @@ enum LlamaToolLoopStopReason {
   /// rolled back.
   contextExceeded,
 
-  /// `LlamaEngine.cancelGeneration` was called while the loop ran. A reply
+  /// Generation was cancelled while the loop ran by
+  /// `LlamaEngine.cancelGeneration`, model unload/replacement or disposal. A reply
   /// without tool calls stays in the history as the turn's answer, even an
   /// empty one; otherwise the turn was rolled back.
   ///
