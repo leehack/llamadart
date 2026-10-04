@@ -95,17 +95,15 @@ Future<List<({String text, double score})>> search(
 }
 
 Future<void> main() async {
-  final LlamaEngine embedder = LlamaEngine(LlamaBackend());
-  try {
-    await embedder.loadModelSource(
+  final LlamaEngine embedder = await LlamaEngine.load(
+    LlamaModel(
       ModelSource.parse(
         'hf://ggml-org/embeddinggemma-300M-GGUF/embeddinggemma-300M-Q8_0.gguf',
       ),
-      modelParams: const ModelParams(
-        contextSize: 2048,
-        maxParallelSequences: 8,
-      ),
-    );
+    ),
+    params: const ModelParams(contextSize: 2048, maxParallelSequences: 8),
+  );
+  try {
     final List<({String text, double score})> hits = await search(
       embedder,
       <String>[

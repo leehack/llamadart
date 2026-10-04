@@ -16,15 +16,18 @@ description: >-
 - Loading, chat and streaming basics are in the llamadart-getting-started and
   llamadart-chat-streaming skills; this skill only covers media.
 - Pick the flow by model format:
-  - GGUF (llama.cpp): load the model, then its matching projector with
-    `engine.loadMultimodalProjector(path)` or
-    `engine.loadMultimodalProjectorSource(ModelSource.parse(...))`. The
-    projector must come from the same model family and release as the model.
+  - GGUF (llama.cpp): load the model and its matching projector in one call,
+    `LlamaModel(source, projector: projectorSource)` passed to
+    `LlamaEngine.load` or `setModel`. The projector must come from the same
+    model family and release as the model.
   - `.litertlm` (LiteRT-LM): the bundle carries its own media processors. Do
-    not load a projector; `loadMultimodalProjector*` throws
-    `LlamaUnsupportedException` on LiteRT-LM.
-- Load the model first. Either projector call before a model is loaded
-  throws `LlamaContextException`. A projector that is missing or
+    not pass a projector: `LlamaModel.projector` throws
+    `LlamaUnsupportedException`, before any download when the file name or
+    `ModelSource.format` gives the format, and so does
+    `loadMultimodalProjectorSource` on LiteRT-LM.
+- Use `engine.loadMultimodalProjectorSource(source, download: ...)` only to
+  change the projector of a model that is already loaded; before a model is
+  loaded it throws `LlamaContextException`. A projector that is missing or
   rejected by the runtime throws `LlamaModelException`.
 - After loading the model and any projector, read
   `final caps = await engine.capabilities;` and check `caps.supportsVision`
@@ -58,8 +61,9 @@ description: >-
   frames as `LlamaImageContent` instead.
 - Loading a second projector replaces the first. `unloadMultimodalProjector()`
   drops only the projector; `unloadModel()` and `dispose()` also release it.
-  When switching GGUF models, load the new model's projector after the new
-  model: the old one is gone with `unloadModel()` and must not be reused.
+  `setModel` replaces the loaded model and its projector, with no
+  `unloadModel()` first: pass the new model's projector in its `LlamaModel`,
+  because the old one is gone and must not be reused.
 - Projector offload follows the model load: `ModelParams(gpuLayers: 0)` or
   `preferredBackend: GpuBackend.cpu` also keeps the projector on CPU. If
   multimodal output is wrong or crashes on GPU, get a CPU baseline first.
@@ -71,12 +75,13 @@ description: >-
   tighter than for text; images in history keep consuming context on later
   turns.
 - Web:
-  - WebGPU loads projectors by URL. `loadMultimodalProjectorSource` accepts
-    remote unauthenticated URLs only; local paths and `ModelLoadOptions` that
-    need the native cache (`bearerToken`/`headers`, `sha256`, `cachePolicy`,
-    `cacheDirectory`, `cancelToken`, `resume: false`, custom `maxRetries`)
-    throw `LlamaUnsupportedException`.
-  - Local file paths are native-only; on web pass browser file bytes or URLs.
+  - WebGPU loads projectors by URL: a remote unauthenticated URL, or a
+    `ModelSource.path` that is a URL relative to the document or a `blob:`
+    URL. `ModelLoadOptions` that need the native cache
+    (`bearerToken`/`headers`, `sha256`, `cachePolicy`, `cacheDirectory`,
+    `cancelToken`, `resume: false`, custom `maxRetries`) throw
+    `LlamaUnsupportedException`.
+  - Media file paths are native-only; on web pass browser file bytes or URLs.
   - LiteRT-LM on web is text-only.
 - `LlamaAudioContent` is generic audio routed through generation, not a
   transcript API. For transcription use `SpeechToTextEngine.load` or
@@ -92,11 +97,13 @@ GGUF model plus projector, with capability checks before sending an image:
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  final LlamaEngine engine = await LlamaEngine.load(
+    LlamaModel(
+      ModelSource.path('/models/gemma-3-4b-it-Q4_K_M.gguf'),
+      projector: ModelSource.path('/models/mmproj-gemma-3-4b-it.gguf'),
+    ),
+  );
   try {
-    await engine.loadModel('/models/gemma-3-4b-it-Q4_K_M.gguf');
-    await engine.loadMultimodalProjector('/models/mmproj-gemma-3-4b-it.gguf');
-
     final LlamaEngineCapabilities caps = await engine.capabilities;
     if (!caps.supportsVision) {
       throw StateError('This projector does not provide vision input.');
@@ -132,11 +139,13 @@ Future<bool> switchVisionModel(
   required String modelUri,
   required String projectorUri,
 }) async {
-  if (engine.isReady) {
-    await engine.unloadModel();
-  }
-  await engine.loadModelSource(ModelSource.parse(modelUri));
-  await engine.loadMultimodalProjectorSource(ModelSource.parse(projectorUri));
+  // setModel replaces the loaded model and its projector.
+  await engine.setModel(
+    LlamaModel(
+      ModelSource.parse(modelUri),
+      projector: ModelSource.parse(projectorUri),
+    ),
+  );
   return (await engine.capabilities).supportsVision;
 }
 ```
@@ -154,7 +163,9 @@ Future<String> describeClip(
   String imagePath,
   String wavPath,
 ) async {
-  await engine.loadModel('/models/gemma-4-E2B-it.litertlm');
+  await engine.setModel(
+    LlamaModel(ModelSource.path('/models/gemma-4-E2B-it.litertlm')),
+  );
 
   final Uint8List imageBytes = await File(imagePath).readAsBytes();
   final Uint8List audioBytes = await File(wavPath).readAsBytes();

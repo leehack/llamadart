@@ -54,7 +54,7 @@ sandbox or container.
 - Qwen3.6 presets built from `ModelParams` and `GenerationParams`, including
   presence penalty and explicit batch sizes
   ([Performance tuning](../guides/performance-tuning)).
-- An exact `hf://` source passed to `LlamaEngine.loadModelSource`, with
+- An exact `hf://` source passed to `LlamaEngine.setModel`, with
   resumable downloads into the shared cache
   ([Downloads and cache](../guides/model-downloads)).
 - Cancellable downloads, generation and shell process trees, with bounded

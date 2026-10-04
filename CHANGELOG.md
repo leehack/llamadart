@@ -1,5 +1,43 @@
 ## Unreleased
 
+- `LlamaEngine.load(LlamaModel(source, projector:), params:, download:,
+  onProgress:, store:)` creates an engine and loads a model with its
+  projector in one atomic call, and `setModel` loads or replaces the model of
+  an engine: the loaded model keeps serving until every new file has
+  downloaded, except on the Web, where the runtime unloads it before it
+  fetches the new one. A class that `implements LlamaEngine` must add
+  `setModel`, and an override of `loadMultimodalProjectorSource` its new
+  `download` parameter
+  ([#846](https://github.com/leehack/llamadart/issues/846)).
+- **Deprecated:** `LlamaEngine.loadModel`, `loadModelSource`,
+  `loadModelFromUrl` and `loadMultimodalProjector`; use `LlamaEngine.load` or
+  `setModel`. `loadMultimodalProjectorSource(options:)` is now `download:`.
+  They still work until 1.0
+  ([#846](https://github.com/leehack/llamadart/issues/846)).
+- **Fixed:** a load checks that it can proceed before it downloads:
+  `LlamaEngine.load` and `setModel` reject a projector for a LiteRT-LM model
+  and `ComputeDevice.npu` for a GGUF first, and the deprecated
+  `loadModelSource` throws for an already loaded engine first
+  ([#846](https://github.com/leehack/llamadart/issues/846)).
+- **Fixed:** `LlamaEngine.dispose()` stops the downloads of a running
+  `setModel` at once, and `unloadModel()` and `dispose()` stop a
+  `loadMultimodalProjectorSource` download instead of waiting for it; the
+  load throws `LlamaStateException`
+  ([#895](https://github.com/leehack/llamadart/issues/895),
+  [#896](https://github.com/leehack/llamadart/issues/896)).
+- **Behavior change:** on the Web, a `ModelSource.path` loads as a URL
+  relative to the document, or as a `blob:` URL, for models, projectors, LoRA
+  adapters and draft models; it used to throw `LlamaUnsupportedException`
+  ([#846](https://github.com/leehack/llamadart/issues/846)).
+- **Fixed:** the llama.cpp WebGPU bridge resolves a relative model,
+  projector, LoRA or draft model URL against the document, as LiteRT-LM Web
+  does; its worker resolved one against `webgpu_bridge/`, so the fetch
+  failed ([#846](https://github.com/leehack/llamadart/issues/846)).
+- A local `ModelSource.path` whose file name holds `%2F` or `%5C`, or whose
+  directory is named `%2e` or `%2e%2e`, loads through `LlamaEngine.load`,
+  `setModel`, `loadMultimodalProjectorSource`, `setLoraSource`,
+  `ModelParams.loras`, draft models and the image, decision and speech
+  engines' `load` ([#846](https://github.com/leehack/llamadart/issues/846)).
 - **Breaking (Preview):** `ImageGenerationEngine.generate` returns
   `Future<ImageGenerationTask>`; await it before reading `events` or calling
   `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).
@@ -34,7 +72,7 @@
   `LlamaStateException`, and Web backend calls before a model load throw
   `LlamaStateException`, instead of `ArgumentError` or `StateError`; a failed
   load's `details` is now the cause's message instead of a `{type, message}`
-  map, and the not-ready error names `loadModelSource()`
+  map, and the not-ready error names `LlamaEngine.load` and `setModel`
   ([#843](https://github.com/leehack/llamadart/issues/843)).
 - **Deprecated, behavior change:** `sourceLangCode` and `targetLangCode` on
   `LlamaEngine.create`, `createStructuredJson`, `chatTemplate` and

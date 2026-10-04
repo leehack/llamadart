@@ -442,7 +442,7 @@ void main() {
     expect(() => agent.initialize(), throwsA(isA<StateError>()));
   });
 
-  test('loads Hugging Face sources through engine.loadModelSource', () async {
+  test('loads Hugging Face sources through engine.setModel', () async {
     final remoteBackend = _QueuedBackend();
     final cacheDirectory = p.join(workspace.path, 'managed-cache');
     final cachedPath = p.join(cacheDirectory, 'cached-model.gguf');
@@ -466,7 +466,7 @@ void main() {
     expect(downloadManager.source?.filePath, 'models/model.gguf');
     expect(downloadManager.options?.cacheDirectory, cacheDirectory);
     expect(downloadManager.options?.cancelToken, isNotNull);
-    expect(progress.single.fraction, 0.5);
+    expect(progress.map((event) => event.fraction), [0.5, 1]);
     expect(remoteBackend.lastModelPath, cachedPath);
     expect(remoteAgent.loadedModelName, 'model.gguf');
     expect(remoteAgent.isReady, isTrue);

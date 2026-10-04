@@ -408,7 +408,7 @@ void main() {
         isA<LlamaStateException>().having(
           (e) => e.message,
           'message',
-          contains('loadModelSource()'),
+          contains('LlamaEngine.load or setModel'),
         ),
       ),
     );

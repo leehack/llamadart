@@ -101,11 +101,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadModel() async {
     setState(() => _status = 'Downloading model...');
     try {
-      await _engine.loadModelSource(
-        ModelSource.parse(modelUri),
-        modelParams: const ModelParams(contextSize: 2048),
+      await _engine.setModel(
+        LlamaModel(ModelSource.parse(modelUri)),
+        params: const ModelParams(contextSize: 2048),
         // Web backends own the download and reject cancellation tokens.
-        options: kIsWeb
+        download: kIsWeb
             ? ModelLoadOptions.defaults
             : ModelLoadOptions(cancelToken: _downloadCancel),
         onProgress: (ModelDownloadProgress progress) {
@@ -264,7 +264,7 @@ package cache; later launches load it from there.
   the engine. Quitting a desktop app does not run `State.dispose`, so
   `onExitRequested` disposes the engine too; on macOS Metal, a model still
   loaded at exit aborts the process. An engine holds one model at a time.
-- **Download with progress.** `loadModelSource` resolves the `hf://` reference,
+- **Download with progress.** `setModel` resolves the `hf://` reference,
   downloads it with resume support and reports `ModelDownloadProgress`.
   `fraction` is `null` while the total size is unknown, which
   `LinearProgressIndicator` shows as indeterminate. Web backends download

@@ -65,10 +65,12 @@ the llama.cpp WebGPU bridge. For a URL without a model extension, name the
 format:
 
 ```dart
-await engine.loadModelSource(
-  ModelSource.url(
-    Uri.parse('https://example.com/download?id=42'),
-    format: ModelFormat.liteRtLm,
+await engine.setModel(
+  LlamaModel(
+    ModelSource.url(
+      Uri.parse('https://example.com/download?id=42'),
+      format: ModelFormat.liteRtLm,
+    ),
   ),
 );
 ```
@@ -83,12 +85,14 @@ chat-template defaults from the file name, so pass a `fileName:` such as
 final engine = LlamaEngine(LlamaBackend());
 
 // GGUF routes to llama.cpp.
-await engine.loadModel('models/model-Q4_K_M.gguf');
+await engine.setModel(
+  LlamaModel(ModelSource.path('models/model-Q4_K_M.gguf')),
+);
 
-// .litertlm routes to LiteRT-LM.
-await engine.loadModel(
-  'models/gemma-4-E2B-it.litertlm',
-  modelParams: const ModelParams(device: ComputeDevice.gpu),
+// .litertlm routes to LiteRT-LM. setModel replaces the GGUF model.
+await engine.setModel(
+  LlamaModel(ModelSource.path('models/gemma-4-E2B-it.litertlm')),
+  params: const ModelParams(device: ComputeDevice.gpu),
 );
 ```
 
@@ -149,7 +153,8 @@ unsupported options for `.litertlm` loads instead of ignoring them, so a GGUF
 tuning profile cannot appear to work while doing something different under
 LiteRT-LM.
 
-Use `ModelSource` / `loadModelSource(...)` for download and cache flows. Native
+Pass a remote `ModelSource` to `LlamaEngine.load` or `setModel` for download
+and cache flows. Native
 targets cache remote GGUF and `.litertlm` sources before loading a local file.
 Web targets pass simple unauthenticated `.litertlm` URLs to the LiteRT-LM
 JavaScript runtime.

@@ -256,6 +256,20 @@ void main() {
       expect(manager.calls, hasLength(1));
     });
 
+    test('loads a checked local file that the manager cannot describe as a '
+        'cache entry from its path, counting its size', () async {
+      manager
+        ..uncacheable = '/models/tokenizer.json'
+        ..bytes = {'model.tflite': 10};
+      final progress = <ModelDownloadProgress>[];
+
+      final paths = await resolve([remote, local], onProgress: progress.add);
+
+      expect(paths, ['/cache/model.tflite', '/abs/models/tokenizer.json']);
+      expect(progress.last.receivedBytes, 17);
+      expect(progress.last.totalBytes, 17);
+    });
+
     test('stops after a file when the cancel token is cancelled', () async {
       final token = ModelDownloadCancelToken();
       manager.onEnsure = token.cancel;
@@ -339,12 +353,89 @@ void main() {
       },
     );
   });
+
+  group('resolveModelSourceUrls', () {
+    final remote = ModelSource.parse('hf://owner/repo/model.gguf');
+
+    Future<List<String>> resolve(
+      List<ModelSource> sources, {
+      ModelResolver resolver = const DefaultModelResolver(),
+      ModelLoadOptions download = ModelLoadOptions.defaults,
+    }) => resolveModelSourceUrls(
+      sources,
+      resolver: resolver,
+      download: download,
+      assetType: 'decision model',
+    );
+
+    test('gives a remote source its URL and a local one its path as written, '
+        'in order', () async {
+      expect(
+        await resolve([
+          ModelSource.path('models/encoder.gguf'),
+          remote,
+          ModelSource.path('blob:https://app.example/3f2a'),
+        ]),
+        [
+          'models/encoder.gguf',
+          'https://huggingface.co/owner/repo/resolve/main/model.gguf'
+              '?download=true',
+          'blob:https://app.example/3f2a',
+        ],
+      );
+    });
+
+    test('rejects an option the backend fetch cannot apply before it '
+        'resolves anything, naming the asset type', () async {
+      final resolver = _MirrorSecondResolver();
+
+      await expectLater(
+        resolve(
+          [remote],
+          resolver: resolver,
+          download: ModelLoadOptions(cacheDirectory: '/models'),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'cacheDirectory is not supported for decision model loading by '
+                'URL-loading backends.',
+          ),
+        ),
+      );
+      expect(resolver._remotes, 0);
+    });
+
+    test('rejects a remote target that disallows the browser cache', () async {
+      await expectLater(
+        resolve([remote], resolver: _NoCacheResolver()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'Remote decision model loading without browser/backend cache is '
+                'not supported yet.',
+          ),
+        ),
+      );
+    });
+  });
+}
+
+final class _NoCacheResolver implements ModelResolver {
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async => RemoteModelUrl(source.resolvedUri!, useBrowserCache: false);
 }
 
 final class _RecordingManager extends ThrowingModelDownloadManager {
   final List<(ModelSource, ModelLoadOptions, ModelDownloadProgressCallback?)>
   calls = [];
   void Function()? onEnsure;
+  String? uncacheable;
   Map<String, List<ModelDownloadProgress>> progress = const {};
   Map<String, int> bytes = const {};
 
@@ -356,6 +447,13 @@ final class _RecordingManager extends ThrowingModelDownloadManager {
   }) async {
     calls.add((source, options, onProgress));
     onEnsure?.call();
+    if (source.path case final path? when path == uncacheable) {
+      throw UncacheableLocalModelFileException(
+        'A ModelCacheEntry cannot hold $path.',
+        filePath: '/abs$path',
+        bytes: 7,
+      );
+    }
     for (final event in progress[source.fileName] ?? const []) {
       onProgress?.call(event);
     }

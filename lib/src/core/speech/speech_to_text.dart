@@ -20,7 +20,6 @@ import 'litert_lm_speech_to_text_driver.dart';
 import 'litert_lm_speech_to_text_driver_stub.dart'
     if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
 import 'speech_engine_lease.dart';
-import 'speech_model_loader.dart';
 import 'speech_to_text_model.dart';
 import 'speech_platform_stub.dart'
     if (dart.library.js_interop) 'speech_platform_web.dart';
@@ -686,13 +685,11 @@ class SpeechToTextEngine {
   /// [SpeechToTextModel.projector], and checks [capabilities]. The recognizer
   /// owns that engine and a [backend] passed in: [dispose], or a failed
   /// load, disposes both. Adapters in [ModelParams.loras] given as sources
-  /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
+  /// download as [LlamaEngine.setModel] downloads them. A URL-loading
   /// backend, as on the web, fetches each file itself, as
-  /// `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do. [onProgress] then
-  /// reports only the main file's fetch, as a fraction from 0 to 0.5 of the
-  /// two files when there is a projector; the projector fetch reports no
-  /// progress.
+  /// [LlamaEngine.setModel] describes. [onProgress] then reports only the
+  /// main file's fetch, as a fraction from 0 to 0.5 of the two files when
+  /// there is a projector; the projector fetch reports no progress.
   ///
   /// With a [LiteRtLmAsrAdapter], [load] probes the LiteRT-LM ASR runtime
   /// before any download and then resolves [SpeechToTextModel.source] and
@@ -714,8 +711,8 @@ class SpeechToTextEngine {
   ///   unavailable, including on the web, and when [download] sets
   ///   [ModelLoadOptions.sha256] for a model of more than one file.
   /// - [LlamaStateException] when [download]'s cancel token cancels the load.
-  /// - What `LlamaEngine.loadModelSource`, the resolver and the download
-  ///   manager throw for a file that fails to download or load.
+  /// - What [LlamaEngine.setModel], the resolver and the download manager
+  ///   throw for a file that fails to download or load.
   static Future<SpeechToTextEngine> load(
     SpeechToTextModel model, {
     ModelParams? params,
@@ -736,32 +733,37 @@ class SpeechToTextEngine {
             ),
           );
         }
-        late final SpeechToTextEngine recognizer;
-        await loadSpeechLlamaEngine(
-          engineName: 'SpeechToTextEngine',
-          source: model.source,
-          projector: model.projector,
+        final (engine, _) = await loadLlamaEngine(
+          LlamaModel(model.source, projector: model.projector),
           params: params ?? const ModelParams(),
           download: download,
           onProgress: onProgress,
           store: store,
           backend: backend,
-          verify: (engine) async {
-            recognizer = SpeechToTextEngine._prompt(
-              engine,
-              adapter,
-              ownsEngine: true,
-            );
-            final capabilities = await recognizer.capabilities;
-            if (!capabilities.isSupported) {
-              throw LlamaUnsupportedException(
-                capabilities.unsupportedReason ??
-                    'The loaded model cannot recognize speech.',
-              );
-            }
-          },
+          operation: 'SpeechToTextEngine model loading',
         );
-        return recognizer;
+        try {
+          final recognizer = SpeechToTextEngine._prompt(
+            engine,
+            adapter,
+            ownsEngine: true,
+          );
+          final capabilities = await recognizer.capabilities;
+          if (!capabilities.isSupported) {
+            throw LlamaUnsupportedException(
+              capabilities.unsupportedReason ??
+                  'The loaded model cannot recognize speech.',
+            );
+          }
+          return recognizer;
+        } catch (_) {
+          try {
+            await engine.dispose();
+          } catch (_) {
+            // The load failure is the error the caller needs.
+          }
+          rethrow;
+        }
       case final LiteRtLmAsrAdapter adapter:
         final tokenizer = model.tokenizer;
         if (tokenizer == null) {
@@ -985,8 +987,8 @@ class SpeechToTextEngine {
         isSupported: false,
         unsupportedReason: engine.hasMultimodalProjector
             ? 'The loaded multimodal projector does not report audio support.'
-            : 'No multimodal projector is loaded. Load the model\'s audio '
-                  'projector with LlamaEngine.loadMultimodalProjector.',
+            : 'No multimodal projector is loaded. Load the model with its '
+                  'audio projector, as LlamaModel(source, projector: ...).',
         backendName: backendName,
       );
     }

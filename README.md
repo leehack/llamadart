@@ -144,7 +144,7 @@ Future<void> main() async {
 
 A split model lists its other files as `components`, in any order: the
 engine downloads each `ModelSource` (local path, URL or `hf://`) like
-`LlamaEngine.loadModelSource` and gives it its role from its header. See the
+`LlamaEngine.load` and gives it its role from its header. See the
 [image generation guide](https://llamadart.leehack.com/docs/guides/image-generation)
 for the files and settings of each validated model, download options, memory
 checks and known limits.
@@ -228,16 +228,16 @@ dart run skills@ get
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
-
-  try {
-    await engine.loadModelSource(
+  final engine = await LlamaEngine.load(
+    LlamaModel(
       ModelSource.parse(
         'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
         'SmolLM2-135M-Instruct-Q2_K.gguf',
       ),
-    );
+    ),
+  );
 
+  try {
     final reply = await engine.create(
       const [
         LlamaChatMessage.fromText(

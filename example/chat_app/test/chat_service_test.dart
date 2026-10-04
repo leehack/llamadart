@@ -373,6 +373,45 @@ void main() {
       expect(engine.lastModelParams!.numberOfThreadsBatch, 4);
     });
 
+    test('loading another model replaces the loaded one', () async {
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      for (final modelPath in ['first.gguf', 'second.gguf']) {
+        await service.init(
+          ChatSettings(modelPath: modelPath),
+          eagerLoadMultimodalProjector: false,
+        );
+      }
+
+      expect(engine.mockBackend.loadedModelPaths, [
+        'first.gguf',
+        'second.gguf',
+      ]);
+      expect(engine.mockBackend.modelFreeCalls, 1);
+      expect(engine.isReady, isTrue);
+    });
+
+    test(
+      'a local model reports no progress before it starts loading',
+      () async {
+        final engine = MockLlamaEngine();
+        final service = ChatService(engine: engine);
+        final progress = <double>[];
+        List<double>? progressAtLoad;
+        engine.mockBackend.onModelLoad = () => progressAtLoad = [...progress];
+
+        await service.init(
+          const ChatSettings(modelPath: 'model.gguf'),
+          onProgress: progress.add,
+          eagerLoadMultimodalProjector: false,
+        );
+
+        expect(progressAtLoad, isEmpty);
+        expect(progress, [1.0]);
+      },
+    );
+
     test('releases a partially loaded model after projector failure', () async {
       final engine = _FailingProjectorEngine(Exception('unwind'));
       final service = ChatService(engine: engine);
@@ -425,9 +464,14 @@ class _FailingProjectorEngine extends MockLlamaEngine {
   int unloadModelCalls = 0;
 
   @override
-  Future<void> loadMultimodalProjector(String mmProjPath) async {
+  Future<void> loadMultimodalProjectorSource(
+    ModelSource source, {
+    ModelLoadOptions? download,
+    ModelLoadOptions? options,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
     loadMultimodalProjectorCalls += 1;
-    lastLoadedMmprojPath = mmProjPath;
+    lastLoadedMmprojPath = source.path;
     throw projectorError;
   }
 

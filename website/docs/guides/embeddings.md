@@ -13,10 +13,11 @@ native and web runtimes.
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path('path/to/embedding-model.gguf')),
+  );
 
   try {
-    await engine.loadModel('path/to/embedding-model.gguf');
     if (!(await engine.capabilities).supportsEmbeddings) {
       print('This backend cannot embed.');
       return;
@@ -74,11 +75,11 @@ Future<void> main() async {
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path('path/to/embedding-model.gguf')),
+  );
 
   try {
-    await engine.loadModel('path/to/embedding-model.gguf');
-
     const query = 'How do I improve embedding throughput?';
     final candidates = <String>[
       'Increase maxParallelSequences for wider embedding batches.',

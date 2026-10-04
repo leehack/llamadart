@@ -1024,19 +1024,25 @@ void main() {
       },
     );
 
-    test(
-      'loadModelSource rejects explicit local paths on URL backends',
-      () async {
-        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
-        final webEngine = LlamaEngine(webBackend);
+    test('loadModelSource loads a local path as a URL on URL backends, and '
+        'rejects download options for it', () async {
+      final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final webEngine = LlamaEngine(webBackend);
 
-        await expectLater(
-          () =>
-              webEngine.loadModelSource(ModelSource.path('/models/model.gguf')),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-      },
-    );
+      await expectLater(
+        webEngine.loadModelSource(
+          ModelSource.path('models/model.gguf'),
+          options: ModelLoadOptions(bearerToken: 'secret-token'),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(webBackend.modelLoadFromUrlCalls, 0);
+
+      await webEngine.loadModelSource(ModelSource.path('models/model.gguf'));
+
+      expect(webBackend.lastModelUrl, 'models/model.gguf');
+      expect(webEngine.isReady, isTrue);
+    });
 
     test(
       'native loadModelSource applies load options for local path sources',
@@ -1666,7 +1672,10 @@ void main() {
 
         expect(downloadManager.ensureModelCalls, 1);
         expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
-        expect(downloadManager.lastOptions, same(options));
+        final forwarded = downloadManager.lastOptions!;
+        expect(forwarded.cachePolicy, ModelCachePolicy.refresh);
+        expect(forwarded.bearerToken, 'secret-token');
+        expect(forwarded.cancelToken!.isCancelled, isFalse);
         expect(nativeBackend.lastMultimodalProjectorPath, '/cache/mmproj.gguf');
         expect(progressEvents.single.fraction, 0.5);
       },
@@ -1767,25 +1776,24 @@ void main() {
       },
     );
 
-    test(
-      'loadMultimodalProjectorSource rejects local paths on URL backends',
-      () async {
-        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
-        final webEngine = LlamaEngine(webBackend);
+    test('loadMultimodalProjectorSource rejects download options for a local '
+        'path on URL backends', () async {
+      final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final webEngine = LlamaEngine(webBackend);
 
-        await webEngine.loadModelSource(
-          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
-        );
+      await webEngine.loadModelSource(
+        ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+      );
 
-        await expectLater(
-          () => webEngine.loadMultimodalProjectorSource(
-            ModelSource.path('/models/mmproj.gguf'),
-          ),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        expect(webBackend.multimodalContextCreateCalls, 0);
-      },
-    );
+      await expectLater(
+        () => webEngine.loadMultimodalProjectorSource(
+          ModelSource.path('models/mmproj.gguf'),
+          download: ModelLoadOptions(cacheDirectory: '/models'),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(webBackend.multimodalContextCreateCalls, 0);
+    });
 
     test(
       'loadMultimodalProjectorSource rejects URL-backend cache IO options',
@@ -2289,7 +2297,7 @@ void main() {
           isA<LlamaContextException>().having(
             (e) => e.message,
             'message',
-            contains('Call loadModelSource() first'),
+            contains('Call LlamaEngine.load or setModel first'),
           ),
         ),
       );

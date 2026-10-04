@@ -217,7 +217,7 @@ four threads, run `C01.load`, then:
 | `D03.logits` | `LlamaEngineBackendHooks.loadDecisionHeadBackend`, `runDecisionBackend` (`package:llamadart/backend.dart`) | The 24 reference sequences, run in one call, give every marker logit within 0.25 |
 | `D04.answers` | `systemOne`, one call per reference case (15 calls, 24 questions) | Answers match, as below |
 | `D05.batch` | `systemOneBatch` with the 15 requests | Answers match, as below |
-| `D06.reload` | `dispose`, `attach`, `unloadModel`, `loadModel`, `attach` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
+| `D06.reload` | `dispose`, `attach`, `unloadModel`, `setModel`, `attach` | `LlamaStateException` after the dispose and after the unload; the first case's answers match after each reload |
 | `D07.guards` | `attach` with a missing head, `systemOne` with U+0000 in the state | `LlamaModelException`, `LlamaDecisionException`, then the first case's answers match |
 
 Answers match when the type, probability key order, model `laya-rl-agent`

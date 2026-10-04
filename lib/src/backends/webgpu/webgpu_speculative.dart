@@ -7,6 +7,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
+import 'webgpu_url.dart';
 
 /// The llama.cpp `--spec-type` name the bridge takes for each strategy.
 const Map<SpeculativeDecodingStrategy, String> webGpuSpeculativeStrategyNames =
@@ -407,6 +408,7 @@ class WebGpuDraftModel {
     JSAny? signal,
   }) async {
     final name = webGpuSpeculativeStrategyNames[strategy]!;
+    url = webGpuDocumentUrl(url);
     if (_url == url && await _reports(bridge, name)) return;
     final architecture = await _load(bridge, url, signal);
     if (await _reports(bridge, name)) return;

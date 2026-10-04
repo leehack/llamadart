@@ -680,7 +680,7 @@ class WebAutoBackend
     if (delegate == null) {
       throw LlamaStateException(
         'No web backend has been selected. Load a model with '
-        'loadModelSource() first.',
+        'LlamaEngine.load or setModel first.',
       );
     }
     return delegate;

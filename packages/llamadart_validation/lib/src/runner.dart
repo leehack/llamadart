@@ -92,14 +92,14 @@ class PublicValidationEngine
       _disposed = false;
     }
     await LlamaLogging.configure(level: LlamaLogLevel.info);
-    await _engine.loadModel(
-      location,
-      modelParams: profile.loadParams.copyWith(
+    await _engine.setModel(
+      LlamaModel(ModelSource.parse(location)),
+      params: profile.loadParams.copyWith(
         liteRtLmDispatchLibDir: npu?.dispatchDirectory,
       ),
     );
     if (!_engine.isReady) {
-      throw StateError('loadModel returned without readiness');
+      throw StateError('setModel returned without readiness');
     }
   }
 

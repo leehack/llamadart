@@ -94,7 +94,7 @@ mechanical reasoning-token budget as `GenerationParams.thinkingBudget`; this
 example does not set it, and total output tokens are not used as a fake
 reasoning level.
 
-The session passes this source directly to `LlamaEngine.loadModelSource`, so
+The session passes this source directly to `LlamaEngine.setModel`, so
 downloads use `llamadart`'s shared per-user model cache and resume behavior.
 Use `--cache-dir` only to override that cache root. An earlier flat
 `UD-Q4_K_S` TUI file remains usable by passing its local path explicitly; it is

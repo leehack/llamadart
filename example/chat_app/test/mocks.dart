@@ -16,11 +16,19 @@ class MockLlamaBackend
   BackendTextToSpeechRequest? lastTextToSpeechRequest;
   bool textToSpeechCancelled = false;
   Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
+  final List<String> loadedModelPaths = <String>[];
+  int modelFreeCalls = 0;
+  void Function()? onModelLoad;
 
   @override
   bool get isReady => true;
   @override
-  Future<int> modelLoad(String path, ModelParams params) async => 1;
+  Future<int> modelLoad(String path, ModelParams params) async {
+    onModelLoad?.call();
+    loadedModelPaths.add(path);
+    return 1;
+  }
+
   @override
   Future<int> modelLoadFromUrl(
     String url,
@@ -28,7 +36,10 @@ class MockLlamaBackend
     Function(double progress)? onProgress,
   }) async => 1;
   @override
-  Future<void> modelFree(int modelHandle) async {}
+  Future<void> modelFree(int modelHandle) async {
+    modelFreeCalls += 1;
+  }
+
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async => 1;
   @override
@@ -167,6 +178,28 @@ class MockLlamaBackend
   }
 }
 
+/// Resolves every source without touching the file system or the network: a
+/// local path to itself and a remote file to a cache path.
+class FakeModelDownloadManager extends ThrowingModelDownloadManager {
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    final now = DateTime.utc(2026);
+    return ModelCacheEntry(
+      sourceCanonicalKey: source.metadataSourceKey,
+      cacheKey: source.cacheKey,
+      fileName: source.fileName,
+      filePath: source.path ?? '/cache/${source.fileName}',
+      bytes: 1,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+}
+
 class MockLlamaEngine extends LlamaEngine {
   bool initialized = false;
   bool mmprojLoaded = false;
@@ -200,7 +233,11 @@ class MockLlamaEngine extends LlamaEngine {
     supportsStreamBatching: true,
   );
 
-  MockLlamaEngine() : super(MockLlamaBackend());
+  MockLlamaEngine()
+    : super(
+        MockLlamaBackend(),
+        modelDownloadManager: FakeModelDownloadManager(),
+      );
 
   MockLlamaBackend get mockBackend => backend as MockLlamaBackend;
 
@@ -216,39 +253,42 @@ class MockLlamaEngine extends LlamaEngine {
   bool get isReady => initialized;
 
   @override
-  Future<void> loadModel(
-    String path, {
-    ModelParams modelParams = const ModelParams(),
+  Future<void> setModel(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
   }) async {
-    lastLoadedModelPath = path;
-    lastModelParams = modelParams;
-    await _loadBackendModel(path, modelParams);
-    initialized = true;
-  }
-
-  Future<void> _loadBackendModel(String path, ModelParams modelParams) async {
-    if (!super.isReady) {
-      await super.loadModel(path, modelParams: modelParams);
+    final source = model.source;
+    if (source.isLocal) {
+      lastLoadedModelPath = source.path;
+    } else {
+      lastLoadedModelUrl = source.resolvedUri.toString();
     }
-  }
-
-  @override
-  Future<void> loadModelFromUrl(
-    String url, {
-    ModelParams modelParams = const ModelParams(),
-    Function(double progress)? onProgress,
-  }) async {
-    lastLoadedModelUrl = url;
-    lastModelParams = modelParams;
-    await _loadBackendModel(url, modelParams);
+    lastModelParams = params;
+    await super.setModel(
+      model,
+      params: params,
+      download: download,
+      onProgress: onProgress,
+    );
     initialized = true;
   }
 
   @override
-  Future<void> loadMultimodalProjector(String mmProjPath) async {
+  Future<void> loadMultimodalProjectorSource(
+    ModelSource source, {
+    ModelLoadOptions? download,
+    ModelLoadOptions? options,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
     loadMultimodalProjectorCalls += 1;
-    lastLoadedMmprojPath = mmProjPath;
-    await super.loadMultimodalProjector(mmProjPath);
+    lastLoadedMmprojPath = source.path ?? source.resolvedUri.toString();
+    await super.loadMultimodalProjectorSource(
+      source,
+      download: download,
+      onProgress: onProgress,
+    );
     mmprojLoaded = true;
   }
 
@@ -398,11 +438,15 @@ class MockChatService extends ChatService {
     if (settings.modelPath == null || settings.modelPath!.isEmpty) {
       throw Exception("Invalid model path");
     }
-    await mockEngine.loadModel(settings.modelPath!);
+    await mockEngine.setModel(
+      LlamaModel(ChatService.modelSourceFor(settings.modelPath!)),
+    );
     if (eagerLoadMultimodalProjector &&
         settings.mmprojPath != null &&
         settings.mmprojPath!.isNotEmpty) {
-      await mockEngine.loadMultimodalProjector(settings.mmprojPath!);
+      await mockEngine.loadMultimodalProjectorSource(
+        ChatService.modelSourceFor(settings.mmprojPath!),
+      );
     }
   }
 
