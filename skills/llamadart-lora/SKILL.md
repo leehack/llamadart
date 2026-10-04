@@ -47,7 +47,9 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   their sources before the model loads, with each adapter's own
   `download:` options, or else only the load's cache policy, directory and
   cancel token; the load's bearer token, headers and `sha256` never reach an
-  adapter's host (no progress). On llama.cpp
+  adapter's host (no progress). Disposing the engine cancels these downloads,
+  including those of deprecated `loadModelSource`, without cancelling the
+  caller's load or adapter tokens. On llama.cpp
   (native and WebGPU) each is applied in list order at its scale, as
   `setLoraSource` would, once the model loads; `setLoraSource`,
   `removeLoraSource` and `clearLoras` can change them afterwards. If one cannot be applied the load fails and the

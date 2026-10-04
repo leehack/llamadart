@@ -13,7 +13,9 @@ For canonical full release notes, use:
   capacity before context creation, avoiding runtime graph-budget aborts.
 - Native embeddings reject inputs that exceed a required one-pass micro-batch,
   avoiding non-causal attention aborts and incorrect MEAN/CLS pooled vectors.
-
+- Disposal now cancels model and LoRA downloads started by deprecated
+  `loadModelSource`, without waiting for resolution that ignores cancellation
+  ([#895](https://github.com/leehack/llamadart/issues/895)).
 - Prevented execution of incomplete parallel tool-call replies when generation
   reaches a reported limit; the tool loop rolls back the whole turn.
 - Automatic tool loops now reject pinned LiteRT-LM native and Web runtimes

@@ -93,8 +93,8 @@ class LlamaEngine {
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
   Future<void>? _disposal;
-  // Fails the file resolution of the running setModel; set while it resolves.
-  void Function()? _abandonResolution;
+  // Fails every pending file resolution when disposal abandons its load.
+  final Set<void Function()> _abandonResolutions = {};
   bool _isReadyState = false;
   // Changes on every load and unload, so a probe that awaits can tell whether
   // the model it started on is still the loaded one.
@@ -637,7 +637,8 @@ class LlamaEngine {
       );
     }
 
-    _abandonResolution = abandon;
+    _abandonResolutions.add(abandon);
+    if (isDisposed) abandon();
     work.then(
       (value) {
         if (!result.isCompleted) result.complete(value);
@@ -647,7 +648,7 @@ class LlamaEngine {
       },
     );
     return result.future.whenComplete(() {
-      if (identical(_abandonResolution, abandon)) _abandonResolution = null;
+      _abandonResolutions.remove(abandon);
     });
   }
 
@@ -768,6 +769,13 @@ class LlamaEngine {
   /// [ModelParams.validate] runs before anything resolves or downloads and
   /// throws [LlamaArgumentException]. Throws [LlamaStateException] before
   /// anything resolves or downloads when a model is already loaded.
+  ///
+  /// On file-backed backends, [dispose] cancels model and LoRA downloads and
+  /// makes this call throw [LlamaStateException] without waiting for a custom
+  /// resolver or download manager that ignores cancellation. The resolver and
+  /// download manager receive a copy of [options] with a cancel token linked
+  /// to disposal and the caller's token; disposal never cancels the caller's
+  /// token. URL-loading backends keep their runtime-owned fetch behavior.
   @Deprecated(
     'Use LlamaEngine.load or setModel with LlamaModel(source). This will be '
     'removed in 1.0.',
@@ -781,32 +789,49 @@ class LlamaEngine {
     _throwIfDisposed();
     modelParams.validate();
     _ensureNotReady();
+    if (!backend.supportsUrlLoading) {
+      final callerToken = options.cancelToken;
+      options = _withCancelToken(
+        options,
+        _LinkedCancelToken([
+          () => isDisposed,
+          if (callerToken != null) () => callerToken.isCancelled,
+        ]),
+      );
+      final loraLocations = <String, String>{};
+      Future<(String, ModelParams)> resolve() async {
+        final target = await modelResolver.resolve(
+          source,
+          ModelResolveRequest(options: options, onProgress: onProgress),
+        );
+        _throwIfSourceLoadCancelled(options);
+        final entry = await ensureModelTargetFile(
+          modelDownloadManager,
+          source,
+          target,
+          options: options,
+          onProgress: onProgress,
+        );
+        _throwIfSourceLoadCancelled(options);
+        final resolvedParams = await _resolveLoraSources(
+          modelParams,
+          options,
+          loraLocations,
+        );
+        _throwIfSourceLoadCancelled(options);
+        return (entry.filePath, resolvedParams);
+      }
+
+      final (path, resolvedParams) = await _unlessDisposed(resolve());
+      await _loadSourceFile(path, resolvedParams, source.format);
+      if (_isReady) _loraLocations.addAll(loraLocations);
+      return;
+    }
     final target = await modelResolver.resolve(
       source,
       ModelResolveRequest(options: options, onProgress: onProgress),
     );
     _throwIfSourceLoadCancelled(options);
-
-    if (!backend.supportsUrlLoading) {
-      final entry = await ensureModelTargetFile(
-        modelDownloadManager,
-        source,
-        target,
-        options: options,
-        onProgress: onProgress,
-      );
-      _throwIfSourceLoadCancelled(options);
-      final loraLocations = <String, String>{};
-      final resolvedParams = await _resolveLoraSources(
-        modelParams,
-        options,
-        loraLocations,
-      );
-      _throwIfSourceLoadCancelled(options);
-      await _loadSourceFile(entry.filePath, resolvedParams, source.format);
-      if (_isReady) _loraLocations.addAll(loraLocations);
-      return;
-    }
     final String url;
     switch (target) {
       case LocalModelFile(:final path):
@@ -1367,14 +1392,16 @@ class LlamaEngine {
   /// model queries such as [getMetadata] and [getContextSize] return their
   /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A
   /// load running when this is called throws [LlamaStateException], and a
-  /// model it loaded is unloaded. The downloads of a running [setModel] or
-  /// [loadMultimodalProjectorSource] stop, and those of [setModel] do not
-  /// hold this call up; a download that the deprecated `loadModelSource`
-  /// started runs to its end first.
+  /// model it loaded is unloaded. The downloads of a running [setModel],
+  /// [loadModelSource] or [loadMultimodalProjectorSource] stop. Resolution or
+  /// download work from [setModel] or [loadModelSource] does not hold this
+  /// call up, even when a custom resolver or manager ignores cancellation.
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {
-    _abandonResolution?.call();
+    for (final abandon in _abandonResolutions.toList()) {
+      abandon();
+    }
     unregisterLoggingBackend(backend);
     final activeLifecycle = _modelLifecycleOperation;
     if (activeLifecycle != null) {

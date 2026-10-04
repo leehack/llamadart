@@ -1072,7 +1072,17 @@ void main() {
         expect(downloadManager.ensureModelCalls, 1);
         expect(downloadManager.lastSource?.path, source.path);
         expect(downloadManager.lastSource?.cacheKey, source.cacheKey);
-        expect(downloadManager.lastOptions, same(options));
+        expect(downloadManager.lastOptions!.sha256, options.sha256);
+        expect(downloadManager.lastOptions!.cachePolicy, options.cachePolicy);
+        expect(downloadManager.lastOptions!.bearerToken, options.bearerToken);
+        expect(downloadManager.lastOptions!.headers, options.headers);
+        expect(
+          downloadManager.lastOptions!.cacheDirectory,
+          options.cacheDirectory,
+        );
+        expect(downloadManager.lastOptions!.resume, options.resume);
+        expect(downloadManager.lastOptions!.maxRetries, options.maxRetries);
+        expect(downloadManager.lastOptions!.cancelToken!.isCancelled, isFalse);
         expect(nativeBackend.lastModelPath, '/models/model.gguf');
       },
     );
@@ -1396,7 +1406,17 @@ void main() {
         expect(downloadManager.ensureModelCalls, 1);
         expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
         expect(downloadManager.lastSource?.fileName, source.fileName);
-        expect(downloadManager.lastOptions, same(options));
+        expect(downloadManager.lastOptions!.sha256, options.sha256);
+        expect(downloadManager.lastOptions!.cachePolicy, options.cachePolicy);
+        expect(downloadManager.lastOptions!.bearerToken, options.bearerToken);
+        expect(downloadManager.lastOptions!.headers, options.headers);
+        expect(
+          downloadManager.lastOptions!.cacheDirectory,
+          options.cacheDirectory,
+        );
+        expect(downloadManager.lastOptions!.resume, options.resume);
+        expect(downloadManager.lastOptions!.maxRetries, options.maxRetries);
+        expect(downloadManager.lastOptions!.cancelToken!.isCancelled, isFalse);
         expect(nativeBackend.modelLoadCalls, 1);
         expect(nativeBackend.modelLoadFromUrlCalls, 0);
         expect(nativeBackend.lastModelPath, '/cache/model.gguf');
@@ -2125,11 +2145,7 @@ void main() {
       );
 
       final load = sourceEngine.loadModelSource(source);
-      await downloadStarted.future;
-      await sourceEngine.dispose();
-      downloadGate.complete();
-
-      await expectLater(
+      final outcome = expectLater(
         load,
         throwsA(
           isA<LlamaStateException>().having(
@@ -2139,6 +2155,11 @@ void main() {
           ),
         ),
       );
+      await downloadStarted.future;
+      await sourceEngine.dispose();
+      await outcome;
+      downloadGate.complete();
+      await pumpEventQueue();
       expect(sourceBackend.modelLoadCalls, 0);
       expect(sourceBackend.disposeCalls, 1);
     });

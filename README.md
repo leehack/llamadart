@@ -268,6 +268,12 @@ Future<void> main() async {
 }
 ```
 
+If an engine's owner goes away during `setModel` or deprecated
+`loadModelSource`, dispose the engine: the load throws `LlamaStateException`
+and model/LoRA downloads receive cancellation without changing caller-owned
+tokens. See [Model lifecycle](https://llamadart.leehack.com/docs/guides/model-lifecycle)
+for lifecycle and cancellation details.
+
 For multi-turn chat, wrap the same engine in `ChatSession` and let it maintain
 history:
 [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).
