@@ -257,6 +257,11 @@ enum BackendGenerationLimit {
 
   /// The prompt and generated tokens filled the context.
   contextSize,
+
+  /// The runtime reported a limit without distinguishing its cause.
+  ///
+  /// This may be an output-token, context, or runtime-specific media limit.
+  runtime,
 }
 
 /// Internal backend probe for the limit that ended a generation stream.

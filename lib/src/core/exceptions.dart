@@ -87,6 +87,9 @@ enum LlamaSpeechTranscriptLimit {
 
   /// The audio prompt and the transcript filled the model context.
   contextSize,
+
+  /// The runtime reported truncation without identifying the limiting budget.
+  runtime,
 }
 
 /// Exception thrown when speech recognition stops at a token limit before the

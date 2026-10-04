@@ -1559,6 +1559,13 @@ class SpeechToTextEngine {
           limit: LlamaSpeechTranscriptLimit.contextSize,
           partialTranscript: partialTranscript,
         ),
+      BackendGenerationLimit.runtime => LlamaSpeechTranscriptTruncatedException(
+        'Speech recognition reached a runtime generation limit before the '
+        'transcript ended. Send shorter audio; the runtime does not identify '
+        'whether an output-token, context, or media limit stopped recognition.',
+        limit: LlamaSpeechTranscriptLimit.runtime,
+        partialTranscript: partialTranscript,
+      ),
     };
   }
 
