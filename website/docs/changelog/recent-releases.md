@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed LiteRT-LM speech recognition startup failures hanging indefinitely;
+  failed workers now release their resources and allow another attempt.
+
 - **Breaking (Preview):** `ImageGenerationEngine.generate` returns
   `Future<ImageGenerationTask>`; await it before reading `events` or calling
   `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).

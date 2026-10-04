@@ -5,10 +5,50 @@ import 'dart:typed_data';
 
 import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver.dart';
 import 'package:llamadart/src/core/speech/litert_lm_speech_to_text_driver_io.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'failed worker initialization settles without an update listener',
+    () async {
+      await expectLater(
+        createLiteRtLmSpeechToTextDriver()
+            .start(_missingConfig, libraryPath: _missingLibrary)
+            .timeout(const Duration(seconds: 3)),
+        throwsA(_startupFailure),
+      );
+    },
+  );
+
+  test(
+    'public ASR startup failure releases the task slot for retries',
+    () async {
+      debugLiteRtLmSpeechToTextDriverOverride = _StartupFailureDriver();
+      addTearDown(() => debugLiteRtLmSpeechToTextDriverOverride = null);
+      final recognizer = SpeechToTextEngine.liteRtLm(_missingConfig);
+      addTearDown(recognizer.dispose);
+
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await expectLater(
+          recognizer.startStream().timeout(const Duration(seconds: 3)),
+          throwsA(_startupFailure),
+        );
+        await expectLater(
+          recognizer
+              .transcribeOnce(
+                SpeechToTextRequest(
+                  audio: SpeechAudioPcmInput(Float32List(160)),
+                ),
+              )
+              .timeout(const Duration(seconds: 3)),
+          throwsA(_startupFailure),
+        );
+      }
+    },
+  );
+
   test('skips only LiteRT-LM incomplete BPE ASR windows', () {
     final session = _FakeAsrSession(<Object>[
       LlamaSpeechException(
@@ -35,6 +75,37 @@ void main() {
 
     expect(() => processLiteRtLmSpeechWindow(session), throwsA(same(error)));
   });
+}
+
+final _startupFailure = isA<LlamaSpeechException>()
+    .having(
+      (error) => error.message,
+      'message',
+      'LiteRT-LM speech recognition failed.',
+    )
+    .having((error) => error.details, 'details', contains('ASR ABI'));
+
+const _missingLibrary = '/nonexistent/llamadart-asr-startup-test/library';
+const _missingConfig = LiteRtLmAsrRuntimeConfig(
+  modelPath: '/nonexistent/llamadart-asr-startup-test/model',
+  tokenizerPath: '/nonexistent/llamadart-asr-startup-test/tokenizer',
+  modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+);
+
+class _StartupFailureDriver implements LiteRtLmSpeechToTextDriver {
+  @override
+  Future<LiteRtLmSpeechToTextSupport> probeSupport({
+    String? libraryPath,
+  }) async => const LiteRtLmSpeechToTextSupport(isSupported: true);
+
+  @override
+  Future<LiteRtLmSpeechToTextWorker> start(
+    LiteRtLmAsrRuntimeConfig config, {
+    String? libraryPath,
+  }) => createLiteRtLmSpeechToTextDriver().start(
+    config,
+    libraryPath: _missingLibrary,
+  );
 }
 
 class _FakeAsrSession implements LiteRtLmAsrRuntimeSession {

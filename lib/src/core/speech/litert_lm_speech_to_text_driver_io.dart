@@ -281,7 +281,9 @@ class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
     }
     _pending.clear();
     if (!_updates.isClosed) {
-      await _updates.close();
+      // Stream delivery must not hold worker cleanup hostage to an absent
+      // or paused listener, especially when initialization failed.
+      unawaited(_updates.close());
     }
   }
 }
