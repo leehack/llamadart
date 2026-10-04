@@ -41,8 +41,10 @@ or shipping runtimes the app does not use.
   skills.
 - Stream through a `StreamSubscription` stored on the owner so Stop and
   dispose can reach it. For Stop, call `engine.cancelGeneration()`: the stream
-  ends normally, `onDone` runs, and the partial reply stays in the
-  `ChatSession` history. In `dispose`, also cancel the subscription.
+  ends normally with a partial reply on native backends, but `ChatSession`
+  throws `LlamaStateException` and rolls back if cancelled before any reply
+  content. A partial reply stays in history only if that session has not
+  reset; WebGPU cancellation can also surface a generation error. In `dispose`, also cancel the subscription.
 - Do not call `setState` or `notifyListeners` per token. Append deltas to a
   `StringBuffer` and flush on a short timer (the example chat app notifies
   about every 16 ms), and flush once more on done or error. Check `mounted`
