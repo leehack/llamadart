@@ -42,20 +42,7 @@ class ModelSource {
 
   /// Creates an HTTP(S) URL model source.
   factory ModelSource.url(Uri url, {String? fileName, ModelFormat? format}) {
-    if (url.scheme != 'http' && url.scheme != 'https') {
-      throw ArgumentError.value(
-        url,
-        'url',
-        'Only http and https URLs are supported.',
-      );
-    }
-    if (!url.hasAuthority || url.host.isEmpty) {
-      throw ArgumentError.value(
-        url,
-        'url',
-        'HTTP(S) model URLs must include a host.',
-      );
-    }
+    _validateRemoteUri(url, 'url');
     final inferredFileName = fileName == null
         ? _fileNameFromUri(url)
         : _validateRemoteFileName(fileName, 'fileName');

@@ -2,6 +2,27 @@ import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('invalid direct URL source errors redact credentials', () {
+    for (final value in [
+      'ftp://alice:ConstructorSecret@example.com/m.gguf?token=ConstructorToken',
+      'https:alice:ConstructorSecret@example.com/m.gguf?token=ConstructorToken',
+    ]) {
+      expect(
+        () => ModelSource.url(Uri.parse(value)),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => '${error.invalidValue} $error',
+            'safe error',
+            allOf(
+              isNot(contains('ConstructorSecret')),
+              isNot(contains('ConstructorToken')),
+            ),
+          ),
+        ),
+      );
+    }
+  });
+
   for (final source in [
     's3://user:ParsePassword@bucket/m.gguf?X-Amz-Signature=ParseSignature',
     'gs://user:ParsePassword@bucket/m.gguf',
