@@ -2,6 +2,30 @@ import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
 void main() {
+  for (final source in [
+    's3://user:ParsePassword@bucket/m.gguf?X-Amz-Signature=ParseSignature',
+    'gs://user:ParsePassword@bucket/m.gguf',
+    'hf://owner/repo/m.gguf?token=ParseSignature',
+    'hf://owner/repo/m%2Ffile.gguf?revision=main#ParseSignature',
+    'https:user:ParsePassword@host/m.gguf?token=ParseSignature',
+  ]) {
+    test('invalid source errors redact credential-bearing input', () {
+      expect(
+        () => ModelSource.parse(source),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => '${error.invalidValue} $error',
+            'safe error',
+            allOf(
+              isNot(contains('ParsePassword')),
+              isNot(contains('ParseSignature')),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
   group('ModelSource', () {
     test('path remains local and does not attempt network resolution', () {
       final source = ModelSource.path('/local/model.gguf');

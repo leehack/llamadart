@@ -864,6 +864,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 30);
+    final requestUrls = <String>{uri.toString()};
     try {
       var requestUri = uri;
       late HttpClientResponse response;
@@ -916,7 +917,9 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
             'Redirect missing Location while downloading ${source.displayName}.',
           );
         }
+        requestUrls.add(location);
         requestUri = requestUri.resolve(location);
+        requestUrls.add(requestUri.toString());
         await response.drain<void>();
       }
       final statusCode = response.statusCode;
@@ -1046,6 +1049,19 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         ),
       );
       return entry;
+    } on IOException catch (error) {
+      // Preserve the outer download retry policy while sanitizing every hop.
+      throw HttpException(redactUrlSecrets('$error', sourceUrls: requestUrls));
+    } on ArgumentError catch (error) {
+      throw LlamaModelException(
+        'Failed to download ${source.displayName}.',
+        redactUrlSecrets('$error', sourceUrls: requestUrls),
+      );
+    } on FormatException catch (error) {
+      throw LlamaModelException(
+        'Failed to download ${source.displayName}.',
+        redactUrlSecrets('$error', sourceUrls: requestUrls),
+      );
     } finally {
       client.close(force: true);
       if (partFile == null) {

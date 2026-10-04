@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Redacted URL credentials and signed query strings from redirected download
+  failures, download snapshots and invalid model-source errors, including
+  slashless URLs; LiteRT-LM Web model names reject decoded URL delimiters.
+
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
   or `npu` runs there or throws `LlamaUnsupportedException` instead of

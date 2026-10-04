@@ -1438,8 +1438,7 @@ extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
 }
 
 /// The percent-decoded last path segment of [url], or null when it is empty
-/// or not valid UTF-8 once decoded.
-/// The last path segment of [url], or null when it is empty or repeats a
+/// or not valid UTF-8 once decoded, contains URL delimiters, or repeats a
 /// userinfo credential of [url].
 String? _modelUrlName(String url) {
   final String? name;
@@ -1448,7 +1447,9 @@ String? _modelUrlName(String url) {
   } on FormatException {
     return null;
   }
-  if (name == null || name.isEmpty) return null;
+  if (name == null || name.isEmpty || RegExp(r'[/\\?#@;&=]').hasMatch(name)) {
+    return null;
+  }
   return _urlCredentials(url).any(name.contains) ? null : name;
 }
 

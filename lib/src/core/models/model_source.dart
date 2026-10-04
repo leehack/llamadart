@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../url_redaction.dart';
 import 'model_format.dart';
 
 /// The kind of model source represented by a [ModelSource].
@@ -114,30 +115,15 @@ class ModelSource {
   /// branch or tag can be written as `hf://owner/repo@revision/model-file`; use
   /// `?revision=refs/pr/12` when the revision itself contains `/`.
   factory ModelSource.parse(String value, {ModelFormat? format}) {
-    if (value.isEmpty) {
-      throw ArgumentError.value(value, 'value', 'Source must not be empty.');
-    }
-
-    if (value.startsWith('hf://')) {
-      return _parseHuggingFaceUri(value, format);
-    }
-
-    final parsedUri = Uri.tryParse(value);
-    if (parsedUri != null && parsedUri.hasScheme) {
-      if (parsedUri.scheme == 'http' || parsedUri.scheme == 'https') {
-        return ModelSource.url(parsedUri, format: format);
-      }
-      if (_looksLikeWindowsPath(value, parsedUri.scheme)) {
-        return ModelSource.path(value, format: format);
-      }
+    try {
+      return _parseModelSource(value, format);
+    } on ArgumentError catch (error) {
       throw ArgumentError.value(
-        value,
-        'value',
-        'Unsupported model source scheme: ${parsedUri.scheme}.',
+        sourceUrlDisplay(value),
+        error.name,
+        redactUrlSecrets('${error.message}', sourceUrls: <String>[value]),
       );
     }
-
-    return ModelSource.path(value, format: format);
   }
 
   const ModelSource._({
@@ -253,17 +239,44 @@ class ModelSource {
   }
 }
 
+ModelSource _parseModelSource(String value, ModelFormat? format) {
+  if (value.isEmpty) {
+    throw ArgumentError.value(value, 'value', 'Source must not be empty.');
+  }
+
+  if (value.startsWith('hf://')) {
+    return _parseHuggingFaceUri(value, format);
+  }
+
+  final parsedUri = Uri.tryParse(value);
+  if (parsedUri != null && parsedUri.hasScheme) {
+    if (parsedUri.scheme == 'http' || parsedUri.scheme == 'https') {
+      return ModelSource.url(parsedUri, format: format);
+    }
+    if (_looksLikeWindowsPath(value, parsedUri.scheme)) {
+      return ModelSource.path(value, format: format);
+    }
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Unsupported model source scheme: ${parsedUri.scheme}.',
+    );
+  }
+
+  return ModelSource.path(value, format: format);
+}
+
 void _validateRemoteUri(Uri url, String name) {
   if (url.scheme != 'http' && url.scheme != 'https') {
     throw ArgumentError.value(
-      url,
+      sourceUrlDisplay('$url'),
       name,
       'Only http and https URLs are supported.',
     );
   }
   if (!url.hasAuthority || url.host.isEmpty) {
     throw ArgumentError.value(
-      url,
+      sourceUrlDisplay('$url'),
       name,
       'HTTP(S) model URLs must include a host.',
     );

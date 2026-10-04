@@ -3,6 +3,25 @@ import 'package:test/test.dart';
 
 void main() {
   group('redactUrlSecrets', () {
+    test('redacts slashless credentials and their repeated password', () {
+      const source =
+          'https:alice:SlashlessSecret@example.com/m/SlashlessSecret.gguf?token=QuerySecretValue';
+      final message = redactUrlSecrets(
+        'Loaded $source; password SlashlessSecret',
+        sourceUrls: [source],
+      );
+      expect(message, isNot(contains('alice')));
+      expect(message, isNot(contains('SlashlessSecret')));
+      expect(message, isNot(contains('QuerySecretValue')));
+      expect(sourceUrlDisplay(source), isNot(contains('SlashlessSecret')));
+      expect(
+        redactUrlSecrets(
+          'Failed https:alice:SlashlessSecret@example.com/m.gguf',
+        ),
+        'Failed https://example.com/m.gguf',
+      );
+    });
+
     for (final (url, display, secrets) in const [
       (
         'https://alice:Pw1secret@example.com/m.gguf',

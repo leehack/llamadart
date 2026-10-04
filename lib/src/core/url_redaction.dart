@@ -29,6 +29,7 @@ typedef ParseUrl = ParsedUrl? Function(String url);
 ///   values, such as `1` in `?v=1`, stay in the text.
 ///
 /// A whole token is not preceded or followed by an ASCII letter or digit.
+/// Slashless `scheme:userinfo@host` URLs are treated as `scheme://userinfo@host`.
 /// Userinfo runs from after `//` to the last `@` of the authority, and to the
 /// last `@` of the URL.
 ///
@@ -73,6 +74,9 @@ final RegExp _fileWithQueryOrFragment = RegExp(r'^[\w.-]*\w\.\w+[?#]');
 final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
 final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
 final RegExp _schemeAndSlashes = RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://');
+final RegExp _slashlessAuthority = RegExp(
+  r'^[A-Za-z][A-Za-z0-9+.-]*:(?=[^/?#\s]*@)',
+);
 final RegExp _authorityEnd = RegExp(r'[/?#\\]');
 final RegExp _queryOrFragment = RegExp('[?#]');
 final RegExp _hostAndPort = RegExp(
@@ -243,6 +247,10 @@ Set<String> _encodedForms(String text) {
     final json = jsonEncode(text);
     return json.substring(1, json.length - 1);
   });
+  add(() {
+    final json = jsonEncode(text);
+    return json.substring(1, json.length - 1).replaceAll('/', r'\/');
+  });
   for (final decoded in <String>[
     _percentDecoded(text),
     _percentDecoded(text.replaceAll('+', ' ')),
@@ -263,14 +271,17 @@ String _percentDecoded(String text) => text.replaceAllMapped(
 
 int _authorityStart(String url) {
   if (url.startsWith('//')) return 2;
-  return _schemeAndSlashes.matchAsPrefix(url)?.end ?? -1;
+  return _schemeAndSlashes.matchAsPrefix(url)?.end ??
+      _slashlessAuthority.matchAsPrefix(url)?.end ??
+      -1;
 }
 
 String _redactWord(String word) {
   final parts = _wordParts.firstMatch(word)!;
-  final url = parts[2]!;
+  final url = parts[2]!.replaceAll(r'\/', '/');
   final isUrl =
       url.contains('://') ||
+      _slashlessAuthority.hasMatch(url) ||
       url.startsWith('/') ||
       url.startsWith('./') ||
       url.startsWith('../') ||
@@ -282,7 +293,9 @@ String _redactWord(String word) {
 }
 
 String _redactUrl(String url) {
-  if (url.startsWith('//')) return _displayUrl(url);
+  if (url.startsWith('//') || _slashlessAuthority.hasMatch(url)) {
+    return _displayUrl(url);
+  }
   final scheme = _schemeAndSlashes.firstMatch(url);
   final end = url.indexOf(_queryOrFragment);
   if (scheme != null && (end < 0 || scheme.start < end)) {
@@ -315,6 +328,12 @@ String _sourceDisplayUrl(
 }
 
 String _displayUrl(String url) {
+  final slashless = _slashlessAuthority.matchAsPrefix(url);
+  if (slashless != null && !_schemeAndSlashes.hasMatch(url)) {
+    return _displayUrl(
+      '${url.substring(0, slashless.end)}//${url.substring(slashless.end)}',
+    );
+  }
   final start = _authorityStart(url);
   if (start < 0) {
     final end = url.indexOf(_queryOrFragment);
