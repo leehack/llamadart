@@ -234,9 +234,20 @@ Await each lifecycle call before starting the next.
 
 `LlamaInferenceException`:
 `The embedding input has <n> tokens, but this model embeds its input in one pass of at most <m> tokens (n_ubatch).`
-Encoder-only models and models without a KV cache embed each input in one
-micro-batch. Shorten the input, or raise `ModelParams.microBatchSize` and
-`ModelParams.batchSize`.
+Encoder-only models, models without a KV cache, non-causal attention models,
+and MEAN/CLS pooling embed each input in one micro-batch. Shorten the input, or
+raise `ModelParams.microBatchSize` and `ModelParams.batchSize`. Batched embedding
+calls reject an oversized input before evaluating any of the batch.
+
+### Recurrent speculative rollback is unsupported
+
+Native llama.cpp rejects a nonzero `ModelParams.speculativeRollbackTokenMax`
+on recurrent or hybrid models with `LlamaUnsupportedException`. The pinned
+runtime cannot establish a safe graph budget for the requested rollback slots,
+and an oversized reservation can terminate the process. Leave the value at `0`
+for ordinary generation. Speculative strategies that require those snapshots
+remain unsupported on these models until a qualified runtime supplies a safe
+budget; use a non-recurrent target for those strategies.
 
 ### Prompt does not fit the context
 

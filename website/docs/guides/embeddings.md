@@ -57,11 +57,22 @@ Future<void> main() async {
 - On native, an input with more tokens than the context holds per sequence
   throws `LlamaInferenceException`; shorten it or raise `contextSize`. With
   `kvUnified: false`, the context is split across `maxParallelSequences`.
-- On native, encoder-only models and models without a KV cache (such as
-  BERT-family and ModernBERT GGUFs) embed each input in one pass. An input
-  longer than the context's `microBatchSize` (512 tokens by default for
-  BERT-family models) throws `LlamaInferenceException`; raise
-  `microBatchSize` and `batchSize` to embed longer input.
+- On native, encoder-only models, models without a KV cache, non-causal
+  models and MEAN/CLS-pooled models embed each input in one pass. This also
+  applies when the model has a KV cache. An input longer than the context's
+  actual micro-batch capacity throws `LlamaInferenceException` before decoding;
+  shorten the input or raise `microBatchSize` and `batchSize` together.
+  Causal models with a KV cache retain chunked LAST or unpooled embedding
+  support. Batched one-pass inputs are grouped only within the micro-batch
+  capacity, and every input is validated before any group is decoded.
+- Native causal-attention detection follows the pinned llama.cpp `v0.5.0`
+  contract: the runtime's diffusion-model probe and EmbeddingGemma's forced
+  non-causal attention take precedence over metadata. Other loaded models
+  use their boolean `<architecture>.attention.causal` value, defaulting to
+  causal attention when that optional key is absent. Missing architecture,
+  invalid attention metadata or an unavailable required runtime probe throws
+  `LlamaUnsupportedException` before decoding. Use the pinned native runtime
+  or a compatible runtime that exposes the required model information.
 - Web backend supports embeddings when bridge assets expose embedding APIs
   (`v0.1.7` or newer).
 - If web bridge assets are older than `v0.1.7`, embedding calls can fail with
@@ -139,9 +150,9 @@ decoder/generative defaults. Start with a smaller `microBatchSize` such as
 Web retains full-context automatic batching on CPU and WebGPU because model
 architecture is not available before bridge context creation. Known decoder
 presets can use smaller batches; see [Performance tuning](./performance-tuning).
-An embedding input must fit its model's context and, for non-causal models,
-one micro-batch. Set both batch values explicitly only when tuning a known
-workload; selecting memory64 does not remove this micro-batch requirement.
+An embedding input must fit its model's context and, for encoder-only,
+no-memory, non-causal or MEAN/CLS-pooled models, one micro-batch. Set both
+batch values explicitly only when tuning a known workload; selecting memory64 does not remove this micro-batch requirement.
 
 - `batchSize` (`n_batch`): max logical tokens per forward pass.
 - `microBatchSize` (`n_ubatch`): scheduler micro-batch size.

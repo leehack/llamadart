@@ -325,7 +325,7 @@ dart run tool/testing/native_inference_benchmark.dart \
 
 dart run tool/testing/run_local_e2e.dart \
   --scenario llama-cpp-speculative-benchmark \
-  --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
+  --model-path models/non-recurrent-target.gguf \
   --draft-model-path path/to/dspark-draft.gguf \
   --speculative-cases baseline,draft-dspark,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram \
   --backend cpu \
@@ -357,6 +357,11 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-warmups 1 \
   --benchmark-gpu-layers 0
 ```
+
+Use a non-recurrent target for speculative benchmark cases that reserve
+rollback slots. Native recurrent/hybrid models reject nonzero
+`speculativeRollbackTokenMax`; a baseline-only run reserves no rollback slots
+and can still validate ordinary generation on those models.
 
 Speech evidence outside the `validation-speech-stt` pack
 (`doc/cross_platform_validation.md`):

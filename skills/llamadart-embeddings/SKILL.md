@@ -37,17 +37,27 @@ description: >-
   older assets lack the embedding API, calls throw `LlamaUnsupportedException`
   naming that floor; other web embedding failures surface as
   `LlamaInferenceException`.
-- Nothing is truncated for you. Encoder-only and non-causal models (BERT,
-  ModernBERT, EmbeddingGemma) embed each input in one micro-batch: an input
-  longer than `microBatchSize` (512 tokens by default on native) throws
-  `LlamaInferenceException`. Chunk documents into passages (a few hundred
-  tokens), measure with `engine.getTokenCount(text)`, or raise
-  `microBatchSize` and `batchSize` together (and `contextSize` past its value).
+- Nothing is truncated for you. Native encoder-only, no-memory and
+  non-causal models (BERT, ModernBERT, EmbeddingGemma), plus MEAN/CLS-pooled
+  models even with a KV cache, need one micro-batch per input. Exceeding the
+  context's actual micro-batch capacity throws `LlamaInferenceException` before
+  decoding. Chunk documents into passages, measure with
+  `engine.getTokenCount(text)`, or raise `microBatchSize` and `batchSize`
+  together (and `contextSize` past its value). Causal LAST/unpooled models
+  with memory retain chunked input support.
+- Native diffusion capability and EmbeddingGemma's forced non-causal mode
+  override attention metadata. Other models follow the pinned `v0.5.0`
+  boolean attention metadata, whose absent key defaults to causal. Missing
+  architecture, invalid metadata or a missing required runtime probe fails
+  with `LlamaUnsupportedException` before decoding; use a compatible runtime.
 - `embedBatch` runs true multi-sequence batches only when
   `ModelParams.maxParallelSequences` is greater than 1 (default `1`, which
   embeds inputs one at a time). Set it to the expected batch width (for
   example 4 or 8); llama.cpp keeps the full per-sequence context, and inputs
-  that do not fit a batch fall back to single passes automatically.
+  that do not fit a logical batch fall back to single calls automatically.
+  One-pass models still require each input and each grouped decode to fit
+  the micro-batch capacity; a later invalid input is rejected before any
+  earlier group is decoded.
 - For throughput on a known workload, set `batchSize` and `microBatchSize`
   explicitly (for example 2048/2048 with `maxParallelSequences: 8`), starting
   with `microBatchSize: 512` on memory-constrained devices and measuring.

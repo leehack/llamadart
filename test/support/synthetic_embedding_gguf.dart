@@ -63,14 +63,19 @@ File writeSyntheticModernBertGguf(
 /// byte-fallback SentencePiece vocabulary to [path].
 ///
 /// llama.cpp creates a KV cache for this architecture. [poolingType] is the
-/// raw `llama_pooling_type` value.
+/// raw `llama_pooling_type` value. [causalAttention] overrides the model's
+/// default causal attention; null leaves the optional metadata key absent.
+/// [architecture] also accepts `llada`, whose tensors share this layout and
+/// whose runtime forces non-causal attention even with a true metadata value.
 File writeSyntheticLlamaGguf(
   String path, {
+  String architecture = 'llama',
   int? poolingType,
+  bool? causalAttention,
   int contextLength = 1024,
   int seed = 0,
 }) {
-  const arch = 'llama';
+  final arch = architecture;
   final random = math.Random(seed);
   return _writeGguf(
     path,
@@ -82,6 +87,8 @@ File writeSyntheticLlamaGguf(
       '$arch.block_count': _GgufValue.uint32(1),
       '$arch.attention.head_count': _GgufValue.uint32(2),
       '$arch.attention.layer_norm_rms_epsilon': _GgufValue.float32(1e-5),
+      if (causalAttention != null)
+        '$arch.attention.causal': _GgufValue.boolean(causalAttention),
       if (poolingType != null)
         '$arch.pooling_type': _GgufValue.uint32(poolingType),
     },

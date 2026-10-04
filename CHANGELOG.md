@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Native recurrent and hybrid models reject nonzero speculative rollback
+  capacity before context creation, avoiding runtime graph-budget aborts.
+- Native embeddings reject inputs that exceed a required one-pass micro-batch,
+  avoiding non-causal attention aborts and incorrect MEAN/CLS pooled vectors.
 - Disposal now cancels model and LoRA downloads started by deprecated
   `loadModelSource`, without waiting for resolution that ignores cancellation
   ([#895](https://github.com/leehack/llamadart/issues/895)).

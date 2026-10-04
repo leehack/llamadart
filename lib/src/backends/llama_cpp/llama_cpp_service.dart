@@ -3791,6 +3791,25 @@ class LlamaCppService {
     }
   }
 
+  void _validateRollbackReservation(
+    ModelParams params, {
+    required bool isRecurrent,
+    required bool isHybrid,
+  }) {
+    if (params.speculativeRollbackTokenMax == 0 ||
+        (!isRecurrent && !isHybrid)) {
+      return;
+    }
+    throw LlamaUnsupportedException(
+      'Native llama.cpp recurrent/hybrid models cannot safely reserve '
+      'speculativeRollbackTokenMax=${params.speculativeRollbackTokenMax}: '
+      'the native API does not expose a validated rollback graph-node budget. '
+      'Use speculativeRollbackTokenMax=0 for ordinary generation. '
+      'Speculative decoding that needs recurrent rollback is unsupported '
+      'until the native runtime can validate the required graph capacity.',
+    );
+  }
+
   /// Creates an inference context for the specified [modelHandle].
   ///
   /// Returns a handle to the created context.
@@ -3805,6 +3824,13 @@ class LlamaCppService {
       isAndroid: Platform.isAndroid,
       platform: Platform.operatingSystem,
     );
+    if (params.speculativeRollbackTokenMax > 0) {
+      _validateRollbackReservation(
+        params,
+        isRecurrent: llama_model_is_recurrent(model.pointer),
+        isHybrid: llama_model_is_hybrid(model.pointer),
+      );
+    }
 
     final ctxParams = llama_context_default_params();
     int nCtx = params.contextSize;
@@ -4868,17 +4894,12 @@ class LlamaCppService {
     final nSeqCtx = llama_n_ctx_seq(ctx.pointer);
     final tokens = _tokenizeEmbeddingText(vocab, text, nSeqCtx);
     final passTokenLimit = _embeddingPassTokenLimit(
+      modelHandle,
       ctx.pointer,
       useEncoderPath,
+      poolingType,
     );
-    if (passTokenLimit != null && tokens.length > passTokenLimit) {
-      throw LlamaInferenceException(
-        'The embedding input has ${tokens.length} tokens, but this model '
-        'embeds its input in one pass of at most $passTokenLimit tokens '
-        '(n_ubatch). Shorten the input or raise ModelParams.microBatchSize '
-        'and ModelParams.batchSize.',
-      );
-    }
+    _checkEmbeddingPassTokenLimit(tokens.length, passTokenLimit);
     final configuredBatchSize = contextParams.n_batch > 0
         ? contextParams.n_batch
         : tokens.length;
@@ -4996,23 +5017,16 @@ class LlamaCppService {
     final poolingType = llama_pooling_type$1(ctx.pointer);
     _checkEmbeddingPoolingType(poolingType);
     final maxParallelSequences = llama_n_seq_max(ctx.pointer);
-    if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_NONE ||
-        maxParallelSequences <= 1) {
-      final fallbackVectors = <List<double>>[];
-      for (final text in texts) {
-        fallbackVectors.add(embed(contextHandle, text, normalize: normalize));
-      }
-      return fallbackVectors;
-    }
-
     final vocab = llama_model_get_vocab(model.pointer);
     final nSeqCtx = llama_n_ctx_seq(ctx.pointer);
     final configuredBatchSize = contextParams.n_batch > 0
         ? contextParams.n_batch
         : llama_n_ctx(ctx.pointer);
     final passTokenLimit = _embeddingPassTokenLimit(
+      modelHandle,
       ctx.pointer,
       useEncoderPath,
+      poolingType,
     );
     final batchCapacity = math.max(
       1,
@@ -5025,7 +5039,17 @@ class LlamaCppService {
     final tokenizedInputs = <List<int>>[];
     for (final text in texts) {
       final tokens = _tokenizeEmbeddingText(vocab, text, nSeqCtx);
+      _checkEmbeddingPassTokenLimit(tokens.length, passTokenLimit);
       tokenizedInputs.add(tokens);
+    }
+
+    if (poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_NONE ||
+        maxParallelSequences <= 1) {
+      final fallbackVectors = <List<double>>[];
+      for (final text in texts) {
+        fallbackVectors.add(embed(contextHandle, text, normalize: normalize));
+      }
+      return fallbackVectors;
     }
 
     final vectors = List<List<double>?>.filled(texts.length, null);
@@ -5198,13 +5222,75 @@ class LlamaCppService {
   }
 
   int? _embeddingPassTokenLimit(
+    int modelHandle,
     Pointer<llama_context> contextPointer,
     bool useEncoderPath,
+    llama_pooling_type poolingType,
   ) {
-    if (useEncoderPath || llama_get_memory(contextPointer) == nullptr) {
+    // MEAN/CLS pooling overwrites the sequence embedding per micro-batch;
+    // non-causal attention needs all prompt tokens in the same forward pass.
+    if (useEncoderPath ||
+        llama_get_memory(contextPointer) == nullptr ||
+        poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_MEAN ||
+        poolingType == llama_pooling_type.LLAMA_POOLING_TYPE_CLS ||
+        !_embeddingModelHasCausalAttention(modelHandle)) {
       return llama_n_ubatch(contextPointer);
     }
     return null;
+  }
+
+  bool _embeddingModelHasCausalAttention(
+    int modelHandle, {
+    bool Function(Pointer<llama_model>)? diffusionProbe,
+  }) {
+    try {
+      if ((diffusionProbe ?? llama_model_is_diffusion)(
+        _models[modelHandle]!.pointer,
+      )) {
+        return false;
+      }
+    } on Object {
+      throw LlamaUnsupportedException(
+        'Cannot verify causal attention for native embeddings: the runtime '
+        'does not expose the required llama_model_is_diffusion probe. '
+        'Use the pinned native runtime or a compatible version before decoding.',
+      );
+    }
+    final metadata = getMetadata(modelHandle);
+    final architecture = metadata['general.architecture'];
+    if (architecture == null || architecture.isEmpty) {
+      throw LlamaUnsupportedException(
+        'Cannot verify causal attention for native embeddings: the runtime '
+        'did not report general.architecture model metadata. Use a runtime '
+        'that exposes embedding model metadata before decoding.',
+      );
+    }
+    // llama.cpp v0.5.0 (7fe450e1) forces this non-diffusion architecture's
+    // attention to non-causal after loading the optional metadata override.
+    if (architecture == 'gemma-embedding') return false;
+    final causal = metadata['$architecture.attention.causal'];
+    // The other models in the pinned loader default causal_attn to true when
+    // this optional boolean key is absent. Context creation keeps that value.
+    return switch (causal) {
+      null || 'true' => true,
+      'false' => false,
+      _ => throw LlamaUnsupportedException(
+        'Cannot verify causal attention for native embeddings: the runtime '
+        'reported invalid attention.causal model metadata. Use a runtime '
+        'that reports a boolean attention mode before decoding.',
+      ),
+    };
+  }
+
+  void _checkEmbeddingPassTokenLimit(int tokenCount, int? passTokenLimit) {
+    if (passTokenLimit != null && tokenCount > passTokenLimit) {
+      throw LlamaInferenceException(
+        'The embedding input has $tokenCount tokens, but this model '
+        'embeds its input in one pass of at most $passTokenLimit tokens '
+        '(n_ubatch). Shorten the input or raise ModelParams.microBatchSize '
+        'and ModelParams.batchSize.',
+      );
+    }
   }
 
   int _resolveEmbeddingDimension(Pointer<llama_model> modelPointer) {

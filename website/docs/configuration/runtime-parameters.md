@@ -64,10 +64,10 @@ Important fields:
   resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
   CPU preset uses `min(n_batch, 512)`. Explicit positive
   values are preserved within `n_ubatch <= n_batch <= n_ctx`. Native
-  encoder-only models and models without a KV cache (such as BERT and
-  ModernBERT) embed each input in one micro-batch, so `embed()` throws
-  `LlamaInferenceException` for longer input; raise `microBatchSize` and
-  `batchSize` to embed it.
+  encoder-only models, models without a KV cache (such as BERT and ModernBERT),
+  non-causal attention models, and MEAN/CLS pooling embed each input in one
+  micro-batch. `embed()` and `embedBatch()` throw `LlamaInferenceException`
+  for longer input; raise `microBatchSize` and `batchSize` or shorten the input.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the
@@ -76,6 +76,12 @@ Important fields:
   `draftModel`. WebGPU passes it, and `speculativeRollbackTokenMax`, to
   the bridge only when set; bridge assets without speculative decoding ignore
   both.
+- `speculativeRollbackTokenMax` (llama.cpp): native recurrent or hybrid models
+  reject a nonzero value with `LlamaUnsupportedException` before context
+  creation. The pinned runtime cannot establish a safe rollback graph budget.
+  Leave it at `0` for ordinary generation; strategies requiring rollback
+  snapshots on those models remain unsupported. Non-recurrent native models
+  and WebGPU retain their runtime behavior.
 - `chatTemplate`: Jinja chat template that replaces the model's own. On GGUF
   models, like llama.cpp's `--chat-template-file`, `engine.create` and
   `engine.chatTemplate` render the prompt and parse tool calls and reasoning

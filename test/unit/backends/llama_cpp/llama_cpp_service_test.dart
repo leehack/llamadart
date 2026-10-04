@@ -34,6 +34,61 @@ import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 void main() {
+  group('recurrent rollback reservation policy', () {
+    for (final (isRecurrent, isHybrid) in [
+      (false, false),
+      (true, false),
+      (false, true),
+      (true, true),
+    ]) {
+      for (final capacity in [0, 1, 48]) {
+        test('capacity=$capacity recurrent=$isRecurrent hybrid=$isHybrid', () {
+          void validate() => _invokePrivateForTesting<Object?>(
+            LlamaCppService(),
+            '_validateRollbackReservation',
+            [ModelParams(speculativeRollbackTokenMax: capacity)],
+            {#isRecurrent: isRecurrent, #isHybrid: isHybrid},
+          );
+          if (capacity == 0 || (!isRecurrent && !isHybrid)) {
+            expect(validate, returnsNormally);
+          } else {
+            expect(
+              validate,
+              throwsA(
+                isA<LlamaUnsupportedException>().having(
+                  (error) => error.message,
+                  'actionable diagnostic',
+                  allOf(
+                    contains('speculativeRollbackTokenMax=$capacity'),
+                    contains('graph'),
+                    contains('speculativeRollbackTokenMax=0'),
+                  ),
+                ),
+              ),
+            );
+          }
+        });
+      }
+    }
+
+    test('production context creation retains nonrecurrent reservations', () {
+      final temp = Directory.systemTemp.createTempSync(
+        'rollback_nonrecurrent_',
+      );
+      addTearDown(() => temp.deleteSync(recursive: true));
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+      final model = writeSyntheticLlamaGguf(path.join(temp.path, 'llama.gguf'));
+      const params = ModelParams(
+        contextSize: 512,
+        gpuLayers: 0,
+        speculativeRollbackTokenMax: 48,
+      );
+      final handle = service.loadModel(model.path, params);
+      expect(service.createContext(handle, params), greaterThan(0));
+    });
+  });
+
   test('preserved template tokens remain excluded from native text stops', () {
     final stops = _invokePrivateForTesting<List<String>>(
       LlamaCppService(),
@@ -3387,6 +3442,365 @@ void main() {
       expect(vector.every((value) => value.isFinite), isTrue);
     });
 
+    int decoderContext({
+      String architecture = 'llama',
+      int poolingType = 3,
+      bool? causalAttention,
+      ModelParams params = const ModelParams(
+        contextSize: 1024,
+        batchSize: 1024,
+        microBatchSize: 64,
+        maxParallelSequences: 2,
+      ),
+    }) {
+      final modelPath = path.join(tempDir.path, 'decoder.gguf');
+      writeSyntheticLlamaGguf(
+        modelPath,
+        architecture: architecture,
+        poolingType: poolingType,
+        causalAttention: causalAttention,
+      );
+      final cpuParams = params.copyWith(
+        preferredBackend: GpuBackend.cpu,
+        gpuLayers: 0,
+      );
+      modelHandle = service.loadModel(modelPath, cpuParams);
+      return service.createContext(modelHandle, cpuParams);
+    }
+
+    for (final pooling in [
+      llama_pooling_type.LLAMA_POOLING_TYPE_MEAN,
+      llama_pooling_type.LLAMA_POOLING_TYPE_CLS,
+    ]) {
+      test(
+        '$pooling with memory rejects partial pooling for embed and embedBatch',
+        () {
+          final handle = decoderContext(poolingType: pooling.value);
+          final fits = textOfTokens(64);
+          final exceeds = textOfTokens(65);
+          final rejectsPartialPooling = throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('at most 64 tokens'),
+                contains('ModelParams.microBatchSize'),
+                contains('ModelParams.batchSize'),
+              ),
+            ),
+          );
+          expect(service.embed(handle, fits), hasLength(16));
+          expect(() => service.embed(handle, exceeds), rejectsPartialPooling);
+          expect(
+            () => service.embedBatch(handle, [fits, exceeds]),
+            rejectsPartialPooling,
+          );
+          expect(service.embed(handle, fits), hasLength(16));
+        },
+      );
+
+      test(
+        '$pooling limits grouped input to one micro-batch without corrupting vectors',
+        () {
+          final handle = decoderContext(poolingType: pooling.value);
+          final first = textOfTokens(40);
+          final second = textOfTokens(40, letter: 'b');
+          final expected = [
+            service.embed(handle, first, normalize: false),
+            service.embed(handle, second, normalize: false),
+          ];
+          final vectors = service.embedBatch(handle, [
+            first,
+            second,
+          ], normalize: false);
+          expect(vectors[0], orderedEquals(expected[0]));
+          expect(vectors[1], orderedEquals(expected[1]));
+        },
+      );
+
+      test(
+        '$pooling with memory embeds a longer input when the micro-batch is raised',
+        () {
+          final handle = decoderContext(
+            poolingType: pooling.value,
+            params: const ModelParams(
+              contextSize: 1024,
+              batchSize: 1024,
+              microBatchSize: 1024,
+              maxParallelSequences: 2,
+            ),
+          );
+          final text = textOfTokens(600);
+          final vector = service.embed(handle, text);
+          expect(vector, hasLength(16));
+          expect(vector.every((value) => value.isFinite), isTrue);
+          final vectors = service.embedBatch(handle, [text, 'short']);
+          expect(
+            vectors.first,
+            orderedEquals(vector.map((value) => closeTo(value, 1e-6))),
+          );
+        },
+      );
+    }
+
+    for (final pooling in [
+      llama_pooling_type.LLAMA_POOLING_TYPE_LAST,
+      llama_pooling_type.LLAMA_POOLING_TYPE_NONE,
+    ]) {
+      test('non-causal $pooling with memory rejects split decoding', () {
+        final handle = decoderContext(
+          poolingType: pooling.value,
+          causalAttention: false,
+        );
+        final fits = textOfTokens(64);
+        final exceeds = textOfTokens(65);
+        final rejectsSplit = throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('at most 64 tokens'),
+          ),
+        );
+        expect(service.embed(handle, fits), hasLength(16));
+        expect(() => service.embed(handle, exceeds), rejectsSplit);
+        expect(() => service.embedBatch(handle, [fits, exceeds]), rejectsSplit);
+      });
+
+      test('causal $pooling with memory keeps supported chunking', () {
+        final handle = decoderContext(
+          poolingType: pooling.value,
+          causalAttention: true,
+        );
+        final first = textOfTokens(100);
+        final second = textOfTokens(100, letter: 'b');
+        final expected = [
+          service.embed(handle, first),
+          service.embed(handle, second),
+        ];
+        final vectors = service.embedBatch(handle, [first, second]);
+        expect(vectors[0], orderedEquals(expected[0]));
+        expect(vectors[1], orderedEquals(expected[1]));
+      });
+    }
+
+    test(
+      'non-causal grouped decode fits total input within one micro-batch',
+      () {
+        final handle = decoderContext(causalAttention: false);
+        final first = textOfTokens(40);
+        final second = textOfTokens(40, letter: 'b');
+        final expected = [
+          service.embed(handle, first),
+          service.embed(handle, second),
+        ];
+        final vectors = service.embedBatch(handle, [first, second]);
+        expect(vectors[0], orderedEquals(expected[0]));
+        expect(vectors[1], orderedEquals(expected[1]));
+      },
+    );
+
+    test('non-causal input succeeds when its one-pass capacity is raised', () {
+      final handle = decoderContext(
+        causalAttention: false,
+        params: const ModelParams(
+          contextSize: 1024,
+          batchSize: 1024,
+          microBatchSize: 1024,
+        ),
+      );
+      final text = textOfTokens(600);
+      expect(service.embed(handle, text), hasLength(16));
+      expect(service.embedBatch(handle, [text, 'short']).first, hasLength(16));
+    });
+
+    for (final metadata in [
+      <String, String>{},
+      {
+        'general.architecture': 'llama',
+        'llama.attention.causal': 'not-a-boolean',
+      },
+    ]) {
+      test('unverifiable causal metadata $metadata fails before decoding', () {
+        service.dispose();
+        service = _EmbeddingMetadataService(metadata);
+        final handle = decoderContext();
+        final rejectsProbe = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot verify causal attention'),
+          ),
+        );
+        expect(() => service.embed(handle, 'short'), rejectsProbe);
+        expect(
+          () => service.embedBatch(handle, ['short', 'other']),
+          rejectsProbe,
+        );
+      });
+    }
+
+    test(
+      'batch rejects a later oversized pooled input before clearing any context',
+      () {
+        final handle = decoderContext(
+          poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
+        );
+        final context = _readPrivateForTesting<Map<int, Object>>(
+          service,
+          '_contexts',
+        )[handle]!;
+        reflect(context).setField(#cachedPromptTokens, [7, 8, 9]);
+        final fits = textOfTokens(64);
+        final exceeds = textOfTokens(65);
+        expect(
+          () => service.embedBatch(handle, [fits, exceeds]),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(reflect(context).getField(#cachedPromptTokens).reflectee, [
+          7,
+          8,
+          9,
+        ]);
+        expect(service.embed(handle, fits), hasLength(16));
+      },
+    );
+
+    test('one-pass limit uses the effective native micro-batch', () {
+      final handle = decoderContext(
+        poolingType: llama_pooling_type.LLAMA_POOLING_TYPE_MEAN.value,
+        params: const ModelParams(
+          contextSize: 1024,
+          batchSize: 64,
+          microBatchSize: 128,
+        ),
+      );
+      final context = _readPrivateForTesting<Map<int, Object>>(
+        service,
+        '_contexts',
+      )[handle]!;
+      final pointer =
+          reflect(context).getField(#pointer).reflectee
+              as Pointer<llama_context>;
+      expect(llama_n_ubatch(pointer), 64);
+      expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+      expect(
+        () => service.embed(handle, textOfTokens(65)),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('at most 64 tokens'),
+          ),
+        ),
+      );
+    });
+
+    for (final pooling in [
+      llama_pooling_type.LLAMA_POOLING_TYPE_NONE,
+      llama_pooling_type.LLAMA_POOLING_TYPE_LAST,
+    ]) {
+      test('fallback $pooling preflights every input before decoding', () {
+        final handle = decoderContext(
+          poolingType: pooling.value,
+          causalAttention: false,
+          params: const ModelParams(
+            contextSize: 1024,
+            batchSize: 1024,
+            microBatchSize: 64,
+            maxParallelSequences: 1,
+          ),
+        );
+        final context = _readPrivateForTesting<Map<int, Object>>(
+          service,
+          '_contexts',
+        )[handle]!;
+        reflect(context).setField(#cachedPromptTokens, [7, 8, 9]);
+        expect(
+          () => service.embedBatch(handle, ['short', textOfTokens(65)]),
+          throwsA(isA<LlamaInferenceException>()),
+        );
+        expect(reflect(context).getField(#cachedPromptTokens).reflectee, [
+          7,
+          8,
+          9,
+        ]);
+        expect(service.embed(handle, 'short'), hasLength(16));
+      });
+    }
+
+    for (final causalAttention in [null, true]) {
+      test(
+        'native diffusion probe overrides causal metadata $causalAttention',
+        () {
+          final handle = decoderContext(
+            architecture: 'llada',
+            causalAttention: causalAttention,
+          );
+          expect(
+            _invokePrivateForTesting<bool>(
+              service,
+              '_embeddingModelHasCausalAttention',
+              [modelHandle],
+            ),
+            isFalse,
+          );
+          expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+          expect(
+            () => service.embed(handle, textOfTokens(65)),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          expect(
+            () => service.embedBatch(handle, ['short', textOfTokens(65)]),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+        },
+      );
+
+      test(
+        'Gemma embedding forced attention overrides causal metadata $causalAttention',
+        () {
+          service.dispose();
+          service = _EmbeddingMetadataService({
+            'general.architecture': 'gemma-embedding',
+            if (causalAttention != null)
+              'gemma-embedding.attention.causal': 'true',
+          });
+          final handle = decoderContext();
+          expect(service.embed(handle, textOfTokens(64)), hasLength(16));
+          expect(
+            () => service.embed(handle, textOfTokens(65)),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+          expect(
+            () => service.embedBatch(handle, ['short', textOfTokens(65)]),
+            throwsA(isA<LlamaInferenceException>()),
+          );
+        },
+      );
+    }
+
+    test('unavailable native diffusion probe reports typed version skew', () {
+      decoderContext();
+      expect(
+        () => _invokePrivateForTesting<bool>(
+          service,
+          '_embeddingModelHasCausalAttention',
+          [modelHandle],
+          {
+            #diffusionProbe: (Pointer<llama_model> pointer) =>
+                throw ArgumentError('missing native symbol'),
+          },
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama_model_is_diffusion'),
+          ),
+        ),
+      );
+    });
+
     test('an encoder-only model rejects input above the micro-batch', () {
       final modelPath = path.join(tempDir.path, 't5encoder.gguf');
       writeSyntheticT5EncoderGguf(
@@ -3571,6 +3985,87 @@ void main() {
       expect(vectors[1], orderedEquals(service.embed(handle, second)));
       expect(vectors[0], isNot(orderedEquals(vectors[1])));
     });
+  });
+
+  group('real Qwen3 embedding safety', () {
+    for (final entry in <(String, llama_pooling_type, String)>[
+      (
+        'LLAMADART_QWEN3_MEAN_MODEL',
+        llama_pooling_type.LLAMA_POOLING_TYPE_MEAN,
+        'true',
+      ),
+      (
+        'LLAMADART_QWEN3_NONCAUSAL_MODEL',
+        llama_pooling_type.LLAMA_POOLING_TYPE_LAST,
+        'false',
+      ),
+    ]) {
+      final (environmentKey, pooling, causal) = entry;
+      final modelPath = Platform.environment[environmentKey];
+      test(
+        '$pooling causal=$causal rejects long input and recovers with a raised one-pass limit',
+        () {
+          final service = LlamaCppService()..initializeBackend();
+          addTearDown(service.dispose);
+          const params = ModelParams(
+            contextSize: 2048,
+            batchSize: 1024,
+            microBatchSize: 512,
+            maxParallelSequences: 2,
+            preferredBackend: GpuBackend.cpu,
+            gpuLayers: 0,
+          );
+          final model = service.loadModel(modelPath!, params);
+          final metadata = service.getMetadata(model);
+          expect(metadata['general.architecture'], 'qwen3');
+          expect(metadata['qwen3.attention.causal'], causal);
+          expect(metadata['qwen3.pooling_type'], pooling.value.toString());
+          var context = service.createContext(model, params);
+          final long = 'hello ' * 690;
+          final tokenCount = service.tokenize(model, long, true).length;
+          expect(tokenCount, greaterThan(512));
+          expect(tokenCount, lessThanOrEqualTo(1024));
+          final short = service.embed(context, 'hello', normalize: false);
+          expect(short.length, greaterThan(1));
+          expect(short.every((value) => value.isFinite), isTrue);
+          final rejectsSplit = throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              contains('at most 512 tokens'),
+            ),
+          );
+          expect(() => service.embed(context, long), rejectsSplit);
+          expect(
+            () => service.embedBatch(context, ['hello', long]),
+            rejectsSplit,
+          );
+          expect(
+            service.embed(context, 'hello', normalize: false),
+            orderedEquals(short),
+          );
+          service.freeContext(context);
+          context = service.createContext(
+            model,
+            params.copyWith(microBatchSize: 1024),
+          );
+          final vector = service.embed(context, long, normalize: false);
+          final grouped = service.embedBatch(context, [
+            long,
+            'hello',
+          ], normalize: false);
+          expect(
+            grouped.first,
+            orderedEquals(vector.map((value) => closeTo(value, 1e-6))),
+          );
+          expect(vector.every((value) => value.isFinite), isTrue);
+        },
+        tags: 'local-only',
+        skip: modelPath == null
+            ? 'Set $environmentKey to the retagged Qwen3-Reranker GGUF.'
+            : null,
+      );
+    }
   });
 
   group('resolveGpuLayersForLoad', () {
@@ -5620,4 +6115,11 @@ final class _EncoderSpy {
     expect(valueCount, tokens.length * 4);
     return hiddenFor(tokens);
   }
+}
+
+class _EmbeddingMetadataService extends LlamaCppService {
+  _EmbeddingMetadataService(this.metadata);
+  final Map<String, String> metadata;
+  @override
+  Map<String, String> getMetadata(int modelHandle) => metadata;
 }
