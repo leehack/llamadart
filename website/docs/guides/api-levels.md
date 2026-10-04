@@ -46,11 +46,11 @@ chat history management.
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  final LlamaEngine engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path('model.gguf')),
+  );
 
   try {
-    await engine.loadModel('model.gguf');
-
     final ChatSession session = ChatSession(engine)
       ..systemPrompt = 'You are a concise assistant.';
 

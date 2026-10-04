@@ -51,19 +51,17 @@ Future<void> main(List<String> args) async {
   const warmups = 1;
   const runs = 3;
 
-  final engine = LlamaEngine(LlamaBackend());
+  final loadSw = Stopwatch()..start();
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path(modelPath)),
+    params: ModelParams(
+      contextSize: 4096,
+      gpuLayers: ModelParams.maxGpuLayers,
+      preferredBackend: GpuBackend.metal,
+    ),
+  );
+  loadSw.stop();
   try {
-    final loadSw = Stopwatch()..start();
-    await engine.loadModel(
-      modelPath,
-      modelParams: ModelParams(
-        contextSize: 4096,
-        gpuLayers: ModelParams.maxGpuLayers,
-        preferredBackend: GpuBackend.metal,
-      ),
-    );
-    loadSw.stop();
-
     final backendName = await engine.getBackendName();
     final resolvedGpuLayers = await engine.getResolvedGpuLayers();
     final promptTokens = await engine.getTokenCount(prompt);

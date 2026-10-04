@@ -9,7 +9,7 @@ This quickstart uses the core `LlamaEngine` API.
 ## Minimal generation example
 
 Start with a model source instead of a machine-specific file path. On native
-Dart/Flutter targets, `loadModelSource(...)` downloads the file on first run,
+Dart/Flutter targets, `LlamaEngine.load(...)` downloads the file on first run,
 stores it in the package-managed model cache, and reuses the cached file on
 later runs. The cache is a per-user directory on desktop and the app's cache
 directory on Android and iOS, so no `path_provider` setup is needed; see
@@ -20,23 +20,23 @@ to move it.
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final LlamaEngine engine = LlamaEngine(LlamaBackend());
-
-  try {
-    await engine.loadModelSource(
+  final LlamaEngine engine = await LlamaEngine.load(
+    LlamaModel(
       ModelSource.parse(
         'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
         'SmolLM2-135M-Instruct-Q2_K.gguf',
       ),
-      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
-      onProgress: (progress) {
-        final fraction = progress.fraction;
-        if (fraction != null) {
-          print('download ${(fraction * 100).toStringAsFixed(1)}%');
-        }
-      },
-    );
+    ),
+    params: const ModelParams(contextSize: 1024, gpuLayers: 0),
+    onProgress: (progress) {
+      final fraction = progress.fraction;
+      if (fraction != null) {
+        print('download ${(fraction * 100).toStringAsFixed(1)}%');
+      }
+    },
+  );
 
+  try {
     final output = await engine.create(
       const [
         LlamaChatMessage.fromText(

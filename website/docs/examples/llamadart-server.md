@@ -54,7 +54,7 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   `thinking_budget_tokens`
   ([Generation and streaming](../guides/generation-and-streaming)).
 - Local paths, HTTP(S) URLs and `hf://` sources through
-  `LlamaEngine.loadModelSource` ([Downloads and cache](../guides/model-downloads)).
+  `LlamaEngine.setModel` ([Downloads and cache](../guides/model-downloads)).
 - Optional bearer auth, CORS, an OpenAPI spec at `/openapi.json` and Swagger UI
   with ready-made requests at `/docs`.
 

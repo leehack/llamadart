@@ -33,8 +33,9 @@ final weatherTool = ToolDefinition(
 ## Run the tool-call loop
 
 ```dart
-final engine = LlamaEngine(LlamaBackend());
-await engine.loadModel('model.gguf');
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.path('model.gguf')),
+);
 final session = ChatSession(engine);
 
 final result = await session.sendWithTools(

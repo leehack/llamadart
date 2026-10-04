@@ -55,10 +55,9 @@ Future<void> main(List<String> arguments) async {
   };
   final seen = <String>{};
   final out = File(outPath).openWrite();
-  final engine = LlamaEngine(LlamaBackend());
-  await engine.loadModel(
-    model,
-    modelParams: const ModelParams(contextSize: 4096),
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path(model)),
+    params: const ModelParams(contextSize: 4096),
   );
   final definitions = [
     for (final i in CommandIntent.values)

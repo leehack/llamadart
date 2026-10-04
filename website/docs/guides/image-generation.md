@@ -174,7 +174,7 @@ wrong file costs its download; it stays in the cache.
   Cached and local files count as received. `totalBytes` is `null` until
   every file's size is known: local files from the start, others when their
   download starts.
-- `download:` (`ModelLoadOptions`, as for `LlamaEngine.loadModelSource`)
+- `download:` (`ModelLoadOptions`, as for `LlamaEngine.load`)
   applies to every remote file: cache policy and directory, `bearerToken` and
   headers (for example for a gated repository), resume, retries and the
   cancel token. Local files take only the cancel token. `bearerToken` and

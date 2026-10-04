@@ -41,23 +41,21 @@ Future<void> main(List<String> args) async {
   final dispatchLibDir = _env('LITERT_LM_DISPATCH_LIB_DIR');
 
   final backend = _parseBackend(backendArg);
-  final engine = LlamaEngine(LlamaBackend());
+  await LlamaLogging.configure(nativeLevel: LlamaLogLevel.info);
+  final loadSw = Stopwatch()..start();
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path(modelPath)),
+    params: ModelParams(
+      contextSize: contextSize,
+      liteRtLmBackend: backend,
+      liteRtLmActivationDataType: activationDataType,
+      liteRtLmPrefillChunkSize: prefillChunkSize,
+      liteRtLmParallelFileSectionLoading: parallelFileSectionLoading,
+      liteRtLmDispatchLibDir: dispatchLibDir,
+    ),
+  );
+  loadSw.stop();
   try {
-    await LlamaLogging.configure(nativeLevel: LlamaLogLevel.info);
-    final loadSw = Stopwatch()..start();
-    await engine.loadModel(
-      modelPath,
-      modelParams: ModelParams(
-        contextSize: contextSize,
-        liteRtLmBackend: backend,
-        liteRtLmActivationDataType: activationDataType,
-        liteRtLmPrefillChunkSize: prefillChunkSize,
-        liteRtLmParallelFileSectionLoading: parallelFileSectionLoading,
-        liteRtLmDispatchLibDir: dispatchLibDir,
-      ),
-    );
-    loadSw.stop();
-
     final promptTokens = await engine.tokenize(prompt, addSpecial: false);
     final promptTokensWithSpecial = await engine.tokenize(
       prompt,

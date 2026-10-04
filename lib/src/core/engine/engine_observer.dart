@@ -166,9 +166,10 @@ final class LlamaEmbeddingsOperation extends LlamaOperation {
        super._();
 }
 
-/// A model load: the load that `LlamaEngine.load` and `setModel` perform
-/// after resolving the model's files, including its projector, and the
-/// deprecated `loadModel`, `loadModelFromUrl` and `loadModelSource`.
+/// A model load: a whole `LlamaEngine.load` or `setModel` call, with its
+/// downloads and its projector, or the deprecated `loadModel` and
+/// `loadModelFromUrl`, including the load that `loadModelSource` performs
+/// after resolving its source.
 final class LlamaModelLoadOperation extends LlamaOperation {
   /// The model parameters.
   final ModelParams modelParams;

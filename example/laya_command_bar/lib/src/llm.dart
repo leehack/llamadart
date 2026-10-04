@@ -85,23 +85,23 @@ Future<IntentSource> loadLlmSource({
   LoadStatus? onStatus,
 }) async {
   model ??= defaultLlmModel;
-  final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: downloads);
+  onStatus?.call('Loading ${model.fileName}', null);
+  final engine = await LlamaEngine.load(
+    LlamaModel(model),
+    params: ModelParams(
+      contextSize: 4096,
+      preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
+      gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
+    ),
+    onProgress: (p) => onStatus?.call(
+      'Downloading ${model!.fileName}: ${(p.receivedBytes / 1e6).round()}'
+      '${p.totalBytes == null ? '' : ' of ${(p.totalBytes! / 1e6).round()}'}'
+      ' MB',
+      p.fraction,
+    ),
+    store: ModelFileStore(downloadManager: downloads),
+  );
   try {
-    onStatus?.call('Loading ${model.fileName}', null);
-    await engine.loadModelSource(
-      model,
-      modelParams: ModelParams(
-        contextSize: 4096,
-        preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
-        gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
-      ),
-      onProgress: (p) => onStatus?.call(
-        'Downloading ${model!.fileName}: ${(p.receivedBytes / 1e6).round()}'
-        '${p.totalBytes == null ? '' : ' of ${(p.totalBytes! / 1e6).round()}'}'
-        ' MB',
-        p.fraction,
-      ),
-    );
     if (!engine.supportsNextTokenScoring) {
       throw LlamaUnsupportedException(
         'The LLM reader needs next-token scoring, which this backend lacks.',

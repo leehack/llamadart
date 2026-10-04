@@ -454,7 +454,13 @@ class LlamaEngine {
     List<ModelSource> companions = const <ModelSource>[],
   }) async {
     var companionLocations = const <String>[];
-    await _withModelLifecycle('set a model', () async {
+    final source = model.source;
+    final observedSource =
+        source.path ??
+        (backend.supportsUrlLoading
+            ? '${source.resolvedUri}'
+            : source.fileName);
+    Future<void> load() => _withModelLifecycle('set a model', () async {
       params.validate();
       final sources = <ModelSource>[
         model.source,
@@ -487,50 +493,50 @@ class LlamaEngine {
       _throwIfDisposedDuringLoad();
       final location = locations.first;
       final projector = model.projector == null ? null : locations[1];
-      await _observeModelLoad(location, resolvedParams, () async {
-        if (backend.supportsUrlLoading) {
-          final fileCount = projector == null ? 1 : 2;
-          await _loadModelFromUrl(
-            location,
-            modelParams: resolvedParams,
-            onProgress: onProgress == null
-                ? null
-                : (double fraction) => onProgress(
-                    ModelDownloadProgress.fraction(fraction / fileCount),
-                  ),
-            format: model.source.format,
-          );
-        } else {
-          await _loadModel(
-            location,
-            modelParams: resolvedParams,
-            format: model.source.format,
-          );
-        }
-        _loraLocations.addAll(loraLocations);
-        try {
-          _throwIfDisposedDuringLoad();
-          if (projector != null) {
-            await _withMmLifecycle(
-              () => _loadMultimodalProjectorLocked(projector),
-            );
-          }
-          throwIfCancelled();
-        } catch (_) {
-          try {
-            await _unloadModel();
-          } catch (_) {
-            // The load failure is the error the caller needs.
-          }
-          rethrow;
-        }
-        await _captureObservedModel(location);
+      if (backend.supportsUrlLoading) {
+        final fileCount = projector == null ? 1 : 2;
+        await _loadModelFromUrl(
+          location,
+          modelParams: resolvedParams,
+          onProgress: onProgress == null
+              ? null
+              : (double fraction) => onProgress(
+                  ModelDownloadProgress.fraction(fraction / fileCount),
+                ),
+          format: source.format,
+        );
+      } else {
+        await _loadModel(
+          location,
+          modelParams: resolvedParams,
+          format: source.format,
+        );
+      }
+      _loraLocations.addAll(loraLocations);
+      try {
         _throwIfDisposedDuringLoad();
-      });
+        if (projector != null) {
+          await _withMmLifecycle(
+            () => _loadMultimodalProjectorLocked(projector),
+          );
+        }
+        throwIfCancelled();
+      } catch (_) {
+        try {
+          await _unloadModel();
+        } catch (_) {
+          // The load failure is the error the caller needs.
+        }
+        rethrow;
+      }
+      await _captureObservedModel(location);
+      _throwIfDisposedDuringLoad();
       companionLocations = locations.sublist(
         sources.length - companions.length,
       );
     });
+
+    await _observeModelLoad(observedSource, params, load);
     return companionLocations;
   }
 
@@ -2847,8 +2853,12 @@ class LlamaEngine {
       if (abandoned()) return null;
       _draftLocations[key] = location;
     }
-    final resolved = backend.supportsUrlLoading
-        ? ModelSource.url(Uri.parse(location), fileName: source.fileName)
+    // A URL-loading backend reads a local path as a URL relative to the
+    // document, or a `blob:` URL, which only a path source can carry.
+    final remote = backend.supportsUrlLoading ? Uri.tryParse(location) : null;
+    final resolved =
+        remote != null && (remote.isScheme('http') || remote.isScheme('https'))
+        ? ModelSource.url(remote, fileName: source.fileName)
         : ModelSource.path(location);
     // The resolved file needs no download options, and the caller's bearer
     // token, headers and cancel token must not reach the backend or its

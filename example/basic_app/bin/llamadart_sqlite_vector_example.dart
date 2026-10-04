@@ -44,9 +44,9 @@ Future<void> main(List<String> arguments) async {
     );
 
     print('Loading model...');
-    await engine.loadModel(
-      modelFile.path,
-      modelParams: ModelParams(
+    await engine.setModel(
+      LlamaModel(ModelSource.path(modelFile.path)),
+      params: ModelParams(
         contextSize: options.contextSize,
         preferredBackend: options.forceCpu ? GpuBackend.cpu : GpuBackend.auto,
         gpuLayers: options.forceCpu ? 0 : ModelParams.maxGpuLayers,

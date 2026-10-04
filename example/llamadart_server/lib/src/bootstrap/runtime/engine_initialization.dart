@@ -34,9 +34,9 @@ Future<LlamaApiServerEngine> createInitializedServerEngine(
             required ModelParams modelParams,
             ModelDownloadProgressCallback? onProgress,
           }) {
-            return engine.loadModelSource(
-              source,
-              modelParams: modelParams,
+            return engine.setModel(
+              LlamaModel(source),
+              params: modelParams,
               onProgress: onProgress,
             );
           },

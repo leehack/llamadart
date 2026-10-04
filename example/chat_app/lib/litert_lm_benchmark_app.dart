@@ -371,9 +371,9 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       }
 
       final loadSw = Stopwatch()..start();
-      await engine.loadModel(
-        modelPath,
-        modelParams: ModelParams(
+      await engine.setModel(
+        LlamaModel(ModelSource.path(modelPath)),
+        params: ModelParams(
           contextSize: _maxTokens,
           device: _computeDevice(_backend),
         ),
@@ -520,9 +520,9 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       }
       _append('  backend: ${llamaCppBenchmarkBackendLabel(backendPreference)}');
       final loadSw = Stopwatch()..start();
-      await engine.loadModel(
-        modelPath,
-        modelParams: ModelParams(
+      await engine.setModel(
+        LlamaModel(ModelSource.path(modelPath)),
+        params: ModelParams(
           contextSize: _maxTokens,
           gpuLayers: ModelParams.maxGpuLayers,
           preferredBackend: backendPreference,

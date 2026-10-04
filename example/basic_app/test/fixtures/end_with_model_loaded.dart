@@ -15,7 +15,7 @@ Future<void> main(List<String> args) async {
       ImageGenerationModel(ModelSource.path(model)),
     );
   } else {
-    await LlamaEngine(LlamaBackend()).loadModel(model);
+    await LlamaEngine.load(LlamaModel(ModelSource.path(model)));
   }
   stdout.writeln('loaded');
   if (ending == 'throw') {

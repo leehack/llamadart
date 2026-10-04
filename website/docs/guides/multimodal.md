@@ -11,43 +11,67 @@ load a separate projector.
 
 ## GGUF projector flow
 
+Load the model and its projector in one call:
+
 ```dart
-await engine.loadModel('/path/to/model.gguf');
-await engine.loadMultimodalProjector('/path/to/mmproj.gguf');
+final engine = await LlamaEngine.load(
+  LlamaModel(
+    ModelSource.path('/path/to/model.gguf'),
+    projector: ModelSource.path('/path/to/mmproj.gguf'),
+  ),
+);
 ```
 
-Use source-based loading when the projector should be resolved, downloaded, and
-cached like a remote model source:
+Remote sources are resolved, downloaded and cached together, and `setModel`
+takes the same `LlamaModel` on an existing engine:
 
 ```dart
-await engine.loadModelSource(
-  ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+await engine.setModel(
+  LlamaModel(
+    ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+    projector: ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+  ),
 );
+```
+
+To change only the projector of a loaded model, call
+`loadMultimodalProjectorSource`:
+
+```dart
 await engine.loadMultimodalProjectorSource(
-  ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+  ModelSource.parse('hf://owner/repo/other-mmproj.gguf'),
+  download: ModelLoadOptions(maxRetries: 3),
 );
 ```
 
 Native/file-backed backends download remote projectors through the configured
 `ModelDownloadManager` before loading the cached local path. URL-loading web
-backends support remote unauthenticated projector URLs directly and reject local
-filesystem paths or options that require native cache IO such as auth headers,
-a `cancelToken`, checksum verification, explicit cache policy changes, custom
+backends fetch the projector themselves, from a remote unauthenticated URL or
+a `ModelSource.path` that is a URL relative to the document or a `blob:` URL,
+and reject options that require native cache IO such as auth headers, a
+`cancelToken`, checksum verification, explicit cache policy changes, custom
 cache directories, disabled resume, and custom retry counts.
 
 Projector offload follows effective model-load configuration. If model loading
 is CPU-only (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`), projector
 initialization also runs CPU-only.
 
-`unloadModel()` and `dispose()` release the projector with the model.
+`unloadModel()`, `dispose()` and a `setModel` that replaces the model release
+the projector with the model.
 `unloadMultimodalProjector()` releases only the projector and keeps the model
 loaded. Loading another projector replaces the active one.
 
 ## LiteRT-LM bundle flow
 
 ```dart
-await engine.loadModel('/path/to/model.litertlm');
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.path('/path/to/model.litertlm')),
+);
 ```
+
+A `.litertlm` model takes no projector: passing one throws
+`LlamaUnsupportedException`, before any download when `ModelSource.format` or
+the file name gives the format.
 
 Native LiteRT-LM accepts `LlamaImageContent` and `LlamaAudioContent` backed by
 local paths or encoded media bytes. Remote image URLs and raw PCM
@@ -104,7 +128,8 @@ Native `.litertlm` bundles process media themselves, without a projector.
 `capabilities.supportsVision` and `supportsAudio` report the modalities the
 bundle declares. That declaration can under-report for bundles whose section
 types are not lowercase ([litert-lm-native#60](https://github.com/leehack/litert-lm-native/issues/60)), so a `false` does not block the
-request. `loadMultimodalProjector*` applies only to GGUF projectors; the
+request. `LlamaModel.projector` and `loadMultimodalProjectorSource` apply only
+to GGUF models; the
 `engine.supportsVision` and `engine.supportsAudio` getters report what
 `capabilities` reports, for both formats.
 
@@ -119,9 +144,10 @@ does not by itself provide a transcript contract. For typed transcription, see
 
 - Web uses bridge runtime paths.
 - Multimodal projector loading on web is URL-based.
-- `loadMultimodalProjectorSource(...)` accepts remote unauthenticated projector
-  URLs on URL-loading web backends; source options that require the native
-  download/cache manager are unsupported there.
+- A projector on a URL-loading web backend is a remote unauthenticated URL, or
+  a `ModelSource.path` that is a URL relative to the document or a `blob:`
+  URL; download options that require the native download/cache manager are
+  unsupported there.
 - Local file path media inputs are native-first; web flows use browser file
   bytes/URLs. `LlamaImageContent.url` is read only by the web bridge: native
   `llama.cpp` throws `LlamaUnsupportedException` for it, so download the image

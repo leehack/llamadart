@@ -54,11 +54,11 @@ await engine.setLoraSource(
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path('/models/base-model.gguf')),
+  );
 
   try {
-    await engine.loadModel('/models/base-model.gguf');
-
     await engine.setLoraSource(
       ModelSource.path('/models/lora/domain.gguf'),
       scale: 0.7,
@@ -84,9 +84,9 @@ Future<void> main() async {
 Pass adapters as `ModelParams.loras` to apply them as part of the load:
 
 ```dart
-await engine.loadModel(
-  '/models/base-model.gguf',
-  modelParams: ModelParams(
+await engine.setModel(
+  LlamaModel(ModelSource.path('/models/base-model.gguf')),
+  params: ModelParams(
     loras: [
       LoraAdapterConfig.source(
         ModelSource.path('/models/lora/style.gguf'),
@@ -197,8 +197,9 @@ Custom native runtimes must export the aLoRA metadata functions; see
 ## Lifecycle notes
 
 - LoRA activation is tied to the active context.
-- `unloadModel()` or `dispose()` releases model/context resources and clears
-  active adapter state, including changes made with `setLoraSource`.
+- `unloadModel()`, `dispose()` or a `setModel` that replaces the model
+  releases model/context resources and clears active adapter state, including
+  changes made with `setLoraSource`.
 - Each load applies its `ModelParams.loras`; re-apply adapters set with
   `setLoraSource` after reloading a model.
 

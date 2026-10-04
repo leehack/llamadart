@@ -47,11 +47,15 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
   failures. Safari with assets that lack the adaptive GPU probe is forced to
   CPU. Log `engine.getBackendName()` after load; do not assume GPU ran.
 - Models, projectors, draft models, LoRA adapters and n-gram caches are URLs
-  on the web. `loadModelSource` with a local path throws
-  `LlamaUnsupportedException`, as do `ModelLoadOptions` that need the native
-  download manager: bearer tokens or headers, `sha256`, `cancelToken`,
-  `cacheDirectory`, `resume: false`, or a cache policy other than
-  `preferCached`. The model URL must be fetchable from the page (CORS).
+  on the web, which the runtime fetches itself. Use
+  `ModelSource.parse('https://...')` for a remote model or projector; a
+  `ModelSource.path` for one is a URL relative to the document, or a `blob:`
+  URL. Leave `download:` at `ModelLoadOptions.defaults`: options that need
+  the native download manager (bearer tokens or headers, `sha256`,
+  `cancelToken`, `cacheDirectory`, `resume: false`, or a cache policy other
+  than `preferCached`) throw `LlamaUnsupportedException`. `onProgress`
+  reports only the model's fetch, as a fraction that ends at 0.5 when there
+  is a projector. The model URL must be fetchable from the page (CORS).
 - Models are cached in browser Cache Storage keyed by URL, subject to quota and
   private-mode policy. URLs with userinfo, a fragment, or credential-like query
   keys (`token`, `sig`, `key`, `X-Amz-*`, ...) are loaded without a persistent
@@ -139,18 +143,18 @@ Load a GGUF by URL and pick sampling options from the capability probe:
 import 'package:llamadart/llamadart.dart';
 
 Future<LlamaEngine> loadWebModel(String modelUrl, int modelBytes) async {
-  final LlamaEngine engine = LlamaEngine(LlamaBackend());
+  final LlamaEngine engine;
   try {
-    await engine.loadModelSource(
-      ModelSource.parse(modelUrl),
-      modelParams: ModelParams(contextSize: 2048, modelBytesHint: modelBytes),
+    engine = await LlamaEngine.load(
+      LlamaModel(ModelSource.parse(modelUrl)),
+      params: ModelParams(contextSize: 2048, modelBytesHint: modelBytes),
       onProgress: (ModelDownloadProgress progress) {
         final double? fraction = progress.fraction;
         if (fraction != null) print('Loading ${(fraction * 100).round()}%');
       },
     );
   } on LlamaUnsupportedException catch (error) {
-    await engine.dispose();
+    // A failed LlamaEngine.load has already disposed its engine.
     print('Web runtime unavailable: ${error.message}');
     rethrow;
   }

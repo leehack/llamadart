@@ -59,22 +59,21 @@ Future<void> main(List<String> args) async {
       ? null
       : await readAudioChatSmokeFixture(audioPath);
 
-  final engine = LlamaEngine(LlamaBackend());
+  await LlamaLogging.configure(level: LlamaLogLevel.warn);
+  final engine = await LlamaEngine.load(
+    LlamaModel(
+      ModelSource.path(modelPath),
+      projector: mmprojPath == null ? null : ModelSource.path(mmprojPath),
+    ),
+    params: ModelParams(
+      contextSize: 2048,
+      preferredBackend: backend,
+      gpuLayers: backend == GpuBackend.cpu ? 0 : ModelParams.maxGpuLayers,
+      numberOfThreads: 4,
+      numberOfThreadsBatch: 4,
+    ),
+  );
   try {
-    await LlamaLogging.configure(level: LlamaLogLevel.warn);
-    await engine.loadModel(
-      modelPath,
-      modelParams: ModelParams(
-        contextSize: 2048,
-        preferredBackend: backend,
-        gpuLayers: backend == GpuBackend.cpu ? 0 : ModelParams.maxGpuLayers,
-        numberOfThreads: 4,
-        numberOfThreadsBatch: 4,
-      ),
-    );
-    if (mmprojPath != null) {
-      await engine.loadMultimodalProjector(mmprojPath);
-    }
     final backendName = await engine.getBackendName();
     // Emitted before every semantic assertion so a failing run still records
     // which backend actually served it.

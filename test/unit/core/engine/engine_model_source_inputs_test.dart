@@ -508,28 +508,44 @@ void main() {
       );
     });
 
-    test('URL-loading backends get the draft model URL', () async {
+    test('URL-loading backends get the URL of a remote draft model and the '
+        'path of a local one as written', () async {
       final backend = _RecordingBackend(urlLoadingSupported: true);
       final engine = LlamaEngine(backend);
       await engine.loadModelSource(
         ModelSource.url(Uri.parse('https://example.com/model.gguf')),
       );
 
-      await engine
-          .generate(
-            prompt,
-            params: GenerationParams(
-              speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
-                draftModel: hfDraft,
+      for (final (draft, location) in [
+        (
+          hfDraft,
+          'https://huggingface.co/owner/repo/resolve/main/draft.gguf'
+              '?download=true',
+        ),
+        (ModelSource.path('models/draft.gguf'), 'models/draft.gguf'),
+        (
+          ModelSource.path('blob:https://app.example/3f2a'),
+          'blob:https://app.example/3f2a',
+        ),
+      ]) {
+        await engine
+            .generate(
+              prompt,
+              params: GenerationParams(
+                speculativeDecodingConfig:
+                    SpeculativeDecodingConfig.draftSimple(draftModel: draft),
               ),
-            ),
-          )
-          .drain<void>();
+            )
+            .drain<void>();
 
-      expect(
-        backend.lastGenerationParams!.speculativeDecodingConfig!.draftModelPath,
-        'https://huggingface.co/owner/repo/resolve/main/draft.gguf?download=true',
-      );
+        expect(
+          backend
+              .lastGenerationParams!
+              .speculativeDecodingConfig!
+              .draftModelPath,
+          location,
+        );
+      }
     });
 
     test('cancelGeneration stops a draft model download without cancelling '

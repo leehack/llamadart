@@ -67,9 +67,9 @@ void main() {
 
         addTearDown(engine.dispose);
         final preferredBackend = _backendFromEnvironment();
-        await engine.loadModel(
-          modelPath,
-          modelParams: ModelParams(
+        await engine.setModel(
+          LlamaModel(ModelSource.path(modelPath)),
+          params: ModelParams(
             contextSize: 2048,
             preferredBackend: preferredBackend,
             gpuLayers: preferredBackend == GpuBackend.cpu

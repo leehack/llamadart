@@ -54,8 +54,9 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   engine is left with no model: `LlamaUnsupportedException` (naming the
   adapter) for an unsupported adapter or WebGPU bridge assets, otherwise
   `LlamaModelException` with the adapter and cause in its `details`.
-- Adapter state belongs to the loaded model. `unloadModel()` and `dispose()`
-  drop it, including `setLoraSource` changes. Each load applies its own
+- Adapter state belongs to the loaded model. `unloadModel()`, `dispose()` and
+  a `setModel` that replaces the model drop it, including `setLoraSource`
+  changes. Each load applies its own
   `ModelParams.loras` again; re-apply `setLoraSource` adapters after a reload
   or model switch.
 - An aLoRA (activated LoRA) adapter throws `LlamaUnsupportedException` from
@@ -68,8 +69,8 @@ llamadart applies LoRA adapters at inference time; it does not train them.
   - WebGPU (GGUF on web): needs bridge assets whose
     `getLoraAdapterCapabilities()` reports support (bridge `v0.1.54+`, which
     includes the default pin), for `ModelParams.loras` and the runtime API.
-    The source must be remote; the bridge fetches its URL once per model
-    load, and a local path throws `LlamaUnsupportedException`. Older bridge assets throw
+    The bridge fetches the source's URL once per model load; a
+    `ModelSource.path` is a URL relative to the document, or a `blob:` URL. Older bridge assets throw
     `LlamaUnsupportedException` on every LoRA call and on a load with
     `ModelParams.loras`.
   - Native LiteRT-LM (`.litertlm`): exactly one text adapter at scale `1.0`,
@@ -133,21 +134,18 @@ Future<void> main() async {
       LoraAdapterConfig.source(domain, scale: 0.7),
     ],
   );
+  final LlamaModel base = LlamaModel(
+    ModelSource.path('/models/base-model.gguf'),
+  );
   try {
-    await engine.loadModel(
-      '/models/base-model.gguf',
-      modelParams: withAdapters,
-    );
+    await engine.setModel(base, params: withAdapters);
 
     await engine.setLoraSource(domain, scale: 0.4);
     await engine.removeLoraSource(style);
     await engine.clearLoras();
 
-    await engine.unloadModel();
-    await engine.loadModel(
-      '/models/base-model.gguf',
-      modelParams: withAdapters,
-    );
+    // setModel replaces the loaded model and applies ModelParams.loras again.
+    await engine.setModel(base, params: withAdapters);
   } on LlamaUnsupportedException catch (error) {
     print('LoRA not available here: ${error.message}');
   } finally {
@@ -162,9 +160,9 @@ Native LiteRT-LM: one default-scale adapter, only at load:
 import 'package:llamadart/llamadart.dart';
 
 Future<void> loadLiteRtLmWithAdapter(LlamaEngine engine) {
-  return engine.loadModel(
-    '/models/gemma.litertlm',
-    modelParams: ModelParams(
+  return engine.setModel(
+    LlamaModel(ModelSource.path('/models/gemma.litertlm')),
+    params: ModelParams(
       loras: [
         LoraAdapterConfig.source(
           ModelSource.path('/models/gemma-text-adapter.bin'),

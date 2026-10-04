@@ -679,25 +679,50 @@ void main() {
       expect(manager.sources, isEmpty);
     });
 
-    test(
-      'reports one model load to observers, with the resolved file',
-      () async {
-        final observer = _LoadObserver();
-        final engine = LlamaEngine(
-          _Backend(),
-          modelDownloadManager: _Manager(cacheFiles()),
-          observers: [observer],
-        );
+    test('reports the whole call to observers as one model load', () async {
+      final observer = _LoadObserver();
+      final manager = _Manager(cacheFiles(), gated: {remoteModel});
+      final engine = LlamaEngine(
+        _Backend(),
+        modelDownloadManager: manager,
+        observers: [observer],
+      );
+      const params = ModelParams(contextSize: 1024);
 
-        await engine.setModel(
-          LlamaModel(remoteModel, projector: remoteProjector),
-        );
+      final loading = engine.setModel(
+        LlamaModel(remoteModel, projector: remoteProjector),
+        params: params,
+      );
+      await manager.started(remoteModel);
+      expect(observer.started.single.model, 'model.gguf');
+      expect(observer.started.single.modelParams, same(params));
+      expect(observer.ended, isEmpty);
+      manager.release(remoteModel);
+      await loading;
 
-        expect(observer.started.single.model, 'model.gguf');
-        expect(observer.ended, [null]);
-        await engine.dispose();
-      },
-    );
+      expect(observer.started, hasLength(1));
+      expect(observer.ended, [null]);
+      await engine.dispose();
+    });
+
+    test('reports a file that fails to resolve to observers as a failed '
+        'model load', () async {
+      final observer = _LoadObserver();
+      final engine = LlamaEngine(
+        _Backend(),
+        modelDownloadManager: _Manager(cacheFiles(), failing: {remoteModel}),
+        observers: [observer],
+      );
+
+      await expectLater(
+        engine.setModel(LlamaModel(remoteModel)),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      expect(observer.started.single.model, 'model.gguf');
+      expect(observer.ended.single, isA<LlamaModelException>());
+      await engine.dispose();
+    });
   });
 
   group('LlamaEngine.setModel on a URL-loading backend', () {

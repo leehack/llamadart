@@ -403,20 +403,18 @@ lib/
 
 ### Loading a Model
 ```dart
-final engine = LlamaEngine(LlamaBackend());
-await engine.loadModel(
-  modelPath,
-  modelParams: ModelParams(
+final engine = await LlamaEngine.load(
+  LlamaModel(
+    ModelSource.path(modelPath),
+    // Optional: the multimodal projector, loaded with the model
+    projector: mmprojPath == null ? null : ModelSource.path(mmprojPath),
+  ),
+  params: ModelParams(
     gpuLayers: 99, // Offload all layers for best performance on GPU
     contextSize: 2048,
     preferredBackend: GpuBackend.vulkan,
   ),
 );
-
-// Optional: Load multimodal projector
-if (mmprojPath != null) {
-  await engine.loadMultimodalProjector(mmprojPath);
-}
 ```
 
 ### Sending a Multimodal Message

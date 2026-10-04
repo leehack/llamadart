@@ -89,6 +89,113 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
+## Unreleased: `LlamaEngine.load` and `setModel`
+
+`LlamaEngine` loads like the other engines: `LlamaEngine.load` creates an
+engine and loads a `LlamaModel`, and `setModel` loads or replaces the model
+of an engine you already have. `loadModel`, `loadModelSource`,
+`loadModelFromUrl` and `loadMultimodalProjector` are deprecated and keep
+working until 1.0.
+
+1. **Load a model and its projector in one call.** Runtime settings are
+   `params:` and download settings are `download:`. The load is atomic: when
+   it throws, the engine and its backend are disposed and nothing stays
+   loaded.
+
+   ```dart
+   // Before
+   final engine = LlamaEngine(LlamaBackend());
+   await engine.loadModelSource(
+     ModelSource.parse('hf://owner/repo/model.gguf'),
+     modelParams: const ModelParams(contextSize: 4096),
+     options: ModelLoadOptions(bearerToken: token),
+     onProgress: (progress) => print(progress.fraction),
+   );
+   try {
+     await engine.loadMultimodalProjectorSource(
+       ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+     );
+   } catch (_) {
+     await engine.unloadModel();
+     rethrow;
+   }
+   // After
+   final engine = await LlamaEngine.load(
+     LlamaModel(
+       ModelSource.parse('hf://owner/repo/model.gguf'),
+       projector: ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+     ),
+     params: const ModelParams(contextSize: 4096),
+     download: ModelLoadOptions(bearerToken: token),
+     onProgress: (progress) => print(progress.fraction),
+   );
+   ```
+
+   A local file is `ModelSource.path(path)`, and `ModelSource.parse` takes a
+   path, an `http(s)` URL or an `hf://` reference. A custom resolver or
+   download manager goes in `store: ModelFileStore(...)`. `onProgress`
+   reports the model and its projector together.
+
+2. **Switch models with `setModel`.** It replaces the loaded model, so the
+   `unloadModel()` before a second load is no longer needed. The loaded
+   model keeps serving until every file of the new one has downloaded; a
+   download that fails or is cancelled leaves it loaded. A load that fails
+   after that leaves nothing loaded.
+
+   ```dart
+   // Before
+   await engine.unloadModel();
+   await engine.loadModel('/models/other.gguf', modelParams: params);
+   // After
+   await engine.setModel(
+     LlamaModel(ModelSource.path('/models/other.gguf')),
+     params: params,
+   );
+   ```
+
+   While `setModel` runs, another `setModel` and `unloadModel()` throw
+   `LlamaStateException`; stop it with `download`'s cancel token.
+   `dispose()` stops its downloads at once, and the call throws
+   `LlamaStateException`.
+
+3. **`loadMultimodalProjectorSource` takes `download:`.** `options:` is the
+   deprecated name; passing both throws `LlamaArgumentException`. Use the
+   method to change the projector of a loaded model; load a model with its
+   projector as in step 1. `unloadModel()` and `dispose()` now stop its
+   download, and the load throws `LlamaStateException` instead of
+   `LlamaContextException`.
+
+4. **What differs from the deprecated loaders.**
+   - A local file takes only `download`'s cancel token and, for a model
+     without a projector, its `sha256`. `loadModelSource` threw
+     `LlamaUnsupportedException` for a local path with a bearer token,
+     headers, cache directory, cache policy, resume or retry setting;
+     `load` and `setModel` do not apply them to a local file.
+   - `download`'s bearer token and headers go to one origin only: a model
+     and projector on different hosts throw `LlamaArgumentException` when
+     they are set.
+   - `ModelLoadOptions.sha256` with a projector throws
+     `LlamaUnsupportedException`, since it cannot name two files.
+   - A projector for a LiteRT-LM model and `ComputeDevice.npu` for a GGUF
+     throw `LlamaUnsupportedException` before anything downloads, when the
+     `ModelSource.format` or file name gives the format.
+   - On the Web, a `ModelSource.path` is a URL relative to the document, or
+     a `blob:` URL. It used to throw `LlamaUnsupportedException`, and now
+     loads in the deprecated `loadModelSource`, `setLoraSource` and draft
+     models too.
+   - A subclass that overrides `loadModel` no longer sees loads made
+     through `load` and `setModel`. Fake a `LlamaBackend` in tests, or
+     override `setModel`.
+
+5. **New members on `LlamaEngine`.** A class that `implements LlamaEngine`
+   must add `setModel`, and an override of `loadMultimodalProjectorSource`
+   must add the `download` parameter and make `options` nullable.
+
+6. **Messages.** A request before a load throws `LlamaContextException`
+   with `Engine not ready: no model is loaded. Call LlamaEngine.load or
+   setModel first.` Code that matched the earlier text should catch the
+   exception type instead.
+
 ## Unreleased: one task shape for image and speech engines
 
 `ImageGenerationTask`, `SpeechToTextTask` and `TextToSpeechTask` share one
@@ -687,7 +794,7 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    `LlamaStateException`; read them before disposing. Model queries such as
    `getMetadata` and `getContextSize` return their no-model values, as
    before. `unloadModel` and `cancelGeneration` do nothing. To switch models, call
-   `unloadModel` and load again; to start over after `dispose`, create a new
+   `setModel`; to start over after `dispose`, create a new
    `LlamaEngine`. A load running when `dispose` is called now throws
    `LlamaStateException` instead of completing, and its model is unloaded.
    A class that `implements LlamaEngine` must add `bool get isDisposed`.
