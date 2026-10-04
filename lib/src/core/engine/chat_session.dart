@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'chat_completion_request_planner.dart';
 import 'engine.dart';
 import 'generation_cancellation.dart';
+import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
@@ -41,6 +42,7 @@ class ChatSession {
   final LlamaEngine _engine;
   final List<LlamaChatMessage> _history = [];
   bool _lastRequestFitContext = true;
+  int _resetEpoch = 0;
 
   /// The maximum number of tokens allowed in the context window.
   ///
@@ -88,6 +90,7 @@ class ChatSession {
   /// By default, [keepSystemPrompt] is true, meaning only the message history
   /// is cleared.
   void reset({bool keepSystemPrompt = true}) {
+    _resetEpoch++;
     _history.clear();
     if (!keepSystemPrompt) {
       systemPrompt = null;
@@ -122,7 +125,7 @@ class ChatSession {
   /// [history]. Use [createStructuredJson] to also validate and decode the
   /// reply.
   ///
-  /// If the stream ends before the engine yields its first chunk, through an
+  /// If the stream ends before the engine yields any reply content, through an
   /// error such as the backend rejecting the rendered request or through a
   /// cancelled subscription, this call undoes its own [history] changes: it
   /// removes the user message it added, and puts back the turns its context
@@ -130,7 +133,10 @@ class ChatSession {
   /// not repeat the user message. [onMessageAdded] has already reported that
   /// message. If the stream ends that way after the first chunk, the reply
   /// generated so far is added as the assistant turn, so roles keep
-  /// alternating.
+  /// alternating. Empty terminal chunks do not count as reply content.
+  /// Cancelling generation before any content throws [LlamaStateException]
+  /// and rolls back this turn. A reply never enters history after [reset]
+  /// or after its initiating message has been removed.
   ///
   /// To run the tools' handlers until the model answers, use
   /// `sendWithTools`. Running the calls yourself:
@@ -238,14 +244,25 @@ class ChatSession {
         );
         await for (final chunk in completion) {
           if (unsubscribed) break;
-          started = true;
+          started |= chunk.choices.any(
+            (choice) =>
+                (choice.delta.content?.isNotEmpty ?? false) ||
+                (choice.delta.thinking?.isNotEmpty ?? false) ||
+                (choice.delta.toolCalls?.isNotEmpty ?? false),
+          );
           reply.add(chunk);
           yield chunk;
+        }
+        if (!started && request.isCancelled() && !unsubscribed) {
+          throw LlamaStateException(
+            'Generation was cancelled before any output.',
+          );
         }
         completed = true;
       } finally {
         // Runs on completion, on an error and on a cancelled subscription.
-        if (started || (completed && !request.isCancelled())) {
+        if (edits.canCommit &&
+            (started || (completed && !request.isCancelled()))) {
           final assistantMsg = reply.build().message;
           _history.add(assistantMsg);
           onMessageAdded?.call(assistantMsg);
@@ -579,14 +596,26 @@ class ChatSession {
 /// The [ChatSession.history] changes one [ChatSession.create] call made, so
 /// it can undo them without discarding changes made by anyone else.
 class _TurnEdits {
-  _TurnEdits(this._session) : _historyAfter = List.of(_session._history);
+  _TurnEdits(this._session)
+    : _resetEpoch = _session._resetEpoch,
+      _anchor = _session._history.lastOrNull,
+      _historyAfter = List.of(_session._history);
 
   final ChatSession _session;
+  final int _resetEpoch;
+  final LlamaChatMessage? _anchor;
   final List<(int, List<LlamaChatMessage>)> _removals = [];
   LlamaChatMessage? _added;
   List<LlamaChatMessage> _historyAfter;
 
   List<LlamaChatMessage> get _history => _session._history;
+
+  bool get canCommit {
+    if (_session._resetEpoch != _resetEpoch) return false;
+    final anchor = _added ?? _anchor;
+    return anchor == null ||
+        _history.any((message) => identical(message, anchor));
+  }
 
   void add(LlamaChatMessage message) {
     _history.add(message);
@@ -604,6 +633,7 @@ class _TurnEdits {
   /// then removes the added message wherever it now is.
   void undo() {
     final unchanged =
+        _session._resetEpoch == _resetEpoch &&
         _history.length == _historyAfter.length &&
         Iterable<int>.generate(
           _history.length,

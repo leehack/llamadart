@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Kept cancelled replies out of reset chats and rolled back turns cancelled
+  before any output; structured JSON cancellation now reports a state error.
+  A model change during draft-model resolution also rolls back the turn.
+
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
   or `npu` runs there or throws `LlamaUnsupportedException` instead of

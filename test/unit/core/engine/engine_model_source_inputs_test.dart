@@ -941,12 +941,17 @@ void main() {
       final engine = LlamaEngine(backend, modelDownloadManager: manager);
       await engine.loadModel('/models/model.gguf');
 
-      final done = engine.generate('hi', params: draftParams()).drain<void>();
+      final chat = ChatSession(engine);
+      final done = expectLater(
+        chat.send('hi', params: draftParams()),
+        throwsA(isA<LlamaStateException>()),
+      );
       await manager.started.future;
       await engine.unloadModel();
       await engine.loadModel('/models/model.gguf');
       await done;
 
+      expect(chat.history, isEmpty);
       expect(manager.sawCancel, isTrue);
       expect(backend.lastGenerationParams, isNull);
     });

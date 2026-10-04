@@ -1183,6 +1183,45 @@ void main() {
       });
     });
 
+    for (final partial in [false, true]) {
+      test(
+        'cancel and reset does not commit the old reply (partial=$partial)',
+        () async {
+          backend.chatTemplate = _alternatingRolesTemplate;
+          final scripted = _ScriptedEngine(backend);
+          await scripted.loadModel('qwen-test.gguf');
+          addTearDown(scripted.dispose);
+          final chat = ChatSession(scripted);
+          final pending = StreamController<LlamaCompletionChunk>();
+          addTearDown(pending.close);
+          scripted.completions.add(pending.stream);
+          final added = <LlamaChatMessage>[];
+          final response = chat.send('old question', onMessageAdded: added.add);
+          final done = partial
+              ? response.then<void>((_) {})
+              : expectLater(response, throwsA(isA<LlamaStateException>()));
+          await pumpEventQueue();
+          if (partial) {
+            pending.add(_contentChunk('old private reply'));
+            await pumpEventQueue();
+          }
+          scripted.cancelGeneration();
+          chat.reset();
+          pending.add(_contentChunk(''));
+          await pending.close();
+          await done;
+          expect(chat.history, isEmpty);
+          expect(added.map((message) => message.role), [LlamaChatRole.user]);
+          backend.queueResponse('new answer');
+          await chat.send('new question');
+          expect(chat.history.map((message) => message.content), [
+            'new question',
+            'new answer',
+          ]);
+        },
+      );
+    }
+
     group('a request ending after its first chunk', () {
       late _ScriptedEngine scripted;
       late ChatSession scriptedSession;
@@ -1313,29 +1352,55 @@ void main() {
       expect(session.history, hasLength(4));
     });
 
-    test('honours a cancel issued before the context check ends', () async {
-      final gate = Completer<void>();
-      backend.contextSizeGate = gate.future;
-      final done = Completer<void>();
-      final content = StringBuffer();
+    test(
+      'a cancel before output ignores the parser terminal chunk and rolls back',
+      () async {
+        final gate = Completer<void>();
+        backend.contextSizeGate = gate.future;
+        final done = expectLater(
+          session.create([const LlamaTextContent('Hi')]).drain<void>(),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await pumpEventQueue();
+        engine.cancelGeneration();
+        gate.complete();
+        await done;
+        expect(backend.generateCalls, 0);
+        expect(session.history, isEmpty);
+      },
+    );
 
-      session.create([const LlamaTextContent('Hi')]).listen((chunk) {
-        if (chunk.choices.isNotEmpty) {
-          content.write(chunk.text);
-        }
-      }, onDone: done.complete);
-      await Future<void>.delayed(Duration.zero);
-      engine.cancelGeneration();
-      gate.complete();
-      await done.future;
-
-      expect(backend.generateCalls, 0);
-      expect(content.toString(), isEmpty);
-      expect(session.history.map((message) => message.role), [
-        LlamaChatRole.user,
-        LlamaChatRole.assistant,
-      ]);
-    });
+    test(
+      'structured JSON cancellation before output is a state error and preserves earlier turns',
+      () async {
+        final older = [
+          _text(LlamaChatRole.user, 'old'),
+          _text(LlamaChatRole.assistant, 'answer'),
+        ];
+        older.forEach(session.addMessage);
+        final gate = Completer<void>();
+        backend.contextSizeGate = gate.future;
+        final done = expectLater(
+          session.createStructuredJson(
+            [const LlamaTextContent('JSON')],
+            output: LlamaStructuredOutput.jsonObject(decoder: (value) => value),
+          ),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (e) => e.message,
+              'reason',
+              contains('cancelled'),
+            ),
+          ),
+        );
+        await pumpEventQueue();
+        engine.cancelGeneration();
+        gate.complete();
+        await done;
+        expect(session.history, older);
+        expect(backend.generateCalls, 0);
+      },
+    );
 
     test('a cancel after completion leaves the next turn intact', () async {
       backend.queueResponse('First');
