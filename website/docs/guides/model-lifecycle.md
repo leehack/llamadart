@@ -51,9 +51,12 @@ backend. It is final, on every engine: later calls return the same future,
 load, a request or a backend query such as `getBackendName()` or
 `getVramInfo()` throws `LlamaStateException`. A load still running when
 `dispose()` is called stops its downloads at once and throws
-`LlamaStateException` too, and nothing stays loaded. To free the model's
-memory and keep the engine, call `unloadModel()`; to load another model, call
-`setModel`.
+`LlamaStateException` too, and nothing stays loaded. This includes model and
+LoRA downloads started by deprecated `loadModelSource`; disposal does not
+cancel caller-owned tokens or wait for a custom resolver/manager that ignores
+cancellation. Package-managed transfers stop at their next cancellation
+checkpoint. To free the model's memory and keep the engine, call
+`unloadModel()`; to load another model, call `setModel`.
 
 On macOS Metal, ggml aborts a process that exits with a model, context,
 decision head or image model still loaded

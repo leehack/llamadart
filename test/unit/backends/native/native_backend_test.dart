@@ -1114,7 +1114,17 @@ void main() {
         expect(downloadManager.ensureModelCalls, 1);
         expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
         expect(downloadManager.lastSource?.fileName, 'gemma-4-E2B-it.litertlm');
-        expect(downloadManager.lastOptions, same(options));
+        expect(downloadManager.lastOptions!.cachePolicy, options.cachePolicy);
+        expect(downloadManager.lastOptions!.bearerToken, options.bearerToken);
+        expect(downloadManager.lastOptions!.headers, options.headers);
+        expect(downloadManager.lastOptions!.sha256, options.sha256);
+        expect(
+          downloadManager.lastOptions!.cacheDirectory,
+          options.cacheDirectory,
+        );
+        expect(downloadManager.lastOptions!.resume, options.resume);
+        expect(downloadManager.lastOptions!.maxRetries, options.maxRetries);
+        expect(downloadManager.lastOptions!.cancelToken!.isCancelled, isFalse);
         expect(llama.loadedPaths, isEmpty);
         expect(litert.loadedPaths, [modelFile.path]);
         expect(
