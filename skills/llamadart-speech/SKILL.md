@@ -114,6 +114,7 @@ description: >-
   window.
 - LiteRT-LM initialization failures settle with a `LlamaSpeechException` and
   release the task slot, so `startStream()` or `transcribe()` can be retried.
+  For `transcribe()`, observe that failure through `await task.result`.
   Inspect the diagnostics and correct missing runtime/model assets before retrying.
 - LiteRT-LM streaming: `await recognizer.startStream()`, then `await` every
   `session.addPcm(chunk)` so native backpressure throttles the producer.

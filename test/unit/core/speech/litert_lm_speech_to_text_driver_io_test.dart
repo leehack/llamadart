@@ -37,7 +37,7 @@ void main() {
         );
         await expectLater(
           recognizer
-              .transcribe(
+              .transcribeOnce(
                 SpeechToTextRequest(
                   audio: SpeechAudioPcmInput(Float32List(160)),
                 ),
