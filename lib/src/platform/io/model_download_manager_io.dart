@@ -288,7 +288,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       }
       if (cachePolicy == ModelCachePolicy.cacheOnly) {
         throw LlamaStateException(
-          'No cached model is available for ${source.displayName}.',
+          'No cached model is available for ${_redactedSourceName(source)}.',
         );
       }
     }
@@ -807,14 +807,14 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         lastError = error;
         if (attempt == options.maxRetries) {
           throw LlamaModelException(
-            'Failed to download ${source.displayName}.',
+            'Failed to download ${_redactedSourceName(source)}.',
             redactUrlSecrets('$error', sourceUrls: <String>['$uri']),
           );
         }
       }
     }
     throw LlamaModelException(
-      'Failed to download ${source.displayName}.',
+      'Failed to download ${_redactedSourceName(source)}.',
       lastError,
     );
   }
@@ -833,7 +833,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     // or repeated full re-downloads.
     if (restartDepth > 3) {
       throw LlamaModelException(
-        'Exceeded download restart attempts for ${source.displayName}.',
+        'Exceeded download restart attempts for ${_redactedSourceName(source)}.',
       );
     }
     await finalFile.parent.create(recursive: true);
@@ -868,6 +868,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
     final client = HttpClient();
     client.connectionTimeout = const Duration(seconds: 30);
+    final requestUrls = <String>{uri.toString()};
     try {
       var requestUri = uri;
       late HttpClientResponse response;
@@ -910,17 +911,19 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         if (redirectCount >= 10) {
           await response.drain<void>();
           throw LlamaModelException(
-            'Too many redirects while downloading ${source.displayName}.',
+            'Too many redirects while downloading ${_redactedSourceName(source)}.',
           );
         }
         final location = response.headers.value(HttpHeaders.locationHeader);
         if (location == null || location.isEmpty) {
           await response.drain<void>();
           throw LlamaModelException(
-            'Redirect missing Location while downloading ${source.displayName}.',
+            'Redirect missing Location while downloading ${_redactedSourceName(source)}.',
           );
         }
+        requestUrls.add(location);
         requestUri = requestUri.resolve(location);
+        requestUrls.add(requestUri.toString());
         await response.drain<void>();
       }
       final statusCode = response.statusCode;
@@ -971,7 +974,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         );
       } else if (statusCode != HttpStatus.ok) {
         throw LlamaModelException(
-          'Failed to download ${source.displayName}: HTTP $statusCode.',
+          'Failed to download ${_redactedSourceName(source)}: HTTP $statusCode.',
           statusCode,
         );
       }
@@ -1026,7 +1029,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
             await _deleteIfExists(partMetadataFile);
           }
           throw LlamaModelException(
-            'Checksum mismatch for ${source.displayName}.',
+            'Checksum mismatch for ${_redactedSourceName(source)}.',
           );
         }
         verifiedSha256 = actual;
@@ -1050,6 +1053,19 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         ),
       );
       return entry;
+    } on IOException catch (error) {
+      // Preserve the outer download retry policy while sanitizing every hop.
+      throw HttpException(redactUrlSecrets('$error', sourceUrls: requestUrls));
+    } on ArgumentError catch (error) {
+      throw LlamaModelException(
+        'Failed to download ${_redactedSourceName(source)}.',
+        redactUrlSecrets('$error', sourceUrls: requestUrls),
+      );
+    } on FormatException catch (error) {
+      throw LlamaModelException(
+        'Failed to download ${_redactedSourceName(source)}.',
+        redactUrlSecrets('$error', sourceUrls: requestUrls),
+      );
     } finally {
       client.close(force: true);
       if (partFile == null) {
@@ -1319,7 +1335,7 @@ void _validateContentRange(
   if (contentRange == null ||
       !contentRange.startsWith('bytes $expectedStart-')) {
     throw LlamaModelException(
-      'Server returned an invalid resume range for ${source.displayName}.',
+      'Server returned an invalid resume range for ${_redactedSourceName(source)}.',
     );
   }
 }
@@ -1336,7 +1352,7 @@ void _validateResumeValidator(
   if (previousEtag != null) {
     if (current.etag != previousEtag) {
       throw LlamaModelException(
-        'Server returned a different entity validator while resuming ${source.displayName}.',
+        'Server returned a different entity validator while resuming ${_redactedSourceName(source)}.',
       );
     }
     return;
@@ -1345,7 +1361,7 @@ void _validateResumeValidator(
   if (previousLastModified != null &&
       current.lastModified != previousLastModified) {
     throw LlamaModelException(
-      'Server returned a different modification timestamp while resuming ${source.displayName}.',
+      'Server returned a different modification timestamp while resuming ${_redactedSourceName(source)}.',
     );
   }
 }
@@ -1596,3 +1612,11 @@ String _validateCacheNamespace(String namespace) {
   }
   return trimmed;
 }
+
+String _redactedSourceName(ModelSource source) => redactUrlSecrets(
+  source.displayName,
+  sourceUrls: <String>[
+    source.canonicalKey,
+    if (source.resolvedUri case final uri?) uri.toString(),
+  ],
+);

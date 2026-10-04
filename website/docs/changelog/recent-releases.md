@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Redacted URL credentials and signed query strings from redirected download
+  failures, download snapshots and invalid model-source errors, including
+  slashless URLs; LiteRT-LM Web model names reject decoded URL delimiters.
+
 - `LlamaEngine.load(LlamaModel(source, projector:), params:, download:,
   onProgress:, store:)` creates an engine and loads a model with its
   projector in one atomic call, and `setModel` loads or replaces the model of

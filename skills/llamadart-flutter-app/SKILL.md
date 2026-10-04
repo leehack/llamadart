@@ -345,7 +345,9 @@ class ModelDownloadScreenModel {
 
 Render `snapshot.stage` (`resolving`, `checkingCache`, `downloading`,
 `verifying`, `ready`, `failed`, `cancelled`), `snapshot.fraction` and the
-redacted `snapshot.errorMessage`; load the returned path with
+redacted `snapshot.errorMessage`; source and redirect URL credentials are
+removed from failure diagnostics. Transient I/O failures retain retry behavior.
+Load the returned path with
 `engine.setModel(LlamaModel(ModelSource.path(path)))`.
 
 ## More
