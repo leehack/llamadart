@@ -196,7 +196,7 @@ class SpeculativeDecodingConfig {
   ///
   /// `LlamaEngine` resolves it when the first generation that uses it starts,
   /// before the request reaches the backend, as
-  /// `LlamaEngine.loadModelSource` resolves a model: its `modelResolver` and
+  /// `LlamaEngine.setModel` resolves a model: its `modelResolver` and
   /// `modelDownloadManager` check a local file, or download a remote one
   /// with [draftModelDownload] into the model cache, or reuse the cached
   /// file. On WebGPU the runtime fetches the URL itself. Later generations

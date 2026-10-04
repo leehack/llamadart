@@ -178,8 +178,8 @@ void main() {
       expect(backend.setLoraPaths, isEmpty);
     }, timeout: const Timeout(Duration(seconds: 10)));
 
-    test('URL-loading backends get a remote adapter URL and reject a local '
-        'adapter', () async {
+    test('URL-loading backends get a remote adapter URL, and a local '
+        'adapter path as written', () async {
       final backend = _RecordingBackend(urlLoadingSupported: true);
       final manager = _CacheManager({});
       final engine = LlamaEngine(backend, modelDownloadManager: manager);
@@ -194,17 +194,9 @@ void main() {
       expect(backend.removedLoraPaths, [
         'https://example.com/adapters/tone.gguf',
       ]);
+      await engine.setLoraSource(localAdapter);
+      expect(backend.setLoraPaths.last, '/models/local-adapter.gguf');
       expect(manager.calls, isEmpty);
-      await expectLater(
-        engine.setLoraSource(localAdapter),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('local LoRA adapter paths'),
-          ),
-        ),
-      );
       await expectLater(
         engine.setLoraSource(
           urlAdapter,

@@ -1,6 +1,6 @@
 // Focused helpers for native model loading and sampler setup. Kept here (vs
 // inlined in the service) so they can be unit-tested without going through
-// `LlamaEngine.loadModel`, which is integration-level and needs a real model.
+// `LlamaEngine.load`, which is integration-level and needs a real model.
 
 import 'dart:ffi';
 

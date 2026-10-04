@@ -1075,7 +1075,8 @@ class WebGpuLlamaBackend
     final bridge = _bridge;
     if (!_usingBridge || bridge == null) {
       throw LlamaStateException(
-        'Web bridge is not active. Load a model with loadModelSource() first.',
+        'Web bridge is not active. Load a model with LlamaEngine.load or '
+        'setModel first.',
       );
     }
     return bridge;
@@ -1849,8 +1850,8 @@ class WebGpuLlamaBackend
     if (mediaParts != null && !_mmContextActive) {
       throw LlamaUnsupportedException(
         'Media input needs a multimodal projector on WebGPU, and none is '
-        'loaded. Call LlamaEngine.loadMultimodalProjector before sending '
-        'image or audio parts.',
+        'loaded. Load the model with LlamaModel(source, projector: ...) '
+        'before sending image or audio parts.',
       );
     }
     final bridgeThinkingBudget = thinkingBudget == null

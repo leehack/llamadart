@@ -253,6 +253,26 @@ class ModelSource {
   }
 }
 
+/// The files of a model that `LlamaEngine` runs.
+///
+/// A value object: creating one reads and downloads nothing. Pass it to
+/// `LlamaEngine.load` or `LlamaEngine.setModel`.
+class LlamaModel {
+  /// Describes the model at [source], with the multimodal [projector] of a
+  /// llama.cpp model.
+  const LlamaModel(this.source, {this.projector});
+
+  /// The model file: a GGUF, which llama.cpp runs, or a `.litertlm` bundle,
+  /// which LiteRT-LM runs. The engine picks the runtime for each model.
+  final ModelSource source;
+
+  /// The multimodal projector (mmproj) GGUF that gives a llama.cpp model
+  /// vision or audio input, or null.
+  ///
+  /// A `.litertlm` bundle carries its own media encoders and takes none.
+  final ModelSource? projector;
+}
+
 void _validateRemoteUri(Uri url, String name) {
   if (url.scheme != 'http' && url.scheme != 'https') {
     throw ArgumentError.value(

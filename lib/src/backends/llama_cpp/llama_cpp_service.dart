@@ -3944,8 +3944,8 @@ class LlamaCppService {
           : 'Audio';
       throw LlamaUnsupportedException(
         '$kind input needs a multimodal projector on llama.cpp, and none is '
-        'loaded. Call LlamaEngine.loadMultimodalProjector before sending '
-        'media.',
+        'loaded. Load the model with LlamaModel(source, projector: ...) '
+        'before sending media.',
       );
     }
     for (final part in parts) {

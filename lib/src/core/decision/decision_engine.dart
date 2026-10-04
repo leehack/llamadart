@@ -198,7 +198,7 @@ class DecisionEngine {
   /// Loads [model] into a new [LlamaEngine] that the returned engine owns.
   ///
   /// Every file of [model] comes from its `ModelSource`, resolved like
-  /// `LlamaEngine.loadModelSource`: [store]'s resolver (by default
+  /// `LlamaEngine.load`: [store]'s resolver (by default
   /// [DefaultModelResolver]) resolves it, and its download manager (by
   /// default [DefaultModelDownloadManager]) checks a local file, or downloads
   /// a remote one into the model cache, resuming an interrupted download and
@@ -280,40 +280,24 @@ class DecisionEngine {
         'ModelFormat.liteRtLm.',
       );
     }
-    final files = store ?? ModelFileStore();
-    final engine = LlamaEngine(
-      (debugDecisionBackendFactory ?? LlamaBackend.new)(),
-      modelResolver: files.resolver,
-      modelDownloadManager: files.downloadManager,
+    final (engine, targets) = await loadLlamaEngine(
+      LlamaModel(model.encoder),
+      params: params.encoderModelParams,
+      download: download,
+      onProgress: onProgress,
+      store: store,
+      backend: (debugDecisionBackendFactory ?? LlamaBackend.new)(),
+      operation: _loadingOperation,
+      assetType: 'decision model',
+      companions: [model.head, ?model.config],
     );
     try {
-      final targets = await _fileTargets(
-        engine,
-        [model.encoder, model.head, ?model.config],
-        download,
-        onProgress,
-      );
-      _throwIfCancelled(download);
-      final modelParams = params.encoderModelParams;
-      if (engine.backend.supportsUrlLoading) {
-        await engine.loadModelFromUrl(
-          targets[0],
-          modelParams: modelParams,
-          onProgress: onProgress == null
-              ? null
-              : (double fraction) =>
-                    onProgress(ModelDownloadProgress.fraction(fraction)),
-        );
-      } else {
-        await engine.loadModel(targets[0], modelParams: modelParams);
-      }
-      _throwIfCancelled(download);
       final modelEpoch = modelUnloadEpoch(engine);
       await _probe(engine, modelEpoch);
       final decisions = await _loadHead(
         engine,
-        targets[1],
-        targets.length > 2 ? targets[2] : null,
+        targets[0],
+        targets.length > 1 ? targets[1] : null,
         modelEpoch,
         ownsEngine: true,
       );
@@ -479,19 +463,12 @@ class DecisionEngine {
         assetType: 'decision model',
       );
     }
-    rejectUnsupportedUrlBackendOptions(download, assetType: 'decision model');
-    final request = ModelResolveRequest(options: download);
-    return [
-      for (final source in sources)
-        switch (await engine.modelResolver.resolve(source, request)) {
-          LocalModelFile(:final path) => path,
-          RemoteModelUrl(:final url, useBrowserCache: true) => '$url',
-          RemoteModelUrl() => throw LlamaUnsupportedException(
-            'Remote decision model loading without browser/backend cache is '
-            'not supported yet.',
-          ),
-        },
-    ];
+    return resolveModelSourceUrls(
+      sources,
+      resolver: engine.modelResolver,
+      download: download,
+      assetType: 'decision model',
+    );
   }
 
   static void _throwIfCancelled(ModelLoadOptions download) {

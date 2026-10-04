@@ -269,7 +269,7 @@ class ImageGenerationEngine {
   /// Loads [model] and returns a ready engine.
   ///
   /// Every file of [model] comes from its `ModelSource`, resolved like
-  /// `LlamaEngine.loadModelSource`: [store]'s resolver (by default
+  /// `LlamaEngine.load`: [store]'s resolver (by default
   /// [DefaultModelResolver]) resolves it, and its download manager (by
   /// default [DefaultModelDownloadManager]) checks a local file, or
   /// downloads a remote one into the model cache, resuming an interrupted

@@ -5,6 +5,26 @@ import 'model_load_options.dart';
 import 'model_resolver.dart';
 import 'model_source.dart';
 
+/// Thrown by the default download manager for a local file that exists and
+/// passed its checks, but whose name a [ModelCacheEntry] cannot hold.
+///
+/// [resolveModelSourceFiles] loads [filePath] anyway, since it needs no cache
+/// entry for a local file.
+class UncacheableLocalModelFileException extends LlamaUnsupportedException {
+  /// Creates the exception for the checked file at [filePath].
+  UncacheableLocalModelFileException(
+    super.message, {
+    required this.filePath,
+    required this.bytes,
+  });
+
+  /// The absolute, normalized path of the file.
+  final String filePath;
+
+  /// The size of the file.
+  final int bytes;
+}
+
 /// Makes the [target] that a [ModelResolver] returned for [source] a local
 /// file through [manager], for backends that load files rather than URLs.
 ///
@@ -60,7 +80,9 @@ Future<ModelCacheEntry> ensureModelTargetFile(
 /// host and port), this throws [LlamaArgumentException] naming the origins,
 /// never the credentials, before downloading from another host. A local
 /// file takes only the cancel token and, for a single file, the checksum,
-/// since [ModelLoadOptions] rejects download options for local files.
+/// since [ModelLoadOptions] rejects download options for local files. A
+/// local file whose name the default download manager cannot describe as a
+/// [ModelCacheEntry], such as one holding `%2F`, loads from its path.
 ///
 /// [onProgress] reports the files together. Byte progress counts every file
 /// resolved so far plus the bytes of the current one; `totalBytes` is their
@@ -126,21 +148,115 @@ Future<List<String>> resolveModelSourceFiles(
     if (source.isRemote && target is RemoteModelUrl) {
       checkOrigins(targetOrigins, target.url);
     }
-    final entry = await ensureModelTargetFile(
-      store.downloadManager,
-      source,
-      target,
-      options: fileOptions,
-      onProgress: fileProgress,
-      assetType: assetType,
-    );
+    String filePath;
+    int? bytes;
+    try {
+      final entry = await ensureModelTargetFile(
+        store.downloadManager,
+        source,
+        target,
+        options: fileOptions,
+        onProgress: fileProgress,
+        assetType: assetType,
+      );
+      filePath = entry.filePath;
+      bytes = entry.bytes;
+    } on UncacheableLocalModelFileException catch (file) {
+      filePath = file.filePath;
+      bytes = file.bytes;
+    }
     if (download.cancelToken?.isCancelled ?? false) {
       throw LlamaStateException('$operation was cancelled.');
     }
-    progress.resolved(index, entry.bytes);
-    files.add(entry.filePath);
+    progress.resolved(index, bytes);
+    files.add(filePath);
   }
   return files;
+}
+
+/// What a URL-loading backend fetches for each of [sources], in order: the
+/// URL that [resolver] returns for a remote source, and the path of a local
+/// one as written, which a browser reads as a URL relative to the document,
+/// or as a `blob:` URL.
+///
+/// Nothing is fetched here. Throws [LlamaUnsupportedException] when
+/// [download] asks for what only the package download manager provides, and
+/// for a remote target that disallows the browser/backend cache, naming
+/// [assetType] in the message.
+Future<List<String>> resolveModelSourceUrls(
+  List<ModelSource> sources, {
+  required ModelResolver resolver,
+  required ModelLoadOptions download,
+  String assetType = 'model',
+}) async {
+  rejectUnsupportedUrlBackendOptions(download, assetType: assetType);
+  final request = ModelResolveRequest(options: download);
+  return [
+    for (final source in sources)
+      switch (await resolver.resolve(source, request)) {
+        LocalModelFile(:final path) => path,
+        RemoteModelUrl(:final url, useBrowserCache: true) => '$url',
+        RemoteModelUrl() => throw LlamaUnsupportedException(
+          'Remote $assetType loading without browser/backend cache is not '
+          'supported yet.',
+        ),
+      },
+  ];
+}
+
+/// Throws [LlamaUnsupportedException] when [options] asks for what only the
+/// package download manager provides, for an [assetType] that a URL-loading
+/// backend fetches itself.
+void rejectUnsupportedUrlBackendOptions(
+  ModelLoadOptions options, {
+  String assetType = 'model',
+}) {
+  final isModel = assetType == 'model';
+  if (options.cachePolicy != ModelCachePolicy.preferCached) {
+    throw LlamaUnsupportedException(
+      '${options.cachePolicy.name} $assetType loading requires the native download/cache manager.',
+    );
+  }
+  if (options.bearerToken != null || options.headers.isNotEmpty) {
+    throw LlamaUnsupportedException(
+      'Authenticated $assetType URL loading requires the native download/cache manager.',
+    );
+  }
+  if (options.cancelToken != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Cancellation tokens require the native download/cache manager.'
+          : 'Cancellation tokens for $assetType loading require the native download/cache manager.',
+    );
+  }
+  if (options.sha256 != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Checksum verification requires the native download/cache manager.'
+          : 'Checksum verification for $assetType loading requires the native download/cache manager.',
+    );
+  }
+  if (options.cacheDirectory != null) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'cacheDirectory is not supported by URL-loading backends.'
+          : 'cacheDirectory is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
+  if (!options.resume) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Disabling resume is not supported by URL-loading backends.'
+          : 'Disabling resume is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
+  if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
+    throw LlamaUnsupportedException(
+      isModel
+          ? 'Custom maxRetries is not supported by URL-loading backends.'
+          : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
+    );
+  }
 }
 
 /// Combines the progress of files resolved one after another into one

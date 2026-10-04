@@ -598,9 +598,16 @@ void main() {
           download: ModelLoadOptions(sha256: 'a' * 64),
           backend: backend,
         ),
-        throwsA(isA<LlamaUnsupportedException>()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('TextToSpeechEngine model loading uses 2 files'),
+          ),
+        ),
       );
       expect(backend.lastModelParams, isNull);
+      expect(backend.disposeCalls, 1);
     });
 
     test('attach borrows the engine and dispose leaves it loaded', () async {
