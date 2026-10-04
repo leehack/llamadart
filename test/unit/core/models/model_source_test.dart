@@ -50,6 +50,60 @@ void main() {
     });
   }
 
+  for (final value in const [
+    'https://PathUser:PathPassword@example.com/model.gguf?token=PathSignature',
+    '//PathUser:PathPassword@example.com/model.gguf?token=PathSignature',
+    'https:PathUser:PathPassword@example.com/model.gguf?token=PathSignature',
+    'models/model.gguf?X-Amz-Signature=PathSignature',
+    'models/model.gguf?%74oken=PathSignature',
+    'models/model.gguf#token=PathSignature',
+    'https://PathUser:PathPassword@example.com/PathPassword.gguf?token=PathSignature',
+    'models/model.gguf?token=PathSignature.repeated',
+  ]) {
+    test('URL-valued path diagnostics redact secrets: $value', () {
+      final source = ModelSource.path(value);
+      final equivalent = ModelSource.path(
+        value.replaceAll('PathSignature', 'OtherSignature'),
+      );
+
+      expect(source.path, value);
+      expect(source.canonicalKey, 'path:$value');
+      expect(source.cacheKey, isNot(equivalent.cacheKey));
+      for (final diagnostic in [
+        source.metadataSourceKey,
+        source.toString(),
+        source.displayName,
+        source.cacheDirectoryName,
+      ]) {
+        expect(
+          diagnostic,
+          allOf(
+            isNot(contains('PathUser')),
+            isNot(contains('PathPassword')),
+            isNot(contains('PathSignature')),
+          ),
+        );
+      }
+      expect(source.metadataSourceKey, contains(source.cacheKey));
+      expect(source.cacheDirectoryName, isNot(equivalent.cacheDirectoryName));
+    });
+  }
+
+  test('native filename diagnostics stay literal without URL query syntax', () {
+    for (final value in const [
+      '/models/a?literal#native.gguf',
+      r'C:\models\a?literal#native.gguf',
+      '/models/literal name%2F.gguf',
+    ]) {
+      final source = ModelSource.path(value);
+      expect(source.path, value);
+      expect(source.canonicalKey, 'path:$value');
+      expect(source.metadataSourceKey, source.canonicalKey);
+      expect(source.toString(), source.canonicalKey);
+      expect(source.displayName, source.fileName);
+    }
+  });
+
   group('ModelSource', () {
     test('path remains local and does not attempt network resolution', () {
       final source = ModelSource.path('/local/model.gguf');

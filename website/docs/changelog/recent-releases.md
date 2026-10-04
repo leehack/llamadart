@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- **Fixed:** URL-valued `ModelSource.path` diagnostics redact credentials and
+  signed queries while preserving the loading path and cache identity
+  ([#846](https://github.com/leehack/llamadart/issues/846)).
 - Fixed LiteRT-LM speech recognition startup failures hanging indefinitely;
   failed workers now release their resources and allow another attempt.
 - Kept cancelled replies out of reset chats and rolled back turns cancelled

@@ -179,7 +179,8 @@ class ModelSource {
   String get scheme => isLocal ? 'path' : url!.scheme;
 
   /// Human-friendly source name suitable for logs.
-  String get displayName => fileName;
+  String get displayName =>
+      isLocal ? _fileNameFromPath(sourcePathDisplay(path!)) : fileName;
 
   /// SHA-256 digest of [canonicalKey], used as a deterministic cache key.
   String get cacheKey => sha256.convert(utf8.encode(canonicalKey)).toString();
@@ -189,18 +190,26 @@ class ModelSource {
   /// [canonicalKey] intentionally remains the full source identity so cache keys
   /// stay unique for signed URLs. This value omits raw URL query strings while
   /// including [cacheKey] so persisted metadata can still be correlated with the
-  /// deterministic cache entry without storing credentials.
+  /// deterministic cache entry without storing credentials. Explicit paths
+  /// with URL authority or query key/value syntax receive the same protection;
+  /// other native filename literals remain unchanged.
   String get metadataSourceKey {
     if (kind == ModelSourceKind.http) {
       final redactedUri = _uriWithoutQueryOrFragment(url!);
       return 'url:${redactedUri.toString()}#cacheKey=$cacheKey';
+    }
+    if (isLocal) {
+      final displayPath = sourcePathDisplay(path!);
+      if (displayPath != path) {
+        return 'path:$displayPath#cacheKey=$cacheKey';
+      }
     }
     return canonicalKey;
   }
 
   /// Safe deterministic cache directory name for this source.
   String get cacheDirectoryName {
-    final stem = _fileStem(fileName);
+    final stem = _fileStem(displayName);
     final safeStem = _safeName(stem.isEmpty ? 'model' : stem);
     return '$safeStem-${cacheKey.substring(0, 12)}';
   }
