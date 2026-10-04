@@ -2615,6 +2615,10 @@ void main() {
       );
       expect(limited['expected_checks'], 23);
       expect(limited['functional_pass'], true);
+      expect(stt.calls.where((call) => call.startsWith('limit:')), [
+        'limit:maxOutputTokens',
+        'limit:contextSize',
+      ]);
       final sttIds = [
         for (final row in limited['checks'] as List) row['id'] as String,
       ];
@@ -3101,6 +3105,8 @@ void main() {
           (contextSize, {'context_size': 4096}, 'context size differs'),
           (contextSize, {'max_output_tokens': 511}, 'context size differs'),
           (maxTokens, {'truncated_limit': 'contextSize'}, 'did not fail'),
+          (maxTokens, {'truncated_limit': 'runtime'}, 'reported runtime'),
+          (contextSize, {'truncated_limit': 'runtime'}, 'reported runtime'),
           (contextSize, {'truncated_limit': null}, 'did not fail'),
           (maxTokens, {'reference': null}, 'no reference'),
           (contextSize, {'reference_repeats': 0}, 'no reference'),
@@ -3323,6 +3329,29 @@ void main() {
       createEngine: () => engine,
     );
   }
+
+  test('the public adapter rejects an unspecified runtime limit '
+      'before engine work', () async {
+    final engine = LimitedRecognitionEngine(
+      fixtureBytes: File('assets/speech/jfk.wav').lengthSync(),
+    );
+    final adapter = limitAdapter(engine);
+    await expectLater(
+      adapter.executeTranscriptLimit(LlamaSpeechTranscriptLimit.runtime),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'diagnostic',
+          contains('unspecified runtime transcript limit'),
+        ),
+      ),
+    );
+    expect(engine.contextSizes, isEmpty);
+    expect(engine.generations, 0);
+    expect(engine.maxTokens, isEmpty);
+    expect(engine.audioParts, isEmpty);
+    await adapter.dispose();
+  });
 
   test('the public adapter drives recognition into each limit', () async {
     final wav = File('assets/speech/jfk.wav').readAsBytesSync();
