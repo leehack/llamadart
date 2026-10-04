@@ -17,7 +17,7 @@ void main() {
         createLiteRtLmSpeechToTextDriver()
             .start(_missingConfig, libraryPath: _missingLibrary)
             .timeout(const Duration(seconds: 3)),
-        throwsA(isA<LlamaSpeechException>()),
+        throwsA(_startupFailure),
       );
     },
   );
@@ -33,7 +33,7 @@ void main() {
       for (var attempt = 0; attempt < 2; attempt++) {
         await expectLater(
           recognizer.startStream().timeout(const Duration(seconds: 3)),
-          throwsA(isA<LlamaSpeechException>()),
+          throwsA(_startupFailure),
         );
         await expectLater(
           recognizer
@@ -43,7 +43,7 @@ void main() {
                 ),
               )
               .timeout(const Duration(seconds: 3)),
-          throwsA(isA<LlamaSpeechException>()),
+          throwsA(_startupFailure),
         );
       }
     },
@@ -76,6 +76,14 @@ void main() {
     expect(() => processLiteRtLmSpeechWindow(session), throwsA(same(error)));
   });
 }
+
+final _startupFailure = isA<LlamaSpeechException>()
+    .having(
+      (error) => error.message,
+      'message',
+      'LiteRT-LM speech recognition failed.',
+    )
+    .having((error) => error.details, 'details', contains('ASR ABI'));
 
 const _missingLibrary = '/nonexistent/llamadart-asr-startup-test/library';
 const _missingConfig = LiteRtLmAsrRuntimeConfig(
