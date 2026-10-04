@@ -1506,11 +1506,12 @@ class SpeechToTextEngine {
       streamBatchTokenThreshold: 1,
     );
     if (!speechToTextUsesChatTemplate) {
-      return engine.generate(
+      final generation = engine.generate(
         _promptAdapter.promptFor(request),
         parts: <LlamaContentPart>[_contentFor(request.audio)],
         params: params,
       );
+      return _rawPromptAdapterTokens(generation, onLimit);
     }
     return engine
         .create(
@@ -1537,6 +1538,15 @@ class SpeechToTextEngine {
           final text = chunk.choices.first.delta.content;
           return text == null ? const <String>[] : <String>[text];
         });
+  }
+
+  Stream<String> _rawPromptAdapterTokens(
+    Stream<String> generation,
+    void Function(BackendGenerationLimit limit) onLimit,
+  ) async* {
+    yield* generation;
+    final limit = rawGenerationLimit(generation);
+    if (limit != null) onLimit(limit);
   }
 
   LlamaSpeechTranscriptTruncatedException _truncatedTranscript(
