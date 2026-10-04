@@ -328,7 +328,8 @@ An older bridge, no loaded projector, a projector without audio support, or a
 failed runtime audio probe makes `load` throw `LlamaUnsupportedException`, and
 leaves an attached recognizer's `capabilities.isSupported` false, with an
 actionable reason. On Web, `load` passes the sources to the browser runtime,
-which loads projectors from remote unauthenticated URLs only.
+which fetches each file itself: a `ModelSource.path` is a URL relative to the
+document, or a `blob:` URL, and `download` must stay at its defaults.
 
 WebGPU accepts encoded WAV, MP3, and FLAC bytes. Read the selected file into
 memory and pass `SpeechAudioBytesInput` with a `SpeechAudioFormat` whose

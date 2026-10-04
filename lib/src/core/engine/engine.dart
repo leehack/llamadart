@@ -395,22 +395,28 @@ class LlamaEngine {
   /// and port), the call throws before downloading from another host. An
   /// adapter of [ModelParams.loras] takes its own
   /// [LoraAdapterConfig.download], or only the non-secret parts of
-  /// [download]. [onProgress] reports the model and projector together:
-  /// `receivedBytes` counts the files resolved so far plus the current
-  /// download, and `totalBytes` is their combined size once every size is
-  /// known.
+  /// [download]. The download manager gets a copy of [download] whose cancel
+  /// token is also cancelled by [dispose]. [onProgress] reports the model
+  /// and projector together: `receivedBytes` counts the files resolved so
+  /// far plus the current download, and `totalBytes` is their combined size
+  /// once every size is known. With a projector that is null, and so is
+  /// `fraction`, until the model has downloaded and the projector reports
+  /// its size.
   ///
   /// The model this engine already holds keeps serving until every file has
   /// resolved. Only then is it unloaded, which cancels its generations, and
-  /// [model] loaded, then its projector. A failure from there on leaves
-  /// nothing loaded, and so does [download]'s cancel token when it is
-  /// cancelled that late; cancelled earlier, it leaves the old model loaded.
+  /// [model] loaded, then its projector. A generation cut off by the unload
+  /// ends as a completed one, with finish reason `stop`. A failure from
+  /// there on leaves nothing loaded, and so does [download]'s cancel token
+  /// when it is cancelled that late; cancelled earlier, it leaves the old
+  /// model loaded.
   ///
   /// A URL-loading backend, as on the Web, fetches each file itself during
-  /// the load, after the old model is unloaded: a local path is a URL
-  /// relative to the document, or a `blob:` URL, [download] must leave every
-  /// option at its default, and [onProgress] reports only the model's fetch,
-  /// as a fraction that ends at 0.5 when there is a projector.
+  /// the load, so the old model is unloaded before the new one is fetched,
+  /// and a fetch that fails leaves nothing loaded. There a local path is a
+  /// URL relative to the document, or a `blob:` URL, [download] must leave
+  /// every option at its default, and [onProgress] reports only the model's
+  /// fetch, as a fraction that ends at 0.5 when there is a projector.
   ///
   /// While a call runs, another [setModel] and [unloadModel] throw
   /// [LlamaStateException]; stop it with [download]'s cancel token.
@@ -838,8 +844,9 @@ class LlamaEngine {
   /// extension loads as GGUF. For such a URL, load it with [setModel] and a
   /// [ModelSource.format].
   @Deprecated(
-    'Use LlamaEngine.load or setModel with LlamaModel(ModelSource.parse(url)). '
-    'This will be removed in 1.0.',
+    'Use LlamaEngine.load or setModel with LlamaModel(ModelSource.parse(url)), '
+    'or with ModelSource.path(url) for a relative or blob: URL. This will be '
+    'removed in 1.0.',
   )
   Future<void> loadModelFromUrl(
     String url, {
@@ -1168,13 +1175,14 @@ class LlamaEngine {
   /// [modelDownloadManager] checks a local file, or downloads a remote one
   /// with [download] into the model cache, reporting to [onProgress].
   /// [download]'s cancel token stops the download, and so do [unloadModel],
-  /// [setModel] replacing the model, and [dispose]. On URL-loading backends
-  /// the backend fetches [source] itself: a local path is a URL relative to
-  /// the document, or a `blob:` URL, and package-managed auth, headers,
-  /// checksum verification, cache policy changes, cache directories,
-  /// cancellation, retry/resume settings, and progress reporting are not
-  /// available because the backend/browser owns the network and cache
-  /// behavior.
+  /// [setModel] replacing the model, and [dispose]: the download manager
+  /// gets a copy of [download] whose cancel token they also cancel. On
+  /// URL-loading backends the backend fetches [source] itself: a local path
+  /// is a URL relative to the document, or a `blob:` URL, and
+  /// package-managed auth, headers, checksum verification, cache policy
+  /// changes, cache directories, cancellation, retry/resume settings, and
+  /// progress reporting are not available because the backend/browser owns
+  /// the network and cache behavior.
   ///
   /// [options] is the deprecated name of [download]; setting both throws
   /// [LlamaArgumentException].
@@ -1254,15 +1262,19 @@ class LlamaEngine {
     );
 
     if (!backend.supportsUrlLoading) {
-      final entry = await ensureModelTargetFile(
-        modelDownloadManager,
-        source,
-        target,
-        options: options,
-        onProgress: onProgress,
-        assetType: assetType,
-      );
-      return entry.filePath;
+      try {
+        final entry = await ensureModelTargetFile(
+          modelDownloadManager,
+          source,
+          target,
+          options: options,
+          onProgress: onProgress,
+          assetType: assetType,
+        );
+        return entry.filePath;
+      } on UncacheableLocalModelFileException catch (file) {
+        return file.filePath;
+      }
     }
     switch (target) {
       case LocalModelFile(:final path):
@@ -1350,10 +1362,10 @@ class LlamaEngine {
   /// model queries such as [getMetadata] and [getContextSize] return their
   /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A
   /// load running when this is called throws [LlamaStateException], and a
-  /// model it loaded is unloaded. The downloads of a running [setModel],
-  /// [LlamaEngine.load] or [loadMultimodalProjectorSource] stop, without
-  /// holding this call up for [setModel] and [LlamaEngine.load]; a download
-  /// that the deprecated `loadModelSource` started runs to its end first.
+  /// model it loaded is unloaded. The downloads of a running [setModel] or
+  /// [loadMultimodalProjectorSource] stop, and those of [setModel] do not
+  /// hold this call up; a download that the deprecated `loadModelSource`
+  /// started runs to its end first.
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {
@@ -2590,13 +2602,14 @@ class LlamaEngine {
   /// Applies the LoRA adapter at [source] with [scale], or changes the scale
   /// of an adapter already applied from [source].
   ///
-  /// [source] resolves as in [loadModelSource]: [modelResolver] resolves it,
-  /// and on file-backed backends [modelDownloadManager] checks a local file,
-  /// or downloads a remote one with [download] into the model cache,
-  /// resuming an interrupted download and reusing a cached file, reporting
-  /// to [onProgress]. [download]'s cancel token stops the download. On
-  /// URL-loading backends (WebGPU) a remote source goes to the runtime as a
-  /// URL, and options that need the package-managed download manager throw
+  /// [source] resolves as in [setModel]: [modelResolver] resolves it, and on
+  /// file-backed backends [modelDownloadManager] checks a local file, or
+  /// downloads a remote one with [download] into the model cache, resuming
+  /// an interrupted download and reusing a cached file, reporting to
+  /// [onProgress]. [download]'s cancel token stops the download. On
+  /// URL-loading backends (WebGPU) the runtime fetches [source] itself, a
+  /// local path as a URL relative to the document or a `blob:` URL, and
+  /// options that need the package-managed download manager throw
   /// [LlamaUnsupportedException], as for [loadMultimodalProjectorSource].
   ///
   /// Remove the adapter with [removeLoraSource] and the same [source].

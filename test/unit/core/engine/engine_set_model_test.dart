@@ -454,6 +454,50 @@ void main() {
       await engine.dispose();
     });
 
+    test('loads local adapters and a local draft model their download '
+        'manager cannot describe as cache entries', () async {
+      final backend = _Backend();
+      const loadAdapter = '/models/load%2Fadapter.gguf';
+      const laterAdapter = '/models/later%2Fadapter.gguf';
+      const draft = '/models/draft%2Fmodel.gguf';
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _Manager(
+          const {},
+          uncacheable: {loadAdapter, laterAdapter, draft},
+        ),
+      );
+
+      await engine.setModel(
+        LlamaModel(localModel),
+        params: ModelParams(
+          loras: [LoraAdapterConfig.source(ModelSource.path(loadAdapter))],
+        ),
+      );
+      await engine.setLoraSource(ModelSource.path(laterAdapter));
+      await engine
+          .generate(
+            'hi',
+            params: GenerationParams(
+              speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+                draftModel: ModelSource.path(draft),
+              ),
+            ),
+          )
+          .drain<void>();
+
+      expect(
+        backend.contextParams.single.loras.single.path,
+        '/abs$loadAdapter',
+      );
+      expect(backend.lastLoraPath, '/abs$laterAdapter');
+      expect(
+        backend.lastGenerationParams!.speculativeDecodingConfig!.draftModelPath,
+        '/abs$draft',
+      );
+      await engine.dispose();
+    });
+
     test('an adapter that fails to download leaves the loaded model as it '
         'was', () async {
       final backend = _Backend();
@@ -657,6 +701,35 @@ void main() {
       expect(backend.events, isEmpty);
       expect(engine.isReady, isFalse);
     });
+
+    test('dispose stops an adapter download too', () async {
+      final backend = _Backend();
+      final manager = _Manager(cacheFiles(), polling: {adapter});
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+
+      final loading = engine.setModel(
+        LlamaModel(localModel),
+        params: ModelParams(loras: [LoraAdapterConfig.source(adapter)]),
+      );
+      final outcome = expectLater(
+        loading,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed while loading'),
+          ),
+        ),
+      );
+      await manager.started(adapter);
+      final token = manager.options.last.cancelToken!;
+      expect(token.isCancelled, isFalse);
+      await engine.dispose();
+      await outcome;
+
+      expect(token.isCancelled, isTrue);
+      expect(backend.events, isEmpty);
+    }, timeout: const Timeout(Duration(seconds: 10)));
 
     test(
       'dispose during the load unloads the model and the call throws',
@@ -1129,6 +1202,58 @@ void main() {
       expect(backend.disposeCalls, 1);
     }, timeout: const Timeout(Duration(seconds: 10)));
 
+    test('a download that ends after the model is unloaded loads no '
+        'projector and throws LlamaStateException', () async {
+      final backend = _Backend();
+      final manager = _Manager(
+        cacheFiles(),
+        gated: {remoteProjector},
+        ignoresCancel: true,
+      );
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.setModel(LlamaModel(localModel));
+
+      final loading = engine.loadMultimodalProjectorSource(remoteProjector);
+      final outcome = expectLater(
+        loading,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('model was unloaded while its multimodal projector'),
+          ),
+        ),
+      );
+      await manager.started(remoteProjector);
+      final unload = engine.unloadModel();
+      manager.release(remoteProjector);
+      await outcome;
+      await unload;
+
+      expect(backend.multimodalContextCreateCalls, 0);
+      await engine.dispose();
+    });
+
+    test('loads a local projector its download manager cannot describe as a '
+        'cache entry', () async {
+      final backend = _Backend();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _Manager(
+          const {},
+          uncacheable: {'/models/mm%2Fproj.gguf'},
+        ),
+      );
+      await engine.setModel(LlamaModel(localModel));
+
+      await engine.loadMultimodalProjectorSource(
+        ModelSource.path('/models/mm%2Fproj.gguf'),
+      );
+
+      expect(backend.events.last, 'projector /abs/models/mm%2Fproj.gguf');
+      await engine.dispose();
+    });
+
     test("the caller's cancel token still stops the download", () async {
       final manager = _Manager(cacheFiles(), polling: {remoteProjector});
       final engine = LlamaEngine(_Backend(), modelDownloadManager: manager);
@@ -1302,7 +1427,8 @@ class _RoutingBackend extends _Backend
 /// A [gated] source waits for [release], ignoring cancellation; a [polling]
 /// one waits for its cancel token, like the package download manager; a
 /// [failing] one throws; and an [uncacheable] local path throws what the
-/// package download manager throws for a name no cache entry can hold.
+/// package download manager throws for a name no cache entry can hold. With
+/// [ignoresCancel] a download completes although its token is cancelled.
 class _Manager implements ModelDownloadManager {
   _Manager(
     Map<ModelSource, String> files, {
@@ -1310,6 +1436,7 @@ class _Manager implements ModelDownloadManager {
     Set<ModelSource> polling = const {},
     Set<ModelSource> failing = const {},
     this.uncacheable = const {},
+    this.ignoresCancel = false,
   }) : _files = {
          for (final MapEntry(:key, :value) in files.entries)
            key.cacheKey: value,
@@ -1326,6 +1453,7 @@ class _Manager implements ModelDownloadManager {
   final Set<String> _polling;
   final Set<String> _failing;
   final Set<String> uncacheable;
+  final bool ignoresCancel;
   void Function()? onResolved;
   final List<String> sources = <String>[];
   final List<ModelLoadOptions> options = <ModelLoadOptions>[];
@@ -1351,7 +1479,7 @@ class _Manager implements ModelDownloadManager {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
     }
-    if (options.cancelToken?.isCancelled ?? false) {
+    if (!ignoresCancel && (options.cancelToken?.isCancelled ?? false)) {
       throw LlamaStateException('Model download was cancelled.');
     }
     if (_failing.contains(source.cacheKey)) {

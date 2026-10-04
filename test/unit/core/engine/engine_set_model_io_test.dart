@@ -55,6 +55,29 @@ void main() {
     await engine.dispose();
   });
 
+  test('a projector and an adapter whose names hold %2F load on a loaded '
+      'model', () async {
+    final engine = await LlamaEngine.load(
+      LlamaModel(ModelSource.path(local('model.gguf').path)),
+      store: store,
+      backend: backend,
+    );
+    final projector = local('mm%2Fproj.gguf');
+    final adapter = local('lora%5Ca.gguf');
+
+    await engine.loadMultimodalProjectorSource(
+      ModelSource.path(projector.path),
+    );
+    await engine.setLoraSource(ModelSource.path(adapter.path));
+
+    expect(
+      backend.lastMultimodalProjectorPath,
+      p.normalize(p.absolute(projector.path)),
+    );
+    expect(backend.lastLoraPath, p.normalize(p.absolute(adapter.path)));
+    await engine.dispose();
+  });
+
   test('a local file that is missing or fails its checksum throws before the '
       'loaded model is replaced', () async {
     final first = local('first.gguf');

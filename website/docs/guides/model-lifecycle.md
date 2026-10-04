@@ -145,8 +145,10 @@ final engine = await LlamaEngine.load(
 Native targets download each remote file into a cache and load the local copy,
 resuming an interrupted download and reusing a cached file. `download` applies
 to every remote file, and `onProgress` reports the model and its projector
-together. `cancelToken.cancel()` stops the load, which throws
-`LlamaStateException`.
+together: with a projector, `totalBytes` and `fraction` are null until the
+model has downloaded and the projector reports its size, so show
+`receivedBytes` until then. `cancelToken.cancel()` stops the load, which
+throws `LlamaStateException`.
 
 On web the runtime fetches each file itself: `.gguf` URLs load through the
 llama.cpp WebGPU bridge and `.litertlm` URLs through LiteRT-LM JS. A

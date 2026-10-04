@@ -209,6 +209,14 @@ files before each create; see
 before `LlamaEngine.load` or `setModel` finished, or after `unloadModel`.
 Await the load before using the engine.
 
+### `Local model file does not exist: <path>`
+
+`LlamaModelException`: `LlamaEngine.load`, `setModel` and the other engines'
+`load` check a local `ModelSource.path` through the download manager before
+the backend loads it. In a test that loads a made-up path into a fake
+backend, use a real temporary file, or pass a fake `ModelDownloadManager` in
+`store:` or `LlamaEngine(backend, modelDownloadManager: ...)`.
+
 ### `Model is already loaded. Call unloadModel() first.`
 
 `LlamaStateException`: only the deprecated `loadModel`, `loadModelSource` and

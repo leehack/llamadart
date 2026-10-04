@@ -45,8 +45,8 @@ await engine.setLoraSource(
 
 - `onProgress` reports the download; cancelling the token stops it and
   `setLoraSource` throws `LlamaStateException`.
-- On WebGPU a remote source goes to the bridge as a URL, and a local path
-  throws `LlamaUnsupportedException`.
+- On WebGPU the bridge fetches the source's URL; a `ModelSource.path` is a
+  URL relative to the document, or a `blob:` URL.
 
 ## Basic runtime flow
 

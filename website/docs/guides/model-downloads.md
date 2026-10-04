@@ -74,7 +74,10 @@ try {
 - The controller owns cancellation: call `controller.cancel()` and leave
   `ModelLoadOptions.cancelToken` unset, or `start(...)` throws.
 - Passing the original `ModelSource` to `LlamaEngine.load` or `setModel`
-  instead of `entry.filePath` loads the same cached file.
+  instead of `entry.filePath` loads the same cached file only when the engine
+  uses the same download manager: pass it as
+  `store: ModelFileStore(downloadManager: manager)`. An engine with its own
+  manager looks in its own cache root and downloads the file again.
 - On web, pass a custom manager for browser storage; the default manager's
   operations throw `LlamaUnsupportedException` there.
 

@@ -5,6 +5,7 @@ import '../../core/cache_policy.dart';
 import '../../core/exceptions.dart';
 import 'interop.dart';
 import 'webgpu_decision.dart';
+import 'webgpu_url.dart';
 
 /// LoRA API version that [WebGpuLoraAdapters] speaks.
 const int webGpuLoraApiVersion = 1;
@@ -33,6 +34,7 @@ class WebGpuLoraAdapters {
   /// when it rejects applying the adapter.
   Future<void> set(LlamaWebGpuBridge? bridge, String path, double scale) async {
     final active = await _requireSupport(bridge);
+    path = webGpuDocumentUrl(path);
     final pending = _handles[path];
     final loading = pending ?? _load(active, path);
     if (pending == null) _handles[path] = loading;
@@ -54,6 +56,7 @@ class WebGpuLoraAdapters {
   /// failed, does nothing.
   Future<void> remove(LlamaWebGpuBridge? bridge, String path) async {
     final active = await _requireSupport(bridge);
+    path = webGpuDocumentUrl(path);
     final pending = _handles[path];
     if (pending == null) return;
     final int handle;

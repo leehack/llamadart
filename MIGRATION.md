@@ -134,13 +134,17 @@ working until 1.0.
    A local file is `ModelSource.path(path)`, and `ModelSource.parse` takes a
    path, an `http(s)` URL or an `hf://` reference. A custom resolver or
    download manager goes in `store: ModelFileStore(...)`. `onProgress`
-   reports the model and its projector together.
+   reports the model and its projector together: with a projector,
+   `totalBytes` and `fraction` are null until the model has downloaded and
+   the projector reports its size, so show `receivedBytes` until then.
 
 2. **Switch models with `setModel`.** It replaces the loaded model, so the
    `unloadModel()` before a second load is no longer needed. The loaded
    model keeps serving until every file of the new one has downloaded; a
    download that fails or is cancelled leaves it loaded. A load that fails
-   after that leaves nothing loaded.
+   after that leaves nothing loaded. On the Web the runtime fetches the
+   files itself, so `setModel` unloads the loaded model before the fetch, and
+   a fetch that fails leaves nothing loaded.
 
    ```dart
    // Before
@@ -186,6 +190,14 @@ working until 1.0.
    - A subclass that overrides `loadModel` no longer sees loads made
      through `load` and `setModel`. Fake a `LlamaBackend` in tests, or
      override `setModel`.
+   - `load` and `setModel` check a local file through the download manager
+     before the backend sees it, so a test that loads a made-up path such
+     as `model.gguf` into a fake backend now throws `LlamaModelException`
+     (`Local model file does not exist`). Give the test a real temporary
+     file, or a fake `ModelDownloadManager` in `store:` or
+     `LlamaEngine(backend, modelDownloadManager: ...)`.
+   - A `blob:` URL goes in `ModelSource.path`; `ModelSource.parse` accepts
+     only paths, `http(s)` URLs and `hf://` references.
    - A `LlamaEngineObserver` sees a whole `load` or `setModel` call as one
      model load, with its downloads, so a file that is missing or fails to
      download ends that operation with an error. `loadModelSource` reports
@@ -714,10 +726,9 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
      ),
    );
    // After
-   final engine = LlamaEngine(LlamaBackend());
-   await engine.loadModel(
-     path,
-     modelParams: const ModelParams(device: ComputeDevice.gpu),
+   final engine = await LlamaEngine.load(
+     LlamaModel(ModelSource.path(path)),
+     params: const ModelParams(device: ComputeDevice.gpu),
    );
    ```
 

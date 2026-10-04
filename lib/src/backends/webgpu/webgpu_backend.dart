@@ -26,6 +26,7 @@ import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
 import 'webgpu_lora.dart';
+import 'webgpu_url.dart';
 import 'webgpu_speculative.dart';
 
 @JS('Object.keys')
@@ -1192,6 +1193,7 @@ class WebGpuLlamaBackend
     ModelParams params, {
     Function(double progress)? onProgress,
   }) async {
+    url = webGpuDocumentUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
@@ -2943,6 +2945,7 @@ class WebGpuLlamaBackend
     String mmProjPath,
   ) async {
     final bridge = _requireBridge();
+    mmProjPath = webGpuDocumentUrl(mmProjPath);
     final cachedBlobUrl = await _cachedModelBlobUrlFor(mmProjPath);
     final projectorPath = cachedBlobUrl ?? mmProjPath;
     var retainedCachedBlobUrl = false;
