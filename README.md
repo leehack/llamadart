@@ -74,6 +74,11 @@ tools, structured output and grammars, each sampling control
 decoding strategies it runs. Branch on these instead of the model's file
 extension or backend name.
 
+Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
+preserve runtime `length` termination: tool loops return `truncated` and roll
+back the turn. Typed speech recognition reports a runtime truncation error;
+the bridge does not identify whether the output, context or media cap was reached.
+
 ## Image generation (Preview)
 
 `ImageGenerationEngine` turns a text prompt into PNG images on the device

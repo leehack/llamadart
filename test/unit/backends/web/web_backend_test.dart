@@ -7,6 +7,8 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
+import 'package:llamadart/src/core/engine/chat_session.dart';
+import 'package:llamadart/src/core/engine/chat_session_tool_loop.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -53,6 +55,70 @@ void main() {
     );
     expect(WebAutoBackend(webBackend: _NoStateBackend()).runtime, isNull);
     expect(WebAutoBackend().runtime, isNull);
+  });
+
+  test('WebAutoBackend forwards explicit unsupported limit reporting', () {
+    expect(
+      WebAutoBackend(
+        webBackend: _LimitSupportBackend('runtime has no reason'),
+      ).generationLimitUnsupportedReason,
+      'runtime has no reason',
+    );
+    expect(
+      WebAutoBackend(
+        webBackend: _LimitSupportBackend(null),
+      ).generationLimitUnsupportedReason,
+      isNull,
+    );
+    expect(
+      WebAutoBackend(
+        webBackend: _NoStateBackend(),
+      ).generationLimitUnsupportedReason,
+      isNull,
+    );
+    expect(WebAutoBackend().generationLimitUnsupportedReason, isNull);
+  });
+
+  test(
+    'WebAutoBackend prevents an automatic loop on an explicitly unsupported delegate',
+    () async {
+      final engine = LlamaEngine(
+        WebAutoBackend(
+          webBackend: _LimitSupportBackend('runtime has no reason'),
+        ),
+      );
+      addTearDown(engine.dispose);
+      final session = ChatSession(engine, maxContextTokens: 0);
+      await expectLater(
+        session.sendWithTools('Reply', tools: const []),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('runtime has no reason'),
+          ),
+        ),
+      );
+      expect(session.history, isEmpty);
+    },
+  );
+
+  test('WebAutoBackend forwards generation limits from its delegate', () {
+    final generation = Stream<List<int>>.empty();
+    final limit = BackendGenerationLimit.runtime;
+    expect(
+      WebAutoBackend(
+        webBackend: _LimitBackend({generation: limit}),
+      ).generationLimitOf(generation),
+      limit,
+    );
+    expect(
+      WebAutoBackend(
+        webBackend: _NoStateBackend(),
+      ).generationLimitOf(generation),
+      isNull,
+    );
+    expect(WebAutoBackend().generationLimitOf(generation), isNull);
   });
 
   test('WebAutoBackend forwards generation usage from its delegate', () {
@@ -868,4 +934,20 @@ class _DecisionBackend extends _NoStateBackend implements BackendDecision {
   Future<void> decisionHeadFree(int headHandle) async {
     calls.add('free $headHandle');
   }
+}
+
+class _LimitBackend extends _NoStateBackend
+    implements BackendGenerationLimitReporting {
+  _LimitBackend(this.limits);
+  final Map<Stream<List<int>>, BackendGenerationLimit> limits;
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      limits[generation];
+}
+
+class _LimitSupportBackend extends _NoStateBackend
+    implements BackendGenerationLimitSupport {
+  _LimitSupportBackend(this.generationLimitUnsupportedReason);
+  @override
+  final String? generationLimitUnsupportedReason;
 }

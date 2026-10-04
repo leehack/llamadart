@@ -335,8 +335,14 @@ WebGPU accepts encoded WAV, MP3, and FLAC bytes. Read the selected file into
 memory and pass `SpeechAudioBytesInput` with a `SpeechAudioFormat` whose
 `encoding` is `'wav'`, `'mp3'` or `'flac'`; local filesystem paths, other
 encodings, raw PCM, and bytes without that metadata are rejected. The bridge
-does not report why generation stopped, so a truncated Web transcript still
-completes. The browser needs enough memory for the roughly 1.02 GB Qwen3-ASR
+reports truncation through `onUsage` when its `supportsCompletionUsage`
+probe is true (`v0.1.54+`). A cut-off Web transcript then fails with
+`LlamaSpeechTranscriptTruncatedException`, whose `limit` is
+`LlamaSpeechTranscriptLimit.runtime`: the bridge combines output-token,
+context and media caps, so the error cannot name the exact cause. Its
+`partialTranscript` holds the text produced before the limit. Older bridges
+without this signal retain their existing completion behavior. The browser
+needs enough memory for the roughly 1.02 GB Qwen3-ASR
 0.6B Q8_0 model/projector pair.
 
 ## Known limits

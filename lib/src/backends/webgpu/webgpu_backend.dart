@@ -53,6 +53,7 @@ class WebGpuLlamaBackend
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendGenerationUsageReporting,
+        BackendGenerationLimitReporting,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -113,6 +114,9 @@ class WebGpuLlamaBackend
       _noCompletionCapabilities;
   final Expando<LlamaGenerationUsage> _generationUsages =
       Expando<LlamaGenerationUsage>();
+
+  final Expando<BackendGenerationLimit> _generationLimits =
+      Expando<BackendGenerationLimit>();
 
   /// Creates a bridge-backed web backend.
   WebGpuLlamaBackend({
@@ -1887,6 +1891,7 @@ class WebGpuLlamaBackend
     late final StreamController<List<int>> controller;
     late final Stream<List<int>> generation;
     LlamaGenerationUsage? reportedUsage;
+    var reportedLength = false;
     var failed = false;
     var canceledByCaller = false;
     controller = StreamController<List<int>>(
@@ -2019,6 +2024,12 @@ class WebGpuLlamaBackend
       onUsage: _bridgeSupportsCompletionUsage(bridge)
           ? ((JSAny? usage) {
               reportedUsage = _generationUsageFromJs(usage);
+              // Usage counts cannot distinguish nPredict, context exhaustion
+              // and the bridge's media cap. Trust only the explicit reason.
+              reportedLength =
+                  usage.isA<JSObject>() &&
+                  _jsStringProperty(usage as JSObject, 'finishReason') ==
+                      'length';
             }).toJS
           : null,
       emitCurrentTextOnToken: hasStopSequences,
@@ -2094,6 +2105,13 @@ class WebGpuLlamaBackend
           if (!failed && reportedUsage != null) {
             _generationUsages[generation] = reportedUsage;
           }
+          if (!failed &&
+              reportedLength &&
+              !stoppedBySequence &&
+              !canceledByCaller &&
+              !abortController.signal.aborted) {
+            _generationLimits[generation] = BackendGenerationLimit.runtime;
+          }
           if (!controller.isClosed) {
             await controller.close();
           }
@@ -2154,6 +2172,10 @@ class WebGpuLlamaBackend
   @override
   LlamaGenerationUsage? generationUsageOf(Stream<List<int>> generation) =>
       _generationUsages[generation];
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
+      _generationLimits[generation];
 
   @override
   Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
