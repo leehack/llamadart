@@ -74,6 +74,12 @@ tools, structured output and grammars, each sampling control
 decoding strategies it runs. Branch on these instead of the model's file
 extension or backend name.
 
+Native llama.cpp rejects nonzero rollback capacity on recurrent or hybrid
+models before creating a context. Embedding inputs that need one-pass attention
+or MEAN/CLS pooling must fit `microBatchSize`; larger inputs raise a typed error.
+See [performance tuning](https://llamadart.leehack.com/docs/guides/performance-tuning)
+and [embeddings](https://llamadart.leehack.com/docs/guides/embeddings).
+
 Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
 preserve runtime `length` termination: tool loops return `truncated` and roll
 back the turn. Typed speech recognition reports a runtime truncation error;

@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Native recurrent and hybrid models reject nonzero speculative rollback
+  capacity before context creation, avoiding runtime graph-budget aborts.
+- Native embeddings reject inputs that exceed a required one-pass micro-batch,
+  avoiding non-causal attention aborts and incorrect MEAN/CLS pooled vectors.
+
 - Prevented execution of incomplete parallel tool-call replies when generation
   reaches a reported limit; the tool loop rolls back the whole turn.
 - Automatic tool loops now reject pinned LiteRT-LM native and Web runtimes
