@@ -290,7 +290,8 @@ extension ChatSessionToolLoopExtension on ChatSession {
     }
     final backend = engine.backend;
     if (backend is BackendGenerationLimitSupport) {
-      final reason = backend.generationLimitUnsupportedReason;
+      final reason = (backend as BackendGenerationLimitSupport)
+          .generationLimitUnsupportedReason;
       if (reason != null) {
         return Future.error(
           LlamaUnsupportedException(
