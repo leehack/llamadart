@@ -26,7 +26,9 @@ description: >-
   `LlamaFinishReason` (`stop`, `length`, `toolCalls`) on the final chunk only.
   On native llama.cpp and LiteRT-LM a cancelled generation usually still ends
   with `stop`; on WebGPU `cancelGeneration()` can surface as a generation
-  error. Track cancels in the code that issues them.
+  error. `ChatSession` cancellation before any reply content instead throws
+  `LlamaStateException` and rolls back the turn, including structured JSON.
+  Track cancels in the code that issues them.
 - To wait for the whole reply, use `await stream.text()`, or
   `await stream.collect()` for a `LlamaCompletion` with `text`, `thinking`,
   assembled `toolCalls`, `finishReason`, `usage` and an assistant `message`.
@@ -58,9 +60,12 @@ description: >-
   `json_schema` may also hold `name`, `description` and `strict`, or
   `{'type': 'text'}`; a `null`-valued key counts as absent, and any other type
   or key throws. A `ChatSession` turn that throws this way, or fails or has
-  its subscription cancelled before its first chunk, removes its user
-  message from `session.history`; one stopped later keeps the partial reply
-  as the assistant turn. Do not parse partial stream chunks as JSON.
+  its subscription cancelled before any reply content, removes its user
+  message from `session.history`; empty terminal chunks are not content.
+  Generation cancellation before content throws `LlamaStateException`.
+  One stopped later keeps the partial reply as the assistant turn only if
+  the session has not reset and its initiating message remains. A history
+  edit during context preparation throws `LlamaStateException`. Do not parse partial stream chunks as JSON.
 - `session.reset()` clears history (`keepSystemPrompt: false` also clears the
   system prompt). `session.addMessage(...)` restores saved history.
 - Use `engine.getTokenCount(text)` for context budgeting instead of estimating

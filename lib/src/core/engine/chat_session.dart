@@ -136,7 +136,9 @@ class ChatSession {
   /// alternating. Empty terminal chunks do not count as reply content.
   /// Cancelling generation before any content throws [LlamaStateException]
   /// and rolls back this turn. A reply never enters history after [reset]
-  /// or after its initiating message has been removed.
+  /// or after its initiating message has been removed. A history edit while
+  /// preparing the context throws [LlamaStateException] instead of trimming
+  /// messages from the changed conversation.
   ///
   /// To run the tools' handlers until the model answers, use
   /// `sendWithTools`. Running the calls yourself:
@@ -335,7 +337,9 @@ class ChatSession {
     Map<String, dynamic>? responseFormat,
     Map<String, dynamic>? chatTemplateKwargs,
   }) async {
+    edits.beginContextPreparation();
     final limit = maxContextTokens ?? await _engine.getContextSize();
+    edits.ensureUnchanged();
     if (limit <= 0) return true;
 
     final requestedResponseTokens =
@@ -364,6 +368,7 @@ class ChatSession {
       responseFormat: responseFormat,
       chatTemplateKwargs: chatTemplateKwargs,
     );
+    edits.ensureUnchanged();
     if (fullTokenCount <= targetLimit) return true;
 
     if (turnOffsets.length > 1) {
@@ -384,6 +389,7 @@ class ChatSession {
           chatTemplateKwargs: chatTemplateKwargs,
         );
 
+        edits.ensureUnchanged();
         if (tokenCount <= targetLimit) {
           bestDropCount = mid;
           foundFit = true;
@@ -476,6 +482,7 @@ class ChatSession {
         responseFormat: responseFormat,
         chatTemplateKwargs: chatTemplateKwargs,
       );
+      edits.ensureUnchanged();
       if (tokenCount <= targetLimit) {
         bestBoundary = boundary;
         foundFit = true;
@@ -607,6 +614,7 @@ class _TurnEdits {
   final List<(int, List<LlamaChatMessage>)> _removals = [];
   LlamaChatMessage? _added;
   List<LlamaChatMessage> _historyAfter;
+  List<LlamaChatMessage> _contextHistory = [];
 
   List<LlamaChatMessage> get _history => _session._history;
 
@@ -627,17 +635,36 @@ class _TurnEdits {
     _removals.add((start, _history.sublist(start, end)));
     _history.removeRange(start, end);
     _historyAfter = List.of(_history);
+    _contextHistory = List.of(_history);
+  }
+
+  bool get isUnchanged =>
+      _session._resetEpoch == _resetEpoch &&
+      _history.length == _historyAfter.length &&
+      Iterable<int>.generate(
+        _history.length,
+      ).every((i) => identical(_history[i], _historyAfter[i]));
+
+  void beginContextPreparation() {
+    _contextHistory = List.of(_history);
+  }
+
+  void ensureUnchanged() {
+    if (_session._resetEpoch != _resetEpoch ||
+        _history.length != _contextHistory.length ||
+        !Iterable<int>.generate(
+          _history.length,
+        ).every((i) => identical(_history[i], _contextHistory[i]))) {
+      throw LlamaStateException(
+        'Chat history changed while preparing the request. Retry with the current session.',
+      );
+    }
   }
 
   /// Puts back the removed turns when no one else changed the history since,
   /// then removes the added message wherever it now is.
   void undo() {
-    final unchanged =
-        _session._resetEpoch == _resetEpoch &&
-        _history.length == _historyAfter.length &&
-        Iterable<int>.generate(
-          _history.length,
-        ).every((i) => identical(_history[i], _historyAfter[i]));
+    final unchanged = isUnchanged;
     if (unchanged) {
       for (final (start, removed) in _removals.reversed) {
         _history.insertAll(start, removed);

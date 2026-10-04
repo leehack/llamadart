@@ -339,7 +339,9 @@ not count as reply content. Generation cancellation before content throws
 trying to parse an empty reply. After content, the partial reply is kept as
 an assistant turn, unless the session was reset or its initiating message
 was removed. A model change during draft-model resolution throws
-`LlamaStateException` and rolls back the turn.
+`LlamaStateException` and rolls back the turn. A history edit while the
+context is being prepared also throws `LlamaStateException`, preserving the
+changed conversation instead of trimming it with stale offsets.
 
 ## `create(...)` flow at a glance
 

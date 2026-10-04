@@ -2,7 +2,8 @@
 
 - Kept cancelled replies out of reset chats and rolled back turns cancelled
   before any output; structured JSON cancellation now reports a state error.
-  A model change during draft-model resolution also rolls back the turn.
+  A model change during draft-model resolution also rolls back the turn;
+  resets during context preparation preserve the replacement conversation.
 
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`

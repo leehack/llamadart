@@ -194,6 +194,24 @@ class _RenderRecordingEngine extends LlamaEngine {
   }
 }
 
+class _GatedTokenBackend extends MockLlamaBackend {
+  final started = Completer<void>();
+  final gate = Completer<void>();
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) async {
+    if (!started.isCompleted) {
+      started.complete();
+      await gate.future;
+    }
+    return super.tokenize(modelHandle, text, addSpecial: addSpecial);
+  }
+}
+
 /// Serves queued completion streams to [create] calls, then the real engine.
 class _ScriptedEngine extends LlamaEngine {
   _ScriptedEngine(super.backend);
@@ -1182,6 +1200,38 @@ void main() {
         expect(scriptedSession.history, older);
       });
     });
+
+    test(
+      'reset during context tokenization never trims the replacement conversation',
+      () async {
+        final gated = _GatedTokenBackend()..contextSize = 300;
+        final model = LlamaEngine(gated);
+        await model.loadModel('mock.gguf');
+        addTearDown(model.dispose);
+        final chat = ChatSession(model);
+        for (var i = 0; i < 3; i++) {
+          chat.addMessage(_text(LlamaChatRole.user, 'u$i${'x' * 200}'));
+          chat.addMessage(_text(LlamaChatRole.assistant, 'a$i${'y' * 200}'));
+        }
+        final done = expectLater(
+          chat.send('old'),
+          throwsA(isA<LlamaStateException>()),
+        );
+        await gated.started.future;
+        chat.reset();
+        final fresh = [
+          for (var i = 0; i < 2; i++) ...[
+            _text(LlamaChatRole.user, 'new u$i'),
+            _text(LlamaChatRole.assistant, 'new a$i'),
+          ],
+        ];
+        fresh.forEach(chat.addMessage);
+        gated.gate.complete();
+        await done;
+        expect(chat.history, fresh);
+        expect(gated.generateCalls, 0);
+      },
+    );
 
     for (final partial in [false, true]) {
       test(
