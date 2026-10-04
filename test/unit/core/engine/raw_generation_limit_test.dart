@@ -9,35 +9,46 @@ import 'package:test/test.dart';
 import 'engine_test.dart' show MockLlamaBackend, LimitReportingMockBackend;
 
 void main() {
-  for (final limit in BackendGenerationLimit.values) {
-    test('raw generation retains $limit only after successful EOF', () async {
-      final backend = LimitReportingMockBackend()
-        ..generationText = 'partial'
-        ..nextLimit = limit;
-      final engine = LlamaEngine(backend);
-      addTearDown(engine.dispose);
-      await engine.loadModel('qwen-test.gguf');
-      final generation = engine.generate('hello');
-      expect(rawGenerationLimit(generation), isNull);
-      final pieces = <String>[];
-      await for (final piece in generation) {
-        expect(rawGenerationLimit(generation), isNull);
-        pieces.add(piece);
-      }
-      expect(pieces.join(), 'partial');
-      expect(rawGenerationLimit(generation), limit);
+  for (final observed in [false, true]) {
+    for (final limit in BackendGenerationLimit.values) {
+      test(
+        'raw generation retains $limit only after successful EOF observed=$observed',
+        () async {
+          final backend = LimitReportingMockBackend()
+            ..generationText = 'partial'
+            ..nextLimit = limit;
+          final observer = _LimitObserver();
+          final engine = LlamaEngine(
+            backend,
+            observers: observed ? [observer] : [],
+          );
+          addTearDown(engine.dispose);
+          await engine.loadModel('qwen-test.gguf');
+          final generation = engine.generate('hello');
+          expect(rawGenerationLimit(generation), isNull);
+          final pieces = <String>[];
+          await for (final piece in generation) {
+            expect(rawGenerationLimit(generation), isNull);
+            pieces.add(piece);
+          }
+          expect(pieces.join(), 'partial');
+          expect(rawGenerationLimit(generation), limit);
+          if (observed) {
+            expect(observer.operation.results.last.finishReason, 'length');
+          }
 
-      backend.nextLimit = null;
-      final normal = engine.generate(
-        'hello',
-        params: const GenerationParams(maxTokens: 1),
+          backend.nextLimit = null;
+          final normal = engine.generate(
+            'hello',
+            params: const GenerationParams(maxTokens: 1),
+          );
+          expect(await normal.join(), 'partial');
+          expect(rawGenerationLimit(normal), isNull);
+          expect(rawGenerationLimit(generation), limit);
+        },
       );
-      expect(await normal.join(), 'partial');
-      expect(rawGenerationLimit(normal), isNull);
-      expect(rawGenerationLimit(generation), limit);
-    });
+    }
   }
-
   for (final termination in ['cancel', 'error', 'subscription cancel']) {
     test('raw $termination never publishes a backend limit', () async {
       final backend = _InterruptedLimitBackend();
@@ -96,4 +107,16 @@ class _InterruptedLimitBackend extends MockLlamaBackend
   @override
   BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) =>
       BackendGenerationLimit.runtime;
+}
+
+final class _LimitObserver extends LlamaEngineObserver {
+  final operation = _LimitOperation();
+  @override
+  LlamaOperationObserver? onStart(LlamaOperation request) => operation;
+}
+
+final class _LimitOperation extends LlamaOperationObserver {
+  final results = <LlamaOperationResult>[];
+  @override
+  void onEnd(LlamaOperationResult result) => results.add(result);
 }
