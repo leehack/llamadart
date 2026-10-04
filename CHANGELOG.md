@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Redacted URL credentials and signed query strings from redirected download
+  failures, download snapshots and invalid model-source errors, including
+  slashless URLs; LiteRT-LM Web model names reject decoded URL delimiters.
+
 - **Breaking (Preview):** `ImageGenerationEngine.generate` returns
   `Future<ImageGenerationTask>`; await it before reading `events` or calling
   `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).

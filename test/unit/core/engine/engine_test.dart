@@ -5147,6 +5147,11 @@ void main() {
         'https://bucket.example.com/m.gguf',
         <String>['Sig5secret'],
       ),
+      (
+        'https:alice:SlashlessPassword@example.com/m.gguf?token=SlashlessSignature',
+        'https://example.com/m.gguf',
+        <String>['SlashlessPassword', 'SlashlessSignature', 'alice'],
+      ),
     ]) {
       Matcher withoutSecrets() => allOf(<Matcher>[
         for (final secret in secrets) isNot(contains(secret)),

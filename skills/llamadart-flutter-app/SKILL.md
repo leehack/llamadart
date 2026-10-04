@@ -343,7 +343,9 @@ class ModelDownloadScreenModel {
 
 Render `snapshot.stage` (`resolving`, `checkingCache`, `downloading`,
 `verifying`, `ready`, `failed`, `cancelled`), `snapshot.fraction` and the
-redacted `snapshot.errorMessage`; pass the returned path to
+redacted `snapshot.errorMessage`; source and redirect URL credentials are
+removed from failure diagnostics. Transient I/O failures retain retry behavior.
+Pass the returned path to
 `engine.loadModel(path)`.
 
 ## More

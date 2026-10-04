@@ -3,6 +3,47 @@ import 'package:test/test.dart';
 
 void main() {
   group('redactUrlSecrets', () {
+    test('relative userinfo is not mistaken for a URL scheme', () {
+      expect(
+        redactUrlSecrets('Bad URL (u:pw@cdn.example.com:8080/m.gguf)'),
+        'Bad URL (cdn.example.com:8080/m.gguf)',
+      );
+    });
+    test(
+      'a display form never reinserts a known signature repeated in its path',
+      () {
+        const source =
+            's3://host/LongSecretSignature/m.gguf?token=LongSecretSignature';
+        expect(sourceUrlDisplay(source), 's3://');
+        expect(
+          redactUrlSecrets(
+            'Failed $source bare LongSecretSignature',
+            sourceUrls: [source],
+          ),
+          isNot(contains('LongSecretSignature')),
+        );
+      },
+    );
+
+    test('redacts slashless credentials and their repeated password', () {
+      const source =
+          'https:alice:SlashlessSecret@example.com/m/SlashlessSecret.gguf?token=QuerySecretValue';
+      final message = redactUrlSecrets(
+        'Loaded $source; password SlashlessSecret',
+        sourceUrls: [source],
+      );
+      expect(message, isNot(contains('alice')));
+      expect(message, isNot(contains('SlashlessSecret')));
+      expect(message, isNot(contains('QuerySecretValue')));
+      expect(sourceUrlDisplay(source), isNot(contains('SlashlessSecret')));
+      expect(
+        redactUrlSecrets(
+          'Failed https:alice:SlashlessSecret@example.com/m.gguf',
+        ),
+        'Failed https://example.com/m.gguf',
+      );
+    });
+
     for (final (url, display, secrets) in const [
       (
         'https://alice:Pw1secret@example.com/m.gguf',
