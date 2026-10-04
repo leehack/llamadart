@@ -42,9 +42,10 @@ add its pinned SDK dependencies to use it there.
 The adapter creates an `INTERNAL` span for each chat completion, raw text
 completion, embeddings request and model load. Inference runs in-process.
 `createStructuredJson` and `ChatSession.create` use the chat observer too.
-This hook does not automatically trace tool execution, model downloads,
-next-token scoring, speech APIs or GPU kernels. Add application spans around
-those operations as needed.
+A model-load span covers a whole `LlamaEngine.load` or `setModel` call, with
+its downloads; a download has no span of its own. This hook does not
+automatically trace tool execution, next-token scoring, speech APIs or GPU
+kernels. Add application spans around those operations as needed.
 
 Streaming operations begin when listened to. Callbacks run in the zone that
 called the engine method, so create the stream inside the desired parent

@@ -186,6 +186,10 @@ working until 1.0.
    - A subclass that overrides `loadModel` no longer sees loads made
      through `load` and `setModel`. Fake a `LlamaBackend` in tests, or
      override `setModel`.
+   - A `LlamaEngineObserver` sees a whole `load` or `setModel` call as one
+     model load, with its downloads, so a file that is missing or fails to
+     download ends that operation with an error. `loadModelSource` reports
+     only the load that follows its download.
 
 5. **New members on `LlamaEngine`.** A class that `implements LlamaEngine`
    must add `setModel`, and an override of `loadMultimodalProjectorSource`
