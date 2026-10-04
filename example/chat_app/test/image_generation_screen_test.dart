@@ -234,6 +234,75 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('shows a failed completion and allows a successful retry', (
+    tester,
+  ) async {
+    models.installed.add(ImageModelProfile.sdxs.id);
+    final provider = await pumpScreen(tester);
+    final generate = find.byKey(
+      const ValueKey<String>('generate_image_button'),
+    );
+
+    await tester.tap(generate);
+    await tester.pump();
+    await tester.pump();
+    final engine = generation.generator!;
+    final failedRun = engine.runs.single;
+    failedRun.progress(ImageGenerationPhase.sampling, 0, 1);
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_progress')),
+      findsOneWidget,
+    );
+
+    const message = 'Image generation failed: the runtime returned no image.';
+    failedRun.failWith(LlamaModelException(message));
+    await tester.pumpAndSettle();
+
+    expect(provider.error, message);
+    expect(find.text(message), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_error')),
+      findsOneWidget,
+    );
+    expect(provider.stage, ImageGenerationStage.idle);
+    expect(provider.progress, isNull);
+    expect(provider.output, isNull);
+    expect(provider.status, isNull);
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_progress')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey<String>('generated_image')), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('cancel_image_generation_button')),
+      findsNothing,
+    );
+    expect(tester.widget<FilledButton>(generate).onPressed, isNotNull);
+    expect(failedRun.cancelled, isFalse);
+
+    await tester.tap(generate);
+    await tester.pump();
+    expect(provider.error, isNull);
+    expect(find.text(message), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('image_generation_error')),
+      findsNothing,
+    );
+    expect(engine.runs, hasLength(2));
+    expect(generation.loadCount, 1, reason: 'retry reuses the loaded engine');
+    engine.runs.last.completeWith(seed: 1234);
+    await tester.pumpAndSettle();
+
+    expect(provider.error, isNull);
+    expect(provider.output!.seed, 1234);
+    expect(
+      find.byKey(const ValueKey<String>('generated_image')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Seed 1234 · 2×2'), findsOneWidget);
+  });
+
   testWidgets('cancels a running generation', (tester) async {
     models.installed.add(ImageModelProfile.sdxs.id);
     await pumpScreen(tester);
@@ -1051,6 +1120,10 @@ class FakeImageGenerationRun implements ImageGenerationRun {
     );
     _events.add(ImageGenerationFinalEvent(result));
     _finish(ImageGenerationCompletion.completed(result));
+  }
+
+  void failWith(LlamaException error) {
+    _finish(ImageGenerationCompletion.failed(error));
   }
 
   @override
