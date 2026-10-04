@@ -19,9 +19,8 @@
 /// ### Simple Example
 ///
 /// ```dart
-/// final engine = await LlamaEngine.load(
-///   LlamaModel(ModelSource.path('path/to/model.gguf')), // or model.litertlm
-/// );
+/// final engine = LlamaEngine(LlamaBackend());
+/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm
 ///
 /// final session = ChatSession(engine);
 /// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {

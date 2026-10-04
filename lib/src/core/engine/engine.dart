@@ -467,7 +467,7 @@ class LlamaEngine {
         ?model.projector,
         ...companions,
       ];
-      _checkModelBeforeIo(model, params, download, operation, sources.length);
+      _checkModelBeforeIo(model, params);
 
       void throwIfCancelled() {
         if (download.cancelToken?.isCancelled ?? false) {
@@ -542,13 +542,7 @@ class LlamaEngine {
 
   /// Throws [LlamaUnsupportedException] for what [setModel] can reject from
   /// its arguments alone.
-  void _checkModelBeforeIo(
-    LlamaModel model,
-    ModelParams params,
-    ModelLoadOptions download,
-    String operation,
-    int fileCount,
-  ) {
+  void _checkModelBeforeIo(LlamaModel model, ModelParams params) {
     final source = model.source;
     final format =
         source.format ??
@@ -572,12 +566,6 @@ class LlamaEngine {
       );
     }
     if (source.format case final declared?) _checkBackendLoads(declared);
-    if (fileCount > 1 && download.sha256 != null) {
-      throw LlamaUnsupportedException(
-        '$operation uses $fileCount files, so ModelLoadOptions.sha256 cannot '
-        'apply to them. Leave it unset.',
-      );
-    }
   }
 
   /// Where the backend loads each of [sources] from, in order, and [params]

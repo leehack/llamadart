@@ -19,6 +19,7 @@ Future<void> main(List<String> arguments) async {
       ? prompts.take(options.maxPrompts!).toList(growable: false)
       : prompts;
 
+  final engine = LlamaEngine(LlamaBackend());
   final baseParams = GenerationParams(
     maxTokens: options.maxTokens,
     temp: options.temperature,
@@ -31,20 +32,21 @@ Future<void> main(List<String> arguments) async {
     streamBatchByteThreshold: options.streamBatchByteThreshold,
   );
 
-  await LlamaLogging.configure(
-    level: LlamaLogLevel.none,
-    nativeLevel: LlamaLogLevel.warn,
-  );
-  final engine = await LlamaEngine.load(
-    LlamaModel(ModelSource.path(options.modelPath)),
-    params: ModelParams(
-      contextSize: options.contextSize,
-      gpuLayers: options.gpuLayers,
-      numberOfThreads: options.threads,
-      numberOfThreadsBatch: options.threadsBatch,
-    ),
-  );
   try {
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.none,
+      nativeLevel: LlamaLogLevel.warn,
+    );
+    await engine.loadModel(
+      options.modelPath,
+      modelParams: ModelParams(
+        contextSize: options.contextSize,
+        gpuLayers: options.gpuLayers,
+        numberOfThreads: options.threads,
+        numberOfThreadsBatch: options.threadsBatch,
+      ),
+    );
+
     final checks = <Map<String, dynamic>>[];
     var mismatchCount = 0;
     var totalChecks = 0;

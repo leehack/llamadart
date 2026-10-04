@@ -37,11 +37,13 @@ Future<void> main(List<String> args) async {
   final audioFixture = audioPath == null
       ? null
       : await readAudioChatSmokeFixture(audioPath);
-  final engine = await LlamaEngine.load(
-    LlamaModel(ModelSource.path(modelPath)),
-    params: ModelParams(contextSize: 2048, liteRtLmBackend: backend),
-  );
+  final engine = LlamaEngine(LlamaBackend());
   try {
+    await engine.loadModel(
+      modelPath,
+      modelParams: ModelParams(contextSize: 2048, liteRtLmBackend: backend),
+    );
+
     final plain = await _runScenario(
       engine: engine,
       messages: const [

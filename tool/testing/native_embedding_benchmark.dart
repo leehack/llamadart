@@ -16,29 +16,32 @@ Future<void> main(List<String> arguments) async {
     exit(64);
   }
 
-  await LlamaLogging.configure(
-    level: LlamaLogLevel.none,
-    nativeLevel: LlamaLogLevel.warn,
-  );
+  final engine = LlamaEngine(LlamaBackend());
 
-  final resolvedMaxSeq = options.maxParallelSequences > 0
-      ? options.maxParallelSequences
-      : inputs.length;
-
-  final engine = await LlamaEngine.load(
-    LlamaModel(ModelSource.path(options.modelPath)),
-    params: ModelParams(
-      contextSize: options.contextSize,
-      gpuLayers: options.forceCpu ? 0 : options.gpuLayers,
-      preferredBackend: options.forceCpu ? GpuBackend.cpu : GpuBackend.auto,
-      numberOfThreads: options.threads,
-      numberOfThreadsBatch: options.threadsBatch,
-      batchSize: options.batchSize,
-      microBatchSize: options.microBatchSize,
-      maxParallelSequences: resolvedMaxSeq,
-    ),
-  );
   try {
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.none,
+      nativeLevel: LlamaLogLevel.warn,
+    );
+
+    final resolvedMaxSeq = options.maxParallelSequences > 0
+        ? options.maxParallelSequences
+        : inputs.length;
+
+    await engine.loadModel(
+      options.modelPath,
+      modelParams: ModelParams(
+        contextSize: options.contextSize,
+        gpuLayers: options.forceCpu ? 0 : options.gpuLayers,
+        preferredBackend: options.forceCpu ? GpuBackend.cpu : GpuBackend.auto,
+        numberOfThreads: options.threads,
+        numberOfThreadsBatch: options.threadsBatch,
+        batchSize: options.batchSize,
+        microBatchSize: options.microBatchSize,
+        maxParallelSequences: resolvedMaxSeq,
+      ),
+    );
+
     final backendName = await engine.getBackendName();
     final tokenCounts = <int>[];
     for (final input in inputs) {

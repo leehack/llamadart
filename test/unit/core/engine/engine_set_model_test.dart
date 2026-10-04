@@ -561,6 +561,37 @@ void main() {
       await engine.dispose();
     });
 
+    test('a cancel token cancelled while an adapter resolves stops the call '
+        'with the loaded model as it was', () async {
+      final backend = _Backend();
+      final token = ModelDownloadCancelToken();
+      final manager = _Manager(cacheFiles());
+      final engine = LlamaEngine(backend, modelDownloadManager: manager);
+      await engine.setModel(LlamaModel(localModel));
+      backend.events.clear();
+      manager.onResolved = () {
+        if (manager.sources.last == adapter.cacheKey) token.cancel();
+      };
+
+      await expectLater(
+        engine.setModel(
+          LlamaModel(remoteModel),
+          params: ModelParams(loras: [LoraAdapterConfig.source(adapter)]),
+          download: ModelLoadOptions(cancelToken: token),
+        ),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Model loading was cancelled.',
+          ),
+        ),
+      );
+      expect(backend.events, isEmpty);
+      expect(engine.isReady, isTrue);
+      await engine.dispose();
+    });
+
     test('a cancel token cancelled while the projector loads leaves nothing '
         'loaded', () async {
       final backend = _Backend();
@@ -660,6 +691,75 @@ void main() {
         expect(engine.isReady, isFalse);
       },
     );
+
+    test('dispose while the replaced model unloads stops the call before '
+        'the new model loads', () async {
+      final unloadGate = Completer<void>();
+      final backend = _Backend();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _Manager(cacheFiles()),
+      );
+      await engine.setModel(LlamaModel(localModel));
+      backend
+        ..events.clear()
+        ..contextFreeDelay = unloadGate.future;
+
+      final replacing = engine.setModel(LlamaModel(remoteModel));
+      final outcome = expectLater(
+        replacing,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed while loading'),
+          ),
+        ),
+      );
+      await pumpEventQueue();
+      expect(backend.events, ['contextFree']);
+      final dispose = engine.dispose();
+      unloadGate.complete();
+      await outcome;
+      await dispose;
+
+      expect(backend.events, ['contextFree', 'modelFree']);
+      expect(backend.disposeCalls, 1);
+    });
+
+    test('dispose while the loaded model is read for observers makes the '
+        'call throw, and unloads the model', () async {
+      final backend = _Backend()..metadataGate = Completer<void>();
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: _Manager(cacheFiles()),
+        observers: [_LoadObserver()],
+      );
+
+      final loading = engine.setModel(LlamaModel(remoteModel));
+      final outcome = expectLater(
+        loading,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed while loading'),
+          ),
+        ),
+      );
+      await backend.metadataStarted.future;
+      final dispose = engine.dispose();
+      backend.metadataGate!.complete();
+      await outcome;
+      await dispose;
+
+      expect(backend.events, [
+        'modelLoad /cache/model.gguf',
+        'contextFree',
+        'modelFree',
+      ]);
+      expect(engine.isReady, isFalse);
+    });
 
     test('throws LlamaStateException after dispose', () async {
       final manager = _Manager(cacheFiles());
@@ -1101,6 +1201,8 @@ class _Backend extends MockLlamaBackend {
   final List<ModelParams> contextParams = <ModelParams>[];
   final List<String> removedLoraPaths = <String>[];
   final Completer<void> modelLoadStarted = Completer<void>();
+  final Completer<void> metadataStarted = Completer<void>();
+  Completer<void>? metadataGate;
   Object? projectorError;
   void Function()? onProjectorLoad;
 
@@ -1154,6 +1256,13 @@ class _Backend extends MockLlamaBackend {
   Future<void> removeLoraAdapter(int contextHandle, String path) {
     removedLoraPaths.add(path);
     return super.removeLoraAdapter(contextHandle, path);
+  }
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    if (!metadataStarted.isCompleted) metadataStarted.complete();
+    await metadataGate?.future;
+    return super.modelMetadata(modelHandle);
   }
 }
 

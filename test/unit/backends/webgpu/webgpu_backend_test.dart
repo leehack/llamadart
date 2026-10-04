@@ -590,7 +590,7 @@ void main() {
           isA<LlamaStateException>().having(
             (e) => e.message,
             'message',
-            contains('loadModelSource()'),
+            contains('LlamaEngine.load or setModel'),
           ),
         ),
       );
@@ -4042,7 +4042,7 @@ void main() {
             'message',
             allOf(
               contains('needs a multimodal projector'),
-              contains('loadMultimodalProjector'),
+              contains('LlamaModel(source, projector: ...)'),
             ),
           ),
         ),

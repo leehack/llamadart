@@ -19,26 +19,28 @@ Future<void> main(List<String> args) async {
   final maxTokens = args.length > 2 ? int.parse(args[2]) : 32;
   final draftTokenMax = args.length > 3 ? int.parse(args[3]) : 1;
 
+  final engine = LlamaEngine(LlamaBackend());
   const userPrompt =
       'Write a detailed paragraph of about 180 words explaining why fast local '
       'inference matters for private, offline, user-facing AI applications. Do '
       'not use bullets.';
-  await LlamaLogging.configure(
-    level: LlamaLogLevel.warn,
-    nativeLevel: LlamaLogLevel.warn,
-  );
-  final engine = await LlamaEngine.load(
-    LlamaModel(ModelSource.path(modelPath)),
-    params: ModelParams(
-      contextSize: 2048,
-      preferredBackend: GpuBackend.metal,
-      gpuLayers: ModelParams.maxGpuLayers,
-      numberOfThreads: 4,
-      numberOfThreadsBatch: 4,
-      speculativeRollbackTokenMax: draftTokenMax > 4 ? draftTokenMax : 4,
-    ),
-  );
   try {
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.warn,
+      nativeLevel: LlamaLogLevel.warn,
+    );
+    await engine.loadModel(
+      modelPath,
+      modelParams: ModelParams(
+        contextSize: 2048,
+        preferredBackend: GpuBackend.metal,
+        gpuLayers: ModelParams.maxGpuLayers,
+        numberOfThreads: 4,
+        numberOfThreadsBatch: 4,
+        speculativeRollbackTokenMax: draftTokenMax > 4 ? draftTokenMax : 4,
+      ),
+    );
+
     final backendName = await engine.getBackendName();
     final baseline = await _run(
       engine,
