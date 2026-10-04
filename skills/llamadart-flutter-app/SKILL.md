@@ -23,6 +23,9 @@ or shipping runtimes the app does not use.
   `State.dispose` is synchronous, so wrap the call in `unawaited(...)`.
   `dispose()` waits for an in-flight load or unload, then unloads the model
   and releases the backend; that load then throws `LlamaStateException`.
+  It immediately marks the engine disposed, even inside logging or backend
+  hooks. Every call shares one future, including a failed teardown; disposal
+  does not retry cleanup after failure.
   Model unload, replacement, and disposal also cancel active chat-session
   requests: partial replies stay in history, while requests stopped before
   output roll back and throw `LlamaStateException`. Tool loops report

@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Reentrant engine disposal now shares one teardown and immediately reports
+  disposed state, including calls from logging or backend cancellation hooks.
+
 - Native recurrent and hybrid models reject nonzero speculative rollback
   capacity before context creation, avoiding runtime graph-budget aborts.
 - Native embeddings reject inputs that exceed a required one-pass micro-batch,

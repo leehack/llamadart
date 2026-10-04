@@ -1384,7 +1384,10 @@ class LlamaEngine {
   /// Waits for a model load or unload in progress, unloads the model, which
   /// cancels running generations, and disposes [backend].
   ///
-  /// Idempotent: every call returns the same future. Terminal: afterwards,
+  /// Immediately marks the engine as disposed, before teardown callbacks run.
+  /// Idempotent: every call, including a synchronous reentrant call, returns
+  /// the same future, even if teardown fails. A failed disposal is not retried.
+  /// Terminal: afterwards,
   /// loads, requests and the backend queries [getBackendName],
   /// [getAvailableBackends], [isGpuSupported], [getVramInfo],
   /// [listGpuDevices] and [getResolvedGpuLayers] throw
@@ -1396,7 +1399,17 @@ class LlamaEngine {
   /// [loadModelSource] or [loadMultimodalProjectorSource] stop. Resolution or
   /// download work from [setModel] or [loadModelSource] does not hold this
   /// call up, even when a custom resolver or manager ignores cancellation.
-  Future<void> dispose() => _disposal ??= _dispose();
+  Future<void> dispose() {
+    final existing = _disposal;
+    if (existing != null) return existing;
+
+    // Publish terminal state and the shared future before synchronous logging,
+    // cancellation or backend hooks can reenter disposal.
+    final disposal = Completer<void>();
+    _disposal = disposal.future;
+    disposal.complete(_dispose());
+    return disposal.future;
+  }
 
   Future<void> _dispose() async {
     for (final abandon in _abandonResolutions.toList()) {
@@ -3111,15 +3124,25 @@ class LlamaEngine {
         'Cannot $operation while another model lifecycle operation is in progress.',
       );
     }
-    final lifecycleOperation = action();
+    // Disposal must be able to join this operation even if it is first called
+    // by a synchronous hook inside action. Preserve action's synchronous prefix.
+    final lifecycle = Completer<void>();
+    final lifecycleOperation = lifecycle.future;
     _modelLifecycleOperation = lifecycleOperation;
-    try {
-      await lifecycleOperation;
-    } finally {
-      if (identical(_modelLifecycleOperation, lifecycleOperation)) {
-        _modelLifecycleOperation = null;
+    Future<void> run() async {
+      try {
+        await action();
+      } finally {
+        if (identical(_modelLifecycleOperation, lifecycleOperation)) {
+          _modelLifecycleOperation = null;
+        }
       }
     }
+
+    // Joiners resume only after the slot is released, including joiners that
+    // subscribed from action's synchronous prefix before this caller could.
+    lifecycle.complete(run());
+    await lifecycleOperation;
   }
 
   Future<void> _cleanupFailedLoadState() async {
