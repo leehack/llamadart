@@ -2,6 +2,8 @@
 
 - Reentrant engine disposal now shares one teardown and immediately reports
   disposed state, including calls from logging or backend cancellation hooks.
+- Native requests, generation, and speech synthesis fail promptly when their
+  worker exits unexpectedly, allowing disposal to finish.
 
 - Native recurrent and hybrid models reject nonzero speculative rollback
   capacity before context creation, avoiding runtime graph-budget aborts.

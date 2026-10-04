@@ -48,6 +48,9 @@ class NativeLlamaBackend
   Isolate? _isolate;
   SendPort? _sendPort;
   RawReceivePort? _workerLogPort;
+  RawReceivePort? _workerLifecyclePort;
+  LlamaStateException? _workerFailure;
+  final Set<ReceivePort> _responsePorts = <ReceivePort>{};
   Future<void>? _isolateStart;
   Future<void>? _disposeStart;
   int _lifecycleEpoch = 0;
@@ -56,6 +59,7 @@ class NativeLlamaBackend
   final Allocator _cancelFlagAllocator;
   _NativeCancelFlag? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
+  void Function(Object error)? _activeGenerationFailure;
   void Function()? _activeFreeToken;
   _QueuedGeneration? _queuedGeneration;
   bool _textToSpeechActive = false;
@@ -74,6 +78,12 @@ class NativeLlamaBackend
   ///
   /// [cancelFlagAllocator] allocates and frees the one-byte cancel flag of
   /// each generation and text-to-speech synthesis.
+  ///
+  /// If a worker spawned by this backend exits unexpectedly, pending work
+  /// fails with [LlamaStateException] and existing model/context handles are
+  /// invalid. Dispose this backend and create a fresh one before reloading.
+  /// This does not recover native allocations owned by an abandoned worker.
+  /// An externally supplied [initialSendPort] has no owned isolate to monitor.
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
@@ -134,16 +144,80 @@ class NativeLlamaBackend
     }
   }
 
+  void _throwIfWorkerFailed() {
+    final failure = _workerFailure;
+    if (failure != null) throw failure;
+  }
+
+  ReceivePort _openResponsePort() {
+    _throwIfWorkerFailed();
+    final port = ReceivePort();
+    _responsePorts.add(port);
+    return port;
+  }
+
+  void _closeResponsePort(ReceivePort port) {
+    _responsePorts.remove(port);
+    port.close();
+  }
+
+  void _dispatchRequest(ReceivePort port, WorkerRequest request) {
+    try {
+      _sendPort!.send(request);
+    } catch (_) {
+      _closeResponsePort(port);
+      rethrow;
+    }
+  }
+
+  Future<Object?> _receiveResponse(ReceivePort port) async {
+    try {
+      final response = await port.first;
+      if (response is ErrorResponse) throw _workerError(response);
+      return response;
+    } finally {
+      _closeResponsePort(port);
+    }
+  }
+
+  void _workerExited(RawReceivePort lifecyclePort) {
+    if (!identical(_workerLifecyclePort, lifecyclePort)) return;
+    lifecyclePort.close();
+    _workerLifecyclePort = null;
+    _workerLogPort?.close();
+    _workerLogPort = null;
+    _isolate = null;
+    _sendPort = null;
+    _isReady = false;
+    final failure = _workerFailure = LlamaStateException(
+      'The llama.cpp worker exited unexpectedly. Its model and context '
+      'handles are no longer usable. Dispose this backend and create a '
+      'new backend before loading a model again.',
+    );
+    // An actual onExit notification proves that this worker has stopped
+    // reading shared cancellation flags. Error notifications alone do not.
+    _activeGenerationFailure?.call(failure);
+    for (final port in _responsePorts.toList()) {
+      port.sendPort.send(
+        ErrorResponse(failure.message, kind: WorkerErrorKind.state),
+      );
+    }
+    _queuedGeneration?.fail(failure);
+  }
+
   Future<void> _ensureIsolate() async {
+    _throwIfWorkerFailed();
     final activeDispose = _disposeStart;
     if (activeDispose != null) {
       await activeDispose;
+      _throwIfWorkerFailed();
     }
     final lifecycleEpoch = _lifecycleEpoch;
     final existingStart = _isolateStart;
     if (existingStart != null) {
       await existingStart;
       _throwIfDisposedDuringStartup(lifecycleEpoch);
+      _throwIfWorkerFailed();
       _isReady = _sendPort != null;
       return;
     }
@@ -157,6 +231,7 @@ class NativeLlamaBackend
     try {
       await start;
       _throwIfDisposedDuringStartup(lifecycleEpoch);
+      _throwIfWorkerFailed();
       _isReady = _sendPort != null;
     } finally {
       if (_isolateStart == start) {
@@ -169,6 +244,18 @@ class NativeLlamaBackend
     final completer = Completer<void>();
     final tempPort = ReceivePort();
     final logPort = _openWorkerLogPort();
+    final lifecyclePort = RawReceivePort();
+    var initialized = false;
+    lifecyclePort.keepIsolateAlive = false;
+    _workerLifecyclePort = lifecyclePort;
+    lifecyclePort.handler = (Object? message) {
+      if (!identical(_workerLifecyclePort, lifecyclePort)) return;
+      if (!completer.isCompleted) {
+        tempPort.sendPort.send(message);
+      } else if (message == null && initialized) {
+        _workerExited(lifecyclePort);
+      }
+    };
     SendPort? workerSendPort;
     tempPort.listen((msg) {
       if (msg is SendPort && workerSendPort == null) {
@@ -187,6 +274,7 @@ class NativeLlamaBackend
         return;
       }
       if (msg is DoneResponse && workerSendPort != null) {
+        initialized = true;
         _sendPort = workerSendPort;
         completer.complete();
         return;
@@ -224,8 +312,8 @@ class NativeLlamaBackend
       _isolate = await Isolate.spawn(
         _workerEntrypoint,
         tempPort.sendPort,
-        onError: tempPort.sendPort,
-        onExit: tempPort.sendPort,
+        onError: lifecyclePort.sendPort,
+        onExit: lifecyclePort.sendPort,
         errorsAreFatal: true,
       );
       await completer.future.timeout(
@@ -244,6 +332,10 @@ class NativeLlamaBackend
       _isolate?.kill(priority: Isolate.immediate);
       _isolate = null;
       _closeWorkerLogPort(logPort);
+      lifecyclePort.close();
+      if (identical(_workerLifecyclePort, lifecyclePort)) {
+        _workerLifecyclePort = null;
+      }
       if (error is LlamaBackendInitializationException) {
         rethrow;
       }
@@ -306,24 +398,27 @@ class NativeLlamaBackend
     WorkerRequest Function(SendPort sendPort) buildRequest,
     String operation,
   ) async {
+    _throwIfWorkerFailed();
     final activeDispose = _disposeStart;
     if (activeDispose != null) {
       await activeDispose;
+      _throwIfWorkerFailed();
     }
     final lifecycleEpoch = _lifecycleEpoch;
     final startup = _isolateStart;
     if (startup != null) {
       await startup;
       _throwIfDisposedDuringStartup(lifecycleEpoch);
+      _throwIfWorkerFailed();
     }
     final sendPort = _sendPort;
     if (sendPort != null) {
-      final rp = ReceivePort();
+      final rp = _openResponsePort();
       try {
         sendPort.send(buildRequest(rp.sendPort));
-        _expectDoneResponse(await rp.first, operation);
+        _expectDoneResponse(await _receiveResponse(rp), operation);
       } finally {
-        rp.close();
+        _closeResponsePort(rp);
       }
     }
   }
@@ -331,10 +426,9 @@ class NativeLlamaBackend
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(ModelLoadRequest(path, params, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ModelLoadRequest(path, params, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is HandleResponse) return res.handle;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during model load");
@@ -355,21 +449,23 @@ class NativeLlamaBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
+    _throwIfWorkerFailed();
     if (_sendPort == null) return;
-    final rp = ReceivePort();
-    _sendPort!.send(ModelFreeRequest(modelHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ModelFreeRequest(modelHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'model free');
   }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(ContextCreateRequest(modelHandle, params, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      ContextCreateRequest(modelHandle, params, rp.sendPort),
+    );
+    final res = await _receiveResponse(rp);
     if (res is ErrorResponse) throw _workerError(res);
     if (res is! HandleResponse) {
       throw Exception("Unknown response during context creation");
@@ -385,21 +481,21 @@ class NativeLlamaBackend
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    _throwIfWorkerFailed();
     if (_sendPort == null) return;
-    final rp = ReceivePort();
-    _sendPort!.send(ContextFreeRequest(contextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ContextFreeRequest(contextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'context free');
   }
 
   @override
   Future<int> getContextSize(int contextHandle) async {
+    _throwIfWorkerFailed();
     if (_sendPort == null) return 0;
-    final rp = ReceivePort();
-    _sendPort!.send(GetContextSizeRequest(contextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, GetContextSizeRequest(contextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is GetContextSizeResponse) return res.size;
     return 0;
   }
@@ -411,6 +507,8 @@ class NativeLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
+    final failure = _workerFailure;
+    if (failure != null) return Stream<List<int>>.error(failure);
     final runningToken = _activeCancelToken;
     if (_queuedGeneration != null ||
         (runningToken != null && !runningToken.isRaised)) {
@@ -453,7 +551,10 @@ class NativeLlamaBackend
       }
     }
 
-    queued = _QueuedGeneration(start, close);
+    queued = _QueuedGeneration(start, close, (error) {
+      if (!controller.isClosed) controller.addError(error);
+      close();
+    });
     cancel = close;
     _queuedGeneration = queued;
     return stream;
@@ -465,7 +566,10 @@ class NativeLlamaBackend
       return;
     }
     _queuedGeneration = null;
-    if (_disposeStart != null) {
+    final failure = _workerFailure;
+    if (failure != null) {
+      queued.fail(failure);
+    } else if (_disposeStart != null) {
       queued.close();
     } else {
       queued.start();
@@ -482,7 +586,7 @@ class NativeLlamaBackend
     GenerationParams params,
     List<LlamaContentPart>? parts,
   ) {
-    final rp = ReceivePort();
+    final rp = _openResponsePort();
 
     final cancelToken = _NativeCancelFlag(_cancelFlagAllocator);
     _activeCancelToken = cancelToken;
@@ -506,13 +610,14 @@ class NativeLlamaBackend
         return;
       }
       tokenFreed = true;
-      rp.close();
+      _closeResponsePort(rp);
       cancelToken.free();
       if (_activeCancelToken == cancelToken) {
         _activeCancelToken = null;
       }
       if (_activeFreeToken == freeToken) {
         _activeFreeToken = null;
+        _activeGenerationFailure = null;
       }
     };
     _activeFreeToken = freeToken;
@@ -532,9 +637,16 @@ class NativeLlamaBackend
     }
 
     _activeGenerationCleanup = detachAndClose;
+    _activeGenerationFailure = (error) {
+      if (!controller.isClosed) controller.addError(error);
+      detachAndClose();
+      freeToken();
+      _activeGenerationFailure = null;
+    };
 
     try {
-      _sendPort!.send(
+      _dispatchRequest(
+        rp,
         GenerateRequest(
           contextHandle,
           prompt,
@@ -607,12 +719,12 @@ class NativeLlamaBackend
     String text, {
     bool addSpecial = true,
   }) async {
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       TokenizeRequest(modelHandle, text, addSpecial, rp.sendPort),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is TokenizeResponse) return res.tokens;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Tokenization failed");
@@ -625,10 +737,12 @@ class NativeLlamaBackend
     bool normalize = true,
   }) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(EmbedRequest(contextHandle, text, normalize, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      EmbedRequest(contextHandle, text, normalize, rp.sendPort),
+    );
+    final res = await _receiveResponse(rp);
     if (res is EmbedResponse) return res.embedding;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
@@ -643,8 +757,9 @@ class NativeLlamaBackend
     required bool reusePromptPrefix,
   }) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       ScoreNextTokenRequest(
         contextHandle,
         prompt,
@@ -654,8 +769,7 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is ScoreNextTokenResponse) return res.scores;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Next-token scoring failed');
@@ -672,8 +786,9 @@ class NativeLlamaBackend
     }
 
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       EmbedBatchRequest(
         contextHandle,
         List<String>.from(texts),
@@ -681,8 +796,7 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is EmbedBatchResponse) return res.embeddings;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Batch embedding failed');
@@ -694,12 +808,12 @@ class NativeLlamaBackend
     List<int> tokens, {
     bool special = false,
   }) async {
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       DetokenizeRequest(modelHandle, tokens, special, rp.sendPort),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is DetokenizeResponse) return res.text;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Detokenization failed");
@@ -707,20 +821,18 @@ class NativeLlamaBackend
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(MetadataRequest(modelHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, MetadataRequest(modelHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is MetadataResponse) return res.metadata;
     return {};
   }
 
   @override
   Future<ModelFileType?> getModelFileType(int modelHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(ModelFileTypeRequest(modelHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ModelFileTypeRequest(modelHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is ModelFileTypeResponse) return res.modelFileType;
     if (res is ErrorResponse) throw _workerError(res);
     return null;
@@ -733,8 +845,9 @@ class NativeLlamaBackend
     List<int> tokens,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       StateSaveFileRequest(
         contextHandle,
         path,
@@ -742,8 +855,7 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is StateSaveFileResponse) return res.success;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception('State save failed');
@@ -756,12 +868,12 @@ class NativeLlamaBackend
     int tokenCapacity,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       StateLoadFileRequest(contextHandle, path, tokenCapacity, rp.sendPort),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is StateLoadFileResponse) {
       return StateLoadResult(tokens: res.tokens);
     }
@@ -776,8 +888,9 @@ class NativeLlamaBackend
     double scale,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       LoraRequest(
         contextHandle,
         'set',
@@ -786,30 +899,31 @@ class NativeLlamaBackend
         sendPort: rp.sendPort,
       ),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'set LoRA adapter');
   }
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       LoraRequest(contextHandle, 'remove', path: path, sendPort: rp.sendPort),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'remove LoRA adapter');
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(LoraRequest(contextHandle, 'clear', sendPort: rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      LoraRequest(contextHandle, 'clear', sendPort: rp.sendPort),
+    );
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'clear LoRA adapters');
   }
 
@@ -819,30 +933,27 @@ class NativeLlamaBackend
   @override
   Future<String> getBackendName() async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(BackendInfoRequest(rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, BackendInfoRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
     return (res as BackendInfoResponse).name;
   }
 
   @override
   Future<String> getAvailableBackends() async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(AvailableBackendsRequest(rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, AvailableBackendsRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
     return (res as BackendInfoResponse).name;
   }
 
   @override
   Future<int?> getResolvedGpuLayers() async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(ResolvedGpuLayersRequest(rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ResolvedGpuLayersRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
     return (res as ResolvedGpuLayersResponse).layers;
   }
 
@@ -851,10 +962,9 @@ class NativeLlamaBackend
     int contextHandle,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(PerformanceContextRequest(contextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, PerformanceContextRequest(contextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is PerformanceContextResponse) {
       return BackendPerfContextData(
         loadMs: res.loadMs,
@@ -887,10 +997,9 @@ class NativeLlamaBackend
   @override
   Future<bool> isGpuSupported() async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(GpuSupportRequest(rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, GpuSupportRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
     return (res as GpuSupportResponse).support;
   }
 
@@ -937,10 +1046,20 @@ class NativeLlamaBackend
     cancelTextToSpeech();
 
     if (_sendPort != null) {
-      final rp = ReceivePort();
-      _sendPort!.send(DisposeRequest(rp.sendPort));
-      await rp.first;
-      rp.close();
+      final rp = _openResponsePort();
+      try {
+        _dispatchRequest(rp, DisposeRequest(rp.sendPort));
+        await _receiveResponse(rp);
+        // Normal disposal can also produce onExit before this continuation.
+        // Its acknowledgement distinguishes that exit from an abandoned RPC.
+        _workerFailure = null;
+      } on LlamaStateException {
+        if (_workerFailure == null) rethrow;
+        // The worker exited without replying. Disposal has no live worker
+        // left to await; outstanding operations retain their typed failure.
+      } finally {
+        _closeResponsePort(rp);
+      }
     }
     _isolate?.kill();
     _isolate = null;
@@ -948,12 +1067,15 @@ class NativeLlamaBackend
     _isolateStart = null;
     _workerLogPort?.close();
     _workerLogPort = null;
+    _workerLifecyclePort?.close();
+    _workerLifecyclePort = null;
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _queuedGeneration?.close();
     textToSpeechCancelFlag?.free();
     _activeCancelToken = null;
     _activeGenerationCleanup = null;
+    _activeGenerationFailure = null;
     _activeFreeToken = null;
     _isReady = false;
   }
@@ -963,12 +1085,12 @@ class NativeLlamaBackend
     int modelHandle,
     String mmProjPath,
   ) async {
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       MultimodalContextCreateRequest(modelHandle, mmProjPath, rp.sendPort),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is HandleResponse) return res.handle;
     if (res is ErrorResponse) throw _workerError(res);
     return null;
@@ -976,29 +1098,29 @@ class NativeLlamaBackend
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(MultimodalContextFreeRequest(mmContextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
+      MultimodalContextFreeRequest(mmContextHandle, rp.sendPort),
+    );
+    final res = await _receiveResponse(rp);
     _expectDoneResponse(res, 'multimodal context free');
   }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(SupportsAudioRequest(mmContextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, SupportsAudioRequest(mmContextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is ErrorResponse) throw _workerError(res);
     return res as bool;
   }
 
   @override
   Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(SupportsVideoRequest(mmContextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, SupportsVideoRequest(mmContextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is ErrorResponse) throw _workerError(res);
     return res as bool;
   }
@@ -1009,16 +1131,16 @@ class NativeLlamaBackend
     int mmContextHandle,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       TextToSpeechCapabilitiesRequest(
         contextHandle,
         mmContextHandle,
         rp.sendPort,
       ),
     );
-    final response = await rp.first;
-    rp.close();
+    final response = await _receiveResponse(rp);
     if (response is TextToSpeechCapabilitiesResponse) {
       return response.capabilities;
     }
@@ -1049,24 +1171,32 @@ class NativeLlamaBackend
     _textToSpeechRequestSent = false;
     final cancelFlag = _NativeCancelFlag(_cancelFlagAllocator);
     _textToSpeechCancelFlag = cancelFlag;
+    late final ReceivePort rp;
     try {
       await _ensureIsolate();
+      rp = _openResponsePort();
     } catch (_) {
       _textToSpeechActive = false;
       cancelFlag.free();
       rethrow;
     }
-    final rp = ReceivePort();
     final completer = Completer<BackendTextToSpeechResult>();
-    _sendPort!.send(
-      TextToSpeechSynthesizeRequest(
-        contextHandle,
-        mmContextHandle,
-        request,
-        cancelFlag.address,
-        rp.sendPort,
-      ),
-    );
+    try {
+      _dispatchRequest(
+        rp,
+        TextToSpeechSynthesizeRequest(
+          contextHandle,
+          mmContextHandle,
+          request,
+          cancelFlag.address,
+          rp.sendPort,
+        ),
+      );
+    } catch (_) {
+      _textToSpeechActive = false;
+      cancelFlag.free();
+      rethrow;
+    }
     _textToSpeechRequestSent = true;
     if (_textToSpeechCancelRequested) {
       _sendPort!.send(TextToSpeechCancelRequest());
@@ -1109,7 +1239,7 @@ class NativeLlamaBackend
       _textToSpeechActive = false;
       cancelFlag.free();
       await subscription.cancel();
-      rp.close();
+      _closeResponsePort(rp);
     }
   }
 
@@ -1154,10 +1284,9 @@ class NativeLlamaBackend
     int modelHandle,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(DecisionCapabilitiesRequest(modelHandle, rp.sendPort));
-    final response = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, DecisionCapabilitiesRequest(modelHandle, rp.sendPort));
+    final response = await _receiveResponse(rp);
     if (response is DecisionCapabilitiesResponse) {
       return response.capabilities;
     }
@@ -1171,12 +1300,12 @@ class NativeLlamaBackend
     String? configPath,
   }) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       DecisionHeadLoadRequest(modelHandle, headPath, configPath, rp.sendPort),
     );
-    final response = await rp.first;
-    rp.close();
+    final response = await _receiveResponse(rp);
     if (response is DecisionHeadLoadResponse) {
       return response.head;
     }
@@ -1189,16 +1318,16 @@ class NativeLlamaBackend
     List<BackendDecisionSequence> sequences,
   ) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       DecisionRunRequest(
         headHandle,
         List<BackendDecisionSequence>.of(sequences, growable: false),
         rp.sendPort,
       ),
     );
-    final response = await rp.first;
-    rp.close();
+    final response = await _receiveResponse(rp);
     if (response is DecisionRunResponse) {
       return response.outputs;
     }
@@ -1207,11 +1336,11 @@ class NativeLlamaBackend
 
   @override
   Future<void> decisionHeadFree(int headHandle) async {
+    _throwIfWorkerFailed();
     if (_sendPort == null || _disposeStart != null) return;
-    final rp = ReceivePort();
-    _sendPort!.send(DecisionHeadFreeRequest(headHandle, rp.sendPort));
-    final response = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, DecisionHeadFreeRequest(headHandle, rp.sendPort));
+    final response = await _receiveResponse(rp);
     _expectDoneResponse(response, 'decision head free');
   }
 
@@ -1227,20 +1356,18 @@ class NativeLlamaBackend
 
   @override
   Future<bool> supportsVision(int mmContextHandle) async {
-    final rp = ReceivePort();
-    _sendPort!.send(SupportsVisionRequest(mmContextHandle, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, SupportsVisionRequest(mmContextHandle, rp.sendPort));
+    final res = await _receiveResponse(rp);
     return res as bool;
   }
 
   @override
   Future<({int total, int free})> getVramInfo() async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(SystemInfoRequest(rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, SystemInfoRequest(rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is SystemInfoResponse) {
       return (total: res.totalVram, free: res.freeVram);
     }
@@ -1252,10 +1379,9 @@ class NativeLlamaBackend
     List<GpuBackend> probeBackends = const [],
   }) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(ListGpuDevicesRequest(probeBackends, rp.sendPort));
-    final res = await rp.first;
-    rp.close();
+    final rp = _openResponsePort();
+    _dispatchRequest(rp, ListGpuDevicesRequest(probeBackends, rp.sendPort));
+    final res = await _receiveResponse(rp);
     if (res is ListGpuDevicesResponse) {
       return res.devices;
     }
@@ -1270,8 +1396,9 @@ class NativeLlamaBackend
     bool addAssistant = true,
   }) async {
     await _ensureIsolate();
-    final rp = ReceivePort();
-    _sendPort!.send(
+    final rp = _openResponsePort();
+    _dispatchRequest(
+      rp,
       ChatTemplateRequest(
         modelHandle,
         messages,
@@ -1280,8 +1407,7 @@ class NativeLlamaBackend
         rp.sendPort,
       ),
     );
-    final res = await rp.first;
-    rp.close();
+    final res = await _receiveResponse(rp);
     if (res is ChatTemplateResponse) return res.result;
     if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during chat template application");
@@ -1331,7 +1457,10 @@ final class _QueuedGeneration {
   /// Ends the generation's stream without output.
   final void Function() close;
 
-  _QueuedGeneration(this.start, this.close);
+  /// Fails an unsent generation when its worker exits.
+  final void Function(Object error) fail;
+
+  _QueuedGeneration(this.start, this.close, this.fail);
 }
 
 /// A [RangeError] raised on the worker isolate, described as it was there.

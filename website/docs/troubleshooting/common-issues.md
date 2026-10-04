@@ -83,6 +83,19 @@ within 30 seconds. The native runtime may be missing, fail to
 load, or hang during backend initialization. Check the native log for a
 library load error and confirm the platform prerequisites.
 
+### `The llama.cpp worker exited unexpectedly.`
+
+Requests, generation streams, and speech synthesis fail with
+`LlamaStateException` if the backend's worker isolate exits after startup.
+Dispose the affected engine/backend and create a fresh one before loading the
+model again; handles from the old worker are invalid. Disposal no longer waits
+for a reply from that dead worker. Native allocations abandoned by the worker
+cannot be reclaimed through its old handles.
+
+The regression tests cover external isolate termination and uncaught Dart
+worker errors. A native crash can terminate the entire application process;
+isolate exit handling does not make that crash recoverable.
+
 ## GPU crash or device loss
 
 Confirm the model runs on CPU first: load it with
