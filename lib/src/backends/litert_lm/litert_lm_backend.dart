@@ -32,6 +32,7 @@ class LiteRtLmBackend
         BackendDeferredEngineCreation,
         BackendPerformanceDiagnostics,
         BackendGenerationCapabilitiesSupport,
+        BackendGenerationLimitSupport,
         BackendEmbeddingsSupport,
         BackendStatePersistenceSupport,
         BackendNativeChatGeneration,
@@ -72,6 +73,12 @@ class LiteRtLmBackend
       _isReady = true;
     }
   }
+
+  @override
+  String? get generationLimitUnsupportedReason =>
+      'Native LiteRT-LM v0.17.0-6 does not expose a reliable generation termination reason. '
+      'Automatic tool loops require an owner runtime with token-limit reporting; '
+      'use ChatSession.create or LlamaEngine.create for manual completion.';
 
   @override
   bool get isReady => _isReady;

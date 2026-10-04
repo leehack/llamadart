@@ -11,6 +11,10 @@ For canonical full release notes, use:
 
 - Prevented execution of incomplete parallel tool-call replies when generation
   reaches a reported limit; the tool loop rolls back the whole turn.
+- Automatic tool loops now reject pinned LiteRT-LM native and Web runtimes
+  before generation because they cannot report token-limit truncation reliably;
+  manually managed completion remains available ([#919](https://github.com/leehack/llamadart/issues/919)).
+
 - Redacted known URL secrets repeated in model filenames from download
   cancellation messages.
 - **Fixed:** URL-valued `ModelSource.path` diagnostics redact credentials and

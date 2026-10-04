@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
+import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/engine/engine_observer.dart';
@@ -27,6 +28,73 @@ import '../../../support/fake_navigator_gpu.dart';
 void main() {
   setUp(_clearGlobals);
   tearDown(_clearGlobals);
+
+  test('rejects automatic tool loops before Web generation while '
+      'manual completion remains usable', () async {
+    var prompts = 0;
+    var callbacks = 0;
+    var toolRuns = 0;
+    _installFakeEngine(
+      onPrompt: (_) => prompts++,
+      chunks: <JSAny?>[_messageChunk('Hello')],
+    );
+    final engine = LlamaEngine(LiteRtLmBackend());
+    final session = api.ChatSession(engine, maxContextTokens: 0);
+    final previous = api.LlamaChatMessage.fromText(
+      role: api.LlamaChatRole.user,
+      text: 'Existing turn',
+    );
+    session.addMessage(previous);
+    final tools = [
+      api.ToolDefinition(
+        name: 'weather',
+        description: 'Weather',
+        parameters: const [],
+        handler: (_) async {
+          toolRuns++;
+          return 'sunny';
+        },
+      ),
+    ];
+    try {
+      await engine.loadModelFromUrl('https://example.com/model.litertlm');
+      for (final resume in [false, true]) {
+        await expectLater(
+          session.completeWithTools(
+            resume ? const [] : const [api.LlamaTextContent('New turn')],
+            tools: tools,
+            params: const api.GenerationParams(maxTokens: 1),
+            onMessageAdded: (_) => callbacks++,
+          ),
+          throwsA(
+            isA<api.LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'diagnostic',
+              contains('@0.15.0'),
+            ),
+          ),
+        );
+        expect(session.history, [same(previous)]);
+      }
+      await expectLater(
+        session.sendWithTools('No tools', tools: const []),
+        throwsA(isA<api.LlamaUnsupportedException>()),
+      );
+      expect(prompts, 0);
+      expect(callbacks, 0);
+      expect(toolRuns, 0);
+      expect(session.history, [same(previous)]);
+
+      final chunks = await engine.create(const [
+        api.LlamaChatMessage.fromText(role: api.LlamaChatRole.user, text: 'hi'),
+      ], params: const api.GenerationParams(maxTokens: 1)).toList();
+      expect(chunks.map((chunk) => chunk.text).join(), 'Hello');
+      expect(chunks.last.choices.single.finishReason, 'stop');
+      expect(prompts, 1);
+    } finally {
+      await engine.dispose();
+    }
+  });
 
   test('reports the LiteRT-LM runtime', () {
     expect(LiteRtLmBackend().runtime, LlamaRuntime.liteRtLm);

@@ -31,7 +31,10 @@ for each target.
 ## What It Supports
 
 - GGUF model loading and generation through llama.cpp.
-- `.litertlm` model loading and generation through LiteRT-LM.
+- `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
+  loops require reliable runtime termination reporting and reject the pinned
+  LiteRT-LM native and Web runtimes; use manually managed completion there
+  ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.

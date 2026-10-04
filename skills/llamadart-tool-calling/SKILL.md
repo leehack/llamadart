@@ -85,6 +85,13 @@ description: >-
   reach the prompt, and describe the tools in the system prompt if not. To
   replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;
   prompts and tool-call parsing then both follow that template.
+- Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
+  LiteRT-LM `v0.17.0-6` and Web `@litert-lm/core@0.15.0` with
+  `LlamaUnsupportedException` before generation or history mutation: those
+  runtimes expose no reliable token-limit termination cause. Manual
+  `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`
+  does not prove EOS. Do not infer truncation from output length or run tool
+  handlers automatically from an unverified terminal result.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does
   not forward tools, and WebGPU `ToolChoice.auto` parses calls best-effort.
   `(await engine.capabilities).supportsToolCalling`,

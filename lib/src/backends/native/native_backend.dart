@@ -54,6 +54,7 @@ class NativeAutoBackend
         BackendGenerationCapabilitiesSupport,
         BackendVideoRuntimeSupport,
         BackendGenerationLimitReporting,
+        BackendGenerationLimitSupport,
         BackendGenerationUsageReporting,
         BackendDartLogLevel {
   final LlamaBackend Function() _llamaCppFactory;
@@ -71,6 +72,15 @@ class NativeAutoBackend
     LlamaBackend Function()? liteRtLmFactory,
   }) : _llamaCppFactory = llamaCppFactory ?? (() => NativeLlamaBackend()),
        _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend());
+
+  @override
+  String? get generationLimitUnsupportedReason {
+    final delegate = _delegate;
+    return delegate is BackendGenerationLimitSupport
+        ? (delegate as BackendGenerationLimitSupport)
+              .generationLimitUnsupportedReason
+        : null;
+  }
 
   @override
   bool get isReady => _delegate?.isReady ?? false;

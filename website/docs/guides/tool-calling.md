@@ -10,6 +10,17 @@ chat template renders them, and the parser returns the model's calls as
 `handler` until the model answers; `create` and `engine.create` only return
 the calls, and your code runs them.
 
+Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
+runtime termination reporting. The pinned native LiteRT-LM `v0.17.0-6` and
+Web `@litert-lm/core@0.15.0` cannot distinguish normal completion from a
+per-request token cutoff. They throw `LlamaUnsupportedException` before
+starting the loop or modifying its history, including when resuming a turn or
+passing an empty tools list. Plain `ChatSession.create` and
+`LlamaEngine.create` remain available for manually managed completion; their
+LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not
+execute calls automatically based on that value or infer truncation from
+output length. See the [owner runtime prerequisite](../maintainers/runtime-ownership#litert-lm-termination-reporting).
+
 ## Define a tool
 
 `handler` is optional: leave it out for a tool your app runs itself.
