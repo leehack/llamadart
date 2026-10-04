@@ -122,7 +122,9 @@ collects the reply.
 `finishReason` does not tell you that a generation was cancelled. On native
 llama.cpp and LiteRT-LM, a stream stopped by `engine.cancelGeneration()`,
 before or during generation, usually still ends with `LlamaFinishReason.stop`
-and whatever text it produced. On WebGPU, `cancelGeneration()` can instead
+and whatever text it produced. `ChatSession` instead throws
+`LlamaStateException` and rolls back its turn when cancelled before any reply
+content, including through `createStructuredJson`. On WebGPU, `cancelGeneration()` can instead
 fail the stream with a generation error. Track cancels in the code that issues
 them; on native llama.cpp and LiteRT-LM you can also read
 `LlamaOperationResult.cancelled` from an
@@ -329,11 +331,17 @@ fail early for strict structured output.
 output; the JSON reply is kept in the session history like any other turn.
 An unrecognised format, or a strict one on a backend without grammar
 constraints, throws before the user message joins the history. A request that
-fails, or whose subscription is cancelled, before its first chunk takes back its own user message
+fails or is cancelled before any reply content takes back its own user message
 (and any turns its context trimming dropped, if the history is otherwise
-unchanged), so a retry does not repeat the user turn. One that stops after its
-first chunk keeps the reply generated so far as the assistant turn, so roles
-keep alternating.
+unchanged), so a retry does not repeat the user turn. Empty terminal chunks do
+not count as reply content. Generation cancellation before content throws
+`LlamaStateException`; structured JSON helpers preserve that error instead of
+trying to parse an empty reply. After content, the partial reply is kept as
+an assistant turn, unless the session was reset or its initiating message
+was removed. A model change during draft-model resolution throws
+`LlamaStateException` and rolls back the turn. A history edit while the
+context is being prepared also throws `LlamaStateException`, preserving the
+changed conversation instead of trimming it with stale offsets.
 
 ## `create(...)` flow at a glance
 
@@ -353,7 +361,10 @@ This cancels every `create`, `generate` and `ChatSession.create` stream that has
 been listened to, including one still rendering its template or checking its
 input: that stream ends without generating. On native llama.cpp and
 LiteRT-LM the stream ends normally, and its final chunk's `finishReason` is
-usually `stop`, so it does not mark the cancel. On WebGPU, the cancel can
+usually `stop`, so it does not mark the cancel. `ChatSession` throws
+`LlamaStateException` if cancelled before reply content and rolls back the
+turn; it keeps a partial reply only while its original turn remains in
+history. On WebGPU, the cancel can
 instead surface as a generation error on the stream. A stream listened to
 after the call is not affected. How quickly a running generation stops
 depends on the backend.

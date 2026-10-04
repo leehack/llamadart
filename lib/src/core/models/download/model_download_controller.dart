@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../exceptions.dart';
+import '../../url_redaction.dart';
 import '../model_load_options.dart';
 import '../model_source.dart';
 import 'model_download_manager_base.dart';
@@ -306,7 +307,7 @@ class ModelDownloadController {
             stage: ModelDownloadTaskStage.failed,
             source: source,
             progress: latestProgress,
-            errorMessage: _redactedErrorMessage(error),
+            errorMessage: _redactedErrorMessage(error, source),
           ),
         );
       }
@@ -359,26 +360,11 @@ bool _isCancelledError(ModelDownloadCancelToken cancelToken) {
   return cancelToken.isCancelled;
 }
 
-String _redactedErrorMessage(Object error) {
-  return error.toString().replaceAllMapped(_urlPattern, (match) {
-    final value = match.group(0)!;
-    final trailing = _trailingPunctuation.firstMatch(value)?.group(0) ?? '';
-    final candidate = trailing.isEmpty
-        ? value
-        : value.substring(0, value.length - trailing.length);
-    final uri = Uri.tryParse(candidate);
-    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-      return '<redacted-url>$trailing';
-    }
-    final redacted = Uri(
-      scheme: uri.scheme,
-      host: uri.host,
-      port: uri.hasPort ? uri.port : null,
-      path: uri.path,
+String _redactedErrorMessage(Object error, ModelSource source) =>
+    redactUrlSecrets(
+      '$error',
+      sourceUrls: <String>[
+        source.canonicalKey,
+        if (source.resolvedUri case final uri?) uri.toString(),
+      ],
     );
-    return '${redacted.toString()}$trailing';
-  });
-}
-
-final RegExp _urlPattern = RegExp(r'https?:\/\/\S+');
-final RegExp _trailingPunctuation = RegExp(r'[.?!:\)\]\}>]+$');
