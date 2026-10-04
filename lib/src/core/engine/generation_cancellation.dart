@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'engine.dart';
 
-/// Package-internal record of [LlamaEngine.cancelGeneration] calls and of
+/// Package-internal record of generation cancellation from
+/// [LlamaEngine.cancelGeneration], model unload/replacement, disposal and
 /// generation subscription cancels.
 ///
 /// A generation stream runs setup (template rendering, media checks) before

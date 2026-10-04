@@ -516,6 +516,24 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-stop-sequences \
 Repeat with `--backend metal` on macOS when available. Record the source commit,
 native runtime tag, printed model SHA-256, and native offload logs with results.
 
+### Model lifecycle cancellation and projector ownership
+
+```bash
+LLAMADART_LOAD_MODEL_PATH=/path/to/chat.gguf \
+LLAMADART_LOAD_MMPROJ_PATH=/path/to/mmproj.gguf \
+dart test -p vm -j 1 --run-skipped \
+  test/e2e/backends/llama_engine_load_e2e_test.dart \
+  --name 'cancels a real GGUF'
+```
+
+These local-only tests unload, dispose, and replace the model after a real
+tool-loop answer starts on the default device and CPU. They require a
+`cancelled` result, preserve the partial reply, and verify another request
+after reload or replacement. Pair them with
+`test/unit/core/engine/engine_lifecycle_cancellation_test.dart`, which controls
+pre-output stops, buffered tool calls, running handlers, projector creation
+and teardown races, and speech parameter validation before file resolution.
+
 ### Native prompt-evaluation cancel
 
 ```bash

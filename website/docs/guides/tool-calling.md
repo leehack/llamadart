@@ -99,7 +99,8 @@ continues the current turn.
   `result.completion` keeps its text and thinking; raise `maxTokens` and send
   the turn again. The whole turn is rolled back, including earlier tool
   rounds; effects of tools that already ran cannot be undone.
-- **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
+- **Cancel:** `engine.cancelGeneration()`, model unload or replacement, and
+  engine disposal stop the loop with `cancelled`.
   Running tools finish first. A partial answer stays as the turn's reply.
   If a reply also reports a generation limit, `cancelled` takes precedence
   and the incomplete turn is rolled back.

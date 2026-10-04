@@ -20,6 +20,10 @@ For canonical full release notes, use:
 
 - Redacted known URL secrets repeated in model filenames from download
   cancellation messages.
+- Model unload, replacement, and disposal now report interrupted tool loops as
+  cancelled, preserving partial answers and rolling back unfinished turns.
+- Projector loads now reject model changes during loading instead of reporting
+  success after the model has been unloaded.
 - **Fixed:** URL-valued `ModelSource.path` diagnostics redact credentials and
   signed queries while preserving the loading path and cache identity
   ([#846](https://github.com/leehack/llamadart/issues/846)).

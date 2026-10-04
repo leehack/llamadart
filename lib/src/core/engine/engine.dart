@@ -405,9 +405,10 @@ class LlamaEngine {
   ///
   /// The model this engine already holds keeps serving until every file has
   /// resolved. Only then is it unloaded, which cancels its generations, and
-  /// [model] loaded, then its projector. A generation cut off by the unload
-  /// ends as a completed one, with finish reason `stop`. A failure from
-  /// there on leaves nothing loaded, and so does [download]'s cancel token
+  /// [model] loaded, then its projector. Tool loops cut off by the unload
+  /// report `cancelled`. A chat-session request keeps a partial reply, or
+  /// rolls back and throws [LlamaStateException] before any output. A failure
+  /// from there on leaves nothing loaded, and so does [download]'s cancel token
   /// when it is cancelled that late; cancelled earlier, it leaves the old
   /// model loaded.
   ///
@@ -1150,6 +1151,8 @@ class LlamaEngine {
   /// runtime cannot run an mtmd function this package calls. A backend error
   /// that is not a [LlamaException] becomes a [LlamaModelException] without
   /// the URL secrets of [mmProjPath].
+  /// Throws [LlamaStateException] if the model is unloaded, replaced or
+  /// the engine disposed while the projector loads.
   @Deprecated(
     'Use LlamaModel(source, projector: ModelSource.path(path)) with '
     'LlamaEngine.load or setModel, or loadMultimodalProjectorSource to change '
@@ -1295,15 +1298,18 @@ class LlamaEngine {
     final mmProjName = _displayNameForSource(mmProjPath);
     LlamaLogger.instance.info('Loading multimodal projector: $mmProjName');
     _ensureReady(requireContext: false);
+    final epoch = _modelEpoch;
     try {
       if (_mmContextHandle != null) {
         await _unloadMultimodalProjectorLocked();
       }
+      if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
 
       _mmContextHandle = await backend.multimodalContextCreate(
         _modelHandle!,
         mmProjPath,
       );
+      if (!_isLoadedAt(epoch)) throw _projectorModelChanged();
       LlamaLogger.instance.info(
         'Multimodal projector $mmProjName loaded successfully',
       );
@@ -1324,7 +1330,6 @@ class LlamaEngine {
         _redactedErrorDetails(e, mmProjPath),
       );
     }
-    _throwIfDisposedDuringLoad();
   }
 
   /// Unloads the active multimodal projector while keeping the model loaded.
@@ -1410,6 +1415,9 @@ class LlamaEngine {
 
   /// Unloads the currently loaded model and frees its resources.
   ///
+  /// Cancels running generations, including chat-session requests and tool
+  /// loops, with the same history behavior as [cancelGeneration].
+  ///
   /// Does nothing after [dispose].
   Future<void> unloadModel() {
     if (isDisposed) return Future<void>.value();
@@ -1424,6 +1432,7 @@ class LlamaEngine {
     _decisionHeadEpoch++;
     _loraLocations.clear();
     _draftLocations.clear();
+    _generationCancellation.cancel();
     backend.cancelGeneration();
     SpeechEngineLease.cancelActiveTask(this);
     if (_contextHandle != null) {
