@@ -224,15 +224,17 @@ class PublicSpeechValidationAdapter
 
   Future<void> _loadInto(LlamaEngine engine, {int contextSize = 4096}) async {
     await LlamaLogging.configure(level: LlamaLogLevel.info);
-    await engine.loadModel(
-      model,
-      modelParams: ModelParams(
+    await engine.setModel(
+      LlamaModel(
+        ModelSource.path(model),
+        projector: ModelSource.path(projector),
+      ),
+      params: ModelParams(
         contextSize: contextSize,
         preferredBackend: backend,
         gpuLayers: backend == GpuBackend.cpu ? 0 : 99,
       ),
     );
-    await engine.loadMultimodalProjector(projector);
     observedRuntime = {
       'backend_name': await engine.getBackendName(),
       'resolved_gpu_layers': await engine.getResolvedGpuLayers(),

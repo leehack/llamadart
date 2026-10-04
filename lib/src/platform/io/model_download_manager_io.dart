@@ -9,6 +9,7 @@ import '../../core/exceptions.dart';
 import '../../core/models/download/model_download_manager_base.dart';
 import '../../core/models/model_load_options.dart';
 import '../../core/models/model_source.dart';
+import '../../core/models/model_target_file.dart';
 import '../../core/url_redaction.dart';
 import 'mobile_app_cache_directory.dart';
 
@@ -584,10 +585,13 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     } on ArgumentError {
       // ModelCacheEntry rejects names that %2e, %2f and %5c escapes would turn
       // into traversal for a reader that percent-decodes them.
-      throw LlamaUnsupportedException(
+      throw UncacheableLocalModelFileException(
         'Local model path ${source.path} has a file name containing %2F or '
         '%5C, or a directory named %2e or %2e%2e, which a ModelCacheEntry '
-        'cannot hold; load the file with LlamaEngine.loadModel instead.',
+        'cannot hold; load the file with LlamaEngine.load or setModel '
+        'instead.',
+        filePath: file.path,
+        bytes: stat.size,
       );
     }
   }

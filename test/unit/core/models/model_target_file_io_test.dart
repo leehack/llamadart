@@ -33,6 +33,39 @@ void main() {
     operation: 'Test loading',
   );
 
+  test('a local file whose name holds %2F resolves to its path once it is '
+      'checked', () async {
+    final escaped = File(p.join(directory.path, 'a%2Fb.gguf'))
+      ..writeAsBytesSync([1, 2, 3]);
+    final progress = <ModelDownloadProgress>[];
+    Future<List<String>> resolveEscaped(String? sha256) =>
+        resolveModelSourceFiles(
+          [ModelSource.path(escaped.path)],
+          store: ModelFileStore(
+            downloadManager: DefaultModelDownloadManager.appPrivate(
+              cacheDirectory: p.join(directory.path, 'cache'),
+            ),
+          ),
+          download: ModelLoadOptions(sha256: sha256),
+          operation: 'Test loading',
+          onProgress: progress.add,
+        );
+
+    expect(await resolveEscaped(null), [p.normalize(p.absolute(escaped.path))]);
+    expect(progress.last.receivedBytes, 3);
+    expect(progress.last.totalBytes, 3);
+    await expectLater(
+      resolveEscaped('0' * 64),
+      throwsA(
+        isA<LlamaModelException>().having(
+          (error) => error.message,
+          'message',
+          contains('Checksum mismatch for local model file'),
+        ),
+      ),
+    );
+  });
+
   test('a single local file is verified against the checksum', () async {
     await expectLater(
       resolve('0' * 64),

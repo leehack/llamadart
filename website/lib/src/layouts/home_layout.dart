@@ -16,11 +16,12 @@ const homeSample = '''import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
-  await engine.loadModelSource(
-    ModelSource.parse(
-      'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
-      'SmolLM2-135M-Instruct-Q2_K.gguf',
+  final engine = await LlamaEngine.load(
+    LlamaModel(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
     ),
   );
 

@@ -4,8 +4,9 @@ sidebar_label: Downloads and cache
 description: Download GGUF and LiteRT-LM models from Hugging Face or HTTP(S) with progress, retry and cancel, choose where the cache lives on each platform, and inspect or clean it.
 ---
 
-On native targets, `loadModelSource(...)` downloads a remote `ModelSource` into
-a package-managed cache, verifies it, and loads the cached local file. Later
+On native targets, `LlamaEngine.load` and `setModel` download a remote
+`ModelSource` into a package-managed cache, verify it, and load the cached
+local file. Later
 loads reuse the cached file without a network request. Loading itself is
 covered in [Model lifecycle](./model-lifecycle).
 
@@ -53,7 +54,7 @@ try {
     ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
     options: ModelLoadOptions(maxRetries: 3),
   );
-  await engine.loadModel(entry.filePath);
+  await engine.setModel(LlamaModel(ModelSource.path(entry.filePath)));
 } catch (_) {
   if (controller.snapshot.canRetry) {
     // Wire this to a Retry button.
@@ -73,6 +74,11 @@ try {
   after `failed` or `cancelled` reuses the last source and options.
 - The controller owns cancellation: call `controller.cancel()` and leave
   `ModelLoadOptions.cancelToken` unset, or `start(...)` throws.
+- Passing the original `ModelSource` to `LlamaEngine.load` or `setModel`
+  instead of `entry.filePath` loads the same cached file only when the engine
+  uses the same download manager: pass it as
+  `store: ModelFileStore(downloadManager: manager)`. An engine with its own
+  manager looks in its own cache root and downloads the file again.
 - On web, pass a custom manager for browser storage; the default manager's
   operations throw `LlamaUnsupportedException` there.
 
@@ -120,14 +126,15 @@ loads. Web targets route by the URL's extension: pass
 Pass credentials through `ModelLoadOptions`, never in the source string:
 
 ```dart
-await engine.loadModelSource(
-  ModelSource.parse('hf://owner/private-repo/model-Q4_K_M.gguf'),
-  options: ModelLoadOptions(bearerToken: hfToken),
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.parse('hf://owner/private-repo/model-Q4_K_M.gguf')),
+  download: ModelLoadOptions(bearerToken: hfToken),
 );
 ```
 
-Bearer tokens and custom `headers` go only on download requests. They are not
-part of `ModelSource.canonicalKey`, cache metadata or `toString()`.
+Bearer tokens and custom `headers` go only on download requests, and never to
+more than one origin: a model and projector on different hosts throw
+`LlamaArgumentException` when credentials are set. They are not part of `ModelSource.canonicalKey`, cache metadata or `toString()`.
 
 Signed HTTP(S) URLs differ: `canonicalKey` keeps the full URL, and `cacheKey`
 hashes it so distinct signed URLs stay distinct. Cache metadata and
@@ -138,16 +145,14 @@ persist `canonicalKey` for a signed URL.
 
 ```dart
 final cancelToken = ModelDownloadCancelToken();
-final engine = LlamaEngine(
-  LlamaBackend(),
-  modelDownloadManager: DefaultModelDownloadManager.auto(
-    appPrivateCacheDirectory: appCacheModelsDirectory,
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.url(Uri.parse('https://example.com/model.gguf'))),
+  store: ModelFileStore(
+    downloadManager: DefaultModelDownloadManager.auto(
+      appPrivateCacheDirectory: appCacheModelsDirectory,
+    ),
   ),
-);
-
-await engine.loadModelSource(
-  ModelSource.url(Uri.parse('https://example.com/model.gguf')),
-  options: ModelLoadOptions(
+  download: ModelLoadOptions(
     cachePolicy: ModelCachePolicy.preferCached,
     sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     bearerToken: hfToken,
@@ -172,9 +177,11 @@ checkpoint and the load throws `LlamaStateException`, which is never retried.
 Other download failures are typically `LlamaModelException`; check
 `cancelToken.isCancelled` in the `catch` to tell a cancel from a failure.
 
-`ModelSource.path(...)` loads apply only `sha256` and cancellation. A local
-source with a non-default cache policy, `cacheDirectory`, auth headers,
-`resume: false` or a non-default `maxRetries` throws
+`download` applies to every remote file of the load. A local
+`ModelSource.path(...)` takes only the cancel token and, when the model has no
+projector, `sha256`. `ModelDownloadManager.ensureModel(...)` called directly
+with a local source and a non-default cache policy, `cacheDirectory`, auth
+headers, `resume: false` or a non-default `maxRetries` throws
 `LlamaUnsupportedException` instead of ignoring the option.
 
 ## Cache policies
@@ -322,8 +329,9 @@ await manager.clear();
 - URL-loading web backends accept only unauthenticated `preferCached` loads.
   Auth headers, checksums, cancel tokens, other cache policies,
   `cacheDirectory`, `resume: false` and custom retries throw
-  `LlamaUnsupportedException` there, as do local paths. Use a native target
-  for those.
+  `LlamaUnsupportedException` there; use a native target for those. A
+  `ModelSource.path` there is a URL relative to the document, or a `blob:`
+  URL.
 
 ## Reference: resume, locking and cache metadata
 

@@ -10,6 +10,7 @@ import 'engine_observation.dart';
 import 'engine_observer.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
+import '../models/config/compute_device.dart';
 import '../models/config/gpu_backend.dart';
 import '../models/config/lora_config.dart';
 import '../models/config/gpu_device_info.dart';
@@ -28,6 +29,7 @@ import '../models/inference/generation_usage.dart';
 import '../models/inference/next_token_scores.dart';
 import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
+import '../models/model_file_store.dart';
 import '../models/model_format.dart';
 import '../models/model_load_options.dart';
 import '../models/model_resolver.dart';
@@ -47,8 +49,10 @@ import '../url_redaction.dart';
 ///
 /// Example (OpenAI-style stateless usage):
 /// ```dart
-/// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm on native
+/// final engine = await LlamaEngine.load(
+///   // or model.litertlm, or a download: ModelSource.parse('hf://...')
+///   LlamaModel(ModelSource.path('path/to/model.gguf')),
+/// );
 ///
 /// // Build messages array (you manage history)
 /// final messages = [
@@ -89,6 +93,8 @@ class LlamaEngine {
   Future<void> _mmLifecycle = Future<void>.value();
   Future<void>? _modelLifecycleOperation;
   Future<void>? _disposal;
+  // Fails the file resolution of the running setModel; set while it resolves.
+  void Function()? _abandonResolution;
   bool _isReadyState = false;
   // Changes on every load and unload, so a probe that awaits can tell whether
   // the model it started on is still the loaded one.
@@ -215,7 +221,8 @@ class LlamaEngine {
     );
     const notLoaded = LlamaEngineCapabilities(
       isSupported: false,
-      unsupportedReason: 'No model is loaded. Call loadModel first.',
+      unsupportedReason:
+          'No model is loaded. Call LlamaEngine.load or setModel first.',
     );
     if (isDisposed) return disposed;
     if (!_isReady || _modelHandle == null) {
@@ -321,6 +328,328 @@ class LlamaEngine {
     }
   }
 
+  /// Creates an engine and loads [model] into it.
+  ///
+  /// The returned engine owns [backend] (by default `LlamaBackend()`):
+  /// [dispose] disposes it, and so does a load that fails. [store] is where
+  /// the engine finds and keeps model files, by default a
+  /// [DefaultModelResolver] and a [DefaultModelDownloadManager]; its parts
+  /// become [modelResolver] and [modelDownloadManager]. [observers] are those
+  /// of the [LlamaEngine] constructor. [setModel] does the load, so [params],
+  /// [download] and [onProgress] mean what they mean there, and this throws
+  /// what it throws.
+  ///
+  /// The load is atomic: when it throws, the engine and [backend] are
+  /// disposed and nothing stays loaded. Downloaded files stay in the model
+  /// cache.
+  ///
+  /// ```dart
+  /// final engine = await LlamaEngine.load(
+  ///   LlamaModel(ModelSource.parse('hf://owner/repo/model.gguf')),
+  ///   params: const ModelParams(contextSize: 4096),
+  ///   onProgress: (progress) => print(progress.fraction),
+  /// );
+  /// ```
+  static Future<LlamaEngine> load(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+    ModelFileStore? store,
+    LlamaBackend? backend,
+    Iterable<LlamaEngineObserver> observers = const <LlamaEngineObserver>[],
+  }) async {
+    final (engine, _) = await loadLlamaEngine(
+      model,
+      params: params,
+      download: download,
+      onProgress: onProgress,
+      store: store,
+      backend: backend,
+      observers: observers,
+    );
+    return engine;
+  }
+
+  /// Loads [model] with [params], replacing the model this engine holds.
+  ///
+  /// Before any download or file access, the call throws for what it can
+  /// already tell: an invalid [params] ([ModelParams.validate]), a
+  /// [LlamaModel.projector] or [ComputeDevice.npu] that the model's runtime
+  /// does not take, when [ModelSource.format] or the file name gives the
+  /// format, [ModelLoadOptions.sha256] for a model with a projector, and on a
+  /// URL-loading backend a [download] option only the package download
+  /// manager provides.
+  ///
+  /// Then every file resolves, the model first, then the projector and the
+  /// [ModelParams.loras] sources. [modelResolver] resolves each
+  /// `ModelSource`, and on a backend that loads files [modelDownloadManager]
+  /// checks a local file, or downloads a remote one into the model cache,
+  /// resuming an interrupted download and reusing a cached file. [download]
+  /// applies to every remote file: cache policy and directory,
+  /// authentication, resume, retries and the cancel token. A local file takes
+  /// only the cancel token and, without a projector,
+  /// [ModelLoadOptions.sha256]. The bearer token and headers are never sent
+  /// across hosts: when they are set and the model and projector, or the URLs
+  /// the resolver returns for them, span more than one origin (scheme, host
+  /// and port), the call throws before downloading from another host. An
+  /// adapter of [ModelParams.loras] takes its own
+  /// [LoraAdapterConfig.download], or only the non-secret parts of
+  /// [download]. The download manager gets a copy of [download] whose cancel
+  /// token is also cancelled by [dispose]. [onProgress] reports the model
+  /// and projector together: `receivedBytes` counts the files resolved so
+  /// far plus the current download, and `totalBytes` is their combined size
+  /// once every size is known. With a projector that is null, and so is
+  /// `fraction`, until the model has downloaded and the projector reports
+  /// its size.
+  ///
+  /// The model this engine already holds keeps serving until every file has
+  /// resolved. Only then is it unloaded, which cancels its generations, and
+  /// [model] loaded, then its projector. A generation cut off by the unload
+  /// ends as a completed one, with finish reason `stop`. A failure from
+  /// there on leaves nothing loaded, and so does [download]'s cancel token
+  /// when it is cancelled that late; cancelled earlier, it leaves the old
+  /// model loaded.
+  ///
+  /// A URL-loading backend, as on the Web, fetches each file itself during
+  /// the load, so the old model is unloaded before the new one is fetched,
+  /// and a fetch that fails leaves nothing loaded. There a local path is a
+  /// URL relative to the document, or a `blob:` URL, [download] must leave
+  /// every option at its default, and [onProgress] reports only the model's
+  /// fetch, as a fraction that ends at 0.5 when there is a projector.
+  ///
+  /// While a call runs, another [setModel] and [unloadModel] throw
+  /// [LlamaStateException]; stop it with [download]'s cancel token.
+  /// [dispose] stops its downloads at once.
+  ///
+  /// Throws:
+  /// - [LlamaArgumentException] for an invalid [params], and when [download]
+  ///   would send credentials to more than one host; the message names the
+  ///   origins, never the credentials.
+  /// - [LlamaUnsupportedException] for the checks above, for an explicit
+  ///   [ModelParams.device] the runtime cannot use, and when the backend
+  ///   cannot load the model's format or a projector.
+  /// - [LlamaModelException] when a file is missing, cannot be downloaded,
+  ///   fails its checksum or cannot be loaded, and its subtype
+  ///   [LlamaModelFormatException] when a file's content contradicts its
+  ///   declared format.
+  /// - [LlamaStateException] after [dispose], when [dispose] or [download]'s
+  ///   cancel token stops the load, and while another model load or unload
+  ///   runs.
+  Future<void> setModel(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    await _setModel(model, params, download, onProgress);
+  }
+
+  /// [setModel], naming the load [operation] and its files [assetType] in
+  /// errors. [companions] are further files of the model: they resolve after
+  /// the model's own, under the same rules, and this returns where each
+  /// resolved, in order: a local path, or on a URL-loading backend what the
+  /// backend fetches.
+  Future<List<String>> _setModel(
+    LlamaModel model,
+    ModelParams params,
+    ModelLoadOptions download,
+    ModelDownloadProgressCallback? onProgress, {
+    String operation = 'Model loading',
+    String assetType = 'model',
+    List<ModelSource> companions = const <ModelSource>[],
+  }) async {
+    var companionLocations = const <String>[];
+    final source = model.source;
+    final observedSource =
+        source.path ??
+        (backend.supportsUrlLoading
+            ? '${source.resolvedUri}'
+            : source.fileName);
+    Future<void> load() => _withModelLifecycle('set a model', () async {
+      params.validate();
+      final sources = <ModelSource>[
+        model.source,
+        ?model.projector,
+        ...companions,
+      ];
+      _checkModelBeforeIo(model, params);
+
+      void throwIfCancelled() {
+        if (download.cancelToken?.isCancelled ?? false) {
+          throw LlamaStateException('$operation was cancelled.');
+        }
+      }
+
+      final loraLocations = <String, String>{};
+      final (locations, resolvedParams) = await _unlessDisposed(
+        _resolveModelFiles(
+          sources,
+          params,
+          download,
+          onProgress,
+          operation,
+          assetType,
+          loraLocations,
+        ),
+      );
+      throwIfCancelled();
+
+      await _unloadModel();
+      _throwIfDisposedDuringLoad();
+      final location = locations.first;
+      final projector = model.projector == null ? null : locations[1];
+      if (backend.supportsUrlLoading) {
+        final fileCount = projector == null ? 1 : 2;
+        await _loadModelFromUrl(
+          location,
+          modelParams: resolvedParams,
+          onProgress: onProgress == null
+              ? null
+              : (double fraction) => onProgress(
+                  ModelDownloadProgress.fraction(fraction / fileCount),
+                ),
+          format: source.format,
+        );
+      } else {
+        await _loadModel(
+          location,
+          modelParams: resolvedParams,
+          format: source.format,
+        );
+      }
+      _loraLocations.addAll(loraLocations);
+      try {
+        _throwIfDisposedDuringLoad();
+        if (projector != null) {
+          await _withMmLifecycle(
+            () => _loadMultimodalProjectorLocked(projector),
+          );
+        }
+        throwIfCancelled();
+      } catch (_) {
+        try {
+          await _unloadModel();
+        } catch (_) {
+          // The load failure is the error the caller needs.
+        }
+        rethrow;
+      }
+      await _captureObservedModel(location);
+      _throwIfDisposedDuringLoad();
+      companionLocations = locations.sublist(
+        sources.length - companions.length,
+      );
+    });
+
+    await _observeModelLoad(observedSource, params, load);
+    return companionLocations;
+  }
+
+  /// Throws [LlamaUnsupportedException] for what [setModel] can reject from
+  /// its arguments alone.
+  void _checkModelBeforeIo(LlamaModel model, ModelParams params) {
+    final source = model.source;
+    final format =
+        source.format ??
+        ModelFormat.fromPath(
+          source.path ??
+              (backend.supportsUrlLoading
+                  ? '${source.resolvedUri}'
+                  : source.fileName),
+        );
+    if (model.projector != null && format == ModelFormat.liteRtLm) {
+      throw LlamaUnsupportedException(
+        'A LiteRT-LM model takes no multimodal projector: a .litertlm bundle '
+        'carries its own media encoders. Leave LlamaModel.projector unset.',
+      );
+    }
+    if (params.device == ComputeDevice.npu && format == ModelFormat.gguf) {
+      throw LlamaUnsupportedException(
+        'ComputeDevice.npu is not available for llama.cpp, which runs GGUF '
+        'models: only LiteRT-LM on Android has an NPU backend. Use '
+        'ComputeDevice.auto, cpu or gpu.',
+      );
+    }
+    if (source.format case final declared?) _checkBackendLoads(declared);
+  }
+
+  /// Where the backend loads each of [sources] from, in order, and [params]
+  /// with its [ModelParams.loras] sources resolved, recorded in
+  /// [loraLocations].
+  Future<(List<String>, ModelParams)> _resolveModelFiles(
+    List<ModelSource> sources,
+    ModelParams params,
+    ModelLoadOptions download,
+    ModelDownloadProgressCallback? onProgress,
+    String operation,
+    String assetType,
+    Map<String, String> loraLocations,
+  ) async {
+    final List<String> locations;
+    var options = download;
+    if (backend.supportsUrlLoading) {
+      locations = await resolveModelSourceUrls(
+        sources,
+        resolver: modelResolver,
+        download: download,
+        assetType: assetType,
+      );
+    } else {
+      final callerToken = download.cancelToken;
+      options = _withCancelToken(
+        download,
+        _LinkedCancelToken([
+          () => isDisposed,
+          if (callerToken != null) () => callerToken.isCancelled,
+        ]),
+      );
+      locations = await resolveModelSourceFiles(
+        sources,
+        store: ModelFileStore(
+          resolver: modelResolver,
+          downloadManager: modelDownloadManager,
+        ),
+        download: options,
+        operation: operation,
+        onProgress: onProgress,
+        assetType: assetType,
+      );
+    }
+    final resolvedParams = await _resolveLoraSources(
+      params,
+      options,
+      loraLocations,
+    );
+    return (locations, resolvedParams);
+  }
+
+  /// [work], or [LlamaStateException] as soon as [dispose] is called, so a
+  /// download that reads its cancel token late does not hold [dispose] up.
+  Future<T> _unlessDisposed<T>(Future<T> work) {
+    final result = Completer<T>();
+    void abandon() {
+      if (result.isCompleted) return;
+      result.completeError(
+        LlamaStateException(_disposedDuringLoadMessage),
+        StackTrace.current,
+      );
+    }
+
+    _abandonResolution = abandon;
+    work.then(
+      (value) {
+        if (!result.isCompleted) result.complete(value);
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (!result.isCompleted) result.completeError(error, stackTrace);
+      },
+    );
+    return result.future.whenComplete(() {
+      if (identical(_abandonResolution, abandon)) _abandonResolution = null;
+    });
+  }
+
   /// Loads a model from a local [path].
   ///
   /// Optionally provide [ModelParams] to configure context size, GPU offloading,
@@ -332,8 +661,12 @@ class LlamaEngine {
   /// GGUF or LiteRT-LM for a `.litertlm` bundle, so the file name needs no
   /// model extension. Throws [LlamaModelFormatException] when a recognized
   /// header contradicts the file extension. To name the format of a file whose
-  /// header cannot be read, load it with [loadModelSource] and a
+  /// header cannot be read, load it with [setModel] and a
   /// [ModelSource.format].
+  @Deprecated(
+    'Use LlamaEngine.load or setModel with '
+    'LlamaModel(ModelSource.path(path)). This will be removed in 1.0.',
+  )
   Future<void> loadModel(
     String path, {
     ModelParams modelParams = const ModelParams(),
@@ -423,7 +756,8 @@ class LlamaEngine {
   /// Local path sources are dispatched through [loadModel]. Remote URL targets
   /// use the native download/cache manager on file-backed backends, then load
   /// the cached local file. URL-capable web backends keep using
-  /// [loadModelFromUrl] for unauthenticated prefer-cached requests.
+  /// [loadModelFromUrl] for unauthenticated prefer-cached requests, and load
+  /// a local path as a URL relative to the document.
   ///
   /// Adapters in [ModelParams.loras] given as [LoraAdapterConfig.source]
   /// resolve after the model file, with their own
@@ -431,7 +765,12 @@ class LlamaEngine {
   /// see [ModelParams.loras].
   ///
   /// [ModelParams.validate] runs before anything resolves or downloads and
-  /// throws [LlamaArgumentException].
+  /// throws [LlamaArgumentException]. Throws [LlamaStateException] before
+  /// anything resolves or downloads when a model is already loaded.
+  @Deprecated(
+    'Use LlamaEngine.load or setModel with LlamaModel(source). This will be '
+    'removed in 1.0.',
+  )
   Future<void> loadModelSource(
     ModelSource source, {
     ModelParams modelParams = const ModelParams(),
@@ -440,6 +779,7 @@ class LlamaEngine {
   }) async {
     _throwIfDisposed();
     modelParams.validate();
+    _ensureNotReady();
     final target = await modelResolver.resolve(
       source,
       ModelResolveRequest(options: options, onProgress: onProgress),
@@ -466,37 +806,32 @@ class LlamaEngine {
       if (_isReady) _loraLocations.addAll(loraLocations);
       return;
     }
+    final String url;
     switch (target) {
-      case LocalModelFile():
-        throw LlamaUnsupportedException(
-          'Explicit local model paths are not supported by URL-loading backends.',
-        );
-      case RemoteModelUrl(:final url, :final useBrowserCache):
+      case LocalModelFile(:final path):
+        url = path;
+      case RemoteModelUrl(url: final remote, :final useBrowserCache):
         if (!useBrowserCache) {
           throw LlamaUnsupportedException(
             'Remote model loading without browser/backend cache is not supported yet.',
           );
         }
-        rejectUnsupportedUrlBackendOptions(options);
-        final urlProgress = onProgress == null
-            ? null
-            : (double progress) =>
-                  onProgress(ModelDownloadProgress.fraction(progress));
-        final format = source.format;
-        if (format == null) {
-          return loadModelFromUrl(
-            url.toString(),
-            modelParams: modelParams,
-            onProgress: urlProgress,
-          );
-        }
-        return _loadModelFromUrlAs(
-          url.toString(),
-          modelParams,
-          urlProgress,
-          format,
-        );
+        url = remote.toString();
     }
+    rejectUnsupportedUrlBackendOptions(options);
+    final urlProgress = onProgress == null
+        ? null
+        : (double progress) =>
+              onProgress(ModelDownloadProgress.fraction(progress));
+    final format = source.format;
+    if (format == null) {
+      return loadModelFromUrl(
+        url,
+        modelParams: modelParams,
+        onProgress: urlProgress,
+      );
+    }
+    return _loadModelFromUrlAs(url, modelParams, urlProgress, format);
   }
 
   /// Loads a model from a [url].
@@ -506,8 +841,13 @@ class LlamaEngine {
   ///
   /// The runtime fetches [url] itself, so its content cannot pick the
   /// runtime: the URL path's extension does, and a URL without a model
-  /// extension loads as GGUF. For such a URL, load it with [loadModelSource]
-  /// and a [ModelSource.format].
+  /// extension loads as GGUF. For such a URL, load it with [setModel] and a
+  /// [ModelSource.format].
+  @Deprecated(
+    'Use LlamaEngine.load or setModel with LlamaModel(ModelSource.parse(url)), '
+    'or with ModelSource.path(url) for a relative or blob: URL. This will be '
+    'removed in 1.0.',
+  )
   Future<void> loadModelFromUrl(
     String url, {
     ModelParams modelParams = const ModelParams(),
@@ -761,16 +1101,7 @@ class LlamaEngine {
               )
             : router.modelLoadAs(source, modelParams, format);
       }
-      final runtime = candidate is BackendRuntimeIdentity
-          ? (candidate as BackendRuntimeIdentity).runtime
-          : null;
-      if (runtime != format.runtime) {
-        throw LlamaUnsupportedException(
-          'This backend cannot load ModelFormat.${format.name}: '
-          '${runtime == null ? 'it cannot choose a runtime by model format' : 'it runs only ${runtime.name}'}. '
-          'Use LlamaBackend(), which picks the runtime per model.',
-        );
-      }
+      _checkBackendLoads(format);
     }
     return fromUrl
         ? candidate.modelLoadFromUrl(
@@ -779,6 +1110,23 @@ class LlamaEngine {
             onProgress: onProgress,
           )
         : candidate.modelLoad(source, modelParams);
+  }
+
+  /// Throws [LlamaUnsupportedException] when the backend neither routes by
+  /// model format nor runs the runtime of [format].
+  void _checkBackendLoads(ModelFormat format) {
+    final candidate = backend;
+    if (candidate is BackendModelFormatRouting) return;
+    final runtime = candidate is BackendRuntimeIdentity
+        ? (candidate as BackendRuntimeIdentity).runtime
+        : null;
+    if (runtime != format.runtime) {
+      throw LlamaUnsupportedException(
+        'This backend cannot load ModelFormat.${format.name}: '
+        '${runtime == null ? 'it cannot choose a runtime by model format' : 'it runs only ${runtime.name}'}. '
+        'Use LlamaBackend(), which picks the runtime per model.',
+      );
+    }
   }
 
   // Runs [action] after any in-flight multimodal lifecycle operation, so
@@ -793,9 +1141,8 @@ class LlamaEngine {
 
   /// Loads a multimodal projector model for vision/audio support.
   ///
-  /// A model must already be loaded with [loadModel], [loadModelSource], or
-  /// [loadModelFromUrl]. Calling this before the model is ready throws a
-  /// [LlamaContextException].
+  /// A model must already be loaded. Calling this before the model is ready
+  /// throws a [LlamaContextException].
   ///
   /// On the native llama.cpp backend, throws [LlamaModelException] when
   /// [mmProjPath] is not an existing file or the runtime rejects the projector
@@ -803,56 +1150,106 @@ class LlamaEngine {
   /// runtime cannot run an mtmd function this package calls. A backend error
   /// that is not a [LlamaException] becomes a [LlamaModelException] without
   /// the URL secrets of [mmProjPath].
+  @Deprecated(
+    'Use LlamaModel(source, projector: ModelSource.path(path)) with '
+    'LlamaEngine.load or setModel, or loadMultimodalProjectorSource to change '
+    'the projector of a loaded model. This will be removed in 1.0.',
+  )
   Future<void> loadMultimodalProjector(String mmProjPath) {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
 
-  /// Loads a multimodal projector from a structured [source].
+  /// Loads a multimodal projector from a structured [source], replacing the
+  /// one the loaded model has.
   ///
-  /// A model must already be loaded with [loadModel], [loadModelSource], or
-  /// [loadModelFromUrl]. Calling this before the model is ready throws a
+  /// To load a model with its projector, pass both to [LlamaEngine.load] or
+  /// [setModel] as `LlamaModel(source, projector: projector)`. A model must
+  /// already be loaded here; before that this throws
   /// [LlamaContextException].
   ///
-  /// This method is lifecycle-compatible with [loadMultimodalProjector]:
-  /// source resolution, package-managed download/cache work, and the final
-  /// backend projector load are serialized with direct path projector loads and
-  /// unloads. Concurrent projector lifecycle calls are applied in call order,
-  /// and loading a new projector replaces any active projector.
+  /// Source resolution, package-managed download/cache work, and the backend
+  /// projector load are serialized with projector unloads and with other
+  /// projector loads, which apply in call order.
   ///
-  /// Local path sources are validated by the configured
-  /// [modelDownloadManager], then loaded from their local file path. Remote
-  /// sources use the native download/cache manager on file-backed backends. On
-  /// URL-loading backends, remote unauthenticated sources are passed directly to
-  /// the backend; package-managed auth, headers, checksum verification, cache
-  /// policy changes, cache directories, cancellation, retry/resume settings,
-  /// and progress reporting are not available because the backend/browser owns
+  /// [modelResolver] resolves [source]. On file-backed backends
+  /// [modelDownloadManager] checks a local file, or downloads a remote one
+  /// with [download] into the model cache, reporting to [onProgress].
+  /// [download]'s cancel token stops the download, and so do [unloadModel],
+  /// [setModel] replacing the model, and [dispose]: the download manager
+  /// gets a copy of [download] whose cancel token they also cancel. On
+  /// URL-loading backends the backend fetches [source] itself: a local path
+  /// is a URL relative to the document, or a `blob:` URL, and
+  /// package-managed auth, headers, checksum verification, cache policy
+  /// changes, cache directories, cancellation, retry/resume settings, and
+  /// progress reporting are not available because the backend/browser owns
   /// the network and cache behavior.
   ///
+  /// [options] is the deprecated name of [download]; setting both throws
+  /// [LlamaArgumentException].
+  ///
   /// Throws [LlamaUnsupportedException] when the active backend cannot load
-  /// multimodal projectors, when a local path is used with a URL-loading
-  /// backend, when the resolver returns a remote target that disallows
-  /// browser/backend caching, or when URL-backend loading is requested with
-  /// options that require the package-managed download/cache manager.
+  /// multimodal projectors, when the resolver returns a remote target that
+  /// disallows browser/backend caching, or when URL-backend loading is
+  /// requested with options that require the package-managed download/cache
+  /// manager; and [LlamaStateException] when the model is unloaded or the
+  /// engine disposed before the projector loads.
   Future<void> loadMultimodalProjectorSource(
     ModelSource source, {
-    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelLoadOptions? download,
+    @Deprecated('Use download. This will be removed in 1.0.')
+    ModelLoadOptions? options,
     ModelDownloadProgressCallback? onProgress,
   }) {
+    if (download != null && options != null) {
+      throw LlamaArgumentException(
+        'loadMultimodalProjectorSource takes download or the deprecated '
+        'options, not both. Pass download.',
+        name: 'options',
+      );
+    }
+    final requested = download ?? options ?? ModelLoadOptions.defaults;
     return _withMmLifecycle(() async {
       _ensureReady(requireContext: false);
-      final location = await _resolveAuxiliarySource(
-        source,
-        options: options,
-        onProgress: onProgress,
-        assetType: 'multimodal projector',
-      );
+      final epoch = _modelEpoch;
+      bool abandoned() => isDisposed || _modelEpoch != epoch;
+      var resolveOptions = requested;
+      if (!backend.supportsUrlLoading) {
+        final callerToken = requested.cancelToken;
+        resolveOptions = _withCancelToken(
+          requested,
+          _LinkedCancelToken([
+            abandoned,
+            if (callerToken != null) () => callerToken.isCancelled,
+          ]),
+        );
+      }
+      final String location;
+      try {
+        location = await _resolveAuxiliarySource(
+          source,
+          options: resolveOptions,
+          onProgress: onProgress,
+          assetType: 'multimodal projector',
+        );
+      } on Object {
+        if (abandoned()) throw _projectorModelChanged();
+        rethrow;
+      }
+      if (abandoned()) throw _projectorModelChanged();
       return _loadMultimodalProjectorLocked(location);
     });
   }
 
-  /// The local file, or on a URL-loading backend the URL, that the backend
-  /// loads for the auxiliary file [source] of [assetType], resolved as
-  /// [loadMultimodalProjectorSource] describes.
+  LlamaStateException _projectorModelChanged() => LlamaStateException(
+    isDisposed
+        ? _disposedDuringLoadMessage
+        : 'The model was unloaded while its multimodal projector loaded, so '
+              'the projector was not loaded.',
+  );
+
+  /// The local file, or on a URL-loading backend the URL or document-relative
+  /// path, that the backend loads for the auxiliary file [source] of
+  /// [assetType], resolved as [loadMultimodalProjectorSource] describes.
   Future<String> _resolveAuxiliarySource(
     ModelSource source, {
     required ModelLoadOptions options,
@@ -865,21 +1262,24 @@ class LlamaEngine {
     );
 
     if (!backend.supportsUrlLoading) {
-      final entry = await ensureModelTargetFile(
-        modelDownloadManager,
-        source,
-        target,
-        options: options,
-        onProgress: onProgress,
-        assetType: assetType,
-      );
-      return entry.filePath;
+      try {
+        final entry = await ensureModelTargetFile(
+          modelDownloadManager,
+          source,
+          target,
+          options: options,
+          onProgress: onProgress,
+          assetType: assetType,
+        );
+        return entry.filePath;
+      } on UncacheableLocalModelFileException catch (file) {
+        return file.filePath;
+      }
     }
     switch (target) {
-      case LocalModelFile():
-        throw LlamaUnsupportedException(
-          'Explicit local $assetType paths are not supported by URL-loading backends.',
-        );
+      case LocalModelFile(:final path):
+        rejectUnsupportedUrlBackendOptions(options, assetType: assetType);
+        return path;
       case RemoteModelUrl(:final url, :final useBrowserCache):
         if (!useBrowserCache) {
           throw LlamaUnsupportedException(
@@ -960,12 +1360,16 @@ class LlamaEngine {
   /// [listGpuDevices] and [getResolvedGpuLayers] throw
   /// [LlamaStateException]; [capabilities] reports the engine as disposed;
   /// model queries such as [getMetadata] and [getContextSize] return their
-  /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A load running when this is called throws
-  /// [LlamaStateException] once it finishes, and its model is unloaded; a
-  /// download that [loadModelSource] started runs to its end first.
+  /// no-model values; and [unloadModel] and [cancelGeneration] do nothing. A
+  /// load running when this is called throws [LlamaStateException], and a
+  /// model it loaded is unloaded. The downloads of a running [setModel] or
+  /// [loadMultimodalProjectorSource] stop, and those of [setModel] do not
+  /// hold this call up; a download that the deprecated `loadModelSource`
+  /// started runs to its end first.
   Future<void> dispose() => _disposal ??= _dispose();
 
   Future<void> _dispose() async {
+    _abandonResolution?.call();
     unregisterLoggingBackend(backend);
     final activeLifecycle = _modelLifecycleOperation;
     if (activeLifecycle != null) {
@@ -2198,13 +2602,14 @@ class LlamaEngine {
   /// Applies the LoRA adapter at [source] with [scale], or changes the scale
   /// of an adapter already applied from [source].
   ///
-  /// [source] resolves as in [loadModelSource]: [modelResolver] resolves it,
-  /// and on file-backed backends [modelDownloadManager] checks a local file,
-  /// or downloads a remote one with [download] into the model cache,
-  /// resuming an interrupted download and reusing a cached file, reporting
-  /// to [onProgress]. [download]'s cancel token stops the download. On
-  /// URL-loading backends (WebGPU) a remote source goes to the runtime as a
-  /// URL, and options that need the package-managed download manager throw
+  /// [source] resolves as in [setModel]: [modelResolver] resolves it, and on
+  /// file-backed backends [modelDownloadManager] checks a local file, or
+  /// downloads a remote one with [download] into the model cache, resuming
+  /// an interrupted download and reusing a cached file, reporting to
+  /// [onProgress]. [download]'s cancel token stops the download. On
+  /// URL-loading backends (WebGPU) the runtime fetches [source] itself, a
+  /// local path as a URL relative to the document or a `blob:` URL, and
+  /// options that need the package-managed download manager throw
   /// [LlamaUnsupportedException], as for [loadMultimodalProjectorSource].
   ///
   /// Remove the adapter with [removeLoraSource] and the same [source].
@@ -2460,8 +2865,12 @@ class LlamaEngine {
       if (request.isCancelled()) return null;
       _draftLocations[key] = location;
     }
-    final resolved = backend.supportsUrlLoading
-        ? ModelSource.url(Uri.parse(location), fileName: source.fileName)
+    // A URL-loading backend reads a local path as a URL relative to the
+    // document, or a `blob:` URL, which only a path source can carry.
+    final remote = backend.supportsUrlLoading ? Uri.tryParse(location) : null;
+    final resolved =
+        remote != null && (remote.isScheme('http') || remote.isScheme('https'))
+        ? ModelSource.url(remote, fileName: source.fileName)
         : ModelSource.path(location);
     // The resolved file needs no download options, and the caller's bearer
     // token, headers and cancel token must not reach the backend or its
@@ -2747,7 +3156,8 @@ class LlamaEngine {
     _throwIfDisposed();
     if (!_isReady) {
       throw LlamaContextException(
-        'Engine not ready: no model is loaded. Call loadModelSource() first.',
+        'Engine not ready: no model is loaded. Call LlamaEngine.load or '
+        'setModel first.',
       );
     }
     if (requireContext && _contextHandle == null) {
@@ -2765,12 +3175,11 @@ class LlamaEngine {
   /// Throws when [dispose] was called while a load ran; [dispose] then
   /// unloads what it loaded.
   void _throwIfDisposedDuringLoad() {
-    if (isDisposed) {
-      throw LlamaStateException(
-        'The LlamaEngine was disposed while loading, so the load was undone.',
-      );
-    }
+    if (isDisposed) throw LlamaStateException(_disposedDuringLoadMessage);
   }
+
+  static const String _disposedDuringLoadMessage =
+      'The LlamaEngine was disposed while loading, so the load was undone.';
 
   /// Ensures the engine is NOT currently loaded.
   void _ensureNotReady() {
@@ -2797,61 +3206,6 @@ BackendGenerationLimit? completionGenerationLimit(LlamaCompletionChunk chunk) =>
 /// taken while another model was loaded sees a greater value, even under the
 /// same backend handle.
 int modelUnloadEpoch(LlamaEngine engine) => engine._decisionHeadEpoch;
-
-/// Throws [LlamaUnsupportedException] when [options] asks for what only the
-/// package download manager provides, for an [assetType] that a URL-loading
-/// backend fetches itself.
-void rejectUnsupportedUrlBackendOptions(
-  ModelLoadOptions options, {
-  String assetType = 'model',
-}) {
-  final isModel = assetType == 'model';
-  if (options.cachePolicy != ModelCachePolicy.preferCached) {
-    throw LlamaUnsupportedException(
-      '${options.cachePolicy.name} $assetType loading requires the native download/cache manager.',
-    );
-  }
-  if (options.bearerToken != null || options.headers.isNotEmpty) {
-    throw LlamaUnsupportedException(
-      'Authenticated $assetType URL loading requires the native download/cache manager.',
-    );
-  }
-  if (options.cancelToken != null) {
-    throw LlamaUnsupportedException(
-      isModel
-          ? 'Cancellation tokens require the native download/cache manager.'
-          : 'Cancellation tokens for $assetType loading require the native download/cache manager.',
-    );
-  }
-  if (options.sha256 != null) {
-    throw LlamaUnsupportedException(
-      isModel
-          ? 'Checksum verification requires the native download/cache manager.'
-          : 'Checksum verification for $assetType loading requires the native download/cache manager.',
-    );
-  }
-  if (options.cacheDirectory != null) {
-    throw LlamaUnsupportedException(
-      isModel
-          ? 'cacheDirectory is not supported by URL-loading backends.'
-          : 'cacheDirectory is not supported for $assetType loading by URL-loading backends.',
-    );
-  }
-  if (!options.resume) {
-    throw LlamaUnsupportedException(
-      isModel
-          ? 'Disabling resume is not supported by URL-loading backends.'
-          : 'Disabling resume is not supported for $assetType loading by URL-loading backends.',
-    );
-  }
-  if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
-    throw LlamaUnsupportedException(
-      isModel
-          ? 'Custom maxRetries is not supported by URL-loading backends.'
-          : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
-    );
-  }
-}
 
 /// One-shot completions for [LlamaEngine].
 extension LlamaEngineCompletionExtension on LlamaEngine {
@@ -2883,6 +3237,53 @@ extension LlamaEngineCompletionExtension on LlamaEngine {
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
     ).collect();
+  }
+}
+
+/// [LlamaEngine.load] for the engines built on a [LlamaEngine].
+///
+/// [operation] names the load, and [assetType] its files, in errors.
+/// [companions] are further files of the model. They resolve after the
+/// model's own and under the same rules: one combined progress, one cancel
+/// token, and credentials for one origin only. Returns the engine and where
+/// each companion resolved, in order: a local path, or on a URL-loading
+/// backend what the backend fetches.
+Future<(LlamaEngine, List<String>)> loadLlamaEngine(
+  LlamaModel model, {
+  required ModelParams params,
+  required ModelLoadOptions download,
+  required ModelDownloadProgressCallback? onProgress,
+  required ModelFileStore? store,
+  required LlamaBackend? backend,
+  Iterable<LlamaEngineObserver> observers = const <LlamaEngineObserver>[],
+  String operation = 'Model loading',
+  String assetType = 'model',
+  List<ModelSource> companions = const <ModelSource>[],
+}) async {
+  final engine = LlamaEngine(
+    backend ?? LlamaBackend(),
+    modelResolver: store?.resolver,
+    modelDownloadManager: store?.downloadManager,
+    observers: observers,
+  );
+  try {
+    final locations = await engine._setModel(
+      model,
+      params,
+      download,
+      onProgress,
+      operation: operation,
+      assetType: assetType,
+      companions: companions,
+    );
+    return (engine, locations);
+  } catch (_) {
+    try {
+      await engine.dispose();
+    } catch (_) {
+      // The load failure is the error the caller needs.
+    }
+    rethrow;
   }
 }
 

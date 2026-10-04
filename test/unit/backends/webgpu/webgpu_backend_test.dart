@@ -590,7 +590,7 @@ void main() {
           isA<LlamaStateException>().having(
             (e) => e.message,
             'message',
-            contains('loadModelSource()'),
+            contains('LlamaEngine.load or setModel'),
           ),
         ),
       );
@@ -4042,7 +4042,7 @@ void main() {
             'message',
             allOf(
               contains('needs a multimodal projector'),
-              contains('loadMultimodalProjector'),
+              contains('LlamaModel(source, projector: ...)'),
             ),
           ),
         ),
@@ -4172,6 +4172,49 @@ void main() {
         window.fetch(lastMmprojPath!.toJS).toDart,
         throwsA(anything),
       );
+    });
+
+    test('hands the bridge a path as a URL of the document, and a URL or '
+        'blob as written', () async {
+      final loaded = <String>[];
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          loaded.add(url);
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+      String ofDocument(String path) =>
+          '${Uri.parse(document.baseURI).resolve(path)}';
+      final engine = LlamaEngine(backend);
+
+      await engine.setModel(
+        LlamaModel(
+          ModelSource.path('models/tiny.gguf'),
+          projector: ModelSource.path('../shared/mmproj.gguf'),
+        ),
+      );
+      expect(lastMmprojPath, ofDocument('../shared/mmproj.gguf'));
+      await engine.loadMultimodalProjectorSource(
+        ModelSource.path('models/other-mmproj.gguf'),
+      );
+      expect(lastMmprojPath, ofDocument('models/other-mmproj.gguf'));
+      for (final source in [
+        ModelSource.path('/models/root.gguf'),
+        ModelSource.parse('https://example.com/m.gguf?sig=a%2Fb'),
+        ModelSource.path('blob:https://app.example/3f2a'),
+      ]) {
+        await engine.setModel(LlamaModel(source));
+      }
+
+      expect(loaded, [
+        ofDocument('models/tiny.gguf'),
+        ofDocument('/models/root.gguf'),
+        'https://example.com/m.gguf?sig=a%2Fb',
+        'blob:https://app.example/3f2a',
+      ]);
+      expect(ofDocument('models/tiny.gguf'), startsWith('http'));
+      await engine.dispose();
     });
 
     group('a rejected model load', () {
@@ -5125,7 +5168,7 @@ void main() {
       expect(head.handle, 1);
       expect(outputs.single.logits, [1.0]);
       expect(fake.calls, [
-        'loadModel laya-Q8_0.gguf',
+        'loadModel ${Uri.parse(document.baseURI).resolve('laya-Q8_0.gguf')}',
         'capabilities',
         'capabilities',
         'load ${Uri.parse(document.baseURI).resolve('laya-head.safetensors')}',
@@ -5696,8 +5739,8 @@ void main() {
         expect(await backend.contextCreate(1, modelParamsLoras), 1);
 
         expect(fake().loraLoads.map((load) => load.source), <String>[
-          'style.gguf',
-          'domain.gguf',
+          '${Uri.parse(document.baseURI).resolve('style.gguf')}',
+          '${Uri.parse(document.baseURI).resolve('domain.gguf')}',
         ]);
         expect(fake().appliedAdapters, <int, double>{7: 0.5, 8: 1.0});
       });
@@ -6252,7 +6295,7 @@ void main() {
         await generate(speculative(draft));
 
         expect(fake().draftLoads.map((load) => load.url), <String>[
-          'draft.gguf',
+          '${Uri.parse(document.baseURI).resolve('draft.gguf')}',
         ]);
         expect(fake().draftLoads.single.useCache, isTrue);
         expect(fake().draftLoads.single.signal, isNotNull);
@@ -6274,8 +6317,8 @@ void main() {
           ),
         );
         expect(fake().draftLoads.map((load) => load.url), <String>[
-          'draft.gguf',
-          'other.gguf',
+          '${Uri.parse(document.baseURI).resolve('draft.gguf')}',
+          '${Uri.parse(document.baseURI).resolve('other.gguf')}',
         ]);
         expect(
           sentSpeculative(),

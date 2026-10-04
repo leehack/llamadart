@@ -24,8 +24,9 @@ import '../models/tools/tool_definition.dart';
 ///
 /// Example:
 /// ```dart
-/// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('model.gguf');
+/// final engine = await LlamaEngine.load(
+///   LlamaModel(ModelSource.path('model.gguf')),
+/// );
 ///
 /// final session = ChatSession(engine);
 /// session.systemPrompt = 'You are a helpful assistant.';

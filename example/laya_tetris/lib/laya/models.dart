@@ -187,10 +187,10 @@ class LayaModels {
 
     try {
       onStatus?.call('Loading ${setup.backbone.fileName}', null);
-      await engine.loadModelSource(
-        setup.backbone,
-        modelParams: setup.params.encoderModelParams,
-        options: options,
+      await engine.setModel(
+        LlamaModel(setup.backbone),
+        params: setup.params.encoderModelParams,
+        download: options,
         onProgress: progressOf(setup.backbone),
       );
       final base = await loadHead(engine, setup.head);

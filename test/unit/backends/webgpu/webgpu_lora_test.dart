@@ -7,6 +7,7 @@ import 'dart:js_interop_unsafe';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_lora.dart';
 import 'package:test/test.dart';
+import 'package:web/web.dart' show document;
 
 import '../../../support/fake_webgpu_feature_bridge.dart';
 
@@ -132,8 +133,8 @@ void main() {
       ]);
       expect(fake.appliedAdapters, <int, double>{7: 0.25, 8: 1.5});
       expect(fake.loraLoads.map((load) => load.source), <String>[
-        'adapter.gguf',
-        'other.gguf',
+        '${Uri.parse(document.baseURI).resolve('adapter.gguf')}',
+        '${Uri.parse(document.baseURI).resolve('other.gguf')}',
       ]);
     });
 

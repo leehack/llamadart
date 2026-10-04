@@ -19,6 +19,14 @@ class ChatService {
   /// The underlying LlamaEngine instance.
   LlamaEngine get engine => _engine;
 
+  /// The source of a model or projector file at [location]: an `http(s)` URL
+  /// the runtime or the model cache fetches, or else a path, which a native
+  /// runtime opens and a browser reads as a URL.
+  static ModelSource modelSourceFor(String location) =>
+      location.startsWith('http')
+      ? ModelSource.parse(location)
+      : ModelSource.path(location);
+
   /// Initializes the engine with the given settings.
   ///
   /// Throws [LlamaStateException] after [dispose]: a model loaded then would
@@ -31,11 +39,6 @@ class ChatService {
   }) async {
     if (settings.modelPath == null) throw Exception("Model path is null");
     _throwIfDisposed();
-
-    // Unload existing model if any
-    if (_engine.isReady) {
-      await _engine.unloadModel();
-    }
 
     Timer? syntheticProgressTimer;
     var syntheticProgress = 0.0;
@@ -76,20 +79,22 @@ class ChatService {
 
     try {
       _throwIfDisposed();
-      if (settings.modelPath!.startsWith('http')) {
-        await _engine.loadModelFromUrl(
-          settings.modelPath!,
-          modelParams: modelParams,
-          onProgress: onProgress == null
-              ? null
-              : (progress) {
-                  hasObservedModelProgress = true;
-                  emitProgress(progress);
-                },
-        );
-      } else {
-        await _engine.loadModel(settings.modelPath!, modelParams: modelParams);
-      }
+      final modelPath = settings.modelPath!;
+      // setModel replaces a loaded model. A local file reports its whole size
+      // before the runtime starts loading it, so only a fetched model drives
+      // the progress bar.
+      await _engine.setModel(
+        LlamaModel(modelSourceFor(modelPath)),
+        params: modelParams,
+        onProgress: onProgress == null || !modelPath.startsWith('http')
+            ? null
+            : (progress) {
+                final fraction = progress.fraction;
+                if (fraction == null) return;
+                hasObservedModelProgress = true;
+                emitProgress(fraction);
+              },
+      );
 
       final isLiteRtLmModel = _engine.runtime == LlamaRuntime.liteRtLm;
       final directAudioLiteRtLm =
@@ -300,7 +305,7 @@ class ChatService {
     _throwIfDisposed();
 
     try {
-      await _engine.loadMultimodalProjector(mmprojPath);
+      await _engine.loadMultimodalProjectorSource(modelSourceFor(mmprojPath));
     } catch (e) {
       debugPrint("Failed to load multimodal projector: $e");
       final normalizedError = e.toString().toLowerCase();

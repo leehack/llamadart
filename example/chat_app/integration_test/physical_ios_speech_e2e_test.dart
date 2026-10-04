@@ -267,14 +267,15 @@ Future<LlamaEngine> _loadCpuEngine(
   final engine = LlamaEngine(LlamaBackend());
   try {
     await awaitBounded(
-      engine.loadModel(modelPath, modelParams: _cpuParams),
+      engine.setModel(
+        LlamaModel(
+          ModelSource.path(modelPath),
+          projector: ModelSource.path(mmprojPath),
+        ),
+        params: _cpuParams,
+      ),
       _modelLoadTimeout,
-      '$label.loadModel',
-    );
-    await awaitBounded(
-      engine.loadMultimodalProjector(mmprojPath),
-      _modelLoadTimeout,
-      '$label.loadMultimodalProjector',
+      '$label.setModel',
     );
     final gpuLayers = await awaitBounded(
       engine.getResolvedGpuLayers(),
@@ -1445,12 +1446,12 @@ void main() {
           await runWithSpeechCleanup(
             body: () async {
               await awaitBounded(
-                engine.loadModel(
-                  config.liteRtLmModelPath,
-                  modelParams: const ModelParams(contextSize: 2048),
+                engine.setModel(
+                  LlamaModel(ModelSource.path(config.liteRtLmModelPath)),
+                  params: const ModelParams(contextSize: 2048),
                 ),
                 _modelLoadTimeout,
-                'row4.loadModel',
+                'row4.setModel',
               );
               expect(engine.isReady, isTrue);
               backendName = requireSpeechBackendIdentity(

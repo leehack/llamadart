@@ -25,16 +25,16 @@ import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
-  try {
-    await engine.loadModelSource(
+  final engine = await LlamaEngine.load(
+    LlamaModel(
       ModelSource.parse(
         'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
         'SmolLM2-135M-Instruct-Q2_K.gguf',
       ),
-      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
-    );
-
+    ),
+    params: const ModelParams(contextSize: 1024, gpuLayers: 0),
+  );
+  try {
     final session = ChatSession(engine, systemPrompt: 'You are concise.');
 
     // Stream a reply as it is generated.

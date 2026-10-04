@@ -98,7 +98,10 @@ enum LiteRtLmActivationDataType {
 ///   splitMode: ModelSplitMode.none,
 ///   mainGpu: 1, // Use the second GPU device for the full model
 /// );
-/// await engine.loadModel('path/to/model.gguf', modelParams: params);
+/// final engine = await LlamaEngine.load(
+///   LlamaModel(ModelSource.path('path/to/model.gguf')),
+///   params: params,
+/// );
 /// ```
 class ModelParams {
   /// Context size (n_ctx) in tokens.
@@ -221,9 +224,9 @@ class ModelParams {
   /// `LlamaEngine` resolves each [LoraAdapterConfig.source] before the model
   /// loads, as `setLoraSource` does, in list order, with the adapter's own
   /// [LoraAdapterConfig.download]. Without one, an adapter takes only the
-  /// non-secret options of the load (`loadModelSource`'s `options`, or
-  /// defaults for `loadModel` and `loadModelFromUrl`): cache policy and
-  /// directory, resume, retries and cancel token. The load's bearer token,
+  /// non-secret options of the load (the `download` of `LlamaEngine.load`
+  /// and `setModel`): cache policy and directory, resume, retries and cancel
+  /// token. The load's bearer token,
   /// headers and checksum never reach an adapter's host. Adapter downloads
   /// report no progress; a failed one fails the load before the model loads.
   ///

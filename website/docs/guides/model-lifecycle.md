@@ -10,23 +10,50 @@ This guide covers loading, switching and releasing a model on one
 ## Load, use and dispose
 
 ```dart
-final engine = LlamaEngine(LlamaBackend());
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.path('/path/to/model.gguf')),
+  params: const ModelParams(contextSize: 4096),
+);
 try {
-  await engine.loadModel('/path/to/model.gguf');
   // ...run inference...
 } finally {
   await engine.dispose();
 }
 ```
 
+`LlamaEngine.load` creates the engine and loads the model. The load is atomic:
+when it throws, the engine and its backend are already disposed and nothing
+stays loaded, so start the `try` after it returns. It takes:
+
+- `LlamaModel(source, projector: ...)`: the model file and, for a GGUF model,
+  its [multimodal projector](./multimodal).
+- `params`: the `ModelParams` of the load
+  ([Runtime parameters](../configuration/runtime-parameters)).
+- `download`: the `ModelLoadOptions` for remote files, and `onProgress` for
+  their progress ([Download and cache models](./model-downloads)).
+- `store`: a `ModelFileStore` holding the resolver and download manager, to
+  replace the defaults.
+
+When the engine must exist before the load, such as a field or an engine that
+is reused, create it with `LlamaEngine(LlamaBackend())` and call
+`engine.setModel(...)`, which takes the same model, `params`, `download` and
+`onProgress`.
+
+Before any download or file access, the load throws for what its arguments
+already show: invalid `ModelParams`, a projector for a `.litertlm` model or
+`ComputeDevice.npu` for a GGUF model (when `ModelSource.format` or the file
+name gives the format), `ModelLoadOptions.sha256` for a model with a
+projector, and on web a `download` option other than the defaults.
+
 `dispose()` cancels running generations, unloads the model and releases the
 backend. It is final, on every engine: later calls return the same future,
 `isDisposed` is true, `capabilities` reports the engine as disposed, and a
 load, a request or a backend query such as `getBackendName()` or
 `getVramInfo()` throws `LlamaStateException`. A load still running when
-`dispose()` is called throws `LlamaStateException` too, and its model is
-unloaded. Call `unloadModel()` instead when the engine will load another
-model.
+`dispose()` is called stops its downloads at once and throws
+`LlamaStateException` too, and nothing stays loaded. To free the model's
+memory and keep the engine, call `unloadModel()`; to load another model, call
+`setModel`.
 
 On macOS Metal, ggml aborts a process that exits with a model, context,
 decision head or image model still loaded
@@ -78,9 +105,9 @@ LiteRT-LM, by file header on native targets and by URL extension on web
 lifecycle:
 
 ```dart
-await engine.loadModel(
-  '/path/to/gemma-4-E2B-it.litertlm',
-  modelParams: const ModelParams(device: ComputeDevice.gpu),
+await engine.setModel(
+  LlamaModel(ModelSource.path('/path/to/gemma-4-E2B-it.litertlm')),
+  params: const ModelParams(device: ComputeDevice.gpu),
 );
 ```
 
@@ -98,12 +125,14 @@ loading, set `window.LiteRtLmEngine = module.Engine` or set
 
 ## Load from Hugging Face or a URL
 
-`loadModelSource` takes a `ModelSource`: a local path, an HTTP(S) URL or an
-`hf://` reference.
+A `ModelSource` is a local path, an HTTP(S) URL or an `hf://` reference;
+`ModelSource.parse` accepts any of them as a string.
 
 ```dart
-await engine.loadModelSource(
-  ModelSource.parse('hf://owner/repo/path/to/model.gguf'),
+final cancelToken = ModelDownloadCancelToken();
+final engine = await LlamaEngine.load(
+  LlamaModel(ModelSource.parse('hf://owner/repo/path/to/model.gguf')),
+  download: ModelLoadOptions(cancelToken: cancelToken),
   onProgress: (progress) {
     final fraction = progress.fraction;
     if (fraction != null) {
@@ -113,35 +142,54 @@ await engine.loadModelSource(
 );
 ```
 
-Native targets download the file into a cache and load the local copy. On web,
-`.gguf` URLs load through the llama.cpp WebGPU bridge and `.litertlm` URLs
-through LiteRT-LM JS; web rejects local paths. `loadModelFromUrl(url)` loads a
-raw URL on a backend that supports URL loading.
+Native targets download each remote file into a cache and load the local copy,
+resuming an interrupted download and reusing a cached file. `download` applies
+to every remote file, and `onProgress` reports the model and its projector
+together: with a projector, `totalBytes` and `fraction` are null until the
+model has downloaded and the projector reports its size, so show
+`receivedBytes` until then. `cancelToken.cancel()` stops the load, which
+throws `LlamaStateException`.
+
+On web the runtime fetches each file itself: `.gguf` URLs load through the
+llama.cpp WebGPU bridge and `.litertlm` URLs through LiteRT-LM JS. A
+`ModelSource.path` is a URL relative to the document, or a `blob:` URL;
+`download` must stay at its defaults, and `onProgress` reports only the
+model's fetch, as a fraction that ends at 0.5 when there is a projector.
 
 Revisions, private repositories, progress UI, checksums and cache location:
 [Download and cache models](./model-downloads).
 
 ## Switch models
 
-`loadModel(...)` throws `LlamaStateException` while a model is loaded. Unload
+`setModel` replaces the model the engine holds; no `unloadModel()` is needed
 first:
 
 ```dart
-await engine.unloadModel();
-await engine.loadModel('/path/to/another_model.gguf');
+await engine.setModel(
+  LlamaModel(ModelSource.path('/path/to/another_model.gguf')),
+);
 ```
 
-`unloadModel()` also releases the multimodal projector and active LoRA
-adapters. Load the projector again after the new model; adapters listed in
-`ModelParams.loras` are applied again by each load, and adapters added with
-`setLoraSource` must be set again.
+On native targets the old model keeps serving until every file of the new one
+has resolved or downloaded. Only then is it unloaded, which cancels its
+generations, and the new model and its projector load. A failure or a cancel
+before that point leaves the old model loaded; one after it leaves nothing
+loaded. On web the runtime fetches the files during the load, after the old
+model is unloaded.
+
+Replacing or unloading a model also releases its multimodal projector and
+active LoRA adapters. Pass the new model's projector as
+`LlamaModel(source, projector: ...)`; adapters listed in `ModelParams.loras`
+are applied again by each load, and adapters added with `setLoraSource` must
+be set again. `unloadModel()` frees the model without loading another.
 
 ## Readiness and serialized loads
 
 - Check `engine.isReady` before inference.
-- `loadModel`, `loadModelFromUrl` and `unloadModel` do not queue. A call made
-  while another is running throws `LlamaStateException`, so serialize model
-  switches in app code (for example, disable the model picker until the switch
+- `setModel` and `unloadModel` do not queue. While a `setModel` runs, another
+  `setModel` or an `unloadModel` throws `LlamaStateException`. Stop the
+  running load with its `download` cancel token, or serialize model switches
+  in app code (for example, disable the model picker until the switch
   completes).
 
 ## Save and restore prompt state

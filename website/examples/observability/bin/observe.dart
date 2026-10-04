@@ -25,9 +25,9 @@ Future<void> main(List<String> args) async {
   );
   final engine = LlamaEngine(LlamaBackend(), observers: [observer]);
   try {
-    await engine.loadModel(
-      args.single,
-      modelParams: const ModelParams(contextSize: 2048),
+    await engine.setModel(
+      LlamaModel(ModelSource.path(args.single)),
+      params: const ModelParams(contextSize: 2048),
     );
     final tracer = otel.OTel.tracer();
     final parent = tracer.startSpan(

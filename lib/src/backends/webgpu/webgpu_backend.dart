@@ -26,6 +26,7 @@ import 'interop.dart';
 import 'webgpu_decision.dart';
 import 'webgpu_load_retry_policy.dart';
 import 'webgpu_lora.dart';
+import 'webgpu_url.dart';
 import 'webgpu_speculative.dart';
 
 @JS('Object.keys')
@@ -1075,7 +1076,8 @@ class WebGpuLlamaBackend
     final bridge = _bridge;
     if (!_usingBridge || bridge == null) {
       throw LlamaStateException(
-        'Web bridge is not active. Load a model with loadModelSource() first.',
+        'Web bridge is not active. Load a model with LlamaEngine.load or '
+        'setModel first.',
       );
     }
     return bridge;
@@ -1191,6 +1193,7 @@ class WebGpuLlamaBackend
     ModelParams params, {
     Function(double progress)? onProgress,
   }) async {
+    url = webGpuDocumentUrl(url);
     final setup = _prepareUrlLoad(url, params, onProgress);
     if (setup.requireGpu && !await webGpuAdapterAvailable()) {
       throw LlamaUnsupportedException(
@@ -1849,8 +1852,8 @@ class WebGpuLlamaBackend
     if (mediaParts != null && !_mmContextActive) {
       throw LlamaUnsupportedException(
         'Media input needs a multimodal projector on WebGPU, and none is '
-        'loaded. Call LlamaEngine.loadMultimodalProjector before sending '
-        'image or audio parts.',
+        'loaded. Load the model with LlamaModel(source, projector: ...) '
+        'before sending image or audio parts.',
       );
     }
     final bridgeThinkingBudget = thinkingBudget == null
@@ -2942,6 +2945,7 @@ class WebGpuLlamaBackend
     String mmProjPath,
   ) async {
     final bridge = _requireBridge();
+    mmProjPath = webGpuDocumentUrl(mmProjPath);
     final cachedBlobUrl = await _cachedModelBlobUrlFor(mmProjPath);
     final projectorPath = cachedBlobUrl ?? mmProjPath;
     var retainedCachedBlobUrl = false;

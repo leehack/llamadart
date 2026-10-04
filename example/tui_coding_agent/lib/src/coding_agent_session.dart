@@ -124,10 +124,10 @@ class CodingAgentSession {
     _throwIfCancelled(cancelToken);
 
     onStatus?.call('Loading ${source.displayName}...');
-    await _engine.loadModelSource(
-      source,
-      modelParams: _config.modelParams,
-      options: ModelLoadOptions(
+    await _engine.setModel(
+      LlamaModel(source),
+      params: _config.modelParams,
+      download: ModelLoadOptions(
         cacheDirectory: source.isRemote ? _config.modelCacheDirectory : null,
         cancelToken: cancelToken,
       ),

@@ -49,9 +49,9 @@ class LlamaCliRunner {
     _engine = engine;
 
     await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
-    await engine.loadModel(
-      modelPath,
-      modelParams: ModelParams(
+    await engine.setModel(
+      LlamaModel(ModelSource.path(modelPath)),
+      params: ModelParams(
         contextSize: config.contextSize,
         gpuLayers: config.gpuLayers,
         numberOfThreads: config.threads,

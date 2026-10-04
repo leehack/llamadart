@@ -2851,7 +2851,7 @@ void main() {
         unsupported(
           allOf(
             startsWith('Image input needs a multimodal projector'),
-            contains('loadMultimodalProjector'),
+            contains('LlamaModel(source, projector: ...)'),
           ),
         ),
       );

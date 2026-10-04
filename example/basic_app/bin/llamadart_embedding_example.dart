@@ -107,9 +107,9 @@ Future<void> main(List<String> arguments) async {
     print('Checking model...');
     final modelFile = await modelService.ensureModel(modelUrlOrPath);
     print('Loading model...');
-    await engine.loadModel(
-      modelFile.path,
-      modelParams: ModelParams(
+    await engine.setModel(
+      LlamaModel(ModelSource.path(modelFile.path)),
+      params: ModelParams(
         contextSize: contextSize,
         preferredBackend: forceCpu ? GpuBackend.cpu : GpuBackend.auto,
         gpuLayers: forceCpu ? 0 : ModelParams.maxGpuLayers,

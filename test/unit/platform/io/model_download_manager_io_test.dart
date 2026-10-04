@@ -1408,7 +1408,10 @@ void main() {
               isA<LlamaUnsupportedException>().having(
                 (error) => error.message,
                 'message',
-                allOf(contains(file.path), contains('loadModel')),
+                allOf(
+                  contains(file.path),
+                  contains('LlamaEngine.load or setModel'),
+                ),
               ),
             ),
             reason: file.path,

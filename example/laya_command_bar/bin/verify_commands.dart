@@ -23,10 +23,9 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
-  final engine = LlamaEngine(LlamaBackend());
-  await engine.loadModel(
-    model,
-    modelParams: const ModelParams(contextSize: 2048),
+  final engine = await LlamaEngine.load(
+    LlamaModel(ModelSource.path(model)),
+    params: const ModelParams(contextSize: 2048),
   );
   final names = [for (final i in CommandIntent.values) i.name];
   final system =

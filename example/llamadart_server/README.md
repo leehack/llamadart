@@ -29,7 +29,7 @@ This example now follows a feature-first structure:
 - `lib/src/features/chat_completion/` - chat request model, parser, mapper, and
   completion use cases
 - Model paths, URLs, and Hugging Face sources load through
-  `LlamaEngine.loadModelSource(...)`, using the core runtime's cache and
+  `LlamaEngine.setModel(...)`, using the core runtime's cache and
   download policy
 - `lib/src/features/server_engine/` - engine contract + llama engine adapter
 - `lib/src/features/shared/` - shared API error types

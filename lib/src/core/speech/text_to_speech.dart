@@ -9,8 +9,8 @@ import '../models/download/model_download_manager.dart';
 import '../models/inference/model_params.dart';
 import '../models/model_file_store.dart';
 import '../models/model_load_options.dart';
+import '../models/model_source.dart';
 import 'speech_engine_lease.dart';
-import 'speech_model_loader.dart';
 import 'speech_to_text.dart';
 import 'text_to_speech_model.dart';
 import 'text_to_speech_platform_stub.dart'
@@ -474,13 +474,11 @@ class TextToSpeechEngine {
   /// together: `receivedBytes` counts the files resolved so far plus the
   /// current download, and `totalBytes` is their combined size once every
   /// size is known. Adapters in [ModelParams.loras] given as sources
-  /// download as `LlamaEngine.loadModelSource` downloads them. A URL-loading
+  /// download as [LlamaEngine.setModel] downloads them. A URL-loading
   /// backend, as on the web, fetches each file itself, as
-  /// `LlamaEngine.loadModelSource` and
-  /// `LlamaEngine.loadMultimodalProjectorSource` do. [onProgress] then
-  /// reports only the main file's fetch, as a fraction from 0 to 0.5 of the
-  /// two files when there is a projector; the projector fetch reports no
-  /// progress.
+  /// [LlamaEngine.setModel] describes. [onProgress] then reports only the
+  /// main file's fetch, as a fraction from 0 to 0.5 of the two files when
+  /// there is a projector; the projector fetch reports no progress.
   ///
   /// The synthesizer owns the engine and a [backend] passed in: [dispose],
   /// or a failed load, disposes both. The load is atomic: when it throws,
@@ -494,8 +492,8 @@ class TextToSpeechEngine {
   ///   [download] sets [ModelLoadOptions.sha256] for a model with a
   ///   projector.
   /// - [LlamaStateException] when [download]'s cancel token cancels the load.
-  /// - What `LlamaEngine.loadModelSource`, the resolver and the download
-  ///   manager throw for a file that fails to download or load.
+  /// - What [LlamaEngine.setModel], the resolver and the download manager
+  ///   throw for a file that fails to download or load.
   static Future<TextToSpeechEngine> load(
     TextToSpeechModel model, {
     ModelParams params = const ModelParams(),
@@ -504,32 +502,37 @@ class TextToSpeechEngine {
     ModelFileStore? store,
     LlamaBackend? backend,
   }) async {
-    late final TextToSpeechEngine synthesizer;
-    await loadSpeechLlamaEngine(
-      engineName: 'TextToSpeechEngine',
-      source: model.source,
-      projector: model.projector,
+    final (engine, _) = await loadLlamaEngine(
+      LlamaModel(model.source, projector: model.projector),
       params: params,
       download: download,
       onProgress: onProgress,
       store: store,
       backend: backend,
-      verify: (engine) async {
-        synthesizer = TextToSpeechEngine._(
-          engine,
-          model.adapter,
-          ownsEngine: true,
-        );
-        final capabilities = await synthesizer.capabilities;
-        if (!capabilities.isSupported) {
-          throw LlamaUnsupportedException(
-            capabilities.unsupportedReason ??
-                'The loaded model cannot synthesize speech.',
-          );
-        }
-      },
+      operation: 'TextToSpeechEngine model loading',
     );
-    return synthesizer;
+    try {
+      final synthesizer = TextToSpeechEngine._(
+        engine,
+        model.adapter,
+        ownsEngine: true,
+      );
+      final capabilities = await synthesizer.capabilities;
+      if (!capabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          capabilities.unsupportedReason ??
+              'The loaded model cannot synthesize speech.',
+        );
+      }
+      return synthesizer;
+    } catch (_) {
+      try {
+        await engine.dispose();
+      } catch (_) {
+        // The load failure is the error the caller needs.
+      }
+      rethrow;
+    }
   }
 
   /// Runs [adapter] on [engine], which the caller loaded and keeps owning.

@@ -122,10 +122,9 @@ fine-tuned one. Load the encoder with `encoderModelParams`; the head and
 config resolve through the engine's own resolver and download manager:
 
 ```dart
-final engine = LlamaEngine(LlamaBackend());
-await engine.loadModelSource(
-  encoder,
-  modelParams: const DecisionModelParams().encoderModelParams,
+final engine = await LlamaEngine.load(
+  LlamaModel(encoder),
+  params: const DecisionModelParams().encoderModelParams,
 );
 final base = await DecisionEngine.attach(engine, head: baseHead);
 final tuned = await DecisionEngine.attach(engine, head: tunedHead);

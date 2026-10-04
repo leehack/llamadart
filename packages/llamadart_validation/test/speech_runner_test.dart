@@ -192,6 +192,25 @@ class FakeSpeechBackend implements LlamaBackend, BackendTextToSpeech {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Takes every local path as an existing file, so a fake engine loads model
+/// files that are only names.
+class FakeModelFiles extends ThrowingModelDownloadManager {
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async => ModelCacheEntry(
+    sourceCanonicalKey: source.metadataSourceKey,
+    cacheKey: source.cacheKey,
+    fileName: source.fileName,
+    filePath: source.path!,
+    bytes: 1,
+    createdAt: DateTime.utc(2026),
+    updatedAt: DateTime.utc(2026),
+  );
+}
+
 /// Loads its model and projector through [FakeSpeechBackend] once and keeps
 /// them, so a teardown fake can model its own unload and dispose.
 class FakeSpeechEngine extends LlamaEngine {
@@ -200,7 +219,7 @@ class FakeSpeechEngine extends LlamaEngine {
     this.failure,
     this.tokenDelay = Duration.zero,
     this.laterTokenDelay,
-  }) : super(FakeSpeechBackend());
+  }) : super(FakeSpeechBackend(), modelDownloadManager: FakeModelFiles());
   final List<String> deltas;
   final Object? failure;
   final Duration tokenDelay;
@@ -225,19 +244,20 @@ class FakeSpeechEngine extends LlamaEngine {
   Future<void> setLogLevel(LlamaLogLevel level) async {}
 
   @override
-  Future<void> loadModel(
-    String path, {
-    ModelParams modelParams = const ModelParams(),
+  Future<void> setModel(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
   }) async {
-    loaded.add(path);
-    if (!isReady) await super.loadModel(path, modelParams: modelParams);
-  }
-
-  @override
-  Future<void> loadMultimodalProjector(String mmProjPath) async {
-    loaded.add(mmProjPath);
-    if (!hasMultimodalProjector) {
-      await super.loadMultimodalProjector(mmProjPath);
+    loaded.addAll([model.source.path!, ?model.projector?.path]);
+    if (!isReady) {
+      await super.setModel(
+        model,
+        params: params,
+        download: download,
+        onProgress: onProgress,
+      );
     }
   }
 
@@ -693,12 +713,19 @@ class LimitedRecognitionEngine extends FakeSpeechEngine {
   var _contextSize = 0;
 
   @override
-  Future<void> loadModel(
-    String path, {
-    ModelParams modelParams = const ModelParams(),
+  Future<void> setModel(
+    LlamaModel model, {
+    ModelParams params = const ModelParams(),
+    ModelLoadOptions download = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
   }) async {
-    await super.loadModel(path, modelParams: modelParams);
-    contextSizes.add(_contextSize = modelParams.contextSize);
+    await super.setModel(
+      model,
+      params: params,
+      download: download,
+      onProgress: onProgress,
+    );
+    contextSizes.add(_contextSize = params.contextSize);
   }
 
   @override

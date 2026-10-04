@@ -45,7 +45,7 @@ launches. A Web build needs a cross-origin isolated page.
 - One `LlamaEngine` holding the backbone GGUF, shared by two
   `DecisionEngine`s attached with `DecisionEngine.attach`: the base head and a
   Tetris-tuned head ([Decision models](../guides/decision-models)).
-- First-launch downloads with progress through `loadModelSource` for the
+- First-launch downloads with progress through `LlamaEngine.setModel` for the
   backbone and `DecisionEngine.attach` for the heads
   ([Downloads and cache](../guides/model-downloads)).
 - Yes/no and `choice` questions sent as one `systemOneBatch` call per piece,

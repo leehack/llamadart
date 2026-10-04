@@ -84,8 +84,8 @@ void main() {
       expect(capabilities.isSupported, isFalse);
       expect(
         capabilities.unsupportedReason,
-        'No multimodal projector is loaded. Load the model\'s audio projector '
-        'with LlamaEngine.loadMultimodalProjector.',
+        'No multimodal projector is loaded. Load the model with its audio '
+        'projector, as LlamaModel(source, projector: ...).',
       );
     });
 
@@ -1198,7 +1198,13 @@ void main() {
           download: ModelLoadOptions(sha256: 'a' * 64),
           backend: backend,
         ),
-        throwsA(isA<LlamaUnsupportedException>()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            startsWith('SpeechToTextEngine model loading uses 2 files'),
+          ),
+        ),
       );
       expect(backend.lastModelParams, isNull);
       expect(backend.disposeCalls, 2);

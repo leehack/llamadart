@@ -65,6 +65,17 @@ String redactUrlSecrets(
 String sourceUrlDisplay(String url, {ParseUrl? parseUrl}) =>
     _sourceDisplayUrl(url, parseUrl);
 
+/// Redacts URL diagnostics in an explicit model [path].
+///
+/// Authority URLs and paths with query or fragment key/value syntax can carry
+/// browser credentials. Other native filename literals remain unchanged.
+String sourcePathDisplay(String path) {
+  if (_authorityStart(path) < 0 && !_queryOrFragmentWithValue.hasMatch(path)) {
+    return path;
+  }
+  return redactUrlSecrets(path, sourceUrls: <String>[path]);
+}
+
 final RegExp _word = RegExp(r'\S+');
 final RegExp _wordParts = RegExp(r'''^(["'(<\[]*)(.*?)(["')\]>.,;:!]*)$''');
 final RegExp _hostPath = RegExp(

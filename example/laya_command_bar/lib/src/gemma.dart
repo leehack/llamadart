@@ -29,23 +29,23 @@ Future<IntentSource> loadEmbeddingSource({
   LoadStatus? onStatus,
 }) async {
   model ??= defaultEmbeddingModel;
-  final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: downloads);
+  onStatus?.call('Loading ${model.fileName}', null);
+  final engine = await LlamaEngine.load(
+    LlamaModel(model),
+    params: ModelParams(
+      contextSize: 512,
+      preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
+      gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
+    ),
+    onProgress: (p) => onStatus?.call(
+      'Downloading ${model!.fileName}: ${(p.receivedBytes / 1e6).round()}'
+      '${p.totalBytes == null ? '' : ' of ${(p.totalBytes! / 1e6).round()}'}'
+      ' MB',
+      p.fraction,
+    ),
+    store: ModelFileStore(downloadManager: downloads),
+  );
   try {
-    onStatus?.call('Loading ${model.fileName}', null);
-    await engine.loadModelSource(
-      model,
-      modelParams: ModelParams(
-        contextSize: 512,
-        preferredBackend: cpu ? GpuBackend.cpu : GpuBackend.auto,
-        gpuLayers: cpu ? 0 : ModelParams.maxGpuLayers,
-      ),
-      onProgress: (p) => onStatus?.call(
-        'Downloading ${model!.fileName}: ${(p.receivedBytes / 1e6).round()}'
-        '${p.totalBytes == null ? '' : ' of ${(p.totalBytes! / 1e6).round()}'}'
-        ' MB',
-        p.fraction,
-      ),
-    );
     onStatus?.call('Embedding the examples', null);
     final bank = ExampleBank(
       (texts) => engine.embedBatch([for (final t in texts) embeddingPrompt(t)]),

@@ -1185,7 +1185,13 @@ void main() {
             }
           },
         ),
-        throwsA(isA<LlamaStateException>()),
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Decision model loading was cancelled.',
+          ),
+        ),
       );
       expect(downloads.calls, hasLength(3));
       expect(owned.modelLoads, isEmpty);

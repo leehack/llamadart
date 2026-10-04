@@ -17,7 +17,7 @@ To quiet logs again, see [Logging](../configuration/logging).
 
 ### `Failed to load model from <path>`
 
-`loadModel` throws `LlamaModelException` whose details name the cause:
+The load throws `LlamaModelException` whose details name the cause:
 
 - `Model file not found: <path>` or `Model file is empty: <path>`: the path is
   wrong, unreadable or points at an incomplete download.
@@ -35,8 +35,9 @@ runtime supports ([Support matrix](../platforms/support-matrix)).
 
 ### `loadModelFromUrl requires a backend that supports URL loading.`
 
-Native backends do not load from URLs. Use `loadModelSource(...)`, which
-downloads and caches the model before loading the local file
+Only the deprecated `loadModelFromUrl` throws this: native backends do not
+load from URLs. Use `LlamaEngine.load` or `setModel` with a `ModelSource`,
+which downloads and caches the model before loading the local file
 ([Download and cache models](../guides/model-downloads)).
 
 ### Speculative draft model fails to load
@@ -57,7 +58,7 @@ resolves binaries: [Native build hooks](../platforms/native-build-hooks).
 
 ### `llama.cpp runtime could not be loaded on windows-x64`
 
-`LlamaBackendInitializationException`, which `loadModel` wraps in
+`LlamaBackendInitializationException`, which the load wraps in
 `LlamaModelException`: Windows could not load a DLL that llama.cpp imports,
 and the message names the Visual C++ runtime DLLs that did not load, such as
 `msvcp140.dll` or `vcruntime140.dll`. Install the latest Microsoft Visual C++
@@ -76,7 +77,7 @@ Linux only. Every llama.cpp load needs the OpenMP runtime. Install `libgomp1`
 
 ### `Timed out after 30000 ms waiting for the llama.cpp worker to initialize its backend.`
 
-`LlamaBackendInitializationException`, which `loadModel` wraps in
+`LlamaBackendInitializationException`, which the load wraps in
 `LlamaModelException`: the native llama.cpp worker did not finish starting
 within 30 seconds. The native runtime may be missing, fail to
 load, or hang during backend initialization. Check the native log for a
@@ -202,22 +203,31 @@ files before each create; see
 
 ## API usage errors
 
-### `Engine not ready: no model is loaded. Call loadModelSource() first.`
+### `Engine not ready: no model is loaded. Call LlamaEngine.load or setModel first.`
 
 `LlamaContextException`: generation, tokenization or another model call ran
-before `loadModelSource` or `loadModel` finished, or after `unloadModel`.
+before `LlamaEngine.load` or `setModel` finished, or after `unloadModel`.
 Await the load before using the engine.
+
+### `Local model file does not exist: <path>`
+
+`LlamaModelException`: `LlamaEngine.load`, `setModel` and the other engines'
+`load` check a local `ModelSource.path` through the download manager before
+the backend loads it. In a test that loads a made-up path into a fake
+backend, use a real temporary file, or pass a fake `ModelDownloadManager` in
+`store:` or `LlamaEngine(backend, modelDownloadManager: ...)`.
 
 ### `Model is already loaded. Call unloadModel() first.`
 
-`LlamaStateException`: `loadModel` was called while a model is loaded. Call
-`await engine.unloadModel()` first.
+`LlamaStateException`: only the deprecated `loadModel`, `loadModelSource` and
+`loadModelFromUrl` throw this, when a model is already loaded. Use `setModel`,
+which replaces the loaded model.
 
 ### `Cannot <operation> while another model lifecycle operation is in progress.`
 
 `LlamaStateException`: a load or unload started before the previous load or
 unload finished, for example
-`Cannot load a model while another model lifecycle operation is in progress.`
+`Cannot set a model while another model lifecycle operation is in progress.`
 Await each lifecycle call before starting the next.
 
 ### Embedding input exceeds `n_ubatch`

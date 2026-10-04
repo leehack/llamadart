@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:dartastic_opentelemetry/dartastic_opentelemetry.dart' as otel;
 import 'package:dartastic_opentelemetry/testing.dart';
@@ -143,6 +144,10 @@ void main() {
   test(
     'actual engine load failure reaches the observer in caller context',
     () async {
+      final directory = await Directory.systemTemp.createTemp('secret');
+      addTearDown(() => directory.delete(recursive: true));
+      final model = File('${directory.path}/secret.gguf')
+        ..writeAsBytesSync([0]);
       final engine = LlamaEngine(
         _FailingBackend(),
         observers: [const OtelObserver(modelLabel: 'safe')],
@@ -150,7 +155,7 @@ void main() {
       final parent = otel.OTel.tracer().startSpan('request');
       await otel.OTel.tracer().withSpanAsync(parent, () async {
         await expectLater(
-          engine.loadModel('/private/secret.gguf'),
+          engine.setModel(LlamaModel(ModelSource.path(model.path))),
           throwsA(isA<Exception>()),
         );
       });

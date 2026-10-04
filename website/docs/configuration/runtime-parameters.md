@@ -11,9 +11,9 @@ call. To decide which knob to change and what to measure, see
 ## ModelParams essentials
 
 ```dart
-await engine.loadModel(
-  '/path/to/model.gguf',
-  modelParams: const ModelParams(
+await engine.setModel(
+  LlamaModel(ModelSource.path('/path/to/model.gguf')),
+  params: const ModelParams(
     contextSize: 4096,
     gpuLayers: ModelParams.maxGpuLayers,
     preferredBackend: GpuBackend.vulkan,

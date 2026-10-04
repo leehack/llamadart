@@ -51,7 +51,8 @@ or shipping runtimes the app does not use.
   before any `setState` after an `await`.
 - Disable Send while a generation runs: one engine runs one generation at a
   time, and a second request throws `LlamaStateException`.
-- Show download progress from `loadModelSource(onProgress: ...)`.
+- Show download progress from `setModel(onProgress: ...)` (or
+  `LlamaEngine.load(onProgress: ...)`).
   `ModelDownloadProgress.fraction` is `null` while the total size is unknown;
   pass it straight to `LinearProgressIndicator(value: ...)` to get an
   indeterminate bar. A cancelled `ModelDownloadCancelToken` makes the load
@@ -64,7 +65,8 @@ or shipping runtimes the app does not use.
   `ModelDownloadController`, which has no Flutter dependency. It owns
   cancellation: call `controller.cancel()` and never put a `cancelToken` in
   the options you pass to `start` (it throws `LlamaArgumentException`). Then
-  `engine.loadModel(entry.filePath)`.
+  `engine.setModel(LlamaModel(ModelSource.path(entry.filePath)))`, or pass
+  the original `ModelSource`: the load reuses the cached file.
 - On Android and iOS the default cache is already `llamadart/models` in the
   app's cache directory (what `getApplicationCacheDirectory()` returns), which
   survives app updates; no `path_provider` setup is needed. To move every
@@ -206,10 +208,10 @@ class ChatController {
     status = 'Downloading model';
     onChanged();
     try {
-      await _engine.loadModelSource(
-        ModelSource.parse(modelUri),
-        modelParams: const ModelParams(contextSize: 2048),
-        options: isWeb
+      await _engine.setModel(
+        LlamaModel(ModelSource.parse(modelUri)),
+        params: const ModelParams(contextSize: 2048),
+        download: isWeb
             ? ModelLoadOptions.defaults
             : ModelLoadOptions(cancelToken: _downloadCancel),
         onProgress: (ModelDownloadProgress progress) {
@@ -347,8 +349,8 @@ Render `snapshot.stage` (`resolving`, `checkingCache`, `downloading`,
 `verifying`, `ready`, `failed`, `cancelled`), `snapshot.fraction` and the
 redacted `snapshot.errorMessage`; source and redirect URL credentials are
 removed from failure diagnostics. Transient I/O failures retain retry behavior.
-Pass the returned path to
-`engine.loadModel(path)`.
+Load the returned path with
+`engine.setModel(LlamaModel(ModelSource.path(path)))`.
 
 ## More
 

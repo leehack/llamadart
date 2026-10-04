@@ -46,9 +46,9 @@ Future<void> main(List<String> args) async {
 
   try {
     // 1. Load an embedding model and index the documents.
-    await embedder.loadModelSource(
-      ModelSource.parse(embeddingModel),
-      modelParams: ModelParams(
+    await embedder.setModel(
+      LlamaModel(ModelSource.parse(embeddingModel)),
+      params: ModelParams(
         contextSize: 2048,
         maxParallelSequences: documents.length,
       ),
@@ -71,9 +71,9 @@ Future<void> main(List<String> args) async {
     }
 
     // 3. Answer with a chat model, grounded in the retrieved chunks.
-    await generator.loadModelSource(
-      ModelSource.parse(chatModel),
-      modelParams: const ModelParams(contextSize: 2048),
+    await generator.setModel(
+      LlamaModel(ModelSource.parse(chatModel)),
+      params: const ModelParams(contextSize: 2048),
       onProgress: _printProgress('chat model'),
     );
     final String context = top.map((hit) => '- ${hit.text}').join('\n');
