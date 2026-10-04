@@ -42,19 +42,27 @@ class ModelSource {
 
   /// Creates an HTTP(S) URL model source.
   factory ModelSource.url(Uri url, {String? fileName, ModelFormat? format}) {
-    _validateRemoteUri(url, 'url');
-    final inferredFileName = fileName == null
-        ? _fileNameFromUri(url)
-        : _validateRemoteFileName(fileName, 'fileName');
-    return ModelSource._(
-      kind: ModelSourceKind.http,
-      url: url,
-      fileName: inferredFileName,
-      canonicalKey: fileName == null
-          ? url.toString()
-          : 'url:${url.toString()}\nfileName:$inferredFileName',
-      format: format,
-    );
+    try {
+      _validateRemoteUri(url, 'url');
+      final inferredFileName = fileName == null
+          ? _fileNameFromUri(url)
+          : _validateRemoteFileName(fileName, 'fileName');
+      return ModelSource._(
+        kind: ModelSourceKind.http,
+        url: url,
+        fileName: inferredFileName,
+        canonicalKey: fileName == null
+            ? url.toString()
+            : 'url:${url.toString()}\nfileName:$inferredFileName',
+        format: format,
+      );
+    } on ArgumentError catch (error) {
+      throw ArgumentError.value(
+        sourceUrlDisplay('$url'),
+        error.name,
+        redactUrlSecrets('${error.message}', sourceUrls: <String>['$url']),
+      );
+    }
   }
 
   /// Creates a Hugging Face model source from repository details.
@@ -522,7 +530,7 @@ String _fileNameFromUri(Uri uri) {
       .where((segment) => segment.isNotEmpty);
   if (rawSegments.isEmpty) {
     throw ArgumentError.value(
-      uri,
+      sourceUrlDisplay('$uri'),
       'url',
       'URL must include a model file name.',
     );

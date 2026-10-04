@@ -6,6 +6,8 @@ void main() {
     for (final value in [
       'ftp://alice:ConstructorSecret@example.com/m.gguf?token=ConstructorToken',
       'https:alice:ConstructorSecret@example.com/m.gguf?token=ConstructorToken',
+      'https://alice:ConstructorSecret@host/ConstructorSecret%2F?token=ConstructorToken',
+      'https://alice:ConstructorSecret@host/?token=ConstructorToken',
     ]) {
       expect(
         () => ModelSource.url(Uri.parse(value)),
@@ -25,6 +27,7 @@ void main() {
 
   for (final source in [
     's3://user:ParsePassword@bucket/m.gguf?X-Amz-Signature=ParseSignature',
+    's3://host/ParseSignature/m.gguf?token=ParseSignature',
     'gs://user:ParsePassword@bucket/m.gguf',
     'hf://owner/repo/m.gguf?token=ParseSignature',
     'hf://owner/repo/m%2Ffile.gguf?revision=main#ParseSignature',

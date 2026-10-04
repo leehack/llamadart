@@ -29,7 +29,7 @@ typedef ParseUrl = ParsedUrl? Function(String url);
 ///   values, such as `1` in `?v=1`, stay in the text.
 ///
 /// A whole token is not preceded or followed by an ASCII letter or digit.
-/// Slashless `scheme:userinfo@host` URLs are treated as `scheme://userinfo@host`.
+/// Slashless HTTP(S), FTP, WS and WSS userinfo URLs are treated as authority URLs.
 /// Userinfo runs from after `//` to the last `@` of the authority, and to the
 /// last `@` of the URL.
 ///
@@ -49,8 +49,8 @@ typedef ParseUrl = ParsedUrl? Function(String url);
 /// host follows the last `@` before the first `?` or `#` instead. The host is
 /// left out when neither applies, when an authority with an `@` and an empty
 /// or `/` path is followed by `?` or `#` and then another `@`, or, for a
-/// source URL, when the display form would contain its userinfo or password
-/// as [parseUrl] parses them.
+/// source URL, when the display form would contain its known credentials or
+/// credential/signature query values.
 String redactUrlSecrets(
   String text, {
   Iterable<String> sourceUrls = const <String>[],
@@ -75,12 +75,17 @@ final RegExp _queryOrFragmentWithValue = RegExp(r'[?#][^\s?#=]*=');
 final RegExp _leadingUserInfo = RegExp(r'^[^\s/@]+@');
 final RegExp _schemeAndSlashes = RegExp(r'[A-Za-z][A-Za-z0-9+.-]*://');
 final RegExp _slashlessAuthority = RegExp(
-  r'^[A-Za-z][A-Za-z0-9+.-]*:(?=[^/?#\s]*@)',
+  r'^(?:https?|ftp|wss?):(?=[^/?#\s]*@)',
+  caseSensitive: false,
 );
 final RegExp _authorityEnd = RegExp(r'[/?#\\]');
 final RegExp _queryOrFragment = RegExp('[?#]');
 final RegExp _hostAndPort = RegExp(
   r'^(?:[^\s/?#@\\:\[\]"<>]*|\[[0-9A-Fa-f:.]+\])(?::\d*)?$',
+);
+final RegExp _secretQueryKey = RegExp(
+  r'^(?:token|access_token|auth|authorization|password|passwd|secret|sig|signature|api[-_]?key|key|x-amz-(?:signature|credential|security-token)|x-goog-(?:signature|credential))$',
+  caseSensitive: false,
 );
 final RegExp _percentEscapes = RegExp('(?:%[0-9A-Fa-f]{2})+');
 
@@ -109,7 +114,11 @@ String _removeSourceUrlSecrets(
     for (final secret in secrets.delimited) {
       delimited.addAll(_encodedForms(secret));
     }
-    for (final secret in <String>{...secrets.credentials, ...secrets.tokens}) {
+    for (final secret in <String>{
+      ...secrets.credentials,
+      ...secrets.tokens,
+      ...secrets.sensitiveQueryValues,
+    }) {
       tokens.addAll(_encodedForms(secret));
     }
   }
@@ -155,6 +164,12 @@ class _SourceUrlSecrets {
         _addQueryAndFragment(lastAt + 1);
       }
     }
+    if (start < 0) {
+      final userInfo = _leadingUserInfo.matchAsPrefix(url);
+      if (userInfo != null) {
+        _addUserInfo(url.substring(0, userInfo.end - 1), parsed: true);
+      }
+    }
     if (parsedUrl != null) {
       final username = parsedUrl.username;
       final password = parsedUrl.password;
@@ -188,11 +203,15 @@ class _SourceUrlSecrets {
   /// whole tokens.
   final Set<String> tokens = <String>{};
 
+  /// Explicit credential/signature query values that must not reappear in a display path.
+  final Set<String> sensitiveQueryValues = <String>{};
+
   void _addUserInfo(String userInfo, {required bool parsed}) {
     final colon = userInfo.indexOf(':');
     for (final secret in <String>[
       userInfo,
       if (colon >= 0) userInfo.substring(colon + 1),
+      if (colon >= 0) userInfo.substring(userInfo.lastIndexOf(':') + 1),
     ]) {
       if (secret.isEmpty) continue;
       credentials.add(secret);
@@ -216,7 +235,15 @@ class _SourceUrlSecrets {
     for (final part in query.split('&')) {
       _addToken(part);
       final equals = part.indexOf('=');
-      if (equals >= 0) _addToken(part.substring(equals + 1));
+      if (equals >= 0) {
+        final value = part.substring(equals + 1);
+        _addToken(value);
+        if (_secretQueryKey.hasMatch(
+          _percentDecoded(part.substring(0, equals)),
+        )) {
+          if (value.isNotEmpty) sensitiveQueryValues.add(value);
+        }
+      }
     }
   }
 
@@ -307,7 +334,7 @@ String _redactUrl(String url) {
 }
 
 /// The display form of a source [url], without its host when the display
-/// form would contain one of its parsed credentials.
+/// form would contain one of its known credentials or credential/signature query values.
 String _sourceDisplayUrl(
   String url,
   ParseUrl? parseUrl, [
@@ -315,12 +342,21 @@ String _sourceDisplayUrl(
 ]) {
   final display = _displayUrl(url);
   final start = _authorityStart(url);
-  if (start < 0) return display;
   secrets ??= _SourceUrlSecrets(url, parseUrl?.call(url));
-  for (final secret in secrets.parsedCredentials) {
+  for (final secret in <String>{
+    ...secrets.parsedCredentials,
+    ...secrets.sensitiveQueryValues,
+  }) {
     for (final form in _encodedForms(secret)) {
-      if (form.isNotEmpty && display.contains(form)) {
-        return url.substring(0, start).toLowerCase();
+      if (form.isNotEmpty &&
+          (secrets.parsedCredentials.contains(secret)
+              ? display.contains(form)
+              : RegExp(
+                  '(?<![A-Za-z0-9])${RegExp.escape(form)}(?![A-Za-z0-9])',
+                ).hasMatch(display))) {
+        return start < 0
+            ? '<redacted-url>'
+            : url.substring(0, start).toLowerCase();
       }
     }
   }
@@ -338,6 +374,9 @@ String _displayUrl(String url) {
   if (start < 0) {
     final end = url.indexOf(_queryOrFragment);
     final base = end < 0 ? url : url.substring(0, end);
+    if (_leadingUserInfo.hasMatch(base)) {
+      return base.replaceFirst(_leadingUserInfo, '');
+    }
     final uri = Uri.tryParse(base);
     if (uri == null) return base;
     return Uri(

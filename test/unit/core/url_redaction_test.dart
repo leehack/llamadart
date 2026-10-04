@@ -3,6 +3,28 @@ import 'package:test/test.dart';
 
 void main() {
   group('redactUrlSecrets', () {
+    test('relative userinfo is not mistaken for a URL scheme', () {
+      expect(
+        redactUrlSecrets('Bad URL (u:pw@cdn.example.com:8080/m.gguf)'),
+        'Bad URL (cdn.example.com:8080/m.gguf)',
+      );
+    });
+    test(
+      'a display form never reinserts a known signature repeated in its path',
+      () {
+        const source =
+            's3://host/LongSecretSignature/m.gguf?token=LongSecretSignature';
+        expect(sourceUrlDisplay(source), 's3://');
+        expect(
+          redactUrlSecrets(
+            'Failed $source bare LongSecretSignature',
+            sourceUrls: [source],
+          ),
+          isNot(contains('LongSecretSignature')),
+        );
+      },
+    );
+
     test('redacts slashless credentials and their repeated password', () {
       const source =
           'https:alice:SlashlessSecret@example.com/m/SlashlessSecret.gguf?token=QuerySecretValue';
