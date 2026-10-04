@@ -233,7 +233,7 @@ Knobs:
   before creating a context. Its public API cannot establish a safe graph-node
   budget for rollback snapshots, and excessive reservations can abort the
   process. Keep the default `0` for ordinary generation. Speculative strategies
-requiring recurrent rollback remain unsupported until a native runtime can
+  requiring recurrent rollback remain unsupported until a native runtime can
   validate that budget; a small value measured on one model is not a safe bound
   for other models. Nonrecurrent targets retain native handling. WebGPU retains
   its separate bridge capability contract.
