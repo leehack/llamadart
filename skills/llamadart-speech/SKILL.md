@@ -85,12 +85,14 @@ description: >-
     throw `LlamaAudioFormatException`. The API does not record or resample.
 - `transcribe` / `synthesize` throw typed errors during preflight (invalid
   input, `LlamaUnsupportedException`, `LlamaStateException` when a speech task
-  is already active). After a task starts, failures arrive as an error on the
-  single-subscription `task.events` stream and as
-  `SpeechToTextCompletionState.failed` / `TextToSpeechCompletionState.failed`
-  with `error` on `task.done`. `transcribeOnce` / `synthesizeOnce` return the
-  final result, or throw the task's failure, or `LlamaStateException` when
-  cancelled. After `dispose()`, starting a task throws `LlamaStateException`.
+  is already active). After a task starts, the single-subscription
+  `task.events` stream carries progress only and never emits an error.
+  `await task.result` returns the result, or throws the task's failure, or
+  `LlamaStateException` when cancelled; `task.done` reports the same outcome
+  (`SpeechToTextCompletionState` / `TextToSpeechCompletionState` with `error`)
+  and never throws. `transcribeOnce` / `synthesizeOnce` are
+  `(await start(request)).result`. After `dispose()`, starting a task throws
+  `LlamaStateException`.
 - Qwen3-ASR limits:
   - It is validated only up to 30 seconds per input; longer audio can
     silently drop or repeat sentences. Split recordings into windows of 30
@@ -118,7 +120,11 @@ description: >-
   `package:llamadart/backend.dart`) are synchronous and must stay off a
   Flutter UI isolate.
 - Cancellation is cooperative: `task.cancel()` or `await session.cancel()`.
-  `done` then reports `cancelled`. Cancelling or pausing the `events`
+  `done` then reports `cancelled`, and `task.result` throws
+  `LlamaStateException`. `task.cancel()` stops only that task; it does not
+  cancel other requests on the same `LlamaEngine`. A streaming session's `events`
+  still report a failure as a stream error (also on `session.done`), so give
+  its `listen` an `onError`. Cancelling or pausing the `events`
   subscription does not stop or throttle inference. The speech engine's
   `dispose()`, and `unloadModel()` and `dispose()` on its `LlamaEngine`,
   cancel an active task.
@@ -299,23 +305,20 @@ Future<void> speak(
     final TextToSpeechTask task = await synthesizer.synthesize(
       TextToSpeechRequest(text: text, language: 'English', maxFrames: 1024),
     );
-    await for (final TextToSpeechEvent event in task.events) {
+    task.events.listen((TextToSpeechEvent event) {
       if (event is TextToSpeechProgressEvent) {
         print('${event.phase.name}: ${event.framesGenerated} frames');
-      } else if (event is TextToSpeechFinalEvent) {
-        final TextToSpeechResult result = event.result;
-        if (result.truncated) {
-          print('Hit maxFrames; audio may end early.');
-        }
-        final Uint8List wav = result.toWavBytes();
-        await File(outPath).writeAsBytes(wav);
-        print('Wrote ${result.duration} at ${result.sampleRateHz} Hz');
       }
+    });
+    final TextToSpeechResult result = await task.result;
+    if (result.truncated) {
+      print('Hit maxFrames; audio may end early.');
     }
-    final TextToSpeechCompletion completion = await task.done;
-    print(completion.state);
+    final Uint8List wav = result.toWavBytes();
+    await File(outPath).writeAsBytes(wav);
+    print('Wrote ${result.duration} at ${result.sampleRateHz} Hz');
   } on LlamaException catch (error) {
-    print('Synthesis failed: $error');
+    print('Synthesis failed or was cancelled: $error');
   } finally {
     await synthesizer.dispose();
   }

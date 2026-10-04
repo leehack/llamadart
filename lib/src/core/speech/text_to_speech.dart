@@ -359,18 +359,38 @@ class TextToSpeechTask {
 
   /// Progress followed by one final PCM event.
   ///
-  /// This is a single-subscription stream. Runtime failures are emitted as a
-  /// stream error and are also reported by [done]. Current synthesis exposes
-  /// PCM only after generation completes; progress is not live audio.
+  /// This is a single-subscription stream. It carries progress only and
+  /// never emits an error: a failed or cancelled task closes it without a
+  /// final event, and [done] and [result] report why. Current synthesis
+  /// exposes PCM only after generation completes; progress is not live
+  /// audio.
   Stream<TextToSpeechEvent> get events => _eventsController.stream;
 
-  /// Completes once the task succeeds, is cancelled, or fails.
+  /// Completes once the task succeeds, is cancelled, or fails. It never
+  /// completes with an error.
   Future<TextToSpeechCompletion> get done => _doneCompleter.future;
+
+  /// The complete synthesized audio.
+  ///
+  /// Throws the task's [LlamaException] when it fails, and
+  /// [LlamaStateException] when it is cancelled.
+  Future<TextToSpeechResult> get result => _result;
+
+  late final Future<TextToSpeechResult> _result = done.then(
+    (completion) => switch (completion.state) {
+      TextToSpeechCompletionState.completed => completion.result!,
+      TextToSpeechCompletionState.failed => throw completion.error!,
+      TextToSpeechCompletionState.cancelled => throw LlamaStateException(
+        'Speech synthesis was cancelled.',
+      ),
+    },
+  );
 
   /// Whether cancellation has been requested.
   bool get isCancellationRequested => _cancelled;
 
-  /// Requests cooperative cancellation. Calling this more than once is safe.
+  /// Requests cooperative cancellation of this task. Calling this more than
+  /// once is safe.
   void cancel() {
     if (_cancelled || _doneCompleter.isCompleted) {
       return;
@@ -608,12 +628,19 @@ class TextToSpeechEngine {
     );
   }
 
-  /// Starts one complete synthesis task.
+  /// Starts one complete synthesis and returns the running task.
+  ///
+  /// The task's [TextToSpeechTask.events] report prompt processing and
+  /// generated frames; the PCM arrives only on completion, in one
+  /// [TextToSpeechFinalEvent] and in [TextToSpeechTask.result].
+  /// [TextToSpeechTask.cancel] stops only this synthesis.
   ///
   /// Invalid input and unsupported preflight checks throw before the task is
-  /// returned. Failures after backend startup are reported through the task.
-  /// Throws [LlamaStateException] after [dispose]; [dispose] cancels a
-  /// running task.
+  /// returned. Failures after backend startup are reported by
+  /// [TextToSpeechTask.done] and [TextToSpeechTask.result]. Throws
+  /// [LlamaStateException] after [dispose]; [dispose],
+  /// [LlamaEngine.unloadModel] and [LlamaEngine.dispose] cancel a running
+  /// task.
   Future<TextToSpeechTask> synthesize(TextToSpeechRequest request) async {
     _throwIfDisposed();
     _validateRequest(request);
@@ -667,16 +694,9 @@ class TextToSpeechEngine {
   /// Throws what [synthesize] throws, the failure of the task, or
   /// [LlamaStateException] when the task is cancelled, as [dispose] and
   /// [LlamaEngine.unloadModel] do.
-  Future<TextToSpeechResult> synthesizeOnce(TextToSpeechRequest request) async {
-    final completion = await (await synthesize(request)).done;
-    return switch (completion.state) {
-      TextToSpeechCompletionState.completed => completion.result!,
-      TextToSpeechCompletionState.failed => throw completion.error!,
-      TextToSpeechCompletionState.cancelled => throw LlamaStateException(
-        'Speech synthesis was cancelled.',
-      ),
-    };
-  }
+  Future<TextToSpeechResult> synthesizeOnce(
+    TextToSpeechRequest request,
+  ) async => (await synthesize(request)).result;
 
   /// Cancels a running task, waits for it to stop, and disposes the
   /// [LlamaEngine] that [load] created. An engine passed to [attach] stays
@@ -820,7 +840,7 @@ class TextToSpeechEngine {
       task._eventsController.add(TextToSpeechFinalEvent(result));
       unawaited(task._eventsController.close());
       outcome = TextToSpeechCompletion.completed(result);
-    } catch (error, stackTrace) {
+    } catch (error) {
       if (task.isCancellationRequested) {
         _closeCancelledEvents(task);
         outcome = const TextToSpeechCompletion.cancelled();
@@ -829,7 +849,6 @@ class TextToSpeechEngine {
       final speechError = error is LlamaException
           ? error
           : LlamaTextToSpeechException('Speech synthesis failed.', error);
-      task._eventsController.addError(speechError, stackTrace);
       unawaited(task._eventsController.close());
       outcome = TextToSpeechCompletion.failed(speechError);
     } finally {

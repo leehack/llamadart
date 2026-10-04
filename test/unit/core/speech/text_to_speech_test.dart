@@ -100,6 +100,7 @@ void main() {
       final finalEvent = events[2] as TextToSpeechFinalEvent;
       expect(completion.state, TextToSpeechCompletionState.completed);
       expect(completion.result, same(finalEvent.result));
+      expect(await task.result, same(finalEvent.result));
       expect(finalEvent.result.sampleRateHz, 24000);
       expect(finalEvent.result.channelCount, 1);
       expect(finalEvent.result.samples, <double>[-1, -0.5, 0, 0.5, 1]);
@@ -214,6 +215,16 @@ void main() {
       expect(backend.cancelCalls, 1);
       expect(completion.state, TextToSpeechCompletionState.cancelled);
       expect(await task.events.toList(), isEmpty);
+      await expectLater(
+        task.result,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Speech synthesis was cancelled.',
+          ),
+        ),
+      );
     });
 
     test('frees the engine lease before the task reports done', () async {
@@ -263,6 +274,7 @@ void main() {
         expect(task.isCancellationRequested, isTrue);
         expect((await task.done).state, TextToSpeechCompletionState.cancelled);
         expect(await task.events.toList(), isEmpty);
+        await expectLater(task.result, throwsA(isA<LlamaStateException>()));
       });
     }
 
@@ -411,15 +423,11 @@ void main() {
       final task = await speechEngine.synthesize(
         const TextToSpeechRequest(text: 'Fail.'),
       );
-      final streamError = Completer<Object>();
-      task.events.listen(
-        (_) {},
-        onError: (Object error) => streamError.complete(error),
-      );
-
+      expect(await task.events.toList(), isEmpty);
       final completion = await task.done;
-      expect(await streamError.future, isA<LlamaTextToSpeechException>());
       expect(completion.state, TextToSpeechCompletionState.failed);
+      expect(completion.error, isA<LlamaTextToSpeechException>());
+      await expectLater(task.result, throwsA(same(completion.error)));
 
       backend.synthesisError = null;
       final retry = await speechEngine.synthesize(

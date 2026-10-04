@@ -3907,21 +3907,16 @@ class ChatProvider extends ChangeNotifier {
         return false;
       }
       _activeTextToSpeechTask = task;
-      eventSubscription = task.events.listen(
-        (event) {
-          if (event is TextToSpeechProgressEvent &&
-              identical(_activeTextToSpeechTask, task) &&
-              _textToSpeechContextMatches(context)) {
-            _textToSpeechProgress = event;
-            if (!_isDisposed) {
-              notifyListeners();
-            }
+      eventSubscription = task.events.listen((event) {
+        if (event is TextToSpeechProgressEvent &&
+            identical(_activeTextToSpeechTask, task) &&
+            _textToSpeechContextMatches(context)) {
+          _textToSpeechProgress = event;
+          if (!_isDisposed) {
+            notifyListeners();
           }
-        },
-        onError: (Object _, StackTrace _) {
-          // The typed completion below carries the same failure.
-        },
-      );
+        }
+      });
 
       final completion = await task.done;
       if (!_textToSpeechContextMatches(context)) {

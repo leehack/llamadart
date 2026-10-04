@@ -554,6 +554,26 @@ void main() {
       expect(provider.status, 'Generation cancelled.');
     });
 
+    test('honors a cancel requested while the generation starts', () async {
+      models.installed.add(ImageModelProfile.sdxs.id);
+      final generateGate = generation.generateGate = Completer<void>();
+      final provider = await initializedProvider();
+
+      final generating = provider.generate(prompt: 'fox');
+      await pumpEventQueue();
+      expect(provider.stage, ImageGenerationStage.generating);
+      final run = generation.generator!.runs.single;
+      provider.cancelGeneration();
+      expect(run.cancelled, isFalse);
+      generateGate.complete();
+      await pumpEventQueue();
+
+      expect(run.cancelled, isTrue);
+      await generating;
+      expect(provider.stage, ImageGenerationStage.idle);
+      expect(provider.status, 'Generation cancelled.');
+    });
+
     test('ignores a second generate or a model change while busy', () async {
       models.installed
         ..add(ImageModelProfile.sdxs.id)
@@ -917,6 +937,7 @@ class FakeImageGenerationService implements ImageGenerationService {
   Object? loadError;
   Object? generateError;
   Completer<void>? loadGate;
+  Completer<void>? generateGate;
   int loadCount = 0;
   final List<ImageGenerationModel> loadedModels = <ImageGenerationModel>[];
   FakeImageGenerator? generator;
@@ -943,18 +964,22 @@ class FakeImageGenerationService implements ImageGenerationService {
     if (loadError case final error?) {
       throw error;
     }
-    return generator = FakeImageGenerator(generateError);
+    return generator = FakeImageGenerator(
+      generateError,
+      generateGate: generateGate,
+    );
   }
 }
 
 class FakeImageGenerator implements ImageGenerator {
   final Object? generateError;
+  final Completer<void>? generateGate;
   final List<FakeImageGenerationRun> runs = <FakeImageGenerationRun>[];
   bool disposed = false;
   Completer<void>? disposeGate;
   Object? disposeError;
 
-  FakeImageGenerator(this.generateError);
+  FakeImageGenerator(this.generateError, {this.generateGate});
 
   @override
   Future<ImageGenerationCapabilities> get capabilities async =>
@@ -965,12 +990,13 @@ class FakeImageGenerator implements ImageGenerator {
       );
 
   @override
-  ImageGenerationRun generate(ImageGenerationRequest request) {
+  Future<ImageGenerationRun> generate(ImageGenerationRequest request) async {
     if (generateError case final error?) {
       throw error;
     }
     final run = FakeImageGenerationRun(request);
     runs.add(run);
+    await generateGate?.future;
     return run;
   }
 

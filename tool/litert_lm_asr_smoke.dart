@@ -82,6 +82,25 @@ Future<void> main(List<String> args) async {
         '"$normalizedExpected", received "$normalizedTranscript".',
       );
     }
+    final request = SpeechToTextRequest(
+      audio: SpeechAudioPcmInput(fixture.samples),
+    );
+    final taskTranscript = (await recognizer.transcribeOnce(request)).text;
+    if (!_normalize(taskTranscript).contains(normalizedExpected)) {
+      throw StateError(
+        'LiteRT-LM ASR task transcript mismatch: expected a transcript '
+        'containing "$normalizedExpected", received '
+        '"${_normalize(taskTranscript)}".',
+      );
+    }
+    final cancelled = await recognizer.transcribe(request);
+    cancelled.cancel();
+    final cancelledState = (await cancelled.done).state;
+    if (cancelledState != SpeechToTextCompletionState.cancelled) {
+      throw StateError(
+        'A cancelled LiteRT-LM ASR task reported ${cancelledState.name}.',
+      );
+    }
     final result = <String, Object>{
       'modelPreset': preset.name,
       'backend': LiteRtLmAsrBackend.cpu.name,
@@ -92,6 +111,8 @@ Future<void> main(List<String> args) async {
       'fixtureId': fixture.fixtureId,
       'elapsedMilliseconds': stopwatch.elapsedMilliseconds,
       'transcript': transcript,
+      'taskTranscript': taskTranscript,
+      'cancelledTaskState': cancelledState.name,
     };
     print('RESULT litert_lm_asr ${jsonEncode(result)}');
   } finally {
