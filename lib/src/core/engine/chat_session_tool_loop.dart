@@ -75,6 +75,7 @@ enum LlamaToolLoopStopReason {
   /// `GenerationParams.maxTokens` or filled the context before the model
   /// ended it. Its text may be an unfinished tool call or thinking rather
   /// than an answer, so its calls were not run and the turn was rolled back.
+  /// Complete calls before an incomplete parallel call are withheld too.
   /// [LlamaToolLoopResult.completion] keeps the partial reply; raise
   /// `maxTokens` and send the turn again.
   truncated,
@@ -362,9 +363,14 @@ extension ChatSessionToolLoopExtension on ChatSession {
           }
 
           if (request.isCancelled()) {
+            // A limited reply may contain reasoning but no executable calls;
+            // it still cannot close the turn with a trustworthy answer.
             yield stop(
               LlamaToolLoopStopReason.cancelled,
-              rollBack: reply.toolCalls.isNotEmpty || !turn.endsWithReply,
+              rollBack:
+                  reply.finishReason == LlamaFinishReason.length ||
+                  reply.toolCalls.isNotEmpty ||
+                  !turn.endsWithReply,
             );
             return;
           }

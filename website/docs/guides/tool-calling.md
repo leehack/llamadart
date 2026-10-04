@@ -82,10 +82,16 @@ continues the current turn.
   (`contextExceeded`). A reply cut off at `GenerationParams.maxTokens` or the
   end of the context (`finishReason` `length`) stops the loop with
   `truncated`, without running its calls: its text may be an unfinished
-  tool call or thinking, not an answer. `result.completion` keeps it; raise
-  `maxTokens` and send the turn again.
+  tool call or thinking, not an answer. A reported limit takes precedence over
+  any parsed calls: even complete calls before a partial second parallel call
+  are withheld, so `result.pendingToolCalls` is empty for that reply.
+  `result.completion` keeps its text and thinking; raise `maxTokens` and send
+  the turn again. The whole turn is rolled back, including earlier tool
+  rounds; effects of tools that already ran cannot be undone.
 - **Cancel:** `engine.cancelGeneration()` stops the loop with `cancelled`.
   Running tools finish first. A partial answer stays as the turn's reply.
+  If a reply also reports a generation limit, `cancelled` takes precedence
+  and the incomplete turn is rolled back.
 - `toolChoice` applies to the first request only, so `ToolChoice.required`
   forces one call and later rounds can answer.
 

@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Prevented execution of incomplete parallel tool-call replies when generation
+  reaches a reported limit; the tool loop rolls back the whole turn.
 - Redacted known URL secrets repeated in model filenames from download
   cancellation messages.
 - **Fixed:** URL-valued `ModelSource.path` diagnostics redact credentials and
