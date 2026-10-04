@@ -80,6 +80,13 @@ in the llamadart-getting-started and llamadart-chat-streaming skills.
     `usage` `v0.1.54+`, Qwen3-ASR `v0.1.30+` (also needs
     `window.__llamadartBridgeSpeechToTextSupported = true`), Qwen3-TTS
     `v0.1.33+` on memory64.
+- With the bridge's `supportsCompletionUsage` probe (`v0.1.54+`), a runtime
+  `length` signal becomes `LlamaFinishReason.length`; `sendWithTools` returns
+  `truncated` and rolls back the turn. Normal stop, cancellation and missing
+  reasons do not imply a limit. A Web speech transcript that reaches a cap
+  throws `LlamaSpeechTranscriptTruncatedException` with
+  `LlamaSpeechTranscriptLimit.runtime`: the bridge cannot distinguish output,
+  context and media caps. Older bridges cannot report this truncation.
 - WebGPU grammar applies from the first token at `root`: `grammarLazy` or
   another `grammarRoot` throws `LlamaUnsupportedException`. State files live in
   the bridge's WASMFS and are lost on reload; `getPerformanceContext()` returns

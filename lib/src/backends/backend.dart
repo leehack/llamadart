@@ -257,6 +257,23 @@ enum BackendGenerationLimit {
 
   /// The prompt and generated tokens filled the context.
   contextSize,
+
+  /// The runtime reported a limit without distinguishing its cause.
+  ///
+  /// This may be an output-token, context, or runtime-specific media limit.
+  runtime,
+}
+
+/// Optional declaration that a runtime cannot reliably report generation limits.
+///
+/// Automatic tool loops reject runtimes that declare an unsupported reason,
+/// because truncation must not execute an incomplete set of tool calls.
+abstract class BackendGenerationLimitSupport {
+  /// Why the active runtime cannot distinguish normal completion from a limit.
+  ///
+  /// Null means no unsupported declaration. Backends without this optional
+  /// interface retain their existing behavior; absence does not prove support.
+  String? get generationLimitUnsupportedReason;
 }
 
 /// Internal backend probe for the limit that ended a generation stream.

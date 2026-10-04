@@ -85,10 +85,12 @@ unavailable choice there throws `LlamaModelException`.
 | State persistence | Yes | Bridge `v0.1.15+`; WASMFS paths, lost on page reload | No | No |
 | Embeddings | Yes | Bridge `v0.1.7+` | No | No |
 | Next-token scores | Yes | Bridge `v0.1.52+` | No | No |
+| Generation-limit reporting | `length` for output or context limits | `length` with bridge usage probe (`v0.1.54+`); cap cause unspecified | No | No |
 | Per-request usage | `usage` on the final `create` chunk | Bridge `v0.1.54+` | No | No ([#725](https://github.com/leehack/llamadart/issues/725)) |
 | Operation observers | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `llamaCpp` | Yes; after a load, `runtime` is `liteRtLm` | Yes; after a load, `runtime` is `liteRtLm` |
 | Multi-turn `ChatSession` | Yes | Yes | Yes | No: single-turn text prompts only |
 | Tool calling | Yes | Yes | Yes | No: tools do not reach the model |
+| Automatic `sendWithTools` / `completeWithTools` loop | Yes | Requires reliable runtime finish reporting | No: pinned runtime has no reliable termination cause; throws before generation | No: pinned runtime has no reliable termination cause; throws before generation |
 | Multimodal | Image and audio with a projector | Image and audio with a projector URL | Image and audio files or bytes, when the bundle supports them | No |
 | Video | No | No | No | No |
 

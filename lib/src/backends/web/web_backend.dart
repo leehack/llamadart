@@ -37,6 +37,8 @@ class WebAutoBackend
         BackendDecision,
         BackendGenerationCapabilitiesSupport,
         BackendGenerationUsageReporting,
+        BackendGenerationLimitReporting,
+        BackendGenerationLimitSupport,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -534,6 +536,25 @@ class WebAutoBackend
     final delegate = _delegate;
     return delegate is BackendRuntimeIdentity
         ? (delegate as BackendRuntimeIdentity).runtime
+        : null;
+  }
+
+  @override
+  String? get generationLimitUnsupportedReason {
+    final delegate = _delegate;
+    return delegate is BackendGenerationLimitSupport
+        ? (delegate as BackendGenerationLimitSupport)
+              .generationLimitUnsupportedReason
+        : null;
+  }
+
+  @override
+  BackendGenerationLimit? generationLimitOf(Stream<List<int>> generation) {
+    final delegate = _delegate;
+    return delegate is BackendGenerationLimitReporting
+        ? (delegate as BackendGenerationLimitReporting).generationLimitOf(
+            generation,
+          )
         : null;
   }
 

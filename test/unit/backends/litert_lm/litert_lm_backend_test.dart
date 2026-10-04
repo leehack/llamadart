@@ -7,7 +7,9 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:llamadart/llamadart.dart' as api;
 import 'package:llamadart/src/backends/backend.dart';
+import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
@@ -41,6 +43,97 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  for (final routed in [false, true]) {
+    test('rejects automatic tool loops before native generation '
+        '(routed: $routed)', () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        generationChunks: [utf8.encode('Hello')],
+      );
+      final liteRt = LiteRtLmBackend(initialSendPort: worker.sendPort);
+      final LlamaBackend backend = routed
+          ? NativeAutoBackend(liteRtLmFactory: () => liteRt)
+          : liteRt;
+      final engine = LlamaEngine(backend);
+      final session = api.ChatSession(engine, maxContextTokens: 0);
+      final previous = api.LlamaChatMessage.fromText(
+        role: api.LlamaChatRole.user,
+        text: 'Existing turn',
+      );
+      session.addMessage(previous);
+      var callbacks = 0;
+      var toolRuns = 0;
+      final tools = [
+        api.ToolDefinition(
+          name: 'weather',
+          description: 'Weather',
+          parameters: const [],
+          handler: (_) async {
+            toolRuns++;
+            return 'sunny';
+          },
+        ),
+      ];
+      try {
+        await engine.loadModel(modelFile.path);
+        expect(engine.runtime, api.LlamaRuntime.liteRtLm);
+        expect(
+          (backend as BackendGenerationLimitSupport)
+              .generationLimitUnsupportedReason,
+          contains('v0.17.0-6'),
+        );
+        for (final resume in [false, true]) {
+          await expectLater(
+            session.completeWithTools(
+              resume ? const [] : const [api.LlamaTextContent('New turn')],
+              tools: tools,
+              params: const api.GenerationParams(maxTokens: 1),
+              onMessageAdded: (_) => callbacks++,
+            ),
+            throwsA(
+              isA<api.LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'diagnostic',
+                contains('token-limit reporting'),
+              ),
+            ),
+          );
+          expect(session.history, [same(previous)]);
+        }
+        await expectLater(
+          session.sendWithTools('No tools', tools: const []),
+          throwsA(isA<api.LlamaUnsupportedException>()),
+        );
+        expect(callbacks, 0);
+        expect(toolRuns, 0);
+        expect(session.history, [same(previous)]);
+        expect(worker.requests.whereType<LiteRtLmGenerateRequest>(), isEmpty);
+        expect(
+          worker.requests.whereType<LiteRtLmGenerateChatRequest>(),
+          isEmpty,
+        );
+
+        // The safety gate does not prevent manually managed completion.
+        final chunks = await engine.create(const [
+          api.LlamaChatMessage.fromText(
+            role: api.LlamaChatRole.user,
+            text: 'hi',
+          ),
+        ], params: const api.GenerationParams(maxTokens: 1)).toList();
+        expect(chunks.map((chunk) => chunk.text).join(), 'Hello');
+        expect(chunks.last.choices.single.finishReason, 'stop');
+        expect(
+          worker.requests.whereType<LiteRtLmGenerateChatRequest>(),
+          hasLength(1),
+        );
+      } finally {
+        await engine.dispose();
+        worker.close();
+      }
+    });
+  }
 
   test('implements backend diagnostics contracts', () {
     final backend = LiteRtLmBackend();

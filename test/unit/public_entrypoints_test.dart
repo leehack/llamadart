@@ -80,6 +80,7 @@ void main() {
       'BackendEmbeddingsSupport',
       'BackendGenerationCapabilities',
       'BackendGenerationCapabilitiesSupport',
+      'BackendGenerationLimitSupport',
       'BackendGpuEnumeration',
       'BackendGrammarConstraintsSupport',
       'BackendLazyGrammarSupport',

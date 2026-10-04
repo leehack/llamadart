@@ -137,6 +137,23 @@ physical playback, intelligibility or speaker-reference fidelity.
   capability probes rather than on this tag, and the bridge's
   `supportsCompletionUsage` flag for per-request usage.
 
+### Completion termination
+
+With `supportsCompletionUsage`, the backend consumes `onUsage.finishReason`
+in both direct and worker runtimes. Only the literal `length` reports a
+runtime generation limit. Public completions end with `length` and tool loops
+return `truncated`, rolling back the turn. `stop`, `cancelled`, missing or
+unrecognized reasons do not establish a limit; errors, local stop sequences
+and cancellation suppress limit metadata. Older bridges without the usage
+probe receive no callback and retain their existing stop behavior.
+
+The pinned bridge combines `nPredict`, context exhaustion and its
+`mediaMaxPredict` cap under `length`; token counts cannot reliably identify the
+cause. The backend reports `BackendGenerationLimit.runtime` rather than guessing
+`maxTokens` or `contextSize`. Typed Web speech recognition raises
+`LlamaSpeechTranscriptTruncatedException` with `LlamaSpeechTranscriptLimit.runtime`
+and the partial transcript when this signal arrives.
+
 ## Safari compatibility
 
 `scripts/fetch_webgpu_bridge_assets.sh` patches legacy cores to a universal

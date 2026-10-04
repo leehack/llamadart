@@ -71,10 +71,12 @@ class ChatCompletionStreamParser {
 
   /// Parses [tokenStream] into incremental content, thinking, and tool chunks.
   ///
-  /// Without tool calls, the final chunk's finish reason is `length` when
-  /// [stoppedAtLimit] returns true after [tokenStream] ends, and `stop`
-  /// otherwise. The final chunk carries what [usage] returns after
-  /// [tokenStream] ends.
+  /// The final chunk's finish reason is `length` when [stoppedAtLimit]
+  /// returns true after [tokenStream] ends. Such a reply withholds all tool
+  /// calls, including complete calls before an incomplete parallel call:
+  /// the call set is not safe to execute. Otherwise parsed calls finish with
+  /// `tool_calls`, and a reply without calls finishes with `stop`.
+  /// The final chunk carries what [usage] returns after [tokenStream] ends.
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
@@ -401,7 +403,8 @@ class ChatCompletionStreamParser {
       'toolCallCount=${parsed.toolCalls.length}',
     );
 
-    if (parsed.hasToolCalls) {
+    final endedAtLimit = stoppedAtLimit?.call() == true;
+    if (parsed.hasToolCalls && !endedAtLimit) {
       final toolCallsWithIds = parsed.toolCalls
           .map(
             (toolCall) => LlamaCompletionChunkToolCall(
@@ -426,7 +429,7 @@ class ChatCompletionStreamParser {
         completionId: completionId,
         modelName: modelName,
         delta: LlamaCompletionChunkDelta(),
-        finishReason: stoppedAtLimit?.call() == true ? 'length' : 'stop',
+        finishReason: endedAtLimit ? 'length' : 'stop',
         usage: usage?.call(),
       );
     }

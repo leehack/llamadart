@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../../backends/backend.dart';
 import 'chat_session.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
@@ -75,6 +76,7 @@ enum LlamaToolLoopStopReason {
   /// `GenerationParams.maxTokens` or filled the context before the model
   /// ended it. Its text may be an unfinished tool call or thinking rather
   /// than an answer, so its calls were not run and the turn was rolled back.
+  /// Complete calls before an incomplete parallel call are withheld too.
   /// [LlamaToolLoopResult.completion] keeps the partial reply; raise
   /// `maxTokens` and send the turn again.
   truncated,
@@ -263,6 +265,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// same meaning as in [ChatSession.create], and [onMessageAdded] also
   /// reports each tool result message. Use [ChatSession.create] directly to
   /// stream replies as they are generated.
+  ///
+  /// Throws [LlamaUnsupportedException] before changing history or generating
+  /// when the backend declares that it cannot reliably report generation limits.
   Future<LlamaToolLoopResult> completeWithTools(
     List<LlamaContentPart> parts, {
     required List<ToolDefinition> tools,
@@ -284,6 +289,19 @@ extension ChatSessionToolLoopExtension on ChatSession {
           invalidValue: maxRounds,
         ),
       );
+    }
+    final backend = engine.backend;
+    if (backend is BackendGenerationLimitSupport) {
+      final reason = (backend as BackendGenerationLimitSupport)
+          .generationLimitUnsupportedReason;
+      if (reason != null) {
+        return Future.error(
+          LlamaUnsupportedException(
+            'Automatic tool loops require reliable generation-limit reporting. '
+            '$reason Use a backend/runtime that reports why generation stopped.',
+          ),
+        );
+      }
     }
     final cancellation = GenerationCancellation.forEngine(engine);
     return cancellation.request<LlamaToolLoopResult>((request) async* {
@@ -346,9 +364,14 @@ extension ChatSessionToolLoopExtension on ChatSession {
           }
 
           if (request.isCancelled()) {
+            // A limited reply may contain reasoning but no executable calls;
+            // it still cannot close the turn with a trustworthy answer.
             yield stop(
               LlamaToolLoopStopReason.cancelled,
-              rollBack: reply.toolCalls.isNotEmpty || !turn.endsWithReply,
+              rollBack:
+                  reply.finishReason == LlamaFinishReason.length ||
+                  reply.toolCalls.isNotEmpty ||
+                  !turn.endsWithReply,
             );
             return;
           }

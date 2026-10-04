@@ -31,7 +31,10 @@ for each target.
 ## What It Supports
 
 - GGUF model loading and generation through llama.cpp.
-- `.litertlm` model loading and generation through LiteRT-LM.
+- `.litertlm` model loading and generation through LiteRT-LM. Automatic tool
+  loops require reliable runtime termination reporting and reject the pinned
+  LiteRT-LM native and Web runtimes; use manually managed completion there
+  ([tool-calling guide](https://llamadart.leehack.com/docs/guides/tool-calling)).
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
   WebGPU `ToolChoice.auto` skips lazy tool-call grammars; tool calls are best-effort.
@@ -70,6 +73,11 @@ tools, structured output and grammars, each sampling control
 (`penalty`, `presencePenalty`, `minP`, `thinkingBudget`), and the speculative
 decoding strategies it runs. Branch on these instead of the model's file
 extension or backend name.
+
+Web GGUF completions on bridge assets with `supportsCompletionUsage` (`v0.1.54+`)
+preserve runtime `length` termination: tool loops return `truncated` and roll
+back the turn. Typed speech recognition reports a runtime truncation error;
+the bridge does not identify whether the output, context or media cap was reached.
 
 ## Image generation (Preview)
 

@@ -10,6 +10,17 @@ chat template renders them, and the parser returns the model's calls as
 `handler` until the model answers; `create` and `engine.create` only return
 the calls, and your code runs them.
 
+Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
+runtime termination reporting. The pinned native LiteRT-LM `v0.17.0-6` and
+Web `@litert-lm/core@0.15.0` cannot distinguish normal completion from a
+per-request token cutoff. They throw `LlamaUnsupportedException` before
+starting the loop or modifying its history, including when resuming a turn or
+passing an empty tools list. Plain `ChatSession.create` and
+`LlamaEngine.create` remain available for manually managed completion; their
+LiteRT-LM `stop` finish reason does not prove the model reached EOS. Do not
+execute calls automatically based on that value or infer truncation from
+output length. See the [owner runtime prerequisite](../maintainers/runtime-ownership#litert-lm-termination-reporting).
+
 ## Define a tool
 
 `handler` is optional: leave it out for a tool your app runs itself.
@@ -82,11 +93,17 @@ continues the current turn.
   (`contextExceeded`). A reply cut off at `GenerationParams.maxTokens` or the
   end of the context (`finishReason` `length`) stops the loop with
   `truncated`, without running its calls: its text may be an unfinished
-  tool call or thinking, not an answer. `result.completion` keeps it; raise
-  `maxTokens` and send the turn again.
+  tool call or thinking, not an answer. A reported limit takes precedence over
+  any parsed calls: even complete calls before a partial second parallel call
+  are withheld, so `result.pendingToolCalls` is empty for that reply.
+  `result.completion` keeps its text and thinking; raise `maxTokens` and send
+  the turn again. The whole turn is rolled back, including earlier tool
+  rounds; effects of tools that already ran cannot be undone.
 - **Cancel:** `engine.cancelGeneration()`, model unload or replacement, and
   engine disposal stop the loop with `cancelled`.
   Running tools finish first. A partial answer stays as the turn's reply.
+  If a reply also reports a generation limit, `cancelled` takes precedence
+  and the incomplete turn is rolled back.
 - `toolChoice` applies to the first request only, so `ToolChoice.required`
   forces one call and later rounds can answer.
 

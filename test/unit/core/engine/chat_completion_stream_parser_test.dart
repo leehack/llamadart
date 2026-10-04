@@ -82,6 +82,68 @@ void main() {
       expect(chunks.last.choices.single.finishReason, 'stop');
     });
 
+    for (final endedAtLimit in [true, false]) {
+      test('parallel Ministral calls preserve limit=$endedAtLimit', () async {
+        const first = '[TOOL_CALLS]weather[ARGS]{"city":"Paris"}';
+        const second = '[TOOL_CALLS]weather[ARGS]{"city":"Seoul"}';
+        var ended = false;
+        Stream<String> tokens() async* {
+          yield '[THINK]Check both cities.[/THINK]';
+          yield first;
+          yield endedAtLimit ? second.substring(0, second.length - 3) : second;
+          ended = true;
+        }
+
+        final chunks = await ChatCompletionStreamParser.parse(
+          tokenStream: tokens(),
+          templateResult: LlamaChatTemplateResult(
+            prompt: 'prompt',
+            format: ChatFormat.ministral.index,
+          ),
+          parseToolCallsEnabled: true,
+          enableThinking: true,
+          modelName: 'Ministral-3-3B-Reasoning',
+          completionId: 'parallel-$endedAtLimit',
+          stoppedAtLimit: () {
+            expect(ended, isTrue);
+            return endedAtLimit;
+          },
+        ).toList();
+
+        expect(
+          chunks.last.choices.single.finishReason,
+          endedAtLimit ? 'length' : 'tool_calls',
+        );
+        final calls = chunks
+            .expand(
+              (chunk) =>
+                  chunk.choices.single.delta.toolCalls ??
+                  const <LlamaCompletionChunkToolCall>[],
+            )
+            .toList();
+        expect(calls, hasLength(endedAtLimit ? 0 : 2));
+        expect(
+          chunks
+              .map((chunk) => chunk.choices.single.delta.content ?? '')
+              .join(),
+          isEmpty,
+          reason: 'Neither the complete nor the partial call leaks as text.',
+        );
+        expect(
+          chunks
+              .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+              .join(),
+          'Check both cities.',
+        );
+        if (!endedAtLimit) {
+          expect(calls.map((call) => call.function?.arguments), [
+            '{"city":"Paris"}',
+            '{"city":"Seoul"}',
+          ]);
+        }
+      });
+    }
+
     test('routes forced-open Qwen thinking into reasoning content', () async {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(<String>[

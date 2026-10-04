@@ -148,7 +148,8 @@ abstract interface class SpeechTranscriptLimitAdapter {
   /// `after_truncation`. At [LlamaSpeechTranscriptLimit.maxOutputTokens] it
   /// also reports `transcript_tokens`, the token count of the latest complete
   /// transcript; at [LlamaSpeechTranscriptLimit.contextSize], the loaded
-  /// `context_size`.
+  /// `context_size`. [LlamaSpeechTranscriptLimit.runtime] is a reported cause
+  /// with no specified budget, so it cannot be requested as a fixture.
   Future<Map<String, Object?>> executeTranscriptLimit(
     LlamaSpeechTranscriptLimit limit,
   );
@@ -696,6 +697,11 @@ class PublicSpeechValidationAdapter
       throw StateError('Transcript limit checks require the STT pack');
     }
     switch (limit) {
+      case LlamaSpeechTranscriptLimit.runtime:
+        throw LlamaUnsupportedException(
+          'An unspecified runtime transcript limit cannot be requested. '
+          'Choose maxOutputTokens or contextSize to exercise a known budget.',
+        );
       case LlamaSpeechTranscriptLimit.maxOutputTokens:
         final engine =
             _engine ?? (throw StateError('Speech engine is not loaded'));
@@ -1029,6 +1035,10 @@ Map<String, Object?> _truncationOutcome(
 ) {
   final maxTokens = result['max_output_tokens'];
   switch (limit) {
+    case LlamaSpeechTranscriptLimit.runtime:
+      throw StateError(
+        'An unspecified runtime limit cannot qualify a requested budget.',
+      );
     case LlamaSpeechTranscriptLimit.maxOutputTokens:
       final needed = result['transcript_tokens'];
       if (maxTokens is! int ||
@@ -1050,7 +1060,8 @@ Map<String, Object?> _truncationOutcome(
   if (result['truncated_limit'] != limit.name) {
     throw StateError(
       'Recognition did not fail with '
-      'LlamaSpeechTranscriptTruncatedException at ${limit.name}',
+      'LlamaSpeechTranscriptTruncatedException at ${limit.name}; '
+      'reported ${result['truncated_limit'] ?? 'none'}.',
     );
   }
   final reference = result['reference'];
@@ -1354,14 +1365,15 @@ Future<Map<String, Object?>> runSpeechValidation(
       }
       if (checkTranscriptLimits) {
         final limits = adapter as SpeechTranscriptLimitAdapter;
-        for (final limit in LlamaSpeechTranscriptLimit.values) {
+        for (final (limit, id) in const [
+          (
+            LlamaSpeechTranscriptLimit.maxOutputTokens,
+            'max_output_tokens_truncation',
+          ),
+          (LlamaSpeechTranscriptLimit.contextSize, 'context_size_truncation'),
+        ]) {
           await check(
-            switch (limit) {
-              LlamaSpeechTranscriptLimit.maxOutputTokens =>
-                'max_output_tokens_truncation',
-              LlamaSpeechTranscriptLimit.contextSize =>
-                'context_size_truncation',
-            },
+            id,
             () async => _truncationOutcome(
               await limits.executeTranscriptLimit(limit),
               limit,

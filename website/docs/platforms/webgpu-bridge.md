@@ -162,6 +162,12 @@ memory64.
 The feature-by-runtime table is in the
 [support matrix](./support-matrix#features-by-runtime). On WebGPU:
 
+- Bridge assets with `supportsCompletionUsage` (`v0.1.54+`) report `length`
+  when generation reaches a token, context or media cap. `create` preserves
+  that finish reason, and `sendWithTools` returns `truncated` and rolls back
+  the turn. Cancellation and normal stops retain their existing outcomes.
+  Older assets or a missing termination signal cannot establish truncation.
+  The bridge does not distinguish which cap was reached.
 - `grammar` applies from the first token, starting at `root`.
   `GenerationParams.grammarLazy` and any other `grammarRoot` throw
   `LlamaUnsupportedException`; `ToolChoice.auto` skips the lazy tool-call

@@ -1831,23 +1831,32 @@ class LlamaEngine {
             params: params,
             parts: parts,
           );
-    return _generationCancellation.request((request) {
+    late final Stream<String> generation;
+    generation = _generationCancellation.request((request) {
+      BackendGenerationLimit? limit;
+      void recordLimit(BackendGenerationLimit reported) {
+        limit = reported;
+        if (!request.isCancelled()) {
+          _rawGenerationLimits[generation] = reported;
+        }
+      }
+
       if (operation == null) {
         return _generate(
           prompt,
           params: params,
           parts: parts,
+          onLimit: recordLimit,
           request: request,
         );
       }
-      BackendGenerationLimit? limit;
       LlamaGenerationUsage? usage;
       return observeStream(
         _generate(
           prompt,
           params: params,
           parts: parts,
-          onLimit: (reported) => limit = reported,
+          onLimit: recordLimit,
           onUsage: (reported) => usage = reported,
           request: request,
         ),
@@ -1863,6 +1872,7 @@ class LlamaEngine {
         cancelResult: () => const LlamaOperationResult(cancelled: true),
       );
     });
+    return generation;
   }
 
   LlamaOperationResult _generationResult(
@@ -3202,6 +3212,16 @@ class LlamaEngine {
 
 final Expando<BackendGenerationLimit> _completionGenerationLimits =
     Expando<BackendGenerationLimit>();
+
+final Expando<BackendGenerationLimit> _rawGenerationLimits =
+    Expando<BackendGenerationLimit>();
+
+/// The runtime-reported limit of a completed [LlamaEngine.generate] stream.
+///
+/// Inspect the original stream after it closes. Null means no reliable limit
+/// was reported; cancellation and errors never publish a limit here.
+BackendGenerationLimit? rawGenerationLimit(Stream<String> generation) =>
+    _rawGenerationLimits[generation];
 
 /// The token limit behind [chunk]'s `length` finish reason, when the backend
 /// reported one to [LlamaEngine.create].

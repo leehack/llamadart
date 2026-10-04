@@ -7,9 +7,10 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 import 'dart:typed_data';
 
-import 'package:llamadart/backend.dart';
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
+import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 import 'package:web/web.dart' show Response, URL, document, window;
@@ -2503,6 +2504,322 @@ void main() {
         );
       },
     );
+
+    group('generation limits', () {
+      void reportCompletion({
+        Object? reason = 'length',
+        String text = 'partial reply',
+        bool usageSupported = true,
+        bool workerDelivery = false,
+        bool failAfterUsage = false,
+        void Function()? afterToken,
+        int completionTokens = 1,
+      }) {
+        final constructor = (() {}).toJS;
+        constructor.setProperty(
+          'supportsCompletionUsage'.toJS,
+          usageSupported.toJS,
+        );
+        bridge.setProperty('constructor'.toJS, constructor);
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final mediaCap = opts.getProperty('mediaMaxPredict'.toJS);
+            lastMediaMaxPredict = mediaCap.isA<JSNumber>()
+                ? (mediaCap as JSNumber).toDartInt
+                : null;
+            Future<JSString> complete() async {
+              if (workerDelivery) await Future<void>.delayed(Duration.zero);
+              final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
+              onToken?.callAsFunction(null, text.toJS, text.toJS);
+              afterToken?.call();
+              final onUsage = opts.getProperty('onUsage'.toJS) as JSFunction?;
+              expect(onUsage != null, usageSupported);
+              onUsage?.callAsFunction(
+                null,
+                <String, Object?>{
+                  'promptTokens': 4095,
+                  'completionTokens': completionTokens,
+                  'finishReason': ?reason,
+                }.jsify(),
+              );
+              if (failAfterUsage) throw StateError('bridge failed');
+              return text.toJS;
+            }
+
+            return complete().toJS;
+          }).toJS,
+        );
+      }
+
+      Future<LlamaEngine> loadEngine() async {
+        final engine = LlamaEngine(WebAutoBackend(webBackend: backend));
+        await engine.loadModelFromUrl('https://example.com/model.gguf');
+        addTearDown(engine.dispose);
+        return engine;
+      }
+
+      for (final workerDelivery in [false, true]) {
+        final delivery = workerDelivery ? 'worker event' : 'direct callback';
+        test(
+          '$delivery length reaches public completion and rolls back tools',
+          () async {
+            reportCompletion(workerDelivery: workerDelivery);
+            final engine = await loadEngine();
+            final session = ChatSession(engine, maxContextTokens: 0);
+            final result = await session.sendWithTools(
+              'Reply',
+              tools: const [],
+              params: const GenerationParams(maxTokens: 100),
+            );
+            expect(result.completion.finishReason, LlamaFinishReason.length);
+            expect(result.stopReason, LlamaToolLoopStopReason.truncated);
+            expect(result.rolledBack, isTrue);
+            expect(session.history, isEmpty);
+          },
+        );
+
+        test(
+          '$delivery stop at maxTokens is complete, without counter inference',
+          () async {
+            reportCompletion(
+              reason: 'stop',
+              completionTokens: 1,
+              workerDelivery: workerDelivery,
+            );
+            final engine = await loadEngine();
+            final session = ChatSession(engine, maxContextTokens: 0);
+            final result = await session.sendWithTools(
+              'Reply',
+              tools: const [],
+              params: const GenerationParams(maxTokens: 1),
+            );
+            expect(result.completion.finishReason, LlamaFinishReason.stop);
+            expect(result.stopReason, LlamaToolLoopStopReason.completed);
+            expect(result.rolledBack, isFalse);
+            expect(session.history.last.content, 'partial reply');
+          },
+        );
+
+        test('$delivery cancellation wins over a reported length', () async {
+          late LlamaEngine engine;
+          reportCompletion(
+            workerDelivery: workerDelivery,
+            afterToken: () => engine.cancelGeneration(),
+            failAfterUsage: workerDelivery,
+          );
+          engine = await loadEngine();
+          final session = ChatSession(engine, maxContextTokens: 0);
+          final result = await session.sendWithTools('Reply', tools: const []);
+          expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
+          expect(
+            result.completion.finishReason,
+            isNot(LlamaFinishReason.length),
+          );
+        });
+      }
+
+      test(
+        'publishes only after EOF, isolates requests and names no guessed cause',
+        () async {
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          reportCompletion();
+          final limited = backend.generate(
+            1,
+            'Reply',
+            const GenerationParams(maxTokens: 100),
+          );
+          expect(backend.generationLimitOf(limited), isNull);
+          await limited.drain<void>();
+          expect(
+            backend.generationLimitOf(limited),
+            BackendGenerationLimit.runtime,
+          );
+          reportCompletion(reason: 'stop');
+          final stopped = backend.generate(
+            1,
+            'Reply',
+            const GenerationParams(maxTokens: 1),
+          );
+          await stopped.drain<void>();
+          expect(backend.generationLimitOf(stopped), isNull);
+          expect(
+            backend.generationLimitOf(limited),
+            BackendGenerationLimit.runtime,
+          );
+          expect(
+            backend.generationLimitOf(const Stream<List<int>>.empty()),
+            isNull,
+          );
+        },
+      );
+
+      for (final reason in [null, 'stop', 'cancelled', 'other', 1]) {
+        test(
+          'never infers a limit from missing or unrecognized reason $reason',
+          () async {
+            reportCompletion(reason: reason);
+            final engine = await loadEngine();
+            final completion = await engine.create([
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Reply',
+              ),
+            ], params: const GenerationParams(maxTokens: 1)).collect();
+            expect(completion.finishReason, LlamaFinishReason.stop);
+          },
+        );
+      }
+
+      test(
+        'older bridge without usage capability never receives function option',
+        () async {
+          reportCompletion(usageSupported: false);
+          final engine = await loadEngine();
+          final completion = await engine.create([
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Reply'),
+          ], params: const GenerationParams(maxTokens: 1)).collect();
+          expect(completion.finishReason, LlamaFinishReason.stop);
+        },
+      );
+
+      test(
+        'subscription cancellation discards a pending length report',
+        () async {
+          reportCompletion();
+          final started = Completer<void>();
+          final completion = Completer<JSString>();
+          bridge.setProperty(
+            'createCompletion'.toJS,
+            ((String prompt, JSObject opts) {
+              final onUsage = opts.getProperty('onUsage'.toJS) as JSFunction;
+              onUsage.callAsFunction(
+                null,
+                <String, Object?>{'finishReason': 'length'}.jsify(),
+              );
+              started.complete();
+              return completion.future.toJS;
+            }).toJS,
+          );
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          final generation = backend.generate(
+            1,
+            'Reply',
+            const GenerationParams(),
+          );
+          final subscription = generation.listen((_) {});
+          await started.future;
+          expect(backend.generationLimitOf(generation), isNull);
+          await subscription.cancel();
+          completion.complete('partial'.toJS);
+          await Future<void>.delayed(Duration.zero);
+          expect(backend.generationLimitOf(generation), isNull);
+        },
+      );
+
+      test(
+        'failure after a length report stays an error without limit metadata',
+        () async {
+          reportCompletion(failAfterUsage: true);
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          final generation = backend.generate(
+            1,
+            'Reply',
+            const GenerationParams(),
+          );
+          await expectLater(generation.toList(), throwsA(anything));
+          expect(backend.generationLimitOf(generation), isNull);
+        },
+      );
+
+      test(
+        'Web speech uses a generic runtime truncation error for a media cap',
+        () async {
+          runtimeGpuActive = false;
+          runtimeGpuLayers = 0;
+          bridge.setProperty('supportsAudio'.toJS, (() => true).toJS);
+          backend = WebGpuLlamaBackend(
+            promptSpeechToTextSupported: true,
+            bridgeFactory: ([WebGpuBridgeConfig? config]) =>
+                bridge as LlamaWebGpuBridge,
+          );
+          reportCompletion(
+            text: 'language English<asr_text>partial transcript',
+          );
+          final engine = await loadEngine();
+          await engine.loadMultimodalProjectorSource(
+            ModelSource.parse('https://example.com/mmproj.gguf'),
+          );
+          final recognizer = SpeechToTextEngine.attach(
+            engine,
+            adapter: const Qwen3AsrAdapter(),
+          );
+          addTearDown(recognizer.dispose);
+          expect((await recognizer.capabilities).isSupported, isTrue);
+          final request = SpeechToTextRequest(
+            audio: SpeechAudioBytesInput(
+              Uint8List.fromList([1, 2, 3]),
+              format: const SpeechAudioFormat(encoding: 'wav'),
+            ),
+            maxOutputTokens: 4096,
+          );
+          await expectLater(
+            recognizer.transcribeOnce(request),
+            throwsA(
+              isA<LlamaSpeechTranscriptTruncatedException>()
+                  .having(
+                    (error) => error.limit,
+                    'limit',
+                    LlamaSpeechTranscriptLimit.runtime,
+                  )
+                  .having(
+                    (error) => error.partialTranscript,
+                    'partialTranscript',
+                    'partial transcript',
+                  ),
+            ),
+          );
+          expect(lastMediaMaxPredict, isNotNull);
+          expect(lastMediaMaxPredict, lessThan(request.maxOutputTokens));
+          reportCompletion(
+            reason: 'stop',
+            text: 'language English<asr_text>complete transcript',
+          );
+          expect(
+            (await recognizer.transcribeOnce(request)).text,
+            'complete transcript',
+          );
+        },
+      );
+
+      test(
+        'stop sequence suppresses a length report from the same completion',
+        () async {
+          reportCompletion(text: 'Reply STOP tail');
+          await backend.modelLoadFromUrl(
+            'https://example.com/model.gguf',
+            const ModelParams(),
+          );
+          final generation = backend.generate(
+            1,
+            'Reply',
+            const GenerationParams(stopSequences: ['STOP']),
+          );
+          final bytes = (await generation.toList()).expand((c) => c).toList();
+          expect(utf8.decode(bytes), 'Reply ');
+          expect(backend.generationLimitOf(generation), isNull);
+        },
+      );
+    });
 
     group('generation usage', () {
       JSAny? bridgeUsage({int? promptTokens = 5}) => <String, Object?>{

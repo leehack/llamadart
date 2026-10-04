@@ -39,6 +39,7 @@ class LiteRtLmBackend
         LlamaBackend,
         BackendAvailability,
         BackendChatScope,
+        BackendGenerationLimitSupport,
         BackendGrammarConstraintsSupport,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
@@ -96,6 +97,12 @@ class LiteRtLmBackend
   }) : _moduleUrl = moduleUrl,
        _readyTimeout = readyTimeout ?? _engineReadyTimeout,
        _preferredBackend = _normalizeBackendOverride(preferredBackend);
+
+  @override
+  String? get generationLimitUnsupportedReason =>
+      'LiteRT-LM Web @litert-lm/core@0.15.0 does not expose a reliable generation termination reason. '
+      'Automatic tool loops require a qualified Web runtime with token-limit reporting; '
+      'use ChatSession.create or LlamaEngine.create for manual completion.';
 
   @override
   bool get isReady => _isReady;

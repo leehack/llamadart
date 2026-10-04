@@ -102,8 +102,11 @@ description: >-
     `maxOutputTokens` (default 1024) fails with
     `LlamaSpeechTranscriptTruncatedException`. Read `limit`
     (`LlamaSpeechTranscriptLimit.maxOutputTokens` or `.contextSize`) and
-    `partialTranscript`. On Web, truncation is not detected and the task
-    completes.
+    `partialTranscript`. On Web, bridge assets with
+    `supportsCompletionUsage` (`v0.1.54+`) report truncation with `.runtime`:
+    the bridge combines output, context and media caps, so do not diagnose
+    the exact cause from token counts. Older assets without a termination
+    signal retain their existing completion behavior.
   - An empty transcript (for example silence) fails with
     `LlamaSpeechException`.
   - A nonempty `languageHint` throws `LlamaUnsupportedException`; use

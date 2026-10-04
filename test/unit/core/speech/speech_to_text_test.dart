@@ -834,6 +834,7 @@ void main() {
             BackendGenerationLimit.maxTokens,
             LlamaSpeechTranscriptLimit.maxOutputTokens,
           ),
+          (BackendGenerationLimit.runtime, LlamaSpeechTranscriptLimit.runtime),
         ]) {
       test('fails a transcript truncated at $limit', () async {
         backend
@@ -859,11 +860,11 @@ void main() {
         expect(error.partialTranscript, 'And so my');
         expect(
           error.message,
-          contains(
-            expected == LlamaSpeechTranscriptLimit.contextSize
-                ? 'contextSize'
-                : 'maxOutputTokens',
-          ),
+          contains(switch (expected) {
+            LlamaSpeechTranscriptLimit.contextSize => 'contextSize',
+            LlamaSpeechTranscriptLimit.maxOutputTokens => 'maxOutputTokens',
+            LlamaSpeechTranscriptLimit.runtime => 'runtime generation limit',
+          }),
         );
         await expectLater(task.result, throwsA(same(error)));
       });

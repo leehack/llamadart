@@ -19,7 +19,10 @@ description: >-
   `maxRounds`, `unhandledToolCalls`, `contextExceeded`, `truncated` and
   `cancelled` leave `result.pendingToolCalls` unrun. `truncated` means a
   reply hit `GenerationParams.maxTokens` or the context end; its text may be
-  partial tool-call markup, so raise `maxTokens` and retry. `completeWithTools(parts)` takes media
+  partial tool-call markup. A backend-reported limit withholds the whole reply's
+  call set, including complete calls before a partial parallel call, so its
+  `pendingToolCalls` is empty and no calls from that reply run. Raise `maxTokens`
+  and retry. `completeWithTools(parts)` takes media
   parts; `completeWithTools(const [])` continues the turn.
 - After a stop, the history is ready for a new user turn, except after
   `unhandledToolCalls`. `maxRounds`, `contextExceeded`, `truncated`, a
@@ -33,7 +36,8 @@ description: >-
   them back, answer `pendingToolCalls` and call `completeWithTools(const [])`.
   A cancel during the answer keeps the partial answer, on WebGPU too; a
   cancel before any reply content rolls back; empty terminal chunks are not
-  an answer. Check `result.rolledBack`. For a new chat, call
+  an answer. A cancel that also reports a generation limit rolls back and
+  keeps `cancelled` as its stop reason. Check `result.rolledBack`. For a new chat, call
   `engine.cancelGeneration()` and `session.reset()`: a late reply from the
   old turn is not added to the reset history. Await the old loop before
   starting another generation on the same engine.
@@ -81,6 +85,13 @@ description: >-
   reach the prompt, and describe the tools in the system prompt if not. To
   replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;
   prompts and tool-call parsing then both follow that template.
+- Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
+  LiteRT-LM `v0.17.0-6` and Web `@litert-lm/core@0.15.0` with
+  `LlamaUnsupportedException` before generation or history mutation: those
+  runtimes expose no reliable token-limit termination cause. Manual
+  `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`
+  does not prove EOS. Do not infer truncation from output length or run tool
+  handlers automatically from an unverified terminal result.
 - Runtime limits: LiteRT-LM has no grammar enforcement, LiteRT-LM on web does
   not forward tools, and WebGPU `ToolChoice.auto` parses calls best-effort.
   `(await engine.capabilities).supportsToolCalling`,

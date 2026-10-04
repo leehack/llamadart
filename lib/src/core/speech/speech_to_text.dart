@@ -1506,11 +1506,12 @@ class SpeechToTextEngine {
       streamBatchTokenThreshold: 1,
     );
     if (!speechToTextUsesChatTemplate) {
-      return engine.generate(
+      final generation = engine.generate(
         _promptAdapter.promptFor(request),
         parts: <LlamaContentPart>[_contentFor(request.audio)],
         params: params,
       );
+      return _rawPromptAdapterTokens(generation, onLimit);
     }
     return engine
         .create(
@@ -1539,6 +1540,15 @@ class SpeechToTextEngine {
         });
   }
 
+  Stream<String> _rawPromptAdapterTokens(
+    Stream<String> generation,
+    void Function(BackendGenerationLimit limit) onLimit,
+  ) async* {
+    yield* generation;
+    final limit = rawGenerationLimit(generation);
+    if (limit != null) onLimit(limit);
+  }
+
   LlamaSpeechTranscriptTruncatedException _truncatedTranscript(
     BackendGenerationLimit limit,
     String partialTranscript,
@@ -1559,6 +1569,13 @@ class SpeechToTextEngine {
           limit: LlamaSpeechTranscriptLimit.contextSize,
           partialTranscript: partialTranscript,
         ),
+      BackendGenerationLimit.runtime => LlamaSpeechTranscriptTruncatedException(
+        'Speech recognition reached a runtime generation limit before the '
+        'transcript ended. Send shorter audio; the runtime does not identify '
+        'whether an output-token, context, or media limit stopped recognition.',
+        limit: LlamaSpeechTranscriptLimit.runtime,
+        partialTranscript: partialTranscript,
+      ),
     };
   }
 

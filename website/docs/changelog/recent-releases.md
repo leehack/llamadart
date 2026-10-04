@@ -9,6 +9,15 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Prevented execution of incomplete parallel tool-call replies when generation
+  reaches a reported limit; the tool loop rolls back the whole turn.
+- Automatic tool loops now reject pinned LiteRT-LM native and Web runtimes
+  before generation because they cannot report token-limit truncation reliably;
+  manually managed completion remains available ([#919](https://github.com/leehack/llamadart/issues/919)).
+- Web GGUF completions preserve runtime limits as `length`, so tool loops
+  report `truncated` and roll back cut-off turns; typed Web speech recognition
+  raises a runtime truncation error with the partial transcript.
+
 - Redacted known URL secrets repeated in model filenames from download
   cancellation messages.
 - Model unload, replacement, and disposal now report interrupted tool loops as
