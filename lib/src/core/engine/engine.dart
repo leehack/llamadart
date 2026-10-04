@@ -2380,7 +2380,7 @@ class LlamaEngine {
 
   /// [params] with its [SpeculativeDecodingConfig.draftModel] resolved as
   /// [setLoraSource] resolves a source, or null when [request] is cancelled
-  /// or the model is unloaded meanwhile.
+  /// meanwhile. A model change during resolution throws [LlamaStateException].
   ///
   /// A draft model resolves once per loaded model, source, cache directory
   /// and checksum; later generations reuse its file.
@@ -2422,8 +2422,17 @@ class LlamaEngine {
     ].join('\n');
     var location = _draftLocations[key];
     if (location == null) {
-      await _rejectUnsupportedDraftModel(config);
       final epoch = _modelEpoch;
+      void checkModelEpoch() {
+        if (_modelEpoch != epoch) {
+          throw LlamaStateException(
+            'The model changed while resolving the speculative draft model. Retry the request with the loaded model.',
+          );
+        }
+      }
+
+      await _rejectUnsupportedDraftModel(config);
+      checkModelEpoch();
       bool abandoned() => _modelEpoch != epoch || request.isCancelled();
       var options = download;
       if (!backend.supportsUrlLoading) {
@@ -2443,10 +2452,12 @@ class LlamaEngine {
           assetType: 'speculative draft model',
         );
       } on Object {
-        if (abandoned()) return null;
+        checkModelEpoch();
+        if (request.isCancelled()) return null;
         rethrow;
       }
-      if (abandoned()) return null;
+      checkModelEpoch();
+      if (request.isCancelled()) return null;
       _draftLocations[key] = location;
     }
     final resolved = backend.supportsUrlLoading
