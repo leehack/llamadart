@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import '../../backends/backend.dart';
 import 'chat_session.dart';
 import 'generation_cancellation.dart';
 import '../exceptions.dart';
@@ -262,6 +263,9 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// same meaning as in [ChatSession.create], and [onMessageAdded] also
   /// reports each tool result message. Use [ChatSession.create] directly to
   /// stream replies as they are generated.
+  ///
+  /// Throws [LlamaUnsupportedException] before changing history or generating
+  /// when the backend declares that it cannot reliably report generation limits.
   Future<LlamaToolLoopResult> completeWithTools(
     List<LlamaContentPart> parts, {
     required List<ToolDefinition> tools,
@@ -283,6 +287,18 @@ extension ChatSessionToolLoopExtension on ChatSession {
           invalidValue: maxRounds,
         ),
       );
+    }
+    final backend = engine.backend;
+    if (backend is BackendGenerationLimitSupport) {
+      final reason = backend.generationLimitUnsupportedReason;
+      if (reason != null) {
+        return Future.error(
+          LlamaUnsupportedException(
+            'Automatic tool loops require reliable generation-limit reporting. '
+            '$reason Use a backend/runtime that reports why generation stopped.',
+          ),
+        );
+      }
     }
     final cancellation = GenerationCancellation.forEngine(engine);
     return cancellation.request<LlamaToolLoopResult>((request) async* {

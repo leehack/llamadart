@@ -264,6 +264,18 @@ enum BackendGenerationLimit {
   runtime,
 }
 
+/// Optional declaration that a runtime cannot reliably report generation limits.
+///
+/// Automatic tool loops reject runtimes that declare an unsupported reason,
+/// because truncation must not execute an incomplete set of tool calls.
+abstract class BackendGenerationLimitSupport {
+  /// Why the active runtime cannot distinguish normal completion from a limit.
+  ///
+  /// Null means no unsupported declaration. Backends without this optional
+  /// interface retain their existing behavior; absence does not prove support.
+  String? get generationLimitUnsupportedReason;
+}
+
 /// Internal backend probe for the limit that ended a generation stream.
 abstract class BackendGenerationLimitReporting {
   /// The limit that ended [generation], a stream this backend returned from

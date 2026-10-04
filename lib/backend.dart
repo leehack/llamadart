@@ -39,6 +39,7 @@ export 'src/backends/backend.dart'
         BackendEmbeddingsSupport,
         BackendGenerationCapabilities,
         BackendGenerationCapabilitiesSupport,
+        BackendGenerationLimitSupport,
         BackendGpuEnumeration,
         BackendGrammarConstraintsSupport,
         BackendLazyGrammarSupport,
