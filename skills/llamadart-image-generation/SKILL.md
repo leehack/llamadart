@@ -164,8 +164,9 @@ description: >-
   with TAESDXL on an M4 Max). It runs one discarded single-step image,
   returns at once on the CPU, holds the one-operation slot (await it before
   `generate`), and completes normally when `dispose()` cancels it.
-- `engine.generate(request)` returns an `ImageGenerationTask` synchronously;
-  invalid requests throw `LlamaImageGenerationException` first. Width and
+- `await engine.generate(request)` returns the running
+  `ImageGenerationTask`; invalid requests throw
+  `LlamaImageGenerationException` first. Width and
   height are multiples of 8 from 64 to 2048; use the model's native size
   (512x512 for SDXS and SD-Turbo, 1024x1024 for the desktop models). 256 is fine for SDXS and SD-Turbo; the runtime
   rounds up to 64, so read the size from `GeneratedImage`. Steps are 1 to
@@ -175,10 +176,13 @@ description: >-
 - `task.events` (single subscription): `ImageGenerationProgressEvent`
   (`phase`: `encodingPrompt`, `sampling`, `decoding`, rarely `loading`;
   `step`, `steps`, `imageIndex`, `imageCount`), then one
-  `ImageGenerationFinalEvent(result)`. Failures arrive as a stream error and
-  as `ImageGenerationCompletionState.failed` on `task.done`.
-- `engine.generateImage(request)` is the one-call form returning
-  `ImageGenerationResult` (`images`, `seed`, `elapsed`).
+  `ImageGenerationFinalEvent(result)`. The stream never emits an error.
+  `await task.result` returns the `ImageGenerationResult` (`images`, `seed`,
+  `elapsed`), or throws the failure, or `LlamaStateException` when
+  cancelled; `task.done` reports the same outcome as an
+  `ImageGenerationCompletion` and never throws.
+- `engine.generateImage(request)` is the one-call form of
+  `(await engine.generate(request)).result`.
 - `GeneratedImage` has `width`, `height`, `channels` (3) and row-major RGB
   `pixels`; `toPng()` returns PNG bytes (for `Image.memory` or a file).
 - One generation or model load at a time per process (stable-diffusion.cpp's
@@ -186,7 +190,8 @@ description: >-
   even on another engine. Await `task.done` before the next request; disable
   the Generate button while one runs. Do not generate from several isolates.
 - `task.cancel()` stops before the next sampling step; `done` reports
-  `cancelled` and the stream closes without a final event. `dispose()` cancels
+  `cancelled`, `result` throws `LlamaStateException`, and the stream closes
+  without a final event. `dispose()` cancels
   a running task, waits, then frees the model.
 - Dispose before a Flutter app quits: on macOS Metal, quitting with a model
   still loaded aborts the process. A plain Dart program that ends with the
@@ -227,7 +232,7 @@ Future<void> generateFox(String sdxsPath, String outputPath) async {
     ImageGenerationModel(ModelSource.path(sdxsPath)),
   );
   try {
-    final ImageGenerationTask task = engine.generate(
+    final ImageGenerationTask task = await engine.generate(
       const ImageGenerationRequest(
         prompt: 'a red fox in autumn leaves',
         steps: 1,
@@ -235,19 +240,19 @@ Future<void> generateFox(String sdxsPath, String outputPath) async {
         seed: 42,
       ),
     );
-    await for (final ImageGenerationEvent event in task.events) {
-      switch (event) {
-        case ImageGenerationProgressEvent(
-          :final ImageGenerationPhase phase,
-          :final int step,
-          :final int steps,
-        ):
-          print('${phase.name} $step/$steps');
-        case ImageGenerationFinalEvent(:final ImageGenerationResult result):
-          await File(outputPath).writeAsBytes(result.images.first.toPng());
-          print('Seed ${result.seed} in ${result.elapsed.inMilliseconds} ms');
+    task.events.listen((ImageGenerationEvent event) {
+      if (event
+          case ImageGenerationProgressEvent(
+            :final ImageGenerationPhase phase,
+            :final int step,
+            :final int steps,
+          )) {
+        print('${phase.name} $step/$steps');
       }
-    }
+    });
+    final ImageGenerationResult result = await task.result;
+    await File(outputPath).writeAsBytes(result.images.first.toPng());
+    print('Seed ${result.seed} in ${result.elapsed.inMilliseconds} ms');
   } on LlamaInferenceException catch (error) {
     print('Generation failed, engine still usable: ${error.message}');
   } finally {
@@ -305,13 +310,16 @@ Future<Uint8List?> generateWithCancel(Future<void> userCancelled) async {
   }
 
   try {
-    final ImageGenerationTask running = task = engine.generate(
+    final ImageGenerationTask running = task = await engine.generate(
       const ImageGenerationRequest(
         prompt: 'a lighthouse at dusk',
         steps: 4,
         guidanceScale: 1,
       ),
     );
+    if (cancelDownload.isCancelled) {
+      running.cancel(); // Cancelled while the task was starting.
+    }
     final ImageGenerationCompletion completion = await running.done;
     return switch (completion.state) {
       ImageGenerationCompletionState.completed =>

@@ -151,24 +151,20 @@ void main() {
         ),
       ),
     );
-    final streamError = Completer<Object>();
-    task.events.listen(
-      (_) {},
-      onError: (Object error) => streamError.complete(error),
-    );
+    expect(await task.events.toList(), isEmpty);
     final completion = await task.done;
 
+    expect(completion.state, SpeechToTextCompletionState.failed);
+    expect(completion.result, isNull);
     expect(
-      await streamError.future,
+      completion.error,
       isA<LlamaSpeechException>().having(
         (error) => error.message,
         'message',
         contains('empty transcript'),
       ),
     );
-    expect(completion.state, SpeechToTextCompletionState.failed);
-    expect(completion.result, isNull);
-    expect(completion.error, isA<LlamaSpeechException>());
+    await expectLater(task.result, throwsA(same(completion.error)));
 
     backend.generationText = 'Recovered transcript.';
     final retry = await recognizer.transcribe(
@@ -210,9 +206,10 @@ void main() {
     task.cancel();
     final completion = await task.done;
 
-    expect(backend.cancelCalled, isTrue);
+    expect(backend.cancelCalled, isFalse);
     expect(completion.state, SpeechToTextCompletionState.cancelled);
     expect(await task.events.toList(), isEmpty);
+    await expectLater(task.result, throwsA(isA<LlamaStateException>()));
     await engine.dispose();
   });
 

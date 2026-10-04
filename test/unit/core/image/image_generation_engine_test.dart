@@ -1112,21 +1112,25 @@ void main() {
         const ImageGenerationRequest(prompt: 'a', count: 0),
         const ImageGenerationRequest(prompt: 'a', count: 17),
       ]) {
-        expect(
-          () => engine.generate(request),
+        await expectLater(
+          engine.generate(request),
           throwsA(isA<LlamaImageGenerationException>()),
         );
       }
       expect(driver.session.requests, isEmpty);
 
-      await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
+      await (await engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
+      )).done;
     });
 
     test('fills unset size, steps and guidance with the neutral fallbacks, '
         'and leaves sampling to the runtime', () async {
       final engine = await load(_sdxs());
 
-      await engine.generate(const ImageGenerationRequest(prompt: 'a')).done;
+      await (await engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
+      )).done;
 
       final sent = driver.session.requests.last;
       expect((sent.width, sent.height), (512, 512));
@@ -1141,20 +1145,18 @@ void main() {
         'own', () async {
       final engine = await load(_fluxModel());
 
-      await engine
-          .generate(
-            const ImageGenerationRequest(
-              prompt: 'a',
-              width: 1024,
-              height: 768,
-              steps: 4,
-              guidanceScale: 1,
-              sampler: ImageGenerationSampler.euler,
-              scheduler: ImageGenerationScheduler.sgmUniform,
-              flowShift: 3,
-            ),
-          )
-          .done;
+      await (await engine.generate(
+        const ImageGenerationRequest(
+          prompt: 'a',
+          width: 1024,
+          height: 768,
+          steps: 4,
+          guidanceScale: 1,
+          sampler: ImageGenerationSampler.euler,
+          scheduler: ImageGenerationScheduler.sgmUniform,
+          flowShift: 3,
+        ),
+      )).done;
       var sent = driver.session.requests.last;
       expect((sent.width, sent.height, sent.steps), (1024, 768, 4));
       expect(sent.guidanceScale, 1);
@@ -1162,9 +1164,9 @@ void main() {
       expect(sent.scheduler, ImageGenerationScheduler.sgmUniform);
       expect(sent.flowShift, 3);
 
-      await engine
-          .generate(const ImageGenerationRequest(prompt: 'a', width: 768))
-          .done;
+      await (await engine.generate(
+        const ImageGenerationRequest(prompt: 'a', width: 768),
+      )).done;
       sent = driver.session.requests.last;
       expect((sent.width, sent.height), (768, 512));
     });
@@ -1188,7 +1190,7 @@ void main() {
     test('emits phases in order and one final event', () async {
       final engine = await load(_sdxs());
 
-      final task = engine.generate(
+      final task = await engine.generate(
         const ImageGenerationRequest(
           prompt: 'a lighthouse',
           width: 256,
@@ -1219,6 +1221,7 @@ void main() {
       final completion = await task.done;
       expect(completion.state, ImageGenerationCompletionState.completed);
       expect(completion.result, same(result));
+      expect(await task.result, same(result));
       expect(driver.session.requests.single.prompt, 'a lighthouse');
     });
 
@@ -1229,11 +1232,11 @@ void main() {
 
       final running = first.generate(const ImageGenerationRequest(prompt: 'a'));
 
-      for (final start in <void Function()>[
-        () => first.generate(const ImageGenerationRequest(prompt: 'b')),
-        () => second.generate(const ImageGenerationRequest(prompt: 'c')),
+      for (final start in [
+        first.generate(const ImageGenerationRequest(prompt: 'b')),
+        second.generate(const ImageGenerationRequest(prompt: 'c')),
       ]) {
-        expect(
+        await expectLater(
           start,
           throwsA(
             isA<LlamaStateException>().having(
@@ -1248,7 +1251,7 @@ void main() {
 
       gate.complete();
       expect(
-        (await running.done).state,
+        (await (await running).done).state,
         ImageGenerationCompletionState.completed,
       );
       driver.session.gate = null;
@@ -1264,7 +1267,7 @@ void main() {
       final engine = await load(_sdxs());
       final gate = driver.session.gate = Completer<void>();
 
-      final task = engine.generate(
+      final task = await engine.generate(
         const ImageGenerationRequest(prompt: 'a', steps: 4),
       );
       final events = task.events.toList();
@@ -1276,6 +1279,16 @@ void main() {
       final completion = await task.done;
 
       expect(completion.state, ImageGenerationCompletionState.cancelled);
+      await expectLater(
+        task.result,
+        throwsA(
+          isA<LlamaStateException>().having(
+            (error) => error.message,
+            'message',
+            'Image generation was cancelled.',
+          ),
+        ),
+      );
       expect(driver.session.cancelCalls, 2);
       expect(driver.session.stepsRun, 0);
       expect(await events, everyElement(isA<ImageGenerationProgressEvent>()));
@@ -1283,7 +1296,7 @@ void main() {
 
     test('cancel during sampling stops the runtime', () async {
       final engine = await load(_sdxs());
-      final task = engine.generate(
+      final task = await engine.generate(
         const ImageGenerationRequest(prompt: 'a', steps: 8),
       );
 
@@ -1310,11 +1323,11 @@ void main() {
       final engine = await load(_sdxs());
       driver.session.failNext = true;
 
-      final task = engine.generate(const ImageGenerationRequest(prompt: 'a'));
-      await expectLater(
-        task.events.drain<void>(),
-        throwsA(isA<LlamaInferenceException>()),
+      final task = await engine.generate(
+        const ImageGenerationRequest(prompt: 'a'),
       );
+      final events = await task.events.toList();
+      expect(events, everyElement(isA<ImageGenerationProgressEvent>()));
       final completion = await task.done;
       expect(completion.state, ImageGenerationCompletionState.failed);
       expect(
@@ -1325,6 +1338,7 @@ void main() {
           contains('The engine can run the next request'),
         ),
       );
+      await expectLater(task.result, throwsA(same(completion.error)));
 
       final next = await engine.generateImage(
         const ImageGenerationRequest(prompt: 'b'),
@@ -1368,7 +1382,7 @@ void main() {
           isA<LlamaStateException>().having(
             (error) => error.message,
             'message',
-            contains('disposed'),
+            contains('cancelled'),
           ),
         ),
       );
@@ -1385,10 +1399,32 @@ void main() {
       await engine.dispose();
       expect(driver.session.disposeCalls, 1);
       expect((await engine.capabilities).isSupported, isFalse);
-      expect(
-        () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+      await expectLater(
+        engine.generate(const ImageGenerationRequest(prompt: 'a')),
         throwsA(isA<LlamaStateException>()),
       );
+    });
+
+    test('a dispose before generate is awaited still returns the task, '
+        'cancelled, with no error event', () async {
+      final engine = await load(_sdxs());
+      final gate = driver.session.gate = Completer<void>();
+      final starting = engine.generate(
+        const ImageGenerationRequest(prompt: 'a', steps: 4),
+      );
+
+      final disposal = engine.dispose();
+      gate.complete();
+      final task = await starting;
+      final events = task.events.toList();
+      await disposal;
+
+      expect(task.isCancellationRequested, isTrue);
+      expect(await events, everyElement(isA<ImageGenerationProgressEvent>()));
+      expect((await task.done).state, ImageGenerationCompletionState.cancelled);
+      await expectLater(task.result, throwsA(isA<LlamaStateException>()));
+      expect(driver.session.disposedAfterGenerate, isTrue);
+      expect(driver.session.stepsRun, 0);
     });
   });
 
@@ -1437,7 +1473,7 @@ void main() {
       );
 
       final gate = driver.session.gate = Completer<void>();
-      final running = engine.generate(
+      final running = await engine.generate(
         const ImageGenerationRequest(prompt: 'a'),
       );
       await expectLater(engine.warmUp(), throwsA(isA<LlamaStateException>()));
@@ -1466,8 +1502,8 @@ void main() {
 
       final warmUp = engine.warmUp();
 
-      expect(
-        () => engine.generate(const ImageGenerationRequest(prompt: 'a')),
+      await expectLater(
+        engine.generate(const ImageGenerationRequest(prompt: 'a')),
         throwsA(isA<LlamaStateException>()),
       );
       await expectLater(load(_sdxs()), throwsA(isA<LlamaStateException>()));
@@ -1487,7 +1523,7 @@ void main() {
     test('throws LlamaStateException while a generation runs', () async {
       final engine = await load(_sdxs());
       final gate = driver.session.gate = Completer<void>();
-      final running = engine.generate(
+      final running = await engine.generate(
         const ImageGenerationRequest(prompt: 'a'),
       );
 

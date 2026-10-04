@@ -599,6 +599,39 @@ void main() {
     },
   );
 
+  test('reports a task failure through done and result, not events', () async {
+    final engine = await load();
+    driver.workerPushError = StateError('native inference failed');
+
+    final task = await engine.transcribe(
+      SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
+    );
+
+    expect(await task.events.toList(), isEmpty);
+    final completion = await task.done;
+    expect(completion.state, SpeechToTextCompletionState.failed);
+    expect(completion.error, isA<LlamaSpeechException>());
+    await expectLater(task.result, throwsA(same(completion.error)));
+  });
+
+  test('cancels a transcription task through its own session', () async {
+    final engine = await load();
+    driver.blockWorkerPush = true;
+
+    final task = await engine.transcribe(
+      SpeechToTextRequest(audio: SpeechAudioPcmInput(Float32List(16000))),
+    );
+    final events = task.events.toList();
+    await Future<void>.delayed(Duration.zero);
+    task.cancel();
+    driver.worker.releasePushes();
+
+    expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+    await expectLater(task.result, throwsA(isA<LlamaStateException>()));
+    expect(await events, isEmpty);
+    expect(driver.worker.cancelCalls, 1);
+  });
+
   test('cancels a dedicated session idempotently', () async {
     final engine = await load();
     final session = await engine.startStream();
@@ -669,6 +702,7 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
   LiteRtLmAsrRuntimeConfig? lastConfig;
   bool blockStart = false;
   bool blockWorkerPush = false;
+  Object? workerPushError;
   final Completer<void> _startRelease = Completer<void>();
   _FakeLiteRtLmSpeechWorker worker = _FakeLiteRtLmSpeechWorker();
 
@@ -695,7 +729,9 @@ class _FakeLiteRtLmSpeechDriver implements LiteRtLmSpeechToTextDriver {
     startCalls++;
     lastStartLibraryPath = libraryPath;
     lastConfig = config;
-    worker = _FakeLiteRtLmSpeechWorker()..blockPush = blockWorkerPush;
+    worker = _FakeLiteRtLmSpeechWorker()
+      ..blockPush = blockWorkerPush
+      ..pushError = workerPushError;
     if (blockStart) {
       await _startRelease.future;
     }
