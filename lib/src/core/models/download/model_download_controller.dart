@@ -297,7 +297,10 @@ class ModelDownloadController {
             stage: ModelDownloadTaskStage.cancelled,
             source: source,
             progress: latestProgress,
-            errorMessage: 'Download cancelled for ${source.displayName}.',
+            errorMessage: _redactedErrorMessage(
+              'Download cancelled for ${source.displayName}.',
+              source,
+            ),
           ),
         );
       } else {

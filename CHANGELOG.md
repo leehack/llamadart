@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Redacted known URL secrets repeated in model filenames from download
+  cancellation messages.
 - **Fixed:** URL-valued `ModelSource.path` diagnostics redact credentials and
   signed queries while preserving the loading path and cache identity
   ([#846](https://github.com/leehack/llamadart/issues/846)).

@@ -173,9 +173,61 @@ void main() {
         expect(manager.lastOptions?.cancelToken?.isCancelled, isTrue);
         expect(controller.snapshot.stage, ModelDownloadTaskStage.cancelled);
         expect(controller.snapshot.canRetry, isTrue);
+        expect(
+          controller.snapshot.errorMessage,
+          'Download cancelled for model.gguf.',
+        );
         expect(stages, contains(ModelDownloadTaskStage.cancelled));
       },
     );
+
+    for (final url in <String>[
+      'https://alice:CancelPassword@example.com/CancelPassword.gguf?token=CancelSignature',
+      'https://example.com/CancelSignature.gguf?token=CancelSignature',
+      'https://alice:Cancel%20Password@example.com/Cancel%20Password.gguf',
+    ]) {
+      test('cancelled snapshots redact secrets repeated in $url', () async {
+        final source = ModelSource.url(Uri.parse(url));
+        final originalFileName = source.fileName;
+        final originalCanonicalKey = source.canonicalKey;
+        final originalCacheKey = source.cacheKey;
+        final manager = _FakeDownloadManager();
+        final gate = Completer<void>();
+        manager.ensureGate = gate;
+        final controller = ModelDownloadController(manager: manager);
+        addTearDown(controller.dispose);
+        final snapshots = <ModelDownloadTaskSnapshot>[];
+        final sub = controller.snapshots.listen(snapshots.add);
+        addTearDown(sub.cancel);
+
+        final task = controller.start(source);
+        await Future<void>.delayed(Duration.zero);
+        controller.cancel();
+        gate.complete();
+
+        await expectLater(
+          task,
+          throwsA(
+            isA<LlamaStateException>().having(
+              (error) => error.message,
+              'message',
+              'Model download was cancelled.',
+            ),
+          ),
+        );
+        final cancelled = snapshots.singleWhere(
+          (snapshot) => snapshot.stage == ModelDownloadTaskStage.cancelled,
+        );
+        expect(cancelled, same(controller.snapshot));
+        expect(cancelled.errorMessage, 'Download cancelled for .gguf.');
+        expect(cancelled.canRetry, isTrue);
+        expect(cancelled.source, same(source));
+        expect(source.fileName, originalFileName);
+        expect(source.canonicalKey, originalCanonicalKey);
+        expect(source.resolvedUri.toString(), url);
+        expect(source.cacheKey, originalCacheKey);
+      });
+    }
 
     test(
       'manager cancellation-like errors fail unless controller cancelled',

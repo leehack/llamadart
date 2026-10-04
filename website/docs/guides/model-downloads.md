@@ -15,7 +15,8 @@ covered in [Model lifecycle](./model-lifecycle).
 `ModelDownloadController` wraps any `ModelDownloadManager` and emits UI-ready
 snapshots: a stage, a progress fraction, cancel and retry, and an error message
 with URL userinfo, query strings and fragments redacted, including in
-redirect failures and invalid-source diagnostics. It does not depend on Flutter.
+redirect failures and invalid-source diagnostics. Cancellation messages also
+remove known URL secrets repeated in the model filename. It does not depend on Flutter.
 
 ```dart
 final controller = ModelDownloadController(
