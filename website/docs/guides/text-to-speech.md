@@ -112,31 +112,29 @@ final task = await synthesizer.synthesize(
   ),
 );
 
-try {
-  await for (final event in task.events) {
-    if (event is TextToSpeechProgressEvent) {
-      print('Generated ${event.framesGenerated} frames');
-    }
-    if (event is TextToSpeechFinalEvent) {
-      final result = event.result;
-      final wavBytes = result.toWavBytes();
-      print('${result.duration}: ${wavBytes.length} WAV bytes');
-    }
+task.events.listen((event) {
+  if (event is TextToSpeechProgressEvent) {
+    print('Generated ${event.framesGenerated} frames');
   }
-} on LlamaException catch (error) {
-  print('Synthesis failed: $error');
-}
+});
 
-final completion = await task.done;
-print(completion.state);
+try {
+  final result = await task.result;
+  final wavBytes = result.toWavBytes();
+  print('${result.duration}: ${wavBytes.length} WAV bytes');
+} on LlamaException catch (error) {
+  print('Synthesis failed or was cancelled: $error');
+}
 ```
 
 `synthesize` throws typed validation, state, or unsupported errors when
-preflight fails before a task starts. After startup, failures are emitted as a
-stream error and also reported through `task.done`. The event stream is
-single-subscription. `synthesizeOnce` skips the events: it returns the final
-result, and throws the task's failure, or `LlamaStateException` when the task
-is cancelled.
+preflight fails before a task starts. After startup, the single-subscription
+event stream carries progress, then one `TextToSpeechFinalEvent` with the PCM,
+and never emits an error. `task.result` returns the audio or throws the
+failure, or `LlamaStateException` when the task is cancelled; `task.done`
+reports the same outcome as a `TextToSpeechCompletion` and never throws.
+`synthesizeOnce` skips the events: it is
+`(await synthesizer.synthesize(request)).result`.
 
 For models that advertise speaker-reference support, encoded bytes are the
 portable representation. In this example, `referenceWavBytes` is a
@@ -168,8 +166,8 @@ responsible for its own files, byte buffers, permissions, and disclosures.
 
 ## Cancellation, concurrency, and buffering
 
-Call `task.cancel()` to request cooperative cancellation. Cancelling only the
-event-stream subscription does not cancel synthesis. On native llama.cpp with
+Call `task.cancel()` to request cooperative cancellation of that synthesis.
+Cancelling only the event-stream subscription does not cancel synthesis. On native llama.cpp with
 llamadart-native `v0.4.1-1` or later, which the default pin meets, a cancel
 stops a Qwen3-TTS audio decode in progress at its next chunk boundary. Older
 runtimes finish the native step first, which can include the whole decode.

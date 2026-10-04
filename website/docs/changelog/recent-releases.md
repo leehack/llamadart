@@ -13,6 +13,17 @@ For canonical full release notes, use:
   failures, download snapshots and invalid model-source errors, including
   slashless URLs; LiteRT-LM Web model names reject decoded URL delimiters.
 
+- **Breaking (Preview):** `ImageGenerationEngine.generate` returns
+  `Future<ImageGenerationTask>`; await it before reading `events` or calling
+  `cancel` ([#850](https://github.com/leehack/llamadart/issues/850)).
+- **Breaking:** `ImageGenerationTask`, `SpeechToTextTask` and
+  `TextToSpeechTask` no longer report a failure as an error on `events`; read
+  it from `done`, or from the new `result`, which returns the result or
+  throws the failure, or `LlamaStateException` when the task is cancelled
+  ([#850](https://github.com/leehack/llamadart/issues/850)).
+- **Fixed:** `SpeechToTextTask.cancel()` stops only that recognition; it no
+  longer cancels chat and other requests on the same `LlamaEngine`
+  ([#850](https://github.com/leehack/llamadart/issues/850)).
 - `ModelParams.device` (`ComputeDevice`) selects the device for every
   runtime: `auto` keeps each runtime's default, and an explicit `cpu`, `gpu`
   or `npu` runs there or throws `LlamaUnsupportedException` instead of

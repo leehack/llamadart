@@ -277,12 +277,11 @@ class PublicSpeechValidationAdapter
         ),
       );
       final events = await task.events.toList();
-      final completion = await task.done;
-      if (completion.state != SpeechToTextCompletionState.completed ||
-          events.whereType<SpeechToTextFinalEvent>().length != 1) {
+      final result = await task.result;
+      if (events.whereType<SpeechToTextFinalEvent>().length != 1) {
         throw StateError('Edge fixture did not emit one completed result');
       }
-      transcript = completion.result!.text;
+      transcript = result.text;
     } on LlamaSpeechException catch (error) {
       return {
         ...measured,
@@ -396,6 +395,9 @@ class PublicSpeechValidationAdapter
           : null;
       final events = await task.events.toList();
       final completion = await task.done;
+      if (completion.state == SpeechToTextCompletionState.failed) {
+        throw completion.error!;
+      }
       if (cancellation != null) {
         cancelWatch.stop();
         if (completion.state != SpeechToTextCompletionState.cancelled ||
@@ -457,6 +459,9 @@ class PublicSpeechValidationAdapter
       }
     }
     final completion = await task.done;
+    if (completion.state == TextToSpeechCompletionState.failed) {
+      throw completion.error!;
+    }
     if (cancellation != null) {
       cancelWatch.stop();
       if (completion.state != TextToSpeechCompletionState.cancelled ||
@@ -518,18 +523,14 @@ class PublicSpeechValidationAdapter
     final firstFrame = Completer<int>();
     final drained = Completer<void>();
     var finals = 0;
-    final events = task.events.listen(
-      (event) {
-        if (event is TextToSpeechProgressEvent &&
-            event.framesGenerated > 0 &&
-            !firstFrame.isCompleted) {
-          firstFrame.complete(event.framesGenerated);
-        }
-        if (event is TextToSpeechFinalEvent) finals++;
-      },
-      onError: (Object _) {},
-      onDone: drained.complete,
-    );
+    final events = task.events.listen((event) {
+      if (event is TextToSpeechProgressEvent &&
+          event.framesGenerated > 0 &&
+          !firstFrame.isCompleted) {
+        firstFrame.complete(event.framesGenerated);
+      }
+      if (event is TextToSpeechFinalEvent) finals++;
+    }, onDone: drained.complete);
     var settled = false;
     final done = task.done.whenComplete(() => settled = true);
     final frames = await Future.any([firstFrame.future, done.then((_) => 0)]);
@@ -574,7 +575,7 @@ class PublicSpeechValidationAdapter
     final probes = measured['overhead_probes'] = <Map<String, Object?>>[];
     for (var run = 0; run < speechDecodeCancelOverheadRuns; run++) {
       final task = await _synthesize(maxFrames: speechDecodeCancelFrameCap);
-      final events = task.events.handleError((Object _) {}).toList();
+      final events = task.events.toList();
       final watch = _newStopwatch()..start();
       task.cancel();
       final completion = await task.done;
@@ -762,7 +763,7 @@ class PublicSpeechValidationAdapter
         maxOutputTokens: maxOutputTokens,
       ),
     );
-    await task.events.handleError((Object _) {}).drain<void>();
+    await task.events.drain<void>();
     final completion = await task.done;
     final error = completion.error;
     return {

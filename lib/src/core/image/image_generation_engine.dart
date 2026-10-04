@@ -83,19 +83,36 @@ class ImageGenerationTask {
 
   /// Progress events followed by one [ImageGenerationFinalEvent].
   ///
-  /// Single-subscription. A failure is emitted as a stream error and also
-  /// reported by [done]; a cancelled task closes the stream without a final
-  /// event.
+  /// Single-subscription. The stream carries progress only and never emits an
+  /// error: a failed or cancelled task closes it without a final event, and
+  /// [done] and [result] report why.
   Stream<ImageGenerationEvent> get events => _events.stream;
 
-  /// Completes once the task succeeds, is cancelled, or fails.
+  /// Completes once the task succeeds, is cancelled, or fails. It never
+  /// completes with an error.
   Future<ImageGenerationCompletion> get done => _done.future;
+
+  /// The generated images.
+  ///
+  /// Throws the task's [LlamaException] when it fails, and
+  /// [LlamaStateException] when it is cancelled.
+  Future<ImageGenerationResult> get result => _result;
+
+  late final Future<ImageGenerationResult> _result = done.then(
+    (completion) => switch (completion.state) {
+      ImageGenerationCompletionState.completed => completion.result!,
+      ImageGenerationCompletionState.failed => throw completion.error!,
+      ImageGenerationCompletionState.cancelled => throw LlamaStateException(
+        'Image generation was cancelled.',
+      ),
+    },
+  );
 
   /// Whether cancellation has been requested.
   bool get isCancellationRequested => _cancelled;
 
-  /// Requests cancellation. Calling this more than once, or after the task
-  /// finished, is safe.
+  /// Requests cancellation of this task. Calling this more than once, or
+  /// after the task finished, is safe.
   ///
   /// The runtime stops before its next sampling step or before decoding, so
   /// the task can take up to one step to report
@@ -474,7 +491,8 @@ class ImageGenerationEngine {
   /// Whether [dispose] has been called.
   bool get isDisposed => _disposal != null;
 
-  /// Starts generating the images [request] describes.
+  /// Starts generating the images [request] describes and returns the
+  /// running task.
   ///
   /// An unset width and height use
   /// [ImageGenerationRequest.defaultDimension], unset steps
@@ -483,12 +501,19 @@ class ImageGenerationEngine {
   /// scheduler and flow shift leave the runtime's choice for the model, and
   /// an unset seed is picked at random and reported in the result.
   ///
+  /// The task's [ImageGenerationTask.events] report each phase and sampling
+  /// step, then one [ImageGenerationFinalEvent]. [ImageGenerationTask.cancel]
+  /// takes effect before the runtime's next sampling step or before decoding,
+  /// so the task can run up to one more step before it reports
+  /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.
+  ///
   /// Throws [LlamaImageGenerationException] for an invalid request, and
   /// [LlamaStateException] after [dispose] or while another generation or
-  /// load is running. A runtime failure after the task starts, such as an
-  /// aborted GPU command buffer, fails the task with
-  /// [LlamaInferenceException]; the engine stays usable.
-  ImageGenerationTask generate(ImageGenerationRequest request) {
+  /// load is running; these checks run before the returned future completes,
+  /// and the one-generation slot is taken when this is called. A runtime
+  /// failure after the task starts, such as an aborted GPU command buffer,
+  /// fails the task with [LlamaInferenceException]; the engine stays usable.
+  Future<ImageGenerationTask> generate(ImageGenerationRequest request) async {
     final effective = _resolve(request);
     final operation = _acquireOperation();
     final resolved = ImageGenerationSessionRequest(
@@ -512,20 +537,11 @@ class ImageGenerationEngine {
 
   /// Generates the images [request] describes and returns them.
   ///
-  /// Throws what [generate] throws, the failure of the task, or
-  /// [LlamaStateException] when [dispose] cancels it.
+  /// Throws what [generate] and [ImageGenerationTask.result] throw, such as
+  /// [LlamaStateException] when [dispose] cancels the task.
   Future<ImageGenerationResult> generateImage(
     ImageGenerationRequest request,
-  ) async {
-    final completion = await generate(request).done;
-    return switch (completion.state) {
-      ImageGenerationCompletionState.completed => completion.result!,
-      ImageGenerationCompletionState.failed => throw completion.error!,
-      ImageGenerationCompletionState.cancelled => throw LlamaStateException(
-        'Image generation was cancelled because the engine was disposed.',
-      ),
-    };
-  }
+  ) async => (await generate(request)).result;
 
   /// Compiles the GPU pipelines a [width] by [height] generation at
   /// [guidanceScale] needs, by running one single-step generation and
@@ -570,7 +586,7 @@ class ImageGenerationEngine {
       _releaseOperation(_acquireOperation());
       return;
     }
-    final completion = await generate(request).done;
+    final completion = await (await generate(request)).done;
     if (completion.state == ImageGenerationCompletionState.failed) {
       throw completion.error!;
     }
@@ -653,7 +669,7 @@ class ImageGenerationEngine {
       );
       task._add(ImageGenerationFinalEvent(result));
       completion = ImageGenerationCompletion.completed(result);
-    } catch (error, stackTrace) {
+    } catch (error) {
       if (task.isCancellationRequested) {
         completion = const ImageGenerationCompletion.cancelled();
         return;
@@ -661,7 +677,6 @@ class ImageGenerationEngine {
       final failure = error is LlamaException
           ? error
           : LlamaInferenceException('Image generation failed.', error);
-      task._events.addError(failure, stackTrace);
       completion = ImageGenerationCompletion.failed(failure);
     } finally {
       // Release before `done` completes so a caller awaiting it can start

@@ -337,12 +337,26 @@ class CancellableSpeechEngine extends FakeSpeechEngine {
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-  }) async* {
-    final generation = generations++;
-    for (final delta in deltas) {
-      if (!await _awaitToken(generation)) return;
-      yield completionChunk(delta);
-    }
+  }) {
+    late final StreamController<LlamaCompletionChunk> controller;
+    controller = StreamController<LlamaCompletionChunk>(
+      onListen: () async {
+        final generation = generations++;
+        for (final delta in deltas) {
+          if (!await _awaitToken(generation)) break;
+          controller.add(completionChunk(delta));
+        }
+        await controller.close();
+      },
+      // A subscription cancel stops only this generation, as on llama.cpp,
+      // and completes once the generation acknowledges it.
+      onCancel: () {
+        final running = _running;
+        _acknowledgeCancel();
+        return running?.future;
+      },
+    );
+    return controller.stream;
   }
 
   Future<BackendTextToSpeechResult> _synthesize(
@@ -2411,6 +2425,34 @@ void main() {
         expect(cancelled['cancelled'], isTrue, reason: pack);
         expect(cancelled['cancel_immediate'], isTrue, reason: pack);
       }
+    },
+  );
+
+  test(
+    'the public adapter throws the failure a started task reports',
+    () async {
+      final recognition = edgeAdapter(
+        failure: LlamaInferenceException('decode failed'),
+      );
+      await recognition.load();
+      await expectLater(
+        recognition.execute(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      await recognition.dispose();
+
+      final engine = FakeSpeechEngine();
+      engine.speechBackend
+        ..textToSpeech = qwen3TtsCapabilities
+        ..onSynthesize = (_, _) async =>
+            throw LlamaTextToSpeechException('codec failed');
+      final synthesis = edgeAdapter(pack: 'tts', engine: engine);
+      await synthesis.load();
+      await expectLater(
+        synthesis.execute(),
+        throwsA(isA<LlamaTextToSpeechException>()),
+      );
+      await synthesis.dispose();
     },
   );
 
