@@ -1624,6 +1624,10 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             ("duplicate-shared-dependency", original.replace(shared_dependency, shared_dependency + "\n" + shared_dependency)),
             ("unconditional-shared-reference", original.replace(shared_dependency, shared_dependency + '\n.target(name: "LiteRtLm"),')),
             ("extra-metal-platform", original.replace(metal_dependency, metal_dependency + "\n" + metal_dependency.replace(".iOS", ".macOS"))),
+            ("dangling-dependency", original.replace(dependency, dependency + '\n.target(name: "MissingTarget"),')),
+            ("formatted-dangling-dependency", original.replace(dependency, dependency + '\n.target (\n name : "MissingTarget"\n),')),
+            ("string-dependency", original.replace(dependency, dependency + '\n"MissingTarget",')),
+            ("dynamic-dependency", original.replace(dependency, dependency + '\n.target(name: dynamicTarget),')),
         ):
             with self.subTest(source=label), self.assertRaisesRegex(ReleaseError, "provider|Provider|owner inventory"):
                 prepare_litert_lm_package_swift(
@@ -1644,6 +1648,26 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             ("unexpected-target", original.replace('name: "CLiteRTLMMac",', 'name: "UnexpectedTarget",')),
         ):
             with self.subTest(source=label), self.assertRaisesRegex(ReleaseError, "owner inventory"):
+                prepare_litert_lm_package_swift(
+                    source, release=release, manifest=manifest, resolved_tag=tag,
+                )
+
+    def test_schema_2_modern_provider_removal_rejects_valid_wrong_artifact(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        original = MODERN_LITERT_SWIFT.read_text(encoding="utf-8")
+        for target, wrong_asset in (
+            ("LiteRtLm", "LiteRtMetalAccelerator"),
+            ("CLiteRTLM", "LiteRtMetalAccelerator"),
+            ("LiteRtMetalAccelerator", "CLiteRTLM"),
+            ("CLiteRTLMMac", "CLiteRTLM"),
+        ):
+            with self.subTest(target=target), self.assertRaisesRegex(ReleaseError, "canonical.*artifact template"):
+                source = original.replace(
+                    f'artifactName: "litert-lm-native-apple-{target}-xcframework-',
+                    f'artifactName: "litert-lm-native-apple-{wrong_asset}-xcframework-',
+                )
+                self.assertNotEqual(source, original)
                 prepare_litert_lm_package_swift(
                     source, release=release, manifest=manifest, resolved_tag=tag,
                 )
@@ -1702,6 +1726,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         for label, modern in (
             ("wrong-platform", original.replace(dependency, dependency.replace(".iOS", ".macOS"))),
             ("duplicate-reference", original.replace(dependency, dependency + "\n" + dependency)),
+            ("runtime-to-metal-asset", original.replace('artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-', 'artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-')),
+            ("capi-to-metal-asset", original.replace('artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-', 'artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-')),
+            ("metal-to-capi-asset", original.replace('artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-', 'artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-')),
+            ("dangling-dependency", original.replace(dependency, dependency + '\n.target(name: "MissingTarget"),')),
+            ("formatted-dangling-dependency", original.replace(dependency, dependency + '\n.target (\n name : "MissingTarget"\n),')),
+            ("string-dependency", original.replace(dependency, dependency + '\n"MissingTarget",')),
         ):
             with self.subTest(source=label), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)

@@ -3525,11 +3525,45 @@ def prepare_litert_lm_package_swift(
                 raise ReleaseError(
                     "Modern LiteRT-LM Package.swift provider topology is ambiguous"
                 )
-            if len(swift_native_repo_binary_targets(
+            current_target_assets = swift_native_repo_binary_targets(
                 swift_text, tag_variable="liteRtLmTag", current_tag=original_tag,
-            )) != len(current_targets):
+            )
+            if len(current_target_assets) != len(current_targets):
                 raise ReleaseError(
                     "Modern LiteRT-LM provider removal has duplicate binary targets"
+                )
+            for target, artifact_template in current_target_assets:
+                canonical_template = (
+                    f"litert-lm-native-apple-{target}-xcframework-{{tag}}.zip"
+                )
+                if artifact_template != canonical_template:
+                    raise ReleaseError(
+                        "Modern LiteRT-LM provider removal requires the "
+                        f"canonical {target} artifact template"
+                    )
+            target_references = re.findall(
+                r'\.target\s*\(\s*name\s*:\s*"([^\"]+)"', swift_text,
+            )
+            if (
+                sorted(target_references) != sorted(
+                    current_targets | {"llamadart_litert_lm_flutter"}
+                )
+                or len(re.findall(r'\.target\s*\(', swift_text)) != len(target_references)
+            ):
+                raise ReleaseError(
+                    "Modern LiteRT-LM provider removal has unexpected target references"
+                )
+            dependency_lists = re.findall(
+                r'\bdependencies\s*:\s*\[(.*?)\]\s*,\s*linkerSettings\s*:',
+                swift_text, re.DOTALL,
+            )
+            if len(dependency_lists) != 1 or re.sub(
+                r'\.target\s*\(\s*name\s*:\s*"[^\"]+"\s*,\s*condition\s*:\s*'
+                r'\.when\s*\(\s*platforms\s*:\s*\[[^]]*\]\s*\)\s*\)',
+                "", dependency_lists[0] if dependency_lists else "",
+            ).strip(" \t\r\n,"):
+                raise ReleaseError(
+                    "Modern LiteRT-LM provider removal has malformed dependency inventory"
                 )
             for target, platforms in (
                 ("CLiteRTLMMac", ".macOS"),
