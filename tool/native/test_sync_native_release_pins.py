@@ -41,6 +41,7 @@ from sync_native_release_pins import (  # noqa: E402
 
 
 LEGACY_LITERT_SWIFT = Path(__file__).resolve().parent / "fixtures/litert_lm_legacy_Package.swift"
+MODERN_LITERT_SWIFT = Path(__file__).resolve().parent / "fixtures/litert_lm_modern_provider_Package.swift"
 
 UPSTREAM_COMMIT = "ba82499873945908bf8bcfc96e955d0677eb1fa1"
 NATIVE_COMMIT = "451ba0ce7c366972b4dc0e58f08ffe590958f943"
@@ -443,6 +444,7 @@ def _run_schema2_sync(
     include_runtime_dependencies: bool = False,
     current_litert_tag: str = "v0.16.0-native.2",
     allow_stable_rebuild_entry: bool = False,
+    starting_swift: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     repo_root = temp_dir / "repo"
     source_root = Path(__file__).resolve().parents[2]
@@ -482,7 +484,10 @@ def _run_schema2_sync(
         "packages/llamadart_litert_lm_flutter/darwin/"
         "llamadart_litert_lm_flutter/Package.swift"
     )
-    shutil.copyfile(LEGACY_LITERT_SWIFT, swift)
+    if starting_swift is None:
+        shutil.copyfile(LEGACY_LITERT_SWIFT, swift)
+    else:
+        swift.write_text(starting_swift, encoding="utf-8")
     release_dir = temp_dir / "releases"
     release_dir.mkdir()
     _materialize_schema2_release_fixtures(release_dir, manifest, release)
@@ -1527,8 +1532,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 platform["artifactPaths"].append(
                     f'bin/ios/{platform["arch"]}/{provider}.framework/{provider}'
                 )
-        for source in (original, previous):
-            with self.subTest(source="legacy" if source == original else "schema2"):
+        for label, source in (
+            ("legacy", original),
+            ("schema2", previous),
+            ("modern-provider", MODERN_LITERT_SWIFT.read_text(encoding="utf-8")),
+        ):
+            with self.subTest(source=label):
                 prepared = prepare_litert_lm_package_swift(
                     source, release=release, manifest=manifest, resolved_tag=tag,
                 )
@@ -1553,6 +1562,169 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             prepare_litert_lm_package_swift(
                 original, release=release, manifest=manifest, resolved_tag=tag,
             )
+
+    def test_schema_2_removes_only_unused_modern_ios_provider(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        original = MODERN_LITERT_SWIFT.read_text(encoding="utf-8")
+        prepared = prepare_litert_lm_package_swift(
+            original, release=release, manifest=manifest, resolved_tag=tag,
+        )
+        self.assertEqual(MODERN_LITERT_SWIFT.read_text(encoding="utf-8"), original)
+        self.assertNotIn("GemmaModelConstraintProvider", prepared)
+        for dependency in (
+            'name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])',
+            'name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])',
+            'name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])',
+            'name: "LiteRtTopKMetalSampler", condition: .when(platforms: [.iOS])',
+        ):
+            self.assertIn(dependency, prepared)
+        self.assertEqual(
+            {name for name, _ in pins.swift_native_repo_binary_targets(
+                prepared, tag_variable="liteRtLmTag", current_tag=tag,
+            )},
+            pins.litert_schema2_apple_targets(manifest, tag),
+        )
+        for target in pins.litert_schema2_apple_targets(manifest, tag):
+            asset = next(item for item in release["assets"] if item["name"] ==
+                f"litert-lm-native-apple-{target}-xcframework-{tag}.zip")
+            self.assertIn(f'checksum: "{asset["digest"][7:]}"', prepared)
+        self.assertEqual(prepare_litert_lm_package_swift(
+            prepared, release=release, manifest=manifest, resolved_tag=tag,
+        ), prepared)
+
+    def test_schema_2_modern_provider_removal_rejects_ambiguous_topology(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        original = MODERN_LITERT_SWIFT.read_text(encoding="utf-8")
+        dependency = '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS])),'
+        provider_block = re.search(
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "GemmaModelConstraintProvider",.*?^[ \t]*\),',
+            original, re.DOTALL,
+        ).group()
+        mac_block = re.search(
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "CLiteRTLMMac",.*?^[ \t]*\),',
+            original, re.DOTALL,
+        ).group()
+        mac_dependency = '.target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])),'
+        shared_dependency = '.target(name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])),'
+        metal_dependency = '.target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])),'
+        for label, source in (
+            ("duplicate-block", original.replace(provider_block, provider_block + "\n" + provider_block)),
+            ("duplicate-dependency", original.replace(dependency, dependency + "\n" + dependency)),
+            ("missing-dependency", original.replace(dependency, "")),
+            ("wrong-provider-platform", original.replace(dependency, dependency.replace(".iOS", ".macOS"))),
+            ("shared-provider-platform", original.replace(dependency, dependency.replace(".iOS", ".iOS, .macOS"))),
+            ("malformed-block", original.replace(provider_block, provider_block.replace("checksum:", "invalidChecksum:"))),
+            ("malformed-artifact", original.replace(provider_block, provider_block.replace("apple-GemmaModelConstraintProvider-", "apple-OtherProvider-"))),
+            ("wrong-mac-platform", original.replace('name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])', 'name: "CLiteRTLMMac", condition: .when(platforms: [.iOS])')),
+            ("wrong-shared-platform", original.replace('name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])', 'name: "LiteRtLm", condition: .when(platforms: [.iOS])')),
+            ("duplicate-mac-block", original.replace(mac_block, mac_block + "\n" + mac_block)),
+            ("duplicate-mac-dependency", original.replace(mac_dependency, mac_dependency + "\n" + mac_dependency)),
+            ("duplicate-shared-dependency", original.replace(shared_dependency, shared_dependency + "\n" + shared_dependency)),
+            ("unconditional-shared-reference", original.replace(shared_dependency, shared_dependency + '\n.target(name: "LiteRtLm"),')),
+            ("extra-metal-platform", original.replace(metal_dependency, metal_dependency + "\n" + metal_dependency.replace(".iOS", ".macOS"))),
+        ):
+            with self.subTest(source=label), self.assertRaisesRegex(ReleaseError, "provider|Provider|owner inventory"):
+                prepare_litert_lm_package_swift(
+                    source, release=release, manifest=manifest, resolved_tag=tag,
+                )
+
+    def test_schema_2_modern_provider_removal_rejects_missing_required_target(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        original = MODERN_LITERT_SWIFT.read_text(encoding="utf-8")
+        missing, count = re.subn(
+            r'(?m)^[ \t]*nativeRepoBinaryTarget\(\s*name: "LiteRtMetalAccelerator",.*?^[ \t]*\),\n',
+            "", original, flags=re.DOTALL,
+        )
+        self.assertEqual(count, 1)
+        for label, source in (
+            ("missing-required", missing),
+            ("unexpected-target", original.replace('name: "CLiteRTLMMac",', 'name: "UnexpectedTarget",')),
+        ):
+            with self.subTest(source=label), self.assertRaisesRegex(ReleaseError, "owner inventory"):
+                prepare_litert_lm_package_swift(
+                    source, release=release, manifest=manifest, resolved_tag=tag,
+                )
+
+    def test_schema_2_sync_modern_provider_removal_preserves_macos_inventory(self) -> None:
+        # This retained v0.16 contract fixture exercises the mechanism, not a
+        # published v7 release. Its macOS inventory mirrors the required provider.
+        manifest, release = _schema2_fixture_payloads()
+        platform = next(item for item in manifest["platforms"]
+            if item["platform"] == "macos" and item["arch"] == "arm64")
+        companion = "bin/macos/arm64/libGemmaModelConstraintProvider.dylib"
+        platform["artifactPaths"].append(companion)
+        artifact = dict(next(item for item in manifest["artifacts"]
+            if item["path"] == "bin/macos/arm64/libLiteRtLm.dylib"))
+        artifact.update(path=companion, fileName="libGemmaModelConstraintProvider.dylib")
+        manifest["artifacts"].append(artifact)
+        # An optional provider archive must not become an iOS dependency.
+        tag = manifest["release"]["tag"]
+        archive = f"litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip"
+        artifact = dict(next(item for item in manifest["artifacts"]
+            if item["path"].startswith("dist/spm/")))
+        artifact.update(path=f"dist/spm/{tag}/{archive}", fileName=archive, sha256="a" * 64)
+        manifest["artifacts"].append(artifact)
+        release["assets"].append({"name": archive, "digest": "sha256:" + "a" * 64})
+        current_tag = "v0.16.0-native.2"
+        modern = MODERN_LITERT_SWIFT.read_text(encoding="utf-8").replace(
+            'let liteRtLmTag = "v0.17.0-6"', f'let liteRtLmTag = "{current_tag}"',
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            result = _run_schema2_sync(
+                root, manifest, release, current_litert_tag=current_tag,
+                starting_swift=modern,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            repo = root / "repo"
+            swift = (repo / "packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift").read_text()
+            self.assertNotIn("GemmaModelConstraintProvider", swift)
+            self.assertIn('name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])', swift)
+            for relative in (
+                "tool/macos_litert_lm_prepare_app.sh",
+                "lib/src/backends/litert_lm/litert_lm_runtime.dart",
+            ):
+                text = (repo / relative).read_text()
+                self.assertIn("libGemmaModelConstraintProvider.dylib", text)
+                self.assertIn("GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider", text)
+            self.assertIn("libGemmaModelConstraintProvider.dylib", (repo / "lib/src/hook/native_release_pins.dart").read_text())
+
+    def test_schema_2_sync_rejects_modern_provider_without_partial_pin_edits(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        current_tag = "v0.16.0-native.2"
+        original = MODERN_LITERT_SWIFT.read_text(encoding="utf-8").replace(
+            'let liteRtLmTag = "v0.17.0-6"', f'let liteRtLmTag = "{current_tag}"',
+        )
+        dependency = '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS])),'
+        for label, modern in (
+            ("wrong-platform", original.replace(dependency, dependency.replace(".iOS", ".macOS"))),
+            ("duplicate-reference", original.replace(dependency, dependency + "\n" + dependency)),
+        ):
+            with self.subTest(source=label), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                result = _run_schema2_sync(
+                    root, manifest, release, current_litert_tag=current_tag,
+                    starting_swift=modern,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("provider", result.stdout + result.stderr)
+                repo = root / "repo"
+                for path in repo.rglob("*"):
+                    if not path.is_file():
+                        continue
+                    relative = path.relative_to(repo)
+                    expected = (Path(__file__).resolve().parents[2] / relative).read_text()
+                    if relative.name == "Package.swift":
+                        expected = modern
+                    elif relative.name == "native_release_pins.dart":
+                        expected = re.sub(
+                            r"const liteRtLmReleaseTag = '[^']+';",
+                            f"const liteRtLmReleaseTag = '{current_tag}';", expected,
+                        )
+                    self.assertEqual(path.read_text(), expected, str(relative))
 
     def test_schema_2_prepares_hook_libraries_from_owner_inventory(self) -> None:
         fixture_root = Path(__file__).resolve().parent / "fixtures"
