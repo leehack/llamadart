@@ -3515,6 +3515,91 @@ def prepare_litert_lm_package_swift(
                 "LiteRT-LM Package.swift shared runtime target condition",
             )
         elif (
+            "GemmaModelConstraintProvider" not in expected_targets
+            and current_targets == expected_targets | {"GemmaModelConstraintProvider"}
+        ):
+            # Modern manifests already have the separate macOS shim. Remove
+            # only the formerly required iOS provider, never the macOS runtime
+            # inventory or an optional owner release asset.
+            if swift_text.count("GemmaModelConstraintProvider") != 3:
+                raise ReleaseError(
+                    "Modern LiteRT-LM Package.swift provider topology is ambiguous"
+                )
+            current_target_assets = swift_native_repo_binary_targets(
+                swift_text, tag_variable="liteRtLmTag", current_tag=original_tag,
+            )
+            if len(current_target_assets) != len(current_targets):
+                raise ReleaseError(
+                    "Modern LiteRT-LM provider removal has duplicate binary targets"
+                )
+            for target, artifact_template in current_target_assets:
+                canonical_template = (
+                    f"litert-lm-native-apple-{target}-xcframework-{{tag}}.zip"
+                )
+                if artifact_template != canonical_template:
+                    raise ReleaseError(
+                        "Modern LiteRT-LM provider removal requires the "
+                        f"canonical {target} artifact template"
+                    )
+            target_references = re.findall(
+                r'\.target\s*\(\s*name\s*:\s*"([^\"]+)"', swift_text,
+            )
+            if (
+                sorted(target_references) != sorted(
+                    current_targets | {"llamadart_litert_lm_flutter"}
+                )
+                or len(re.findall(r'\.target\s*\(', swift_text)) != len(target_references)
+            ):
+                raise ReleaseError(
+                    "Modern LiteRT-LM provider removal has unexpected target references"
+                )
+            dependency_lists = re.findall(
+                r'\bdependencies\s*:\s*\[(.*?)\]\s*,\s*linkerSettings\s*:',
+                swift_text, re.DOTALL,
+            )
+            if len(dependency_lists) != 1 or re.sub(
+                r'\.target\s*\(\s*name\s*:\s*"[^\"]+"\s*,\s*condition\s*:\s*'
+                r'\.when\s*\(\s*platforms\s*:\s*\[[^]]*\]\s*\)\s*\)',
+                "", dependency_lists[0] if dependency_lists else "",
+            ).strip(" \t\r\n,"):
+                raise ReleaseError(
+                    "Modern LiteRT-LM provider removal has malformed dependency inventory"
+                )
+            for target, platforms in (
+                ("CLiteRTLMMac", ".macOS"),
+                ("LiteRtLm", ".iOS, .macOS"),
+                ("CLiteRTLM", ".iOS"),
+                ("LiteRtMetalAccelerator", ".iOS"),
+                ("LiteRtTopKMetalSampler", ".iOS"),
+            ):
+                dependencies = re.findall(
+                    rf'\.target\(name: "{target}", condition: '
+                    r'\.when\(platforms: \[([^]]*)\]\)\)',
+                    swift_text,
+                )
+                if (
+                    dependencies != [platforms]
+                    or swift_text.count(f'name: "{target}"') != 2
+                ):
+                    raise ReleaseError(
+                        "Modern LiteRT-LM provider removal requires the "
+                        f"maintained {target} platform dependency"
+                    )
+            swift_text = replace_one(
+                swift_text,
+                r'(?ms)^[ \t]*nativeRepoBinaryTarget\(\s*'
+                r'name: "GemmaModelConstraintProvider",.*?^[ \t]*\),\n',
+                "",
+                "LiteRT-LM unused iOS provider binary target",
+            )
+            swift_text = replace_one(
+                swift_text,
+                r'(?m)^[ \t]*\.target\(name: "GemmaModelConstraintProvider", '
+                r'condition: \.when\(platforms: \[\.iOS\]\)\),\n',
+                "",
+                "LiteRT-LM unused provider must have exactly one iOS dependency",
+            )
+        elif (
             "GemmaModelConstraintProvider" in expected_targets
             and current_targets == expected_targets - {"GemmaModelConstraintProvider"}
         ):
@@ -3523,6 +3608,13 @@ def prepare_litert_lm_package_swift(
             raise ReleaseError(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
+            )
+        if (
+            "GemmaModelConstraintProvider" not in expected_targets
+            and "GemmaModelConstraintProvider" in swift_text
+        ):
+            raise ReleaseError(
+                "LiteRT-LM Package.swift has malformed or unexpected provider references"
             )
 
     if manifest.get("schemaVersion") == 2 and "GemmaModelConstraintProvider" in expected_targets:

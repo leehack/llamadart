@@ -89,6 +89,16 @@ so development assets use `g<sha>` directly and never synthesize `vg<sha>` URLs.
 Schema 1 manifests remain accepted only when the downloaded bytes, GitHub asset
 digest, and immutable tag commit match the checked-in historical allowlist.
 
+For schema 2, Apple target selection follows the per-platform owner inventory.
+Sync removes a formerly required iOS Gemma constraint-provider target from a
+modern Swift manifest when the new iOS bundles no longer require it. An optional
+provider XCFramework asset alone does not add an iOS dependency. The separate
+macOS compatibility target and all required macOS provider/runtime files remain
+in the generated inventories. Releases whose iOS bundles still require the
+provider retain it; malformed or ambiguous Swift target layouts fail before
+pin files are replaced. Updating the sync tool does not change the current pins
+or publish a runtime.
+
 Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default

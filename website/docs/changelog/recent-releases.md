@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- LiteRT-LM release sync can remove an obsolete iOS provider target from modern
+  Swift packages while preserving required macOS runtime libraries.
 - Reentrant engine disposal now shares one teardown and immediately reports
   disposed state, including calls from logging or backend cancellation hooks.
 - Native requests, generation, and speech synthesis fail promptly when their
