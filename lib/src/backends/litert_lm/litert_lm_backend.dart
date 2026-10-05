@@ -76,7 +76,7 @@ class LiteRtLmBackend
 
   @override
   String? get generationLimitUnsupportedReason =>
-      'Native LiteRT-LM v0.17.0-6 does not expose a reliable generation termination reason. '
+      'Native LiteRT-LM v0.17.0-7 does not expose a reliable generation termination reason. '
       'Automatic tool loops require an owner runtime with token-limit reporting; '
       'use ChatSession.create or LlamaEngine.create for manual completion.';
 

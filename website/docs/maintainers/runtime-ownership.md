@@ -38,15 +38,15 @@ integration correctness.
 
 The consumer safety gate leaves
 [#919](https://github.com/leehack/llamadart/issues/919) open for reliable runtime
-reporting. The pinned native `v0.17.0-6` and Web `@litert-lm/core@0.15.0` do
+reporting. The pinned native `v0.17.0-7` and Web `@litert-lm/core@0.15.0` do
 not expose a cause that distinguishes EOS from per-request output exhaustion.
 They cannot safely drive automatic tool loops. Plain completion remains
 available; its `stop` value is an unverified termination reason on those pins.
 
 Verified source chain for the native artifact:
 
-- [Owner release `v0.17.0-6`](https://github.com/leehack/litert-lm-native/releases/tag/v0.17.0-6)
-  records owner `941c3086ac1911add67f7350d45405b5fc4b2ed3` and upstream
+- [Owner release `v0.17.0-7`](https://github.com/leehack/litert-lm-native/releases/tag/v0.17.0-7)
+  records owner `526b786a62cb88a6d872deb3aa06227eb8406751` and upstream
   `e9fd8c53ff968071774206163027dd84bedfe925`.
 - [Upstream decode](https://github.com/google-ai-edge/LiteRT-LM/blob/e9fd8c53ff968071774206163027dd84bedfe925/runtime/core/tasks.cc)
   checks EOS before context and output budgets in `ShouldStop`, but discards
@@ -56,7 +56,7 @@ Verified source chain for the native artifact:
   collapses ordinary terminal states to an empty message. The
   [C callback](https://github.com/google-ai-edge/LiteRT-LM/blob/e9fd8c53ff968071774206163027dd84bedfe925/c/conversation.cc)
   maps that message to a final chunk with no text or error. The
-  [owner proxy](https://github.com/leehack/litert-lm-native/blob/941c3086ac1911add67f7350d45405b5fc4b2ed3/native/bridge/litert_lm_bridge.c)
+  [owner proxy](https://github.com/leehack/litert-lm-native/blob/526b786a62cb88a6d872deb3aa06227eb8406751/native/bridge/litert_lm_bridge.c)
   forwards only text, final and error, so a proxy-only change cannot recover
   the discarded cause.
 - The official pinned
