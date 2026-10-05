@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.17.0-6"
+let liteRtLmTag = "v0.17.0-7"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,42 +47,35 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "3b9ed48c4a92480482e4e08986aa3043e63b450850e2ea71ffb6f221321b2da2"
+            checksum: "eec93e5e9f00001b8c4caf82d96dd82151810e8f6798c9fb1d2431b8d7f7f941"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "cf0f9e269f04c6f5e99a8cb82601110e066f359bda5709b1b5002b337413b61f"
+            checksum: "4a4a3147b929dd8bf380d5726fb76f59b39a0b8063afbdca03527fe6896da50d"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "b395e4ce6413a8dadc695d60f40caa53e0246c79ba234d8a4fe1a3ab31710ec7"
-        ),
-        nativeRepoBinaryTarget(
-            name: "GemmaModelConstraintProvider",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "3066ad3b1ad2d589da7f024b47fd7d853cdb40432fda6ec4faa7944238b4420d"
+            checksum: "ac3a31db3e903c75327b442515e19dbb273ad2e35c9d83cd7536b8e22f00075f"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtMetalAccelerator",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "f44f33a57b6334225cde6377ccebdab02fc2415403dd8fe118a690da5b739b65"
+            checksum: "315cd978926d9f1c3d9b84b4a0899cf7fa2205e60c368b086391606f05168a5e"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtTopKMetalSampler",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "44465d4b766587db6320e1a0e7509b13dd5ac656283a469315d008fac0c3da4d"
+            checksum: "26f9dc3964bc381838e85301a9d5bd55f7acca5118725cc5f17d0bd9afe8f82f"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",
@@ -90,7 +83,6 @@ let package = Package(
                 .target(name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])),
                 .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),
                 .target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])),
-                .target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS])),
                 .target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.iOS])),
                 .target(name: "LiteRtTopKMetalSampler", condition: .when(platforms: [.iOS]))
             ],

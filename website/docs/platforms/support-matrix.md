@@ -113,6 +113,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 
 ## Known limitations
 
+- Native LiteRT-LM v0.17.0-7 iOS artifacts omit the Gemma FST constraint
+  provider. Gemma 3/4 and FunctionGemma conversations must disable constrained
+  decoding; Dart already does so. Ordinary generation, thinking and best-effort
+  tool formatting remain available. Automatic tool loops and strict structured
+  output remain unsupported. The artifacts target iOS 16.4; actual runtime
+  qualification used iPhone 16 Pro on iOS 18.3.2, not iOS 16.4
+  ([#831](https://github.com/leehack/llamadart/issues/831)).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
   builds for it.
@@ -139,13 +146,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.5.0` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-6` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-7` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.5.0` and
-`litert-lm-native` release `v0.17.0-6` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.17.0-7` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
 `bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading

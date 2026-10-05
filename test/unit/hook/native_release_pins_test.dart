@@ -48,6 +48,31 @@ void main() {
     );
   });
 
+  test('iOS inventory excludes the provider and retains CAPI and Metal', () {
+    for (final bundle in const ['ios-arm64', 'ios-arm64-sim']) {
+      final spec = liteRtLmBundleSpecs.singleWhere(
+        (spec) => spec.bundle == bundle,
+      );
+      expect(
+        spec.requiredLibraries,
+        unorderedEquals(const [
+          'CLiteRTLM',
+          'LiteRtLm',
+          'LiteRtMetalAccelerator',
+          'LiteRtTopKMetalSampler',
+        ]),
+        reason: bundle,
+      );
+    }
+    final mac = liteRtLmBundleSpecs.singleWhere(
+      (spec) => spec.bundle == 'macos-arm64',
+    );
+    expect(
+      mac.requiredLibraries,
+      contains('libGemmaModelConstraintProvider.dylib'),
+    );
+  });
+
   test('desktop bundle specs agree with the runtime required lists', () {
     const desktopBundles = {
       'macos-arm64': Abi.macosArm64,

@@ -14,7 +14,7 @@ void main() {
     ).readAsStringSync();
 
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
-    expect(manifest, contains('name: "GemmaModelConstraintProvider"'));
+    expect(manifest, isNot(contains('GemmaModelConstraintProvider')));
     expect(manifest, contains('name: "LiteRtMetalAccelerator"'));
     expect(manifest, contains('name: "LiteRtTopKMetalSampler"'));
     expect(
@@ -39,13 +39,6 @@ void main() {
     expect(
       manifest,
       contains('name: "CLiteRTLM", condition: .when(platforms: [.iOS])'),
-    );
-    expect(
-      manifest,
-      contains(
-        'name: "GemmaModelConstraintProvider", condition: '
-        '.when(platforms: [.iOS])',
-      ),
     );
     expect(
       manifest,

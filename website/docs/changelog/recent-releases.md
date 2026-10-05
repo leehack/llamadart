@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Adopt LiteRT-LM `v0.17.0-7` with provider-free iOS artifacts; Gemma FST
+  constrained decoding remains unavailable on iOS.
+
 - LiteRT-LM release sync can remove an obsolete iOS provider target from modern
   Swift packages while preserving required macOS runtime libraries.
 - Reentrant engine disposal now shares one teardown and immediately reports

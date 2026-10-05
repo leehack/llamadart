@@ -11,7 +11,7 @@ chat template renders them, and the parser returns the model's calls as
 the calls, and your code runs them.
 
 Automatic loops (`sendWithTools` and `completeWithTools`) require reliable
-runtime termination reporting. The pinned native LiteRT-LM `v0.17.0-6` and
+runtime termination reporting. The pinned native LiteRT-LM `v0.17.0-7` and
 Web `@litert-lm/core@0.15.0` cannot distinguish normal completion from a
 per-request token cutoff. They throw `LlamaUnsupportedException` before
 starting the loop or modifying its history, including when resuming a turn or

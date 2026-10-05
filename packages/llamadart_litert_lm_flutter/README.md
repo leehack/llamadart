@@ -23,7 +23,18 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.17.0-6`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.17.0-7`.
+This repository change awaits a companion package release; published `0.0.12`
+retains its previous pin.
+
+These iOS artifacts omit the Gemma FST constraint provider. Gemma 3/4 and
+FunctionGemma conversations must use constrained decoding disabled, as the Dart
+adapter already does. Enabling it through the native C API fails conversation
+creation with a null handle and a build-time-disabled diagnostic. Ordinary
+generation, thinking and best-effort tool formatting remain available; automatic
+tool loops and strict structured output remain unsupported. The artifacts target
+iOS 16.4, but actual runtime qualification used iOS 18.3.2, not iOS 16.4.
+The macOS hook-managed bundle still requires its provider.
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the
