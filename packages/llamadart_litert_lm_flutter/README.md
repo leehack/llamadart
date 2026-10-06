@@ -32,9 +32,25 @@ FunctionGemma conversations must use constrained decoding disabled, as the Dart
 adapter already does. Enabling it through the native C API fails conversation
 creation with a null handle and a build-time-disabled diagnostic. Ordinary
 generation, thinking and best-effort tool formatting remain available; automatic
-tool loops and strict structured output remain unsupported. The artifacts target
-iOS 16.4, but actual runtime qualification used iOS 18.3.2, not iOS 16.4.
-The macOS hook-managed bundle still requires its provider.
+tool loops and strict structured output remain unsupported. The macOS
+hook-managed bundle still requires its provider.
+
+iOS 16.4 is the declared deployment floor, not a tested one. The Swift package
+requires an iOS 16.4 app target and the `v0.17.0-7` frameworks declare
+`MinimumOSVersion` 15.0, but nothing has been run on iOS 16.4. On a device,
+model load and generation have run only on an iPhone 16 Pro with iOS 18.3.2;
+no other iOS version is device-verified
+([#831](https://github.com/leehack/llamadart/issues/831)).
+
+The LiteRT-LM frameworks include no Apple privacy manifest on either path, and
+llamadart publishes no reason codes for this runtime. The `v0.17.0-7` iOS
+frameworks reference
+[required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
+in three categories: File Timestamp (`stat`, `fstat`, `lstat`), System Boot
+Time (`mach_absolute_time`) and User Defaults (`NSUserDefaults`, in the Metal
+accelerator and sampler). An app that links LiteRT-LM declares all three in
+its own `PrivacyInfo.xcprivacy`, with reasons it has verified against Apple's
+list ([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65)).
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the

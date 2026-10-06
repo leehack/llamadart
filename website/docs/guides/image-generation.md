@@ -102,6 +102,11 @@ rejects the iOS upload. The iOS build reports this as an Xcode build warning,
 which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
 output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
+The hook-bundled runtime also cannot carry an Apple privacy manifest, and a
+companion framework built before the manifest was added has none either; see
+[Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest)
+for the File Timestamp reasons (`C617.1`, `3B52.1`) the app then declares
+itself.
 
 ## Get a model
 
