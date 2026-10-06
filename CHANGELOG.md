@@ -4,9 +4,10 @@
   iOS 16.4 remains the declared, untested deployment floor
   ([#831](https://github.com/leehack/llamadart/issues/831)).
 - Documented Apple privacy manifests: only the llama.cpp and stable_diffusion
-  companion packages' XCFrameworks can carry one, and an app whose runtime has
-  none declares File Timestamp reason `C617.1` (plus `3B52.1` for
-  stable_diffusion) itself.
+  companion packages' XCFrameworks can carry one, and an app whose llama.cpp
+  or stable_diffusion runtime has none declares File Timestamp reason `C617.1`
+  (plus `3B52.1` for stable_diffusion) itself; LiteRT-LM ships no manifest and
+  no published reason codes.
 
 - Adopt LiteRT-LM `v0.17.0-7` with provider-free iOS artifacts; Gemma FST
   constrained decoding remains unavailable on iOS.

@@ -220,14 +220,16 @@ responsible for the complete runtime library set.
 The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
 Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
 
-Apps bound for the App Store should use the llama.cpp and stable_diffusion
-companions: an Apple privacy manifest for those runtimes can ship only inside
-their SwiftPM XCFrameworks, never in the dylibs the build hook bundles. An app
-on the hook path, or whose embedded `llama.framework` or
+An app bound for the App Store should use the companion for each runtime it
+ships: an Apple privacy manifest for llama.cpp or stable_diffusion can ship
+only inside its SwiftPM XCFramework, never in the dylibs the build hook
+bundles. An app on the hook path, or whose embedded `llama.framework` or
 `stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, declares
 `NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
-with reason `C617.1`, plus `3B52.1` when it ships stable_diffusion. The
-LiteRT-LM frameworks include no privacy manifest. See
+with reason `C617.1`, plus `3B52.1` only when it ships stable_diffusion. The
+LiteRT-LM frameworks include no privacy manifest and use File Timestamp,
+System Boot Time and User Defaults API; the app declares those itself, and
+llamadart publishes no reason codes for them. See
 [Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
 
 Then run:

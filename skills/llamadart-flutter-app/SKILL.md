@@ -114,14 +114,16 @@ or shipping runtimes the app does not use.
 - LiteRT-LM on iOS: 16.4 is the declared deployment floor, not a tested one.
   On a device it has run only on an iPhone 16 Pro with iOS 18.3.2, so test
   older iOS versions before supporting them.
-- App Store builds should use the llama.cpp and stable_diffusion companions:
-  an Apple privacy manifest for those runtimes can ship only inside their
-  XCFrameworks, never in hook-bundled dylibs. On the hook path, or when the
-  embedded `llama.framework` or `stable_diffusion.framework` has no
+- App Store builds should use the companion for each runtime they ship: an
+  Apple privacy manifest for llama.cpp or stable_diffusion can ship only
+  inside its XCFramework, never in hook-bundled dylibs. On the hook path, or
+  when the embedded `llama.framework` or `stable_diffusion.framework` has no
   `PrivacyInfo.xcprivacy`, add `NSPrivacyAccessedAPICategoryFileTimestamp` to
   the app's own `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1`
-  when it ships stable_diffusion. The LiteRT-LM frameworks include no privacy
-  manifest.
+  only when it ships stable_diffusion. The LiteRT-LM frameworks include no
+  privacy manifest and use File Timestamp, System Boot Time and User Defaults
+  API; the app declares those itself, and llamadart publishes no reason codes
+  for them.
 - When the llama.cpp or LiteRT-LM companion is present, the installed
   companions pick those Apple runtime families and `llamadart_native_runtimes`
   is otherwise ignored with a warning; the tag, repository, path and backend

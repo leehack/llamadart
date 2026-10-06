@@ -312,8 +312,8 @@ Apple lists as File Timestamp
 [required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
 A privacy manifest for that use can reach an app only inside the XCFramework a
 companion package links. The hook path cannot carry one: it bundles bare
-dylibs, which Flutter wraps in frameworks it generates. Apps bound for the App
-Store should use the companion packages.
+dylibs, which Flutter wraps in frameworks it generates. An app bound for the
+App Store should use the companion for each runtime it ships.
 
 Runtime releases built before the manifest was added do not contain it. An app
 declares the use in its own `PrivacyInfo.xcprivacy` when it is on the hook
@@ -325,6 +325,10 @@ path, or when the built app has no `PrivacyInfo.xcprivacy` inside the embedded
 | llama.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` |
 | stable-diffusion.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
 
+Put the entry inside the top-level `<dict>` of a `PrivacyInfo.xcprivacy` in
+the app (Runner) target, merged with the reasons the rest of the app needs.
+For an app that ships llama.cpp without stable_diffusion:
+
 ```xml
 <key>NSPrivacyAccessedAPITypes</key>
 <array>
@@ -334,18 +338,26 @@ path, or when the built app has no `PrivacyInfo.xcprivacy` inside the embedded
     <key>NSPrivacyAccessedAPITypeReasons</key>
     <array>
       <string>C617.1</string>
-      <string>3B52.1</string>
     </array>
   </dict>
 </array>
 ```
 
-Leave out `3B52.1` when the app does not ship stable_diffusion, and merge the
-entry with the reasons the rest of the app needs.
+Only an app that ships stable_diffusion adds `<string>3B52.1</string>` to the
+reasons array.
+
+Apple's requirement covers iOS, iPadOS, tvOS, visionOS and watchOS apps. The
+app-level declaration is a workaround for a runtime without its own manifest;
+llamadart has not verified it with an App Store Connect upload.
 
 The LiteRT-LM frameworks include no privacy manifest on either path, and
-llamadart publishes no reason codes for that runtime. Audit it before
-submitting an app that links it.
+llamadart publishes no reason codes for that runtime. The `v0.17.0-7` iOS
+frameworks reference required-reason API in three categories: File Timestamp
+(`stat`, `fstat`, `lstat`), System Boot Time (`mach_absolute_time`) and User
+Defaults (`NSUserDefaults`, in the Metal accelerator and sampler). An app that
+links LiteRT-LM declares all three in its own `PrivacyInfo.xcprivacy`, with
+reasons it has verified against Apple's list
+([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65)).
 
 ## How the hook resolves a build
 

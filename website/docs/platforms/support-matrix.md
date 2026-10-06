@@ -123,7 +123,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
   the v0.17.0-7 frameworks declare `MinimumOSVersion` 15.0, but nothing has
   been run on iOS 16.4. On a device, model load and generation have run only
   on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
-  iOS 26.4, CPU only. iOS 16.4 through 18.3.1 are unverified
+  iOS 26.4, CPU only. No other iOS version is device-verified
   ([#831](https://github.com/leehack/llamadart/issues/831)).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still
