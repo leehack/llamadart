@@ -9,7 +9,7 @@
   [llamadart-native#96](https://github.com/leehack/llamadart-native/issues/96)).
   Image models, and a native host's C `exit()` while llamadart is working,
   are not covered.
-- Update the default llama.cpp runtime to `leehack/llamadart-native@v0.5.0-1`,
+- Update the default llama.cpp runtime to `leehack/llamadart-native@v0.5.0-2`,
   a rebuild of llama.cpp `v0.5.0` whose Apple XCFramework carries a privacy
   manifest (File Timestamp, reason `C617.1`). A runtime older than `v0.5.0-1`
   keeps the previous exit behavior and logs a warning at the first model load.

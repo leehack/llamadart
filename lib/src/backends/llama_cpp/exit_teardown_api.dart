@@ -162,8 +162,12 @@ final class ExitTeardownApi {
     required this.schedGraphCompute,
   });
 
-  /// The first `llamadart-native` release that exports these functions.
-  static const String minimumNativeRelease = 'v0.5.0-1';
+  /// The oldest `llamadart-native` release to use these functions with.
+  ///
+  /// `v0.5.0-1` exports them too, so [tryResolve] accepts it, but its
+  /// teardown does not wait for a free that is in flight on the last tracked
+  /// object.
+  static const String minimumNativeRelease = 'v0.5.0-2';
 
   /// Resolves every function from the loaded runtime, or returns `null` when
   /// it does not export all of them.

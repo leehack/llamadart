@@ -268,6 +268,8 @@ llamadart then creates models and contexts with the upstream llama.cpp
 functions and logs a warning at the first model load, and the exits that
 teardown covers abort on Apple Metal as they did before
 ([Exiting with a model loaded](../guides/model-lifecycle#exiting-with-a-model-loaded)).
+`v0.5.0-1` has exit teardown but can still abort when a native host calls C
+`exit()` during the free of the last object; use `v0.5.0-2` or later.
 Two checks fail closed:
 
 - LoRA adapters need both `llama_adapter_get_alora_n_invocation_tokens` and

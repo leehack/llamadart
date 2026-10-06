@@ -1819,9 +1819,9 @@ class LlamaCppService {
     if (calls.exit == null) {
       LlamaLogger.instance.warning(
         'The loaded llama.cpp runtime does not export the exit-teardown '
-        'functions of llamadart-native '
-        '${ExitTeardownApi.minimumNativeRelease} (llama_dart_exit_free and '
-        'the llama_dart_ calls that go with it), so models and contexts are '
+        'functions (llama_dart_exit_free and the llama_dart_ calls that go '
+        'with it; llamadart-native ${ExitTeardownApi.minimumNativeRelease} '
+        'or later is needed), so models and contexts are '
         'created with the upstream llama.cpp functions. The runtime then '
         'frees nothing at process exit: an Apple process that exits with '
         'one still allocated on Metal aborts in ggml-metal. Use the '

@@ -37,7 +37,7 @@ or shipping runtimes the app does not use.
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
   returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
   still loaded when the process exits aborts in `ggml_metal_rsets_free`. The
-  llama.cpp runtime (`llamadart-native` `v0.5.0-1` and later) frees a
+  llama.cpp runtime (`llamadart-native` `v0.5.0-2` and later) frees a
   llama.cpp model a quit caught mid-load, but never an image model, and an
   AppKit quit (Cmd-Q, last window, `exitApplication`) is not guaranteed to
   run llamadart's Dart-side cleanup. When the engine's owner can be disposed

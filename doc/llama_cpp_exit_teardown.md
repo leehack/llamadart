@@ -22,7 +22,8 @@ runs at exit. The native contract is `src/llama_dart_wrapper.h` in
   address `tryResolve` resolves, so the API exists only when the runtime
   exports all of them.
 - `LlamaCppObjectCalls.upstream`: the upstream functions, which a runtime
-  older than `v0.5.0-1` leaves as the only choice. The service then logs one
+  older than `v0.5.0-1` leaves as the only choice (`v0.5.0-2` is the oldest
+  one to use: see "An exit during the last free"). The service then logs one
   warning at its first model load (visible at log level `warn` or lower) and
   exits behave as they did before exit teardown.
 
@@ -51,21 +52,24 @@ objects. It knows nothing about other native calls:
 ## An exit during the last free
 
 `llama_dart_exit_free` takes an object out of the registry before it has
-finished freeing it, and teardown returns at once when the registry is empty.
-In `v0.5.0-1` a direct C `exit()` that arrives while the last tracked object
-is being freed therefore does not wait for that free, and ggml-metal aborts
-when the object still has Metal buffers allocated. The `llamadart-native`
-investigation reproduced it with a projector or a split (multi-file) model as
-the last object, and not with a single-file model. As with the other limits,
-only a direct C `exit()` reaches it; the exits that shut the isolates down
-wait for the free. The native fix is planned for `v0.5.0-2`, which this
-package does not pin yet.
+finished freeing it. In `v0.5.0-1` teardown returned at once when the
+registry was empty, so a direct C `exit()` that arrived while the last
+tracked object was being freed did not wait for that free, and ggml-metal
+aborted when the object still had Metal buffers allocated. The
+`llamadart-native` investigation reproduced it with a projector or a split
+(multi-file) model as the last object, and not with a single-file model. Only
+a direct C `exit()` reached it; the exits that shut the isolates down wait
+for the free.
+
+`v0.5.0-2`, which this package pins, fixes it: teardown waits for a free in
+flight. An exit that lands during the last free now takes that free plus the
+rest of the 250 ms settle window, about 255 ms in the native measurements,
+where it used to return at once.
 
 The service is a second layer: `dispose()` and `freeModel` free contexts,
 then the projector, then the model, so the last object a service frees is a
 model and never a projector. That is also the lifetime order mtmd needs,
-since a projector points at its model. A split model freed last stays exposed
-on `v0.5.0-1`.
+since a projector points at its model.
 
 ## Which exits are covered
 
@@ -74,7 +78,7 @@ on `v0.5.0-1`.
 | Flutter macOS quit (`-[NSApplication terminate:]`) | The engine shuts the isolates down before C `exit`, so held objects are freed by their isolate. Teardown frees what no isolate held yet: a quit while a model loads, and a quit after a hot restart during a load, no longer abort. |
 | Dart program returns from `main` or dies of an unhandled error; an isolate is killed | The VM shuts the isolates down first. An object created by a native call the isolate never returned from in Dart is freed by teardown. |
 | `exit()` from `dart:io` | Runs no static destructors: no teardown and no abort. |
-| C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call, or on `v0.5.0-1` during the free of the last tracked object, ggml-metal aborts. |
+| C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle, freeing an object, or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call ggml-metal aborts. |
 
 Image models are not covered: stable-diffusion.cpp has no such teardown.
 

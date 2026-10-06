@@ -64,7 +64,7 @@ On macOS Metal, ggml aborts a process that exits with a model, context,
 decision head or image model still loaded
 (`GGML_ASSERT([rsets->data count] == 0)` in `ggml_metal_rsets_free`).
 
-On Apple platforms the llama.cpp runtime (`llamadart-native` `v0.5.0-1` and
+On Apple platforms the llama.cpp runtime (`llamadart-native` `v0.5.0-2` and
 later) frees the llama.cpp models, contexts, projectors and decision heads
 that are still allocated when the process exits. That covers the exits where
 llamadart's own cleanup could not reach an object:
