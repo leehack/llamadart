@@ -1,7 +1,9 @@
 // Subprocess fixture: ends the process in one way while llama.cpp objects are
-// alive. Arguments: the scenario and a GGUF chat model; `quit-projector` also
-// takes that model's projector, and `quit-decision` takes an encoder GGUF and
-// its decision head instead.
+// alive. Arguments: the scenario and a GGUF chat model; `quit-projector` and
+// `quit-disposing` also take that model's projector, and `quit-decision`
+// takes an encoder GGUF and its decision head instead. `quit-disposing` exits
+// `EXIT_PROBE_DISPOSE_DELAY_US` microseconds (default 1000) after the owning
+// isolate starts to dispose.
 //
 // The `quit-` scenarios call C `exit` through FFI from the main isolate while
 // the isolate that owns the objects is alive: what a native host that skips
@@ -38,6 +40,22 @@ Future<void> main(List<String> args) async {
       );
       _reportBackend(await engine.getBackendName());
       _quit(scenario);
+    case 'quit-disposing':
+      final disposing = ReceivePort();
+      await Isolate.spawn(_disposeAfterNotice, (
+        disposing.sendPort,
+        modelPath,
+        extra.single,
+      ));
+      await disposing.first;
+      _reached(scenario);
+      final delay = Stopwatch()..start();
+      final micros = int.parse(
+        Platform.environment['EXIT_PROBE_DISPOSE_DELAY_US'] ?? '1000',
+      );
+      // A timer is too coarse for the few milliseconds the frees take.
+      while (delay.elapsedMicroseconds < micros) {}
+      _cExit();
     case 'quit-decision':
       final decisions = await DecisionEngine.load(
         DecisionModel(
@@ -85,6 +103,10 @@ void _reached(String scenario) =>
 
 Never _quit(String scenario) {
   _reached(scenario);
+  _cExit();
+}
+
+Never _cExit() {
   DynamicLibrary.process()
       .lookupFunction<Void Function(Int32), void Function(int)>('exit')(0);
   throw StateError('C exit returned');
@@ -141,6 +163,17 @@ void _loadAfterNotice((SendPort, String) message) {
   final service = LlamaCppService()..initializeBackend();
   loading.send(null);
   service.loadModel(modelPath, const ModelParams());
+}
+
+void _disposeAfterNotice((SendPort, String, String) message) {
+  final (disposing, modelPath, projectorPath) = message;
+  const params = ModelParams(contextSize: 2048);
+  final service = LlamaCppService()..initializeBackend();
+  final model = service.loadModel(modelPath, params);
+  service.createContext(model, params);
+  service.createMultimodalContext(model, projectorPath);
+  disposing.send(null);
+  service.dispose();
 }
 
 void _loadInThisIsolate(String modelPath) {

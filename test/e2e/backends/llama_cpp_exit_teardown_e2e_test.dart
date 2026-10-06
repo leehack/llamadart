@@ -35,6 +35,7 @@ void main() {
         ('quit-generating', [model], 0, 'Metal'),
         ('quit-loading', [model], 0, null),
         ('quit-projector', [model, projector], 0, 'Metal'),
+        ('quit-disposing', [model, projector], 0, null),
         ('quit-decision', [decisionModel, decisionHead], 0, 'MTL'),
         ('throw-generating', [model], 255, 'Metal'),
         ('throw-loading', [model], 255, null),

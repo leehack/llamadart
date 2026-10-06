@@ -7463,6 +7463,13 @@ class LlamaCppService {
       c.dispose();
     }
     _contexts.clear();
+    // A projector uses its model, so it goes first, as in freeModel.
+    for (final m in _mtmdContexts.values) {
+      _mtmdFree(m);
+    }
+    _mtmdContexts.clear();
+    _modelToMtmd.clear();
+    _modelToMtmdUseGpu.clear();
     for (final m in _models.values) {
       m.dispose();
     }
@@ -7477,12 +7484,6 @@ class LlamaCppService {
     _modelLoadParams.clear();
     _activeBackendName = _backendDisplayName('cpu');
     _activeResolvedGpuLayers = 0;
-    for (final m in _mtmdContexts.values) {
-      _mtmdFree(m);
-    }
-    _mtmdContexts.clear();
-    _modelToMtmd.clear();
-    _modelToMtmdUseGpu.clear();
     // llama_backend_free(); // DISABLED: Prevents race conditions with other isolates
   }
 

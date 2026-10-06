@@ -104,6 +104,27 @@ void main() {
     expect(recorder.freed, recorder.owned.reversed);
   });
 
+  for (final (name, free) in <(String, void Function())>[
+    ('dispose', () => service.dispose()),
+    ('freeModel', () => service.freeModel(model)),
+  ]) {
+    test('$name frees a context, then the projector, then their model', () {
+      final projectorPath = '${dir.path}/mmproj.gguf';
+      File(projectorPath).writeAsStringSync('GGUF');
+      final fake = FakeMtmd.install(service, tokens: const []);
+      addTearDown(fake.dispose);
+      service.createMultimodalContext(model, projectorPath);
+      final [modelAddress, contextAddress, projectorAddress] = recorder.owned;
+
+      free();
+
+      // A projector points at its model, and the model is the last object
+      // freed: an exit that catches the last free in flight then finds one
+      // object left, not the many buffers of a projector.
+      expect(recorder.freed, [contextAddress, projectorAddress, modelAddress]);
+    });
+  }
+
   test('generates through its synchronize, decode and sample', () async {
     recorder.clearCalls();
 

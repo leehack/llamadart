@@ -563,8 +563,10 @@ require the Metal backend, so use a model the GPU loads. `EXIT_TEARDOWN_RUNS`
 sets the runs of each scenario (default 3). A run fails when the process is
 still alive after three minutes. Two scenarios are skipped unless their files
 are set in the environment: `EXIT_TEARDOWN_MMPROJ`, the model's projector,
-adds a C `exit` with the projector loaded, and `EXIT_TEARDOWN_DECISION_MODEL`
-with `EXIT_TEARDOWN_DECISION_HEAD` adds one with a decision head loaded.
+adds a C `exit` with the projector loaded and one while its service disposes
+(`EXIT_PROBE_DISPOSE_DELAY_US` microseconds after the dispose starts, default
+1000), and `EXIT_TEARDOWN_DECISION_MODEL` with `EXIT_TEARDOWN_DECISION_HEAD`
+adds one with a decision head loaded.
 
 `dart:io`'s `exit` is not one of the scenarios: it does not run the static
 destructors that make ggml-metal abort.
