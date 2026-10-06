@@ -70,10 +70,28 @@ unprotected at a direct C `exit()`.
 ## Tests
 
 - `test/unit/backends/llama_cpp/exit_teardown_api_test.dart`: the stage
-  values, the all-or-nothing lookup, one free per tracked object.
+  values; the lookup requests all 22 names and resolves nothing when any one
+  is missing; each member calls the function exported under its own name;
+  `LlamaCppObjectCalls.tracked` uses the exit API for every call; one free per
+  tracked object.
+- `test/integration/backends/llama_cpp/native_symbol_integration_test.dart`:
+  the address resolved for each name is the wrapper library's own export of
+  that name.
 - `test/unit/backends/llama_cpp/llama_cpp_service_exit_teardown_test.dart`: a
-  recording `ExitTeardownApi` shows that creation, generation, speculative
-  checkpoints, embedding, state files, LoRA init, a decision head and a fake
-  projector go through it.
+  recording `ExitTeardownApi` on a real CPU runtime. The whole recorded
+  sequence is compared for creation and frees, plain generation (one decode
+  and one sample per token), one-text and batch embedding on a decoder and on
+  an encoder, state files, LoRA init, a decision head, a decision head that
+  fails after its context was created, and a fake projector. N-gram and
+  draft-model speculation are matched against the sequences their loop
+  allows. Everything created through the API has to be freed through it.
+- `test/unit/backends/llama_cpp/mtmd_chunk_eval_test.dart`: `withExitTeardown`
+  replaces the three evaluating calls and keeps the accessors.
+- Two cases of the service test do not run in default CI. The restore and
+  replay of a rejected draft needs a model whose memory cannot drop a tail:
+  set `LLAMADART_LFM2_MODEL` to an LFM2 GGUF. The decision head's device
+  backend needs a GPU: it runs on a Mac unless `GGML_METAL_DEVICES=0`.
+- No test reaches the free of a model whose vocabulary cannot be read after
+  it loaded (`_createModelWrapper`).
 - `native-exit-teardown` in `doc/testing_matrix.md`: local-only process exits
   on Metal.

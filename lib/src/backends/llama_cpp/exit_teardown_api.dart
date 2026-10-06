@@ -177,12 +177,20 @@ final class ExitTeardownApi {
   }) {
     try {
       return ExitTeardownApi._fromSymbols(
-        symbol ?? (isWindows ? _wrapperAssetSymbol : _bindingsSymbol),
+        symbol ?? (name) => symbolAddress(name, isWindows: isWindows),
       );
     } on ArgumentError {
       return null;
     }
   }
+
+  /// The address of the function the loaded runtime exports as [name], from
+  /// the asset [isWindows] selects; throws [ArgumentError] when it exports
+  /// none.
+  static Pointer<NativeType> symbolAddress(
+    String name, {
+    required bool isWindows,
+  }) => (isWindows ? _wrapperAssetSymbol : _bindingsSymbol)(name);
 
   // Every function is called through the address resolved here, so none can
   // be bound without being part of the probe.

@@ -460,10 +460,11 @@ on Metal and flipped only near-ties on CPU. Use an F32 backbone, or F16 on
 Metal, when answers must match Laya; the published `laya-F16.gguf` has not
 been measured on this set.
 
-On Metal, disposing the engine with a head still loaded exits cleanly; skipping
-the head frees in `freeModel` and `dispose` makes the same exit abort in
-`ggml_metal_rsets_free` when the process exits without shutting the worker
-isolate down, as a Flutter app's AppKit quit does.
+On Metal, disposing the engine with a head still loaded exits cleanly. If
+`freeModel` and `dispose` skipped the head frees, the head would stay
+allocated until its isolate shuts down or, on a runtime with exit teardown,
+until the process exits (`doc/llama_cpp_exit_teardown.md`); on an older
+runtime an exit that does neither aborts in `ggml_metal_rsets_free`.
 
 ### Web check
 

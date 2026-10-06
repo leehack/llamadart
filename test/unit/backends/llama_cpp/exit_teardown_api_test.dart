@@ -115,6 +115,122 @@ void main() {
     }
   });
 
+  test('calls the function exported under the name of each of its '
+      'members', () {
+    final exports = _RecordingExports();
+    addTearDown(exports.close);
+    final api = ExitTeardownApi.tryResolve(
+      isWindows: false,
+      symbol: exports.symbol,
+    )!;
+    final batch = llama_batch_init(1, 0, 1);
+    addTearDown(() => llama_batch_free(batch));
+
+    final members = <String, void Function()>{
+      'llama_dart_exit_track': () => api.track(nullptr, nullptr, 0),
+      'llama_dart_exit_untrack': () => api.untrack(nullptr),
+      'llama_dart_exit_free': () => api.free(nullptr),
+      'llama_dart_model_load_from_file': () =>
+          api.modelLoadFromFile(nullptr, llama_model_default_params()),
+      'llama_dart_init_from_model': () =>
+          api.initFromModel(nullptr, llama_context_default_params()),
+      'llama_dart_mtmd_init_from_file': () =>
+          api.mtmdInitFromFile(nullptr, nullptr, nullptr),
+      'llama_dart_decode': () => api.decode(nullptr, batch),
+      'llama_dart_encode': () => api.encode(nullptr, batch),
+      'llama_dart_synchronize': () => api.synchronize(nullptr),
+      'llama_dart_sampler_sample': () => api.samplerSample(nullptr, nullptr, 0),
+      'llama_dart_state_save_file': () =>
+          api.stateSaveFile(nullptr, nullptr, nullptr, 0),
+      'llama_dart_state_load_file': () =>
+          api.stateLoadFile(nullptr, nullptr, nullptr, 0, nullptr),
+      'llama_dart_state_seq_get_size_ext': () =>
+          api.stateSeqGetSizeExt(nullptr, 0, 0),
+      'llama_dart_state_seq_get_data_ext': () =>
+          api.stateSeqGetDataExt(nullptr, nullptr, 0, 0, 0),
+      'llama_dart_state_seq_set_data_ext': () =>
+          api.stateSeqSetDataExt(nullptr, nullptr, 0, 0, 0),
+      'llama_dart_adapter_lora_init': () =>
+          api.adapterLoraInit(nullptr, nullptr),
+      'llama_dart_mtmd_tokenize': () =>
+          api.mtmdTokenize(nullptr, nullptr, nullptr, nullptr, 0),
+      'llama_dart_mtmd_encode_chunk': () =>
+          api.mtmdEncodeChunk(nullptr, nullptr),
+      'llama_dart_mtmd_helper_eval_chunks': () => api.mtmdHelperEvalChunks(
+        nullptr,
+        nullptr,
+        nullptr,
+        0,
+        0,
+        0,
+        false,
+        nullptr,
+      ),
+      'llama_dart_mtmd_helper_eval_chunk_single': () =>
+          api.mtmdHelperEvalChunkSingle(
+            nullptr,
+            nullptr,
+            nullptr,
+            0,
+            0,
+            0,
+            false,
+            nullptr,
+          ),
+      'llama_dart_mtmd_helper_decode_image_chunk': () =>
+          api.mtmdHelperDecodeImageChunk(
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            0,
+            0,
+            0,
+            nullptr,
+            nullptr,
+            nullptr,
+          ),
+      'llama_dart_ggml_backend_sched_graph_compute': () =>
+          api.schedGraphCompute(nullptr, nullptr),
+    };
+    expect(members.keys, unorderedEquals(_symbols));
+    for (final MapEntry(key: name, value: call) in members.entries) {
+      exports.called.clear();
+      call();
+      expect(exports.called, [name]);
+    }
+    expect(
+      api.freeAddress.address,
+      exports.symbol('llama_dart_exit_free').address,
+    );
+  });
+
+  test('tracked calls use the exit API for every call', () {
+    final exports = _RecordingExports();
+    addTearDown(exports.close);
+    final api = ExitTeardownApi.tryResolve(
+      isWindows: false,
+      symbol: exports.symbol,
+    )!;
+    final calls = LlamaCppObjectCalls.tracked(api);
+
+    expect(calls.loadModel, same(api.modelLoadFromFile));
+    expect(calls.createContext, same(api.initFromModel));
+    expect(calls.decode, same(api.decode));
+    expect(calls.encode, same(api.encode));
+    expect(calls.synchronize, same(api.synchronize));
+    expect(calls.samplerSample, same(api.samplerSample));
+    expect(calls.stateSaveFile, same(api.stateSaveFile));
+    expect(calls.stateLoadFile, same(api.stateLoadFile));
+    expect(calls.stateSeqGetSizeExt, same(api.stateSeqGetSizeExt));
+    expect(calls.stateSeqGetDataExt, same(api.stateSeqGetDataExt));
+    expect(calls.stateSeqSetDataExt, same(api.stateSeqSetDataExt));
+    expect(calls.adapterLoraInit, same(api.adapterLoraInit));
+    calls.freeModel(nullptr);
+    calls.freeContext(nullptr);
+    expect(exports.called, ['llama_dart_exit_free', 'llama_dart_exit_free']);
+  });
+
   test('frees a tracked object once, with the function it was tracked '
       'with', () {
     final exit = resolved();
@@ -205,4 +321,294 @@ void main() {
     calls.freeContext(context);
     calls.freeModel(model);
   });
+}
+
+/// Stands in for a runtime's exports: one native function per name, each of
+/// which records its name in [called] and returns zero.
+final class _RecordingExports {
+  final List<String> called = <String>[];
+
+  late final Map<String, NativeCallable<Function>> _functions = {
+    'llama_dart_exit_track':
+        NativeCallable<
+          Bool Function(
+            Pointer<Void>,
+            Pointer<NativeFunction<Void Function(Pointer<Void>)>>,
+            Int32,
+          )
+        >.isolateLocal(
+          (Pointer<Void> _, Pointer<NativeType> _, int _) =>
+              _record('llama_dart_exit_track', false),
+          exceptionalReturn: false,
+        ),
+    'llama_dart_exit_untrack':
+        NativeCallable<Bool Function(Pointer<Void>)>.isolateLocal(
+          (Pointer<Void> _) => _record('llama_dart_exit_untrack', false),
+          exceptionalReturn: false,
+        ),
+    'llama_dart_exit_free':
+        NativeCallable<Void Function(Pointer<Void>)>.isolateLocal(
+          (Pointer<Void> _) => _record('llama_dart_exit_free', null),
+        ),
+    'llama_dart_model_load_from_file':
+        NativeCallable<
+          Pointer<llama_model> Function(Pointer<Char>, llama_model_params)
+        >.isolateLocal(
+          (Pointer<Char> _, llama_model_params _) => _record(
+            'llama_dart_model_load_from_file',
+            nullptr.cast<llama_model>(),
+          ),
+        ),
+    'llama_dart_init_from_model':
+        NativeCallable<
+          Pointer<llama_context> Function(
+            Pointer<llama_model>,
+            llama_context_params,
+          )
+        >.isolateLocal(
+          (Pointer<llama_model> _, llama_context_params _) => _record(
+            'llama_dart_init_from_model',
+            nullptr.cast<llama_context>(),
+          ),
+        ),
+    'llama_dart_mtmd_init_from_file':
+        NativeCallable<
+          Pointer<mtmd_context> Function(
+            Pointer<Char>,
+            Pointer<llama_model>,
+            Pointer<mtmd_context_params>,
+          )
+        >.isolateLocal(
+          (
+            Pointer<Char> _,
+            Pointer<llama_model> _,
+            Pointer<mtmd_context_params> _,
+          ) => _record(
+            'llama_dart_mtmd_init_from_file',
+            nullptr.cast<mtmd_context>(),
+          ),
+        ),
+    for (final name in ['llama_dart_decode', 'llama_dart_encode'])
+      name:
+          NativeCallable<
+            Int32 Function(Pointer<llama_context>, llama_batch)
+          >.isolateLocal(
+            (Pointer<llama_context> _, llama_batch _) => _record(name, 0),
+            exceptionalReturn: 0,
+          ),
+    'llama_dart_synchronize':
+        NativeCallable<Void Function(Pointer<llama_context>)>.isolateLocal(
+          (Pointer<llama_context> _) => _record('llama_dart_synchronize', null),
+        ),
+    'llama_dart_sampler_sample':
+        NativeCallable<
+          Int32 Function(Pointer<llama_sampler>, Pointer<llama_context>, Int32)
+        >.isolateLocal(
+          (Pointer<llama_sampler> _, Pointer<llama_context> _, int _) =>
+              _record('llama_dart_sampler_sample', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_state_save_file':
+        NativeCallable<
+          Bool Function(
+            Pointer<llama_context>,
+            Pointer<Char>,
+            Pointer<Int32>,
+            Size,
+          )
+        >.isolateLocal(
+          (
+            Pointer<llama_context> _,
+            Pointer<Char> _,
+            Pointer<Int32> _,
+            int _,
+          ) => _record('llama_dart_state_save_file', false),
+          exceptionalReturn: false,
+        ),
+    'llama_dart_state_load_file':
+        NativeCallable<
+          Bool Function(
+            Pointer<llama_context>,
+            Pointer<Char>,
+            Pointer<Int32>,
+            Size,
+            Pointer<Size>,
+          )
+        >.isolateLocal(
+          (
+            Pointer<llama_context> _,
+            Pointer<Char> _,
+            Pointer<Int32> _,
+            int _,
+            Pointer<Size> _,
+          ) => _record('llama_dart_state_load_file', false),
+          exceptionalReturn: false,
+        ),
+    'llama_dart_state_seq_get_size_ext':
+        NativeCallable<
+          Size Function(Pointer<llama_context>, Int32, Uint32)
+        >.isolateLocal(
+          (Pointer<llama_context> _, int _, int _) =>
+              _record('llama_dart_state_seq_get_size_ext', 0),
+          exceptionalReturn: 0,
+        ),
+    for (final name in [
+      'llama_dart_state_seq_get_data_ext',
+      'llama_dart_state_seq_set_data_ext',
+    ])
+      name:
+          NativeCallable<
+            Size Function(
+              Pointer<llama_context>,
+              Pointer<Uint8>,
+              Size,
+              Int32,
+              Uint32,
+            )
+          >.isolateLocal(
+            (Pointer<llama_context> _, Pointer<Uint8> _, int _, int _, int _) =>
+                _record(name, 0),
+            exceptionalReturn: 0,
+          ),
+    'llama_dart_adapter_lora_init':
+        NativeCallable<
+          Pointer<llama_adapter_lora> Function(
+            Pointer<llama_model>,
+            Pointer<Char>,
+          )
+        >.isolateLocal(
+          (Pointer<llama_model> _, Pointer<Char> _) => _record(
+            'llama_dart_adapter_lora_init',
+            nullptr.cast<llama_adapter_lora>(),
+          ),
+        ),
+    'llama_dart_mtmd_tokenize':
+        NativeCallable<
+          Int32 Function(
+            Pointer<mtmd_context>,
+            Pointer<mtmd_input_chunks>,
+            Pointer<mtmd_input_text>,
+            Pointer<Pointer<mtmd_bitmap>>,
+            Size,
+          )
+        >.isolateLocal(
+          (
+            Pointer<mtmd_context> _,
+            Pointer<mtmd_input_chunks> _,
+            Pointer<mtmd_input_text> _,
+            Pointer<Pointer<mtmd_bitmap>> _,
+            int _,
+          ) => _record('llama_dart_mtmd_tokenize', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_mtmd_encode_chunk':
+        NativeCallable<
+          Int32 Function(Pointer<mtmd_context>, Pointer<mtmd_input_chunk>)
+        >.isolateLocal(
+          (Pointer<mtmd_context> _, Pointer<mtmd_input_chunk> _) =>
+              _record('llama_dart_mtmd_encode_chunk', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_mtmd_helper_eval_chunks':
+        NativeCallable<
+          Int32 Function(
+            Pointer<mtmd_context>,
+            Pointer<llama_context>,
+            Pointer<mtmd_input_chunks>,
+            Int32,
+            Int32,
+            Int32,
+            Bool,
+            Pointer<Int32>,
+          )
+        >.isolateLocal(
+          (
+            Pointer<mtmd_context> _,
+            Pointer<llama_context> _,
+            Pointer<mtmd_input_chunks> _,
+            int _,
+            int _,
+            int _,
+            bool _,
+            Pointer<Int32> _,
+          ) => _record('llama_dart_mtmd_helper_eval_chunks', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_mtmd_helper_eval_chunk_single':
+        NativeCallable<
+          Int32 Function(
+            Pointer<mtmd_context>,
+            Pointer<llama_context>,
+            Pointer<mtmd_input_chunk>,
+            Int32,
+            Int32,
+            Int32,
+            Bool,
+            Pointer<Int32>,
+          )
+        >.isolateLocal(
+          (
+            Pointer<mtmd_context> _,
+            Pointer<llama_context> _,
+            Pointer<mtmd_input_chunk> _,
+            int _,
+            int _,
+            int _,
+            bool _,
+            Pointer<Int32> _,
+          ) => _record('llama_dart_mtmd_helper_eval_chunk_single', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_mtmd_helper_decode_image_chunk':
+        NativeCallable<
+          Int32 Function(
+            Pointer<mtmd_context>,
+            Pointer<llama_context>,
+            Pointer<mtmd_input_chunk>,
+            Pointer<Float>,
+            Int32,
+            Int32,
+            Int32,
+            Pointer<Int32>,
+            mtmd_helper_post_decode_callback,
+            Pointer<Void>,
+          )
+        >.isolateLocal(
+          (
+            Pointer<mtmd_context> _,
+            Pointer<llama_context> _,
+            Pointer<mtmd_input_chunk> _,
+            Pointer<Float> _,
+            int _,
+            int _,
+            int _,
+            Pointer<Int32> _,
+            mtmd_helper_post_decode_callback _,
+            Pointer<Void> _,
+          ) => _record('llama_dart_mtmd_helper_decode_image_chunk', 0),
+          exceptionalReturn: 0,
+        ),
+    'llama_dart_ggml_backend_sched_graph_compute':
+        NativeCallable<
+          Int Function(ggml_backend_sched_t, Pointer<ggml_cgraph>)
+        >.isolateLocal(
+          (ggml_backend_sched_t _, Pointer<ggml_cgraph> _) =>
+              _record('llama_dart_ggml_backend_sched_graph_compute', 0),
+          exceptionalReturn: 0,
+        ),
+  };
+
+  T _record<T>(String name, T result) {
+    called.add(name);
+    return result;
+  }
+
+  /// The address of the function exported as [name].
+  Pointer<NativeType> symbol(String name) => _functions[name]!.nativeFunction;
+
+  void close() {
+    for (final function in _functions.values) {
+      function.close();
+    }
+  }
 }

@@ -605,6 +605,22 @@ void main() {
         ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
         isNotNull,
       );
+      // Each name resolves to the wrapper's own export of that name, not to
+      // another function with the same signature.
+      final library = ffi.DynamicLibrary.open(wrapper.path);
+      for (final symbol in [
+        ..._exitTeardownSymbols,
+        _exitTeardownGraphComputeSymbol,
+      ]) {
+        expect(
+          ExitTeardownApi.symbolAddress(
+            symbol,
+            isWindows: Platform.isWindows,
+          ).address,
+          library.lookup<ffi.Void>(symbol).address,
+          reason: symbol,
+        );
+      }
     });
 
     test('Verify pinned mtmd context parameter layout in bindings', () {
