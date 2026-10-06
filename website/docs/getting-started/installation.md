@@ -42,6 +42,10 @@ still uses CocoaPods also needs the Podfile platform:
 platform :ios, '16.4'
 ```
 
+The deployment target is a build requirement, not a tested floor for every
+runtime. LiteRT-LM has run on a device only on iOS 18.3.2; see
+[Known limitations](../platforms/support-matrix#known-limitations).
+
 To link the Apple XCFrameworks through Swift Package Manager, add the runtime
 companion packages you need:
 
@@ -67,6 +71,13 @@ unless the app uses `ImageGenerationEngine`. An app that uses
 image generation without it gets the hook-bundled runtime, whose iOS framework
 `MinimumOSVersion` App Store Connect rejects; only Xcode and `xcodebuild` show
 the build warning about it.
+
+Apps bound for the App Store should use the llama.cpp and stable_diffusion
+companions, because only their XCFrameworks can carry an Apple privacy
+manifest. An app on the hook path, or whose embedded runtime framework has no
+`PrivacyInfo.xcprivacy`, declares the runtime's required-reason API use in its
+own `PrivacyInfo.xcprivacy`; copy the category and reason codes from
+[Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest).
 
 ## Web
 

@@ -167,7 +167,9 @@ checks and known limits.
 
 - Dart SDK `>=3.10.7`
 - Flutter SDK `>=3.38.0` for Flutter apps
-- iOS deployment target `16.4` or newer for Flutter iOS apps
+- iOS deployment target `16.4` or newer for Flutter iOS apps. For LiteRT-LM
+  this is a declared floor, not a tested one: on a device it has run only on
+  iOS 18.3.2 ([#831](https://github.com/leehack/llamadart/issues/831))
 - macOS deployment target `14.0` or newer for Flutter macOS apps
 - Windows: the latest Microsoft Visual C++ v14 Redistributable for the app's
   architecture (x64 or arm64) on every machine that runs it, at least as new
@@ -217,6 +219,16 @@ responsible for the complete runtime library set.
 
 The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
 Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
+
+Apps bound for the App Store should use the llama.cpp and stable_diffusion
+companions: an Apple privacy manifest for those runtimes can ship only inside
+their SwiftPM XCFrameworks, never in the dylibs the build hook bundles. An app
+on the hook path, or whose embedded `llama.framework` or
+`stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, declares
+`NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
+with reason `C617.1`, plus `3B52.1` when it ships stable_diffusion. The
+LiteRT-LM frameworks include no privacy manifest. See
+[Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
 
 Then run:
 

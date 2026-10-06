@@ -305,6 +305,48 @@ Standalone Dart on macOS keeps LiteRT-LM libraries in the hook cache. A custom
 launcher can set `LLAMADART_LITERT_LM_LIB_DIR` to the extracted LiteRT-LM
 directory.
 
+### Apple privacy manifest
+
+The llama.cpp and stable-diffusion.cpp runtimes call `stat` and `fstat`, which
+Apple lists as File Timestamp
+[required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
+A privacy manifest for that use can reach an app only inside the XCFramework a
+companion package links. The hook path cannot carry one: it bundles bare
+dylibs, which Flutter wraps in frameworks it generates. Apps bound for the App
+Store should use the companion packages.
+
+Runtime releases built before the manifest was added do not contain it. An app
+declares the use in its own `PrivacyInfo.xcprivacy` when it is on the hook
+path, or when the built app has no `PrivacyInfo.xcprivacy` inside the embedded
+`llama.framework` or `stable_diffusion.framework`:
+
+| Runtime | Category | Reasons |
+| --- | --- | --- |
+| llama.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1` |
+| stable-diffusion.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
+
+```xml
+<key>NSPrivacyAccessedAPITypes</key>
+<array>
+  <dict>
+    <key>NSPrivacyAccessedAPIType</key>
+    <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+    <key>NSPrivacyAccessedAPITypeReasons</key>
+    <array>
+      <string>C617.1</string>
+      <string>3B52.1</string>
+    </array>
+  </dict>
+</array>
+```
+
+Leave out `3B52.1` when the app does not ship stable_diffusion, and merge the
+entry with the reasons the rest of the app needs.
+
+The LiteRT-LM frameworks include no privacy manifest on either path, and
+llamadart publishes no reason codes for that runtime. Audit it before
+submitting an app that links it.
+
 ## How the hook resolves a build
 
 ```mermaid

@@ -17,7 +17,7 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
-| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
+| iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
 | Windows (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA opt-in | x64: CPU, explicit GPU; arm64: none | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR on x64 | Qwen3-TTS | Untested | x64 CPU or Vulkan, needs AVX2 and the Visual C++ runtime; validated on Windows Server 2022 (CPU, NVIDIA L4) | Supported |
@@ -117,8 +117,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
   provider. Gemma 3/4 and FunctionGemma conversations must disable constrained
   decoding; Dart already does so. Ordinary generation, thinking and best-effort
   tool formatting remain available. Automatic tool loops and strict structured
-  output remain unsupported. The artifacts target iOS 16.4; actual runtime
-  qualification used iPhone 16 Pro on iOS 18.3.2, not iOS 16.4
+  output remain unsupported.
+- Native LiteRT-LM on iOS: iOS 16.4 is the declared deployment floor, not a
+  tested one. The companion Swift package requires an iOS 16.4 app target and
+  the v0.17.0-7 frameworks declare `MinimumOSVersion` 15.0, but nothing has
+  been run on iOS 16.4. On a device, model load and generation have run only
+  on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
+  iOS 26.4, CPU only. iOS 16.4 through 18.3.1 are unverified
   ([#831](https://github.com/leehack/llamadart/issues/831)).
 - iOS x86_64 simulator: no LiteRT-LM runtime is published. Apps that include
   LiteRT-LM must exclude the x86_64 simulator architecture; llama.cpp still

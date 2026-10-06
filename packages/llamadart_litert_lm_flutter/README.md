@@ -32,9 +32,19 @@ FunctionGemma conversations must use constrained decoding disabled, as the Dart
 adapter already does. Enabling it through the native C API fails conversation
 creation with a null handle and a build-time-disabled diagnostic. Ordinary
 generation, thinking and best-effort tool formatting remain available; automatic
-tool loops and strict structured output remain unsupported. The artifacts target
-iOS 16.4, but actual runtime qualification used iOS 18.3.2, not iOS 16.4.
-The macOS hook-managed bundle still requires its provider.
+tool loops and strict structured output remain unsupported. The macOS
+hook-managed bundle still requires its provider.
+
+iOS 16.4 is the declared deployment floor, not a tested one. The Swift package
+requires an iOS 16.4 app target and the `v0.17.0-7` frameworks declare
+`MinimumOSVersion` 15.0, but nothing has been run on iOS 16.4. On a device,
+model load and generation have run only on an iPhone 16 Pro with iOS 18.3.2;
+iOS 16.4 through 18.3.1 are unverified
+([#831](https://github.com/leehack/llamadart/issues/831)).
+
+The LiteRT-LM frameworks include no Apple privacy manifest, and llamadart
+publishes no required-reason API codes for this runtime. Audit it before
+submitting an app that links it to the App Store.
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the
