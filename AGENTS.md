@@ -77,11 +77,10 @@ dart test -p chrome --exclude-tags local-only
   by construction; assert wire values where they are consumed
   (`test/README.md`).
 - In `lib/src/backends/llama_cpp/`, a native call on a model, context,
-  projector or decision-head object that can run longer than 250 ms goes
-  through `LlamaCppObjectCalls` or `ExitTeardownApi`
-  (`exit_teardown_api.dart`): a long upstream call on an object libllamadart's
-  exit teardown tracks is a use after free at exit. When libllamadart has no
-  wrapper for the call, add one in `llamadart-native` first.
+  projector or decision-head object that must not race exit teardown goes
+  through `LlamaCppObjectCalls` or `ExitTeardownApi`. Teardown waits only for
+  those guarded calls; any other call in flight at a direct C `exit()` is
+  unprotected (`doc/llama_cpp_exit_teardown.md`).
 - Generated files that should not count toward coverage carry
   `// coverage:ignore-file`.
 - Tests close the ports, streams and controllers they open.

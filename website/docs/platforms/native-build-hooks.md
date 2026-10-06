@@ -265,8 +265,8 @@ Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
 override is active. A runtime older than `v0.5.0-1` has no exit teardown:
 llamadart then creates models and contexts with the upstream llama.cpp
-functions and logs a warning at the first model load, and on Apple platforms a
-quit with a model still loaded on Metal aborts as it did before
+functions and logs a warning at the first model load, and the exits that
+teardown covers abort on Apple Metal as they did before
 ([Exiting with a model loaded](../guides/model-lifecycle#exiting-with-a-model-loaded)).
 Two checks fail closed:
 

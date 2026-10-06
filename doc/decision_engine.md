@@ -218,8 +218,8 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   teardown (`llamadart-native` `v0.5.0-1` and later) they are tracked with
   `llama_dart_exit_track` in the matching stage and freed through
   `llama_dart_exit_free`, and the graph is computed through
-  `llama_dart_ggml_backend_sched_graph_compute`, so a process that exits with
-  a head loaded frees it natively.
+  `llama_dart_ggml_backend_sched_graph_compute`, so exit teardown frees a
+  head that is still loaded (`doc/llama_cpp_exit_teardown.md`).
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
 resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU

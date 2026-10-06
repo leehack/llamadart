@@ -549,10 +549,15 @@ dart run tool/testing/run_local_e2e.dart --scenario native-exit-teardown \
 
 This local-only macOS row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
 child process and ends it while llama.cpp objects are alive on Metal: C `exit`
-from the main isolate with a model idle, generating or loading, as a Flutter
-macOS quit does; an unhandled error while generating or loading; an isolate
-killed inside the native load; and an isolate that ends without freeing
-anything. Each run must reach its exit point, print no `GGML_ASSERT`, and end
+through FFI from the main isolate with a model idle, generating or loading;
+an unhandled error while generating or loading; an isolate killed inside the
+native load; and an isolate that ends without freeing anything. The C `exit`
+scenarios model a native host that exits without shutting Dart down, while
+the owning isolate is idle or inside a guarded call. They do not model a
+Flutter macOS quit, which shuts the isolates down first, and they do not
+cover an exit during an unguarded call or a guarded call longer than two
+seconds ([llama.cpp exit teardown](llama_cpp_exit_teardown.md)). Each run
+must reach its exit point, print no `GGML_ASSERT`, and end
 with exit code 0, or 255 for the unhandled errors. The engine scenarios also
 require the Metal backend, so use a model the GPU loads. `EXIT_TEARDOWN_RUNS`
 sets the runs of each scenario (default 3). A run fails when the process is

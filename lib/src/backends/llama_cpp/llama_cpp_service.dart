@@ -1823,8 +1823,8 @@ class LlamaCppService {
         '${ExitTeardownApi.minimumNativeRelease} (llama_dart_exit_free and '
         'the llama_dart_ calls that go with it), so models and contexts are '
         'created with the upstream llama.cpp functions. The runtime then '
-        'frees nothing at process exit: on Apple platforms a quit with a '
-        'model still loaded on Metal aborts in ggml-metal. Use the '
+        'frees nothing at process exit: an Apple process that exits with '
+        'one still allocated on Metal aborts in ggml-metal. Use the '
         'package-pinned native runtime $llamaCppTag or a newer one.',
       );
     }

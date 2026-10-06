@@ -65,12 +65,22 @@ decision head or image model still loaded
 (`GGML_ASSERT([rsets->data count] == 0)` in `ggml_metal_rsets_free`).
 
 On Apple platforms the llama.cpp runtime (`llamadart-native` `v0.5.0-1` and
-later) frees the models, contexts, projectors and decision heads still loaded
-when the process exits, however it ends: a quit while a model loads or
-generates, and a quit after a hot restart, included. It first waits up to two
-seconds for a native call still running; if the call has not returned by
-then, it frees nothing and the exit aborts as before. Image models are not
-covered: stable-diffusion.cpp has no such teardown.
+later) frees the llama.cpp models, contexts, projectors and decision heads
+that are still allocated when the process exits. That covers the exits where
+llamadart's own cleanup could not reach an object:
+
+- a Flutter macOS quit while a model is loading, and a quit after a hot
+  restart that interrupted a load;
+- a Dart program that returns from `main`, dies of an unhandled error or
+  kills an isolate while a model or context is being created.
+
+It does not cover a native host that calls C `exit()` while a llamadart
+isolate is still working: an exit during a call the runtime does not guard
+(tokenizing, detokenizing, reading metadata, building a sampler, decoding an
+image or audio file) can crash, and an exit during a guarded call that runs
+longer than two seconds (an image or audio evaluation, a long batch) aborts
+as before. Image models are not covered at all: stable-diffusion.cpp has no
+such teardown.
 
 - A Dart program that returns from `main` or dies of an unhandled error does
   not need to dispose first: llamadart frees what its engines still hold as
@@ -86,12 +96,11 @@ covered: stable-diffusion.cpp has no such teardown.
   `exit()` from `dart:io` skips C++ static destructors and never aborts.
 - A Flutter app that quits through AppKit (Cmd-Q, closing its last window, or
   `ServicesBinding.exitApplication`) is not guaranteed to run llamadart's
-  Dart-side cleanup. The runtime's exit teardown covers llama.cpp objects
-  within its two-second wait, but not an image model, so still dispose every
-  engine, including `DecisionEngine` and `ImageGenerationEngine`, before the
-  app quits. Desktop Flutter apps do not run `State.dispose` on quit, so
-  dispose from an exit request instead (`AppExitResponse` comes from
-  `dart:ui`):
+  Dart-side cleanup, and the runtime's exit teardown never frees an image
+  model, so still dispose every engine, including `DecisionEngine` and
+  `ImageGenerationEngine`, before the app quits. Desktop Flutter apps do not
+  run `State.dispose` on quit, so dispose from an exit request instead
+  (`AppExitResponse` comes from `dart:ui`):
 
 ```dart
 final listener = AppLifecycleListener(
@@ -110,8 +119,8 @@ app-level exit listener instead, and have that listener also await disposals
 already in progress. The example chat app does this with
 [`AppExitCoordinator`](https://github.com/leehack/llamadart/blob/main/example/chat_app/lib/services/app_exit_coordinator.dart).
 
-A Flutter hot restart (debug builds only) discards the old isolates without
-running their cleanup. The llama.cpp runtime frees what they left loaded when
+A Flutter hot restart (debug builds only) discards the old isolates. A
+llama.cpp model one of them was still loading is freed by the runtime when
 the app quits; an image model a discarded isolate loaded still aborts the quit
 ([#813](https://github.com/leehack/llamadart/issues/813)).
 

@@ -114,11 +114,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'macOS Metal process ends with llama.cpp objects alive: C exit with '
-        'a model idle, generating or loading and optionally with a projector '
-        'or a decision head, an unhandled error while generating or loading, '
-        'an isolate killed inside a load, and an isolate that ends without '
-        'freeing',
+        'macOS Metal process ends with llama.cpp objects alive: C exit '
+        'through FFI with a model idle, generating or loading and optionally '
+        'with a projector or a decision head, an unhandled error while '
+        'generating or loading, an isolate killed inside a load, and an '
+        'isolate that ends without freeing; not a Flutter quit and not an '
+        'exit during an unguarded call',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'native-exit-teardown --model-path <chat.gguf>',

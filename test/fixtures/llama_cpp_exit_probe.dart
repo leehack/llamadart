@@ -3,9 +3,13 @@
 // takes that model's projector, and `quit-decision` takes an encoder GGUF and
 // its decision head instead.
 //
-// The `quit-` scenarios call C `exit` from the main isolate while the isolate
-// that owns the objects is alive, as a Flutter macOS quit does; `dart:io`'s
-// `exit` does not run the static destructors that make ggml-metal abort.
+// The `quit-` scenarios call C `exit` through FFI from the main isolate while
+// the isolate that owns the objects is alive: what a native host that skips
+// the Dart shutdown does. They do not model a Flutter macOS quit, which shuts
+// the isolates down first, and `dart:io`'s `exit` does not run the static
+// destructors that make ggml-metal abort. Each one exits while the owning
+// isolate is idle or inside a guarded call; an exit during an unguarded call
+// is not covered (doc/llama_cpp_exit_teardown.md).
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';

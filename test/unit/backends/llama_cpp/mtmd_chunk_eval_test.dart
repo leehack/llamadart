@@ -6,8 +6,11 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
 import 'package:test/test.dart';
+
+import '../../../support/recording_exit_teardown.dart';
 
 const _text = 0;
 const _image = 1;
@@ -184,6 +187,37 @@ void main() {
       'decode 2 nPast=67 seq=0 batch=512',
     ]);
     expect(newNPast.value, 131);
+  });
+
+  test('with exit teardown, encodes, decodes and evaluates through it and '
+      'keeps its own accessors', () {
+    final fake = _FakeMtmd(const [
+      _FakeChunk(_text, 3),
+      _FakeChunk(_image, 64),
+    ], cancelToken);
+    final exit = RecordingExitTeardown(
+      ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+    );
+
+    expect(
+      evalMtmdChunksUntilCancelled(
+        fake.api.withExitTeardown(exit.api),
+        _ctx,
+        _lctx,
+        _chunks,
+        _nBatch,
+        newNPast,
+        cancelToken,
+      ),
+      isNull,
+    );
+
+    expect(exit.calls, [
+      'llama_dart_mtmd_helper_eval_chunk_single',
+      'llama_dart_mtmd_encode_chunk',
+      'llama_dart_mtmd_helper_decode_image_chunk',
+    ]);
+    expect(fake.calls, ['size', 'get 0', 'type 0', 'get 1', 'type 1', 'embd']);
   });
 
   test('evaluates nothing when cancelled before the first chunk', () {

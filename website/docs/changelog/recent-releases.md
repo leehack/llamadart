@@ -9,13 +9,15 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix Apple processes aborting in ggml-metal when they exit with a llama.cpp
-  model, context, projector or decision head still loaded, such as a Flutter
-  macOS app quit while a model loads or after a hot restart during a load:
-  the llama.cpp runtime now frees them at exit
+- Fix a Flutter macOS app aborting in ggml-metal when it quits while a
+  llama.cpp model loads or after a hot restart during a load, and a Dart
+  program aborting when it ends or kills an isolate during a load: the
+  llama.cpp runtime now frees the models, contexts, projectors and decision
+  heads still allocated at exit
   ([#813](https://github.com/leehack/llamadart/issues/813),
   [llamadart-native#96](https://github.com/leehack/llamadart-native/issues/96)).
-  Image models are not covered.
+  Image models, and a native host's C `exit()` while llamadart is working,
+  are not covered.
 - Update the default llama.cpp runtime to `leehack/llamadart-native@v0.5.0-1`,
   a rebuild of llama.cpp `v0.5.0` whose Apple XCFramework carries a privacy
   manifest (File Timestamp, reason `C617.1`). A runtime older than `v0.5.0-1`

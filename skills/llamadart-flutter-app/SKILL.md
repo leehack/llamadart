@@ -36,13 +36,12 @@ or shipping runtimes the app does not use.
   `ImageGenerationEngine` instances from
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
   returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
-  still loaded when the process exits aborts in `ggml_metal_rsets_free`. On
-  Apple platforms the llama.cpp runtime (`llamadart-native` `v0.5.0-1` and
-  later) frees leftover llama.cpp models, contexts and decision heads at
-  exit, after waiting up to two seconds for a running native call, but never
-  an image model, and an AppKit quit (Cmd-Q, last window, `exitApplication`)
-  is not guaranteed to run llamadart's Dart-side cleanup. When the engine's
-  owner can be disposed before quit (a
+  still loaded when the process exits aborts in `ggml_metal_rsets_free`. The
+  llama.cpp runtime (`llamadart-native` `v0.5.0-1` and later) frees a
+  llama.cpp model a quit caught mid-load, but never an image model, and an
+  AppKit quit (Cmd-Q, last window, `exitApplication`) is not guaranteed to
+  run llamadart's Dart-side cleanup. When the engine's owner can be disposed
+  before quit (a
   pushed route), its listener goes with it: make one app-level exit listener
   await every engine's disposal, including one its owner already started.
 - Keep inference state out of widgets. Put a plain Dart controller between

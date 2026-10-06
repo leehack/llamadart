@@ -13,11 +13,31 @@ import 'package:test/test.dart';
 
 import '../../../support/synthetic_embedding_gguf.dart';
 
-@Native<Void Function()>(
-  assetId: 'package:llamadart/llamadart',
-  symbol: 'llama_dart_exit_function_no_runtime_exports',
-)
-external void _notExported();
+// The exports a service on the tracked calls depends on.
+const _symbols = [
+  'llama_dart_exit_track',
+  'llama_dart_exit_untrack',
+  'llama_dart_exit_free',
+  'llama_dart_model_load_from_file',
+  'llama_dart_init_from_model',
+  'llama_dart_mtmd_init_from_file',
+  'llama_dart_decode',
+  'llama_dart_encode',
+  'llama_dart_synchronize',
+  'llama_dart_sampler_sample',
+  'llama_dart_state_save_file',
+  'llama_dart_state_load_file',
+  'llama_dart_state_seq_get_size_ext',
+  'llama_dart_state_seq_get_data_ext',
+  'llama_dart_state_seq_set_data_ext',
+  'llama_dart_adapter_lora_init',
+  'llama_dart_mtmd_tokenize',
+  'llama_dart_mtmd_encode_chunk',
+  'llama_dart_mtmd_helper_eval_chunks',
+  'llama_dart_mtmd_helper_eval_chunk_single',
+  'llama_dart_mtmd_helper_decode_image_chunk',
+  'llama_dart_ggml_backend_sched_graph_compute',
+];
 
 // Runs the real llama.cpp runtime on the CPU.
 void main() {
@@ -67,16 +87,32 @@ void main() {
     );
   });
 
-  test('does not resolve when the runtime lacks a function', () {
-    final resolved = ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!;
+  test('binds every function through the lookup, and resolves none when one '
+      'is missing', () {
+    final requested = <String>[];
+    Pointer<NativeType> exported(String name) {
+      requested.add(name);
+      return Pointer.fromAddress(0x1000 + requested.length);
+    }
 
     expect(
-      ExitTeardownApi.resolveOrNull(() {
-        Native.addressOf<NativeFunction<Void Function()>>(_notExported);
-        return resolved;
-      }),
-      isNull,
+      ExitTeardownApi.tryResolve(isWindows: false, symbol: exported),
+      isNotNull,
     );
+    expect(requested, unorderedEquals(_symbols));
+
+    for (final missing in _symbols) {
+      expect(
+        ExitTeardownApi.tryResolve(
+          isWindows: false,
+          symbol: (name) => name == missing
+              ? throw ArgumentError("Couldn't resolve native function '$name'")
+              : exported(name),
+        ),
+        isNull,
+        reason: missing,
+      );
+    }
   });
 
   test('frees a tracked object once, with the function it was tracked '

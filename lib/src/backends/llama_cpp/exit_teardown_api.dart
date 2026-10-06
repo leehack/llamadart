@@ -118,16 +118,17 @@ int exitStageValue(ShutdownStage stage) => switch (stage) {
 /// libllamadart's exit-teardown functions, resolved from one library.
 ///
 /// The library keeps a registry of the objects created through these
-/// functions and, on Apple platforms, frees what is left of it when the
-/// process exits without freeing them itself, as a Flutter quit does. It does
-/// so before ggml-metal's static destructor, which aborts while a Metal buffer
-/// is still allocated. Teardown waits for the calls made through these
-/// functions and allows a thread 250 ms between two of them, so every native
-/// call on a tracked object that can take longer has to be one of them.
+/// functions and, on Apple platforms, frees what is left of it during C
+/// `exit`, before ggml-metal's static destructor, which aborts while a Metal
+/// buffer is still allocated. Teardown waits only for the calls made through
+/// these functions, and for a short settle after the last one: any other
+/// native call on a tracked object that is in flight when it runs is freed
+/// under (`doc/llama_cpp_exit_teardown.md`).
 ///
 /// Windows bundles export these functions from `llamadart.dll` rather than the
-/// default `llama.dll` asset, so [tryResolve] binds `@Native` declarations to
-/// that asset on Windows. Elsewhere it uses the generated bindings.
+/// default `llama.dll` asset, so [tryResolve] resolves `@Native` declarations
+/// bound to that asset on Windows. Elsewhere it resolves the generated
+/// bindings.
 ///
 /// `llama_dart_exit_call_begin`, `llama_dart_exit_call_end` and
 /// `llama_dart_exit_teardown` are left unbound: an isolate killed between
@@ -167,18 +168,89 @@ final class ExitTeardownApi {
   /// Resolves every function from the loaded runtime, or returns `null` when
   /// it does not export all of them.
   ///
-  /// [isWindows] selects the asset the functions are bound to.
-  static ExitTeardownApi? tryResolve({required bool isWindows}) =>
-      resolveOrNull(isWindows ? _wrapperAssetApi : _bindingsApi);
-
-  /// Returns what [resolve] returns, or `null` when it throws the
-  /// [ArgumentError] of a native function that cannot be resolved.
-  static ExitTeardownApi? resolveOrNull(ExitTeardownApi Function() resolve) {
+  /// [isWindows] selects the asset the functions are bound to. [symbol]
+  /// replaces that lookup: it returns the address of the function exported
+  /// under a name, and throws [ArgumentError] when there is none.
+  static ExitTeardownApi? tryResolve({
+    required bool isWindows,
+    Pointer<NativeType> Function(String name)? symbol,
+  }) {
     try {
-      return resolve();
+      return ExitTeardownApi._fromSymbols(
+        symbol ?? (isWindows ? _wrapperAssetSymbol : _bindingsSymbol),
+      );
     } on ArgumentError {
       return null;
     }
+  }
+
+  // Every function is called through the address resolved here, so none can
+  // be bound without being part of the probe.
+  factory ExitTeardownApi._fromSymbols(
+    Pointer<NativeType> Function(String name) symbol,
+  ) {
+    Pointer<NativeFunction<T>> function<T extends Function>(String name) =>
+        symbol(name).cast();
+    final free = function<_FreeNative>('llama_dart_exit_free');
+    return ExitTeardownApi(
+      track: function<_TrackNative>('llama_dart_exit_track').asFunction(),
+      untrack: function<_UntrackNative>('llama_dart_exit_untrack').asFunction(),
+      free: free.asFunction(),
+      freeAddress: free.cast(),
+      modelLoadFromFile: function<_ModelLoadNative>(
+        'llama_dart_model_load_from_file',
+      ).asFunction(),
+      initFromModel: function<_InitFromModelNative>(
+        'llama_dart_init_from_model',
+      ).asFunction(),
+      mtmdInitFromFile: function<_MtmdInitNative>(
+        'llama_dart_mtmd_init_from_file',
+      ).asFunction(),
+      decode: function<_DecodeNative>('llama_dart_decode').asFunction(),
+      encode: function<_DecodeNative>('llama_dart_encode').asFunction(),
+      synchronize: function<_SynchronizeNative>(
+        'llama_dart_synchronize',
+      ).asFunction(),
+      samplerSample: function<_SamplerSampleNative>(
+        'llama_dart_sampler_sample',
+      ).asFunction(),
+      stateSaveFile: function<_StateSaveFileNative>(
+        'llama_dart_state_save_file',
+      ).asFunction(),
+      stateLoadFile: function<_StateLoadFileNative>(
+        'llama_dart_state_load_file',
+      ).asFunction(),
+      stateSeqGetSizeExt: function<_StateSeqSizeNative>(
+        'llama_dart_state_seq_get_size_ext',
+      ).asFunction(),
+      stateSeqGetDataExt: function<_StateSeqDataNative>(
+        'llama_dart_state_seq_get_data_ext',
+      ).asFunction(),
+      stateSeqSetDataExt: function<_StateSeqDataNative>(
+        'llama_dart_state_seq_set_data_ext',
+      ).asFunction(),
+      adapterLoraInit: function<_AdapterLoraInitNative>(
+        'llama_dart_adapter_lora_init',
+      ).asFunction(),
+      mtmdTokenize: function<_MtmdTokenizeNative>(
+        'llama_dart_mtmd_tokenize',
+      ).asFunction(),
+      mtmdEncodeChunk: function<_MtmdEncodeChunkNative>(
+        'llama_dart_mtmd_encode_chunk',
+      ).asFunction(),
+      mtmdHelperEvalChunks: function<_MtmdEvalChunksNative>(
+        'llama_dart_mtmd_helper_eval_chunks',
+      ).asFunction(),
+      mtmdHelperEvalChunkSingle: function<_MtmdEvalChunkSingleNative>(
+        'llama_dart_mtmd_helper_eval_chunk_single',
+      ).asFunction(),
+      mtmdHelperDecodeImageChunk: function<_MtmdDecodeImageChunkNative>(
+        'llama_dart_mtmd_helper_decode_image_chunk',
+      ).asFunction(),
+      schedGraphCompute: function<_SchedGraphComputeNative>(
+        'llama_dart_ggml_backend_sched_graph_compute',
+      ).asFunction(),
+    );
   }
 
   /// `llama_dart_exit_track`, with an [exitStageValue] as `stage`.
@@ -357,8 +429,8 @@ final class ExitTeardownApi {
 /// [LlamaCppObjectCalls.tracked] goes through an [ExitTeardownApi];
 /// [upstream] calls llama.cpp directly, which is all a runtime older than
 /// [ExitTeardownApi.minimumNativeRelease] offers. One service uses one of
-/// them for all of its calls: a long upstream call on a tracked object is a
-/// use after free at exit.
+/// them for all of its calls: exit teardown does not wait for an upstream
+/// call on a tracked object.
 final class LlamaCppObjectCalls {
   LlamaCppObjectCalls._({
     required this.exit,
@@ -534,177 +606,171 @@ final class LlamaCppObjectCalls {
   adapterLoraInit;
 }
 
-// `Native.addressOf` resolves its symbol, so a runtime that lacks one fails
-// here instead of at that function's first call.
-void _requireResolved(List<Pointer<NativeType>> addresses) {}
-
-ExitTeardownApi _bindingsApi() {
-  final freeAddress = Native.addressOf<NativeFunction<_FreeNative>>(
+Pointer<NativeType> _bindingsSymbol(String symbol) => switch (symbol) {
+  'llama_dart_exit_track' => Native.addressOf<NativeFunction<_TrackNative>>(
+    llama_dart_exit_track,
+  ),
+  'llama_dart_exit_untrack' => Native.addressOf<NativeFunction<_UntrackNative>>(
+    llama_dart_exit_untrack,
+  ),
+  'llama_dart_exit_free' => Native.addressOf<NativeFunction<_FreeNative>>(
     llama_dart_exit_free,
-  );
-  _requireResolved([
-    Native.addressOf<NativeFunction<_TrackNative>>(llama_dart_exit_track),
-    Native.addressOf<NativeFunction<_UntrackNative>>(llama_dart_exit_untrack),
+  ),
+  'llama_dart_model_load_from_file' =>
     Native.addressOf<NativeFunction<_ModelLoadNative>>(
       llama_dart_model_load_from_file,
     ),
+  'llama_dart_init_from_model' =>
     Native.addressOf<NativeFunction<_InitFromModelNative>>(
       llama_dart_init_from_model,
     ),
+  'llama_dart_mtmd_init_from_file' =>
     Native.addressOf<NativeFunction<_MtmdInitNative>>(
       llama_dart_mtmd_init_from_file,
     ),
-    Native.addressOf<NativeFunction<_DecodeNative>>(llama_dart_decode),
-    Native.addressOf<NativeFunction<_DecodeNative>>(llama_dart_encode),
+  'llama_dart_decode' => Native.addressOf<NativeFunction<_DecodeNative>>(
+    llama_dart_decode,
+  ),
+  'llama_dart_encode' => Native.addressOf<NativeFunction<_DecodeNative>>(
+    llama_dart_encode,
+  ),
+  'llama_dart_synchronize' =>
     Native.addressOf<NativeFunction<_SynchronizeNative>>(
       llama_dart_synchronize,
     ),
+  'llama_dart_sampler_sample' =>
     Native.addressOf<NativeFunction<_SamplerSampleNative>>(
       llama_dart_sampler_sample,
     ),
+  'llama_dart_state_save_file' =>
     Native.addressOf<NativeFunction<_StateSaveFileNative>>(
       llama_dart_state_save_file,
     ),
+  'llama_dart_state_load_file' =>
     Native.addressOf<NativeFunction<_StateLoadFileNative>>(
       llama_dart_state_load_file,
     ),
+  'llama_dart_state_seq_get_size_ext' =>
     Native.addressOf<NativeFunction<_StateSeqSizeNative>>(
       llama_dart_state_seq_get_size_ext,
     ),
+  'llama_dart_state_seq_get_data_ext' =>
     Native.addressOf<NativeFunction<_StateSeqDataNative>>(
       llama_dart_state_seq_get_data_ext,
     ),
+  'llama_dart_state_seq_set_data_ext' =>
     Native.addressOf<NativeFunction<_StateSeqDataNative>>(
       llama_dart_state_seq_set_data_ext,
     ),
+  'llama_dart_adapter_lora_init' =>
     Native.addressOf<NativeFunction<_AdapterLoraInitNative>>(
       llama_dart_adapter_lora_init,
     ),
+  'llama_dart_mtmd_tokenize' =>
     Native.addressOf<NativeFunction<_MtmdTokenizeNative>>(
       llama_dart_mtmd_tokenize,
     ),
+  'llama_dart_mtmd_encode_chunk' =>
     Native.addressOf<NativeFunction<_MtmdEncodeChunkNative>>(
       llama_dart_mtmd_encode_chunk,
     ),
+  'llama_dart_mtmd_helper_eval_chunks' =>
     Native.addressOf<NativeFunction<_MtmdEvalChunksNative>>(
       llama_dart_mtmd_helper_eval_chunks,
     ),
+  'llama_dart_mtmd_helper_eval_chunk_single' =>
     Native.addressOf<NativeFunction<_MtmdEvalChunkSingleNative>>(
       llama_dart_mtmd_helper_eval_chunk_single,
     ),
+  'llama_dart_mtmd_helper_decode_image_chunk' =>
     Native.addressOf<NativeFunction<_MtmdDecodeImageChunkNative>>(
       llama_dart_mtmd_helper_decode_image_chunk,
     ),
+  'llama_dart_ggml_backend_sched_graph_compute' =>
     Native.addressOf<NativeFunction<_SchedGraphComputeNative>>(
       _schedGraphCompute,
     ),
-  ]);
-  return ExitTeardownApi(
-    track: llama_dart_exit_track,
-    untrack: llama_dart_exit_untrack,
-    free: llama_dart_exit_free,
-    freeAddress: freeAddress.cast(),
-    modelLoadFromFile: llama_dart_model_load_from_file,
-    initFromModel: llama_dart_init_from_model,
-    mtmdInitFromFile: llama_dart_mtmd_init_from_file,
-    decode: llama_dart_decode,
-    encode: llama_dart_encode,
-    synchronize: llama_dart_synchronize,
-    samplerSample: llama_dart_sampler_sample,
-    stateSaveFile: llama_dart_state_save_file,
-    stateLoadFile: llama_dart_state_load_file,
-    stateSeqGetSizeExt: llama_dart_state_seq_get_size_ext,
-    stateSeqGetDataExt: llama_dart_state_seq_get_data_ext,
-    stateSeqSetDataExt: llama_dart_state_seq_set_data_ext,
-    adapterLoraInit: llama_dart_adapter_lora_init,
-    mtmdTokenize: llama_dart_mtmd_tokenize,
-    mtmdEncodeChunk: llama_dart_mtmd_encode_chunk,
-    mtmdHelperEvalChunks: llama_dart_mtmd_helper_eval_chunks,
-    mtmdHelperEvalChunkSingle: llama_dart_mtmd_helper_eval_chunk_single,
-    mtmdHelperDecodeImageChunk: llama_dart_mtmd_helper_decode_image_chunk,
-    schedGraphCompute: _schedGraphCompute,
-  );
-}
+  _ => throw ArgumentError.value(symbol, 'symbol', 'not bound'),
+};
 
-ExitTeardownApi _wrapperAssetApi() {
-  final freeAddress = Native.addressOf<NativeFunction<_FreeNative>>(
+Pointer<NativeType> _wrapperAssetSymbol(String symbol) => switch (symbol) {
+  'llama_dart_exit_track' => Native.addressOf<NativeFunction<_TrackNative>>(
+    _wrapperTrack,
+  ),
+  'llama_dart_exit_untrack' => Native.addressOf<NativeFunction<_UntrackNative>>(
+    _wrapperUntrack,
+  ),
+  'llama_dart_exit_free' => Native.addressOf<NativeFunction<_FreeNative>>(
     _wrapperFree,
-  );
-  _requireResolved([
-    Native.addressOf<NativeFunction<_TrackNative>>(_wrapperTrack),
-    Native.addressOf<NativeFunction<_UntrackNative>>(_wrapperUntrack),
+  ),
+  'llama_dart_model_load_from_file' =>
     Native.addressOf<NativeFunction<_ModelLoadNative>>(_wrapperModelLoad),
+  'llama_dart_init_from_model' =>
     Native.addressOf<NativeFunction<_InitFromModelNative>>(
       _wrapperInitFromModel,
     ),
+  'llama_dart_mtmd_init_from_file' =>
     Native.addressOf<NativeFunction<_MtmdInitNative>>(_wrapperMtmdInit),
-    Native.addressOf<NativeFunction<_DecodeNative>>(_wrapperDecode),
-    Native.addressOf<NativeFunction<_DecodeNative>>(_wrapperEncode),
+  'llama_dart_decode' => Native.addressOf<NativeFunction<_DecodeNative>>(
+    _wrapperDecode,
+  ),
+  'llama_dart_encode' => Native.addressOf<NativeFunction<_DecodeNative>>(
+    _wrapperEncode,
+  ),
+  'llama_dart_synchronize' =>
     Native.addressOf<NativeFunction<_SynchronizeNative>>(_wrapperSynchronize),
+  'llama_dart_sampler_sample' =>
     Native.addressOf<NativeFunction<_SamplerSampleNative>>(
       _wrapperSamplerSample,
     ),
+  'llama_dart_state_save_file' =>
     Native.addressOf<NativeFunction<_StateSaveFileNative>>(
       _wrapperStateSaveFile,
     ),
+  'llama_dart_state_load_file' =>
     Native.addressOf<NativeFunction<_StateLoadFileNative>>(
       _wrapperStateLoadFile,
     ),
+  'llama_dart_state_seq_get_size_ext' =>
     Native.addressOf<NativeFunction<_StateSeqSizeNative>>(
       _wrapperStateSeqGetSizeExt,
     ),
+  'llama_dart_state_seq_get_data_ext' =>
     Native.addressOf<NativeFunction<_StateSeqDataNative>>(
       _wrapperStateSeqGetDataExt,
     ),
+  'llama_dart_state_seq_set_data_ext' =>
     Native.addressOf<NativeFunction<_StateSeqDataNative>>(
       _wrapperStateSeqSetDataExt,
     ),
+  'llama_dart_adapter_lora_init' =>
     Native.addressOf<NativeFunction<_AdapterLoraInitNative>>(
       _wrapperAdapterLoraInit,
     ),
+  'llama_dart_mtmd_tokenize' =>
     Native.addressOf<NativeFunction<_MtmdTokenizeNative>>(_wrapperMtmdTokenize),
+  'llama_dart_mtmd_encode_chunk' =>
     Native.addressOf<NativeFunction<_MtmdEncodeChunkNative>>(
       _wrapperMtmdEncodeChunk,
     ),
+  'llama_dart_mtmd_helper_eval_chunks' =>
     Native.addressOf<NativeFunction<_MtmdEvalChunksNative>>(
       _wrapperMtmdEvalChunks,
     ),
+  'llama_dart_mtmd_helper_eval_chunk_single' =>
     Native.addressOf<NativeFunction<_MtmdEvalChunkSingleNative>>(
       _wrapperMtmdEvalChunkSingle,
     ),
+  'llama_dart_mtmd_helper_decode_image_chunk' =>
     Native.addressOf<NativeFunction<_MtmdDecodeImageChunkNative>>(
       _wrapperMtmdDecodeImageChunk,
     ),
+  'llama_dart_ggml_backend_sched_graph_compute' =>
     Native.addressOf<NativeFunction<_SchedGraphComputeNative>>(
       _wrapperSchedGraphCompute,
     ),
-  ]);
-  return ExitTeardownApi(
-    track: _wrapperTrack,
-    untrack: _wrapperUntrack,
-    free: _wrapperFree,
-    freeAddress: freeAddress.cast(),
-    modelLoadFromFile: _wrapperModelLoad,
-    initFromModel: _wrapperInitFromModel,
-    mtmdInitFromFile: _wrapperMtmdInit,
-    decode: _wrapperDecode,
-    encode: _wrapperEncode,
-    synchronize: _wrapperSynchronize,
-    samplerSample: _wrapperSamplerSample,
-    stateSaveFile: _wrapperStateSaveFile,
-    stateLoadFile: _wrapperStateLoadFile,
-    stateSeqGetSizeExt: _wrapperStateSeqGetSizeExt,
-    stateSeqGetDataExt: _wrapperStateSeqGetDataExt,
-    stateSeqSetDataExt: _wrapperStateSeqSetDataExt,
-    adapterLoraInit: _wrapperAdapterLoraInit,
-    mtmdTokenize: _wrapperMtmdTokenize,
-    mtmdEncodeChunk: _wrapperMtmdEncodeChunk,
-    mtmdHelperEvalChunks: _wrapperMtmdEvalChunks,
-    mtmdHelperEvalChunkSingle: _wrapperMtmdEvalChunkSingle,
-    mtmdHelperDecodeImageChunk: _wrapperMtmdDecodeImageChunk,
-    schedGraphCompute: _wrapperSchedGraphCompute,
-  );
-}
+  _ => throw ArgumentError.value(symbol, 'symbol', 'not bound'),
+};
 
 // The generated binding converts the result to a `ggml_status`, which throws
 // for a value this package does not know.
