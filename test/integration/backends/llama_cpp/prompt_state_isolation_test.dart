@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -87,7 +88,11 @@ void main() {
   test(
     'a media prompt does not seed the repeat penalty from stale memory',
     () async {
-      final session = _Session.open(modelPath, contextSize: 4096);
+      final session = _Session.open(
+        modelPath,
+        contextSize: 4096,
+        upstreamCalls: true,
+      );
       final fakeMtmd = _FakeMtmd(session, session.tokenize(_p1));
       try {
         const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
@@ -116,7 +121,7 @@ void main() {
   test(
     'a text prompt still seeds the repeat penalty with its own ids',
     () async {
-      final session = _Session.open(modelPath);
+      final session = _Session.open(modelPath, upstreamCalls: true);
       final fakeMtmd = _FakeMtmd(session, session.tokenize(_p1));
       try {
         const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
@@ -138,14 +143,22 @@ void main() {
 final class _Session {
   _Session._(this.service, this.modelHandle, this.contextHandle);
 
-  factory _Session.open(String modelPath, {int contextSize = 256}) {
+  /// With [upstreamCalls] the service calls llama.cpp directly, the only
+  /// calls with which it reaches mtmd through its fallback API.
+  factory _Session.open(
+    String modelPath, {
+    int contextSize = 256,
+    bool upstreamCalls = false,
+  }) {
     final params = ModelParams(
       contextSize: contextSize,
       batchSize: 8,
       microBatchSize: 8,
       gpuLayers: 0,
     );
-    final service = LlamaCppService();
+    final service = LlamaCppService(
+      objectCalls: upstreamCalls ? LlamaCppObjectCalls.upstream : null,
+    );
     final modelHandle = service.loadModel(modelPath, params);
     return _Session._(
       service,

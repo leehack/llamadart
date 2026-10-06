@@ -139,6 +139,7 @@ Pick targeted rows based on the touched surface:
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `native-prompt-cancel` |
 | Generation cancel or engine stream forwarding | `native-prompt-cancel` |
+| llama.cpp native pin, object creation and free paths, exit or isolate shutdown | `native-exit-teardown` |
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
@@ -538,6 +539,30 @@ after reload or replacement. Pair them with
 `test/unit/core/engine/engine_lifecycle_cancellation_test.dart`, which controls
 pre-output stops, buffered tool calls, running handlers, projector creation
 and teardown races, and speech parameter validation before file resolution.
+
+### Native exit teardown
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario native-exit-teardown \
+  --model-path /path/to/chat.gguf
+```
+
+This local-only macOS row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
+child process and ends it while llama.cpp objects are alive on Metal: C `exit`
+from the main isolate with a model idle, generating or loading, as a Flutter
+macOS quit does; an unhandled error while generating or loading; an isolate
+killed inside the native load; and an isolate that ends without freeing
+anything. Each run must reach its exit point, print no `GGML_ASSERT`, and end
+with exit code 0, or 255 for the unhandled errors. The engine scenarios also
+require the Metal backend, so use a model the GPU loads. `EXIT_TEARDOWN_RUNS`
+sets the runs of each scenario (default 3). A run fails when the process is
+still alive after three minutes. Two scenarios are skipped unless their files
+are set in the environment: `EXIT_TEARDOWN_MMPROJ`, the model's projector,
+adds a C `exit` with the projector loaded, and `EXIT_TEARDOWN_DECISION_MODEL`
+with `EXIT_TEARDOWN_DECISION_HEAD` adds one with a decision head loaded.
+
+`dart:io`'s `exit` is not one of the scenarios: it does not run the static
+destructors that make ggml-metal abort.
 
 ### Native prompt-evaluation cancel
 

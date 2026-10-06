@@ -110,6 +110,24 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'stream-forwarding changes. Repeat with --backend metal on macOS.',
   ),
   TestMatrixRow(
+    id: 'native-exit-teardown',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'macOS Metal process ends with llama.cpp objects alive: C exit with '
+        'a model idle, generating or loading and optionally with a projector '
+        'or a decision head, an unhandled error while generating or loading, '
+        'an isolate killed inside a load, and an isolate that ends without '
+        'freeing',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'native-exit-teardown --model-path <chat.gguf>',
+    useWhen:
+        'llama.cpp native pin, exit-teardown call sites, object creation or '
+        'free paths, or isolate shutdown changes. Needs a Mac whose GPU '
+        'loads the model.',
+  ),
+  TestMatrixRow(
     id: 'static-format-analyze',
     tier: 'essential',
     mode: 'CI + local',

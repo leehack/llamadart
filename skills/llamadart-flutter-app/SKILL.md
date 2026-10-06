@@ -36,10 +36,13 @@ or shipping runtimes the app does not use.
   `ImageGenerationEngine` instances from
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
   returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
-  still loaded when the app quits aborts in `ggml_metal_rsets_free`:
-  llamadart frees leftover models when a plain Dart program ends, but an
-  AppKit quit (Cmd-Q, last window, `exitApplication`) is not guaranteed to
-  run that cleanup. When the engine's owner can be disposed before quit (a
+  still loaded when the process exits aborts in `ggml_metal_rsets_free`. On
+  Apple platforms the llama.cpp runtime (`llamadart-native` `v0.5.0-1` and
+  later) frees leftover llama.cpp models, contexts and decision heads at
+  exit, after waiting up to two seconds for a running native call, but never
+  an image model, and an AppKit quit (Cmd-Q, last window, `exitApplication`)
+  is not guaranteed to run llamadart's Dart-side cleanup. When the engine's
+  owner can be disposed before quit (a
   pushed route), its listener goes with it: make one app-level exit listener
   await every engine's disposal, including one its owner already started.
 - Keep inference state out of widgets. Put a plain Dart controller between
@@ -115,12 +118,15 @@ or shipping runtimes the app does not use.
   On a device it has run only on an iPhone 16 Pro with iOS 18.3.2, so test
   older iOS versions before supporting them.
 - App Store builds should use the companion for each runtime they ship: an
-  Apple privacy manifest for llama.cpp or stable_diffusion can ship only
-  inside its XCFramework, never in hook-bundled dylibs. On the hook path, or
-  when the embedded `llama.framework` or `stable_diffusion.framework` has no
-  `PrivacyInfo.xcprivacy`, add `NSPrivacyAccessedAPICategoryFileTimestamp` to
-  the app's own `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1`
-  only when it ships stable_diffusion. The LiteRT-LM frameworks include no
+  Apple privacy manifest reaches an app inside a companion's XCFramework,
+  never in hook-bundled dylibs. The llama.cpp XCFramework has one from
+  `llamadart-native` `v0.5.0-1` (`llamadart_llama_cpp_flutter` releases after
+  `0.0.20`); the pinned stable_diffusion one has none. When llama.cpp or
+  stable_diffusion runs on the hook path, or the embedded `llama.framework` or
+  `stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, add
+  `NSPrivacyAccessedAPICategoryFileTimestamp` to the app's own
+  `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1` only when it
+  ships stable_diffusion. The LiteRT-LM frameworks include no
   privacy manifest and use File Timestamp, System Boot Time and User Defaults
   API; the app declares those itself, and llamadart publishes no reason codes
   for them.

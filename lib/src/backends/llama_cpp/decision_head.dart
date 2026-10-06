@@ -10,6 +10,7 @@ import '../../core/exceptions.dart';
 import '../backend.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
+import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
 import 'safetensors.dart';
 
@@ -217,8 +218,11 @@ final class _LayerTensors {
 /// The decision head as a ggml graph whose weights live on one device; the
 /// act MLP runs in Dart.
 final class DecisionHeadRuntime {
-  DecisionHeadRuntime._(this._api, DecisionHeadWeights weights)
-    : _hiddenSize = weights.hiddenSize,
+  DecisionHeadRuntime._(
+    this._api,
+    this._exitTeardown,
+    DecisionHeadWeights weights,
+  ) : _hiddenSize = weights.hiddenSize,
       _heads = weights.heads,
       _graphSize = 64 + 64 * weights.layers,
       _typeEmbedding = weights._typeEmbedding,
@@ -233,8 +237,11 @@ final class DecisionHeadRuntime {
   /// last. [cpuThreads] sets the CPU backend's thread count when that backend
   /// exposes `ggml_backend_set_n_threads`; [opOffload] is passed to
   /// `ggml_backend_sched_new`. [api] is the ggml function table the head
-  /// calls, [GgmlGraphApi.current] by default. What was created before a
-  /// failure is freed. Throws [ArgumentError] when [cpuThreads] is below 1,
+  /// calls, [GgmlGraphApi.current] by default. With [exitTeardown], the
+  /// backends, the weights buffer and the scheduler are tracked for exit
+  /// teardown, and the graph is computed as a call it waits for. What was
+  /// created before a failure is freed. Throws [ArgumentError] when
+  /// [cpuThreads] is below 1,
   /// [LlamaUnsupportedException] when the native library does not export a
   /// ggml function the head calls, [LlamaModelException] when a backend, the
   /// weights buffer or the scheduler cannot be created or filled, and
@@ -245,11 +252,16 @@ final class DecisionHeadRuntime {
     required int cpuThreads,
     required bool opOffload,
     GgmlGraphApi? api,
+    ExitTeardownApi? exitTeardown,
   }) {
     if (cpuThreads < 1) {
       throw ArgumentError.value(cpuThreads, 'cpuThreads', 'must be at least 1');
     }
-    final runtime = DecisionHeadRuntime._(api ?? GgmlGraphApi.current, weights);
+    final runtime = DecisionHeadRuntime._(
+      api ?? GgmlGraphApi.current,
+      exitTeardown,
+      weights,
+    );
     try {
       withGgmlGraphSymbols(
         () => runtime._initialize(weights, device, cpuThreads, opOffload),
@@ -262,6 +274,7 @@ final class DecisionHeadRuntime {
   }
 
   final GgmlGraphApi _api;
+  final ExitTeardownApi? _exitTeardown;
   final int _hiddenSize;
   final int _heads;
   final int _graphSize;
@@ -277,6 +290,7 @@ final class DecisionHeadRuntime {
   Pointer<ggml_context> _weightsContext = nullptr;
   ggml_backend_buffer_t _weightsBuffer = nullptr;
   ggml_backend_sched_t _sched = nullptr;
+  final Set<int> _exitTracked = {};
   String _deviceName = '';
   bool _disposed = false;
 
@@ -290,7 +304,6 @@ final class DecisionHeadRuntime {
     bool opOffload,
   ) {
     final api = _api;
-    final releases = IsolateShutdownReleases.current;
     final frees = ggmlFreeAddresses;
     final cpuDevice = api.devByType(
       ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
@@ -307,11 +320,11 @@ final class DecisionHeadRuntime {
         'Could not start the ggml CPU backend for the decision head.',
       );
     }
-    releases.hold(ShutdownStage.backend, frees.backendFree, _cpuBackend);
+    _own(ShutdownStage.backend, frees.backendFree, _cpuBackend);
     _setCpuThreads(cpuThreads);
     if (device != null && device != nullptr && device != cpuDevice) {
       _deviceBackend = api.devInit(device, nullptr);
-      releases.hold(ShutdownStage.backend, frees.backendFree, _deviceBackend);
+      _own(ShutdownStage.backend, frees.backendFree, _deviceBackend);
       if (_deviceBackend == nullptr) {
         throw LlamaModelException(
           'Could not start the ggml backend of the model device for the '
@@ -390,7 +403,7 @@ final class DecisionHeadRuntime {
     _scorerOutBias = vector('scorer.3.bias', 1);
 
     _weightsBuffer = api.allocCtxTensors(_weightsContext, primary);
-    releases.hold(ShutdownStage.modelUser, frees.bufferFree, _weightsBuffer);
+    _own(ShutdownStage.modelUser, frees.bufferFree, _weightsBuffer);
     if (_weightsBuffer == nullptr) {
       throw LlamaModelException(
         'Could not allocate decision head weights on $_deviceName.',
@@ -435,7 +448,7 @@ final class DecisionHeadRuntime {
     } finally {
       calloc.free(backends);
     }
-    releases.hold(ShutdownStage.scheduler, frees.schedFree, _sched);
+    _own(ShutdownStage.scheduler, frees.schedFree, _sched);
     if (_sched == nullptr) {
       throw LlamaModelException(
         'Could not create the ggml scheduler for the decision head on '
@@ -648,7 +661,11 @@ final class DecisionHeadRuntime {
           ..setAll(1, markers);
         api.tensorSet(rowsInput, staging.cast(), 0, rowCount * 4);
 
-        final status = api.schedGraphCompute(_sched, graph);
+        final status =
+            (_exitTeardown?.schedGraphCompute ?? api.schedGraphCompute)(
+              _sched,
+              graph,
+            );
         if (status != ggml_status.GGML_STATUS_SUCCESS.value) {
           throw LlamaInferenceException(
             'Decision head compute failed on $_deviceName (ggml status '
@@ -708,16 +725,13 @@ final class DecisionHeadRuntime {
     if (_disposed) return;
     _disposed = true;
     final api = _api;
-    final releases = IsolateShutdownReleases.current;
     if (_sched != nullptr) {
       api.schedSynchronize(_sched);
-      releases.release(_sched);
-      api.schedFree(_sched);
+      _disown(_sched, api.schedFree);
       _sched = nullptr;
     }
     if (_weightsBuffer != nullptr) {
-      releases.release(_weightsBuffer);
-      api.bufferFree(_weightsBuffer);
+      _disown(_weightsBuffer, api.bufferFree);
       _weightsBuffer = nullptr;
     }
     if (_weightsContext != nullptr) {
@@ -725,14 +739,44 @@ final class DecisionHeadRuntime {
       _weightsContext = nullptr;
     }
     if (_deviceBackend != nullptr) {
-      releases.release(_deviceBackend);
-      api.backendFree(_deviceBackend);
+      _disown(_deviceBackend, api.backendFree);
       _deviceBackend = nullptr;
     }
     if (_cpuBackend != nullptr) {
-      releases.release(_cpuBackend);
-      api.backendFree(_cpuBackend);
+      _disown(_cpuBackend, api.backendFree);
       _cpuBackend = nullptr;
+    }
+  }
+
+  /// Frees [object] with [free] at isolate shutdown and, with exit teardown,
+  /// at process exit, unless [_disown] frees it first.
+  void _own<T extends NativeType>(
+    ShutdownStage stage,
+    Pointer<NativeFinalizerFunction> free,
+    Pointer<T> object,
+  ) {
+    final exitTeardown = _exitTeardown;
+    final tracked =
+        exitTeardown != null &&
+        object != nullptr &&
+        exitTeardown.track(object.cast(), free.cast(), exitStageValue(stage));
+    if (tracked) _exitTracked.add(object.address);
+    IsolateShutdownReleases.current.hold(
+      stage,
+      tracked ? exitTeardown.freeAddress : free,
+      object,
+    );
+  }
+
+  void _disown<T extends NativeType>(
+    Pointer<T> object,
+    void Function(Pointer<T> object) free,
+  ) {
+    IsolateShutdownReleases.current.release(object);
+    if (_exitTracked.remove(object.address)) {
+      _exitTeardown!.free(object.cast());
+    } else {
+      free(object);
     }
   }
 }

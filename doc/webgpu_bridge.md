@@ -86,13 +86,14 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```
 
 That release embeds llama.cpp `v0.5.0`, matching the `hook/build.dart` native pin
-(`v0.5.0`, both built from upstream llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
+(`v0.5.0-1`, both built from upstream llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
 even though the bridge asset tag `v0.1.54` differs from the native runtime tag
-`v0.5.0`. Provenance for this immutable consumer artifact: release `397350529`,
+`v0.5.0-1`. Provenance for this immutable consumer artifact: release `397350529`,
 tag commit `e161182a09ac560d45ad5e65bb499574f913a466`, bridge source
 `65622b297b83513db597a760fa067867755010b4`, and manifest SHA-256
 `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`. The bridge
-assets were qualified against native `v0.5.0`. They add the decision API
+assets were qualified against native `v0.5.0`; `v0.5.0-1` rebuilds it from the
+same upstream commit. They add the decision API
 (apiVersion 1), next-token scoring (`scoreNextToken`), presence penalty, Min-P,
 thinking budgets, runtime LoRA adapters and speculative decoding, keep the
 Qwen3-ASR typed speech contract from `v0.1.30`, and

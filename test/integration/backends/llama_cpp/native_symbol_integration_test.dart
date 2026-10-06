@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
@@ -71,6 +72,41 @@ const _mtmdChunkEvalSymbols = [
 const _ttsCancelSymbols = [
   'llama_dart_tts_eval_callback',
   'llama_dart_tts_set_cancel_flag',
+];
+
+const _exitTeardownSymbols = [
+  'llama_dart_exit_track',
+  'llama_dart_exit_untrack',
+  'llama_dart_exit_free',
+  'llama_dart_model_load_from_file',
+  'llama_dart_init_from_model',
+  'llama_dart_mtmd_init_from_file',
+  'llama_dart_decode',
+  'llama_dart_encode',
+  'llama_dart_synchronize',
+  'llama_dart_sampler_sample',
+  'llama_dart_state_save_file',
+  'llama_dart_state_load_file',
+  'llama_dart_state_seq_get_size_ext',
+  'llama_dart_state_seq_get_data_ext',
+  'llama_dart_state_seq_set_data_ext',
+  'llama_dart_adapter_lora_init',
+  'llama_dart_mtmd_tokenize',
+  'llama_dart_mtmd_encode_chunk',
+  'llama_dart_mtmd_helper_eval_chunks',
+  'llama_dart_mtmd_helper_eval_chunk_single',
+  'llama_dart_mtmd_helper_decode_image_chunk',
+];
+
+// Returns an enum, so ffigen binds it under a private name behind a wrapper.
+const _exitTeardownGraphComputeSymbol =
+    'llama_dart_ggml_backend_sched_graph_compute';
+
+// Not kill-safe from Dart, so the bindings must not offer them.
+const _unboundExitTeardownSymbols = [
+  'llama_dart_exit_call_begin',
+  'llama_dart_exit_call_end',
+  'llama_dart_exit_teardown',
 ];
 
 const _aloraMetadataSymbols = [
@@ -529,6 +565,46 @@ void main() {
           reason: symbol,
         );
       }
+    });
+
+    test('Verify exit-teardown symbols are declared in generated bindings, '
+        'except the ones that are unsafe from Dart', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+
+      for (final symbol in _exitTeardownSymbols) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+      expect(
+        bindingsSource,
+        contains("symbol: '$_exitTeardownGraphComputeSymbol'"),
+      );
+      for (final symbol in _unboundExitTeardownSymbols) {
+        expect(bindingsSource, isNot(contains(symbol)), reason: symbol);
+      }
+    });
+
+    test('Verify the pinned wrapper exports the exit-teardown API the service '
+        'resolves', () {
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      _expectDynamicLibraryExports(wrapper!, [
+        ..._exitTeardownSymbols,
+        _exitTeardownGraphComputeSymbol,
+      ]);
+      expect(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
     });
 
     test('Verify pinned mtmd context parameter layout in bindings', () {

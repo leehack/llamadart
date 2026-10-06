@@ -1,13 +1,24 @@
 ## Unreleased
 
+- Fix Apple processes aborting in ggml-metal when they exit with a llama.cpp
+  model, context, projector or decision head still loaded, such as a Flutter
+  macOS app quit while a model loads or after a hot restart during a load:
+  the llama.cpp runtime now frees them at exit
+  ([#813](https://github.com/leehack/llamadart/issues/813),
+  [llamadart-native#96](https://github.com/leehack/llamadart-native/issues/96)).
+  Image models are not covered.
+- Update the default llama.cpp runtime to `leehack/llamadart-native@v0.5.0-1`,
+  a rebuild of llama.cpp `v0.5.0` whose Apple XCFramework carries a privacy
+  manifest (File Timestamp, reason `C617.1`). A runtime older than `v0.5.0-1`
+  keeps the previous exit behavior and logs a warning at the first model load.
 - Documented that LiteRT-LM on iOS has run on a device only on iOS 18.3.2;
   iOS 16.4 remains the declared, untested deployment floor
   ([#831](https://github.com/leehack/llamadart/issues/831)).
-- Documented Apple privacy manifests: only the llama.cpp and stable_diffusion
-  companion packages' XCFrameworks can carry one, and an app whose llama.cpp
-  or stable_diffusion runtime has none declares File Timestamp reason `C617.1`
-  (plus `3B52.1` for stable_diffusion) itself; LiteRT-LM ships no manifest and
-  no published reason codes.
+- Documented Apple privacy manifests: one reaches an app inside a companion
+  package's XCFramework, never through the hook path, and an app whose
+  llama.cpp or stable_diffusion runtime has none declares File Timestamp
+  reason `C617.1` (plus `3B52.1` for stable_diffusion) itself; LiteRT-LM ships
+  no manifest and no published reason codes.
 
 - Adopt LiteRT-LM `v0.17.0-7` with provider-free iOS artifacts; Gemma FST
   constrained decoding remains unavailable on iOS.

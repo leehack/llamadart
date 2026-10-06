@@ -1,3 +1,9 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.5.0-1`,
+  whose XCFramework carries an Apple privacy manifest and frees llama.cpp
+  objects still loaded at process exit.
+
 ## 0.0.20
 
 * Updated Apple SwiftPM native pin to `leehack/llamadart-native@v0.5.0`.

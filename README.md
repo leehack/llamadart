@@ -221,10 +221,13 @@ The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
 Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
 
 An app bound for the App Store should use the companion for each runtime it
-ships: an Apple privacy manifest for llama.cpp or stable_diffusion can ship
-only inside its SwiftPM XCFramework, never in the dylibs the build hook
-bundles. An app on the hook path, or whose embedded `llama.framework` or
-`stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, declares
+ships: an Apple privacy manifest reaches an app inside a SwiftPM XCFramework,
+never in the dylibs the build hook bundles. The llama.cpp XCFramework carries
+one from `llamadart-native` `v0.5.0-1`, which `llamadart_llama_cpp_flutter`
+releases after `0.0.20` link; the pinned stable_diffusion XCFramework carries
+none. An app that runs llama.cpp or stable_diffusion on the hook path, or
+whose embedded `llama.framework` or `stable_diffusion.framework` has no
+`PrivacyInfo.xcprivacy`, declares
 `NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
 with reason `C617.1`, plus `3B52.1` only when it ships stable_diffusion. The
 LiteRT-LM frameworks include no privacy manifest and use File Timestamp,
@@ -309,7 +312,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-7` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.54` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |

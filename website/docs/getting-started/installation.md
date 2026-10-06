@@ -73,11 +73,14 @@ image generation without it gets the hook-bundled runtime, whose iOS framework
 the build warning about it.
 
 An app bound for the App Store should use the companion for each runtime it
-ships, because only the llama.cpp and stable_diffusion XCFrameworks can carry
-an Apple privacy manifest. An app on the hook path, or whose embedded runtime
-framework has no `PrivacyInfo.xcprivacy`, declares the runtime's
-required-reason API use in its own `PrivacyInfo.xcprivacy`. LiteRT-LM ships
-no manifest and no published reason codes. Copy the categories and codes from
+ships, because an Apple privacy manifest reaches an app inside a companion's
+XCFramework and never through the hook path. The llama.cpp XCFramework has one
+from `llamadart-native` `v0.5.0-1`; the pinned stable_diffusion one has none.
+An app that runs llama.cpp or stable_diffusion on the hook path, or whose
+embedded `llama.framework` or `stable_diffusion.framework` has no
+`PrivacyInfo.xcprivacy`, declares the runtime's required-reason API use in its
+own `PrivacyInfo.xcprivacy`. LiteRT-LM ships no manifest and no published
+reason codes. Copy the categories and codes from
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest).
 
 ## Web
@@ -130,7 +133,7 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
       # Compatibility testing only; omit to use the tested pin.
-      # llamadart_native_tag: v0.5.0
+      # llamadart_native_tag: v0.5.0-1
 ```
 
 A `llamadart_native_backends` request that names any backend module the target
@@ -145,7 +148,7 @@ rebuild counters start at 1. Build-hook overrides must always name an explicit
 tag; `latest` is limited to maintainer synchronization and header/binding
 regeneration. An override does not regenerate the Dart bindings, so its
 binary must stay ABI-compatible with the default
-`leehack/llamadart-native@v0.5.0` runtime.
+`leehack/llamadart-native@v0.5.0-1` runtime.
 
 Every key, per-target backend and Android CPU variant selection, local bundle
 paths, and fallback rules:

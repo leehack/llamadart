@@ -262,8 +262,10 @@ package cache; later launches load it from there.
 - **One engine per screen.** `_ChatScreenState` owns the `LlamaEngine`.
   `State.dispose` cancels any running download and generation, then disposes
   the engine. Quitting a desktop app does not run `State.dispose`, so
-  `onExitRequested` disposes the engine too; on macOS Metal, a model still
-  loaded at exit aborts the process. An engine holds one model at a time.
+  `onExitRequested` disposes the engine too. On Apple platforms the llama.cpp
+  runtime frees a model left loaded at exit, but only after waiting up to two
+  seconds for a native call still running. An engine holds one model at a
+  time.
 - **Download with progress.** `setModel` resolves the `hf://` reference,
   downloads it with resume support and reports `ModelDownloadProgress`.
   `fraction` is `null` while the total size is unknown, which

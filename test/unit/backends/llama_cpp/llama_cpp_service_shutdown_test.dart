@@ -4,13 +4,17 @@ library;
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 
 import '../../../support/synthetic_decision_head.dart';
@@ -27,11 +31,34 @@ void main() {
     paths = _Paths(directory.path);
   });
 
-  test('holds each object it creates with its free function and stage, '
-      'which the isolate exit frees', () async {
+  test('holds each object it creates with the runtime\'s tracked free and its '
+      'stage, which the isolate exit frees', () async {
     final p = paths;
     final held = await Isolate.run(() {
       _load(LlamaCppService()..initializeBackend(), p);
+      return _describeHeld();
+    });
+
+    expect(held, [
+      'llama_dart_exit_free model',
+      'llama_dart_exit_free context',
+      'llama_dart_exit_free context',
+      'llama_dart_exit_free model',
+      // The decision head: its encoder context, then its runtime.
+      'llama_dart_exit_free context',
+      'llama_dart_exit_free backend',
+      'llama_dart_exit_free modelUser',
+      'llama_dart_exit_free scheduler',
+    ]);
+  });
+
+  test('holds each object with its upstream free function on a runtime '
+      'without exit teardown', () async {
+    final p = paths;
+    final held = await Isolate.run(() {
+      final service = LlamaCppService(objectCalls: LlamaCppObjectCalls.upstream)
+        ..initializeBackend();
+      _load(service, p);
       return _describeHeld();
     });
 
@@ -40,12 +67,45 @@ void main() {
       'llama_free context',
       'llama_free context',
       'llama_model_free model',
-      // The decision head: its encoder context, then its runtime.
       'llama_free context',
       'ggml_backend_free backend',
       'ggml_backend_buffer_free modelUser',
       'ggml_backend_sched_free scheduler',
     ]);
+  });
+
+  test('computes the same decision and embedding through the tracked and the '
+      'upstream calls', () async {
+    final p = paths;
+    Future<(List<double>, List<double>, List<double>)> run(bool upstream) =>
+        Isolate.run(() {
+          final service = LlamaCppService(
+            objectCalls: upstream ? LlamaCppObjectCalls.upstream : null,
+          )..initializeBackend();
+          final loaded = _load(service, p);
+          final decision = service.runDecision(loaded.head, [
+            BackendDecisionSequence(
+              tokens: Int32List.fromList([1, 5, 0, 6, 0, 2]),
+              markers: Int32List.fromList([2, 4]),
+              questionType: DecisionQuestionType.choice,
+            ),
+          ]).single;
+          final embedding = service.embed(loaded.context, 'exit teardown');
+          service.dispose();
+          return (
+            decision.logits.toList(),
+            decision.actLogits.toList(),
+            embedding,
+          );
+        });
+
+    final tracked = await run(false);
+    final upstream = await run(true);
+    expect(tracked.$1, hasLength(2));
+    expect(tracked.$3, isNotEmpty);
+    expect(upstream.$1, tracked.$1);
+    expect(upstream.$2, tracked.$2);
+    expect(upstream.$3, tracked.$3);
   });
 
   test('releases each hold when its object is freed', () async {
@@ -118,6 +178,9 @@ final class _Paths {
 
 List<String> _describeHeld() {
   final names = {
+    ExitTeardownApi.tryResolve(
+      isWindows: Platform.isWindows,
+    )!.freeAddress.address: 'llama_dart_exit_free',
     Native.addressOf<NativeFunction<Void Function(Pointer<llama_model>)>>(
       llama_model_free,
     ).address: 'llama_model_free',
