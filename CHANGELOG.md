@@ -7,12 +7,26 @@
   heads still allocated at exit
   ([#813](https://github.com/leehack/llamadart/issues/813),
   [llamadart-native#96](https://github.com/leehack/llamadart-native/issues/96)).
-  Image models, and a native host's C `exit()` while llamadart is working,
-  are not covered.
+  A native host's C `exit()` while a llama.cpp call is running is not covered.
 - Update the default llama.cpp runtime to `leehack/llamadart-native@v0.5.0-2`,
   a rebuild of llama.cpp `v0.5.0` whose Apple XCFramework carries a privacy
   manifest (File Timestamp, reason `C617.1`). A runtime older than `v0.5.0-1`
   keeps the previous exit behavior and logs a warning at the first model load.
+- Fix a process aborting when a Dart program dies of an error, or a Flutter
+  macOS app quits or hot restarts, while an image model loads or generates,
+  and a macOS Metal process aborting in ggml-metal when a native host exits
+  with an image model loaded: the stable_diffusion runtime now records
+  progress instead of calling back into Dart, and frees the image models
+  still allocated at exit
+  ([stable-diffusion-native#10](https://github.com/leehack/stable-diffusion-native/issues/10)).
+  Image progress events now arrive up to about 50 ms after the runtime
+  reports them. A quit during an image generation waits for the generation
+  to finish; dispose the engine first to quit at once.
+- Update the stable_diffusion runtime to
+  `leehack/stable-diffusion-native@v0.2.0-1`, a rebuild of the same
+  stable-diffusion.cpp commit whose Apple XCFramework carries a privacy
+  manifest (File Timestamp, reasons `C617.1` and `3B52.1`). Image generation
+  needs this runtime or a later one.
 - Documented that LiteRT-LM on iOS has run on a device only on iOS 18.3.2;
   iOS 16.4 remains the declared, untested deployment floor
   ([#831](https://github.com/leehack/llamadart/issues/831)).

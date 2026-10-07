@@ -163,10 +163,10 @@ the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0 \
+  --stable-diffusion-tag v0.2.0-1 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0
+  --stable-diffusion-tag v0.2.0-1
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
@@ -184,16 +184,22 @@ and a `stableDiffusionBundleForNativeBundle` mapping by hand.
 
 `sync_stable_diffusion_bindings.py` downloads the pinned `linux-x64` archive
 (or takes `--archive`), checks it against the pin, stages
-`include/stable-diffusion.h` under
+`include/stable-diffusion.h` and `include/sd_dart_wrapper.h` under
 `.dart_tool/llamadart/ffigen_headers_stable_diffusion/`, and regenerates
 `lib/src/backends/stable_diffusion/stable_diffusion_bindings.dart` with
 `ffigen_stable_diffusion.yaml`. The bindings resolve the library through the
 `package:llamadart/stable_diffusion` native-asset id that the hook emits.
+That config leaves five `sd_dart_exit_` functions unbound and marks
+`sd_dart_progress_read` as the only leaf call. A new `sd_dart_` function the
+image worker calls also goes into `StableDiffusionCalls`, whose probe decides
+whether the runtime is supported
+([exit teardown](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#image-models)).
 
 After a sync, run
 `dart test --run-skipped -t local-only test/integration/stable_diffusion_runtime_hook_test.dart`
 on macOS: it builds a throwaway consumer against the new pin and probes the
-runtime it bundles.
+runtime it bundles. Then run the `image-generation-smoke` and
+`image-exit-teardown` rows of `doc/testing_matrix.md`.
 
 ## Native version update checklist
 

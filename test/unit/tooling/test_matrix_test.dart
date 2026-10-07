@@ -57,6 +57,7 @@ void main() {
       expect(ids, contains('physical-ios-speech-e2e'));
       expect(ids, contains('decision-model-smoke'));
       expect(ids, contains('image-generation-smoke'));
+      expect(ids, contains('image-exit-teardown'));
       expect(ids, contains('chat-app-image-generation-smoke'));
     });
 
@@ -94,6 +95,7 @@ void main() {
       }
       expect(referenced, contains('decision-model-smoke'));
       expect(referenced, contains('image-generation-smoke'));
+      expect(referenced, contains('image-exit-teardown'));
     });
 
     test('speech-to-text rows take WAV, MP3 or FLAC fixtures', () {

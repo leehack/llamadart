@@ -327,7 +327,7 @@ Runtime releases built before the manifest was added do not contain it:
 | Runtime | XCFramework with a manifest |
 | --- | --- |
 | llama.cpp | `llamadart-native` `v0.5.0-1` and later, which `llamadart_llama_cpp_flutter` releases after `0.0.20` link; `0.0.20` and earlier link `v0.5.0` or older, without one |
-| stable-diffusion.cpp | None yet: the pinned `stable-diffusion-native` `v0.2.0` has none |
+| stable-diffusion.cpp | `stable-diffusion-native` `v0.2.0-1` and later, which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; `0.0.1` links `v0.2.0`, without one |
 | LiteRT-LM | `litert-lm-native` `v0.17.0-8` and later, which `llamadart_litert_lm_flutter` releases after `0.0.12` link; `0.0.12` and earlier link `v0.17.0-6` or older, without one |
 
 An app declares the use in its own `PrivacyInfo.xcprivacy` when it runs

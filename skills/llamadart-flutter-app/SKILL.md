@@ -37,8 +37,10 @@ or shipping runtimes the app does not use.
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
   returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
   still loaded when the process exits aborts in `ggml_metal_rsets_free`. The
-  llama.cpp runtime (`llamadart-native` `v0.5.0-2` and later) frees a
-  llama.cpp model a quit caught mid-load, but never an image model, and an
+  llama.cpp runtime (`llamadart-native` `v0.5.0-2` and later) and the
+  stable_diffusion runtime (`stable-diffusion-native` `v0.2.0-1` and later)
+  free a model a quit caught mid-load, but a quit during an image generation
+  waits for the whole generation, and an
   AppKit quit (Cmd-Q, last window, `exitApplication`) is not guaranteed to
   run llamadart's Dart-side cleanup. When the engine's owner can be disposed
   before quit (a
@@ -120,7 +122,9 @@ or shipping runtimes the app does not use.
   Apple privacy manifest reaches an app inside a companion's XCFramework,
   never in hook-bundled dylibs. The llama.cpp XCFramework has one from
   `llamadart-native` `v0.5.0-1` (`llamadart_llama_cpp_flutter` releases after
-  `0.0.20`); the pinned stable_diffusion one has none. When llama.cpp or
+  `0.0.20`), and the stable_diffusion one from `stable-diffusion-native`
+  `v0.2.0-1` (`llamadart_stable_diffusion_flutter` releases after `0.0.1`).
+  When llama.cpp or
   stable_diffusion runs on the hook path, or the embedded `llama.framework` or
   `stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, add
   `NSPrivacyAccessedAPICategoryFileTimestamp` to the app's own

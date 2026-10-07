@@ -79,28 +79,41 @@ isolate is still working: an exit during a call the runtime does not guard
 (tokenizing, detokenizing, reading metadata, building a sampler, decoding an
 image or audio file) can crash, and an exit during a guarded call that runs
 longer than two seconds (an image or audio evaluation, a long batch) aborts
-as before. Image models are not covered at all: stable-diffusion.cpp has no
-such teardown.
+as before.
+
+The stable_diffusion runtime (`stable-diffusion-native` `v0.2.0-1` and later)
+does the same for image models, and no longer calls back into Dart to report
+progress. That covers:
+
+- a Dart program that dies of an unhandled error while an image model loads
+  or generates, which used to abort the VM with
+  `GetFfiCallbackMetadata called after shutdown`;
+- a Flutter macOS quit while an image model loads or generates, and a hot
+  restart during a load, which also used to abort in the progress callback;
+- a native host's C `exit()` while an image model is loaded, loading or
+  generating. The runtime then cancels the generation and waits for the load
+  or the generation up to 15 seconds: stable-diffusion.cpp stops only before
+  a sampling step or before decoding an image, and cannot interrupt a load.
+  A phase that takes longer than that is not freed, and ggml-metal aborts as
+  before. With a llama.cpp call running too, the exit can take about 17.5
+  seconds.
 
 - A Dart program that returns from `main` or dies of an unhandled error does
   not need to dispose first: llamadart frees what its engines still hold as
-  the program ends, after any native call still running finishes. The exit
-  can still abort when the program dies of an error:
-  - while an image model is being created: the VM stops the worker as soon
-    as that native call returns, before llamadart can track the new object;
-  - while an image model loads or generates: stable-diffusion.cpp reports
-    progress through a Dart callback, which the shutting-down VM rejects;
-  - rarely, while `dispose()` is freeing an image model, which can leave it
-    unfreed.
+  the program ends, after any native call still running finishes. Nothing
+  cancels a running image generation on that path, so the process ends only
+  when the generation does: about 5 s for the rest of a 40-step SDXS
+  generation and 11.5 s for SD-Turbo on an M4 Max. Cancel the task or
+  dispose the engine first to end sooner.
 
   `exit()` from `dart:io` skips C++ static destructors and never aborts.
 - A Flutter app that quits through AppKit (Cmd-Q, closing its last window, or
   `ServicesBinding.exitApplication`) is not guaranteed to run llamadart's
-  Dart-side cleanup, and the runtime's exit teardown never frees an image
-  model, so still dispose every engine, including `DecisionEngine` and
-  `ImageGenerationEngine`, before the app quits. Desktop Flutter apps do not
-  run `State.dispose` on quit, so dispose from an exit request instead
-  (`AppExitResponse` comes from `dart:ui`):
+  Dart-side cleanup, and a quit during an image generation waits for the
+  whole generation, so still dispose every engine, including
+  `DecisionEngine` and `ImageGenerationEngine`, before the app quits.
+  Desktop Flutter apps do not run `State.dispose` on quit, so dispose from
+  an exit request instead (`AppExitResponse` comes from `dart:ui`):
 
 ```dart
 final listener = AppLifecycleListener(
@@ -120,8 +133,8 @@ already in progress. The example chat app does this with
 [`AppExitCoordinator`](https://github.com/leehack/llamadart/blob/main/example/chat_app/lib/services/app_exit_coordinator.dart).
 
 A Flutter hot restart (debug builds only) discards the old isolates. A
-llama.cpp model one of them was still loading is freed by the runtime when
-the app quits; an image model a discarded isolate loaded still aborts the quit
+llama.cpp or image model one of them was still loading is freed by the
+runtime when the app quits
 ([#813](https://github.com/leehack/llamadart/issues/813)).
 
 `LlamaBackend()` routes GGUF to llama.cpp and `.litertlm` bundles to

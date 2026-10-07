@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import '../windows_runtime_libraries.dart';
 import 'stable_diffusion_bindings.dart' as sd;
+import 'stable_diffusion_calls.dart';
 import 'stable_diffusion_runtime_status.dart';
 
 /// The native calls the probe makes; tests substitute a fake.
@@ -18,6 +19,9 @@ abstract interface class StableDiffusionNativeApi {
 
   /// `sd_list_devices()` output.
   String listDevices();
+
+  /// Whether the runtime exports every function of [StableDiffusionCalls].
+  bool exportsWrapperCalls();
 }
 
 /// ABIs stable-diffusion-native publishes a runtime for. `Abi.iosArm64` covers
@@ -54,7 +58,10 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// cross-compiled without AVX, and macOS 13.3 runs only on Intel CPUs that
 /// have AVX2 anyway.
 ///
-/// Then `sd_version`, `sd_commit` and `sd_list_devices` must answer.
+/// Then `sd_version`, `sd_commit` and `sd_list_devices` must answer, and the
+/// runtime must export the `sd_dart_` functions of [StableDiffusionCalls],
+/// which a release older than [StableDiffusionCalls.minimumNativeRelease]
+/// does not.
 ///
 /// [abi], [readCpuInfo], [windowsHasAvx2], [missingWindowsLibraries] and
 /// [api] default to the host and the bundled library; tests replace them.
@@ -129,6 +136,11 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
     final version = api.version();
     final commit = api.commit();
     final devices = parseStableDiffusionDeviceList(api.listDevices());
+    if (!api.exportsWrapperCalls()) {
+      return StableDiffusionRuntimeStatus.unavailable(
+        stableDiffusionWrapperUnsupported(),
+      );
+    }
     return StableDiffusionRuntimeStatus.available(
       version: version,
       commit: commit,
@@ -316,6 +328,9 @@ final class _BundledStableDiffusionApi implements StableDiffusionNativeApi {
       calloc.free(buffer);
     }
   }
+
+  @override
+  bool exportsWrapperCalls() => StableDiffusionCalls.tryResolve() != null;
 
   static String _string(Pointer<Char> value) =>
       value == nullptr ? '' : value.cast<Utf8>().toDartString();

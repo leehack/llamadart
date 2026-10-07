@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Stage the pinned stable-diffusion.h and regenerate its Dart FFI bindings.
+"""Stage the pinned stable-diffusion-native headers and regenerate their Dart
+FFI bindings.
 
-stable-diffusion-native ships its header inside every runtime archive, so the
-header comes from the archive pinned in lib/src/hook/native_release_pins.dart,
+stable-diffusion-native ships its headers inside every runtime archive, so
+they come from the archive pinned in lib/src/hook/native_release_pins.dart,
 after its SHA-256 matches that pin.
 """
 
@@ -28,7 +29,10 @@ DEFAULT_HEADER_ROOT = ".dart_tool/llamadart/ffigen_headers_stable_diffusion"
 DEFAULT_FFIGEN_CONFIG = "ffigen_stable_diffusion.yaml"
 DEFAULT_BUNDLE = "linux-x64"
 RELEASE_BASE_URL = "https://github.com/leehack/stable-diffusion-native/releases/download"
-HEADER_MEMBER = PurePosixPath("include/stable-diffusion.h")
+HEADER_MEMBERS = (
+    PurePosixPath("include/stable-diffusion.h"),
+    PurePosixPath("include/sd_dart_wrapper.h"),
+)
 DOWNLOAD_TIMEOUT_SECONDS = 300
 
 
@@ -78,37 +82,41 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def read_header(archive_path: Path) -> bytes:
-    """Return stable-diffusion.h from a validated runtime archive."""
+def read_headers(archive_path: Path) -> dict[PurePosixPath, bytes]:
+    """Return every HEADER_MEMBERS file from a validated runtime archive."""
     try:
         with tarfile.open(archive_path, "r:gz") as archive:
             members = validate_members(archive.getmembers())
-            matches = [
-                member
-                for member, relative in members
-                if relative == HEADER_MEMBER and member.isfile()
-            ]
-            if len(matches) != 1:
-                raise SyncError(f"{archive_path.name} has no {HEADER_MEMBER}")
-            source = archive.extractfile(matches[0])
-            if source is None:
-                raise SyncError(f"{archive_path.name} {HEADER_MEMBER} is unreadable")
-            with source:
-                return source.read()
+            headers = {}
+            for header in HEADER_MEMBERS:
+                matches = [
+                    member
+                    for member, relative in members
+                    if relative == header and member.isfile()
+                ]
+                if len(matches) != 1:
+                    raise SyncError(f"{archive_path.name} has no {header}")
+                source = archive.extractfile(matches[0])
+                if source is None:
+                    raise SyncError(f"{archive_path.name} {header} is unreadable")
+                with source:
+                    headers[header] = source.read()
+            return headers
     except (tarfile.TarError, OSError, EOFError) as error:
         raise SyncError(f"{archive_path.name} could not be read: {error}") from error
 
 
-def publish_header(header: bytes, header_root: Path) -> None:
-    """Replace [header_root] with one holding include/stable-diffusion.h."""
+def publish_headers(headers: dict[PurePosixPath, bytes], header_root: Path) -> None:
+    """Replace [header_root] with one holding [headers]."""
     header_root.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(
         tempfile.mkdtemp(prefix=f".{header_root.name}.", dir=header_root.parent)
     )
     try:
-        target = staging / HEADER_MEMBER
-        target.parent.mkdir(parents=True)
-        target.write_bytes(header)
+        for member, content in headers.items():
+            target = staging / member
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
         if header_root.exists() or header_root.is_symlink():
             if header_root.is_symlink() or not header_root.is_dir():
                 raise SyncError(f"Refusing to replace non-directory {header_root}")
@@ -135,10 +143,11 @@ def main() -> int:
                 f"{name} SHA-256 {actual_sha256} does not match the pinned "
                 f"{expected_sha256}"
             )
-        header = read_header(archive)
+        headers = read_headers(archive)
     header_root = repo_root / args.header_root
-    publish_header(header, header_root)
-    print(f"Staged {HEADER_MEMBER} from {name} in {header_root}")
+    publish_headers(headers, header_root)
+    staged = ", ".join(str(member) for member in HEADER_MEMBERS)
+    print(f"Staged {staged} from {name} in {header_root}")
 
     if not args.skip_ffigen:
         result = subprocess.run(
@@ -157,7 +166,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bundle",
         default=DEFAULT_BUNDLE,
-        help="Pinned runtime archive to take the header from.",
+        help="Pinned runtime archive to take the headers from.",
     )
     parser.add_argument(
         "--archive",

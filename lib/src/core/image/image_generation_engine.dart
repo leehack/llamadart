@@ -502,7 +502,9 @@ class ImageGenerationEngine {
   /// an unset seed is picked at random and reported in the result.
   ///
   /// The task's [ImageGenerationTask.events] report each phase and sampling
-  /// step, then one [ImageGenerationFinalEvent]. [ImageGenerationTask.cancel]
+  /// step, then one [ImageGenerationFinalEvent]. The engine reads the
+  /// runtime's progress every 50 ms, so progress events arrive in groups, up
+  /// to that long after the runtime reported them. [ImageGenerationTask.cancel]
   /// takes effect before the runtime's next sampling step or before decoding,
   /// so the task can run up to one more step before it reports
   /// [ImageGenerationCompletionState.cancelled]. [dispose] cancels the task.

@@ -80,7 +80,8 @@ since a projector points at its model.
 | `exit()` from `dart:io` | Runs no static destructors: no teardown and no abort. |
 | C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle, freeing an object, or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call ggml-metal aborts. |
 
-Image models are not covered: stable-diffusion.cpp has no such teardown.
+Image models have their own registry in `libstable-diffusion`: see
+"Image models".
 
 ## Rule for new code
 
@@ -89,6 +90,11 @@ must not race exit teardown goes through `LlamaCppObjectCalls` or
 `ExitTeardownApi`. When libllamadart has no guarded function for it, add one
 in `llamadart-native` first; calling the upstream function leaves the call
 unprotected at a direct C `exit()`.
+
+Every native call of an image worker goes through `StableDiffusionCalls`. A
+new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
+(`generate_video`, `sd_ctx_load_control_net`, an upscaler) needs an
+`sd_dart_` wrapper in `stable-diffusion-native` first.
 
 ## Tests
 
@@ -120,3 +126,147 @@ unprotected at a direct C `exit()`.
   projector, model.
 - `native-exit-teardown` in `doc/testing_matrix.md`: local-only process exits
   on Metal, including a C `exit` while a service with a projector disposes.
+
+## Image models
+
+`libstable-diffusion` (`stable-diffusion-native` `v0.2.0-1` and later) keeps a
+registry of its own and frees what is left of it during C `exit` on Apple
+platforms, like libllamadart. The two libraries embed separate copies of
+ggml and tear down independently. The native contract is
+`src/sd_dart_wrapper.h` in `stable-diffusion-native`.
+
+### Dart side
+
+`lib/src/backends/stable_diffusion/stable_diffusion_calls.dart` holds every
+native call an image worker makes, so a worker can run on a recording
+stand-in:
+
+- `sd_dart_new_sd_ctx` creates the context and tracks it inside the call.
+  `sd_dart_generate_image` is the generation teardown cancels and waits for.
+  `sd_dart_cancel_generation` cancels from the calling isolate and does
+  nothing for a context that was already freed. `sd_dart_exit_free` frees a
+  tracked context once; it is also the free function of the worker's
+  `IsolateShutdownReleases` hold.
+- `sd_dart_progress_enable` and `sd_dart_progress_read`: see "Image
+  progress".
+- Upstream calls that return at once: `sd_ctx_params_init`,
+  `sd_ctx_supports_image_generation` and `sd_get_model_version_name` right
+  after the load, `sd_img_gen_params_init` and `free_sd_images`.
+
+`StableDiffusionCalls.tryResolve` binds the six `sd_dart_` functions through
+the addresses it resolves, all or nothing. There is no fallback to the
+upstream functions, unlike the llama.cpp backend: without the recorder a
+runtime reports progress only through a Dart callback, which is the abort the
+recorder removes, and without the callback the engine would report a
+generation as successful while it emits none of the documented progress
+events. `probeStableDiffusionRuntime` therefore reports such a runtime as
+unavailable and names `v0.2.0-1`
+(`StableDiffusionCalls.minimumNativeRelease`), and
+`StableDiffusionImageWorker.start` throws the same
+`LlamaUnsupportedException`. No supported configuration reaches an older
+runtime: the hook downloads the pinned archives by checksum, this runtime has
+no tag or path override, and the build rejects an Apple companion whose pin
+differs from the core pin.
+
+`sd_dart_exit_teardown`, `sd_dart_exit_call_begin`, `sd_dart_exit_call_end`,
+`sd_dart_exit_track` and `sd_dart_exit_untrack` are excluded from the
+bindings (`ffigen_stable_diffusion.yaml`): none is safe from an isolate that
+can be killed. `sd_dart_exit_set_wait_ms` is bound and not called; the
+runtime's default waits apply.
+
+### What teardown waits for
+
+- With no call in flight it frees the tracked contexts at once.
+- While `sd_dart_new_sd_ctx` or `sd_dart_generate_image` is in flight it
+  waits up to 15 seconds and asks the generation to cancel every 20 ms.
+  stable-diffusion.cpp reads a cancel only before a sampling step and before
+  the decode of each image, and a load cannot be cancelled, so the wait is as
+  long as the phase that is running. A phase that outlasts the 15 seconds
+  makes teardown free nothing, and ggml-metal aborts as before.
+- It waits up to two seconds for an `sd_dart_exit_free` in flight, and gives
+  a thread 250 ms after its last such call, which covers the short upstream
+  calls after a load.
+- The two runtimes wait one after the other: with a llama.cpp call and an
+  image generation both in flight an exit can take about 17.5 seconds.
+
+### Which exits are covered for image models
+
+Measured on an M4 Max on Metal with SDXS and SD-Turbo; "before" is native
+`v0.2.0` with the Dart progress callback.
+
+| Exit | Before | Now |
+| --- | --- | --- |
+| Dart program returns from `main`, or dies of an unhandled error, with a model idle | Clean: the worker isolate's hold frees the context | The same |
+| Dart program dies of an unhandled error while a model loads or generates | VM abort in the progress callback | Clean, once the native call returns. Nothing cancels the generation: the process ends when the generation does |
+| Flutter macOS quit (`-[NSApplication terminate:]`) with a model idle | Clean | Clean |
+| Flutter macOS quit while generating | VM abort in the progress callback | Clean, after the whole generation: the engine shuts the isolates down before C `exit`, so teardown's cancel never runs |
+| Flutter macOS quit inside a load | VM abort in the progress callback | Clean: teardown frees the context the killed worker never held |
+| Flutter hot restart inside a load, then quit | Crash at the restart (`Callback invoked after it has been deleted`) | Clean: the context of the discarded isolate stays tracked and teardown frees it |
+| C `exit()` while the worker isolate is alive (through FFI, or a native host that skips the engine shutdown), model idle, loading or generating | ggml-metal abort | Clean within the waits above; a phase longer than 15 seconds aborts as before |
+| `exit()` from `dart:io` | No static destructors run: no abort | The same |
+
+So the 15 second wait applies only to a direct C `exit()`. A Dart or Flutter
+exit waits for the native call itself, however long the generation is, which
+is why the guides still tell apps to dispose an `ImageGenerationEngine` from
+`onExitRequested`. A Flutter hot restart during a generation waits the same
+way: the restart happens once the generation has finished. The wait after a
+quit, a hot restart or an unhandled error is the rest of the generation; the
+times measured with SDXS and SD-Turbo are examples, not a bound. A
+one-argument native cancel that could run as a `NativeFinalizer` of the
+calling isolate would let llamadart cancel a generation on those paths;
+`sd_dart_cancel_generation` takes two arguments.
+
+### Image progress
+
+stable-diffusion.cpp reports progress through one process-wide callback on
+the thread that loads or generates. A Dart callback there cannot be made
+safe: the VM may already be shutting down, and the process aborts with
+`GetFfiCallbackMetadata called after shutdown`. The runtime instead records
+the reports in a ring, and Dart reads them:
+
+- `StableDiffusionImageWorker.start` calls `sd_dart_progress_enable` on the
+  calling isolate before it spawns the worker. The first call registers the
+  recorder, unsynchronized, so it has to precede any load; it also keeps the
+  runtime from printing progress bars. Nothing in llamadart calls
+  `sd_set_progress_callback`, which would replace the recorder.
+- `generate` asks for the newest sequence number before it sends the
+  request, reads the reports after it every 50 ms and once more after the
+  reply, and calls `onProgress(step, steps)` for each in order. One poll
+  makes at most 64 reads of 64 reports, which is the 4095 reports the runtime
+  keeps, so a runtime that reports faster than it is read cannot hold the
+  calling isolate.
+- Reports are numbered. When the first report of a read does not follow the
+  last one read, the runtime dropped the ones in between: the worker delivers
+  what is left in order and logs one warning with the count. A request at
+  the limits (`maxCount` images of `maxSteps` steps) records 2416 reports, so
+  one generation cannot overflow on its own; a second isolate generating at
+  the same time could, and so could a tiled decode, which llamadart does not
+  request but stable-diffusion.cpp falls back to when a decode fails with
+  `GGML_STATUS_ALLOC_FAILED`. The effect is at most that warning and a gap
+  in the progress events.
+- Reports are process-wide, loads included. The engine's one-operation guard
+  keeps one isolate from mixing two operations; two isolates that generate at
+  once each see both runs' reports.
+- stable-diffusion.cpp clears a cancel request when a generation starts. A
+  cancel that arrived before then is applied again by each poll until the
+  generation ends, so it lands at most one poll interval after the runtime
+  started, whether or not a report arrives.
+
+### Tests
+
+- `test/unit/backends/stable_diffusion/stable_diffusion_calls_test.dart`: the
+  lookup requests the six names and resolves nothing when one is missing;
+  each member calls the function exported under its own name; the generated
+  bindings leave out the five unbound functions and mark only
+  `sd_dart_progress_read` as a leaf call.
+- `test/unit/backends/stable_diffusion/stable_diffusion_image_worker_test.dart`:
+  the worker's two isolates on `test/support/fake_stable_diffusion_runtime.dart`,
+  with a progress timer the test fires by hand. The whole call sequence of
+  each isolate is compared for a load, a generation, a batch of three, a
+  cancel before the runtime starts and one during a generation, dispose, a
+  failed load, a model that cannot generate images and a runtime without the
+  functions.
+- The root package does not bundle the runtime, so no default-CI test
+  resolves the real exports. `image-exit-teardown` in
+  `doc/testing_matrix.md` does, locally on Metal, along with the process
+  exits.
