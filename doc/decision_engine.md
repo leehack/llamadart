@@ -214,7 +214,12 @@ causes, such as `LlamaContextException` from tokenization, is rethrown as
   Metal buffer at process exit trips `ggml_metal_rsets_free`'s assert. The
   sched, weights buffer, backends and context are also held in
   `IsolateShutdownReleases`, which frees them if the worker isolate shuts down
-  first; each free releases its hold first.
+  first; each free releases its hold first. With a runtime that has exit
+  teardown (`llamadart-native` `v0.5.0-1` and later) they are tracked with
+  `llama_dart_exit_track` in the matching stage and freed through
+  `llama_dart_exit_free`, and the graph is computed through
+  `llama_dart_ggml_backend_sched_graph_compute`, so exit teardown frees a
+  head that is still loaded (`doc/llama_cpp_exit_teardown.md`).
 
 Head device: CPU when the model runs on CPU (`_modelBackendNames` is CPU or
 resolved GPU layers <= 0), with `op_offload` false. Otherwise a GPU or iGPU
@@ -455,10 +460,11 @@ on Metal and flipped only near-ties on CPU. Use an F32 backbone, or F16 on
 Metal, when answers must match Laya; the published `laya-F16.gguf` has not
 been measured on this set.
 
-On Metal, disposing the engine with a head still loaded exits cleanly; skipping
-the head frees in `freeModel` and `dispose` makes the same exit abort in
-`ggml_metal_rsets_free` when the process exits without shutting the worker
-isolate down, as a Flutter app's AppKit quit does.
+On Metal, disposing the engine with a head still loaded exits cleanly. If
+`freeModel` and `dispose` skipped the head frees, the head would stay
+allocated until its isolate shuts down or, on a runtime with exit teardown,
+until the process exits (`doc/llama_cpp_exit_teardown.md`); on an older
+runtime an exit that does neither aborts in `ggml_metal_rsets_free`.
 
 ### Web check
 

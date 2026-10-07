@@ -29,6 +29,7 @@ import '../../core/models/inference/next_token_scores.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../../hook/native_release_pins.dart';
 import 'decision_head.dart';
+import 'exit_teardown_api.dart';
 import 'lazy_grammar_triggers.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
@@ -641,9 +642,9 @@ class LlamaCppService {
       };
 
   /// Creates the service; tests replace the runtime's first native call, the
-  /// host probes behind its Windows load diagnostics, and the raw
+  /// host probes behind its Windows load diagnostics, the raw
   /// `ggml_backend_dev_type` values a [ComputeDevice.gpu] load checks for a
-  /// backend.
+  /// backend, and the calls that create, free and run models and contexts.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -651,17 +652,22 @@ class LlamaCppService {
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
+    LlamaCppObjectCalls? objectCalls,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
        _missingWindowsLibraries = missingWindowsLibraries,
-       _deviceTypesOverride = deviceTypes;
+       _deviceTypesOverride = deviceTypes,
+       _objectCallsOverride = objectCalls;
 
   final void Function() _backendInit;
   final Abi _abi;
   final bool _isWindows;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
+  final LlamaCppObjectCalls? _objectCallsOverride;
+  late final LlamaCppObjectCalls _calls =
+      _objectCallsOverride ?? _resolveObjectCalls();
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -1808,6 +1814,23 @@ class LlamaCppService {
     return null;
   }
 
+  LlamaCppObjectCalls _resolveObjectCalls() {
+    final calls = LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows);
+    if (calls.exit == null) {
+      LlamaLogger.instance.warning(
+        'The loaded llama.cpp runtime does not export the exit-teardown '
+        'functions (llama_dart_exit_free and the llama_dart_ calls that go '
+        'with it; llamadart-native ${ExitTeardownApi.minimumNativeRelease} '
+        'or later is needed), so models and contexts are '
+        'created with the upstream llama.cpp functions. The runtime then '
+        'frees nothing at process exit: an Apple process that exits with '
+        'one still allocated on Metal aborts in ggml-metal. Use the '
+        'package-pinned native runtime $llamaCppTag or a newer one.',
+      );
+    }
+    return calls;
+  }
+
   /// Loads a model from the specified [modelPath].
   ///
   /// Returns a handle to the loaded model.
@@ -1875,10 +1898,10 @@ class LlamaCppService {
 
     Pointer<llama_model> modelPtr = nullptr;
     try {
-      modelPtr = llama_model_load_from_file(modelPathPtr.cast(), mparams);
+      modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.model,
-        _llamaModelFreeAddress,
+        _calls.modelFreeAddress,
         modelPtr,
       );
     } finally {
@@ -2044,10 +2067,10 @@ class LlamaCppService {
 
     Pointer<llama_model> modelPtr = nullptr;
     try {
-      modelPtr = llama_model_load_from_file(modelPathPtr.cast(), mparams);
+      modelPtr = _calls.loadModel(modelPathPtr.cast(), mparams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.model,
-        _llamaModelFreeAddress,
+        _calls.modelFreeAddress,
         modelPtr,
       );
     } finally {
@@ -2117,13 +2140,14 @@ class LlamaCppService {
       final vocab = llama_model_get_vocab(modelPointer);
       return _LlamaModelWrapper(
         modelPointer,
+        _calls,
         sourcePath: sourcePath,
         vocabSize: llama_vocab_n_tokens(vocab),
         suppressedTokens: readModelSuppressTokens(vocab),
       );
     } catch (_) {
       IsolateShutdownReleases.current.release(modelPointer);
-      llama_model_free(modelPointer);
+      _calls.freeModel(modelPointer);
       rethrow;
     }
   }
@@ -3889,10 +3913,10 @@ class LlamaCppService {
       );
     }
 
-    final ctxPtr = llama_init_from_model(model.pointer, ctxParams);
+    final ctxPtr = _calls.createContext(model.pointer, ctxParams);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.context,
-      _llamaFreeAddress,
+      _calls.contextFreeAddress,
       ctxPtr,
     );
     if (ctxPtr == nullptr) {
@@ -3900,7 +3924,7 @@ class LlamaCppService {
     }
 
     final handle = _getHandle();
-    _contexts[handle] = _LlamaContextWrapper(ctxPtr, model);
+    _contexts[handle] = _LlamaContextWrapper(ctxPtr, model, _calls);
     _contextToModel[handle] = modelHandle;
     _activeLoras[handle] = {};
     _contextParams[handle] = ctxParams;
@@ -4911,7 +4935,7 @@ class LlamaCppService {
     final embeddingSize = _resolveEmbeddingDimension(model.pointer);
 
     try {
-      llama_synchronize(ctx.pointer);
+      _calls.synchronize(ctx.pointer);
       _clearContextMemory(ctx.pointer, strict: false);
       ctx.cachedPromptTokens = null;
       llama_set_embeddings(ctx.pointer, true);
@@ -4932,8 +4956,8 @@ class LlamaCppService {
         }
 
         final status = useEncoderPath
-            ? llama_encode(ctx.pointer, batch)
-            : llama_decode(ctx.pointer, batch);
+            ? _calls.encode(ctx.pointer, batch)
+            : _calls.decode(ctx.pointer, batch);
         if (status != 0) {
           throw LlamaInferenceException('Embedding forward pass failed');
         }
@@ -5099,7 +5123,7 @@ class LlamaCppService {
       final groupSize = index - groupStart;
       final batch = llama_batch_init(groupTokenCount, 0, groupSize);
       try {
-        llama_synchronize(ctx.pointer);
+        _calls.synchronize(ctx.pointer);
         _clearContextMemory(ctx.pointer, strict: false);
         ctx.cachedPromptTokens = null;
         llama_set_embeddings(ctx.pointer, true);
@@ -5120,8 +5144,8 @@ class LlamaCppService {
         }
 
         final status = useEncoderPath
-            ? llama_encode(ctx.pointer, batch)
-            : llama_decode(ctx.pointer, batch);
+            ? _calls.encode(ctx.pointer, batch)
+            : _calls.decode(ctx.pointer, batch);
         if (status != 0) {
           throw LlamaInferenceException('Batch embedding forward pass failed');
         }
@@ -5328,7 +5352,7 @@ class LlamaCppService {
     _LlamaContextWrapper ctx, {
     required bool clearMemory,
   }) {
-    llama_synchronize(ctx.pointer);
+    _calls.synchronize(ctx.pointer);
 
     if (clearMemory) {
       _clearContextMemory(ctx.pointer);
@@ -5506,9 +5530,13 @@ class LlamaCppService {
       if (res == 0) {
         final newPast = malloc<llama_pos>();
         try {
-          final chunkEvalApi = _mtmdPrimarySymbolsUnavailable
+          final unguardedChunkEvalApi = _mtmdPrimarySymbolsUnavailable
               ? _resolveMtmdFallbackApi()?.chunkEval
               : MtmdChunkEvalApi.primary;
+          final exitTeardown = _mtmdExitTeardown;
+          final chunkEvalApi = exitTeardown == null
+              ? unguardedChunkEvalApi
+              : unguardedChunkEvalApi?.withExitTeardown(exitTeardown);
           final int evalResult;
           MtmdChunkEvalFailure? chunkFailure;
           if (chunkEvalApi == null) {
@@ -5897,7 +5925,7 @@ class LlamaCppService {
         batch.logits[i] = outputAllLogits || isLastTokenInPrompt ? 1 : 0;
       }
 
-      if (llama_decode(ctx.pointer, batch) != 0) {
+      if (_calls.decode(ctx.pointer, batch) != 0) {
         throw Exception("Initial decode failed");
       }
       if (hasSpeculativeSession &&
@@ -6139,7 +6167,7 @@ class LlamaCppService {
       }
 
       final sampleTick = Stopwatch()..start();
-      final selectedToken = llama_sampler_sample(sampler, ctx.pointer, -1);
+      final selectedToken = _calls.samplerSample(sampler, ctx.pointer, -1);
       sampleTick.stop();
       sampleMicros += sampleTick.elapsedMicroseconds;
       if (llama_vocab_is_eog(vocab, selectedToken)) {
@@ -6178,7 +6206,7 @@ class LlamaCppService {
       batch.logits[0] = 1;
 
       final evalTick = Stopwatch()..start();
-      final decodeStatus = llama_decode(ctx.pointer, batch);
+      final decodeStatus = _calls.decode(ctx.pointer, batch);
       evalTick.stop();
       evalMicros += evalTick.elapsedMicroseconds;
       if (decodeStatus != 0) {
@@ -6193,7 +6221,7 @@ class LlamaCppService {
         (currentPos == 0 ||
             !llama_vocab_is_eog(
               vocab,
-              llama_sampler_sample(sampler, ctx.pointer, -1),
+              _calls.samplerSample(sampler, ctx.pointer, -1),
             ))) {
       onLimit?.call(limit);
     }
@@ -6263,7 +6291,7 @@ class LlamaCppService {
           pendingSampledToken = null;
         } else {
           final sampleTick = Stopwatch()..start();
-          selectedToken = llama_sampler_sample(sampler, ctx.pointer, -1);
+          selectedToken = _calls.samplerSample(sampler, ctx.pointer, -1);
           sampleTick.stop();
           sampleMicros += sampleTick.elapsedMicroseconds;
           if (llama_vocab_is_eog(vocab, selectedToken)) break;
@@ -6341,7 +6369,7 @@ class LlamaCppService {
           batch.logits[0] = 1;
 
           final evalTick = Stopwatch()..start();
-          final decodeStatus = llama_decode(ctx.pointer, batch);
+          final decodeStatus = _calls.decode(ctx.pointer, batch);
           if (decodeStatus == 0 &&
               !_processSpeculativeBatch(
                 speculativeApi,
@@ -6375,15 +6403,15 @@ class LlamaCppService {
               );
             }
           } else {
-            llama_synchronize(ctx.pointer);
-            seqCheckpointSize = llama_state_seq_get_size_ext(
+            _calls.synchronize(ctx.pointer);
+            seqCheckpointSize = _calls.stateSeqGetSizeExt(
               ctx.pointer,
               0,
               LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
             );
             if (seqCheckpointSize > 0) {
               seqCheckpoint = malloc<Uint8>(seqCheckpointSize);
-              final written = llama_state_seq_get_data_ext(
+              final written = _calls.stateSeqGetDataExt(
                 ctx.pointer,
                 seqCheckpoint,
                 seqCheckpointSize,
@@ -6416,7 +6444,7 @@ class LlamaCppService {
           }
 
           final evalTick = Stopwatch()..start();
-          final decodeStatus = llama_decode(ctx.pointer, batch);
+          final decodeStatus = _calls.decode(ctx.pointer, batch);
           if (decodeStatus == 0 &&
               !_processSpeculativeBatch(
                 speculativeApi,
@@ -6427,7 +6455,7 @@ class LlamaCppService {
             throw Exception("Speculative decode processing failed");
           }
           if (decodeStatus == 0) {
-            llama_synchronize(ctx.pointer);
+            _calls.synchronize(ctx.pointer);
           }
           evalTick.stop();
           evalMicros += evalTick.elapsedMicroseconds;
@@ -6474,7 +6502,7 @@ class LlamaCppService {
                 );
               }
 
-              final restored = llama_state_seq_set_data_ext(
+              final restored = _calls.stateSeqSetDataExt(
                 ctx.pointer,
                 seqCheckpoint,
                 seqCheckpointSize,
@@ -6514,7 +6542,7 @@ class LlamaCppService {
               }
 
               final replayTick = Stopwatch()..start();
-              final replayStatus = llama_decode(ctx.pointer, batch);
+              final replayStatus = _calls.decode(ctx.pointer, batch);
               if (replayStatus == 0 &&
                   !_processSpeculativeBatch(
                     speculativeApi,
@@ -6525,7 +6553,7 @@ class LlamaCppService {
                 throw Exception("Speculative replay processing failed");
               }
               if (replayStatus == 0) {
-                llama_synchronize(ctx.pointer);
+                _calls.synchronize(ctx.pointer);
               }
               replayTick.stop();
               evalMicros += replayTick.elapsedMicroseconds;
@@ -6814,14 +6842,14 @@ class LlamaCppService {
         'Cannot save state while generation is active on context $contextHandle',
       );
     }
-    llama_synchronize(ctx.pointer);
+    _calls.synchronize(ctx.pointer);
     final pathPtr = path.toNativeUtf8();
     final tokensPtr = tokens.isEmpty ? nullptr : malloc<Int32>(tokens.length);
     try {
       for (int i = 0; i < tokens.length; i++) {
         tokensPtr[i] = tokens[i];
       }
-      return llama_state_save_file(
+      return _calls.stateSaveFile(
         ctx.pointer,
         pathPtr.cast(),
         tokensPtr,
@@ -6863,13 +6891,13 @@ class LlamaCppService {
         'must not exceed context size ($contextCapacity)',
       );
     }
-    llama_synchronize(ctx.pointer);
+    _calls.synchronize(ctx.pointer);
     final pathPtr = path.toNativeUtf8();
     final tokensPtr = malloc<Int32>(tokenCapacity);
     final countPtr = malloc<Size>();
     try {
       countPtr.value = 0;
-      final ok = llama_state_load_file(
+      final ok = _calls.stateLoadFile(
         ctx.pointer,
         pathPtr.cast(),
         tokensPtr,
@@ -7110,7 +7138,7 @@ class LlamaCppService {
           final pathPtr = path.toNativeUtf8();
           final Pointer<llama_adapter_lora> adapterPtr;
           try {
-            adapterPtr = llama_adapter_lora_init(
+            adapterPtr = _calls.adapterLoraInit(
               _models[modelHandle]!.pointer,
               pathPtr.cast(),
             );
@@ -7435,6 +7463,13 @@ class LlamaCppService {
       c.dispose();
     }
     _contexts.clear();
+    // A projector uses its model, so it goes first, as in freeModel.
+    for (final m in _mtmdContexts.values) {
+      _mtmdFree(m);
+    }
+    _mtmdContexts.clear();
+    _modelToMtmd.clear();
+    _modelToMtmdUseGpu.clear();
     for (final m in _models.values) {
       m.dispose();
     }
@@ -7449,12 +7484,6 @@ class LlamaCppService {
     _modelLoadParams.clear();
     _activeBackendName = _backendDisplayName('cpu');
     _activeResolvedGpuLayers = 0;
-    for (final m in _mtmdContexts.values) {
-      _mtmdFree(m);
-    }
-    _mtmdContexts.clear();
-    _modelToMtmd.clear();
-    _modelToMtmdUseGpu.clear();
     // llama_backend_free(); // DISABLED: Prevents race conditions with other isolates
   }
 
@@ -7564,11 +7593,41 @@ class LlamaCppService {
     return fallback.contextParamsDefault();
   }
 
+  /// The exit-teardown functions the mtmd calls go through; `null` when the
+  /// service calls llama.cpp directly or the runtime has no mtmd.
+  ExitTeardownApi? get _mtmdExitTeardown {
+    final exitTeardown = _calls.exit;
+    if (exitTeardown == null ||
+        (_mtmdPrimarySymbolsUnavailable && _resolveMtmdFallbackApi() == null)) {
+      return null;
+    }
+    return exitTeardown;
+  }
+
   Pointer<mtmd_context> _mtmdInitFromFile(
     Pointer<Char> mmProjPath,
     Pointer<llama_model> model,
     mtmd_context_params ctxParams,
   ) {
+    final exitTeardown = _mtmdExitTeardown;
+    if (exitTeardown != null) {
+      final params = calloc<mtmd_context_params>()..ref = ctxParams;
+      try {
+        final context = exitTeardown.mtmdInitFromFile(
+          mmProjPath,
+          model,
+          params,
+        );
+        IsolateShutdownReleases.current.hold(
+          ShutdownStage.modelUser,
+          exitTeardown.freeAddress,
+          context,
+        );
+        return context;
+      } finally {
+        calloc.free(params);
+      }
+    }
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         final free = Native.addressOf<NativeFunction<_MtmdFreeNative>>(
@@ -7602,6 +7661,11 @@ class LlamaCppService {
 
   void _mtmdFree(Pointer<mtmd_context> ctx) {
     IsolateShutdownReleases.current.release(ctx);
+    final exitTeardown = _mtmdExitTeardown;
+    if (exitTeardown != null) {
+      exitTeardown.free(ctx.cast());
+      return;
+    }
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         mtmd_free(ctx);
@@ -7753,6 +7817,10 @@ class LlamaCppService {
     Pointer<Pointer<mtmd_bitmap>> bitmaps,
     int nBitmaps,
   ) {
+    final exitTeardown = _mtmdExitTeardown;
+    if (exitTeardown != null) {
+      return exitTeardown.mtmdTokenize(ctx, output, text, bitmaps, nBitmaps);
+    }
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         return mtmd_tokenize(ctx, output, text, bitmaps, nBitmaps);
@@ -7777,6 +7845,19 @@ class LlamaCppService {
     bool logitsLast,
     Pointer<llama_pos> newNPast,
   ) {
+    final exitTeardown = _mtmdExitTeardown;
+    if (exitTeardown != null) {
+      return exitTeardown.mtmdHelperEvalChunks(
+        ctx,
+        lctx,
+        chunks,
+        nPast,
+        seqId,
+        nBatch,
+        logitsLast,
+        newNPast,
+      );
+    }
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
         return mtmd_helper_eval_chunks(
@@ -8401,10 +8482,10 @@ class LlamaCppService {
         _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
       }
 
-      context = llama_init_from_model(model.pointer, ctxParams);
+      context = _calls.createContext(model.pointer, ctxParams);
       IsolateShutdownReleases.current.hold(
         ShutdownStage.context,
-        _llamaFreeAddress,
+        _calls.contextFreeAddress,
         context,
       );
       if (context == nullptr) {
@@ -8425,10 +8506,11 @@ class LlamaCppService {
           device: device,
           cpuThreads: llama_n_threads_batch(context),
           opOffload: device != null && ctxParams.op_offload,
+          exitTeardown: _calls.exit,
         );
       } catch (_) {
         IsolateShutdownReleases.current.release(context);
-        llama_free(context);
+        _calls.freeContext(context);
         rethrow;
       }
     } finally {
@@ -8443,7 +8525,9 @@ class LlamaCppService {
       hiddenSize: hiddenSize,
       tokenLimit: tokenLimit,
       vocabSize: llama_vocab_n_tokens(vocab),
-      encode: _encodeDecisionBatch,
+      encode: (context, batch, valueCount) =>
+          _encodeDecisionBatch(_calls.encode, context, batch, valueCount),
+      freeContext: _calls.freeContext,
     );
     return BackendDecisionHeadInfo(
       handle: handle,
@@ -9753,16 +9837,6 @@ class _MtmdApi {
 
 // --- Native Wrappers ---
 
-final Pointer<NativeFinalizerFunction> _llamaFreeAddress =
-    Native.addressOf<NativeFunction<Void Function(Pointer<llama_context>)>>(
-      llama_free,
-    ).cast();
-
-final Pointer<NativeFinalizerFunction> _llamaModelFreeAddress =
-    Native.addressOf<NativeFunction<Void Function(Pointer<llama_model>)>>(
-      llama_model_free,
-    ).cast();
-
 class _LlamaLoraWrapper {
   final Pointer<llama_adapter_lora> pointer;
   _LlamaLoraWrapper(this.pointer);
@@ -9780,6 +9854,7 @@ class _DecisionHead {
     required this.tokenLimit,
     required this.vocabSize,
     required this.encode,
+    required this.freeContext,
   });
 
   final int modelHandle;
@@ -9794,23 +9869,25 @@ class _DecisionHead {
     int valueCount,
   )
   encode;
+  final void Function(Pointer<llama_context> context) freeContext;
 
   void dispose() {
     try {
       runtime.dispose();
     } finally {
       IsolateShutdownReleases.current.release(context);
-      llama_free(context);
+      freeContext(context);
     }
   }
 }
 
 Float32List _encodeDecisionBatch(
+  int Function(Pointer<llama_context> context, llama_batch batch) encode,
   Pointer<llama_context> context,
   llama_batch batch,
   int valueCount,
 ) {
-  final status = llama_encode(context, batch);
+  final status = encode(context, batch);
   if (status != 0) {
     throw LlamaInferenceException(
       'The decision encoder pass failed.',
@@ -9832,15 +9909,17 @@ class _LlamaModelWrapper {
   final String? sourcePath;
   final int vocabSize;
   final List<int> suppressedTokens;
+  final LlamaCppObjectCalls _calls;
   _LlamaModelWrapper(
-    this.pointer, {
+    this.pointer,
+    this._calls, {
     this.sourcePath,
     required this.vocabSize,
     required this.suppressedTokens,
   });
   void dispose() {
     IsolateShutdownReleases.current.release(pointer);
-    llama_model_free(pointer);
+    _calls.freeModel(pointer);
   }
 }
 
@@ -9872,7 +9951,8 @@ class _LlamaContextWrapper {
   int lastPerfSpeculativeVerifyTokens = 0;
   int lastPerfSpeculativeReplayTokens = 0;
   bool lastPerfSpeculativeRan = false;
-  _LlamaContextWrapper(this.pointer, this._modelKeepAlive);
+  final LlamaCppObjectCalls _calls;
+  _LlamaContextWrapper(this.pointer, this._modelKeepAlive, this._calls);
   void resetLastPerf() {
     lastPerfPromptEvalMs = 0;
     lastPerfEvalMs = 0;
@@ -9896,7 +9976,7 @@ class _LlamaContextWrapper {
     cachedPromptTokens = null;
     kvFromStateLoad = false;
     IsolateShutdownReleases.current.release(pointer);
-    llama_free(pointer);
+    _calls.freeContext(pointer);
   }
 }
 

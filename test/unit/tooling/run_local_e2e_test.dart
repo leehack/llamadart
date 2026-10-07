@@ -147,6 +147,31 @@ void main() {
     );
 
     test(
+      'requires a model and wires the native exit teardown scenario',
+      () async {
+        final missing = await runLocalE2e(const [
+          '--scenario',
+          'native-exit-teardown',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(missing.exitCode, 64);
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'native-exit-teardown',
+          '--model-path',
+          '/model.gguf',
+          '--dry-run',
+        ], projectRoot: '/repo');
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('EXIT_TEARDOWN_MODEL=/model.gguf'));
+        expect(
+          result.stdout,
+          contains('test/e2e/backends/llama_cpp_exit_teardown_e2e_test.dart'),
+        );
+      },
+    );
+
+    test(
       'dry-runs a Flutter device scenario with the requested device',
       () async {
         final result = await runLocalE2e(const [

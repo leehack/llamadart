@@ -263,7 +263,14 @@ hooks:
 
 Overrides do not regenerate the Dart FFI bindings, so the binary must stay ABI-
 and symbol-compatible with the pinned release; the hook logs a warning when an
-override is active. Two checks fail closed:
+override is active. A runtime older than `v0.5.0-1` has no exit teardown:
+llamadart then creates models and contexts with the upstream llama.cpp
+functions and logs a warning at the first model load, and the exits that
+teardown covers abort on Apple Metal as they did before
+([Exiting with a model loaded](../guides/model-lifecycle#exiting-with-a-model-loaded)).
+`v0.5.0-1` has exit teardown but can still abort when a native host calls C
+`exit()` during the free of the last object; use `v0.5.0-2` or later.
+Two checks fail closed:
 
 - LoRA adapters need both `llama_adapter_get_alora_n_invocation_tokens` and
   `llama_adapter_get_alora_invocation_tokens`. Without a compatible pair,
@@ -310,15 +317,22 @@ directory.
 The llama.cpp and stable-diffusion.cpp runtimes call `stat` and `fstat`, which
 Apple lists as File Timestamp
 [required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api).
-A privacy manifest for that use can reach an app only inside the XCFramework a
+A privacy manifest for that use reaches an app inside the XCFramework a
 companion package links. The hook path cannot carry one: it bundles bare
 dylibs, which Flutter wraps in frameworks it generates. An app bound for the
 App Store should use the companion for each runtime it ships.
 
-Runtime releases built before the manifest was added do not contain it. An app
-declares the use in its own `PrivacyInfo.xcprivacy` when it is on the hook
-path, or when the built app has no `PrivacyInfo.xcprivacy` inside the embedded
-`llama.framework` or `stable_diffusion.framework`:
+Runtime releases built before the manifest was added do not contain it:
+
+| Runtime | XCFramework with a manifest |
+| --- | --- |
+| llama.cpp | `llamadart-native` `v0.5.0-1` and later, which `llamadart_llama_cpp_flutter` releases after `0.0.20` link; `0.0.20` and earlier link `v0.5.0` or older, without one |
+| stable-diffusion.cpp | None yet: the pinned `stable-diffusion-native` `v0.2.0` has none |
+
+An app declares the use in its own `PrivacyInfo.xcprivacy` when it runs
+llama.cpp or stable_diffusion on the hook path, or when the built app has no
+`PrivacyInfo.xcprivacy` inside the embedded `llama.framework` or
+`stable_diffusion.framework`:
 
 | Runtime | Category | Reasons |
 | --- | --- | --- |
@@ -326,7 +340,8 @@ path, or when the built app has no `PrivacyInfo.xcprivacy` inside the embedded
 | stable-diffusion.cpp | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
 
 Put the entry inside the top-level `<dict>` of a `PrivacyInfo.xcprivacy` in
-the app (Runner) target, merged with the reasons the rest of the app needs.
+the app (Runner) target, merged with the reasons the rest of the app needs. An
+app that also links LiteRT-LM adds that runtime's categories, listed below.
 For an app that ships llama.cpp without stable_diffusion:
 
 ```xml

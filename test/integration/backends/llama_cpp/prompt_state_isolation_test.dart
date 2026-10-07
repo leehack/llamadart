@@ -4,18 +4,20 @@ library;
 
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:math';
+import 'dart:io';
 import 'dart:mirrors';
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_mtmd.dart';
+import '../../../support/recording_exit_teardown.dart';
 import '../../../test_helper.dart';
 
 const _p1 = 'Once upon a time there was a little girl named Lily.';
@@ -84,68 +86,128 @@ void main() {
   });
 
   // https://github.com/leehack/llamadart/issues/603
-  test(
-    'a media prompt does not seed the repeat penalty from stale memory',
-    () async {
-      final session = _Session.open(modelPath, contextSize: 4096);
-      final fakeMtmd = _FakeMtmd(session, session.tokenize(_p1));
-      try {
-        const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
-        final clean = await session.generate(
-          '<__media__>',
-          params,
-          parts: fakeMtmd.parts,
-        );
-        // The next generate() can get this request's freed prompt buffer, which
-        // holds the media reply's own ids. On macOS a 1 KB buffer (context 256)
-        // came back zeroed; this 16 KB one keeps the ids from index 4.
-        await session.generate(clean, params.copyWith(maxTokens: 1));
+  // On the tracked calls the service evaluates media through its
+  // ExitTeardownApi, on the upstream ones through libmtmd.
+  for (final tracked in [true, false]) {
+    final calls = tracked ? 'tracked' : 'upstream';
 
-        expect(
-          await session.generate('<__media__>', params, parts: fakeMtmd.parts),
-          clean,
-        );
-        expect(fakeMtmd.evaluations, 2);
-      } finally {
-        fakeMtmd.dispose();
-        session.dispose();
-      }
-    },
-  );
+    test('a media prompt does not seed the repeat penalty from stale memory '
+        '($calls calls)', () async {
+      final media = _MediaSession.open(
+        modelPath,
+        _p1,
+        tracked: tracked,
+        contextSize: 4096,
+      );
+      addTearDown(media.dispose);
+      final session = media.session;
+      const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
+      final clean = await session.generate(
+        '<__media__>',
+        params,
+        parts: media.mtmd.parts,
+      );
+      // The next generate() can get this request's freed prompt buffer, which
+      // holds the media reply's own ids. On macOS a 1 KB buffer (context 256)
+      // came back zeroed; this 16 KB one keeps the ids from index 4.
+      await session.generate(clean, params.copyWith(maxTokens: 1));
 
-  test(
-    'a text prompt still seeds the repeat penalty with its own ids',
-    () async {
-      final session = _Session.open(modelPath);
-      final fakeMtmd = _FakeMtmd(session, session.tokenize(_p1));
-      try {
-        const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
-        final unprimed = await session.generate(
-          '<__media__>',
-          params,
-          parts: fakeMtmd.parts,
-        );
-        // Same KV, but the text path primes the penalty with the prompt ids.
-        expect(await session.generate(_p1, params), isNot(unprimed));
-      } finally {
-        fakeMtmd.dispose();
-        session.dispose();
-      }
-    },
-  );
+      expect(
+        await session.generate('<__media__>', params, parts: media.mtmd.parts),
+        clean,
+      );
+      expect(media.mtmd.evaluations, 2);
+      expect(
+        media.mtmd.calls.where((call) => call.contains('eval')),
+        hasLength(tracked ? 0 : 2),
+      );
+    });
+
+    test('a text prompt still seeds the repeat penalty with its own ids '
+        '($calls calls)', () async {
+      final media = _MediaSession.open(modelPath, _p1, tracked: tracked);
+      addTearDown(media.dispose);
+      final session = media.session;
+      const params = GenerationParams(maxTokens: 16, temp: 0, penalty: 2);
+      final unprimed = await session.generate(
+        '<__media__>',
+        params,
+        parts: media.mtmd.parts,
+      );
+      // Same KV, but the text path primes the penalty with the prompt ids.
+      expect(await session.generate(_p1, params), isNot(unprimed));
+    });
+  }
+}
+
+/// A session whose model has a fake projector: one media part that evaluates
+/// the tokens of a text.
+final class _MediaSession {
+  _MediaSession._(this.session, this.mtmd, this._directory);
+
+  factory _MediaSession.open(
+    String modelPath,
+    String mediaText, {
+    required bool tracked,
+    int contextSize = 256,
+  }) {
+    final real = ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!;
+    late final FakeMtmd mtmd;
+    final session = _Session.open(
+      modelPath,
+      contextSize: contextSize,
+      calls: tracked
+          ? LlamaCppObjectCalls.tracked(
+              RecordingExitTeardown(
+                real,
+                evalMedia: (context, nPast, nBatch, newNPast) =>
+                    mtmd.evalMedia(context, nPast, nBatch, newNPast),
+              ).api,
+            )
+          : LlamaCppObjectCalls.upstream,
+    );
+    mtmd = FakeMtmd.install(
+      session.service,
+      tokens: session.tokenize(mediaText),
+      chunkEval: true,
+      decode: tracked ? real.decode : llama_decode,
+    );
+    final directory = Directory.systemTemp.createTempSync('llamadart_mmproj_');
+    final projector = File('${directory.path}/mmproj.gguf')
+      ..writeAsStringSync('GGUF');
+    session.service.createMultimodalContext(
+      session.modelHandle,
+      projector.path,
+    );
+    return _MediaSession._(session, mtmd, directory);
+  }
+
+  final _Session session;
+  final FakeMtmd mtmd;
+  final Directory _directory;
+
+  void dispose() {
+    session.dispose();
+    mtmd.dispose();
+    _directory.deleteSync(recursive: true);
+  }
 }
 
 final class _Session {
   _Session._(this.service, this.modelHandle, this.contextHandle);
 
-  factory _Session.open(String modelPath, {int contextSize = 256}) {
+  factory _Session.open(
+    String modelPath, {
+    int contextSize = 256,
+    LlamaCppObjectCalls? calls,
+  }) {
     final params = ModelParams(
       contextSize: contextSize,
       batchSize: 8,
       microBatchSize: 8,
       gpuLayers: 0,
     );
-    final service = LlamaCppService();
+    final service = LlamaCppService(objectCalls: calls);
     final modelHandle = service.loadModel(modelPath, params);
     return _Session._(
       service,
@@ -207,114 +269,9 @@ final class _Session {
   void dispose() => service.dispose();
 }
 
-/// Stands in for libmtmd through the service's fallback API: one media part
-/// whose evaluation decodes [tokens] as text.
-final class _FakeMtmd {
-  _FakeMtmd(this.session, this.tokens) {
-    final service = session.service;
-    final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
-    final apiClass =
-        owner.declarations[MirrorSystem.getSymbol('_MtmdApi', owner)]
-            as ClassMirror;
-    Never unused([Object? _, Object? _, Object? _, Object? _, Object? _]) =>
-        throw StateError('unexpected mtmd call');
-    final api = apiClass.newInstance(Symbol.empty, const [], {
-      #defaultMarker: () => _marker.cast<Char>(),
-      #contextParamsDefault: unused,
-      #initFromFile: unused,
-      #free: (Pointer<mtmd_context> _) {},
-      // Unused: this fake never creates an mtmd context to hold.
-      #freeAddress: nullptr.cast<NativeFinalizerFunction>(),
-      #inputChunksInit: () => Pointer<mtmd_input_chunks>.fromAddress(0x10),
-      #inputChunksFree: (Pointer<mtmd_input_chunks> _) {},
-      #helperInitOptDefault: unused,
-      #helperBitmapInitFromFile: unused,
-      #helperBitmapInitFromBuf: unused,
-      #bitmapInitFromAudio: (int _, Pointer<Float> _) =>
-          Pointer<mtmd_bitmap>.fromAddress(0x20),
-      #supportsVision: (Pointer<mtmd_context> _) => false,
-      #supportsAudio: (Pointer<mtmd_context> _) => true,
-      #supportsVideo: (Pointer<mtmd_context> _) => false,
-      #bitmapFree: (Pointer<mtmd_bitmap> _) {},
-      #tokenize:
-          (
-            Pointer<mtmd_context> _,
-            Pointer<mtmd_input_chunks> _,
-            Pointer<mtmd_input_text> _,
-            Pointer<Pointer<mtmd_bitmap>> _,
-            int _,
-          ) => 0,
-      #helperEvalChunks: _evalChunks,
-      #chunkEval: null,
-      #logSet: null,
-      #helperLogSet: null,
-    }).reflectee;
-    _setPrivate(service, '_mtmdPrimarySymbolsUnavailable', true);
-    _setPrivate(service, '_mtmdFallbackLookupAttempted', true);
-    _setPrivate(service, '_mtmdFallbackApi', api);
-    (_private(service, '_mtmdContexts') as Map)[_mtmdHandle] =
-        Pointer<mtmd_context>.fromAddress(0x30);
-    (_private(service, '_modelToMtmd') as Map)[session.modelHandle] =
-        _mtmdHandle;
-  }
-
-  static const _mtmdHandle = -603;
-
-  final _Session session;
-  final List<int> tokens;
-  final Pointer<Utf8> _marker = '<__media__>'.toNativeUtf8();
-  int evaluations = 0;
-
-  List<LlamaContentPart> get parts => [
-    LlamaAudioContent(samples: Float32List(1)),
-  ];
-
-  int _evalChunks(
-    Pointer<mtmd_context> _,
-    Pointer<llama_context> context,
-    Pointer<mtmd_input_chunks> _,
-    int nPast,
-    int _,
-    int nBatch,
-    bool _,
-    Pointer<llama_pos> newNPast,
-  ) {
-    evaluations++;
-    final ids = malloc<llama_token>(tokens.length);
-    try {
-      ids.asTypedList(tokens.length).setAll(0, tokens);
-      for (var start = 0; start < tokens.length; start += nBatch) {
-        final count = min(nBatch, tokens.length - start);
-        final result = llama_decode(
-          context,
-          llama_batch_get_one(ids + start, count),
-        );
-        if (result != 0) return result;
-      }
-      newNPast.value = nPast + tokens.length;
-      return 0;
-    } finally {
-      malloc.free(ids);
-    }
-  }
-
-  void dispose() {
-    (_private(session.service, '_mtmdContexts') as Map).remove(_mtmdHandle);
-    (_private(session.service, '_modelToMtmd') as Map).remove(
-      session.modelHandle,
-    );
-    malloc.free(_marker);
-  }
-}
-
 Object? _private(LlamaCppService service, String field) {
   final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
   return reflect(
     service,
   ).getField(MirrorSystem.getSymbol(field, owner)).reflectee;
-}
-
-void _setPrivate(LlamaCppService service, String field, Object? value) {
-  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
-  reflect(service).setField(MirrorSystem.getSymbol(field, owner), value);
 }

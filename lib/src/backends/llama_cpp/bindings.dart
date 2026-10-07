@@ -5999,6 +5999,211 @@ external int llama_copy_state_data(
 );
 
 @ffi.Native<
+  ffi.Pointer<llama_adapter_lora> Function(
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<ffi.Char>,
+  )
+>()
+external ffi.Pointer<llama_adapter_lora> llama_dart_adapter_lora_init(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<ffi.Char> path_lora,
+);
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
+external int llama_dart_decode(
+  ffi.Pointer<llama_context> ctx,
+  llama_batch batch,
+);
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
+external int llama_dart_encode(
+  ffi.Pointer<llama_context> ctx,
+  llama_batch batch,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Void>)>()
+external void llama_dart_exit_free(ffi.Pointer<ffi.Void> object);
+
+@ffi.Native<ffi.Void Function(ffi.Int32)>()
+external void llama_dart_exit_set_wait_ms(int wait_ms);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<ffi.Void>,
+    ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>,
+    ffi.Int32,
+  )
+>()
+external bool llama_dart_exit_track(
+  ffi.Pointer<ffi.Void> object,
+  ffi.Pointer<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>
+  free_fn,
+  int stage,
+);
+
+@ffi.Native<ffi.Int32 Function()>()
+external int llama_dart_exit_tracked_count();
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
+external bool llama_dart_exit_untrack(ffi.Pointer<ffi.Void> object);
+
+@ffi.Native<ffi.Int Function(ggml_backend_sched_t, ffi.Pointer<ggml_cgraph>)>(
+  symbol: 'llama_dart_ggml_backend_sched_graph_compute',
+)
+external int _llama_dart_ggml_backend_sched_graph_compute(
+  ggml_backend_sched_t sched,
+  ffi.Pointer<ggml_cgraph> graph,
+);
+
+ggml_status llama_dart_ggml_backend_sched_graph_compute(
+  ggml_backend_sched_t sched,
+  ffi.Pointer<ggml_cgraph> graph,
+) {
+  return ggml_status.fromValue(
+    _llama_dart_ggml_backend_sched_graph_compute(sched, graph),
+  );
+}
+
+@ffi.Native<
+  ffi.Pointer<llama_context> Function(
+    ffi.Pointer<llama_model>,
+    llama_context_params,
+  )
+>()
+external ffi.Pointer<llama_context> llama_dart_init_from_model(
+  ffi.Pointer<llama_model> model,
+  llama_context_params params,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_model> Function(ffi.Pointer<ffi.Char>, llama_model_params)
+>()
+external ffi.Pointer<llama_model> llama_dart_model_load_from_file(
+  ffi.Pointer<ffi.Char> path_model,
+  llama_model_params params,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<mtmd_context>, ffi.Pointer<mtmd_input_chunk>)
+>()
+external int llama_dart_mtmd_encode_chunk(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_input_chunk> chunk,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_input_chunk>,
+    ffi.Pointer<ffi.Float>,
+    llama_pos,
+    llama_seq_id,
+    ffi.Int32,
+    ffi.Pointer<llama_pos>,
+    ffi.Pointer<
+      ffi.NativeFunction<
+        ffi.Int32 Function(llama_batch batch, ffi.Pointer<ffi.Void> user_data)
+      >
+    >,
+    ffi.Pointer<ffi.Void>,
+  )
+>()
+external int llama_dart_mtmd_helper_decode_image_chunk(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<llama_context> lctx,
+  ffi.Pointer<mtmd_input_chunk> chunk,
+  ffi.Pointer<ffi.Float> encoded_embd,
+  int n_past,
+  int seq_id,
+  int n_batch,
+  ffi.Pointer<llama_pos> new_n_past,
+  ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Int32 Function(llama_batch batch, ffi.Pointer<ffi.Void> user_data)
+    >
+  >
+  callback,
+  ffi.Pointer<ffi.Void> user_data,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_input_chunk>,
+    llama_pos,
+    llama_seq_id,
+    ffi.Int32,
+    ffi.Bool,
+    ffi.Pointer<llama_pos>,
+  )
+>()
+external int llama_dart_mtmd_helper_eval_chunk_single(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<llama_context> lctx,
+  ffi.Pointer<mtmd_input_chunk> chunk,
+  int n_past,
+  int seq_id,
+  int n_batch,
+  bool logits_last,
+  ffi.Pointer<llama_pos> new_n_past,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_input_chunks>,
+    llama_pos,
+    llama_seq_id,
+    ffi.Int32,
+    ffi.Bool,
+    ffi.Pointer<llama_pos>,
+  )
+>()
+external int llama_dart_mtmd_helper_eval_chunks(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<llama_context> lctx,
+  ffi.Pointer<mtmd_input_chunks> chunks,
+  int n_past,
+  int seq_id,
+  int n_batch,
+  bool logits_last,
+  ffi.Pointer<llama_pos> new_n_past,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_context> Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<mtmd_context_params>,
+  )
+>()
+external ffi.Pointer<mtmd_context> llama_dart_mtmd_init_from_file(
+  ffi.Pointer<ffi.Char> mmproj_fname,
+  ffi.Pointer<llama_model> text_model,
+  ffi.Pointer<mtmd_context_params> ctx_params,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<mtmd_input_chunks>,
+    ffi.Pointer<mtmd_input_text>,
+    ffi.Pointer<ffi.Pointer<mtmd_bitmap>>,
+    ffi.Size,
+  )
+>()
+external int llama_dart_mtmd_tokenize(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_input_chunks> output,
+  ffi.Pointer<mtmd_input_text> text,
+  ffi.Pointer<ffi.Pointer<mtmd_bitmap>> bitmaps,
+  int n_bitmaps,
+);
+
+@ffi.Native<
   ffi.Void Function(ffi.Pointer<llama_dart_mtp>, llama_seq_id, ffi.Uint16)
 >()
 external void llama_dart_mtp_accept(
@@ -6193,6 +6398,19 @@ external ffi.Pointer<llama_sampler> llama_dart_sampler_init_reasoning_budget(
 );
 
 @ffi.Native<
+  llama_token Function(
+    ffi.Pointer<llama_sampler>,
+    ffi.Pointer<llama_context>,
+    ffi.Int32,
+  )
+>()
+external int llama_dart_sampler_sample(
+  ffi.Pointer<llama_sampler> smpl,
+  ffi.Pointer<llama_context> ctx,
+  int idx,
+);
+
+@ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<llama_sampler>,
     ffi.Pointer<llama_context>,
@@ -6317,6 +6535,84 @@ external bool llama_dart_speculative_process_batch(
   ffi.Pointer<llama_dart_speculative> speculative,
   llama_batch batch,
 );
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<llama_token>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external bool llama_dart_state_load_file(
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<ffi.Char> path_session,
+  ffi.Pointer<llama_token> tokens_out,
+  int n_token_capacity,
+  ffi.Pointer<ffi.Size> n_token_count_out,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<llama_token>,
+    ffi.Size,
+  )
+>()
+external bool llama_dart_state_save_file(
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<ffi.Char> path_session,
+  ffi.Pointer<llama_token> tokens,
+  int n_token_count,
+);
+
+@ffi.Native<
+  ffi.Size Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    llama_seq_id,
+    ffi.Uint32,
+  )
+>()
+external int llama_dart_state_seq_get_data_ext(
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<ffi.Uint8> dst,
+  int size,
+  int seq_id,
+  int flags,
+);
+
+@ffi.Native<
+  ffi.Size Function(ffi.Pointer<llama_context>, llama_seq_id, ffi.Uint32)
+>()
+external int llama_dart_state_seq_get_size_ext(
+  ffi.Pointer<llama_context> ctx,
+  int seq_id,
+  int flags,
+);
+
+@ffi.Native<
+  ffi.Size Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    llama_seq_id,
+    ffi.Uint32,
+  )
+>()
+external int llama_dart_state_seq_set_data_ext(
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<ffi.Uint8> src,
+  int size,
+  int dest_seq_id,
+  int flags,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>)>()
+external void llama_dart_synchronize(ffi.Pointer<llama_context> ctx);
 
 @ffi.Native<ffi.Uint32 Function()>()
 external int llama_dart_tts_api_version();
@@ -10632,6 +10928,28 @@ enum llama_context_type {
     0 => LLAMA_CONTEXT_TYPE_DEFAULT,
     1 => LLAMA_CONTEXT_TYPE_MTP,
     _ => throw ArgumentError('Unknown value for llama_context_type: $value'),
+  };
+}
+
+enum llama_dart_exit_stage {
+  LLAMA_DART_EXIT_STAGE_SESSION(0),
+  LLAMA_DART_EXIT_STAGE_SCHEDULER(1),
+  LLAMA_DART_EXIT_STAGE_CONTEXT(2),
+  LLAMA_DART_EXIT_STAGE_MODEL_USER(3),
+  LLAMA_DART_EXIT_STAGE_BACKEND(4),
+  LLAMA_DART_EXIT_STAGE_MODEL(5);
+
+  final int value;
+  const llama_dart_exit_stage(this.value);
+
+  static llama_dart_exit_stage fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_EXIT_STAGE_SESSION,
+    1 => LLAMA_DART_EXIT_STAGE_SCHEDULER,
+    2 => LLAMA_DART_EXIT_STAGE_CONTEXT,
+    3 => LLAMA_DART_EXIT_STAGE_MODEL_USER,
+    4 => LLAMA_DART_EXIT_STAGE_BACKEND,
+    5 => LLAMA_DART_EXIT_STAGE_MODEL,
+    _ => throw ArgumentError('Unknown value for llama_dart_exit_stage: $value'),
   };
 }
 

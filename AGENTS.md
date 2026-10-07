@@ -76,6 +76,11 @@ dart test -p chrome --exclude-tags local-only
   only), add the file to its `behaviorlessSources`. Never assert something true
   by construction; assert wire values where they are consumed
   (`test/README.md`).
+- In `lib/src/backends/llama_cpp/`, a native call on a model, context,
+  projector or decision-head object that must not race exit teardown goes
+  through `LlamaCppObjectCalls` or `ExitTeardownApi`. Teardown waits only for
+  those guarded calls; any other call in flight at a direct C `exit()` is
+  unprotected (`doc/llama_cpp_exit_teardown.md`).
 - Generated files that should not count toward coverage carry
   `// coverage:ignore-file`.
 - Tests close the ports, streams and controllers they open.

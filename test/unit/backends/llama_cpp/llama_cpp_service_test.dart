@@ -12,6 +12,7 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
@@ -5880,7 +5881,7 @@ int _registerNullModelForTesting(LlamaCppService service) {
   final model = wrapperClass
       .newInstance(
         Symbol.empty,
-        [nullptr],
+        [nullptr, LlamaCppObjectCalls.upstream],
         {#vocabSize: 0, #suppressedTokens: const <int>[]},
       )
       .reflectee;
@@ -6072,6 +6073,7 @@ int _registerDecisionHead(
     #tokenLimit: 4,
     #vocabSize: 10,
     #encode: (encoder ?? _EncoderSpy()).call,
+    #freeContext: (Pointer<llama_context> _) {},
   }).reflectee;
   final handle = _invokePrivateForTesting<int>(service, '_getHandle', []);
   _readPrivateForTesting<Map<Object?, Object?>>(

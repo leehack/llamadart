@@ -1,6 +1,7 @@
 import 'dart:ffi';
 
 import 'bindings.dart';
+import 'exit_teardown_api.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 
 typedef _ChunksSizeNative = Size Function(Pointer<mtmd_input_chunks>);
@@ -125,6 +126,18 @@ final class MtmdChunkEvalApi {
       return null;
     }
   }
+
+  /// This API with its encode, decode and eval calls made through [exit], so
+  /// exit teardown waits for them.
+  MtmdChunkEvalApi withExitTeardown(ExitTeardownApi exit) => MtmdChunkEvalApi(
+    chunksSize: chunksSize,
+    chunksGet: chunksGet,
+    chunkType: chunkType,
+    evalChunkSingle: exit.mtmdHelperEvalChunkSingle,
+    encodeChunk: exit.mtmdEncodeChunk,
+    outputEmbd: outputEmbd,
+    decodeImageChunk: exit.mtmdHelperDecodeImageChunk,
+  );
 
   /// `mtmd_input_chunks_size`.
   final int Function(Pointer<mtmd_input_chunks> chunks) chunksSize;
