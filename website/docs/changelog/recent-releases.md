@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fix a possible llama.cpp crash when a later image or audio part of a
+  multimodal request fails to load, and native memory leaked when a backend
+  is disposed with a context still open or an embedding fails because the
+  model reports no embedding size
+  ([#947](https://github.com/leehack/llamadart/issues/947),
+  [#610](https://github.com/leehack/llamadart/issues/610)).
+
 ## 0.11.0
 
 - Fix a Flutter macOS app aborting in ggml-metal when it quits while a

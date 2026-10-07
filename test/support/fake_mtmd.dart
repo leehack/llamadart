@@ -27,6 +27,7 @@ final class FakeMtmd {
     required this.tokens,
     this.chunkEval = false,
     this.decode = llama_decode,
+    this.audioBitmap = _audioBitmap,
   }) {
     final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
     final apiClass =
@@ -55,12 +56,14 @@ final class FakeMtmd {
       #helperInitOptDefault: unused,
       #helperBitmapInitFromFile: unused,
       #helperBitmapInitFromBuf: unused,
-      #bitmapInitFromAudio: (int _, Pointer<Float> _) =>
-          Pointer<mtmd_bitmap>.fromAddress(0x20),
+      #bitmapInitFromAudio: (int sampleCount, Pointer<Float> _) =>
+          audioBitmap(sampleCount),
       #supportsVision: (Pointer<mtmd_context> _) => false,
       #supportsAudio: (Pointer<mtmd_context> _) => true,
       #supportsVideo: (Pointer<mtmd_context> _) => false,
-      #bitmapFree: (Pointer<mtmd_bitmap> _) {},
+      #bitmapFree: (Pointer<mtmd_bitmap> bitmap) {
+        freedBitmaps.add(bitmap.address);
+      },
       #tokenize:
           (
             Pointer<mtmd_context> _,
@@ -110,8 +113,15 @@ final class FakeMtmd {
   /// The decode call the media evaluation makes.
   final int Function(Pointer<llama_context> context, llama_batch batch) decode;
 
+  /// The bitmap the fake `mtmd_bitmap_init_from_audio` returns for an audio
+  /// part of a sample count; a null pointer fails that part.
+  final Pointer<mtmd_bitmap> Function(int sampleCount) audioBitmap;
+
   /// Upstream mtmd functions called on the projector so far, in order.
   final List<String> calls = <String>[];
+
+  /// Addresses passed to the fake `mtmd_bitmap_free` so far, in order.
+  final List<int> freedBitmaps = <int>[];
 
   /// Media evaluations so far, through this fake or an `ExitTeardownApi`
   /// given [evalMedia].
@@ -160,6 +170,8 @@ final class FakeMtmd {
       malloc.free(ids);
     }
   }
+
+  static Pointer<mtmd_bitmap> _audioBitmap(int _) => Pointer.fromAddress(0x20);
 
   /// Frees the marker text; call after the service is disposed.
   void dispose() => malloc.free(_marker);
