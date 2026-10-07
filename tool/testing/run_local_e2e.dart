@@ -1006,6 +1006,32 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-litert-reload-memory',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Log per-step memory across LiteRT-LM engine create/delete loops '
+          'and fail when deletes leave memory that accumulates.',
+      requiresDevice: true,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'integration_test/litert_lm_reload_memory_e2e_test.dart',
+            '-d',
+            context.device,
+            if (context.modelPath != null)
+              '--dart-define=LITERT_RELOAD_MODEL=${context.modelPath}',
+          ],
+          description: 'Flutter chat app LiteRT-LM reload memory E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-web-production-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:

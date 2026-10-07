@@ -328,6 +328,7 @@ Runtime releases built before the manifest was added do not contain it:
 | --- | --- |
 | llama.cpp | `llamadart-native` `v0.5.0-1` and later, which `llamadart_llama_cpp_flutter` releases after `0.0.20` link; `0.0.20` and earlier link `v0.5.0` or older, without one |
 | stable-diffusion.cpp | `stable-diffusion-native` `v0.2.0-1` and later, which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; `0.0.1` links `v0.2.0`, without one |
+| LiteRT-LM | `litert-lm-native` `v0.17.0-8` and later, which `llamadart_litert_lm_flutter` releases after `0.0.12` link; `0.0.12` and earlier link `v0.17.0-6` or older, without one |
 
 An app declares the use in its own `PrivacyInfo.xcprivacy` when it runs
 llama.cpp or stable_diffusion on the hook path, or when the built app has no
@@ -341,7 +342,8 @@ llama.cpp or stable_diffusion on the hook path, or when the built app has no
 
 Put the entry inside the top-level `<dict>` of a `PrivacyInfo.xcprivacy` in
 the app (Runner) target, merged with the reasons the rest of the app needs. An
-app that also links LiteRT-LM adds that runtime's categories, listed below.
+app that also runs LiteRT-LM on the hook path adds that runtime's categories,
+listed below.
 For an app that ships llama.cpp without stable_diffusion:
 
 ```xml
@@ -365,14 +367,33 @@ Apple's requirement covers iOS, iPadOS, tvOS, visionOS and watchOS apps. The
 app-level declaration is a workaround for a runtime without its own manifest;
 llamadart has not verified it with an App Store Connect upload.
 
-The LiteRT-LM frameworks include no privacy manifest on either path, and
-llamadart publishes no reason codes for that runtime. The `v0.17.0-7` iOS
-frameworks reference required-reason API in three categories: File Timestamp
-(`stat`, `fstat`, `lstat`), System Boot Time (`mach_absolute_time`) and User
-Defaults (`NSUserDefaults`, in the Metal accelerator and sampler). An app that
-links LiteRT-LM declares all three in its own `PrivacyInfo.xcprivacy`, with
-reasons it has verified against Apple's list
-([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65)).
+The LiteRT-LM iOS frameworks reference required-reason API in three
+categories: File Timestamp (`stat`, `fstat`, `lstat`), System Boot Time
+(`mach_absolute_time`) and User Defaults (`NSUserDefaults`, in the Metal
+accelerator and sampler). From `litert-lm-native` `v0.17.0-8`, each framework
+the companion links on iOS carries a manifest for what that framework
+references:
+
+| Framework | Category | Reasons |
+| --- | --- | --- |
+| `LiteRtLm` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
+| `LiteRtLm` | `NSPrivacyAccessedAPICategorySystemBootTime` | `35F9.1` |
+| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryFileTimestamp` | `C617.1`, `3B52.1` |
+| `LiteRtMetalAccelerator` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
+| `LiteRtTopKMetalSampler` | `NSPrivacyAccessedAPICategoryUserDefaults` | `CA92.1` |
+| `CLiteRTLM` | None: its manifest declares no API | |
+
+An app declares those three categories, with the same reasons, in its own
+`PrivacyInfo.xcprivacy` when it runs LiteRT-LM on the hook path, or when the
+built app has no `PrivacyInfo.xcprivacy` inside the embedded LiteRT-LM
+frameworks. On macOS, which Apple's requirement does not cover, the
+companion's `LiteRtLm.framework` carries a File Timestamp manifest, while its
+`libCLiteRTLM_mac.dylib` and the hook-managed runtime dylibs are bare
+libraries without one. The reasons come from the runtime owner's
+[audit of the binaries](https://github.com/leehack/litert-lm-native/blob/v0.17.0-8/docs/apple_privacy_manifest.md)
+([litert-lm-native#65](https://github.com/leehack/litert-lm-native/issues/65));
+llamadart has not verified them, or an app-level declaration, with an App
+Store Connect upload.
 
 ## How the hook resolves a build
 

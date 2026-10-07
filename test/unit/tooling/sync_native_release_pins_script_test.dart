@@ -1493,7 +1493,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.17.0-7';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.17.0-8';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));
@@ -1502,6 +1502,35 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       '.github/workflows/sync_native_bindings.yml',
     ).readAsStringSync();
     expect(workflow, contains('tool/macos_litert_lm_prepare_app.sh'));
+  });
+
+  test('checked-in LiteRT pins agree across every file the sync rewrites', () {
+    final pins = File(_pinsPath).readAsStringSync();
+    final tag = RegExp(
+      r"const liteRtLmReleaseTag = '(v[^']+)';",
+    ).firstMatch(pins)![1]!;
+    final version = tag.substring(1);
+
+    final runtime = File(
+      'lib/src/backends/litert_lm/litert_lm_runtime.dart',
+    ).readAsStringSync();
+    expect(runtime, contains("const _litertLmReleaseTag = '$tag';"));
+    expect(runtime, contains("const _litertLmVersion = '$version';"));
+    expect(
+      File(
+        'packages/llamadart_litert_lm_flutter/darwin/'
+        'llamadart_litert_lm_flutter/Package.swift',
+      ).readAsStringSync(),
+      contains('let liteRtLmTag = "$tag"'),
+    );
+    expect(
+      RegExp(r'/litert_lm/([^/]+)/macos')
+          .allMatches(
+            File('tool/macos_litert_lm_prepare_app.sh').readAsStringSync(),
+          )
+          .map((match) => match[1]),
+      [version, version],
+    );
   });
 
   test(

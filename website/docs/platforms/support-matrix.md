@@ -113,14 +113,14 @@ output and grammars, sampling controls and speculative decoding. Guides:
 
 ## Known limitations
 
-- Native LiteRT-LM v0.17.0-7 iOS artifacts omit the Gemma FST constraint
+- Native LiteRT-LM v0.17.0-8 iOS artifacts omit the Gemma FST constraint
   provider. Gemma 3/4 and FunctionGemma conversations must disable constrained
   decoding; Dart already does so. Ordinary generation, thinking and best-effort
   tool formatting remain available. Automatic tool loops and strict structured
   output remain unsupported.
 - Native LiteRT-LM on iOS: iOS 16.4 is the declared deployment floor, not a
   tested one. The companion Swift package requires an iOS 16.4 app target and
-  the v0.17.0-7 frameworks declare `MinimumOSVersion` 15.0, but nothing has
+  the v0.17.0-8 frameworks declare `MinimumOSVersion` 15.0, but nothing has
   been run on iOS 16.4. On a device, model load and generation have run only
   on an iPhone 16 Pro with iOS 18.3.2 (CPU and GPU); simulator evidence is
   iOS 26.4, CPU only. No other iOS version is device-verified
@@ -131,10 +131,15 @@ output and grammars, sampling controls and speculative decoding. Guides:
 - Linux x64 LiteRT-LM GPU needs a hardware Vulkan driver. On Mesa llvmpipe
   alone it answers a few prompts, then crashes the process; use `cpu` on such
   hosts ([#572](https://github.com/leehack/llamadart/issues/572)).
-- Android LiteRT-LM GPU on adapters with a 128 MiB storage-buffer binding
-  limit, such as Adreno 750: a model with a larger weight buffer loads without
-  an error and generates incoherent text; use `cpu`
-  ([#553](https://github.com/leehack/llamadart/issues/553)).
+- Android LiteRT-LM on Adreno 750 (Galaxy S24): `ComputeDevice.auto`, the
+  default, runs LiteRT-LM on the GPU, where Qwen3 0.6B loads without an error
+  and generates wrong text. Load that model with
+  `ModelParams(device: ComputeDevice.cpu)`, which answers correctly on the
+  same device. The adapter's 128 MiB storage-buffer binding limit is smaller
+  than one of the model's weight buffers, so expect the same from any model
+  and adapter with that mismatch. The pinned `v0.17.0-8` does not fix it
+  ([#553](https://github.com/leehack/llamadart/issues/553), upstream
+  [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
 - Windows x64 LiteRT-LM GPU needs `litert-lm-native` `v0.17.0-6` or later,
   which bundles `dxil.dll` and `dxcompiler.dll`. The pinned runtime includes
   them.
@@ -151,13 +156,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | Runtime | Pinned release |
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.5.0-2` |
-| LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-7` |
+| LiteRT-LM native | `leehack/litert-lm-native@v0.17.0-8` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.5.0-2` and
-`litert-lm-native` release `v0.17.0-7` (`lib/src/hook/native_release_pins.dart`).
+`litert-lm-native` release `v0.17.0-8` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or
 `bNNNN-llamadart.N` tag; nightly cores and rebuild counters reject leading

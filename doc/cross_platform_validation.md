@@ -72,11 +72,33 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
   int8 GPU initialization still fails with out-of-memory, also reproduced on
   the previous runtime. An OpenCL diagnostic crashed and is not qualified by
   the Vulkan tests.
-- Galaxy S24 (Adreno 750, WebGPU over Vulkan), `v0.17.0-6`: Qwen3 0.6B loads on
-  GPU without an error, then generates incoherent text; CPU on the same device
-  is correct. Dawn rejects one weight buffer at load: `Binding size
-  (155582464) ... is larger than the maximum storage buffer binding size
-  (134217728)` ([#553](https://github.com/leehack/llamadart/issues/553)).
+- Galaxy S24 (Adreno 750, WebGPU over Vulkan), `v0.17.0-6` through
+  `v0.17.0-8`: Qwen3 0.6B loads on GPU without an error, then generates wrong
+  text (one token repeated up to the output limit in the `v0.17.0-8` run); CPU
+  on the same device is correct. `ComputeDevice.auto` selects the GPU for
+  LiteRT-LM on Android, so the default load of this model on this GPU is
+  affected and `ComputeDevice.cpu` is the override. Dawn rejects one weight
+  buffer at load: `Binding size (155582464) ... is larger than the maximum
+  storage buffer binding size (134217728)`
+  ([#553](https://github.com/leehack/llamadart/issues/553),
+  [litert-lm-native#51](https://github.com/leehack/litert-lm-native/issues/51),
+  upstream
+  [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
+  The runtime keeps its own Android Dawn build: upstream's `v0.17`
+  `libwebgpu_dawn.so` is reported to crash in the Qualcomm shader compiler on
+  this device
+  ([LiteRT-LM#3867](https://github.com/google-ai-edge/LiteRT-LM/issues/3867)).
+- Galaxy S24, GPU engine reloads: with `v0.17.0-6` and `v0.17.0-7`, deleting
+  a GPU engine kept its graphics memory (`v0.17.0-7`: `dumpsys meminfo`
+  Graphics 55 MB before the first engine, 2058 MB after its delete) and lmkd
+  killed the app during the second or third engine. `v0.17.0-8` records the WebGPU destroy callback when OpenCL cannot
+  load: with its android-arm64 `libLiteRtLm.so`, Graphics returned to 55 MB
+  after each of four Qwen3 0.6B GPU engine deletes and open descriptors did
+  not grow ([litert-lm-native#59](https://github.com/leehack/litert-lm-native/issues/59),
+  [litert-lm-native#67](https://github.com/leehack/litert-lm-native/pull/67)).
+  Measured with the `chat-app-litert-reload-memory` scenario under Test Lab
+  instrumentation. No other Android GPU, Mali included, and no Android x64
+  device has run it.
 - ARM64 iOS simulator, `v0.17.0-2`: Qwen3 and Qwen3.5 CPU/GPU tests passed;
   Gemma 4 E2B GPU hit a Metal texture-binding limit also present in the
   previous runtime. Simulator evidence does not establish physical iOS GPU

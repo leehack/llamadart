@@ -15,8 +15,8 @@ import 'litert_lm_sampler_params.dart';
 
 export 'litert_lm_asr_types.dart';
 
-const _litertLmReleaseTag = 'v0.17.0-7';
-const _litertLmVersion = '0.17.0-7';
+const _litertLmReleaseTag = 'v0.17.0-8';
+const _litertLmVersion = '0.17.0-8';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';

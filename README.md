@@ -232,9 +232,12 @@ whose embedded `llama.framework` or `stable_diffusion.framework` has no
 `PrivacyInfo.xcprivacy`, declares
 `NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`
 with reason `C617.1`, plus `3B52.1` only when it ships stable_diffusion. The
-LiteRT-LM frameworks include no privacy manifest and use File Timestamp,
-System Boot Time and User Defaults API; the app declares those itself, and
-llamadart publishes no reason codes for them. See
+LiteRT-LM iOS frameworks carry their own manifests from `litert-lm-native`
+`v0.17.0-8`, which `llamadart_litert_lm_flutter` releases after `0.0.12` link.
+An app that runs LiteRT-LM on the hook path, or whose embedded LiteRT-LM
+frameworks have no `PrivacyInfo.xcprivacy`, declares File Timestamp
+(`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
+(`CA92.1`) itself. See
 [Apple privacy manifest](https://llamadart.leehack.com/docs/platforms/native-build-hooks#apple-privacy-manifest).
 
 Then run:
@@ -315,7 +318,7 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0-2` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-7` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.17.0-8` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.54` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
