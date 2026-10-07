@@ -45,6 +45,13 @@ path as the chat app, selects `GpuBackend.auto`, serves local GGUF files with
 byte-range support, and falls back from the fetch-backed loader to streamed
 loading when the bridge reports a generic `core_abort`.
 
+The Pixel 9 Pro Vulkan row is a speed measurement, not a recommendation.
+Android llama.cpp Vulkan is experimental and device-dependent, and on this
+device (Mali-G715) a prompt longer than about 32 tokens evaluated in one batch
+returns wrong text, confirmed so far with one model (Qwen3.5-0.8B Q4_0)
+([#948](https://github.com/leehack/llamadart/issues/948),
+[known limitations](../platforms/support-matrix#known-limitations)).
+
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
 numbers should be treated as practical app-level numbers rather than a cooled
