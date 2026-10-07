@@ -202,10 +202,12 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
 
   @override
   void cancel() {
-    if (!_disposed) {
-      _cancelRequested = true;
-      _calls.cancelGeneration(_context);
+    // A stopped worker's shutdown already freed the context.
+    if (_disposed || _stopped) {
+      return;
     }
+    _cancelRequested = true;
+    _calls.cancelGeneration(_context);
   }
 
   @override

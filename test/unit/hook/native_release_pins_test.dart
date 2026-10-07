@@ -94,7 +94,10 @@ void main() {
   });
 
   test('stable_diffusion cache version is the release tag without its v', () {
-    expect(stableDiffusionReleaseTag, matches(RegExp(r'^v\d+\.\d+\.\d+$')));
+    expect(
+      stableDiffusionReleaseTag,
+      matches(RegExp(r'^v\d+\.\d+\.\d+(?:-[1-9]\d*)?$')),
+    );
     expect(stableDiffusionVersion, stableDiffusionReleaseTag.substring(1));
   });
 

@@ -208,9 +208,13 @@ Measured on an M4 Max on Metal with SDXS and SD-Turbo; "before" is native
 So the 15 second wait applies only to a direct C `exit()`. A Dart or Flutter
 exit waits for the native call itself, however long the generation is, which
 is why the guides still tell apps to dispose an `ImageGenerationEngine` from
-`onExitRequested`. A one-argument native cancel that could run as a
-`NativeFinalizer` of the calling isolate would let llamadart cancel a
-generation on those paths; `sd_dart_cancel_generation` takes two arguments.
+`onExitRequested`. A Flutter hot restart during a generation waits the same
+way: the restart happens once the generation has finished. The wait after a
+quit, a hot restart or an unhandled error is the rest of the generation; the
+times measured with SDXS and SD-Turbo are examples, not a bound. A
+one-argument native cancel that could run as a `NativeFinalizer` of the
+calling isolate would let llamadart cancel a generation on those paths;
+`sd_dart_cancel_generation` takes two arguments.
 
 ### Image progress
 
@@ -235,8 +239,11 @@ the reports in a ring, and Dart reads them:
   last one read, the runtime dropped the ones in between: the worker delivers
   what is left in order and logs one warning with the count. A request at
   the limits (`maxCount` images of `maxSteps` steps) records 2416 reports, so
-  one generation cannot overflow on its own; a tiled decode, which llamadart
-  does not enable, or a second isolate generating at the same time could.
+  one generation cannot overflow on its own; a second isolate generating at
+  the same time could, and so could a tiled decode, which llamadart does not
+  request but stable-diffusion.cpp falls back to when a decode fails with
+  `GGML_STATUS_ALLOC_FAILED`. The effect is at most that warning and a gap
+  in the progress events.
 - Reports are process-wide, loads included. The engine's one-operation guard
   keeps one isolate from mixing two operations; two isolates that generate at
   once each see both runs' reports.

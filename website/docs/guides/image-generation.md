@@ -651,10 +651,12 @@ them further.
   that returns from `main` or dies of an error, a Flutter macOS quit, and a
   native host's C `exit()` (see [Model lifecycle](./model-lifecycle) for what
   each one waits for). Nothing cancels a running generation when a Dart
-  program ends or a Flutter app quits, so the process stays until the
-  generation finishes: 4.8 s for the rest of a 40-step SDXS generation and
-  11.2 s for SD-Turbo in a Flutter macOS quit on an M4 Max. A native host's
-  C `exit()` cancels the generation and waits up to 15 seconds for it.
+  program ends or dies of an error, or a Flutter app quits or hot restarts,
+  so the process stays, and a hot restart waits, until the generation
+  finishes. The wait is the rest of the generation, with no upper bound: for
+  example 4.8 s for the rest of a 40-step SDXS generation and 11.2 s for
+  SD-Turbo in a Flutter macOS quit on an M4 Max. A native host's C `exit()`
+  cancels the generation and waits up to 15 seconds for it.
 - Still dispose the engine before a Flutter app quits, so the quit does not
   wait for a generation and does not depend on the cleanup at exit. Flutter
   desktop apps do not run

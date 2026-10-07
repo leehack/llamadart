@@ -77,7 +77,9 @@ final class FakeStableDiffusionRuntime {
   /// Makes the loaded model one that cannot generate images.
   set videoOnly(bool value) => _state[_videoOnly] = value ? 1 : 0;
 
-  /// Makes a generation throw a Dart error in the worker.
+  /// Makes a generation throw a Dart error in the worker. The worker records
+  /// `uncaught generation error`, with how it holds its context, when the
+  /// error ends it.
   set throwInGenerate(bool value) => _state[_throwInGenerate] = value ? 1 : 0;
 
   /// Keeps a generation from starting, so from clearing a pending cancel,
@@ -323,7 +325,7 @@ final class _FakeCalls {
     _waitWhile(() => _state[_holdStart] != 0);
     _state[_cancelled] = 0;
     if (_state[_throwInGenerate] != 0) {
-      throw StateError('The fake generation failed.');
+      throw _GenerationFailure(this);
     }
     final steps = params.ref.sample_params.sample_steps;
     final images = params.ref.batch_count;
@@ -377,6 +379,20 @@ final class _FakeCalls {
     imagesOut.value = result;
     countOut.value = images;
     return true;
+  }
+}
+
+/// Records how the worker holds its context when the VM reports this error
+/// as uncaught, which is after any handler of the worker ran.
+final class _GenerationFailure extends Error {
+  _GenerationFailure(this._calls);
+
+  final _FakeCalls _calls;
+
+  @override
+  String toString() {
+    _calls._record('uncaught generation error${_calls._held}');
+    return 'The fake generation failed.';
   }
 }
 

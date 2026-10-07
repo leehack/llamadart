@@ -509,8 +509,26 @@ void main() {
       expect(runtime.calls('worker'), isEmpty);
     });
 
+    test('a generation that fails leaves its context held, so the worker\'s '
+        'shutdown frees it through the exit-free', () async {
+      final worker = await loaded();
+      runtime.throwInGenerate = true;
+
+      await expectLater(
+        worker.generate(_request(), (_, _) {}),
+        throwsA(isA<LlamaStateException>()),
+      );
+      await runtime.flush();
+
+      expect(runtime.calls('worker'), [
+        'sd_img_gen_params_init+held',
+        'sd_dart_generate_image+held',
+        'uncaught generation error+held',
+      ]);
+    });
+
     test('a worker that dies in a generation fails it, stops its timer and '
-        'stays safe to cancel and dispose', () async {
+        'stays safe to dispose, and a later cancel calls nothing', () async {
       final worker = await loaded();
       runtime.throwInGenerate = true;
 
@@ -530,11 +548,9 @@ void main() {
       expect(runtime.calls('worker'), [
         'sd_img_gen_params_init+held',
         'sd_dart_generate_image+held',
+        'uncaught generation error+held',
       ]);
-      expect(runtime.calls('caller'), [
-        'sd_dart_progress_read:mark',
-        'sd_dart_cancel_generation',
-      ]);
+      expect(runtime.calls('caller'), ['sd_dart_progress_read:mark']);
     });
   });
 
