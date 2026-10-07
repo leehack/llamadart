@@ -42,46 +42,47 @@ void main() {
         ('kill-loading', [model], 0, null),
         ('return-loaded', [model], 0, null),
       ]) {
-    test(
-      '$scenario ends with exit code $exitCode',
-      skip: arguments.contains(null)
-          ? 'Set the EXIT_TEARDOWN_ variables of this scenario to run it.'
-          : null,
-      () async {
-        final codes = <int>[];
-        for (var run = 0; run < runs; run++) {
-          final process = await Process.start('dart', [
-            'run',
-            'test/fixtures/llama_cpp_exit_probe.dart',
-            scenario,
-            ...arguments.nonNulls,
-          ]);
-          final stdout = process.stdout.transform(utf8.decoder).join();
-          final stderr = process.stderr.transform(utf8.decoder).join();
-          final int code;
-          try {
-            code = await process.exitCode.timeout(const Duration(minutes: 3));
-          } on TimeoutException {
-            process.kill(ProcessSignal.sigkill);
-            fail('$scenario run $run did not exit: ${await stderr}');
-          }
-          final output = await stdout;
-          final errors = await stderr;
-          expect(
-            output,
-            contains('EXIT_PROBE_REACHED $scenario'),
-            reason: errors,
-          );
-          if (backend != null) {
-            expect(output, contains('EXIT_PROBE_BACKEND $backend'));
-          }
-          expect(errors, isNot(contains('GGML_ASSERT')));
-          codes.add(code);
+    test('$scenario ends with exit code $exitCode', () async {
+      // Not `skip:`, which --run-skipped (needed for `local-only`) overrides.
+      if (arguments.contains(null)) {
+        markTestSkipped(
+          'Set the EXIT_TEARDOWN_ variables of $scenario to run it.',
+        );
+        return;
+      }
+      final codes = <int>[];
+      for (var run = 0; run < runs; run++) {
+        final process = await Process.start('dart', [
+          'run',
+          'test/fixtures/llama_cpp_exit_probe.dart',
+          scenario,
+          ...arguments.nonNulls,
+        ]);
+        final stdout = process.stdout.transform(utf8.decoder).join();
+        final stderr = process.stderr.transform(utf8.decoder).join();
+        final int code;
+        try {
+          code = await process.exitCode.timeout(const Duration(minutes: 3));
+        } on TimeoutException {
+          process.kill(ProcessSignal.sigkill);
+          fail('$scenario run $run did not exit: ${await stderr}');
         }
-        // ignore: avoid_print
-        print('EXIT_TEARDOWN_E2E ${jsonEncode({scenario: codes})}');
-        expect(codes, everyElement(exitCode));
-      },
-    );
+        final output = await stdout;
+        final errors = await stderr;
+        expect(
+          output,
+          contains('EXIT_PROBE_REACHED $scenario'),
+          reason: errors,
+        );
+        if (backend != null) {
+          expect(output, contains('EXIT_PROBE_BACKEND $backend'));
+        }
+        expect(errors, isNot(contains('GGML_ASSERT')));
+        codes.add(code);
+      }
+      // ignore: avoid_print
+      print('EXIT_TEARDOWN_E2E ${jsonEncode({scenario: codes})}');
+      expect(codes, everyElement(exitCode));
+    });
   }
 }

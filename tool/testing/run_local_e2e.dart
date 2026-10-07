@@ -1834,8 +1834,10 @@ Direct environment for test/e2e/backends/prompt_cancel_e2e_test.dart:
 
 Direct environment for test/e2e/backends/llama_cpp_exit_teardown_e2e_test.dart:
   EXIT_TEARDOWN_RUNS             Runs of each exit scenario (default: 3).
-  EXIT_TEARDOWN_MMPROJ           The model's projector; adds the projector scenarios.
-  EXIT_TEARDOWN_DECISION_MODEL   Encoder GGUF; with the head, adds the decision scenario.
+  EXIT_TEARDOWN_MMPROJ           The model's projector; unset skips quit-projector and
+                                 quit-disposing.
+  EXIT_TEARDOWN_DECISION_MODEL   Encoder GGUF; unset, or without the head, skips
+                                 quit-decision.
   EXIT_TEARDOWN_DECISION_HEAD    Decision head safetensors for that encoder.
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
