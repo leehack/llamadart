@@ -10,8 +10,8 @@ no inference server. GGUF models run through llama.cpp and `.litertlm` models
 through LiteRT-LM, whose platform coverage is narrower. Native targets run
 offline once the model is on the device; web support is experimental.
 
-llama.cpp uses Metal on Apple platforms, Vulkan on Android, Linux, and Windows,
-and WebGPU in the browser. LiteRT-LM can also use GPU and, on compatible
+llama.cpp uses Metal on Apple platforms, Vulkan on Linux, Windows, and
+(experimental, opt-in) Android, and WebGPU in the browser. LiteRT-LM can also use GPU and, on compatible
 Android deployments, NPU. See the
 [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix)
 for each target.
@@ -107,8 +107,8 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. It needs core `0.10.0` or newer. Without it the hook
-  bundles the runtime, App Store Connect rejects that iOS framework's
+  the entry above. Pair companion `0.0.2` with core `0.11.0`. Without it the
+  hook bundles the runtime, App Store Connect rejects that iOS framework's
   `MinimumOSVersion`, and only Xcode and `xcodebuild` show the build warning
   about it.
 
@@ -184,15 +184,15 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.10.0
+  llamadart: ^0.11.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Pair companion `0.0.20` with core `0.10.0` for matching llama.cpp v0.5.0
-bindings. Keep core `0.8.23` paired with companion `0.0.18`, and core `0.8.22`
-paired with companion `0.0.17`.
+Pair companion `0.0.21` with core `0.11.0` for matching llama.cpp v0.5.0
+bindings. Keep core `0.10.0` and `0.9.0` paired with companion `0.0.20`, core
+`0.8.23` with companion `0.0.18`, and core `0.8.22` with companion `0.0.17`.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
@@ -201,16 +201,17 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.10.0
-  llamadart_llama_cpp_flutter: ^0.0.20 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.12 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.0.1 # Apple image generation, opt-in
+  llamadart: ^0.11.0
+  llamadart_llama_cpp_flutter: ^0.0.21 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.13 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.0.2 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.0.1` with core `0.10.0` or
-newer; older cores, including `0.9.x`, ignore it. Adding it opts iOS and macOS
-builds into the image generation runtime (about 37 MB per Apple target), so
-leave it out unless the app uses `ImageGenerationEngine`.
+Pair `llamadart_stable_diffusion_flutter` `0.0.2` with core `0.11.0`, and
+`0.0.1` with core `0.10.0`; older cores, including `0.9.x`, ignore it. Adding
+it opts iOS and macOS builds into the image generation runtime (about 37 MB
+per Apple target), so leave it out unless the app uses
+`ImageGenerationEngine`.
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime
 targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS LiteRT-LM

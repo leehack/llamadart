@@ -1,4 +1,4 @@
-## Unreleased
+## 0.11.0
 
 - Fix a Flutter macOS app aborting in ggml-metal when it quits while a
   llama.cpp model loads or after a hot restart during a load, and a Dart
@@ -34,6 +34,11 @@
   package's XCFramework, never through the hook path, and an app whose
   llama.cpp or stable_diffusion runtime has none declares File Timestamp
   reason `C617.1` (plus `3B52.1` for stable_diffusion) itself.
+- Flutter iOS and macOS apps pair core `0.11.0` with
+  `llamadart_llama_cpp_flutter` `0.0.21`, `llamadart_litert_lm_flutter`
+  `0.0.13` and `llamadart_stable_diffusion_flutter` `0.0.2`, which link the
+  runtimes this release pins; an older llama.cpp or stable_diffusion companion
+  fails the Apple build.
 
 - Adopt LiteRT-LM `v0.17.0-7` with provider-free iOS artifacts; Gemma FST
   constrained decoding remains unavailable on iOS.
@@ -48,6 +53,10 @@
 - Documented that LiteRT-LM's default GPU selection on Android generates wrong
   text for Qwen3 0.6B on Adreno 750; load it with `ComputeDevice.cpu`
   ([#553](https://github.com/leehack/llamadart/issues/553)).
+- Documented that llama.cpp Vulkan on Android is experimental and
+  device-dependent, with known failures on Pixel 9 Pro, Galaxy A53 and Galaxy
+  S24; `auto` stays on the CPU
+  ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 - LiteRT-LM release sync can remove an obsolete iOS provider target from modern
   Swift packages while preserving required macOS runtime libraries.
@@ -333,6 +342,11 @@
   `LiteRtLmRuntimeClient.conversationTokenCount` and
   `LiteRtLmRuntimeClient.replaceConversationWithClone` are removed
   ([#355](https://github.com/leehack/llamadart/issues/355)).
+* Aligned the default WebGPU bridge assets to `v0.1.54`, unchanged from 0.10.0:
+  they embed llama.cpp `v0.5.0`, are qualified against native `v0.5.0`, and keep
+  Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity
+  and Web `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 
 ## 0.10.0
 

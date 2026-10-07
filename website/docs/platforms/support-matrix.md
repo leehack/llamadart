@@ -16,7 +16,7 @@ runtime out of the app, see [Native runtime configuration](./native-build-hooks)
 
 | Platform | GGUF backends | LiteRT-LM backends | Minimum OS | Speech to text | Text to speech | Decision models | Image generation (Preview) | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Android (arm64, x64) | CPU, Vulkan; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
+| Android (arm64, x64) | CPU; Vulkan experimental, device-dependent; OpenCL opt-in | CPU, GPU, NPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | arm64 CPU; validated on Pixel 9 Pro, Galaxy S24 and A53 | Supported |
 | iOS (arm64, arm64 simulator, x86_64 simulator) | CPU, Metal | CPU, GPU; none on the x86_64 simulator | iOS 16.4 deployment target; LiteRT-LM run on a device only on iOS 18.3.2 | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | Metal, iOS 16.4; validated on iPhone 16 Pro and SE 3 | Supported |
 | macOS (arm64, x86_64) | CPU, Metal | arm64: CPU, GPU; x86_64: CPU | macOS 14.0 (Flutter) | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Validated on Metal and CPU | Metal, macOS 13.3; validated on arm64 | Supported |
 | Linux (arm64, x64) | CPU, Vulkan; BLAS opt-in; x64: CUDA, HIP opt-in | arm64: CPU; x64: CPU, explicit GPU | Not set by llamadart | Qwen3-ASR (GGUF); LiteRT-LM ASR | Qwen3-TTS | Untested | CPU or Vulkan; x64 needs AVX2; validated on x64 (CPU, NVIDIA L4) | Supported |
@@ -55,7 +55,7 @@ each runtime's default; `cpu`, `gpu` and `npu` run there or throw
 
 | Runtime | `auto` | `gpu` | `npu` |
 | --- | --- | --- | --- |
-| Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, and on Android | Needs a GPU module and device; Vulkan on Android | Throws |
+| Native llama.cpp | Best GPU backend that loads, all layers; CPU without a GPU module or device, and on Android | Needs a GPU module and device; Vulkan on Android (experimental) | Throws |
 | WebGPU (llama.cpp) | WebGPU when available, else the WebAssembly CPU runtime | Needs a WebGPU adapter and GPU layers after load; no CPU retry | Throws |
 | Native LiteRT-LM | GPU on Android, iOS and macOS; CPU on Linux and Windows | GPU backend on Android, iOS, macOS arm64, Linux x64 (Vulkan) and Windows x64 (Direct3D 12); a delegate that fails to start throws on first use | Android only |
 | LiteRT-LM Web | WebGPU, without a probe | Needs a WebGPU adapter | Throws |
@@ -146,6 +146,19 @@ output and grammars, sampling controls and speculative decoding. Guides:
 - Android NPU depends on the device SoC, the `.litertlm` bundle and the LiteRT
   dispatch libraries (`ModelParams.liteRtLmDispatchLibDir`). If native
   LiteRT-LM cannot create an NPU engine, use `cpu` or `gpu`.
+- Android llama.cpp Vulkan is experimental and device-dependent. `auto` runs
+  llama.cpp on the CPU there; Vulkan runs only when the app asks for
+  `ComputeDevice.gpu` or `GpuBackend.vulkan`. Known failures on the pinned
+  runtime: on a Pixel 9 Pro (Mali-G715), a prompt longer than about 32 tokens
+  evaluated in one batch returns wrong text, and a request with a grammar or
+  tool call can then abort the process
+  ([#948](https://github.com/leehack/llamadart/issues/948)); a Galaxy A53
+  (Mali-G68) crashes while loading the model
+  ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24
+  (Adreno 750) crashes on the first generation
+  ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
+  Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
+  target devices.
 - Some Vulkan drivers crash in the cooperative-matrix path; see
   [GPU crash or device loss](../troubleshooting/common-issues#gpu-crash-or-device-loss).
 - WebGPU readiness depends on the browser, device, bridge assets and model

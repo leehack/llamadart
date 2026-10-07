@@ -39,7 +39,7 @@ description: >-
   on iOS and macOS without the entry above. Without it the hook bundles the
   runtime, and App Store Connect rejects that iOS framework's
   `MinimumOSVersion`; only Xcode and `xcodebuild` show the build warning about
-  it. The companion needs core `0.10.0` or newer, and adding it opts the app
+  it. Pair companion `0.0.2` with core `0.11.0`; adding it opts the app
   into the runtime (about 37 MB per Apple target).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64

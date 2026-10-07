@@ -2,7 +2,7 @@
 
 This document covers the major breaking upgrade paths.
 
-## `0.10.x` -> next release: image generation engine API
+## `0.10.x` -> `0.11.0`: image generation engine API
 
 Image generation is a Preview, and this release changes its API with no
 deprecation period, to the pattern every llamadart engine will share: a
@@ -89,7 +89,7 @@ no longer has model presets or `String` paths.
 4. **Errors name files by position, not path.** A missing or unusable file
    is "the main file" or "component N".
 
-## Unreleased: `LlamaEngine.load` and `setModel`
+## `0.10.x` -> `0.11.0`: `LlamaEngine.load` and `setModel`
 
 `LlamaEngine` loads like the other engines: `LlamaEngine.load` creates an
 engine and loads a `LlamaModel`, and `setModel` loads or replaces the model
@@ -212,7 +212,7 @@ working until 1.0.
    setModel first.` Code that matched the earlier text should catch the
    exception type instead.
 
-## Unreleased: one task shape for image and speech engines
+## `0.10.x` -> `0.11.0`: one task shape for image and speech engines
 
 `ImageGenerationTask`, `SpeechToTextTask` and `TextToSpeechTask` share one
 shape: `events` carries progress only, `done` reports how the task ended and
@@ -265,7 +265,7 @@ stops only that task.
    task's own generation. Call `LlamaEngine.cancelGeneration` yourself if you
    relied on that.
 
-## Unreleased: decision engine load and attach
+## `0.10.x` -> `0.11.0`: decision engine load and attach
 
 `DecisionEngine` follows the shared engine pattern, and the `String`-path
 `DecisionEngine.load(engine, headPath:, configPath:)` is removed.
@@ -332,7 +332,7 @@ stops only that task.
    metadata now asks for "the head's rl_agent_config.json as its config"
    instead of naming `configPath`; match on `laya.config` if you parse it.
 
-## Unreleased: TranslateGemma language codes
+## `0.10.x` -> `0.11.0`: TranslateGemma language codes
 
 `LlamaEngine.create`, `createStructuredJson` and `chatTemplate` deprecate
 `sourceLangCode` and `targetLangCode`. Pass the codes in
@@ -354,7 +354,7 @@ A custom `BackendNativeChatGeneration` that read `sourceLangCode` or
 `targetLangCode` in `generateChat` gets them from `LlamaEngine` only in
 `chatTemplateKwargs` now.
 
-## Unreleased: mobile model cache default
+## `0.10.x` -> `0.11.0`: mobile model cache default
 
 No source change is required. On Android and iOS, `LlamaEngine`,
 `ModelDownloadController` and `DefaultModelDownloadManager()` (and `auto()`
@@ -366,7 +366,7 @@ clear. Apps that already pass a directory are unaffected. To pick another
 directory for every default download, set
 `DefaultModelDownloadManager.globalCacheDirectory` before the first load.
 
-## Unreleased: typed argument errors and one logging API
+## `0.10.x` -> `0.11.0`: typed argument errors and one logging API
 
 1. **Argument and state errors join the `LlamaException` hierarchy.** Catch
    the new types, or `LlamaException` for all of them:
@@ -420,7 +420,7 @@ directory for every default download, set
    engine changes every engine, and `LlamaEngine.configureLogging` also updates
    running worker isolates.
 
-## Unreleased: speech engine load, attach and adapters
+## `0.10.x` -> `0.11.0`: speech engine load, attach and adapters
 
 `SpeechToTextEngine` and `TextToSpeechEngine` follow the shared engine
 pattern: `load` takes a model of `ModelSource` files and owns what it loads,
@@ -547,7 +547,7 @@ constructors, `SpeechToTextModelProfile`, `TextToSpeechModelProfile` and the
    `LlamaEngine` itself keeps working. A class that `implements` `SpeechToTextEngine` or
    `TextToSpeechEngine`, such as a test fake, must add `dispose()`,
    `isDisposed`, `adapter` and `transcribeOnce` or `synthesizeOnce`.
-## Unreleased: `ModelSource` for LoRA adapters, draft models and speech files
+## `0.10.x` -> `0.11.0`: `ModelSource` for LoRA adapters, draft models and speech files
 
 LoRA adapters, speculative draft models and LiteRT-LM ASR files take a
 `ModelSource`, so a remote file downloads into the model cache like a model.
@@ -559,7 +559,7 @@ The `String` path forms keep working, with deprecation warnings, until 1.0:
 | `engine.removeLora(path)` | `engine.removeLoraSource(ModelSource.path(path))` |
 | `LoraAdapterConfig(path: path, scale: s)` | `LoraAdapterConfig.source(ModelSource.path(path), scale: s)` |
 | `SpeculativeDecodingConfig.draftSimple(draftModelPath: path)` (and the other constructors) | `SpeculativeDecodingConfig.draftSimple(draftModel: ModelSource.path(path))` |
-| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)`; to recognize speech, `SpeechToTextEngine.load` as in [the speech migration](#unreleased-speech-engine-load-attach-and-adapters) |
+| `LiteRtLmAsrRuntimeConfig(modelPath: m, tokenizerPath: t, ...)` | `LiteRtLmAsrRuntimeConfig.source(model: ModelSource.path(m), tokenizer: ModelSource.path(t), ...)`; to recognize speech, `SpeechToTextEngine.load` as in [the speech migration](#010x---0110-speech-engine-load-attach-and-adapters) |
 
 ```dart
 // Before
@@ -600,7 +600,7 @@ final config = LiteRtLmAsrRuntimeConfig.source(
 - A draft model downloads once per loaded model; `draftModelDownload` rejects
   `ModelCachePolicy.noCache` and `refresh`.
 
-## Unreleased: optional `ToolDefinition.handler`
+## `0.10.x` -> `0.11.0`: optional `ToolDefinition.handler`
 
 `ToolDefinition.handler` is a `ToolHandler?`, so a tool the app runs itself
 can leave it out. A direct call to the handler no longer compiles: call
@@ -614,7 +614,7 @@ final result = await tool.handler(ToolParams(args));
 final result = await tool.invoke(args);
 ```
 
-## Unreleased: app, backend and bindings entrypoints
+## `0.10.x` -> `0.11.0`: app, backend and bindings entrypoints
 
 `package:llamadart/llamadart.dart` is now the app API only. Code that loads
 models, generates and uses the speech, image and decision engines needs no
@@ -706,7 +706,7 @@ of two new libraries.
    `LiteRtLmRuntimeResult`. `LiteRtLmRuntimeClient.conversationTokenCount`
    and `replaceConversationWithClone` are gone with no replacement.
 
-## Unreleased: one `ComputeDevice` for every engine
+## `0.10.x` -> `0.11.0`: one `ComputeDevice` for every engine
 
 `ModelParams.device` takes a `ComputeDevice` and applies to llama.cpp and
 LiteRT-LM, as `ImageModelParams.device` and `DecisionModelParams.device`
@@ -775,7 +775,7 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    the backend for GPU support before loading: the encoder loads on a GPU or
    the load throws `LlamaUnsupportedException`.
 
-## Unreleased: shared capabilities and terminal dispose
+## `0.10.x` -> `0.11.0`: shared capabilities and terminal dispose
 
 1. **Image capabilities are async; `runtimeCapabilities()` is removed.**
    `ImageGenerationEngine.capabilities` returns a `Future`, like every other
@@ -818,6 +818,41 @@ already do. `ModelParams.liteRtLmBackend`, `LiteRtLmBackendPreference` and
    LiteRT-LM bundle that takes media directly, they are now true without a
    multimodal projector. When the runtime cannot probe a projector, they
    are false instead of throwing `LlamaUnsupportedException`.
+
+## `0.10.x` -> `0.11.0`: Apple companions, new members and stricter checks
+
+1. **Flutter iOS/macOS apps update the companion packages with the core.**
+   Core `0.11.0` pairs with `llamadart_llama_cpp_flutter` `0.0.21`,
+   `llamadart_litert_lm_flutter` `0.0.13` and
+   `llamadart_stable_diffusion_flutter` `0.0.2`. A `^0.0.x` constraint admits
+   only that version, so edit each one the app uses:
+
+   ```yaml
+   dependencies:
+     llamadart: ^0.11.0
+     llamadart_llama_cpp_flutter: ^0.0.21
+     llamadart_litert_lm_flutter: ^0.0.13
+     llamadart_stable_diffusion_flutter: ^0.0.2
+   ```
+
+   An Apple build that resolves an older llama.cpp or stable_diffusion
+   companion fails with `Incompatible Apple ... companion`.
+
+2. **More members for a class that `implements` an app type.** `ChatSession`
+   gains `createStructuredJson`, and `LlamaEngine` gains `runtime`,
+   `capabilities`, `setLoraSource` and `removeLoraSource`, besides `setModel`
+   and `isDisposed` above.
+
+3. **An unknown `responseFormat` type or key throws.** A map with a
+   misspelled `type` or key, such as `json_shema` or `schma`, used to generate
+   unconstrained output. It now throws `LlamaUnsupportedException` before
+   generation; a `null`-valued key counts as absent.
+
+4. **Native `LlamaBackend()` picks the runtime from the file header.** An
+   extensionless download now loads in the runtime its header names. A
+   recognized header that contradicts the file's model extension or an
+   explicit `format:` throws `LlamaModelFormatException`; rename the file or
+   pass the matching `format:`.
 
 ## `0.9.x` -> `0.10.0`: typed errors, chat templates and model names
 

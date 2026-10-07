@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.2
 
 * Updated Apple SwiftPM native pin to `leehack/stable-diffusion-native@v0.2.0-1`,
   whose XCFramework carries an Apple privacy manifest and frees image models

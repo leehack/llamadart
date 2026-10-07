@@ -553,7 +553,7 @@ await prefs.setInt('preferred_backend', backendIndex);
 |----------|--------|-----------------------|
 | macOS    | ✅ Tested | Metal |
 | iOS      | ✅ Tested | Metal |
-| Android  | ✅ Tested | Vulkan |
+| Android  | ✅ Tested | CPU; Vulkan (experimental, device-dependent) |
 | Linux    | 🟡 Expected | Vulkan |
 | Windows  | ✅ Tested | Vulkan |
 | Web      | ✅ Tested | CPU / Experimental WebGPU |
