@@ -67,7 +67,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'tool/litert_lm_templates/gemma3n.jinja': '10001100',
   'tool/litert_lm_templates/gemma4.jinja': '11111111',
   'tool/litert_lm_templates/qwen25.jinja': '11111001',
-  'tool/litert_lm_templates/qwen3.jinja': '11111011',
+  'tool/litert_lm_templates/qwen3.jinja': '11111111',
 };
 
 const List<String> _capsOrder = <String>[
