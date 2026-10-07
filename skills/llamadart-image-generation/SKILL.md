@@ -185,18 +185,22 @@ description: >-
   `(await engine.generate(request)).result`.
 - `GeneratedImage` has `width`, `height`, `channels` (3) and row-major RGB
   `pixels`; `toPng()` returns PNG bytes (for `Image.memory` or a file).
-- One generation or model load at a time per process (stable-diffusion.cpp's
-  progress callback is global): a second one throws `LlamaStateException`,
+- One generation or model load at a time per process (stable-diffusion.cpp
+  reports progress for the whole process): a second one throws
+  `LlamaStateException`,
   even on another engine. Await `task.done` before the next request; disable
   the Generate button while one runs. Do not generate from several isolates.
 - `task.cancel()` stops before the next sampling step; `done` reports
   `cancelled`, `result` throws `LlamaStateException`, and the stream closes
   without a final event. `dispose()` cancels
   a running task, waits, then frees the model.
-- Dispose before a Flutter app quits: on macOS Metal, quitting with a model
-  still loaded aborts the process. A plain Dart program that ends with the
-  model loaded frees it on the way out, unless it dies of an error while the
-  model loads or generates; a Flutter quit does not. Flutter
+- Progress events arrive in groups, up to about 50 ms after the runtime
+  reports them (the engine polls the runtime), always in order and before
+  the final event.
+- Dispose before a Flutter app quits. A process that ends with an image
+  model loaded no longer aborts on macOS Metal, but nothing cancels a running
+  generation when a Dart program ends or a Flutter app quits, so the process
+  stays until the generation finishes. Flutter
   desktop apps skip `State.dispose` on
   quit; await `dispose()` in `AppLifecycleListener.onExitRequested`. If
   `ImageGenerationEngine.load` is still running, await it there and dispose

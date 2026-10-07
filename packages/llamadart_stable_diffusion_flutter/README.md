@@ -28,14 +28,17 @@ macOS builds; `llamadart_native_runtimes` still decides the other platforms.
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0`.
+The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0-1`.
 
-An Apple privacy manifest for the stable-diffusion.cpp runtime can ship only
-inside this XCFramework, never in the dylibs the native-assets hook bundles.
-If the embedded `stable_diffusion.framework` in the built app has no
-`PrivacyInfo.xcprivacy`, or the app uses the hook path, declare
-`NSPrivacyAccessedAPICategoryFileTimestamp` with reasons `C617.1` and `3B52.1`
-in the app's own `PrivacyInfo.xcprivacy`.
+Apps bound for the App Store should use this package: an Apple privacy
+manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,
+never in the dylibs the core package's native-assets hook bundles. The
+`v0.2.0-1` XCFramework declares `NSPrivacyAccessedAPICategoryFileTimestamp`
+with reasons `C617.1` and `3B52.1`; release `0.0.1` of this package links
+`v0.2.0`, which has no manifest. If the embedded `stable_diffusion.framework`
+in the built app has no `PrivacyInfo.xcprivacy`, or the app uses the hook
+path, declare that category and those reasons in the app's own
+`PrivacyInfo.xcprivacy`.
 
 Source for this package lives in
 `packages/llamadart_stable_diffusion_flutter` in the

@@ -650,6 +650,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'image-exit-teardown',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'End macOS processes with an image model alive on Metal and '
+          'require a clean exit; also compare the progress events of image '
+          'batches.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: '${context.projectRoot}/example/basic_app',
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/image_exit_teardown_e2e_test.dart',
+          ],
+          environment: {'IMAGE_EXIT_MODEL': context.modelPath!},
+          description: 'Image model exit teardown',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'decision-model-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -1562,6 +1586,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'litert-lm-chat-features-smoke' ||
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||
+          scenario.name == 'image-exit-teardown' ||
           scenario.name == 'gemma4-mtp-smoke' ||
           scenario.name == 'native-embedding-benchmark' ||
           scenario.name == 'native-embedding-sweep') &&
@@ -1839,6 +1864,10 @@ Direct environment for test/e2e/backends/llama_cpp_exit_teardown_e2e_test.dart:
   EXIT_TEARDOWN_DECISION_MODEL   Encoder GGUF; unset, or without the head, skips
                                  quit-decision.
   EXIT_TEARDOWN_DECISION_HEAD    Decision head safetensors for that encoder.
+
+Direct environment for example/basic_app/test/image_exit_teardown_e2e_test.dart:
+  IMAGE_EXIT_RUNS                Runs of each exit scenario (default: 3).
+  IMAGE_EXIT_GGUF                GGUF chat model; unset skips quit-both-loaded.
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
   LITERT_LM_IMAGE_PATH           Optional local image fixture.

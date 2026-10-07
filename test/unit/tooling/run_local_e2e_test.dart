@@ -818,6 +818,33 @@ void main() {
       );
     });
 
+    test('dry-runs the image exit teardown in the opted-in example, and '
+        'requires its model', () async {
+      final missing = await runLocalE2e(const [
+        '--scenario',
+        'image-exit-teardown',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(missing.exitCode, 64);
+
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'image-exit-teardown',
+        '--model-path',
+        '/sdxs.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/basic_app && IMAGE_EXIT_MODEL=/sdxs.gguf '
+          'dart test --run-skipped -t local-only '
+          'test/image_exit_teardown_e2e_test.dart',
+        ),
+      );
+    });
+
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(const [
         '--scenario',

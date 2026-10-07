@@ -475,6 +475,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'probe or hook changes.',
   ),
   TestMatrixRow(
+    id: 'image-exit-teardown',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'macOS Metal process ends with an image model alive: C exit through '
+        'FFI with the model idle, generating, loading, disposed and '
+        'optionally with a llama.cpp model loaded too, an unhandled error '
+        'while generating or loading, and an isolate killed inside a load; '
+        'the exports the sd_dart_ calls resolve to; and the progress events '
+        'of batches of two and three images; not a Flutter quit',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'image-exit-teardown --model-path <sdxs.gguf>',
+    useWhen:
+        'stable_diffusion runtime pin, image worker call sites, progress '
+        'polling, or isolate shutdown changes. Needs a Mac whose GPU loads '
+        'the model.',
+  ),
+  TestMatrixRow(
     id: 'decision-model-smoke',
     tier: 'targeted',
     mode: 'local-only',

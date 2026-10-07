@@ -7,30 +7,52 @@ import 'package:ffi/ffi.dart';
 import '../../core/exceptions.dart';
 import '../../core/image/generated_image.dart';
 import '../../core/image/image_generation_driver.dart';
+import '../../core/llama_logger.dart';
 import '../isolate_shutdown_releases.dart';
 import 'stable_diffusion_bindings.dart' as sd;
+import 'stable_diffusion_calls.dart';
 import 'stable_diffusion_params.dart';
 
-typedef _ProgressCallback = NativeCallable<sd.sd_progress_cb_tFunction>;
+/// Resolves the native calls of a worker; `null` when the runtime lacks them.
+typedef StableDiffusionCallsResolver = StableDiffusionCalls? Function();
+
+/// Starts the timer that polls progress during a generation.
+typedef StableDiffusionProgressTimer =
+    Timer Function(Duration interval, void Function(Timer timer) poll);
 
 /// One stable-diffusion.cpp context running in a dedicated worker isolate.
 ///
-/// Loading and `generate_image` block, so both run in the worker. Progress
-/// comes back through a [NativeCallable.listener] owned by the calling
-/// isolate, which is safe to invoke from any runtime thread. Cancellation
-/// calls `sd_cancel_generation` from the calling isolate, since the worker is
-/// blocked inside `generate_image`; the runtime flag is atomic.
+/// Loading and `generate_image` block, so both run in the worker. The runtime
+/// records its progress reports and the calling isolate reads them on a
+/// timer: Dart gives stable-diffusion.cpp no callback, because a callback
+/// from the generating thread into a VM that is shutting down aborts the
+/// process. Cancellation calls `sd_dart_cancel_generation` from the calling
+/// isolate, since the worker is blocked inside the generation.
 ///
 /// Only a pending reply keeps the calling isolate alive, so a program that
 /// ends with a model loaded exits; the worker then frees the model as it shuts
 /// down.
 final class StableDiffusionImageWorker implements ImageGenerationSession {
+  /// How often a running [generate] reads the recorded progress. A cancel
+  /// that arrived before the runtime started generating is applied again at
+  /// the same rate.
+  static const Duration progressPollInterval = Duration(milliseconds: 50);
+
+  /// Reports one read asks for.
+  static const int _reportsPerRead = 64;
+
+  /// Reads one poll makes at most, so a runtime that reports faster than the
+  /// calling isolate reads cannot keep it in the poll. Together with
+  /// [_reportsPerRead] it covers the reports the runtime keeps.
+  static const int _readsPerPoll = 64;
+
   final Isolate _isolate;
   final _Replies _replies;
   final SendPort _commands;
-  final _ProgressCallback _progress;
+  final StableDiffusionCalls _calls;
+  final StableDiffusionProgressTimer _progressTimer;
   final Pointer<sd.sd_ctx_t> _context;
-  void Function(int step, int steps)? _onProgress;
+  bool _cancelRequested = false;
   bool _disposed = false;
   bool _stopped = false;
 
@@ -41,48 +63,56 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     this._isolate,
     this._replies,
     this._commands,
-    this._progress,
+    this._calls,
+    this._progressTimer,
     this._context,
     this.modelVersion,
   );
 
   /// Spawns a worker and loads [config] in it.
   ///
+  /// [resolveCalls] runs once in the calling isolate and once in the worker;
+  /// [progressTimer] starts the progress poll of each [generate]. Tests
+  /// replace both.
+  ///
   /// Throws [LlamaModelException] when the runtime cannot load the files as
-  /// an image model.
+  /// an image model, and [LlamaUnsupportedException] when the runtime does
+  /// not export the functions of [StableDiffusionCalls].
   static Future<StableDiffusionImageWorker> start(
-    ImageGenerationSessionConfig config,
-  ) async {
-    void Function(int step, int steps)? route;
-    final progress = _ProgressCallback.listener(
-      (int step, int steps, double _, Pointer<Void> _) =>
-          route?.call(step, steps),
-    )..keepIsolateAlive = false;
+    ImageGenerationSessionConfig config, {
+    StableDiffusionCallsResolver resolveCalls = StableDiffusionCalls.tryResolve,
+    StableDiffusionProgressTimer progressTimer = Timer.periodic,
+  }) async {
+    final calls = resolveCalls();
+    if (calls == null) {
+      throw stableDiffusionWrapperUnsupported();
+    }
+    // Registers the runtime's recorder, which is not synchronized with a
+    // load: it has to be in place before the worker starts one.
+    calls.progressEnable();
     final replies = _Replies();
     Isolate? isolate;
     try {
       isolate = await Isolate.spawn(
         _workerMain,
-        (replies.sendPort, config, progress.nativeFunction.address),
+        (replies.sendPort, config, resolveCalls),
         debugName: 'llamadart-image-generation',
         onExit: replies.sendPort,
         onError: replies.sendPort,
       );
       final loaded = _unwrap(await replies.next()) as _Loaded;
-      final worker = StableDiffusionImageWorker._(
+      return StableDiffusionImageWorker._(
         isolate,
         replies,
         loaded.commands,
-        progress,
+        calls,
+        progressTimer,
         Pointer.fromAddress(loaded.context),
         loaded.modelVersion,
       );
-      route = (step, steps) => worker._onProgress?.call(step, steps);
-      return worker;
     } catch (_) {
       isolate?.kill(priority: Isolate.immediate);
       await replies.close();
-      progress.close();
       rethrow;
     }
   }
@@ -97,10 +127,52 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
         'The image-generation worker stopped; load the model again.',
       );
     }
-    _onProgress = onProgress;
+    final reports = calloc<sd.sd_dart_progress_t>(_reportsPerRead);
+    final latest = calloc<Uint64>();
+    // Reports are process-wide and numbered: everything after the newest one
+    // recorded so far belongs to this generation.
+    _calls.progressRead(0, nullptr, 0, latest);
+    var after = latest.value;
+    var dropped = 0;
+    void readProgress() {
+      for (var reads = 0; reads < _readsPerPoll; reads++) {
+        final count = _calls.progressRead(
+          after,
+          reports,
+          _reportsPerRead,
+          latest,
+        );
+        if (count == 0) {
+          return;
+        }
+        // The runtime dropped its oldest reports when the first one it
+        // returns does not follow the last one read.
+        dropped += reports[0].sequence - after - 1;
+        for (var i = 0; i < count; i++) {
+          final report = reports[i];
+          after = report.sequence;
+          onProgress(report.step, report.steps);
+        }
+        if (after >= latest.value) {
+          return;
+        }
+      }
+    }
+
+    _cancelRequested = false;
+    final timer = _progressTimer(progressPollInterval, (_) {
+      if (_cancelRequested) {
+        // stable-diffusion.cpp clears a cancel request when a generation
+        // starts, so one that arrived before then is applied again.
+        _calls.cancelGeneration(_context);
+      }
+      readProgress();
+    });
     try {
       _commands.send(request);
       final reply = await _reply() as _Generated;
+      // The runtime recorded the last reports before the reply was sent.
+      readProgress();
       return reply.images == null
           ? null
           : [
@@ -113,14 +185,26 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
                 ),
             ];
     } finally {
-      _onProgress = null;
+      timer.cancel();
+      calloc.free(reports);
+      calloc.free(latest);
+      if (dropped > 0) {
+        LlamaLogger.instance.warning(
+          'The stable_diffusion runtime dropped $dropped image-generation '
+          'progress reports: it keeps the '
+          '${StableDiffusionCalls.progressHistory} most recent ones, and more '
+          'than that were recorded between two reads. Progress events of '
+          'this generation can be missing or mislabelled.',
+        );
+      }
     }
   }
 
   @override
   void cancel() {
     if (!_disposed) {
-      sd.sd_cancel_generation(_context, sd.sd_cancel_mode_t.SD_CANCEL_ALL);
+      _cancelRequested = true;
+      _calls.cancelGeneration(_context);
     }
   }
 
@@ -138,8 +222,6 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
     } finally {
       _isolate.kill(priority: Isolate.immediate);
       await _replies.close();
-      // The worker cleared the callback before replying, so nothing calls it.
-      _progress.close();
     }
   }
 
@@ -254,7 +336,7 @@ final class _Loaded {
 }
 
 final class _LoadFailure {
-  final LlamaModelException error;
+  final LlamaException error;
 
   const _LoadFailure(this.error);
 }
@@ -282,21 +364,25 @@ final class _Generated {
   const _Generated(this.images);
 }
 
-void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
-  final (replies, config, progressAddress) = arguments;
-  final progress =
-      Pointer<NativeFunction<sd.sd_progress_cb_tFunction>>.fromAddress(
-        progressAddress,
-      );
+void _workerMain(
+  (SendPort, ImageGenerationSessionConfig, StableDiffusionCallsResolver)
+  arguments,
+) {
+  final (replies, config, resolveCalls) = arguments;
+  final calls = resolveCalls();
+  if (calls == null) {
+    replies.send(_LoadFailure(stableDiffusionWrapperUnsupported()));
+    return;
+  }
 
-  final context = _withProgress(progress, () => _newContext(config));
+  final context = _newContext(calls, config);
   if (context == nullptr) {
     replies.send(_LoadFailure(stableDiffusionModelLoadFailure(config.files)));
     return;
   }
-  if (!sd.sd_ctx_supports_image_generation(context)) {
+  if (!calls.supportsImageGeneration(context)) {
     IsolateShutdownReleases.current.release(context);
-    sd.free_sd_ctx(context);
+    calls.exitFree(context.cast());
     replies.send(
       _LoadFailure(
         LlamaModelException(
@@ -308,7 +394,7 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
   }
 
   final commands = ReceivePort('llamadart-image-generation-commands');
-  final version = sd.sd_get_model_version_name(context);
+  final version = calls.modelVersionName(context);
   replies.send(
     _Loaded(
       commands.sendPort,
@@ -319,54 +405,31 @@ void _workerMain((SendPort, ImageGenerationSessionConfig, int) arguments) {
   commands.listen((command) {
     switch (command) {
       case ImageGenerationSessionRequest():
-        final _Generated generated;
-        try {
-          generated = _withProgress(
-            progress,
-            () => _generate(context, command),
-          );
-        } catch (_) {
-          // The error ends this isolate, and the calling isolate may still
-          // call `sd_cancel_generation` on the context: leak it rather than
-          // free it at shutdown.
-          IsolateShutdownReleases.current.release(context);
-          rethrow;
-        }
-        replies.send(generated);
+        // An error here ends this isolate with the context still held, so
+        // its shutdown frees it; a later cancel from the calling isolate
+        // does nothing for a freed context.
+        replies.send(_generate(calls, context, command));
       case _Dispose():
         IsolateShutdownReleases.current.release(context);
-        sd.free_sd_ctx(context);
+        calls.exitFree(context.cast());
         commands.close();
         replies.send(const _Disposed());
     }
   });
 }
 
-/// Runs [body] with the process-wide progress callback set, so the runtime
-/// never prints progress bars to stdout, and clears it before returning.
-T _withProgress<T>(
-  Pointer<NativeFunction<sd.sd_progress_cb_tFunction>> progress,
-  T Function() body,
+Pointer<sd.sd_ctx_t> _newContext(
+  StableDiffusionCalls calls,
+  ImageGenerationSessionConfig config,
 ) {
-  sd.sd_set_progress_callback(progress, nullptr);
-  try {
-    return body();
-  } finally {
-    sd.sd_set_progress_callback(nullptr, nullptr);
-  }
-}
-
-Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
   return using((arena) {
     final params = arena<sd.sd_ctx_params_t>();
-    sd.sd_ctx_params_init(params);
+    calls.contextParamsInit(params);
     applyStableDiffusionContextParams(params, config, arena);
-    final context = sd.new_sd_ctx(params);
+    final context = calls.newContext(params);
     IsolateShutdownReleases.current.hold(
       ShutdownStage.model,
-      Native.addressOf<NativeFunction<Void Function(Pointer<sd.sd_ctx_t>)>>(
-        sd.free_sd_ctx,
-      ).cast(),
+      calls.exitFreeAddress,
       context,
     );
     return context;
@@ -374,17 +437,18 @@ Pointer<sd.sd_ctx_t> _newContext(ImageGenerationSessionConfig config) {
 }
 
 _Generated _generate(
+  StableDiffusionCalls calls,
   Pointer<sd.sd_ctx_t> context,
   ImageGenerationSessionRequest request,
 ) {
   return using((arena) {
     final params = arena<sd.sd_img_gen_params_t>();
-    sd.sd_img_gen_params_init(params);
+    calls.imageGenerationParamsInit(params);
     applyStableDiffusionGenerationParams(params, request, arena);
 
     final imagesOut = arena<Pointer<sd.sd_image_t>>();
     final countOut = arena<Int>();
-    final ok = sd.generate_image(context, params, imagesOut, countOut);
+    final ok = calls.generateImage(context, params, imagesOut, countOut);
     final images = imagesOut.value;
     final count = countOut.value;
     try {
@@ -397,7 +461,7 @@ _Generated _generate(
       ]);
     } finally {
       if (images != nullptr) {
-        sd.free_sd_images(images, count);
+        calls.freeImages(images, count);
       }
     }
   });

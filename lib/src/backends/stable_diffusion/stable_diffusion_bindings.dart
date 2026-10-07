@@ -297,6 +297,68 @@ external bool sd_ctx_supports_video_generation(ffi.Pointer<sd_ctx_t> sd_ctx);
 @ffi.Native<ffi.Bool Function(ffi.Pointer<sd_ctx_t>)>()
 external bool sd_ctx_unload_control_net(ffi.Pointer<sd_ctx_t> sd_ctx);
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<sd_ctx_t>, ffi.UnsignedInt)>(
+  symbol: 'sd_dart_cancel_generation',
+)
+external void _sd_dart_cancel_generation(
+  ffi.Pointer<sd_ctx_t> sd_ctx,
+  int mode,
+);
+
+void sd_dart_cancel_generation(
+  ffi.Pointer<sd_ctx_t> sd_ctx,
+  sd_cancel_mode_t mode,
+) {
+  return _sd_dart_cancel_generation(sd_ctx, mode.value);
+}
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Void>)>()
+external void sd_dart_exit_free(ffi.Pointer<ffi.Void> object);
+
+@ffi.Native<ffi.Void Function(ffi.Int32, ffi.Int32)>()
+external void sd_dart_exit_set_wait_ms(int wait_ms, int work_wait_ms);
+
+@ffi.Native<ffi.Int32 Function()>()
+external int sd_dart_exit_tracked_count();
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<sd_ctx_t>,
+    ffi.Pointer<sd_img_gen_params_t>,
+    ffi.Pointer<ffi.Pointer<sd_image_t>>,
+    ffi.Pointer<ffi.Int>,
+  )
+>()
+external bool sd_dart_generate_image(
+  ffi.Pointer<sd_ctx_t> sd_ctx,
+  ffi.Pointer<sd_img_gen_params_t> sd_img_gen_params,
+  ffi.Pointer<ffi.Pointer<sd_image_t>> images_out,
+  ffi.Pointer<ffi.Int> num_images_out,
+);
+
+@ffi.Native<ffi.Pointer<sd_ctx_t> Function(ffi.Pointer<sd_ctx_params_t>)>()
+external ffi.Pointer<sd_ctx_t> sd_dart_new_sd_ctx(
+  ffi.Pointer<sd_ctx_params_t> sd_ctx_params,
+);
+
+@ffi.Native<ffi.Void Function()>()
+external void sd_dart_progress_enable();
+
+@ffi.Native<
+  ffi.Size Function(
+    ffi.Uint64,
+    ffi.Pointer<sd_dart_progress_t>,
+    ffi.Size,
+    ffi.Pointer<ffi.Uint64>,
+  )
+>(isLeaf: true)
+external int sd_dart_progress_read(
+  int after,
+  ffi.Pointer<sd_dart_progress_t> reports,
+  int capacity,
+  ffi.Pointer<ffi.Uint64> latest,
+);
+
 @ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<sd_ctx_t>)>(
   symbol: 'sd_get_default_sample_method',
 )
@@ -1244,6 +1306,48 @@ final class sd_ctx_params_t extends ffi.Struct {
 }
 
 final class sd_ctx_t extends ffi.Opaque {}
+
+enum sd_dart_exit_stage {
+  SD_DART_EXIT_STAGE_CONTEXT_USER(0),
+  SD_DART_EXIT_STAGE_CONTEXT(1),
+  SD_DART_EXIT_STAGE_RESOURCE(2);
+
+  final int value;
+  const sd_dart_exit_stage(this.value);
+
+  static sd_dart_exit_stage fromValue(int value) => switch (value) {
+    0 => SD_DART_EXIT_STAGE_CONTEXT_USER,
+    1 => SD_DART_EXIT_STAGE_CONTEXT,
+    2 => SD_DART_EXIT_STAGE_RESOURCE,
+    _ => throw ArgumentError('Unknown value for sd_dart_exit_stage: $value'),
+  };
+}
+
+final class sd_dart_progress_t extends ffi.Struct {
+  @ffi.Uint64()
+  external int sequence;
+
+  @ffi.Int32()
+  external int step;
+
+  @ffi.Int32()
+  external int steps;
+
+  @ffi.Float()
+  external double time;
+
+  static ffi.Pointer<sd_dart_progress_t> $allocate(
+    ffi.Allocator $allocator, {
+    required int sequence,
+    required int step,
+    required int steps,
+    required double time,
+  }) => $allocator<sd_dart_progress_t>()
+    ..ref.sequence = sequence
+    ..ref.step = step
+    ..ref.steps = steps
+    ..ref.time = time;
+}
 
 final class sd_embedding_t extends ffi.Struct {
   external ffi.Pointer<ffi.Char> name;

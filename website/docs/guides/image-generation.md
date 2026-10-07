@@ -102,11 +102,12 @@ rejects the iOS upload. The iOS build reports this as an Xcode build warning,
 which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
 output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
-The hook-bundled runtime also cannot carry an Apple privacy manifest, and a
-companion framework built before the manifest was added has none either; see
+The hook-bundled runtime also cannot carry an Apple privacy manifest. The
+companion's XCFramework carries one from `stable-diffusion-native` `v0.2.0-1`,
+which `llamadart_stable_diffusion_flutter` releases after `0.0.1` link; see
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest)
-for the File Timestamp reasons (`C617.1`, `3B52.1`) the app then declares
-itself.
+for the File Timestamp reasons (`C617.1`, `3B52.1`) an app declares itself
+when its `stable_diffusion.framework` has no manifest.
 
 ## Get a model
 
@@ -608,8 +609,8 @@ probes the same way and does not block the caller either.
 
 ## Progress phases
 
-The runtime reports all progress through one `(step, steps)` callback, so the
-engine labels it from the call sequence:
+The runtime reports all progress as `(step, steps)` pairs with no phase, so
+the engine labels each report from the sequence:
 
 1. `encodingPrompt` when the generation starts.
 2. `sampling` with `0/steps` when each image's first step starts, then one
@@ -620,17 +621,23 @@ engine labels it from the call sequence:
 `loading` appears only if the runtime loads weights lazily, which the engine
 avoids by loading them eagerly.
 
+The runtime records its reports and the engine reads them every 50 ms, so
+progress events arrive in groups, up to about 50 ms after the runtime made
+the report. Every report still becomes its events, in order, and the last
+ones arrive before the final event. A calling isolate that is busy delays
+them further.
+
 ## Cancellation, concurrency and disposal
 
 - `task.cancel()` stops before the next sampling step or before decoding;
   `task.done` then reports `cancelled` and `task.result` throws
   `LlamaStateException`. A cancel issued before the runtime starts is honored
-  too.
-- stable-diffusion.cpp reports progress through one process-wide callback, so
-  one generation or model load runs at a time. Another `generate` or `load`
-  meanwhile throws `LlamaStateException`, even on a different engine. The guard
-  covers engines in one isolate; do not generate from several isolates at
-  once.
+  too, up to 50 ms after it starts.
+- stable-diffusion.cpp reports progress for the whole process, not per
+  model, so one generation or model load runs at a time. Another `generate`
+  or `load` meanwhile throws `LlamaStateException`, even on a different
+  engine. The guard covers engines in one isolate; do not generate from
+  several isolates at once, or each sees the other's progress.
 - `dispose()` cancels a running generation, waits for it, and frees the model.
   The task reports `cancelled`, and its `result` and `generateImage` throw
   `LlamaStateException`, as does `generate` after `dispose()`.
@@ -639,12 +646,18 @@ avoids by loading them eagerly.
   then reports the engine as unsupported. `capabilities` never throws and
   changes only on `dispose()`, so a Flutter app can read it once after
   `load` and keep it in its state for `build`.
-- Free the model before a Flutter app quits: on macOS Metal, quitting with a
-  model still loaded aborts the process. A Dart program that ends with the
-  model loaded frees it on the way out and does not abort, unless it dies of
-  an error while the model loads or generates (see
-  [Model lifecycle](./model-lifecycle)); a Flutter app's quit skips that
-  cleanup. Flutter desktop apps do not run
+- A process that ends with an image model loaded, loading or generating no
+  longer aborts on macOS Metal in the cases llamadart has run: a Dart program
+  that returns from `main` or dies of an error, a Flutter macOS quit, and a
+  native host's C `exit()` (see [Model lifecycle](./model-lifecycle) for what
+  each one waits for). Nothing cancels a running generation when a Dart
+  program ends or a Flutter app quits, so the process stays until the
+  generation finishes: 4.8 s for the rest of a 40-step SDXS generation and
+  11.2 s for SD-Turbo in a Flutter macOS quit on an M4 Max. A native host's
+  C `exit()` cancels the generation and waits up to 15 seconds for it.
+- Still dispose the engine before a Flutter app quits, so the quit does not
+  wait for a generation and does not depend on the cleanup at exit. Flutter
+  desktop apps do not run
   `State.dispose` on quit, so await `dispose()` in
   `AppLifecycleListener.onExitRequested`. If `ImageGenerationEngine.load` is
   still running, await it there and dispose the engine it returns. If the

@@ -15,6 +15,7 @@ import sync_stable_diffusion_bindings as sync  # noqa: E402
 SCRIPT = Path(__file__).resolve().parent / "sync_stable_diffusion_bindings.py"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HEADER = b"// stable-diffusion.h\nint sd_version(void);\n"
+WRAPPER_HEADER = b'#include "stable-diffusion.h"\nvoid sd_dart_progress_enable(void);\n'
 
 
 def write_archive(path: Path, members: dict[str, bytes | str]) -> None:
@@ -94,22 +95,24 @@ class SyncScriptTest(unittest.TestCase):
             check=False,
         )
 
-    def staged_header(self) -> bytes:
-        return (self.header_root / "include" / "stable-diffusion.h").read_bytes()
+    def staged_header(self, name: str = "stable-diffusion.h") -> bytes:
+        return (self.header_root / "include" / name).read_bytes()
 
-    def test_stages_the_header_from_a_pinned_archive(self) -> None:
+    def test_stages_both_headers_from_a_pinned_archive(self) -> None:
         result = self.run_sync(
             {
                 "./include/stable-diffusion.h": HEADER,
+                "./include/sd_dart_wrapper.h": WRAPPER_HEADER,
                 "lib/libstable-diffusion.so": b"\x7fELF",
                 "LICENSE": b"MIT",
             }
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.staged_header(), HEADER)
+        self.assertEqual(self.staged_header("sd_dart_wrapper.h"), WRAPPER_HEADER)
         self.assertEqual(
             sorted(p.name for p in self.header_root.rglob("*") if p.is_file()),
-            ["stable-diffusion.h"],
+            ["sd_dart_wrapper.h", "stable-diffusion.h"],
         )
         self.assertEqual(
             [p.name for p in self.root.iterdir() if p.name.startswith(".headers")],
@@ -118,7 +121,11 @@ class SyncScriptTest(unittest.TestCase):
 
     def test_checksum_mismatch_leaves_the_header_root_unchanged(self) -> None:
         result = self.run_sync(
-            {"include/stable-diffusion.h": HEADER}, pin="0" * 64
+            {
+                "include/stable-diffusion.h": HEADER,
+                "include/sd_dart_wrapper.h": WRAPPER_HEADER,
+            },
+            pin="0" * 64,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("does not match the pinned", result.stderr)
@@ -129,6 +136,10 @@ class SyncScriptTest(unittest.TestCase):
             ({"include/stable-diffusion.h": "../../etc/passwd"}, "link entry"),
             ({"../include/stable-diffusion.h": HEADER}, "escapes"),
             ({"lib/libstable-diffusion.so": b"\x7fELF"}, "has no"),
+            (
+                {"include/stable-diffusion.h": HEADER},
+                "has no include/sd_dart_wrapper.h",
+            ),
         ):
             with self.subTest(message=message):
                 result = self.run_sync(members)

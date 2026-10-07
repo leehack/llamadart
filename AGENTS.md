@@ -81,6 +81,11 @@ dart test -p chrome --exclude-tags local-only
   through `LlamaCppObjectCalls` or `ExitTeardownApi`. Teardown waits only for
   those guarded calls; any other call in flight at a direct C `exit()` is
   unprotected (`doc/llama_cpp_exit_teardown.md`).
+- In `lib/src/backends/stable_diffusion/`, every native call of an image
+  worker goes through `StableDiffusionCalls`, and Dart gives
+  stable-diffusion.cpp no callback. A call on an `sd_ctx_t` that can run
+  longer than 250 ms needs an `sd_dart_` wrapper in `stable-diffusion-native`
+  first (same doc, "Image models").
 - Generated files that should not count toward coverage carry
   `// coverage:ignore-file`.
 - Tests close the ports, streams and controllers they open.

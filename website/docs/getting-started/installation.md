@@ -75,7 +75,8 @@ the build warning about it.
 An app bound for the App Store should use the companion for each runtime it
 ships, because an Apple privacy manifest reaches an app inside a companion's
 XCFramework and never through the hook path. The llama.cpp XCFramework has one
-from `llamadart-native` `v0.5.0-1`; the pinned stable_diffusion one has none.
+from `llamadart-native` `v0.5.0-1`, and the stable_diffusion one from
+`stable-diffusion-native` `v0.2.0-1`.
 An app that runs llama.cpp or stable_diffusion on the hook path, or whose
 embedded `llama.framework` or `stable_diffusion.framework` has no
 `PrivacyInfo.xcprivacy`, declares the runtime's required-reason API use in its

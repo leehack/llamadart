@@ -224,8 +224,10 @@ An app bound for the App Store should use the companion for each runtime it
 ships: an Apple privacy manifest reaches an app inside a SwiftPM XCFramework,
 never in the dylibs the build hook bundles. The llama.cpp XCFramework carries
 one from `llamadart-native` `v0.5.0-1`, which `llamadart_llama_cpp_flutter`
-releases after `0.0.20` link; the pinned stable_diffusion XCFramework carries
-none. An app that runs llama.cpp or stable_diffusion on the hook path, or
+releases after `0.0.20` link; the stable_diffusion XCFramework carries one
+from `stable-diffusion-native` `v0.2.0-1`, which
+`llamadart_stable_diffusion_flutter` releases after `0.0.1` link. An app that
+runs llama.cpp or stable_diffusion on the hook path, or
 whose embedded `llama.framework` or `stable_diffusion.framework` has no
 `PrivacyInfo.xcprivacy`, declares
 `NSPrivacyAccessedAPICategoryFileTimestamp` in its own `PrivacyInfo.xcprivacy`

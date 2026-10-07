@@ -27,6 +27,25 @@ void main() {
       expect(status.devices.map((device) => device.name), ['CPU', 'MTL0']);
     });
 
+    test('a runtime without the sd_dart_ functions is unavailable, and the '
+        'reason names them and the release that has them', () {
+      final status = probeStableDiffusionRuntime(
+        abi: Abi.macosArm64,
+        api: _FakeApi(wrapperCalls: false),
+      );
+
+      expect(status.isAvailable, isFalse);
+      expect(
+        status.unavailableReason?.message,
+        allOf(
+          contains('does not export the sd_dart_ functions'),
+          contains('sd_dart_progress_read'),
+          contains('sd_dart_exit_free'),
+          contains('stable-diffusion-native v0.2.0-1 or later'),
+        ),
+      );
+    });
+
     test('rejects an unpublished ABI before touching the library', () {
       for (final abi in [Abi.androidX64, Abi.windowsArm64, Abi.linuxArm]) {
         final api = _FakeApi();
@@ -445,10 +464,15 @@ void main() {
 }
 
 final class _FakeApi implements StableDiffusionNativeApi {
-  _FakeApi({this.devices = 'CPU\tHost CPU\n', this.error});
+  _FakeApi({
+    this.devices = 'CPU\tHost CPU\n',
+    this.error,
+    this.wrapperCalls = true,
+  });
 
   final String devices;
   final ArgumentError? error;
+  final bool wrapperCalls;
   int calls = 0;
 
   T _call<T>(T value) {
@@ -468,4 +492,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
 
   @override
   String listDevices() => _call(devices);
+
+  @override
+  bool exportsWrapperCalls() => _call(wrapperCalls);
 }

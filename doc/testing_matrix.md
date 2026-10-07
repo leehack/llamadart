@@ -153,6 +153,7 @@ Pick targeted rows based on the touched surface:
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
 | Image generation API or `stable_diffusion` runtime | `image-generation-smoke`, `native-hook-bundles` |
+| `stable_diffusion` runtime pin, image worker native calls, progress polling, exit or isolate shutdown | `image-exit-teardown`, `image-generation-smoke` |
 | Chat-app image screen or image model downloads | `chat-app-image-generation-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
@@ -571,6 +572,38 @@ enables `quit-decision` (one with a decision head loaded).
 
 `dart:io`'s `exit` is not one of the scenarios: it does not run the static
 destructors that make ggml-metal abort.
+
+### Image model exit teardown
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario image-exit-teardown \
+  --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
+```
+
+This local-only macOS row runs in `example/basic_app`, which opts into the
+stable_diffusion runtime. It runs
+`example/basic_app/test/fixtures/image_exit_probe.dart` as a child process and
+ends it while an image model is alive on Metal: C `exit` through FFI from the
+main isolate with the model idle, generating, loading, or already disposed;
+an unhandled error while generating or loading; and an isolate killed inside
+the native load. Each run must reach its exit point, print neither
+`GGML_ASSERT` nor `GetFfiCallbackMetadata`, and end with exit code 0, or 255
+for the unhandled errors. The loading scenarios time a second load of the
+model and exit halfway through a third, because the first load of a process
+also sets up Metal. As in the llama.cpp row, the C `exit` scenarios model a
+native host that exits without shutting Dart down, not a Flutter quit
+([exit teardown](llama_cpp_exit_teardown.md#image-models)).
+
+The row also checks that each `sd_dart_` function `StableDiffusionCalls`
+looks up resolves to the runtime's own export of that name, which default CI
+cannot (the root package does not bundle the runtime), and that batches of
+two and three images report every sampling step in order and end with the
+`decoding` event.
+
+`IMAGE_EXIT_RUNS` sets the runs of each exit scenario (default 3). A run fails
+when the process is still alive after two minutes. `quit-both-loaded`, a C
+`exit` with a llama.cpp model loaded as well, is reported as skipped unless
+`IMAGE_EXIT_GGUF` names a GGUF chat model the GPU loads.
 
 ### Native prompt-evaluation cancel
 
