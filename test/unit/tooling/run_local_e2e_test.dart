@@ -195,6 +195,44 @@ void main() {
       },
     );
 
+    test('dry-runs the LiteRT-LM reload memory device scenario', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-litert-reload-memory',
+        '--device',
+        'macos',
+        '--model-path',
+        '/models/Qwen3-0.6B.litertlm',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/chat_app && flutter test --run-skipped '
+          '-t local-only '
+          'integration_test/litert_lm_reload_memory_e2e_test.dart '
+          '-d macos '
+          '--dart-define=LITERT_RELOAD_MODEL=/models/Qwen3-0.6B.litertlm',
+        ),
+      );
+    });
+
+    test('the reload memory scenario downloads the model by default', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-litert-reload-memory',
+        '--device',
+        'android',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('-d android'));
+      expect(result.stdout, isNot(contains('LITERT_RELOAD_MODEL')));
+    });
+
     test('dry-runs Web Qwen3-ASR file and microphone transcription', () async {
       final result = await runLocalE2e(const [
         '--scenario',

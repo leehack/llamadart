@@ -79,8 +79,10 @@ from `llamadart-native` `v0.5.0-1`; the pinned stable_diffusion one has none.
 An app that runs llama.cpp or stable_diffusion on the hook path, or whose
 embedded `llama.framework` or `stable_diffusion.framework` has no
 `PrivacyInfo.xcprivacy`, declares the runtime's required-reason API use in its
-own `PrivacyInfo.xcprivacy`. LiteRT-LM ships no manifest and no published
-reason codes. Copy the categories and codes from
+own `PrivacyInfo.xcprivacy`. The LiteRT-LM iOS frameworks have their own
+manifests from `litert-lm-native` `v0.17.0-8`; an app that runs LiteRT-LM on
+the hook path, or whose embedded LiteRT-LM frameworks have none, declares that
+runtime's three categories itself. Copy the categories and codes from
 [Apple privacy manifest](../platforms/native-build-hooks#apple-privacy-manifest).
 
 ## Web

@@ -19,11 +19,21 @@
 - Documented Apple privacy manifests: one reaches an app inside a companion
   package's XCFramework, never through the hook path, and an app whose
   llama.cpp or stable_diffusion runtime has none declares File Timestamp
-  reason `C617.1` (plus `3B52.1` for stable_diffusion) itself; LiteRT-LM ships
-  no manifest and no published reason codes.
+  reason `C617.1` (plus `3B52.1` for stable_diffusion) itself.
 
 - Adopt LiteRT-LM `v0.17.0-7` with provider-free iOS artifacts; Gemma FST
   constrained decoding remains unavailable on iOS.
+- Update the default LiteRT-LM runtime to `leehack/litert-lm-native@v0.17.0-8`.
+  Its iOS SwiftPM frameworks carry Apple privacy manifests (File Timestamp
+  `C617.1` and `3B52.1`, System Boot Time `35F9.1`, User Defaults `CA92.1`);
+  an app that runs LiteRT-LM on the hook path declares them itself.
+- Fix Android LiteRT-LM GPU engines keeping their graphics memory after
+  deletion, which got an app killed after one or two model reloads on a
+  Galaxy S24
+  ([litert-lm-native#59](https://github.com/leehack/litert-lm-native/issues/59)).
+- Documented that LiteRT-LM's default GPU selection on Android generates wrong
+  text for Qwen3 0.6B on Adreno 750; load it with `ComputeDevice.cpu`
+  ([#553](https://github.com/leehack/llamadart/issues/553)).
 
 - LiteRT-LM release sync can remove an obsolete iOS provider target from modern
   Swift packages while preserving required macOS runtime libraries.

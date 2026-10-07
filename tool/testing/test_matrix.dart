@@ -726,6 +726,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Chat app model lifecycle, cache, projector, or device UI changes.',
   ),
   TestMatrixRow(
+    id: 'chat-app-litert-reload-memory',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'LiteRT-LM engine create/generate/delete loops on CPU and GPU with '
+        'per-step process memory, including dumpsys graphics memory under '
+        'Android instrumentation',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-litert-reload-memory --device <macos|android>',
+    useWhen:
+        'LiteRT-LM runtime pin, engine lifecycle or Android GPU memory '
+        'changes. Downloads the locked model unless --model-path names a '
+        'copy on the target device. Graphics memory needs the Test Lab '
+        'arguments in example/chat_app/README.md.',
+  ),
+  TestMatrixRow(
     id: 'web-bridge-smoke',
     tier: 'targeted',
     mode: 'local-only',

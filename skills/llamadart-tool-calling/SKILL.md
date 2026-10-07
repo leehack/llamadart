@@ -86,7 +86,7 @@ description: >-
   replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;
   prompts and tool-call parsing then both follow that template.
 - Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
-  LiteRT-LM `v0.17.0-7` and Web `@litert-lm/core@0.15.0` with
+  LiteRT-LM `v0.17.0-8` and Web `@litert-lm/core@0.15.0` with
   `LlamaUnsupportedException` before generation or history mutation: those
   runtimes expose no reliable token-limit termination cause. Manual
   `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`
