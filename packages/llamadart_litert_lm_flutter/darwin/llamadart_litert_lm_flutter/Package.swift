@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.17.0-7"
+let liteRtLmTag = "v0.17.0-8"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,35 +47,35 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "eec93e5e9f00001b8c4caf82d96dd82151810e8f6798c9fb1d2431b8d7f7f941"
+            checksum: "1fb0ad15036f25ca17df7c3ba329f3c6de652562de567d8e92c08653c9c659f6"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "4a4a3147b929dd8bf380d5726fb76f59b39a0b8063afbdca03527fe6896da50d"
+            checksum: "f858fc3c16c73e6275164b24823addaa79860c3cb17a307e0a97ecf68a06e28d"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "ac3a31db3e903c75327b442515e19dbb273ad2e35c9d83cd7536b8e22f00075f"
+            checksum: "3f3c0e8237a912217b9d32193286bdb075c16089342bf6f92b1a944082c264cc"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtMetalAccelerator",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "315cd978926d9f1c3d9b84b4a0899cf7fa2205e60c368b086391606f05168a5e"
+            checksum: "0f9fa8be20372e666a80f4f412d3855a1763ebe52e7c575f21b9d05d26f461da"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtTopKMetalSampler",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "26f9dc3964bc381838e85301a9d5bd55f7acca5118725cc5f17d0bd9afe8f82f"
+            checksum: "a523ad988590f05eba9b3bc2fe7b53c9d199e03c4c08edbc9fd2d6d1007815cf"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",

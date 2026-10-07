@@ -1,6 +1,8 @@
 ## Unreleased
 
-* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.17.0-7`.
+* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.17.0-8`.
+
+* The pinned iOS frameworks carry Apple privacy manifests.
 
 ## 0.0.12
 

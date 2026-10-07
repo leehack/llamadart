@@ -125,10 +125,12 @@ or shipping runtimes the app does not use.
   `stable_diffusion.framework` has no `PrivacyInfo.xcprivacy`, add
   `NSPrivacyAccessedAPICategoryFileTimestamp` to the app's own
   `PrivacyInfo.xcprivacy` with reason `C617.1`, plus `3B52.1` only when it
-  ships stable_diffusion. The LiteRT-LM frameworks include no
-  privacy manifest and use File Timestamp, System Boot Time and User Defaults
-  API; the app declares those itself, and llamadart publishes no reason codes
-  for them.
+  ships stable_diffusion. The LiteRT-LM iOS frameworks carry their own
+  manifests from `litert-lm-native` `v0.17.0-8` (`llamadart_litert_lm_flutter`
+  releases after `0.0.12`). When LiteRT-LM runs on the hook path, or its
+  embedded frameworks have no `PrivacyInfo.xcprivacy`, add File Timestamp
+  (`C617.1`, `3B52.1`), System Boot Time (`35F9.1`) and User Defaults
+  (`CA92.1`) to the app's own manifest.
 - When the llama.cpp or LiteRT-LM companion is present, the installed
   companions pick those Apple runtime families and `llamadart_native_runtimes`
   is otherwise ignored with a warning; the tag, repository, path and backend
@@ -156,10 +158,12 @@ or shipping runtimes the app does not use.
   LiteRT-LM runtime, such as the iOS x86_64 simulator. Apps that include
   LiteRT-LM must exclude that simulator architecture.
 - Android: llama.cpp ships `cpu` and `vulkan` by default; `opencl` is opt-in
-  through `llamadart_native_backends`. LiteRT-LM GPU on adapters with a
-  128 MiB storage-buffer limit (for example Adreno 750) can load a larger
-  model and then produce incoherent text without an error; offer
-  `ModelParams(device: ComputeDevice.cpu)`. `ComputeDevice.npu` needs a
+  through `llamadart_native_backends`. LiteRT-LM defaults to the GPU on
+  Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
+  storage-buffer limit (for example Adreno 750) a model with a larger weight
+  buffer, such as Qwen3 0.6B, loads and then produces wrong text without an
+  error; load it with `ModelParams(device: ComputeDevice.cpu)` or let the
+  user switch. `ComputeDevice.npu` needs a
   supporting SoC and bundle, and throws `LlamaUnsupportedException` without
   one.
 - Budget memory for phones: 1B-3B parameter models, a `contextSize` no larger

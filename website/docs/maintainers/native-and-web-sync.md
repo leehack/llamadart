@@ -231,9 +231,10 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-The repository LiteRT-LM pin is `v0.17.0-7`; its provider-free iOS SwiftPM
-manifest must ship in a new companion package release before the next core
-release. Published companion `0.0.12` retains the prior pin. Do not present the
+The repository LiteRT-LM pin is `v0.17.0-8`; its provider-free iOS SwiftPM
+manifest and the frameworks' Apple privacy manifests must ship in a new
+companion package release before the next core release. Published companion
+`0.0.12` retains `v0.17.0-6`. Do not present the
 repository manifest as an already published pub.dev package. The iOS artifacts
 meet the declared 16.4 deployment floor, but runtime execution at 16.4 remains
 unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
