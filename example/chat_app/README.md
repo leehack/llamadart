@@ -742,3 +742,64 @@ inference. Do not stage directly into `/sdcard/Android/data`: scoped storage can
 prevent the app from reading files installed there by Test Lab. A staging or
 checksum failure is a harness failure, not evidence that a runtime backend passed
 or failed inference.
+
+#### LiteRT-LM reload memory
+
+`integration_test/litert_lm_reload_memory_e2e_test.dart` creates a LiteRT-LM
+engine, generates, deletes it and repeats, recording process memory after every
+step. It fails when the memory left after a delete keeps growing across reloads,
+measured from the second of at least three iterations. Generation is checked
+only for non-empty output; read the journal to judge the text.
+
+Run it on a connected device or the macOS host (off Android the counter is
+process RSS, which is not a graphics-memory counter):
+
+```sh
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-litert-reload-memory --device <device>
+```
+
+It downloads and hash-checks the locked `chat-litert-*` validation model
+itself; `--model-path` names a copy that already exists on the target device.
+
+For Test Lab, build both APKs from that target as above, then add:
+
+```sh
+--environment-variables=litertReloadVariants=cpu+gpu,litertReloadIterations=4,memorySnapshots=true \
+--directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/litert_reload_memory
+```
+
+Variants run in order in one process: `cpu` or `gpu`, optionally suffixed
+`-create-only`, `-reuse` or `-settle`. With `memorySnapshots=true` the runner
+answers each step with `dumpsys meminfo` and `dumpsys gpu --gpumem`, the only
+counters here that include driver-owned graphics memory per process; without it
+the test falls back to device-wide `MemTotal - MemAvailable`. A variant whose
+counter changes during the run, because `dumpsys` stopped answering, fails
+instead of comparing unlike readings. The pulled
+directory holds `journal.jsonl`, the raw `dumpsys` text of every step,
+`vkjson.json` (`cmd gpu vkjson`, the Vulkan driver's limits) and
+`app_apk.sha256` (the installed app APK), written as the run goes so they
+survive a low-memory kill. The same records appear in logcat as
+`LITERT_RELOAD_MEMORY` lines.
+
+When the low-memory killer or a native crash ends the app, Test Lab reports
+`Test failed to run` and no test case. It still pulls the directory, journal
+included: the last `step_started` record without a matching `step` names the
+step that was running.
+
+On the Android emulator the `gpu` variants measure gfxstream, which keeps
+memory and descriptors after a delete, so the check can fail there and says
+nothing about a device.
+
+Each `generate` step records the first 400 characters of the output, its length
+and three signals of a broken decode (`printable_ascii`,
+`replacement_characters`, `distinct_words` of `words`). To compare backends or
+runtimes on one prompt, run `cpu` first as the reference and fix the request:
+`litertReloadPrompts` (`|`-separated; the profile prompt by default),
+`litertReloadChat=true` (chat template with thinking off instead of raw text),
+`litertReloadTemperature` and `litertReloadSeed` (the profile samples greedily:
+temperature 0, seed 1). The matching build-time defaults are
+`--dart-define=LITERT_RELOAD_PROMPTS`, `LITERT_RELOAD_CHAT`,
+`LITERT_RELOAD_TEMPERATURE` and `LITERT_RELOAD_SEED`. An argument passed as an
+empty string keeps its default. Fewer than three iterations record the steps
+without the memory check.
