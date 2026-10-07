@@ -184,15 +184,15 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.10.0
+  llamadart: ^0.11.0
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-Pair companion `0.0.20` with core `0.10.0` for matching llama.cpp v0.5.0
-bindings. Keep core `0.8.23` paired with companion `0.0.18`, and core `0.8.22`
-paired with companion `0.0.17`.
+Pair companion `0.0.21` with core `0.11.0` for matching llama.cpp v0.5.0
+bindings. Keep core `0.10.0` and `0.9.0` paired with companion `0.0.20`, core
+`0.8.23` with companion `0.0.18`, and core `0.8.22` with companion `0.0.17`.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
 symbol lookup. Incompatible companions or unverified local `Artifacts`
@@ -201,16 +201,17 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.10.0
-  llamadart_llama_cpp_flutter: ^0.0.20 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.12 # Apple .litertlm / LiteRT-LM targets
-  llamadart_stable_diffusion_flutter: ^0.0.1 # Apple image generation, opt-in
+  llamadart: ^0.11.0
+  llamadart_llama_cpp_flutter: ^0.0.21 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.13 # Apple .litertlm / LiteRT-LM targets
+  llamadart_stable_diffusion_flutter: ^0.0.2 # Apple image generation, opt-in
 ```
 
-Pair `llamadart_stable_diffusion_flutter` `0.0.1` with core `0.10.0` or
-newer; older cores, including `0.9.x`, ignore it. Adding it opts iOS and macOS
-builds into the image generation runtime (about 37 MB per Apple target), so
-leave it out unless the app uses `ImageGenerationEngine`.
+Pair `llamadart_stable_diffusion_flutter` `0.0.2` with core `0.11.0`, and
+`0.0.1` with core `0.10.0`; older cores, including `0.9.x`, ignore it. Adding
+it opts iOS and macOS builds into the image generation runtime (about 37 MB
+per Apple target), so leave it out unless the app uses
+`ImageGenerationEngine`.
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime
 targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS LiteRT-LM
