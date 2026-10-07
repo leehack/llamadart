@@ -107,8 +107,8 @@ experimental and may change, and the runtime is opt-in.
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
-  the entry above. It needs core `0.10.0` or newer. Without it the hook
-  bundles the runtime, App Store Connect rejects that iOS framework's
+  the entry above. Pair companion `0.0.2` with core `0.11.0`. Without it the
+  hook bundles the runtime, App Store Connect rejects that iOS framework's
   `MinimumOSVersion`, and only Xcode and `xcodebuild` show the build warning
   about it.
 
