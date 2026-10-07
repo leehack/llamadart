@@ -10,8 +10,8 @@ no inference server. GGUF models run through llama.cpp and `.litertlm` models
 through LiteRT-LM, whose platform coverage is narrower. Native targets run
 offline once the model is on the device; web support is experimental.
 
-llama.cpp uses Metal on Apple platforms, Vulkan on Android, Linux, and Windows,
-and WebGPU in the browser. LiteRT-LM can also use GPU and, on compatible
+llama.cpp uses Metal on Apple platforms, Vulkan on Linux, Windows, and
+(experimental, opt-in) Android, and WebGPU in the browser. LiteRT-LM can also use GPU and, on compatible
 Android deployments, NPU. See the
 [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix)
 for each target.

@@ -121,9 +121,12 @@ never falls back to another device:
 
 - `cpu` loads no GPU layers and, on llama.cpp, only the CPU module.
 - `gpu` on llama.cpp needs a GPU module and device for `preferredBackend`, and
-  uses Vulkan on Android. On the Web it needs a WebGPU adapter and a bridge
-  that loads GPU layers. On LiteRT-LM it needs the GPU backend: Linux arm64 and
-  macOS x64 have none.
+  uses Vulkan on Android. Android Vulkan is experimental and fails on some
+  devices; keep `auto` or `cpu` there unless you have validated your target
+  devices
+  ([known limitations](../platforms/support-matrix#known-limitations)). On
+  the Web it needs a WebGPU adapter and a bridge that loads GPU layers. On
+  LiteRT-LM it needs the GPU backend: Linux arm64 and macOS x64 have none.
 - `npu` is LiteRT-LM on Android only.
 
 Native LiteRT-LM starts its runtime on the first call that needs it, such as
@@ -163,7 +166,7 @@ JavaScript runtime.
 
 | Capability | llama.cpp / GGUF | LiteRT-LM / `.litertlm` |
 | --- | --- | --- |
-| Native Android | CPU, Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
+| Native Android | CPU, experimental Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
 | Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU (macOS x64: CPU only) |
 | Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU default; explicit GPU on Linux x64 (Vulkan) and Windows x64 (Direct3D 12), with compatible drivers. Linux arm64 remains CPU-only. |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |

@@ -53,6 +53,10 @@
 - Documented that LiteRT-LM's default GPU selection on Android generates wrong
   text for Qwen3 0.6B on Adreno 750; load it with `ComputeDevice.cpu`
   ([#553](https://github.com/leehack/llamadart/issues/553)).
+- Documented that llama.cpp Vulkan on Android is experimental and
+  device-dependent, with known failures on Pixel 9 Pro, Galaxy A53 and Galaxy
+  S24; `auto` stays on the CPU
+  ([#948](https://github.com/leehack/llamadart/issues/948)).
 
 - LiteRT-LM release sync can remove an obsolete iOS provider target from modern
   Swift packages while preserving required macOS runtime libraries.
