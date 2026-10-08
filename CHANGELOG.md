@@ -21,6 +21,9 @@
   models, text-to-speech and speculative-decoding verification batches are
   not, so speculative decoding can still produce wrong output on an affected
   GPU.
+- Document that a Flutter macOS app that quits without disposing its engines
+  still exits cleanly, and why disposing them in `onExitRequested` is still
+  recommended ([#826](https://github.com/leehack/llamadart/issues/826)).
 
 ## 0.11.0
 

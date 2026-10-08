@@ -657,9 +657,9 @@ them further.
   example 4.8 s for the rest of a 40-step SDXS generation and 11.2 s for
   SD-Turbo in a Flutter macOS quit on an M4 Max. A native host's C `exit()`
   cancels the generation and waits up to 15 seconds for it.
-- Still dispose the engine before a Flutter app quits, so the quit does not
-  wait for a generation and does not depend on the cleanup at exit. Flutter
-  desktop apps do not run
+- Still dispose the engine before a Flutter app quits: the quit otherwise
+  waits for a running generation, and the cleanup at exit has been measured
+  on macOS only. Flutter desktop apps do not run
   `State.dispose` on quit, so await `dispose()` in
   `AppLifecycleListener.onExitRequested`. If `ImageGenerationEngine.load` is
   still running, await it there and dispose the engine it returns. If the

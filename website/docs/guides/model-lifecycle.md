@@ -107,11 +107,23 @@ progress. That covers:
   dispose the engine first to end sooner.
 
   `exit()` from `dart:io` skips C++ static destructors and never aborts.
-- A Flutter app that quits through AppKit (Cmd-Q, closing its last window, or
-  `ServicesBinding.exitApplication`) is not guaranteed to run llamadart's
-  Dart-side cleanup, and a quit during an image generation waits for the
-  whole generation, so still dispose every engine, including
-  `DecisionEngine` and `ImageGenerationEngine`, before the app quits.
+- A Flutter macOS app that quits through AppKit (the Quit menu item, a Quit
+  Apple event, closing its last window, or
+  `ServicesBinding.exitApplication`) does not need to dispose first to exit
+  cleanly either. Flutter shuts the isolates down before the process exits,
+  so llamadart frees what its engines still hold, and the runtimes above
+  free a model the quit caught mid-load. Still dispose every engine,
+  including `DecisionEngine` and `ImageGenerationEngine`, before the app
+  quits:
+
+  - The quit waits for a native call that is still running, so a quit
+    during an image generation takes the rest of the generation.
+  - Only macOS has been measured. The runtimes free nothing at process exit
+    outside Apple platforms, and on Linux a C `exit()` during a model load
+    or a generation crashes
+    ([#949](https://github.com/leehack/llamadart/issues/949)); whether a
+    Flutter Linux or Windows quit can reach that is not known.
+
   Desktop Flutter apps do not run `State.dispose` on quit, so dispose from
   an exit request instead (`AppExitResponse` comes from `dart:ui`):
 
@@ -132,10 +144,10 @@ app-level exit listener instead, and have that listener also await disposals
 already in progress. The example chat app does this with
 [`AppExitCoordinator`](https://github.com/leehack/llamadart/blob/main/example/chat_app/lib/services/app_exit_coordinator.dart).
 
-A Flutter hot restart (debug builds only) discards the old isolates. A
-llama.cpp or image model one of them was still loading is freed by the
-runtime when the app quits
-([#813](https://github.com/leehack/llamadart/issues/813)).
+A Flutter hot restart (debug builds only) shuts the old isolates down, which
+frees the models they hold once a native call that is still running has
+returned. A llama.cpp or image model one of them was still loading is freed
+by the runtime when the app quits. Both are measured on macOS.
 
 `LlamaBackend()` routes GGUF to llama.cpp and `.litertlm` bundles to
 LiteRT-LM, by file header on native targets and by URL extension on web

@@ -96,6 +96,23 @@ void main() {
       expect(referenced, contains('decision-model-smoke'));
       expect(referenced, contains('image-generation-smoke'));
       expect(referenced, contains('image-exit-teardown'));
+      expect(referenced, contains('chat-app-macos-quit'));
+    });
+
+    test('the macOS quit test is local-only and its probe entrypoint '
+        'exists', () {
+      final test = File(
+        'example/chat_app/test/macos_quit_e2e_test.dart',
+      ).readAsStringSync();
+
+      expect(test, contains("@Tags(['local-only'])"));
+      expect(test, contains("'integration_test/macos_quit_probe.dart'"));
+      expect(
+        File(
+          'example/chat_app/integration_test/macos_quit_probe.dart',
+        ).existsSync(),
+        isTrue,
+      );
     });
 
     test('speech-to-text rows take WAV, MP3 or FLAC fixtures', () {

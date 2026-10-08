@@ -1032,6 +1032,30 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-macos-quit',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Quit the macOS chat app Runner through each AppKit path with '
+          'models loaded on Metal and nothing disposed, and after a hot '
+          'restart, and require exit status 0 and no crash report.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/macos_quit_e2e_test.dart',
+          ],
+          environment: {'MACOS_QUIT_CHAT_MODEL': context.modelPath!},
+          description: 'Flutter macOS quit with models loaded',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-web-production-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -1613,6 +1637,7 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'native-prompt-cancel' ||
           scenario.name == 'native-exit-teardown' ||
           scenario.name == 'image-exit-teardown' ||
+          scenario.name == 'chat-app-macos-quit' ||
           scenario.name == 'gemma4-mtp-smoke' ||
           scenario.name == 'native-embedding-benchmark' ||
           scenario.name == 'native-embedding-sweep') &&
@@ -1894,6 +1919,12 @@ Direct environment for test/e2e/backends/llama_cpp_exit_teardown_e2e_test.dart:
 Direct environment for example/basic_app/test/image_exit_teardown_e2e_test.dart:
   IMAGE_EXIT_RUNS                Runs of each exit scenario (default: 3).
   IMAGE_EXIT_GGUF                GGUF chat model; unset skips quit-both-loaded.
+
+Direct environment for example/chat_app/test/macos_quit_e2e_test.dart:
+  MACOS_QUIT_IMAGE_MODEL         Image checkpoint to load too; unset loads the chat
+                                 model only.
+  MACOS_QUIT_RUNS                Runs of each clean quit (default: 3).
+  MACOS_QUIT_BUILD_MODES         Builds to quit (default: debug,release).
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
   LITERT_LM_IMAGE_PATH           Optional local image fixture.
