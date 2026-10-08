@@ -442,7 +442,7 @@ def main() -> int:
             typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
             window.__llamadartLiteRtLmModuleUrl.length > 0
               ? window.__llamadartLiteRtLmModuleUrl
-              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm';
+              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm';
           window.__llamadartLiteRtLmOriginalModuleUrl = originalModuleUrl;
           const moduleSource = [
             'import * as mod from ' + JSON.stringify(originalModuleUrl) + ';',
