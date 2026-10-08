@@ -762,6 +762,26 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'arguments in example/chat_app/README.md.',
   ),
   TestMatrixRow(
+    id: 'chat-app-macos-quit',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Flutter macOS quit of debug and release builds with a llama.cpp '
+        'model and optionally an image model and a decision head loaded on '
+        'Metal and nothing disposed: Quit Apple event, the Quit menu action, '
+        'last-window close and exitApplication (required and cancelable), '
+        'plus a hot restart then quit; exit status 0 and no crash report, '
+        'with a model nothing frees aborting each path; not the Cmd-Q '
+        'keystroke and not a quit during a load or a generation',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-macos-quit --model-path <chat.gguf>',
+    useWhen:
+        'Isolate shutdown releases, llama.cpp or stable_diffusion exit '
+        'teardown, a Flutter pin bump, or app-exit guidance changes. Needs '
+        'a Mac whose GPU loads the model.',
+  ),
+  TestMatrixRow(
     id: 'web-bridge-smoke',
     tier: 'targeted',
     mode: 'local-only',

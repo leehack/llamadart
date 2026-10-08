@@ -883,6 +883,37 @@ void main() {
       );
     });
 
+    test('dry-runs the macOS quit scenario as a host test of the chat app, '
+        'and requires its model', () async {
+      final missing = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-macos-quit',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(missing.exitCode, 64);
+      expect(
+        missing.stderr,
+        contains('--model-path is required for chat-app-macos-quit'),
+      );
+
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-macos-quit',
+        '--model-path',
+        '/chat.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/chat_app && MACOS_QUIT_CHAT_MODEL=/chat.gguf '
+          'flutter test --run-skipped -t local-only '
+          'test/macos_quit_e2e_test.dart\n',
+        ),
+      );
+    });
+
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(const [
         '--scenario',

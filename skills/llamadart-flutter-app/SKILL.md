@@ -35,15 +35,16 @@ or shipping runtimes the app does not use.
   `State.dispose`. Also dispose `LlamaEngine`, `DecisionEngine` and
   `ImageGenerationEngine` instances from
   `AppLifecycleListener(onExitRequested: ...)`, awaiting them before
-  returning `AppExitResponse.exit` (from `dart:ui`). On macOS Metal a model
-  still loaded when the process exits aborts in `ggml_metal_rsets_free`. The
-  llama.cpp runtime (`llamadart-native` `v0.5.0-2` and later) and the
-  stable_diffusion runtime (`stable-diffusion-native` `v0.2.0-1` and later)
-  free a model a quit caught mid-load, but a quit during an image generation
-  waits for the whole generation, and an
-  AppKit quit (Cmd-Q, last window, `exitApplication`) is not guaranteed to
-  run llamadart's Dart-side cleanup. When the engine's owner can be disposed
-  before quit (a
+  returning `AppExitResponse.exit` (from `dart:ui`). A Flutter macOS app
+  that quits without disposing (Quit menu item, last window,
+  `exitApplication`) still exits cleanly: Flutter shuts the isolates down
+  first, so llamadart frees the models they hold, and the llama.cpp runtime
+  (`llamadart-native` `v0.5.0-2` and later) and the stable_diffusion runtime
+  (`stable-diffusion-native` `v0.2.0-1` and later) free a model the quit
+  caught mid-load. Dispose anyway: the quit waits for a native call that is
+  still running, so for the rest of an image generation, and only macOS has
+  been measured (the runtimes free nothing at process exit outside Apple
+  platforms). When the engine's owner can be disposed before quit (a
   pushed route), its listener goes with it: make one app-level exit listener
   await every engine's disposal, including one its owner already started.
 - Keep inference state out of widgets. Put a plain Dart controller between

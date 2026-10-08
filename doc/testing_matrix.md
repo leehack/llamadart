@@ -150,6 +150,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | LiteRT-LM engine reload memory on a device | `chat-app-litert-reload-memory` |
+| Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
 | Decision engine, decision head, or safetensors reader | `decision-model-smoke` |
@@ -606,6 +607,66 @@ two and three images report every sampling step in order and end with the
 when the process is still alive after two minutes. `quit-both-loaded`, a C
 `exit` with a llama.cpp model loaded as well, is reported as skipped unless
 `IMAGE_EXIT_GGUF` names a GGUF chat model the GPU loads.
+
+### Flutter macOS quit
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-macos-quit \
+  --model-path /path/to/chat.gguf
+```
+
+This local-only macOS row is the Flutter counterpart of the two rows above:
+it quits a real Flutter macOS app instead of calling C `exit`.
+`example/chat_app/test/macos_quit_e2e_test.dart` builds
+`integration_test/macos_quit_probe.dart` into the chat app's Runner, debug
+and release, and starts the built executable itself, so it reads the app's
+exit status. The probe loads a llama.cpp model on Metal and generates a few
+tokens, disposes nothing, registers no `onExitRequested` listener, and quits
+through one path:
+
+| Path | How it is driven |
+| --- | --- |
+| `apple-event` | `osascript` sends the Quit Apple event to the app's process id |
+| `terminate` | the probe sends `terminate:` to `NSApp`, the action of the Quit menu item |
+| `close-window` | the probe sends `performClose:` to its window; the Runner quits when its last window closes |
+| `exit-required`, `exit-cancelable` | `ServicesBinding.exitApplication` |
+
+Each path runs `MACOS_QUIT_RUNS` times (default 3) and must end with exit
+status 0, no `GGML_ASSERT`, and no crash report of that process in
+`~/Library/Logs/DiagnosticReports`, with the runtimes' tracked-object counts
+above zero before the quit. In the debug build, one more case attaches
+`flutter attach`, hot restarts the app, waits for the models to load again
+and quits: the tracked counts after the restart must equal the ones before
+it, which is what shows that the discarded isolates freed their models.
+
+Every path also runs once with a model loaded through the upstream loader,
+which no isolate holds and no runtime tracks. That run must abort
+(`SIGABRT` with `GGML_ASSERT`); without it a path that skipped the static
+destructors would pass with nothing freed. Each abort leaves a crash report
+of `llamadart_chat_example`, ten for one run of the row, and the test logs
+whether it found it (`"crashReport"`) instead of requiring it: macOS stopped
+writing reports for that process name after 25 of them, and did not resume
+when they were moved out of the folder. While those lines say `false`, the
+check that a clean quit left no crash report proves nothing, and the exit
+status carries the row.
+
+`MACOS_QUIT_IMAGE_MODEL` (an image checkpoint such as SDXS) loads an image
+model too, and `MACOS_QUIT_DECISION_MODEL` with `MACOS_QUIT_DECISION_HEAD`
+a decision engine; both must report a Metal device. `MACOS_QUIT_BUILD_MODES`
+picks the builds (default `debug,release`).
+
+Limits:
+
+- The Cmd-Q keystroke is not sent: a synthetic keystroke needs the
+  Accessibility permission and goes to whichever app is frontmost, which
+  the probe need not be. `terminate` is the action that keystroke triggers.
+- The models are idle when the app quits. A quit during a load or a
+  generation is not part of the row; the measurements are in
+  [exit teardown](llama_cpp_exit_teardown.md).
+- The test signs the probe with the Runner's entitlements plus read access
+  to the model files (the sandbox refuses paths outside the container), and
+  the build replaces `example/chat_app/build/macos`. The app's window opens
+  for each run.
 
 ### Native prompt-evaluation cancel
 

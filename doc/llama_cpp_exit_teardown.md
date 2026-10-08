@@ -75,10 +75,19 @@ since a projector points at its model.
 
 | Exit | What happens |
 | --- | --- |
-| Flutter macOS quit (`-[NSApplication terminate:]`) | The engine shuts the isolates down before C `exit`, so held objects are freed by their isolate. Teardown frees what no isolate held yet: a quit while a model loads, and a quit after a hot restart during a load, no longer abort. |
+| Flutter macOS quit (`-[NSApplication terminate:]`: the Quit menu item, a Quit Apple event, a last-window close, `exitApplication`) | The engine shuts the isolates down before C `exit`, so held objects are freed by their isolate. Teardown frees what no isolate held yet: a quit while a model loads, and a quit after a hot restart during a load, no longer abort. |
 | Dart program returns from `main` or dies of an unhandled error; an isolate is killed | The VM shuts the isolates down first. An object created by a native call the isolate never returned from in Dart is freed by teardown. |
 | `exit()` from `dart:io` | Runs no static destructors: no teardown and no abort. |
 | C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle, freeing an object, or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call ggml-metal aborts. |
+
+In a Flutter macOS quit with models idle, either layer is enough alone
+(debug build on an M4 Max, each of the four paths in the table). With the
+service on `LlamaCppObjectCalls.upstream`, the isolates' frees gave a clean
+quit with a llama.cpp model loaded. With `IsolateShutdownReleases.hold`
+doing nothing, teardown gave one with a llama.cpp and an image model loaded,
+about 0.24 s later (its settle time). With both, every quit aborted. A
+Flutter hot restart shuts the old isolates down too: the tracked counts
+after the restart and a second load equal the ones before it.
 
 Image models have their own registry in `libstable-diffusion`: see
 "Image models".
@@ -126,6 +135,11 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   projector, model.
 - `native-exit-teardown` in `doc/testing_matrix.md`: local-only process exits
   on Metal, including a C `exit` while a service with a projector disposes.
+- `chat-app-macos-quit` in `doc/testing_matrix.md`: local-only Flutter macOS
+  quits with a llama.cpp model and, when their files are set, an image model
+  and a decision head idle on Metal and nothing disposed, through a Quit
+  Apple event, `terminate:`, a last-window close and `exitApplication`, and
+  after a hot restart.
 
 ## Image models
 
