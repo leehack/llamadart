@@ -303,7 +303,12 @@ class ModelParams {
   /// returns wrong results for a larger one on some GPUs
   /// ([#948](https://github.com/leehack/llamadart/issues/948)). An explicit
   /// value is used as given, so one above 32 can bring the wrong results
-  /// back. Prompts with image or audio input and embeddings are not covered.
+  /// back. The cap applies to text-prompt decoding only: it does not cover
+  /// prompts with image or audio input, embeddings, decision models,
+  /// text-to-speech, or speculative-decoding verification batches during
+  /// generation. Those batches exceed 32 tokens with the default n-gram
+  /// settings, so speculative decoding can still produce wrong output on an
+  /// affected GPU.
   ///
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a

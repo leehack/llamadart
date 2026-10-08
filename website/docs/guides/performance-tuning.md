@@ -64,6 +64,11 @@ const modelParams = ModelParams(
   most `32` tokens at a time while `microBatchSize` is `0`, and a larger
   explicit value can return wrong text on some GPUs
   ([known limitations](../platforms/support-matrix#known-limitations)).
+  The cap applies to text-prompt decoding only: it does not cover prompts
+  with image or audio input, embeddings, decision models, text-to-speech, or
+  speculative-decoding verification batches during generation, which exceed
+  `32` tokens with the default n-gram settings, so speculative decoding can
+  still produce wrong output on an affected GPU.
   Encoder-only embedding models keep
   full-context native defaults for correctness; set both values explicitly
   for a known embedding workload
