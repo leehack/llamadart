@@ -61,14 +61,17 @@ const modelParams = ModelParams(
   llama.cpp-aligned caps of `2048` and `512`. Lower `microBatchSize` first
   (for example to `256` or `128`) when memory or GPU stability is tight;
   bigger is not always faster. On Android Vulkan a text prompt is decoded at
-  most `32` tokens at a time while `microBatchSize` is `0`, and a larger
-  explicit value can return wrong text on some GPUs
+  most `8` tokens at a time while `microBatchSize` is `0`, and an explicit
+  value above `32` can return wrong text on some GPUs
   ([known limitations](../platforms/support-matrix#known-limitations)).
+  On a GPU without that defect the `8`-token default can be slower than
+  decoding the prompt in one batch; an app that has validated Vulkan on its
+  target devices can set `microBatchSize` explicitly.
   The cap applies to text-prompt decoding only: it does not cover prompts
   with image or audio input, embeddings, decision models, text-to-speech, or
-  speculative-decoding verification batches during generation, which exceed
-  `32` tokens with the default n-gram settings, so speculative decoding can
-  still produce wrong output on an affected GPU.
+  speculative-decoding verification batches during generation, which can
+  exceed `32` tokens, so speculative decoding can still produce wrong output
+  on an affected GPU.
   Encoder-only embedding models keep
   full-context native defaults for correctness; set both values explicitly
   for a known embedding workload

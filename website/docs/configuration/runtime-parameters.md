@@ -63,14 +63,15 @@ Important fields:
   encoder-only models retain the resolved logical batch. WebGPU follows its
   resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
   CPU preset uses `min(n_batch, 512)`. On Android, a llama.cpp context that
-  runs on Vulkan keeps that `n_ubatch` but decodes a text prompt at most `32`
-  tokens at a time when this is `0`
+  runs on Vulkan keeps that `n_ubatch` but decodes a text prompt at most `8`
+  tokens at a time when this is `0`, and an explicit value above `32` can
+  return wrong text on some GPUs
   ([known limitations](../platforms/support-matrix#known-limitations)).
   The cap applies to text-prompt decoding only: it does not cover prompts
   with image or audio input, embeddings, decision models, text-to-speech, or
-  speculative-decoding verification batches during generation, which exceed
-  `32` tokens with the default n-gram settings, so speculative decoding can
-  still produce wrong output on an affected GPU.
+  speculative-decoding verification batches during generation, which can
+  exceed `32` tokens, so speculative decoding can still produce wrong output
+  on an affected GPU.
   Explicit positive values are preserved within
   `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models, models without a KV cache (such as BERT and ModernBERT),
