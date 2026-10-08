@@ -662,11 +662,15 @@ await prefs.setInt('preferred_backend', backendIndex);
 
 ### Hugging Face static deployment (CI)
 
-- Workflow: `.github/workflows/chat_app_hf_static_deploy.yml`
-- Triggered on pushes to `main/master` when chat app files change, and by manual dispatch.
+- Workflow: `.github/workflows/chat_app_hf_static_deploy.yml`, called by the
+  `deploy-chat-app` job of `.github/workflows/ci.yml`.
+- Runs for pushes to `main` that change chat app inputs, after the CI run has
+  built and tested the artifact it deploys. A build that a newer `main` commit
+  superseded is skipped with a notice instead of failing.
+- Redeploy `main` by hand with `gh workflow run ci.yml --ref main`; the run
+  tests `main`'s tip in full first. See `doc/ci_selection.md`.
 - Required repository secret: `HF_TOKEN` (write access to your Space repo).
 - Required repository variable: `HF_CHAT_APP_SPACE_REPO` in `owner/space` format.
-- Manual dispatch can override target Space via `space_repo` input and deploy a specific ref via `deploy_ref`.
 - The workflow-generated Space `README.md` already injects required COI headers
   for large-model web runtime support.
 
@@ -683,10 +687,6 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Optional repository variable: `HF_CHAT_APP_PREVIEW_NAMESPACE`. If omitted,
   the workflow uses the owner portion of `HF_CHAT_APP_SPACE_REPO`.
 - Fork PRs are skipped so repository secrets are not exposed to untrusted code.
-- The automated PR workflow becomes available after the workflow file exists on
-  the base branch. For a one-off preview before that, manually dispatch
-  `.github/workflows/chat_app_hf_static_deploy.yml` with `space_repo` set to a
-  temporary Space and `deploy_ref` set to the branch or commit to preview.
 
 If deploying outside this workflow, set this frontmatter in Space README (all
 lowercase):
