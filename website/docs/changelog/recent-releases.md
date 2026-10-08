@@ -7,20 +7,23 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.11.1
 
 - Give a chat template that reads content part lists but rejects image and
   audio parts the media marker in its text instead of failing in the
-  template, and, for a template that does not take typed content parts,
-  render a video part in a `chatTemplate` prompt as the media marker instead
-  of its JSON ([#959](https://github.com/leehack/llamadart/issues/959)).
+  template, and render a video part in a `chatTemplate` prompt as the media
+  marker on any template when the messages hold no image or audio part
+  ([#959](https://github.com/leehack/llamadart/issues/959)). Beside an image
+  or audio part, a template that is given typed content parts still receives
+  the video part ([#963](https://github.com/leehack/llamadart/issues/963)).
 - Fix a possible llama.cpp crash when an image or audio part of a multimodal
   request fails to load while later parts remain, and native memory leaked
   when a backend is disposed with a context still open or an embedding fails
   because the model reports no embedding size
   ([#947](https://github.com/leehack/llamadart/issues/947),
   [#610](https://github.com/leehack/llamadart/issues/610)).
-- Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
+- Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that
+  normalize message content to arrays.
 - Work around wrong llama.cpp Vulkan output on some Android GPUs for prompts
   over 32 tokens (seen on a Pixel 9 Pro, Mali-G715): an Android Vulkan
   context now decodes a text prompt in micro-batches of at most 8 tokens
@@ -33,6 +36,11 @@ For canonical full release notes, use:
 - Document that a Flutter macOS app that quits without disposing its engines
   still exits cleanly, and why disposing them in `onExitRequested` is still
   recommended ([#826](https://github.com/leehack/llamadart/issues/826)).
+- Aligned default WebGPU bridge assets to `v0.1.54`, unchanged from 0.11.0:
+  they embed llama.cpp `v0.5.0`, are qualified against native `v0.5.0`, and keep
+  Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity
+  and Web `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 
 ## 0.11.0
 
