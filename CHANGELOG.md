@@ -14,7 +14,7 @@
 - Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
 - Work around wrong llama.cpp Vulkan output on some Android GPUs for prompts
   over 32 tokens (seen on a Pixel 9 Pro, Mali-G715): an Android Vulkan
-  context now decodes a text prompt in micro-batches of at most 32 tokens
+  context now decodes a text prompt in micro-batches of at most 8 tokens
   unless `ModelParams.microBatchSize` is set
   ([#948](https://github.com/leehack/llamadart/issues/948)). Only text-prompt
   decoding is covered: prompts with image or audio input, embeddings, decision

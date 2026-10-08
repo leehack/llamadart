@@ -5213,18 +5213,18 @@ void main() {
             .having((result) => result.calls, 'calls', calls)
             .having((result) => result.microBatch, 'n_ubatch', microBatch);
 
-    test('decodes a prompt in calls of at most 32 tokens on Android Vulkan '
+    test('decodes a prompt in calls of at most 8 tokens on Android Vulkan '
         'and keeps n_ubatch', () async {
       expect(
         await ingest(vulkan, loadedGpuLayers: 1),
-        decodes([32, 32, 32, 4]),
+        decodes([8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]),
       );
       expect(
         await ingest(
           const ModelParams(contextSize: 256, device: ComputeDevice.gpu),
           loadedGpuLayers: 1,
         ),
-        decodes([32, 32, 32, 4]),
+        decodes([8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]),
       );
     });
 
@@ -5241,7 +5241,7 @@ void main() {
           loadedGpuLayers: 1,
           speculativeDecodingConfig: ngram,
         ),
-        decodes([32, 32, 32, 4]),
+        decodes([8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 4]),
       );
       expect(
         await ingest(cpu, speculativeDecodingConfig: ngram),
@@ -5251,6 +5251,7 @@ void main() {
 
     test('keeps an explicit micro-batch on Android Vulkan', () async {
       for (final (explicit, calls) in [
+        (16, [16, 16, 16, 16, 16, 16, 4]),
         (33, [33, 33, 33, 1]),
         (64, [64, 36]),
         (256, [100]),
