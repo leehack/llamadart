@@ -155,32 +155,43 @@ Compare the GPU output with a CPU run (`gpuLayers: 0`) using the same prompt,
 `seed` and `temp: 0`. If only the GPU output is wrong, the failure is in the
 GPU backend or driver.
 
-### LiteRT-LM GPU output is incoherent on Android
+### LiteRT-LM GPU fails or is incoherent for Qwen3 0.6B on Adreno 750
 
-On the Adreno 750 in a Galaxy S24 (WebGPU over Vulkan), LiteRT-LM loads Qwen3
-0.6B on the GPU without an error and then generates wrong text, such as one
-token repeated up to the output limit, while the CPU on the same device
-answers correctly. `ComputeDevice.auto`, the default, selects the GPU for
-LiteRT-LM on Android, so a default load of that model on that GPU is affected.
-Load it with `ModelParams(device: ComputeDevice.cpu)` instead.
+The Adreno 750 in a Galaxy S24 (WebGPU over Vulkan) cannot run Qwen3 0.6B on
+the LiteRT-LM GPU backend: one of the model's weight buffers is 155582464
+bytes and the adapter's storage buffer binding limit is 134217728 (128 MiB).
+Any adapter with that limit and any model with a larger weight buffer should
+fail the same way. The CPU on the same device answers correctly.
+`ComputeDevice.auto`, the default, selects the GPU for LiteRT-LM on Android,
+so a default load of that model on that GPU is affected. Load it with
+`ModelParams(device: ComputeDevice.cpu)` instead; llamadart does not retry on
+the CPU.
 
-At load Dawn rejects one weight buffer: `Binding size (155582464) ... is larger
-than the maximum storage buffer binding size (134217728)`. Any adapter with
-that 128 MiB limit and any model with a larger weight buffer should fail the
-same way. The runtime reports no failure to the caller, so llamadart cannot
-turn it into a load error or pick the CPU for you. Seen from `v0.17.0-6`
-through the pinned `v0.17.0-8`
-([#553](https://github.com/leehack/llamadart/issues/553), upstream
-[LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
+What you see depends on the runtime:
+
+- The pinned `v0.18.0` fails GPU engine creation. `loadModel` returns, because
+  the engine is created at first use, and the first generation or `tokenize`
+  throws: `LlamaUnsupportedException` when `ComputeDevice.gpu` was requested,
+  and `LlamaModelException` under `auto`. Catch `LlamaException` to handle
+  both.
+- `v0.17.0-6` through `v0.17.0-8` created the engine and generated wrong
+  text, such as one token repeated up to the output limit, with no error. The
+  native log has `Binding size (155582464) ... is larger than the maximum
+  storage buffer binding size (134217728)`.
+
+Tracked in [#553](https://github.com/leehack/llamadart/issues/553) and
+upstream
+[LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866).
 
 ### Android app is killed after reloading a LiteRT-LM GPU model
 
 With `litert-lm-native` `v0.17.0-7` and earlier, deleting a LiteRT-LM GPU
 engine on Android kept its graphics memory, about 2 GB for Qwen3 0.6B on a
 Galaxy S24, so the low-memory killer ended the app at the second or third
-model load. The pinned `v0.17.0-8` releases that memory when the engine is
-deleted, as measured on a Galaxy S24; update llamadart to a release that pins
-it ([litert-lm-native#59](https://github.com/leehack/litert-lm-native/issues/59)).
+model load. From `v0.17.0-8` the runtime releases that memory when the engine
+is deleted, as measured on a Galaxy S24; update llamadart to a release that
+pins it or later
+([litert-lm-native#59](https://github.com/leehack/litert-lm-native/issues/59)).
 
 ## Web
 

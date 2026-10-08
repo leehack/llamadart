@@ -6,7 +6,8 @@
 /// `LlamaUnsupportedException` naming the device, runtime and platform. It is
 /// never moved to another device. Native LiteRT-LM starts its runtime on the
 /// first call that needs it, such as the first generation, so a GPU or NPU
-/// that fails to start throws there.
+/// that fails to start throws there. Under [auto] or [cpu], a LiteRT-LM engine
+/// the runtime cannot create throws `LlamaModelException` at that call.
 enum ComputeDevice {
   /// The runtime's recommended device for this platform, which is its
   /// default. It adds no failure mode the runtime does not already have.

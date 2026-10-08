@@ -1,0 +1,185 @@
+@TestOn('vm')
+library;
+
+import 'dart:io';
+import 'dart:isolate';
+
+import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/backends/litert_lm/worker.dart';
+import 'package:test/test.dart';
+
+void main() {
+  late Directory tempDir;
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('llamadart_engine_create_');
+  });
+
+  tearDown(() async {
+    await tempDir.delete(recursive: true);
+  });
+
+  // The real service behind the real backend and engine, in this isolate,
+  // with a runtime client whose engine creation returns no engine.
+  Future<({LlamaEngine engine, List<_NoEngineClient> clients})> load(
+    ModelParams params,
+  ) async {
+    final clients = <_NoEngineClient>[];
+    final handshake = ReceivePort();
+    runLiteRtLmWorkerForTesting(
+      handshake.sendPort,
+      LiteRtLmService(
+        clientFactory: () {
+          final client = _NoEngineClient();
+          clients.add(client);
+          return client;
+        },
+        readBundleCapabilities: (_) =>
+            (vision: false, audio: false, speculativeDecoding: false),
+      ),
+      exitOnDispose: false,
+    );
+    final engine = LlamaEngine(
+      LiteRtLmBackend(initialSendPort: await handshake.first as SendPort),
+    );
+    final modelFile = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+    await modelFile.writeAsString('fake model');
+    await engine.loadModel(modelFile.path, modelParams: params);
+    return (engine: engine, clients: clients);
+  }
+
+  const hello = [
+    LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+  ];
+
+  test('a GPU engine the runtime cannot create fails the first generation '
+      'with LlamaUnsupportedException when ComputeDevice.gpu was '
+      'requested', () async {
+    if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return;
+    }
+    final loaded = await load(const ModelParams(device: ComputeDevice.gpu));
+    try {
+      expect(loaded.clients, isEmpty, reason: 'engine creation is deferred');
+      await expectLater(
+        loaded.engine.create(hello).drain<void>(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('ComputeDevice.gpu'),
+              contains('could not create a gpu engine'),
+              contains('engine creation failed for backend "gpu"'),
+              contains('ComputeDevice.cpu'),
+            ),
+          ),
+        ),
+      );
+      expect(loaded.clients.single.backend, 'gpu');
+      expect(loaded.clients.single.conversations, 0);
+    } finally {
+      await loaded.engine.dispose();
+    }
+  });
+
+  test('a GPU engine the runtime cannot create under ComputeDevice.auto '
+      'fails each first use with LlamaModelException', () async {
+    if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
+      markTestSkipped('No LiteRT-LM GPU backend on this platform.');
+      return;
+    }
+    // Android resolves auto to the GPU; the GPU preference makes every host
+    // resolve it the same way.
+    final loaded = await load(
+      const ModelParams(preferredBackend: GpuBackend.vulkan),
+    );
+    try {
+      expect(loaded.clients, isEmpty, reason: 'engine creation is deferred');
+      final engineCreateFailure = throwsA(
+        isA<LlamaModelException>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+            contains('engine creation failed for backend "gpu"'),
+            contains('try backend "cpu"'),
+          ),
+        ),
+      );
+      await expectLater(
+        loaded.engine.create(hello).drain<void>(),
+        engineCreateFailure,
+      );
+      await expectLater(
+        ChatSession(
+          loaded.engine,
+        ).create(const [LlamaTextContent('Hello')]).drain<void>(),
+        engineCreateFailure,
+      );
+      await expectLater(loaded.engine.tokenize('Hello'), engineCreateFailure);
+      expect(loaded.clients.map((client) => client.backend).toSet(), {'gpu'});
+      expect(loaded.clients.every((client) => client.conversations == 0), true);
+    } finally {
+      await loaded.engine.dispose();
+    }
+  });
+}
+
+class _NoEngineClient extends LiteRtLmRuntimeClient {
+  String? backend;
+  int conversations = 0;
+
+  @override
+  Future<void> initialize({
+    required String modelPath,
+    String backend = 'gpu',
+    String? visionBackend,
+    String? audioBackend,
+    int maxTokens = 4096,
+    int outputTokens = 256,
+    int? prefillTokens,
+    int? maxNumImages,
+    String? cacheDir,
+    bool speculativeDecoding = true,
+    int minLogLevel = 3,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
+    int? numberOfThreads,
+  }) async {
+    this.backend = backend;
+    liteRtLmCheckEngineCreated(0, backend: backend, modelPath: modelPath);
+  }
+
+  @override
+  void setMinLogLevel(int level) {}
+
+  @override
+  void createConversation({
+    String? systemMessage,
+    String? promptTemplate,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
+    double temperature = 0.8,
+    int topK = 40,
+    double topP = 0.95,
+    int seed = 1,
+    bool npuBackend = false,
+    String? loraPath,
+  }) {
+    conversations += 1;
+  }
+
+  @override
+  void cancel() {}
+
+  @override
+  void dispose() {}
+}

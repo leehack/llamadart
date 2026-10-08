@@ -258,7 +258,7 @@ void main() {
     );
     expect(legacyAbiError, contains('not stream-chunk compatible'));
     expect(legacyAbiError, contains('Expected callback ABI 2'));
-    expect(legacyAbiError, contains('v0.17.0-8'));
+    expect(legacyAbiError, contains('v0.18.0'));
     expect(legacyAbiError, contains('detected 1'));
   });
 
@@ -432,6 +432,7 @@ void main() {
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'webgpu_dawn.dll',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
   });
@@ -461,6 +462,7 @@ void main() {
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'webgpu_dawn.dll',
     ]);
   });
 

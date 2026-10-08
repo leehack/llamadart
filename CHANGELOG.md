@@ -1,3 +1,33 @@
+## Unreleased
+
+- Update the default LiteRT-LM runtime to
+  `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
+  macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer
+  grows on every engine create; Qwen3.5 0.8B's still does
+  ([#552](https://github.com/leehack/llamadart/issues/552)). The Windows
+  bundle adds `webgpu_dawn.dll`, which the GPU accelerator now loads.
+- **Behavior change:** with LiteRT-LM `v0.18.0`, a `ModelParams.chatTemplate`
+  on a Qwen 3 `.litertlm` text bundle receives each message's `content` as a
+  list of `{"type": "text", "text": ...}` parts instead of a string. A
+  template that concatenates `content` as a string fails the generation, and
+  one that interpolates it renders the list into the prompt; read both shapes
+  ([Chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing#litert-lm-template-registry)).
+  The built-in templates are unaffected.
+- LiteRT-LM on a GPU that cannot hold one of the model's weight buffers, such
+  as Qwen3 0.6B on Adreno 750 (Galaxy S24), now fails the first generation
+  with a `LlamaException` instead of generating wrong text; load that model
+  with `ComputeDevice.cpu`
+  ([#553](https://github.com/leehack/llamadart/issues/553)).
+- **Behavior change:** a LiteRT-LM engine the runtime cannot create under
+  `ComputeDevice.auto` or `ComputeDevice.cpu` now throws `LlamaModelException`
+  on first use, where `ChatSession` and `tokenize` threw a `StateError`. With
+  `v0.18.0` that includes a cache directory (`liteRtLmCacheDir`) the runtime
+  cannot write, on the CPU backend too.
+- LiteRT-LM release sync accepts runtimes built on upstream `v0.17.1` and
+  `v0.18.0`, and names the upstream version when its prebuilt-override table
+  is behind the runtime owner's
+  ([#586](https://github.com/leehack/llamadart/issues/586)).
+
 ## 0.11.1
 
 - Give a chat template that reads content part lists but rejects image and

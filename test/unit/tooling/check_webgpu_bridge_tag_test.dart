@@ -272,7 +272,7 @@ void main() {
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
-        contains("const liteRtLmReleaseTag = 'v0.17.0-8';"),
+        contains("const liteRtLmReleaseTag = 'v0.18.0';"),
       );
     },
   );

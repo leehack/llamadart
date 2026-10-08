@@ -825,7 +825,7 @@ void main() {
 
     test(
       'a GPU engine that fails to start throws '
-      'LlamaUnsupportedException, and auto keeps the runtime error',
+      'LlamaUnsupportedException, and LlamaModelException under auto',
       () async {
         if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
           markTestSkipped('No LiteRT-LM GPU backend on this platform.');
@@ -838,6 +838,7 @@ void main() {
                 'delegate init failed.',
               ),
             ),
+            useTempCacheDir: false,
           );
           try {
             final params = ModelParams(
@@ -855,9 +856,15 @@ void main() {
                       'gpu engine',
                       Platform.operatingSystem,
                       'model file',
-                      'delegate init failed',
+                      'delegate init failed. Load with ComputeDevice.cpu',
                     ])
-                  : throwsA(isA<LiteRtLmEngineCreateError>()),
+                  : throwsA(
+                      isA<LlamaModelException>().having(
+                        (error) => error.message,
+                        'message',
+                        'delegate init failed.',
+                      ),
+                    ),
             );
           } finally {
             service.dispose();
@@ -865,6 +872,53 @@ void main() {
         }
       },
     );
+
+    test('an engine that fails to start with a cache directory names the '
+        'directory as a possible cause', () async {
+      for (final device in [
+        ComputeDevice.cpu,
+        if (liteRtLmNativeGpuSupportedOnCurrentPlatform()) ComputeDevice.gpu,
+      ]) {
+        final service = LiteRtLmService(
+          clientFactory: () => _FakeLiteRtLmRuntimeClient(
+            initializeError: LiteRtLmEngineCreateError('no engine.'),
+          ),
+        );
+        try {
+          final params = ModelParams(
+            device: device,
+            liteRtLmCacheDir: '${tempDir.path}/cache',
+          );
+          final model = await service.loadModel(modelFile.path, params);
+          service.createContext(model, params);
+
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            throwsA(
+              isA<LlamaException>()
+                  .having(
+                    (error) => error,
+                    'type',
+                    device == ComputeDevice.gpu
+                        ? isA<LlamaUnsupportedException>()
+                        : isA<LlamaModelException>(),
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains(
+                      'no engine. Engine creation also fails when the '
+                      'runtime cannot write its cache directory; see '
+                      'ModelParams.liteRtLmCacheDir.',
+                    ),
+                  ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      }
+    });
 
     test('a GPU load whose runtime library cannot open keeps the runtime '
         'error', () async {

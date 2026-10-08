@@ -95,6 +95,27 @@ not in the registry or whose filename has been changed. The maintained registry
 coverage, smoke commands, and contribution notes live in
 [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
 
+On a Qwen 3 text bundle the native conversation renders a
+`ModelParams.chatTemplate` itself, and from LiteRT-LM `v0.18.0` it passes each
+message's `content` to the template as a list of parts,
+`[{"type": "text", "text": ...}]`, where `v0.17.0-8` passed the string. A
+template that concatenates `message['content']` as a string fails the
+generation with `LlamaInferenceException`, and one that interpolates it
+renders the list into the prompt without an error. Read both shapes:
+
+```jinja
+{%- if message['content'] is string -%}
+  {{- message['content'] -}}
+{%- else -%}
+  {%- for part in message['content'] -%}
+    {%- if part['type'] == 'text' -%}{{- part['text'] -}}{%- endif -%}
+  {%- endfor -%}
+{%- endif -%}
+```
+
+`engine.chatTemplate(...)` renders in Dart and does not show what the runtime
+rendered.
+
 ## Custom template overrides
 
 To replace a model's template for every request, such as a GGUF file whose

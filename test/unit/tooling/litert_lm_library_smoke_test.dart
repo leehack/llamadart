@@ -43,7 +43,7 @@ void main() {
       );
       expect(calls.last, 'LiteRtLm.dll');
       expect(calls.where((name) => name == dependent), hasLength(2));
-      expect(opened.companions, hasLength(5));
+      expect(opened.companions, hasLength(6));
     },
   );
 
@@ -58,7 +58,7 @@ void main() {
       },
     );
     expect(calls, isNot(anyElement(isIn(['dxcompiler.dll', 'dxil.dll']))));
-    expect(calls, hasLength(6));
+    expect(calls, hasLength(7));
 
     File(path.join(directory.path, 'dxil.dll')).deleteSync();
     expect(

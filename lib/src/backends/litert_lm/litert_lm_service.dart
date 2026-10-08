@@ -861,9 +861,18 @@ class LiteRtLmService {
         }
       }
     } on LiteRtLmEngineCreateError catch (error, stackTrace) {
+      // From LiteRT-LM v0.18 a cache directory the runtime cannot write fails
+      // engine creation on every backend, with no reason reported.
+      final cacheHint = runtimeCacheDir == null
+          ? ''
+          : ' Engine creation also fails when the runtime cannot write its '
+                'cache directory; see ModelParams.liteRtLmCacheDir.';
       final device = modelParams.device;
       if (device != ComputeDevice.gpu && device != ComputeDevice.npu) {
-        rethrow;
+        Error.throwWithStackTrace(
+          LlamaModelException('${error.message}$cacheHint'),
+          stackTrace,
+        );
       }
       Error.throwWithStackTrace(
         LlamaUnsupportedException(
@@ -871,7 +880,8 @@ class LiteRtLmService {
           'not create a $backend engine on ${Platform.operatingSystem}. '
           'Either the $backend backend cannot start here or the model file '
           'cannot be loaded; the runtime does not say which. '
-          '${error.message} Load with ComputeDevice.cpu to tell them apart.',
+          '${error.message}$cacheHint Load with ComputeDevice.cpu to tell '
+          'them apart.',
         ),
         stackTrace,
       );
