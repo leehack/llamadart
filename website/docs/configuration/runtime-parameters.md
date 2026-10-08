@@ -62,8 +62,12 @@ Important fields:
   decoder/generative models use `min(n_batch, 512)` when this is `0`, while
   encoder-only models retain the resolved logical batch. WebGPU follows its
   resolved logical batch unless a safety preset applies; the Qwen3.5-0.8B
-  CPU preset uses `min(n_batch, 512)`. Explicit positive
-  values are preserved within `n_ubatch <= n_batch <= n_ctx`. Native
+  CPU preset uses `min(n_batch, 512)`. On Android, a llama.cpp context that
+  runs on Vulkan keeps that `n_ubatch` but decodes a text prompt at most `32`
+  tokens at a time when this is `0`
+  ([known limitations](../platforms/support-matrix#known-limitations)).
+  Explicit positive values are preserved within
+  `n_ubatch <= n_batch <= n_ctx`. Native
   encoder-only models, models without a KV cache (such as BERT and ModernBERT),
   non-causal attention models, and MEAN/CLS pooling embed each input in one
   micro-batch. `embed()` and `embedBatch()` throw `LlamaInferenceException`

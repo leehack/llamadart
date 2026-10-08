@@ -642,13 +642,15 @@ class LlamaCppService {
       };
 
   /// Creates the service; tests replace the runtime's first native call, the
-  /// host probes behind its Windows load diagnostics, the raw
-  /// `ggml_backend_dev_type` values a [ComputeDevice.gpu] load checks for a
-  /// backend, and the calls that create, free and run models and contexts.
+  /// host probes behind its Windows load diagnostics, the Android check behind
+  /// its backend and context policy, the raw `ggml_backend_dev_type` values a
+  /// [ComputeDevice.gpu] load checks for a backend, and the calls that create,
+  /// free and run models and contexts.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
     bool? isWindows,
+    bool? isAndroid,
     List<String> Function(List<String> names) missingWindowsLibraries =
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
@@ -656,6 +658,7 @@ class LlamaCppService {
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
+       _isAndroid = isAndroid ?? Platform.isAndroid,
        _missingWindowsLibraries = missingWindowsLibraries,
        _deviceTypesOverride = deviceTypes,
        _objectCallsOverride = objectCalls;
@@ -663,6 +666,7 @@ class LlamaCppService {
   final void Function() _backendInit;
   final Abi _abi;
   final bool _isWindows;
+  final bool _isAndroid;
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   final LlamaCppObjectCalls? _objectCallsOverride;
@@ -876,6 +880,38 @@ class LlamaCppService {
       '',
     );
     return normalized == 'qwen35';
+  }
+
+  /// Most tokens of a text prompt an Android Vulkan context decodes in one
+  /// micro-batch when [ModelParams.microBatchSize] is unset.
+  static const int androidVulkanPromptMicroBatchSize = 32;
+
+  /// Returns the most tokens of a text prompt one decode call takes on a
+  /// context created with [modelParams], or `null` for the context's own
+  /// micro-batch.
+  ///
+  /// An Android Vulkan context gets [androidVulkanPromptMicroBatchSize]
+  /// unless [ModelParams.microBatchSize] is set.
+  static int? resolvePromptMicroBatchLimit(
+    ModelParams modelParams, {
+    int? resolvedGpuLayers,
+    bool isAndroid = false,
+  }) {
+    // ggml-vulkan's small matmul tile gives wrong results for a micro-batch of
+    // more than 32 tokens on GPUs with a subgroup size of 16
+    // (https://github.com/ggml-org/llama.cpp/issues/28637), and the subgroup
+    // size cannot be read here. `n_ubatch` is left alone: a non-causal image
+    // decode and a one-pass embedding need their whole input in one
+    // micro-batch.
+    if (modelParams.microBatchSize > 0 ||
+        !shouldUseConservativeAndroidVulkanContextConfig(
+          modelParams,
+          resolvedGpuLayers: resolvedGpuLayers,
+          isAndroid: isAndroid,
+        )) {
+      return null;
+    }
+    return androidVulkanPromptMicroBatchSize;
   }
 
   /// Resolves effective context batch parameters.
@@ -1838,7 +1874,7 @@ class LlamaCppService {
   int loadModel(String modelPath, ModelParams modelParams) {
     modelParams = resolveComputeDeviceParams(
       modelParams,
-      isAndroid: Platform.isAndroid,
+      isAndroid: _isAndroid,
       platform: Platform.operatingSystem,
     );
     final modelFileSize = _validateGgufModelFile(modelPath, 'Model');
@@ -1846,7 +1882,7 @@ class LlamaCppService {
     _applyConfiguredLogLevel();
     final effectiveBackend = resolvePreferredBackendForLoad(
       modelParams,
-      isAndroid: Platform.isAndroid,
+      isAndroid: _isAndroid,
     );
 
     _prepareBackendsForModelLoad(effectiveBackend);
@@ -1854,10 +1890,7 @@ class LlamaCppService {
     final modelPathPtr = modelPath.toNativeUtf8();
     final mparams = llama_model_default_params();
     var preferredDevices = _createPreferredDeviceList(effectiveBackend);
-    var gpuLayers = resolveGpuLayersForLoad(
-      modelParams,
-      isAndroid: Platform.isAndroid,
-    );
+    var gpuLayers = resolveGpuLayersForLoad(modelParams, isAndroid: _isAndroid);
     var forcedCpuFallback = false;
 
     final explicitGpuBackend =
@@ -1885,7 +1918,7 @@ class LlamaCppService {
       modelParams,
       gpuLayers,
       modelPath: modelPath,
-      isAndroid: Platform.isAndroid,
+      isAndroid: _isAndroid,
     );
 
     mparams.n_gpu_layers = gpuLayers;
@@ -2030,14 +2063,11 @@ class LlamaCppService {
         ? GpuBackend.cpu
         : resolvePreferredBackendForLoad(
             targetModelParams,
-            isAndroid: Platform.isAndroid,
+            isAndroid: _isAndroid,
           );
     final targetResolvedGpuLayers =
         _modelResolvedGpuLayers[targetModelHandle] ??
-        resolveGpuLayersForLoad(
-          targetModelParams,
-          isAndroid: Platform.isAndroid,
-        );
+        resolveGpuLayersForLoad(targetModelParams, isAndroid: _isAndroid);
     final draftBackend = effectiveBackend;
     final draftGpuLayers = targetResolvedGpuLayers;
     final cacheKey = _speculativeDraftModelCacheKey(
@@ -3845,7 +3875,7 @@ class LlamaCppService {
     }
     params = resolveComputeDeviceParams(
       params,
-      isAndroid: Platform.isAndroid,
+      isAndroid: _isAndroid,
       platform: Platform.operatingSystem,
     );
     if (params.speculativeRollbackTokenMax > 0) {
@@ -3899,7 +3929,7 @@ class LlamaCppService {
     } else if (shouldUseConservativeAndroidVulkanContextConfig(
       params,
       resolvedGpuLayers: resolvedModelGpuLayers,
-      isAndroid: Platform.isAndroid,
+      isAndroid: _isAndroid,
     )) {
       _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
     }
@@ -3924,7 +3954,16 @@ class LlamaCppService {
     }
 
     final handle = _getHandle();
-    _contexts[handle] = _LlamaContextWrapper(ctxPtr, model, _calls);
+    _contexts[handle] = _LlamaContextWrapper(
+      ctxPtr,
+      model,
+      _calls,
+      promptMicroBatchLimit: resolvePromptMicroBatchLimit(
+        params,
+        resolvedGpuLayers: resolvedModelGpuLayers,
+        isAndroid: _isAndroid,
+      ),
+    );
     _contextToModel[handle] = modelHandle;
     _activeLoras[handle] = {};
     _contextParams[handle] = ctxParams;
@@ -5874,7 +5913,8 @@ class LlamaCppService {
   /// speculative session, each [maxBatchTokens] chunk is decoded in calls of
   /// at most `n_ubatch` tokens, the size llama.cpp splits a larger call into.
   /// A speculative session processes each call's batch, so it gets each chunk
-  /// in one call.
+  /// in one call. Either way a call takes at most the context's
+  /// `promptMicroBatchLimit` tokens when it has one.
   int _decodePromptSegment(
     llama_batch batch,
     Pointer<Int32> tokensPtr,
@@ -5897,9 +5937,13 @@ class LlamaCppService {
         : tokenCount;
     final hasSpeculativeSession =
         speculativeSession != null && speculativeSession != nullptr;
-    final callTokens = hasSpeculativeSession
+    final microBatchLimit = ctx.promptMicroBatchLimit;
+    final uncappedCallTokens = hasSpeculativeSession
         ? effectiveBatchTokens
         : llama_n_ubatch(ctx.pointer);
+    final callTokens = microBatchLimit == null
+        ? uncappedCallTokens
+        : math.min(uncappedCallTokens, microBatchLimit);
     var decoded = 0;
 
     while (decoded < tokenCount) {
@@ -8460,7 +8504,7 @@ class LlamaCppService {
       final params = _modelLoadParams[modelHandle] ?? const ModelParams();
       final resolvedGpuLayers =
           _modelResolvedGpuLayers[modelHandle] ??
-          resolveGpuLayersForLoad(params, isAndroid: Platform.isAndroid);
+          resolveGpuLayersForLoad(params, isAndroid: _isAndroid);
       final runsOnCpu = decisionHeadRunsOnCpu(
         modelBackendName: _modelBackendNames[modelHandle],
         resolvedGpuLayers: resolvedGpuLayers,
@@ -8477,7 +8521,7 @@ class LlamaCppService {
           shouldUseConservativeAndroidVulkanContextConfig(
             params,
             resolvedGpuLayers: resolvedGpuLayers,
-            isAndroid: Platform.isAndroid,
+            isAndroid: _isAndroid,
           )) {
         _applyConservativeAndroidVulkanContextConfig(ctxParams, modelHandle);
       }
@@ -9952,7 +9996,17 @@ class _LlamaContextWrapper {
   int lastPerfSpeculativeReplayTokens = 0;
   bool lastPerfSpeculativeRan = false;
   final LlamaCppObjectCalls _calls;
-  _LlamaContextWrapper(this.pointer, this._modelKeepAlive, this._calls);
+
+  /// Most tokens of a text prompt one decode call takes, or `null` for the
+  /// context's own micro-batch.
+  final int? promptMicroBatchLimit;
+
+  _LlamaContextWrapper(
+    this.pointer,
+    this._modelKeepAlive,
+    this._calls, {
+    this.promptMicroBatchLimit,
+  });
   void resetLastPerf() {
     lastPerfPromptEvalMs = 0;
     lastPerfEvalMs = 0;

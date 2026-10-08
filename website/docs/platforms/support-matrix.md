@@ -157,6 +157,11 @@ output and grammars, sampling controls and speculative decoding. Guides:
   ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
+  For the first of these, an Android Vulkan context decodes a text prompt in
+  micro-batches of at most 32 tokens by default. An explicit
+  `ModelParams.microBatchSize` above 32 brings the wrong text back on
+  affected GPUs, and prompts with image or audio input and embeddings are
+  not covered.
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.
 - Some Vulkan drivers crash in the cooperative-matrix path; see

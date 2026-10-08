@@ -298,6 +298,13 @@ class ModelParams {
   /// the resolved logical batch size for compatibility. Other backends may
   /// preserve the same architecture-agnostic fallback.
   ///
+  /// On Android, while this is unset, a llama.cpp context that runs on Vulkan
+  /// decodes a text prompt in micro-batches of at most 32 tokens: ggml-vulkan
+  /// returns wrong results for a larger one on some GPUs
+  /// ([#948](https://github.com/leehack/llamadart/issues/948)). An explicit
+  /// value is used as given, so one above 32 can bring the wrong results
+  /// back. Prompts with image or audio input and embeddings are not covered.
+  ///
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a
   /// longer embedding input throws `LlamaInferenceException`.
