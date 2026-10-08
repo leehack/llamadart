@@ -1,5 +1,11 @@
 ## Unreleased
 
+- Fix a possible llama.cpp crash when an image or audio part of a multimodal
+  request fails to load while later parts remain, and native memory leaked
+  when a backend is disposed with a context still open or an embedding fails
+  because the model reports no embedding size
+  ([#947](https://github.com/leehack/llamadart/issues/947),
+  [#610](https://github.com/leehack/llamadart/issues/610)).
 - Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
 - Work around wrong llama.cpp Vulkan output on some Android GPUs for prompts
   over 32 tokens (seen on a Pixel 9 Pro, Mali-G715): an Android Vulkan
