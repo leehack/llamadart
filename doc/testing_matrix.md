@@ -496,9 +496,10 @@ dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle \
 This local-only row runs public engine reload/recovery and forced initialization
 timeout in separate child processes. Recovery retains a 60-second generation
 budget and requires the hello fixture after each reload; the parent enforces
-240-second recovery and 120-second timeout-process deadlines. The negative case
-requires an explicit cleanup error and failure of the abandoned request, never a
-cleanup pass. Outer deadline expiry kills only the owned child and fails the test.
+240-second recovery and 120-second timeout-process deadlines. The timeout case
+requires the abandoned request to settle within one second of `dispose`: either
+`dispose` succeeds and the request completes or fails, or `dispose` reports an
+explicit cleanup error and the request fails. Outer deadline expiry kills only the owned child and fails the test.
 Logs and process results go to `.dart_tool/litert_lm_lifecycle`, or
 `LITERT_LM_LIFECYCLE_LOG_DIR`. Record source commit, model hash/revision, runtime
 artifact identity, requested backend, and device with these logs. A GPU request

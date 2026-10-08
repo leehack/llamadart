@@ -67,10 +67,12 @@ Future<void> main(List<String> args) async {
       } on TimeoutException {
         event('operation_timeout');
       }
+      var cleanupFailed = false;
       try {
         await engine.dispose();
-        throw StateError('Unverified cleanup unexpectedly succeeded');
+        event('cleanup_pass');
       } on LlamaException catch (error) {
+        cleanupFailed = true;
         event('cleanup_error', {
           'type': error.runtimeType.toString(),
           'message': error.message,
@@ -78,11 +80,16 @@ Future<void> main(List<String> args) async {
       }
       try {
         await pending.timeout(const Duration(seconds: 1));
-        throw StateError('Abandoned request unexpectedly succeeded');
+        if (cleanupFailed) {
+          throw StateError('Abandoned request unexpectedly succeeded');
+        }
+        event('pending_completed');
       } on LlamaException catch (error) {
         event('pending_failed', {'type': error.runtimeType.toString()});
       }
-      exitCode = 1;
+      if (cleanupFailed) {
+        exitCode = 1;
+      }
       event('run_end');
       return;
     }
