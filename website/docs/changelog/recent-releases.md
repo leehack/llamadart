@@ -7,6 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
+
 ## 0.11.0
 
 - Fix a Flutter macOS app aborting in ggml-metal when it quits while a
