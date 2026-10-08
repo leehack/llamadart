@@ -81,13 +81,16 @@ since a projector points at its model.
 | C `exit()` while an isolate is still running (through FFI, or a native host that skips the engine shutdown) | Covered only while the isolate is idle, freeing an object, or inside a guarded call that returns within two seconds. Inside an unguarded call it is a use after free; inside a longer guarded call ggml-metal aborts. |
 
 In a Flutter macOS quit with models idle, either layer is enough alone
-(debug build on an M4 Max, each of the four paths in the table). With the
+(debug build on an M4 Max, each of the five quits `chat-app-macos-quit`
+drives: the four paths in the table, with `exitApplication` once as
+`AppExitType.required` and once as `AppExitType.cancelable`). With the
 service on `LlamaCppObjectCalls.upstream`, the isolates' frees gave a clean
 quit with a llama.cpp model loaded. With `IsolateShutdownReleases.hold`
 doing nothing, teardown gave one with a llama.cpp and an image model loaded,
-0.2 to 0.3 s later (its settle time). With both, every quit aborted. A
-Flutter hot restart shuts the old isolates down too: the tracked counts
-after the restart and a second load equal the ones before it.
+0.2 to 0.3 s later (its settle time). With both layers disabled at once,
+every quit aborted. A Flutter hot restart shuts the old isolates down too:
+the tracked counts after the restart and a second load equal the ones before
+it.
 
 Image models have their own registry in `libstable-diffusion`: see
 "Image models".
