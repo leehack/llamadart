@@ -189,8 +189,8 @@ Pointer<llama_sampler> _samplerChain(LlamaCppService service, int context) {
 
 // Leaves non-null words in freed blocks of [byteCount]. An allocator that
 // hands such a block out again as it is, as glibc does, then shows an array
-// slot the service never wrote as a pointer. macOS clears freed blocks: run
-// with MallocPreScribble=1 there for the same effect.
+// slot the service never wrote as a pointer. On macOS the slot reads as null
+// unless the test runs with MallocScribble=1.
 void _scribbleFreedBlocks(int byteCount) {
   final blocks = [
     for (var block = 0; block < 64; block++) malloc<Uint8>(byteCount),
