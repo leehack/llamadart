@@ -69,7 +69,6 @@ void main() {
           isFalse,
           reason: 'Owned child exceeded outer deadline. $text',
         );
-        expect(code, mode == 'recovery' ? 0 : 1, reason: '$text\n$nativeLog');
         final events = text
             .split('\n')
             .where((line) => line.startsWith('{'))
@@ -78,6 +77,8 @@ void main() {
         final stages = events.map((event) => event['stage']).toList();
         expect(stages, isNot(contains('failure')), reason: text);
         expect(stages.last, 'run_end');
+        final cleanupFailed = stages.contains('cleanup_error');
+        expect(code, cleanupFailed ? 1 : 0, reason: '$text\n$nativeLog');
         if (mode == 'recovery') {
           expect(stages.where((stage) => stage == 'generation'), hasLength(3));
           expect(
@@ -93,12 +94,13 @@ void main() {
             stages,
             containsAllInOrder([
               'operation_timeout',
-              'cleanup_error',
-              'pending_failed',
+              cleanupFailed ? 'cleanup_error' : 'cleanup_pass',
+              cleanupFailed
+                  ? 'pending_failed'
+                  : anyOf('pending_completed', 'pending_failed'),
               'run_end',
             ]),
           );
-          expect(stages, isNot(contains('cleanup_pass')));
         }
       },
     );

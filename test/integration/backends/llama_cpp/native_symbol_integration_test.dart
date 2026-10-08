@@ -597,14 +597,16 @@ void main() {
         isNotNull,
         reason: 'Expected the llama.cpp wrapper library.',
       );
-      _expectDynamicLibraryExports(wrapper!, [
-        ..._exitTeardownSymbols,
-        _exitTeardownGraphComputeSymbol,
-      ]);
+      // Resolved through the package first: a raw open of the wrapper cannot
+      // find its sibling DLLs on Windows until the runtime is loaded.
       expect(
         ExitTeardownApi.tryResolve(isWindows: Platform.isWindows),
         isNotNull,
       );
+      _expectDynamicLibraryExports(wrapper!, [
+        ..._exitTeardownSymbols,
+        _exitTeardownGraphComputeSymbol,
+      ]);
       // Each name resolves to the wrapper's own export of that name, not to
       // another function with the same signature.
       final library = ffi.DynamicLibrary.open(wrapper.path);

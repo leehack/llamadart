@@ -7,11 +7,74 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
+import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 
+import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
 void main() {
+  test(
+    'LiteRT Qwen normalized history matches pinned upstream rendering',
+    () async {
+      final build =
+          Platform.environment['LLAMA_CPP_CHAT_TEST_BUILD_DIR'] ??
+          '${Directory.current.path}/.dart_tool/llama_cpp_chat_tests';
+      final binary = File('$build/bin/test-chat-template');
+      expect(binary.existsSync(), isTrue);
+      final temp = Directory.systemTemp.createTempSync('litert-qwen-parity-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      for (final thinking in [true, false]) {
+        final messages = HermesHandler().templateMessages(
+          qwenResultHistory(),
+          templateSource: litertQwenTemplate,
+        );
+        final input = File('${temp.path}/input.json')
+          ..writeAsStringSync(
+            jsonEncode({
+              'messages': [
+                for (final message in messages)
+                  {
+                    ...message,
+                    'content': [
+                      if (message['role'] == 'tool')
+                        {
+                          'type': 'tool_response',
+                          'response': message['content'],
+                        }
+                      else
+                        {'type': 'text', 'text': message['content']},
+                    ],
+                  },
+              ],
+              'tools': [qwenResultTool.toJson()],
+              'add_generation_prompt': true,
+              'enable_thinking': thinking,
+            }),
+          );
+        final output = File('${temp.path}/prompt.txt');
+        final result = await Process.run(binary.path, [
+          '--no-common',
+          '--json',
+          input.path,
+          '--output',
+          output.path,
+          File('tool/litert_lm_templates/qwen3.jinja').absolute.path,
+        ]);
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        final history = renderLiteRtQwenHistory(
+          choice: ToolChoice.auto,
+          thinking: thinking,
+        );
+        expect(history.normalized, history.legacy);
+        expect(
+          _canonicalToolDeclarations(history.normalized),
+          _canonicalToolDeclarations(output.readAsStringSync()),
+        );
+      }
+    },
+  );
+
   test('runs upstream llama.cpp chat test selection', () async {
     const scriptPath = 'tool/testing/run_llama_cpp_chat_tests.sh';
     final script = File(scriptPath);

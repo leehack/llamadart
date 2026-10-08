@@ -644,7 +644,8 @@ class LlamaCppService {
   /// Creates the service; tests replace the runtime's first native call, the
   /// host probes behind its Windows load diagnostics, the raw
   /// `ggml_backend_dev_type` values a [ComputeDevice.gpu] load checks for a
-  /// backend, and the calls that create, free and run models and contexts.
+  /// backend, the calls that create, free and run models and contexts, and
+  /// the calls that allocate and free token batches.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -653,12 +654,16 @@ class LlamaCppService {
         findMissingWindowsLibraries,
     List<int> Function(GpuBackend backend)? deviceTypes,
     LlamaCppObjectCalls? objectCalls,
+    llama_batch Function(int tokens, int embd, int sequences)? batchInit,
+    void Function(llama_batch batch)? batchFree,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
        _missingWindowsLibraries = missingWindowsLibraries,
        _deviceTypesOverride = deviceTypes,
-       _objectCallsOverride = objectCalls;
+       _objectCallsOverride = objectCalls,
+       _batchInit = batchInit ?? llama_batch_init,
+       _batchFree = batchFree ?? llama_batch_free;
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -666,6 +671,8 @@ class LlamaCppService {
   final List<String> Function(List<String> names) _missingWindowsLibraries;
   final List<int> Function(GpuBackend backend)? _deviceTypesOverride;
   final LlamaCppObjectCalls? _objectCallsOverride;
+  final llama_batch Function(int tokens, int embd, int sequences) _batchInit;
+  final void Function(llama_batch batch) _batchFree;
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
   int _nextHandle = 1;
@@ -3931,7 +3938,7 @@ class LlamaCppService {
     _samplers[handle] = llama_sampler_chain_init(
       llama_sampler_chain_default_params(),
     );
-    _batches[handle] = llama_batch_init(resolvedBatchSizes.batchSize, 0, 1);
+    _batches[handle] = _batchInit(resolvedBatchSizes.batchSize, 0, 1);
 
     return handle;
   }
@@ -3970,7 +3977,7 @@ class LlamaCppService {
     final sampler = _samplers.remove(handle);
     if (sampler != null && sampler != nullptr) llama_sampler_free(sampler);
     final batch = _batches.remove(handle);
-    if (batch != null) llama_batch_free(batch);
+    if (batch != null) _batchFree(batch);
     _contexts.remove(handle)?.dispose();
   }
 
@@ -4931,8 +4938,8 @@ class LlamaCppService {
       1,
       math.min(configuredBatchSize, tokens.length),
     );
-    final batch = llama_batch_init(batchCapacity, 0, 1);
     final embeddingSize = _resolveEmbeddingDimension(model.pointer);
+    final batch = _batchInit(batchCapacity, 0, 1);
 
     try {
       _calls.synchronize(ctx.pointer);
@@ -4997,7 +5004,7 @@ class LlamaCppService {
       return _normalizeEmbeddingVector(vector);
     } finally {
       llama_set_embeddings(ctx.pointer, false);
-      llama_batch_free(batch);
+      _batchFree(batch);
     }
   }
 
@@ -5121,7 +5128,7 @@ class LlamaCppService {
       }
 
       final groupSize = index - groupStart;
-      final batch = llama_batch_init(groupTokenCount, 0, groupSize);
+      final batch = _batchInit(groupTokenCount, 0, groupSize);
       try {
         _calls.synchronize(ctx.pointer);
         _clearContextMemory(ctx.pointer, strict: false);
@@ -5171,7 +5178,7 @@ class LlamaCppService {
         }
       } finally {
         llama_set_embeddings(ctx.pointer, false);
-        llama_batch_free(batch);
+        _batchFree(batch);
       }
     }
 
@@ -5448,7 +5455,8 @@ class LlamaCppService {
     Pointer<Int8> cancelToken,
   ) {
     int initialTokens = 0;
-    final bitmaps = malloc<Pointer<mtmd_bitmap>>(mediaParts.length);
+    // Zeroed, so the cleanup of a part that failed skips the slots after it.
+    final bitmaps = calloc<Pointer<mtmd_bitmap>>(mediaParts.length);
     final chunks = _mtmdInputChunksInit();
     Pointer<mtmd_input_text> inputText = nullptr;
     Pointer<Utf8> promptPtr = nullptr;
@@ -5456,7 +5464,6 @@ class LlamaCppService {
     try {
       for (int i = 0; i < mediaParts.length; i++) {
         final p = mediaParts[i];
-        bitmaps[i] = nullptr;
         if (p is LlamaImageContent) {
           if (p.path != null) {
             final pathPtr = p.path!.toNativeUtf8();
@@ -5585,7 +5592,7 @@ class LlamaCppService {
       for (int i = 0; i < mediaParts.length; i++) {
         if (bitmaps[i] != nullptr) _mtmdBitmapFree(bitmaps[i]);
       }
-      malloc.free(bitmaps);
+      calloc.free(bitmaps);
       _mtmdInputChunksFree(chunks);
     }
     ctx.cachedPromptTokens = null;
@@ -7459,10 +7466,9 @@ class LlamaCppService {
   /// Disposes of all resources managed by the service.
   void dispose() {
     _freeDecisionHeadsWhere((_) => true);
-    for (final c in _contexts.values) {
-      c.dispose();
+    for (final handle in _contexts.keys.toList()) {
+      _freeContext(handle);
     }
-    _contexts.clear();
     // A projector uses its model, so it goes first, as in freeModel.
     for (final m in _mtmdContexts.values) {
       _mtmdFree(m);
@@ -8564,14 +8570,14 @@ class LlamaCppService {
       tokenLimit: head.tokenLimit,
       vocabSize: head.vocabSize,
     );
-    final batch = llama_batch_init(head.tokenLimit, 0, 1);
+    final batch = _batchInit(head.tokenLimit, 0, 1);
     try {
       return <BackendDecisionOutput>[
         for (final sequence in sequences)
           _runDecisionSequence(head, batch, sequence),
       ];
     } finally {
-      llama_batch_free(batch);
+      _batchFree(batch);
     }
   }
 
