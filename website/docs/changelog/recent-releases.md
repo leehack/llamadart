@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Give a chat template that reads content part lists but rejects image and
+  audio parts the media marker in its text instead of failing in the
+  template, and render a video part in a `chatTemplate` prompt as the media
+  marker instead of its JSON
+  ([#959](https://github.com/leehack/llamadart/issues/959)).
 - Fix a possible llama.cpp crash when an image or audio part of a multimodal
   request fails to load while later parts remain, and native memory leaked
   when a backend is disposed with a context still open or an embedding fails

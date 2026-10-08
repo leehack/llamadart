@@ -292,14 +292,17 @@ class ChatTemplateEngine {
     // Other templates cannot consume transport objects. Keep media in the
     // original request for the backend and render only its placeholder here,
     // in content order, as llama.cpp does for media_marker parts.
-    if (hasMediaParts) {
+    bool isTransport(LlamaContentPart part) =>
+        part is LlamaImageContent ||
+        part is LlamaAudioContent ||
+        part is LlamaVideoContent;
+    if (effectiveMessages.any((message) => message.parts.any(isTransport))) {
       effectiveMessages = effectiveMessages
           .map((message) {
             return message.copyWith(
               parts: message.parts
                   .map((part) {
-                    return part is LlamaImageContent ||
-                            part is LlamaAudioContent
+                    return isTransport(part)
                         ? const LlamaTextContent(mtmdMediaMarker)
                         : part;
                   })

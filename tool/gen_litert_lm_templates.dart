@@ -3,9 +3,11 @@
 //
 // LiteRT-LM `.litertlm` bundles can't expose their chat template through the
 // native FFI, so the backend supplies one itself keyed by model family. The
-// jinja sources here are copied verbatim from the templates llama.cpp ships
-// (so they stay in lockstep with the llama.cpp backend's rendering/parsing),
-// and this tool embeds them as Dart consts.
+// jinja sources here start from the templates llama.cpp ships (so they stay in
+// lockstep with the llama.cpp backend's rendering/parsing), and this tool
+// embeds them as Dart consts. A source may add a content-shape adapter for the
+// native runtime that keeps the rendered prompt for equivalent text input, as
+// `qwen3.jinja` does.
 //
 // To add a model family:
 //   1. Copy its canonical jinja into `tool/litert_lm_templates/<id>.jinja`.

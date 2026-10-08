@@ -1,6 +1,14 @@
+import 'dart:typed_data';
+
 import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_template.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:test/test.dart';
 
 /// Mirrors `LiteRtLmService._resolveBuiltinTemplate`: first match wins.
@@ -133,6 +141,8 @@ void main() {
     });
     for (final part in [
       {'type': 'image', 'image_path': 'image.png'},
+      {'type': 'image'},
+      {'type': 'audio'},
       {'type': 'unknown'},
       {'text': 'missing type'},
       {'type': 'text'},
@@ -159,6 +169,51 @@ void main() {
         },
       );
     }
+
+    for (final (kind, media) in <(String, LlamaContentPart)>[
+      ('image', LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3]))),
+      ('audio', LlamaAudioContent(bytes: Uint8List.fromList([4, 5, 6]))),
+      ('video', LlamaVideoContent(bytes: Uint8List.fromList([7, 8, 9]))),
+    ]) {
+      for (final bundle in ['Qwen3-0.6B.litertlm', 'Qwen3.5-2B.litertlm']) {
+        test('Dart rendering gives the $bundle text template the media '
+            'marker for $kind, never a media part', () {
+          final template = resolveTemplate(bundle)!;
+          expect(TemplateCaps.detect(template.template).toMap(), {
+            'supports_system_role': true,
+            'supports_tool_calls': true,
+            'supports_tools': true,
+            'supports_parallel_tool_calls': true,
+            'supports_string_content': true,
+            'supports_typed_content': false,
+            'supports_thinking': true,
+            'supports_object_arguments': true,
+          });
+          final rendered = ChatTemplateEngine.render(
+            templateSource: template.template,
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [const LlamaTextContent('Describe this.'), media],
+              ),
+            ],
+            metadata: {
+              'tokenizer.chat_template': template.template,
+              'tokenizer.ggml.bos_token': template.bosToken,
+              'tokenizer.ggml.eos_token': template.eosToken,
+            },
+            enableThinking: false,
+          );
+          expect(
+            rendered.prompt,
+            '<|im_start|>user\nDescribe this.<__media__><|im_end|>\n'
+            '<|im_start|>assistant\n<think>\n\n</think>\n\n',
+          );
+          expect(rendered.format, ChatFormat.hermes.index);
+        });
+      }
+    }
+
     test('resolves each seeded family from representative bundle names', () {
       expect(resolveId('gemma-4-E2B-it.litertlm'), 'gemma4');
       expect(resolveId('gemma-4-E4B-it.litertlm'), 'gemma4');
