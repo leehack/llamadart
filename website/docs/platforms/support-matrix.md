@@ -135,11 +135,12 @@ output and grammars, sampling controls and speculative decoding. Guides:
   default, runs LiteRT-LM on the GPU, which cannot run Qwen3 0.6B. The
   adapter's 128 MiB storage-buffer binding limit is smaller than one of the
   model's weight buffers, so expect the same from any model and adapter with
-  that mismatch. With the pinned `v0.18.0` the load returns and the first
-  generation throws a `LlamaException`, because the runtime cannot create the
-  GPU engine; `v0.17.0-8` and earlier generated wrong text instead. Load that
-  model with `ModelParams(device: ComputeDevice.cpu)`, which answers
-  correctly on the same device
+  that mismatch. `v0.17.0-8` and earlier generated wrong text there. For the
+  pinned `v0.18.0` the runtime owner measured that GPU engine creation fails
+  instead; llamadart reports a failed engine creation as a `LlamaException`
+  at first use, and has not yet been run on this device with this runtime.
+  Load that model with `ModelParams(device: ComputeDevice.cpu)`, which
+  answers correctly on the same device
   ([#553](https://github.com/leehack/llamadart/issues/553), upstream
   [LiteRT-LM#3866](https://github.com/google-ai-edge/LiteRT-LM/issues/3866)).
 - Windows x64 LiteRT-LM GPU needs `litert-lm-native` `v0.17.0-6` or later,

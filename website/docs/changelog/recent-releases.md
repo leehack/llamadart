@@ -22,16 +22,20 @@ For canonical full release notes, use:
   one that interpolates it renders the list into the prompt; read both shapes
   ([Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)).
   The built-in templates are unaffected.
-- LiteRT-LM on a GPU that cannot hold one of the model's weight buffers, such
-  as Qwen3 0.6B on Adreno 750 (Galaxy S24), now fails the first generation
-  with a `LlamaException` instead of generating wrong text; load that model
-  with `ComputeDevice.cpu`
+- Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): the runtime
+  owner measured that `v0.18.0` fails GPU engine creation there, where
+  `v0.17.0-8` generated wrong text. llamadart reports a failed engine creation
+  as a `LlamaException` on first use; it has not yet been run on that device
+  with this runtime. Load that model with `ComputeDevice.cpu`
   ([#553](https://github.com/leehack/llamadart/issues/553)).
 - **Behavior change:** a LiteRT-LM engine the runtime cannot create under
   `ComputeDevice.auto` or `ComputeDevice.cpu` now throws `LlamaModelException`
-  on first use, where `ChatSession` and `tokenize` threw a `StateError`. With
-  `v0.18.0` that includes a cache directory (`liteRtLmCacheDir`) the runtime
-  cannot write, on the CPU backend too.
+  on first use. `LlamaEngine.create`, `generate` and `complete` threw
+  `LlamaInferenceException` there, so a `catch` of that type no longer sees
+  this failure; `ChatSession`, `tokenize`, `detokenize`, `getTokenCount` and
+  `chatTemplate` with a token count threw a `StateError`. With `v0.18.0` that
+  includes a `liteRtLmCacheDir` the runtime cannot write, on the CPU backend
+  too.
 - LiteRT-LM release sync accepts runtimes built on upstream `v0.17.1` and
   `v0.18.0`, and names the upstream version when its prebuilt-override table
   is behind the runtime owner's

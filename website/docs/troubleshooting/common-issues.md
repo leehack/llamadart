@@ -169,15 +169,18 @@ the CPU.
 
 What you see depends on the runtime:
 
-- The pinned `v0.18.0` fails GPU engine creation. `loadModel` returns, because
-  the engine is created at first use, and the first generation or `tokenize`
-  throws: `LlamaUnsupportedException` when `ComputeDevice.gpu` was requested,
-  and `LlamaModelException` under `auto`. Catch `LlamaException` to handle
-  both.
 - `v0.17.0-6` through `v0.17.0-8` created the engine and generated wrong
   text, such as one token repeated up to the output limit, with no error. The
   native log has `Binding size (155582464) ... is larger than the maximum
   storage buffer binding size (134217728)`.
+- For the pinned `v0.18.0`, the runtime owner measured on this device that
+  GPU engine creation fails instead. llamadart has not yet been run there
+  with this runtime. What it does with any failed engine creation is known,
+  from an engine the runtime refused to create on macOS: `loadModel` returns,
+  because the engine is created at first use, and the first generation or
+  `tokenize` throws `LlamaUnsupportedException` when `ComputeDevice.gpu` was
+  requested and `LlamaModelException` under `auto`. Catch `LlamaException` to
+  handle both.
 
 Tracked in [#553](https://github.com/leehack/llamadart/issues/553) and
 upstream

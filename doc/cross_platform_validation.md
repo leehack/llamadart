@@ -99,8 +99,10 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
     `LlamaUnsupportedException` when `ComputeDevice.gpu` was requested, and
     `LlamaModelException` under `auto`.
     `test/integration/backends/litert_lm/engine_create_failure_test.dart`
-    pins both with a runtime client that returns no engine; llamadart at this
-    pin has not been run on the device.
+    pins both with a runtime client that returns no engine, and the same
+    exceptions came from the real runtime on macOS when it refused to create
+    an engine (a read-only `liteRtLmCacheDir`). llamadart at this pin has not
+    been run on the device.
   - The runtime keeps its own Android Dawn build: upstream's `v0.17`
     `libwebgpu_dawn.so` is reported to crash in the Qualcomm shader compiler
     on this device

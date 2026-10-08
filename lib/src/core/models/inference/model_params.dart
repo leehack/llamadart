@@ -260,10 +260,7 @@ class ModelParams {
   /// parsing, and prompt rendering on LiteRT-LM web and for requests that
   /// cannot use the native Conversation API. Native `LlamaEngine.create`
   /// sends eligible text-only chats through that API, where the template
-  /// shapes the prompt only for Qwen3 text bundles. There LiteRT-LM v0.18
-  /// passes each message's `content` as a list of
-  /// `{'type': 'text', 'text': ...}` parts, not a string, so the template
-  /// must read both shapes.
+  /// shapes the prompt only for Qwen3 text bundles.
   ///
   /// A per-call `customTemplate` takes precedence on every runtime.
   final String? chatTemplate;

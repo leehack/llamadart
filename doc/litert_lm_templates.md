@@ -49,7 +49,8 @@ override in the native conversation, so it receives the same part arrays. A
 template that reads `message.content` as a string no longer works there: with
 Qwen3 0.6B on `v0.18.0`, string concatenation (`'...' + message['content']`)
 fails the generation with `LlamaInferenceException`
-(`litert_lm_conversation_send_message_stream rc=13`), and interpolation
+(`litert_lm_conversation_send_message_stream rc=13`, to which llamadart adds a
+note about the content shape when `chatTemplate` is set), and interpolation
 (`{{ message['content'] }}`) renders the list itself into the prompt without
 an error. Both produced the intended prompt on `v0.17.0-8`. Read both shapes,
 as the built-in `content_text` macro in `tool/litert_lm_templates/qwen3.jinja`
