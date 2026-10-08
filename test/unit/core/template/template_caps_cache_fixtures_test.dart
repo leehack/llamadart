@@ -26,7 +26,10 @@ List<File> _fixtureTemplates() {
 }
 
 /// Detected caps as bits in [_capsOrder] order. Every bit but
-/// `supports_thinking` is what llama-server 7fe450e19 reports in `/props`.
+/// `supports_thinking` is what llama-server 7fe450e19 reports in `/props`,
+/// except `supports_typed_content` where `JinjaAnalyzer`'s own media-part
+/// probe clears it: `tool/litert_lm_templates/qwen3.jinja` reads strings and
+/// part lists but rejects image and audio parts.
 const Map<String, String> _pinnedCaps = <String, String>{
   'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja':
       '11111101',
@@ -67,7 +70,7 @@ const Map<String, String> _pinnedCaps = <String, String>{
   'tool/litert_lm_templates/gemma3n.jinja': '10001100',
   'tool/litert_lm_templates/gemma4.jinja': '11111111',
   'tool/litert_lm_templates/qwen25.jinja': '11111001',
-  'tool/litert_lm_templates/qwen3.jinja': '11111111',
+  'tool/litert_lm_templates/qwen3.jinja': '11111011',
 };
 
 const List<String> _capsOrder = <String>[

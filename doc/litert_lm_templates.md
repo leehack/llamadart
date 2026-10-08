@@ -38,10 +38,23 @@ conversation-template setter fail explicitly instead of silently ignoring it.
 LiteRT-LM v0.18 normalizes native conversation content into part arrays. The
 Qwen 3 override accepts both older string content and normalized text parts;
 `tool_response` parts preserve object/array responses as JSON and scalar
-responses as text. Unknown parts, text parts without string text, and tool
-responses without a response field fail during template rendering. Media
-conversations continue to use the bundle template. This compatibility adapter
-does not change the default runtime pin or add grammar-constrained decoding.
+responses as text. Image and audio parts, unknown parts, text parts without
+string text, and tool responses without a response field fail during template
+rendering. This compatibility adapter does not change the default runtime pin
+or add grammar-constrained decoding.
+
+Media conversations never give this template a media part. Natively they keep
+the bundle template: the override is set only for a conversation with no image
+or audio part. In Dart, `LlamaEngine.create`, `chatTemplate` and `ChatSession`
+render the template before every request, to prepare output parsing and count
+tokens, and the capability probe finds that it rejects image and audio parts,
+so it gets string content with `<__media__>` in place of each media part, as
+before the adapter. The request then reaches the native media boundary: a
+bundle with the matching encoder gets the image or audio item, and a runtime
+failure on a bundle that declares no such encoder surfaces as
+`LlamaUnsupportedException`.
+`test/integration/backends/litert_lm/qwen_media_boundary_test.dart` covers
+this through the engine.
 
 System instructions are passed as JSON-encoded text content: the native C API
 adds the system role itself, so passing a full message object would nest it.
@@ -180,6 +193,10 @@ Templates are committed as jinja under `tool/litert_lm_templates/` and embedded
 into `lib/src/backends/litert_lm/litert_lm_chat_templates.dart` by a generator.
 Start from the canonical template llama.cpp uses. Keep any runtime
 content-shape adapter in this source and cover it with prompt-parity tests.
+An adapter that reads content part lists either renders image and audio parts
+or rejects both: the Dart renderer gives a template that reads part lists
+media as typed parts unless it rejects both kinds. Pin the result in
+`test/unit/core/template/template_caps_cache_fixtures_test.dart`.
 
 1. Copy the canonical jinja into `tool/litert_lm_templates/<id>.jinja`
    (e.g. from `.dart_tool/llama_cpp/models/templates/` or the model's GGUF /

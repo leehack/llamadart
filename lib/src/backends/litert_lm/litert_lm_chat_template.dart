@@ -22,9 +22,10 @@ class LiteRtLmChatTemplate {
 
   /// The jinja chat template, rendered by the matching format handler.
   ///
-  /// Copied verbatim from the canonical jinja that llama.cpp ships, minus any
-  /// leading `bos_token` emission: the native LiteRT-LM runtime adds the start
-  /// token itself, so emitting one here would double it.
+  /// Derived from the canonical jinja that llama.cpp ships, minus any leading
+  /// `bos_token` emission: the native LiteRT-LM runtime adds the start token
+  /// itself, so emitting one here would double it. A family may add a
+  /// content-shape adapter that keeps the prompt for equivalent text input.
   final String template;
 
   /// Filename substrings that identify this family.

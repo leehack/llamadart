@@ -383,6 +383,58 @@ void main() {
       },
     );
 
+    test('renders a video part as the media marker without leaking its '
+        'source', () {
+      final result = ChatTemplateEngine.render(
+        templateSource:
+            '{% for message in messages %}'
+            '{{ message.role }}: {{ message.content }}\n'
+            '{% endfor %}',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Describe:'),
+              LlamaVideoContent(path: '/tmp/clip.mp4'),
+            ],
+          ),
+        ],
+        metadata: const {},
+      );
+
+      expect(result.prompt, 'user: Describe:<__media__>\n');
+    });
+
+    test('gives the media marker in text to a template that reads part '
+        'lists but rejects media parts', () {
+      const textParts =
+          '{% for message in messages %}'
+          '{% if message.content is string %}{{ message.content }}'
+          '{% else %}{% for part in message.content %}'
+          "{% if part.type == 'text' %}{{ part.text }}"
+          "{% else %}{{ raise_exception('text parts only') }}{% endif %}"
+          '{% endfor %}{% endif %}'
+          '{% endfor %}';
+
+      for (final media in <LlamaContentPart>[
+        const LlamaImageContent(path: '/tmp/page.png'),
+        const LlamaAudioContent(path: '/tmp/clip.wav'),
+      ]) {
+        final result = ChatTemplateEngine.render(
+          templateSource: textParts,
+          messages: [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [const LlamaTextContent('Describe:'), media],
+            ),
+          ],
+          metadata: const {},
+        );
+
+        expect(result.prompt, 'Describe:<__media__>');
+      }
+    });
+
     test('keeps GLM-OCR image marker when GLM tool-call policy runs', () {
       const history = [
         LlamaChatMessage.withContent(
