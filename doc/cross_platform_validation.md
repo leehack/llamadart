@@ -76,7 +76,8 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
   inference on a Pixel 9 Pro (API 35, Mali-G715), and Qwen3 0.6B and Gemma 4
   E2B passed with the kept one
   ([owner record](https://github.com/leehack/litert-lm-native/blob/v0.18.0/docs/android_gpu_qualification.md)).
-  llamadart at this pin has not been run on a Pixel.
+  llamadart at this pin passed both models on that GPU with no Dawn
+  validation error ([2026-10-08 runs](#litert-lm-v0180-device-and-gpu-host-runs-2026-10-08)).
 - Galaxy S24 (Adreno 750, WebGPU over Vulkan): Qwen3 0.6B cannot run on this
   GPU. One of its weight buffers is 155582464 bytes and the adapter's storage
   buffer binding limit is 134217728 (128 MiB). CPU on the same device is
@@ -91,18 +92,18 @@ GPU uses the LiteRT-LM GPU backend, not CUDA.
     is larger than the maximum storage buffer binding size (134217728)`, the
     engine is created anyway, and generation returns wrong text (one token
     repeated up to the output limit in the `v0.17.0-8` run).
-  - `v0.18.0`: GPU engine creation fails on the same buffer, in the owner's
-    Test Lab run of the `v0.18` candidate
-    ([owner record](https://github.com/leehack/litert-lm-native/blob/v0.18.0/docs/android_gpu_qualification.md)).
+  - `v0.18.0`: GPU engine creation fails on the same buffer, with the same
+    Dawn line, in the owner's Test Lab run of the `v0.18` candidate
+    ([owner record](https://github.com/leehack/litert-lm-native/blob/v0.18.0/docs/android_gpu_qualification.md))
+    and with llamadart at this pin on the device
+    ([2026-10-08 runs](#litert-lm-v0180-device-and-gpu-host-runs-2026-10-08)).
     The model load returns, because llamadart creates the engine at first use,
-    and the first generation or `tokenize` throws:
-    `LlamaUnsupportedException` when `ComputeDevice.gpu` was requested, and
-    `LlamaModelException` under `auto`.
+    and every later case throws: `LlamaUnsupportedException` when
+    `ComputeDevice.gpu` was requested, and `LlamaModelException` under `auto`.
+    The run ends normally, with no crash or process death in logcat.
     `test/integration/backends/litert_lm/engine_create_failure_test.dart`
-    pins both with a runtime client that returns no engine, and the same
-    exceptions came from the real runtime on macOS when it refused to create
-    an engine (a read-only `liteRtLmCacheDir`). llamadart at this pin has not
-    been run on the device.
+    pins both with a runtime client that returns no engine. Qwen3 0.6B on the
+    CPU and Gemma 4 E2B on this GPU pass on the same device.
   - The runtime keeps its own Android Dawn build: upstream's `v0.17`
     `libwebgpu_dawn.so` is reported to crash in the Qualcomm shader compiler
     on this device
@@ -1141,6 +1142,46 @@ therefore use code `K7Q2` with the same system, acknowledgement and question.
 The original model and the int4 artifact each return `K7Q2` for all four
 variants in three repetitions, and the public `gemma3-litert-cpu` run passes all
 17 cases. The q4 SM8650 NPU artifact has not run this fixture.
+
+## LiteRT-LM v0.18.0 device and GPU-host runs (2026-10-08)
+
+Source `c385ef656`, LiteRT-LM `v0.18.0`, 15 validation cases per row. The
+phones ran under Firebase Test Lab (Android Debug, iOS Release); the Windows
+host was a GCE Windows Server 2022 x64 VM with an NVIDIA L4.
+
+| Device / profile | Outcome |
+| --- | --- |
+| Galaxy S24 (API 36, Adreno 750) / Qwen3 0.6B LiteRT GPU | 1 PASS (load), 14 ERROR: `LlamaUnsupportedException`; cleanup PASS |
+| Galaxy S24 / Qwen3 0.6B LiteRT `auto` (resolved GPU) | 1 PASS (load), 14 ERROR: `LlamaModelException`; cleanup PASS |
+| Galaxy S24 / Qwen3 0.6B LiteRT CPU | 15 PASS |
+| Galaxy S24 / Gemma 4 E2B LiteRT GPU | 15 PASS on the third attempt |
+| Pixel 9 Pro (API 35, Mali-G715) / Qwen3 0.6B LiteRT GPU | 15 PASS |
+| Pixel 9 Pro / Gemma 4 E2B LiteRT GPU | 15 PASS |
+| iPhone 16 Pro (iOS 18.3) / Qwen3 0.6B LiteRT GPU | 15 PASS |
+| iPhone 16 Pro / Gemma 4 E2B LiteRT GPU | 15 PASS |
+| Windows x64, NVIDIA L4 (Direct3D 12) / Qwen3 0.6B LiteRT GPU, `dart run` | 15 PASS |
+| Windows x64, NVIDIA L4 / Qwen3 0.6B LiteRT GPU, `dart build cli` bundle | 15 PASS |
+| Windows x64 / Qwen3 0.6B LiteRT CPU | 15 PASS |
+
+Both Galaxy S24 Qwen3 GPU failures log `Validation error: Binding size
+(155582464) ... is larger than the maximum storage buffer binding size
+(134217728)` and end the run normally, with no crash or process death in
+logcat. The `auto` row used a local harness profile, so its journal records a
+modified source tree. The first two Galaxy S24 Gemma 4 attempts stopped at the
+harness's 10-minute deadline for the 2.6 GB model download, before any case.
+
+No GPU row is harness-qualified: none carries the native placement evidence
+the harness requires, and the `dart run` Windows rows have no portable-bundle
+payload verification. The adapter is read from the native log on Android (`Adreno (TM)
+750` and `Mali-G715`, both Vulkan) and Windows (`NVIDIA L4 ... Direct3D 12 ...
+Discrete GPU`); the iPhone logs name no adapter. On Windows the GPU
+accelerator and sampler import `webgpu_dawn.dll`, the packaged process mapped
+it, and the native log has no Dawn validation error and the event log no
+application crash.
+
+Not run: a Flutter Windows desktop app, Linux GPU, Linux without a Vulkan ICD
+([#572](https://github.com/leehack/llamadart/issues/572)), Android x64 and
+iOS 16.
 
 ## Planned platform/backend coverage
 

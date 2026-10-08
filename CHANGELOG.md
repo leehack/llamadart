@@ -13,12 +13,12 @@
   one that interpolates it renders the list into the prompt; read both shapes
   ([Chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing#litert-lm-template-registry)).
   The built-in templates are unaffected.
-- Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): the runtime
-  owner measured that `v0.18.0` fails GPU engine creation there, where
-  `v0.17.0-8` generated wrong text. llamadart reports a failed engine creation
-  as a `LlamaException` on first use; it has not yet been run on that device
-  with this runtime. Load that model with `ComputeDevice.cpu`
-  ([#553](https://github.com/leehack/llamadart/issues/553)).
+- Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): with
+  `v0.18.0` GPU engine creation fails there, where `v0.17.0-8` generated wrong
+  text. The first use throws `LlamaUnsupportedException` under
+  `ComputeDevice.gpu` and `LlamaModelException` under `auto`. Load that model
+  with `ComputeDevice.cpu`, which works on the device; Gemma 4 E2B runs on
+  that GPU ([#553](https://github.com/leehack/llamadart/issues/553)).
 - **Behavior change:** a LiteRT-LM engine the runtime cannot create under
   `ComputeDevice.auto` or `ComputeDevice.cpu` now throws `LlamaModelException`
   on first use. `LlamaEngine.create`, `generate` and `complete` threw
