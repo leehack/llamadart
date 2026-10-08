@@ -16,9 +16,8 @@ exposes **no way to read it back**. So the backend has to supply
 `tokenizer.chat_template` itself for metadata, template inspection, Dart-side
 parsing, web generation, and fallback prompt rendering. It does this by
 detecting the model family from the bundle filename and mapping it to a
-canonical template copied verbatim from the one llama.cpp ships — which keeps
-the LiteRT-LM path byte-for-byte consistent with the llama.cpp path whenever
-the Dart renderer is active.
+template derived from the one llama.cpp ships. Runtime content-shape adapters
+preserve the same rendered prompt for equivalent text inputs.
 
 Native LiteRT-LM text chat does not always render the full prompt in Dart. When
 `LlamaEngine.create(...)` can represent a request as structured text-only
@@ -36,6 +35,14 @@ native template override preserves the closed reasoning prefix for
 hidden reasoning as the answer. Qwen 3.5, other families, and media conversations
 retain their model-specific native templates. Native overrides lacking the
 conversation-template setter fail explicitly instead of silently ignoring it.
+LiteRT-LM v0.18 normalizes native conversation content into part arrays. The
+Qwen 3 override accepts both older string content and normalized text parts;
+`tool_response` parts preserve object/array responses as JSON and scalar
+responses as text. Unknown parts, text parts without string text, and tool
+responses without a response field fail during template rendering. Media
+conversations continue to use the bundle template. This compatibility adapter
+does not change the default runtime pin or add grammar-constrained decoding.
+
 System instructions are passed as JSON-encoded text content: the native C API
 adds the system role itself, so passing a full message object would nest it.
 
@@ -171,7 +178,8 @@ artifact.
 
 Templates are committed as jinja under `tool/litert_lm_templates/` and embedded
 into `lib/src/backends/litert_lm/litert_lm_chat_templates.dart` by a generator.
-You never hand-author a template — copy the canonical one llama.cpp uses.
+Start from the canonical template llama.cpp uses. Keep any runtime
+content-shape adapter in this source and cover it with prompt-parity tests.
 
 1. Copy the canonical jinja into `tool/litert_lm_templates/<id>.jinja`
    (e.g. from `.dart_tool/llama_cpp/models/templates/` or the model's GGUF /

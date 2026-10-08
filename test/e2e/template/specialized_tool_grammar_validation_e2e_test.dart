@@ -23,6 +23,7 @@ import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
+import '../../support/litert_qwen_content_fixture.dart';
 import '../../support/qwen35_tool_result_fixture.dart' as typed;
 import '../../support/qwen_tool_schema_fixture.dart';
 
@@ -37,6 +38,31 @@ void main() {
       reason: 'Set LLAMA_CPP_GBNF_VALIDATOR to llama.cpp test-gbnf-validator.',
     );
     expect(File(validator).existsSync(), isTrue);
+  });
+
+  test('LiteRT Qwen normalized history preserves compiled JSON schema', () {
+    for (final thinking in [true, false]) {
+      final history = renderLiteRtQwenHistory(
+        choice: ToolChoice.required,
+        thinking: thinking,
+      );
+      expect(history.normalized, history.legacy);
+      expect(history.normalized, contains(jsonEncode(qwenResultPayload)));
+      expect(history.rendered.grammarLazy, isFalse);
+      _expectGrammar(
+        validator,
+        history.rendered.grammar!,
+        valid: [litertQwenEnvelope],
+        invalid: [
+          litertQwenEnvelope.replaceFirst('"inspect"', '"unknown"'),
+          litertQwenEnvelope.replaceFirst('"code": "123"', '"code": 123'),
+          litertQwenEnvelope.replaceFirst('"count": 7', '"count": "7"'),
+          litertQwenEnvelope.replaceFirst('"active": true, ', ''),
+          litertQwenEnvelope.replaceFirst('</tool_call>', ''),
+          'No tool',
+        ],
+      );
+    }
   });
 
   test('Qwen typed Map result history preserves compiled follow-up grammar', () {

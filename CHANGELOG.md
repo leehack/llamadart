@@ -6,6 +6,7 @@
   model reports no embedding size
   ([#947](https://github.com/leehack/llamadart/issues/947),
   [#610](https://github.com/leehack/llamadart/issues/610)).
+- Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
 
 ## 0.11.0
 
