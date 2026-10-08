@@ -22,6 +22,11 @@ class JinjaAnalyzer {
   /// [JinjaUsageProbe]. `supportsThinking` comes from the template's string
   /// literals.
   ///
+  /// The media-part probe is not llama.cpp's: a template that reads both
+  /// strings and part lists is rendered with an image part and with an audio
+  /// part, and `supportsTypedContent` is cleared when it rejects both. The
+  /// only part lists `ChatTemplateEngine` gives such a template carry media.
+  ///
   /// A probe render that throws is one of llama.cpp's outcomes, not a
   /// failure: it is logged at debug level and read as llama.cpp reads it.
   /// `failed` is `true` only when the template does not parse, and the regex
@@ -98,6 +103,25 @@ class JinjaAnalyzer {
           usedAsArray(typedRun, typedContent.message(0, 'content'))) {
         supportsTypedContent = true;
       }
+    }
+
+    // A template that reads strings too is given a part list only to carry
+    // media. One that reads text part lists but rejects both media kinds is
+    // given strings, with the media marker in the text.
+    if (supportsTypedContent && supportsStringContent) {
+      bool rejects(String type) => !_render(
+        probe,
+        '$type-content',
+        _Probe.messages([
+          {
+            'role': 'user',
+            'content': [
+              {'type': type},
+            ],
+          },
+        ]),
+      ).success;
+      if (rejects('image') && rejects('audio')) supportsTypedContent = false;
     }
 
     final system = _Probe.messages([

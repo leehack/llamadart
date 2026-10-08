@@ -891,7 +891,7 @@ class LlamaCppService {
 
   /// Most tokens of a text prompt an Android Vulkan context decodes in one
   /// micro-batch when [ModelParams.microBatchSize] is unset.
-  static const int androidVulkanPromptMicroBatchSize = 32;
+  static const int androidVulkanPromptMicroBatchSize = 8;
 
   /// Returns the most tokens of a text prompt one decode call takes on a
   /// context created with [modelParams], or `null` for the context's own
@@ -907,8 +907,10 @@ class LlamaCppService {
     // ggml-vulkan's small matmul tile gives wrong results for a micro-batch of
     // more than 32 tokens on GPUs with a subgroup size of 16
     // (https://github.com/ggml-org/llama.cpp/issues/28637), and the subgroup
-    // size cannot be read here. `n_ubatch` is left alone: a non-causal image
-    // decode and a one-pass embedding need their whole input in one
+    // size cannot be read here. The cap is 8 rather than 32 because 8-token
+    // calls evaluated a prompt about three times faster on the affected
+    // device (Pixel 9 Pro, Mali-G715). `n_ubatch` is left alone: a non-causal
+    // image decode and a one-pass embedding need their whole input in one
     // micro-batch.
     if (modelParams.microBatchSize > 0 ||
         !shouldUseConservativeAndroidVulkanContextConfig(

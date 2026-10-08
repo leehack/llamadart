@@ -189,6 +189,60 @@ void main() {
     );
   });
 
+  group('JinjaAnalyzer media parts', () {
+    String template({
+      String strings = '{{ message.content }}',
+      String otherParts = "{{ raise_exception('unsupported part') }}",
+    }) =>
+        '''
+{%- for message in messages -%}
+{%- if message.content is string -%}$strings
+{%- else -%}
+{%- for part in message.content -%}
+{%- if part.type == 'text' -%}{{ part.text }}
+{%- else -%}$otherParts
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- endfor -%}''';
+
+    String accepting(String type) =>
+        "{%- if part.type == '$type' -%}<$type>"
+        "{%- else -%}{{ raise_exception('unsupported part') }}{%- endif -%}";
+
+    test('a template that reads strings and rejects image and audio parts '
+        'does not take typed content', () {
+      final caps = JinjaAnalyzer.analyze(template());
+      expect(caps.supportsStringContent, isTrue);
+      expect(caps.supportsTypedContent, isFalse);
+    });
+
+    for (final type in ['image', 'audio']) {
+      test('a template that renders $type parts takes typed content', () {
+        final caps = JinjaAnalyzer.analyze(
+          template(otherParts: accepting(type)),
+        );
+        expect(caps.supportsStringContent, isTrue);
+        expect(caps.supportsTypedContent, isTrue);
+      });
+    }
+
+    test('a template that skips media parts takes typed content', () {
+      final caps = JinjaAnalyzer.analyze(template(otherParts: ''));
+      expect(caps.supportsStringContent, isTrue);
+      expect(caps.supportsTypedContent, isTrue);
+    });
+
+    test('a template that reads only part lists takes typed content even '
+        'when it rejects media parts', () {
+      final caps = JinjaAnalyzer.analyze(
+        template(strings: "{{ raise_exception('string content') }}"),
+      );
+      expect(caps.supportsStringContent, isFalse);
+      expect(caps.supportsTypedContent, isTrue);
+    });
+  });
+
   group('JinjaAnalyzer object arguments', () {
     String withArguments(String arguments) =>
         '''

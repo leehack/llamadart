@@ -159,15 +159,19 @@ output and grammars, sampling controls and speculative decoding. Guides:
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
   For the first of these, an Android Vulkan context decodes a text prompt in
-  micro-batches of at most 32 tokens by default, which makes prompt
-  evaluation slower on Android Vulkan (measured about 2x for a 59-token
-  prompt on a Pixel 9 Pro). An explicit `ModelParams.microBatchSize` above
-  32 brings the wrong text back on affected GPUs. The cap applies to
+  micro-batches of at most 8 tokens by default. On a Pixel 9 Pro, prompt
+  evaluation with 8-token micro-batches ran at about the speed uncapped
+  decoding did (about 34 tokens/s against about 30 tokens/s for a 59-token
+  prompt); other GPUs are not measured. On a GPU without the defect, decoding
+  a prompt in 8-token micro-batches can be slower than decoding it in one
+  batch. An app that has validated Vulkan on its target devices can set
+  `ModelParams.microBatchSize` to choose the micro-batch size itself: an
+  explicit value is used as given, and one above 32 brings the wrong text
+  back on affected GPUs. The cap applies to
   text-prompt decoding only: it does not cover prompts with image or audio
   input, embeddings, decision models, text-to-speech, or speculative-decoding
-  verification batches during generation. Those batches exceed 32 tokens with
-  the default n-gram settings, so speculative decoding can still produce
-  wrong output on an affected GPU.
+  verification batches during generation. Those batches can exceed 32 tokens,
+  so speculative decoding can still produce wrong output on an affected GPU.
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.
 - Some Vulkan drivers crash in the cooperative-matrix path; see

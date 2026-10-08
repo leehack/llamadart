@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Give a chat template that reads content part lists but rejects image and
+  audio parts the media marker in its text instead of failing in the
+  template, and, for a template that does not take typed content parts,
+  render a video part in a `chatTemplate` prompt as the media marker instead
+  of its JSON ([#959](https://github.com/leehack/llamadart/issues/959)).
 - Fix a possible llama.cpp crash when an image or audio part of a multimodal
   request fails to load while later parts remain, and native memory leaked
   when a backend is disposed with a context still open or an embedding fails
@@ -18,7 +23,7 @@ For canonical full release notes, use:
 - Fix Qwen 3 chat and tool-result history with LiteRT-LM runtimes that normalize message content to arrays.
 - Work around wrong llama.cpp Vulkan output on some Android GPUs for prompts
   over 32 tokens (seen on a Pixel 9 Pro, Mali-G715): an Android Vulkan
-  context now decodes a text prompt in micro-batches of at most 32 tokens
+  context now decodes a text prompt in micro-batches of at most 8 tokens
   unless `ModelParams.microBatchSize` is set
   ([#948](https://github.com/leehack/llamadart/issues/948)). Only text-prompt
   decoding is covered: prompts with image or audio input, embeddings, decision
