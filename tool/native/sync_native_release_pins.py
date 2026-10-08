@@ -157,6 +157,10 @@ LITERT_ANDROID_DAWN_OVERRIDES = [
         "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
     },
 ]
+# Hand-kept mirror of PREBUILT_OVERRIDES in leehack/litert-lm-native
+# tools/prebuilt_overrides.py, keyed by upstream LiteRT-LM version. Extend it
+# from the owner table before syncing a release on a new upstream version; never
+# derive it from the manifest under validation.
 LITERT_PREBUILT_OVERRIDES = {
     "v0.15.0": [
         {
@@ -180,6 +184,9 @@ LITERT_PREBUILT_OVERRIDES = {
     # v0.17.0-3 restores the reviewed Pixel/Mali correction. Earlier v0.17
     # artifacts without this provenance must not be newly adopted.
     "v0.17.0": LITERT_ANDROID_DAWN_OVERRIDES,
+    "v0.17.1": LITERT_ANDROID_DAWN_OVERRIDES,
+    # Stock v0.18 still loses the Vulkan device on Pixel Mali-G715.
+    "v0.18.0": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
@@ -2217,8 +2224,22 @@ def validate_litert_lm_release_manifest(
         compatibility_tag, []
     )
     if upstream["prebuiltOverrides"] != expected_overrides:
+        if compatibility_tag not in LITERT_PREBUILT_OVERRIDES:
+            declared = ", ".join(
+                sorted(
+                    override["targetPath"]
+                    for override in upstream["prebuiltOverrides"]
+                )
+            )
+            raise ReleaseError(
+                "LITERT_PREBUILT_OVERRIDES has no entry for upstream "
+                f"{compatibility_tag}, but the manifest declares prebuilt "
+                f"overrides for {declared}; mirror tools/prebuilt_overrides.py "
+                "from leehack/litert-lm-native before syncing"
+            )
         raise ReleaseError(
-            "LiteRT-LM prebuilt override provenance does not match owner policy"
+            "LiteRT-LM prebuilt override provenance does not match owner policy "
+            f"for upstream {compatibility_tag}"
         )
     for name, expected in expected_release_fields.items():
         if release_identity.get(name) != expected:
