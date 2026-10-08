@@ -642,13 +642,12 @@ it, which is what shows that the discarded isolates freed their models.
 Every path also runs once with a model loaded through the upstream loader,
 which no isolate holds and no runtime tracks. That run must abort
 (`SIGABRT` with `GGML_ASSERT`); without it a path that skipped the static
-destructors would pass with nothing freed. Each abort leaves a crash report
-of `llamadart_chat_example`, ten for one run of the row, and the test logs
-whether it found it (`"crashReport"`) instead of requiring it: macOS stopped
-writing reports for that process name after 25 of them, and did not resume
-when they were moved out of the folder. While those lines say `false`, the
-check that a clean quit left no crash report proves nothing, and the exit
-status carries the row.
+destructors would pass with nothing freed. An abort can leave a crash report
+of `llamadart_chat_example`, up to ten for one run of the row, and the test
+logs whether it found one (`"crashReport"`) instead of requiring it: macOS
+may stop writing crash reports, or write only some, for a process that
+aborts repeatedly. The check that a clean quit left no crash report is
+therefore supporting evidence, and the exit status carries the row.
 
 `MACOS_QUIT_IMAGE_MODEL` (an image checkpoint such as SDXS) loads an image
 model too, and `MACOS_QUIT_DECISION_MODEL` with `MACOS_QUIT_DECISION_HEAD`

@@ -18,7 +18,7 @@ import 'package:test/test.dart';
 /// example's Runner, keeping the Runner's sandbox with read access to the model
 /// files added. Every path also runs once with a model that nothing frees and
 /// has to abort: that run is what shows the path reaches ggml-metal's check,
-/// and it leaves a crash report in `~/Library/Logs/DiagnosticReports`.
+/// and it can leave a crash report in `~/Library/Logs/DiagnosticReports`.
 ///
 /// Set `MACOS_QUIT_CHAT_MODEL` to a GGUF chat model. `MACOS_QUIT_IMAGE_MODEL`,
 /// an image checkpoint such as SDXS, loads an image model too, and
@@ -94,8 +94,8 @@ void main() {
           expect(quit.exitCode, _sigabrt, reason: quit.stderr);
           expect(quit.stderr, contains('GGML_ASSERT'));
 
-          // Logged and not required: macOS stopped writing crash reports of
-          // this process name after 25 of them.
+          // Logged and not required: macOS may stop writing crash reports,
+          // or write only some, for a process that aborts repeatedly.
           final sinceExit = Stopwatch()..start();
           while (_crashReports(quit).isEmpty &&
               sinceExit.elapsed < _crashReportWait) {
