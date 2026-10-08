@@ -85,7 +85,7 @@ In a Flutter macOS quit with models idle, either layer is enough alone
 service on `LlamaCppObjectCalls.upstream`, the isolates' frees gave a clean
 quit with a llama.cpp model loaded. With `IsolateShutdownReleases.hold`
 doing nothing, teardown gave one with a llama.cpp and an image model loaded,
-about 0.24 s later (its settle time). With both, every quit aborted. A
+0.2 to 0.3 s later (its settle time). With both, every quit aborted. A
 Flutter hot restart shuts the old isolates down too: the tracked counts
 after the restart and a second load equal the ones before it.
 
