@@ -171,9 +171,15 @@ rsync -a --delete \
 (cd "$tmp_package" && flutter pub publish)
 ```
 
-- `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags.
+- `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags and
+  pushes it to `main` with `GITHUB_TOKEN`, so that commit starts no CI or demo
+  deploy run.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
+- `ci.yml` (`deploy-chat-app`) and `laya_tetris_hf_static_deploy.yml`: the
+  release-prep merge commit redeploys the hosted chat app and Laya Tetris
+  demos. Each upload is skipped, without failing, only when a newer `main`
+  commit changes that demo's inputs; the docs snapshot commit does not.
 - `release_on_prep_merge.yml`: runs after a release-prep PR is merged into
   `main`, validates the prepared version, publishes any missing companion
   package versions first, pushes the core release tag, waits for pub.dev, and
@@ -190,6 +196,27 @@ rsync -a --delete \
 - Verify pub.dev package page and API docs for the new version.
 - Verify the GitHub Release exists and is marked latest.
 - Verify docs version selector includes the new release.
+- Verify both hosted demos serve the release commit. The chat app deploys at
+  the end of the release commit's CI run, the Laya Tetris demo a few minutes
+  after the merge:
+
+  ```bash
+  git rev-list -n 1 v<release-version>
+  curl -fsS https://leehack-llamadart.static.hf.space/llamadart-build.json
+  curl -fsS https://leehack-flutter-laya-tetris.static.hf.space/deploy-sha.txt
+  ```
+
+  A later commit is fine when it changed no demo input. If a demo is behind,
+  for example because another merge cancelled the release commit's CI run
+  before its deploy, redeploy `main` by hand. The CI run tests `main`'s tip in
+  full before it deploys the chat app, and replaces a `main` CI run still in
+  progress:
+
+  ```bash
+  gh workflow run ci.yml --ref main
+  gh workflow run laya_tetris_hf_static_deploy.yml --ref main
+  ```
+
 - Re-run smoke checks for representative examples.
 
 ## 5. If automation is blocked

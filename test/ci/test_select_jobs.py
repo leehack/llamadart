@@ -198,6 +198,20 @@ class SelectionTest(unittest.TestCase):
             self.assertTrue(plan['jobs']['test-other-os'])
             self.assertIn('desktops-enabled=true', output.read_text())
 
+    def test_cli_manual_run_selects_every_job_that_gates_the_chat_app_deploy(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            event = Path(scratch) / 'event.json'
+            event.write_text(json.dumps({'ref': 'refs/heads/main', 'inputs': None}))
+            output = Path(scratch) / 'output'
+            env = dict(os.environ, GITHUB_EVENT_NAME='workflow_dispatch',
+                       GITHUB_EVENT_PATH=str(event), GITHUB_OUTPUT=str(output))
+            result = subprocess.run([sys.executable, str(ROOT / 'tool/ci/select_jobs.py'), 'select'],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['jobs'],
+                             ci.select([], force_full=True)['jobs'])
+            self.assertIn('web-chat-contract=true', output.read_text())
+
 
 class AggregateTest(unittest.TestCase):
     def test_each_selected_job_must_succeed_and_each_unselected_job_must_skip(self):

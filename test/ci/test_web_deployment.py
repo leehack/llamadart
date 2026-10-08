@@ -8,6 +8,7 @@ import urllib.request
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
@@ -152,13 +153,18 @@ class DeploymentTest(unittest.TestCase):
         def run(extra):
             return subprocess.run([sys.executable, str(ROOT/'tool/ci/web_deployment.py'), 'verify'],
                                   cwd=self.root, env={**env, **extra}, capture_output=True, text=True)
-        for extra in [dict(GITHUB_EVENT_NAME='pull_request'), dict(GITHUB_REF='refs/heads/topic'),
-                      dict(GITHUB_REPOSITORY='fork/llamadart'), dict(GITHUB_SHA='c'*40)]:
-            self.assertNotEqual(run(extra).returncode, 0)
+        dispatch = dict(GITHUB_EVENT_NAME='workflow_dispatch')
+        for extra in [dict(GITHUB_EVENT_NAME='pull_request'), dict(GITHUB_EVENT_NAME='workflow_run'),
+                      dict(GITHUB_REF='refs/heads/topic'), dict(dispatch, GITHUB_REF='refs/heads/topic'),
+                      dict(GITHUB_REPOSITORY='fork/llamadart'), dict(GITHUB_SHA='c'*40),
+                      dict(dispatch, GITHUB_RUN_ID='23')]:
+            self.assertNotEqual(run(extra).returncode, 0, extra)
             self.assertFalse((self.root / 'web-artifact').exists())
-        result = run({})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.root / 'web-artifact/index.html').read_text(), '<base href="/">')
+        for extra in [{}, dispatch]:
+            result = run(extra)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((self.root / 'web-artifact/index.html').read_text(), '<base href="/">')
+            shutil.rmtree(self.root / 'web-artifact')
 
 
 class PreviewTest(unittest.TestCase):

@@ -93,12 +93,13 @@ def main():
     if sys.argv[1:] != ['verify']:
         raise ValueError('Expected preview or verify')
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    if (os.environ['GITHUB_EVENT_NAME'] != 'push'
+    if (os.environ['GITHUB_EVENT_NAME'] not in ('workflow_dispatch', 'push')
             or os.environ['GITHUB_REF'] != 'refs/heads/main'
             or event['repository']['full_name'] != 'leehack/llamadart'
             or os.environ['GITHUB_REPOSITORY'] != 'leehack/llamadart'
             or event['repository'].get('fork') is not False):
-        raise ValueError('Production deployment requires this repository main push')
+        raise ValueError('Production deployment requires a push to or a manual run on '
+                         'this repository main')
     digest = os.environ['ARTIFACT_DIGEST']
     sha = os.environ['GITHUB_SHA']
     verify_artifact(json.loads(Path('web-artifact.json').read_text()),

@@ -56,3 +56,5 @@ packages/*/darwin/*/Package.swift @leehack
 packages/*/pubspec.yaml @leehack
 
 tool/ci/web_deployment.py @leehack
+tool/ci/deploy_guard.py @leehack
+test/ci/test_deploy_guard.py @leehack
