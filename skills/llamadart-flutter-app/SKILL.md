@@ -164,7 +164,15 @@ or shipping runtimes the app does not use.
 - Android: llama.cpp ships `cpu` and `vulkan` by default; `opencl` is opt-in
   through `llamadart_native_backends`. llama.cpp `ComputeDevice.auto` stays
   on the CPU there; Vulkan is experimental and device-dependent, so request
-  `ComputeDevice.gpu` only on devices the app has validated. LiteRT-LM defaults to the GPU on
+  `ComputeDevice.gpu` only on devices the app has validated. Leave
+  `ModelParams.microBatchSize` unset on Android Vulkan: a text prompt is then
+  decoded at most 32 tokens at a time, and a larger value returns wrong text
+  on some GPUs. The cap applies to text-prompt decoding only: it does not
+  cover prompts with image or audio input, embeddings, decision models,
+  text-to-speech, or speculative-decoding verification batches during
+  generation, which exceed 32 tokens with the default n-gram settings, so
+  speculative decoding can still produce wrong output on an affected GPU.
+  LiteRT-LM defaults to the GPU on
   Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
   storage-buffer limit (for example Adreno 750) a model with a larger weight
   buffer, such as Qwen3 0.6B, loads and then produces wrong text without an

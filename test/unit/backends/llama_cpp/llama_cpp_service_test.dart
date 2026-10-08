@@ -31,6 +31,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
@@ -5112,6 +5113,174 @@ void main() {
           isAndroid: true,
         ),
         isFalse,
+      );
+    });
+  });
+
+  group('Android Vulkan prompt micro-batch', () {
+    const vulkan = ModelParams(
+      contextSize: 256,
+      preferredBackend: GpuBackend.vulkan,
+    );
+    const cpu = ModelParams(
+      contextSize: 256,
+      preferredBackend: GpuBackend.cpu,
+      gpuLayers: 0,
+    );
+    final prompt = 'a' * 96;
+    late Directory tempDir;
+    late String modelPath;
+
+    setUpAll(() => LlamaCppService().initializeBackend());
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('android_vulkan_ubatch_');
+      modelPath = path.join(tempDir.path, 'llama.gguf');
+      writeSyntheticLlamaGguf(modelPath);
+    });
+
+    tearDown(() => tempDir.deleteSync(recursive: true));
+
+    /// The token count of each `llama_decode` call that ingests the 100-token
+    /// [prompt] on a context created with [params], and the `n_ubatch` of
+    /// that context.
+    ///
+    /// The model loads with [loadParams] on this host. [loadedGpuLayers]
+    /// replaces the GPU layer count that load recorded, as a load that kept
+    /// its layers on a GPU backend this host does not have.
+    Future<({List<int> calls, int microBatch})> ingest(
+      ModelParams params, {
+      bool isAndroid = true,
+      ModelParams loadParams = cpu,
+      int? loadedGpuLayers,
+      SpeculativeDecodingConfig? speculativeDecodingConfig,
+    }) async {
+      final recorder = RecordingExitTeardown(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+      );
+      final service = LlamaCppService(
+        isAndroid: isAndroid,
+        objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+      );
+      addTearDown(service.dispose);
+      final model = service.loadModel(modelPath, loadParams);
+      if (loadedGpuLayers != null) {
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        )[model] = loadedGpuLayers;
+      }
+      final context = service.createContext(model, params);
+      expect(service.tokenize(model, prompt, true), hasLength(100));
+
+      final cancel = calloc<Int8>();
+      try {
+        await service
+            .generate(
+              context,
+              prompt,
+              GenerationParams(
+                maxTokens: 1,
+                temp: 0,
+                seed: 1,
+                speculativeDecodingConfig: speculativeDecodingConfig,
+              ),
+              cancel.address,
+            )
+            .drain<void>();
+      } finally {
+        calloc.free(cancel);
+      }
+
+      final calls = <int>[];
+      for (final tokens in recorder.decodedTokens) {
+        if (calls.fold(0, (sum, call) => sum + call) == 100) break;
+        calls.add(tokens);
+      }
+      final pointer =
+          reflect(
+                _readPrivateForTesting<Map<int, Object>>(
+                  service,
+                  '_contexts',
+                )[context]!,
+              ).getField(#pointer).reflectee
+              as Pointer<llama_context>;
+      return (calls: calls, microBatch: llama_n_ubatch(pointer));
+    }
+
+    Matcher decodes(List<int> calls, {int microBatch = 256}) =>
+        isA<({List<int> calls, int microBatch})>()
+            .having((result) => result.calls, 'calls', calls)
+            .having((result) => result.microBatch, 'n_ubatch', microBatch);
+
+    test('decodes a prompt in calls of at most 32 tokens on Android Vulkan '
+        'and keeps n_ubatch', () async {
+      expect(
+        await ingest(vulkan, loadedGpuLayers: 1),
+        decodes([32, 32, 32, 4]),
+      );
+      expect(
+        await ingest(
+          const ModelParams(contextSize: 256, device: ComputeDevice.gpu),
+          loadedGpuLayers: 1,
+        ),
+        decodes([32, 32, 32, 4]),
+      );
+    });
+
+    test('caps the calls of a speculative session too', () async {
+      const ngram = SpeculativeDecodingConfig.ngramSimple(
+        ngramSizeN: 1,
+        ngramSizeM: 4,
+        ngramMinHits: 1,
+      );
+
+      expect(
+        await ingest(
+          vulkan,
+          loadedGpuLayers: 1,
+          speculativeDecodingConfig: ngram,
+        ),
+        decodes([32, 32, 32, 4]),
+      );
+      expect(
+        await ingest(cpu, speculativeDecodingConfig: ngram),
+        decodes([100]),
+      );
+    });
+
+    test('keeps an explicit micro-batch on Android Vulkan', () async {
+      for (final (explicit, calls) in [
+        (33, [33, 33, 33, 1]),
+        (64, [64, 36]),
+        (256, [100]),
+      ]) {
+        expect(
+          await ingest(
+            vulkan.copyWith(microBatchSize: explicit),
+            loadedGpuLayers: 1,
+          ),
+          decodes(calls, microBatch: explicit),
+        );
+      }
+    });
+
+    test('keeps the default when Android auto loads on the CPU', () async {
+      const auto = ModelParams(contextSize: 256);
+
+      expect(await ingest(auto, loadParams: auto), decodes([100]));
+    });
+
+    test('keeps the default for Android CPU and for a Vulkan load that kept '
+        'no GPU layers', () async {
+      expect(await ingest(cpu), decodes([100]));
+      expect(await ingest(vulkan), decodes([100]));
+    });
+
+    test('keeps the default for Vulkan off Android', () async {
+      expect(
+        await ingest(vulkan, isAndroid: false, loadedGpuLayers: 1),
+        decodes([100]),
       );
     });
   });
