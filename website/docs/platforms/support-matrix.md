@@ -151,7 +151,8 @@ output and grammars, sampling controls and speculative decoding. Guides:
   `ComputeDevice.gpu` or `GpuBackend.vulkan`. Known failures on the pinned
   runtime: on a Pixel 9 Pro (Mali-G715), a prompt longer than about 32 tokens
   evaluated in one batch returns wrong text, and a request with a grammar or
-  tool call can then abort the process
+  tool call can then abort the process, confirmed so far with one model
+  (Qwen3.5-0.8B Q4_0) on that one device
   ([#948](https://github.com/leehack/llamadart/issues/948)); a Galaxy A53
   (Mali-G68) crashes while loading the model
   ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24

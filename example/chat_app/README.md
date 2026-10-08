@@ -467,7 +467,11 @@ await prefs.setInt('preferred_backend', backendIndex);
 - If you manually moved a model, verify the path in the settings sheet.
 
 **Slow generation:**
-- Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Android/Linux/Windows).
+- Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Linux/Windows).
+- On Android, llama.cpp Vulkan is experimental and device-dependent, so it is
+  not a general fix for slow generation: keep `CPU` unless you have validated
+  Vulkan on your device
+  ([known limitations](https://llamadart.leehack.com/docs/platforms/support-matrix#known-limitations)).
 - Check if `GPU Layers` is set to a high enough value (default 99 offloads all layers).
 - Use a smaller model or a lighter 4-bit quant when your device is memory-bound.
 - For LiteRT-LM, select CPU/GPU/NPU intentionally in the settings sheet when
