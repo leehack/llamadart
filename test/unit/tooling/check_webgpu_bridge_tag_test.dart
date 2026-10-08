@@ -247,6 +247,23 @@ void main() {
     );
   });
 
+  test('LiteRtLmBackend names the LiteRT-LM module the chat app loads', () {
+    final chatAppDefault = RegExp(
+      r"'(https://cdn\.jsdelivr\.net/npm/(@litert-lm/core@[^/']+)/\+esm)'",
+    ).firstMatch(File('example/chat_app/web/index.html').readAsStringSync())!;
+    final backend = File(
+      'lib/src/backends/litert_lm/litert_lm_backend_web.dart',
+    ).readAsStringSync();
+
+    expect(backend, contains('/// `${chatAppDefault[1]}`.'));
+    expect(
+      RegExp(
+        r'@litert-lm/core@\d+\.\d+\.\d+',
+      ).allMatches(backend).map((m) => m[0]).toSet(),
+      {chatAppDefault[2]},
+    );
+  });
+
   test(
     'current release notes keep exact Web provenance and LiteRT separation',
     () {
@@ -263,12 +280,12 @@ void main() {
           reason: path,
         );
         expect(current, contains(bridgeNativeReleaseTag), reason: path);
-        expect(current, contains('@litert-lm/core@0.15.0'), reason: path);
+        expect(current, contains('@litert-lm/core@0.18.0'), reason: path);
       }
 
       expect(
         File('example/chat_app/web/index.html').readAsStringSync(),
-        contains('@litert-lm/core@0.15.0/+esm'),
+        contains('@litert-lm/core@0.18.0/+esm'),
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
@@ -276,6 +293,23 @@ void main() {
       );
     },
   );
+
+  test('Playwright helpers wrap the LiteRT-LM module the chat app loads', () {
+    List<String> moduleUrls(String path) => RegExp(
+      r"'(https://cdn\.jsdelivr\.net/npm/@litert-lm/core@[^']+)'",
+    ).allMatches(File(path).readAsStringSync()).map((m) => m[1]!).toList();
+
+    final chatAppDefault = moduleUrls('example/chat_app/web/index.html');
+    expect(chatAppDefault, hasLength(1));
+    // The helpers install their wrapper before index.html runs, so their own
+    // default is the module a smoke or benchmark loads.
+    for (final helper in const <String>[
+      'tool/testing/playwright_chat_app_real_model_smoke.py',
+      'tool/testing/playwright_chat_app_benchmark.py',
+    ]) {
+      expect(moduleUrls(helper), chatAppDefault, reason: helper);
+    }
+  });
 
   test('a pin quoting a different tag is reported', () {
     final root = _fakeRepo(

@@ -62,7 +62,7 @@ an earlier `<script>`:
 | `__llamadartBridgeEnableMem64` | `true` sets `__llamadartBridgePreferMemory64`; default off |
 | `__llamadartBridgeThreadPoolSize` | Thread hint; default 1 without cross-origin isolation, else `hardwareConcurrency` clamped to 2..4 |
 | `__llamadartBridgeSpeechToTextSupported` | Defaults to `true` only for the official repository at `v0.1.30` or newer |
-| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.15.0` from jsDelivr |
+| `__llamadartLiteRtLmModuleUrl` | `@litert-lm/core` module; default `@litert-lm/core@0.18.0` from jsDelivr |
 | `__llamadartBridgeBootstrapVerbose` | `true` enables bootstrap `console.*` logs |
 
 ## Pinned assets

@@ -38,7 +38,7 @@ integration correctness.
 
 The consumer safety gate leaves
 [#919](https://github.com/leehack/llamadart/issues/919) open for reliable runtime
-reporting. The pinned native `v0.17.0-8` and Web `@litert-lm/core@0.15.0` do
+reporting. The pinned native `v0.17.0-8` and Web `@litert-lm/core@0.18.0` do
 not expose a cause that distinguishes EOS from per-request output exhaustion.
 They cannot safely drive automatic tool loops. Plain completion remains
 available; its `stop` value is an unverified termination reason on those pins.
@@ -60,7 +60,7 @@ Verified source chain for the native artifact:
   forwards only text, final and error, so a proxy-only change cannot recover
   the discarded cause.
 - The official pinned
-  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/dist/conversation.js)
+  [Web conversation implementation](https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/dist/conversation.js)
   streams messages and closes after `waitUntilDone`. It exposes no terminal
   cause; native artifact publication alone does not repair the browser package.
 
