@@ -277,6 +277,23 @@ void main() {
     },
   );
 
+  test('Playwright helpers wrap the LiteRT-LM module the chat app loads', () {
+    List<String> moduleUrls(String path) => RegExp(
+      r"'(https://cdn\.jsdelivr\.net/npm/@litert-lm/core@[^']+)'",
+    ).allMatches(File(path).readAsStringSync()).map((m) => m[1]!).toList();
+
+    final chatAppDefault = moduleUrls('example/chat_app/web/index.html');
+    expect(chatAppDefault, hasLength(1));
+    // The helpers install their wrapper before index.html runs, so their own
+    // default is the module a smoke or benchmark loads.
+    for (final helper in const <String>[
+      'tool/testing/playwright_chat_app_real_model_smoke.py',
+      'tool/testing/playwright_chat_app_benchmark.py',
+    ]) {
+      expect(moduleUrls(helper), chatAppDefault, reason: helper);
+    }
+  });
+
   test('a pin quoting a different tag is reported', () {
     final root = _fakeRepo(
       'v9.9.9',

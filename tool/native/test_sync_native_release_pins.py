@@ -845,15 +845,21 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 )
 
     def test_override_table_has_an_entry_for_the_pinned_upstream_version(self) -> None:
-        pinned = re.search(
-            r"const liteRtLmReleaseTag = '(v\d+\.\d+\.\d+)(?:-[^']+)?';",
+        tag = re.search(
+            r"const liteRtLmReleaseTag = '([^']+)';",
             (
                 Path(__file__).resolve().parents[2]
                 / "lib/src/hook/native_release_pins.dart"
             ).read_text(encoding="utf-8"),
-        )
-        self.assertIsNotNone(pinned, "liteRtLmReleaseTag is not a stable tag")
-        self.assertIn(pinned[1], pins.LITERT_PREBUILT_OVERRIDES)
+        )[1]
+        if pins.DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag):
+            self.skipTest(
+                "the upstream version of a development pin is only in its "
+                "release manifest"
+            )
+        upstream = re.fullmatch(r"(v\d+\.\d+\.\d+)(?:-.+)?", tag)
+        self.assertIsNotNone(upstream, f"unrecognized LiteRT-LM pin {tag}")
+        self.assertIn(upstream[1], pins.LITERT_PREBUILT_OVERRIDES)
 
     def test_override_mismatch_names_the_upstream_version_missing_from_the_table(
         self,
