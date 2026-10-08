@@ -37,6 +37,11 @@ abstract final class LlamaLogging {
   /// printed, not thrown. Some native output, such as the LiteRT-LM WebGPU
   /// accelerator's, ignores [nativeLevel]; see
   /// https://llamadart.leehack.com/docs/configuration/logging.
+  ///
+  /// The stable_diffusion runtime of `ImageGenerationEngine` records its
+  /// messages from the stricter of the two levels and hands them to
+  /// [handler] after each load and generation. It takes the levels when a
+  /// model loads, so a later call applies to the next load.
   static Future<void> configure({
     LlamaLogLevel level = LlamaLogLevel.none,
     LlamaLogLevel? nativeLevel,

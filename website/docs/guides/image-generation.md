@@ -18,9 +18,9 @@ Image generation is a Preview.
   [desktop models](#desktop-models) are validated on macOS Metal only
   ([#802](https://github.com/leehack/llamadart/issues/802)).
 - Open limits: no web runtime yet
-  ([#780](https://github.com/leehack/llamadart/issues/780)); Vulkan GPU
-  memory is not checked before loading
-  ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9));
+  ([#780](https://github.com/leehack/llamadart/issues/780)); the
+  [memory check](#memory-check) of a Vulkan GPU has not run on a physical GPU
+  yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9));
   the automatic attention and VAE settings were measured on an M4 Max and
   still need re-measuring on Android phones and iPhone
   ([#805](https://github.com/leehack/llamadart/issues/805)); the chat app's
@@ -682,12 +682,44 @@ device the model loads on:
 | iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
 | macOS: CPU | Physical memory |
 | macOS: Metal | Physical memory, capped at the GPU's `recommendedMaxWorkingSetSize` (about two thirds to three quarters of it) |
-| Linux, Windows: Vulkan | Not checked: the weights live in GPU memory, which the runtime does not report yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)) |
+| Linux, Windows: Vulkan, discrete GPU | The GPU's free memory when its driver reports one (`VK_EXT_memory_budget`), otherwise its total memory |
+| Linux: Vulkan, integrated GPU | `MemAvailable`, as for the CPU |
+| Windows: Vulkan, integrated GPU | Not checked |
 | Windows: CPU | Not checked |
 
 A model that does not fit throws `LlamaModelException` naming both figures,
 instead of the system killing the app. Set
 `ImageModelParams(checkMemory: false)` to load anyway.
+
+The Vulkan figures are the runtime's, which are ggml's: the memory of the
+GPU a model loads on by default, the first discrete GPU or else the first
+integrated one. The engine asks for them in a short-lived isolate, because
+the first such call in a process can initialize the GPU.
+
+- With a memory budget from the driver, the free figure is what this process
+  can still allocate on the GPU, so it accounts for other processes and for
+  image models already loaded.
+- Without one the runtime reports the total as free. The engine then
+  compares with the total, and does the same for a free figure of 0: only a
+  model that cannot fit the GPU at all is refused.
+- An integrated GPU uses host memory, and a driver that exposes it as several
+  heaps makes the GPU's own figures count it more than once. The engine
+  ignores them and compares with host memory, which it does not read on
+  Windows.
+- Nothing is checked when the GPU does not report its memory, when the
+  `SD_VK_DEVICE` environment variable picks the Vulkan device, or with a
+  `stable_diffusion` runtime older than `stable-diffusion-native` `v0.2.0-2`.
+
+With the check off, stable-diffusion.cpp keeps the weights that do not fit a
+Vulkan GPU in host memory, which is slower but does not fail the load. So
+the check refuses there what would have loaded slowly before.
+
+The Vulkan rules are tested on reported figures, and the call that reads them
+is checked on macOS Metal, where its total equals the working set above. The
+figures of a physical Vulkan GPU on Linux and Windows have not been checked
+yet ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
+The Apple checks do not use these figures: Metal's total is the same working
+set, and its free figure counts only this process's allocations.
 
 On Android, `MemAvailable` alone is too strict: it leaves out the memory the
 low-memory killer frees by stopping cached apps and what it swaps to zram,
@@ -722,35 +754,62 @@ and 1024x1024 SDXL, SD 3.5 Large Turbo, FLUX and Z-Image stayed 0.5
 to 1.6 GiB under it on Metal. SD 3.5 Medium, whose single file decodes with
 the full VAE, peaked 0.3 GiB above it (11.6 against 11.3 GiB). Larger sizes
 need more, especially on the CPU: SD-Turbo at 1024x1024
-peaked at 4.7 GiB there. On a Vulkan GPU too small for the model,
-stable-diffusion.cpp keeps some weights in host memory, which is slower but
-does not fail the load.
+peaked at 4.7 GiB there.
+
+## Runtime logs
+
+stable-diffusion.cpp's and ggml's messages go to the handler of
+[`LlamaLogging.configure`](../configuration/logging), each at its own level:
+
+```dart
+await LlamaLogging.configure(
+  level: LlamaLogLevel.info,
+  handler: (record) => print('[${record.level.name}] ${record.message}'),
+);
+final engine = await ImageGenerationEngine.load(model);
+```
+
+- A message has to pass both `level` and `nativeLevel`, so the runtime
+  records from the stricter of the two, and nothing when either is `none`,
+  the default. A load takes the levels it finds: configure logging before
+  `load`.
+- Messages arrive after each load and generation and at `dispose()`, not
+  while one runs: a worker isolate reads them from the runtime between its
+  calls. Each starts with `stable_diffusion: `, and model file paths are
+  replaced by roles, such as `<checkpoint file>`.
+- The runtime keeps the most recent 256 KiB of messages. When one load or
+  generation records more, the oldest are lost and one warning says how
+  many. On an M4 Max an SDXS load recorded 28 messages at `info` and 40 at
+  `debug`, and reading them took about 0.1 ms.
+- The runtime no longer writes ggml's device messages to stderr, at any
+  level. What a ggml backend writes to stderr itself still goes there.
+- A `stable_diffusion` runtime older than `stable-diffusion-native`
+  `v0.2.0-2` has no log to read: it logs as before, to stderr only.
 
 ## Errors
 
 | Exception | When |
 | --- | --- |
 | `LlamaUnsupportedException` | The runtime is not bundled, the platform or CPU is unsupported, on the web, `ComputeDevice.gpu` without a GPU, `ComputeDevice.npu`, or `ModelLoadOptions.sha256` set for a `load` of several files |
-| `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A rejected split model names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
+| `LlamaModelException` | A file is missing, fails to download or is not an image-model component, two files share a role, a decoder does not match the diffusion model, the model does not fit, or the runtime cannot load it. A load the runtime rejects quotes the errors it logged, with files named by role, such as `tensor '...' extends beyond its model file`; a rejected split model also names the roles it lacks, such as a VAE or text encoder, and `details` lists the roles passed |
 | `LlamaImageGenerationException` | An invalid request or `params:` |
 | `LlamaStateException` | The load's cancel token cancelled it, another generation or load is running, or the engine is disposed |
 | `LlamaInferenceException` | The runtime failed a generation, for example an aborted Metal command buffer or running out of memory; the engine runs the next request |
 
 ## Known limits
 
-- Runtime logs are not forwarded to `LlamaLogger`: stable-diffusion.cpp's log
-  text is only valid during a call made from its own threads
-  ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
-  ggml's own backend messages still reach stderr. The same gap keeps the
-  runtime's own reason out of a load failure; the error names missing file
-  roles instead.
+- [Runtime logs](#runtime-logs) arrive after a load or generation, not
+  during it. A failed load quotes what the runtime logged as errors, which
+  for a file in the wrong role is only `get sd version from file failed`,
+  and a failed generation does not quote its reason yet.
 - Android runs on the CPU only: ggml Vulkan and OpenCL crashed or ran slower
   on the phones tried
   ([stable-diffusion-native#2](https://github.com/leehack/stable-diffusion-native/issues/2)).
 - iOS can abort a Metal command buffer under GPU pressure (seen once with
   SD-Turbo at four steps); the task fails and the next request runs.
-- Windows and Vulkan GPUs are not memory-checked. Per-platform validation
-  results, including timings, are in
+- The Windows CPU and integrated GPUs on Windows are not memory-checked, and
+  the [memory check](#memory-check) of a Vulkan GPU has not run on a physical
+  GPU yet. Per-platform validation results, including timings, are in
   [#779](https://github.com/leehack/llamadart/issues/779).
 - The web has no image runtime yet
   ([#780](https://github.com/leehack/llamadart/issues/780)).

@@ -19,7 +19,7 @@ void main() {
       throwsA(isA<LlamaUnsupportedException>()),
     );
     for (final device in ImageGenerationComputeDevice.values) {
-      expect(driver.memoryBudget(device), isNull);
+      expect(await driver.memoryBudget(device), isNull);
     }
     await expectLater(
       driver.start(

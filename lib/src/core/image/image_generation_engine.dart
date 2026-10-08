@@ -157,9 +157,11 @@ class ImageGenerationTask {
 /// in the same isolate; do not generate from engines in different isolates
 /// at the same time.
 ///
-/// Runtime logs are not forwarded to `LlamaLogger` yet: stable-diffusion.cpp
-/// passes log text that is only valid during a call made from its own
-/// threads.
+/// The runtime's messages reach the handler of `LlamaLogging.configure` when
+/// both of its levels admit them; a load takes the levels it finds. They
+/// arrive after each load and generation and at [dispose], not while one
+/// runs, and name model files by role. At the default levels the runtime
+/// logs nothing, to stderr either.
 ///
 /// ```dart
 /// final engine = await ImageGenerationEngine.load(
@@ -308,10 +310,15 @@ class ImageGenerationEngine {
   /// available: on Android the larger of `MemAvailable` and half of physical
   /// memory less what the app already holds, `MemAvailable` on Linux, the
   /// app's remaining memory limit on iOS, and physical memory on macOS,
-  /// capped on Metal by the GPU's recommended working set. Windows, and GPUs
-  /// other than Metal (whose device memory the runtime does not report), are
-  /// not checked. A model that does not fit throws [LlamaModelException]
-  /// naming both figures, instead of letting the system kill the app.
+  /// capped on Metal by the GPU's recommended working set. On a Vulkan GPU
+  /// it is the GPU's free memory when its driver reports that, its total
+  /// memory otherwise, and for an integrated GPU the host figure of its
+  /// platform; the GPU is asked off the calling isolate. The Windows CPU, an
+  /// integrated GPU on Windows, a GPU that does not report its memory and a
+  /// load with the `SD_VK_DEVICE` environment variable set are not checked. A
+  /// model that does not fit throws [LlamaModelException] naming both
+  /// figures, instead of letting the system kill the app or, on a Vulkan
+  /// GPU, the runtime keep the weights that do not fit in host memory.
   ///
   /// [download]'s cancel token stops a download at once and is checked again
   /// after classification and after the native load; the native load itself
@@ -335,8 +342,8 @@ class ImageGenerationEngine {
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
   ///   diffusion weights; when the model does not fit; when the runtime
-  ///   cannot load it; and what the download manager throws for a failed
-  ///   download.
+  ///   cannot load it, with the reason the runtime logged when it logged
+  ///   one; and what the download manager throws for a failed download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
   /// - [LlamaArgumentException] when [download] sets a bearer token or
@@ -409,7 +416,7 @@ class ImageGenerationEngine {
     if (params.checkMemory) {
       _checkMemory(
         weightBytes,
-        driver.memoryBudget(switch (backendName) {
+        await driver.memoryBudget(switch (backendName) {
           _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
           _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
           _ => ImageGenerationComputeDevice.cpu,
@@ -561,7 +568,7 @@ class ImageGenerationEngine {
   /// one sampling step and a decode at that size: about 2 to 4 s for
   /// SDXL-Lightning with TAESDXL on an M4 Max, and the same peak memory as
   /// an image, which the memory check in [load] covers where it runs (not
-  /// on Vulkan or the Windows CPU).
+  /// on the Windows CPU).
   ///
   /// On the CPU there is nothing to compile, so this returns at once.
   ///

@@ -8,6 +8,11 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
+
+import '../../../support/fake_stable_diffusion_runtime.dart';
+
+const _gib = 1 << 30;
 
 /// Whether `MTLCreateSystemDefaultDevice` returns a device, checked apart
 /// from the code under test.
@@ -280,6 +285,163 @@ void main() {
         expect(metal.bytes, lessThan(physical));
       }
     }, skip: Platform.isMacOS ? false : 'macOS only');
+  });
+
+  group('readStableDiffusionGpuMemory', () {
+    late FakeStableDiffusionRuntime runtime;
+
+    setUp(() => runtime = FakeStableDiffusionRuntime());
+
+    tearDown(() => runtime.close());
+
+    StableDiffusionGpuMemory? read({
+      LlamaLogLevel logLevel = LlamaLogLevel.none,
+      String? vulkanDevice,
+    }) => readStableDiffusionGpuMemory(
+      resolveCalls: runtime.resolver,
+      logLevel: logLevel,
+      environment: (name) => name == 'SD_VK_DEVICE' ? vulkanDevice : null,
+    );
+
+    test('asks the default device, after the recorder is registered at the '
+        'log level', () async {
+      runtime.setGpuMemory(total: 24 * _gib, free: 21 * _gib);
+
+      final memory = read(logLevel: LlamaLogLevel.warn);
+      await runtime.flush();
+
+      expect(memory, (
+        name: 'Vulkan0 (Fake GPU)',
+        totalBytes: 24 * _gib,
+        freeBytes: 21 * _gib,
+        integrated: false,
+      ));
+      expect(runtime.calls('caller'), [
+        'sd_dart_log_enable',
+        'sd_dart_log_set_level:3',
+        'sd_dart_gpu_device_memory:-1',
+      ]);
+    });
+
+    test('reports an integrated GPU as one', () {
+      runtime.setGpuMemory(total: 16 * _gib, free: 12 * _gib, integrated: true);
+
+      expect(read()?.integrated, isTrue);
+    });
+
+    test('is null for every status but OK: no backend, no device, memory '
+        'unavailable, an invalid argument', () {
+      for (final status in [-1, -2, -3, -4]) {
+        runtime.setGpuMemory(status: status, total: 8 * _gib, free: _gib);
+
+        expect(read(), isNull, reason: '$status');
+      }
+    });
+
+    test('a runtime older than the query is not asked', () async {
+      runtime
+        ..olderRelease = true
+        ..setGpuMemory(total: 8 * _gib, free: _gib);
+
+      expect(read(), isNull);
+      await runtime.flush();
+      expect(runtime.calls('caller'), isEmpty);
+    });
+
+    test('is null without a runtime', () {
+      expect(readStableDiffusionGpuMemory(resolveCalls: () => null), isNull);
+    });
+
+    test('SD_VK_DEVICE, which makes the runtime pick the device, skips the '
+        'query', () async {
+      runtime.setGpuMemory(total: 8 * _gib, free: _gib);
+
+      expect(read(vulkanDevice: '1'), isNull);
+      await runtime.flush();
+      expect(runtime.calls('caller'), isEmpty);
+      expect(read(), isNotNull);
+    });
+  });
+
+  group('stableDiffusionGpuMemoryBudget', () {
+    const host = (bytes: 5 * _gib, source: 'MemAvailable in /proc/meminfo');
+
+    ImageGenerationMemoryBudget? budget(
+      StableDiffusionGpuMemory? memory, {
+      ImageGenerationMemoryBudget? hostBudget = host,
+    }) => stableDiffusionGpuMemoryBudget(memory, hostBudget: () => hostBudget);
+
+    StableDiffusionGpuMemory gpu({
+      required int total,
+      required int free,
+      bool integrated = false,
+    }) => (
+      name: 'Vulkan0 (NVIDIA L4)',
+      totalBytes: total,
+      freeBytes: free,
+      integrated: integrated,
+    );
+
+    test('a discrete GPU whose driver reports a budget gives its free '
+        'memory', () {
+      expect(budget(gpu(total: 24 * _gib, free: 9 * _gib)), (
+        bytes: 9 * _gib,
+        source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 24.0 GiB',
+      ));
+      expect(
+        budget(gpu(total: 8 * _gib, free: 8 * _gib - 1))?.bytes,
+        8 * _gib - 1,
+      );
+      expect(budget(gpu(total: 8 * _gib, free: 1))?.bytes, 1);
+    });
+
+    test('a discrete GPU that reports its total as free, or nothing as free, '
+        'gives its total memory and says that free memory is unknown', () {
+      for (final free in [8 * _gib, 0]) {
+        expect(budget(gpu(total: 8 * _gib, free: free)), (
+          bytes: 8 * _gib,
+          source:
+              'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does not '
+              'report how much of it is free',
+        ), reason: '$free');
+      }
+    });
+
+    test('an integrated GPU gives the host figure, never its own', () {
+      for (final (total, free) in [(64 * _gib, 60 * _gib), (2 * _gib, _gib)]) {
+        expect(budget(gpu(total: total, free: free, integrated: true)), (
+          bytes: 5 * _gib,
+          source:
+              'MemAvailable in /proc/meminfo; Vulkan0 (NVIDIA L4) is an '
+              'integrated GPU, which uses host memory',
+        ));
+      }
+    });
+
+    test('an integrated GPU has no budget where host memory is not read', () {
+      expect(
+        budget(
+          gpu(total: 16 * _gib, free: 8 * _gib, integrated: true),
+          hostBudget: null,
+        ),
+        isNull,
+      );
+    });
+
+    test('unknown memory has no budget, and the host is not asked for a '
+        'discrete GPU', () {
+      ImageGenerationMemoryBudget? unasked() => fail('asked the host');
+
+      expect(budget(null), isNull);
+      expect(budget(gpu(total: 0, free: 0)), isNull);
+      expect(
+        stableDiffusionGpuMemoryBudget(
+          gpu(total: 8 * _gib, free: _gib),
+          hostBudget: unasked,
+        )?.bytes,
+        _gib,
+      );
+    });
   });
 
   test('readStableDiffusionFileRange reads a range and stops at the end of '

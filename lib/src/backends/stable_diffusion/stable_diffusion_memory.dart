@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
@@ -5,6 +6,10 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 import '../../core/image/image_generation_driver.dart';
+import '../../core/models/config/log_level.dart';
+import 'stable_diffusion_bindings.dart' as sd;
+import 'stable_diffusion_calls.dart';
+import 'stable_diffusion_log.dart';
 
 /// Up to [length] bytes of the file at [path] from [offset]; fewer at its end.
 Future<Uint8List> readStableDiffusionFileRange(
@@ -57,8 +62,8 @@ int? stableDiffusionFileSize(String path) {
 /// physical memory, beyond which Metal buffers page.
 ///
 /// On other GPUs, such as Vulkan, `null`: the weights live in device memory,
-/// which the runtime does not report (stable-diffusion-native#9), so host
-/// memory would be the wrong figure.
+/// so host memory would be the wrong figure. [readStableDiffusionGpuMemory]
+/// and [stableDiffusionGpuMemoryBudget] give theirs.
 ///
 /// [abi], [readMemInfo], [readProcessStatus], [iosAvailableMemory],
 /// [macosPhysicalMemory] and [metalRecommendedWorkingSet] default to the
@@ -102,6 +107,140 @@ int? stableDiffusionFileSize(String path) {
   }
   return (bytes: bytes, source: reading.$2);
 }
+
+/// The memory of a GPU as the stable_diffusion runtime reports it, in bytes.
+/// [name] is the device name with its description, such as
+/// `Vulkan0 (NVIDIA L4)`.
+typedef StableDiffusionGpuMemory = ({
+  String name,
+  int totalBytes,
+  int freeBytes,
+  bool integrated,
+});
+
+/// The memory of the GPU a context with no named device loads on (the first
+/// discrete GPU, or else the first integrated one), from
+/// `sd_dart_gpu_device_memory`, or `null` when it is not known:
+///
+/// - the runtime is older than `StableDiffusionCalls.optionalNativeRelease`
+///   and does not export the query;
+/// - the runtime has no GPU backend or found no GPU, or the device does not
+///   report its memory;
+/// - `SD_VK_DEVICE` is set: such a context then loads on the Vulkan device of
+///   that number if it initializes, which the query does not follow.
+///
+/// The first query in a process initializes the GPU backend, as a load
+/// otherwise does, which can take many seconds, and exit teardown waits for
+/// a query in flight: call it from an isolate that may block, never from a UI
+/// isolate. The runtime's recorder is registered first at [logLevel], because
+/// a query logs through ggml and the registration is not synchronized with
+/// it.
+///
+/// [resolveCalls] and [environment] default to the bundled runtime and the
+/// process environment; tests replace them.
+StableDiffusionGpuMemory? readStableDiffusionGpuMemory({
+  StableDiffusionCalls? Function() resolveCalls =
+      StableDiffusionCalls.tryResolve,
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
+  String? Function(String name) environment = _environmentVariable,
+}) {
+  if (environment('SD_VK_DEVICE') != null) {
+    return null;
+  }
+  final calls = resolveCalls();
+  final query = calls?.gpuDeviceMemory;
+  if (calls == null || query == null) {
+    return null;
+  }
+  final log = calls.log;
+  if (log != null) {
+    recordStableDiffusionLog(log, logLevel);
+  }
+  return using((arena) {
+    final out = arena<sd.sd_dart_gpu_device_memory_t>();
+    final status = query(sd.SD_DART_GPU_DEFAULT_DEVICE, out);
+    if (status != sd.sd_dart_gpu_status.SD_DART_GPU_OK.value) {
+      return null;
+    }
+    final memory = out.ref;
+    final name = _text(memory.name, 64);
+    final description = _text(memory.description, 256);
+    return (
+      name: description.isEmpty ? name : '$name ($description)',
+      totalBytes: memory.total_bytes,
+      freeBytes: memory.free_bytes,
+      integrated:
+          memory.type ==
+          sd.sd_dart_gpu_device_type.SD_DART_GPU_DEVICE_INTEGRATED.value,
+    );
+  });
+}
+
+/// The memory a new image model can use on the GPU [memory] describes, or
+/// `null` when it is not known.
+///
+/// - A discrete GPU whose driver reports a budget (`VK_EXT_memory_budget`):
+///   its free memory, which is what this process can still allocate there
+///   and so accounts for other processes and for models already loaded.
+/// - A discrete GPU without one: its total memory. The runtime then reports
+///   the total as free, so equal figures mean "not reported", and so does a
+///   free figure of 0, which a driver whose budget is below the process's use
+///   gives. Only a model that cannot fit the device at all is refused.
+/// - An integrated GPU: [hostBudget], the figure the CPU gets. Its memory is
+///   host memory, and a driver that exposes that as several heaps has it
+///   counted more than once in the device's figures, so they are not used.
+///   `null` where host memory is not read, as on Windows.
+ImageGenerationMemoryBudget? stableDiffusionGpuMemoryBudget(
+  StableDiffusionGpuMemory? memory, {
+  required ImageGenerationMemoryBudget? Function() hostBudget,
+}) {
+  if (memory == null || memory.totalBytes <= 0) {
+    return null;
+  }
+  if (memory.integrated) {
+    final host = hostBudget();
+    return host == null
+        ? null
+        : (
+            bytes: host.bytes,
+            source:
+                '${host.source}; ${memory.name} is an integrated GPU, which '
+                'uses host memory',
+          );
+  }
+  final total = '${_gib(memory.totalBytes)} GiB';
+  if (memory.freeBytes > 0 && memory.freeBytes < memory.totalBytes) {
+    return (
+      bytes: memory.freeBytes,
+      source: 'free GPU memory of ${memory.name}, out of $total',
+    );
+  }
+  return (
+    bytes: memory.totalBytes,
+    source:
+        'the GPU memory of ${memory.name}, whose driver does not report how '
+        'much of it is free',
+  );
+}
+
+String _gib(int bytes) {
+  final gib = bytes / (1 << 30);
+  return gib.toStringAsFixed(gib < 10 ? 2 : 1);
+}
+
+String _text(Array<Char> characters, int length) {
+  final bytes = <int>[];
+  for (var i = 0; i < length; i++) {
+    final byte = characters[i] & 0xff;
+    if (byte == 0) {
+      break;
+    }
+    bytes.add(byte);
+  }
+  return utf8.decode(bytes, allowMalformed: true);
+}
+
+String? _environmentVariable(String name) => Platform.environment[name];
 
 const String _memAvailableSource = 'MemAvailable in /proc/meminfo';
 

@@ -1030,6 +1030,36 @@ void main() {
       expect(driver.started, isEmpty);
     });
 
+    test('refuses a model that does not fit a Vulkan GPU, naming the '
+        'estimate and the memory of the GPU', () async {
+      driver
+        ..status = _available('Vulkan0\tNVIDIA L4\nCPU\tHost\n')
+        ..sizes[_model] = 8 * _gib
+        ..budget = (
+          bytes: 6 * _gib,
+          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB',
+        );
+
+      await expectLater(
+        load(_sdxs()),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('about 10.5 GiB'),
+              contains('only 6.00 GiB is available'),
+              contains(
+                'free GPU memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB',
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(driver.budgetDevices, [ImageGenerationComputeDevice.otherGpu]);
+      expect(driver.started, isEmpty);
+    });
+
     test('counts every file toward the estimate', () async {
       driver.sizes[_model] = _gib;
       driver.sizes[_taesd] = _gib;
@@ -1663,9 +1693,9 @@ final class _FakeDriver implements ImageGenerationDriver {
   final List<ImageGenerationComputeDevice> budgetDevices = [];
 
   @override
-  ImageGenerationMemoryBudget? memoryBudget(
+  Future<ImageGenerationMemoryBudget?> memoryBudget(
     ImageGenerationComputeDevice device,
-  ) {
+  ) async {
     budgetDevices.add(device);
     return budget;
   }

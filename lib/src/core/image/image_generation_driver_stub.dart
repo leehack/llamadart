@@ -26,9 +26,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
       Future.error(probe().unavailableReason!);
 
   @override
-  ImageGenerationMemoryBudget? memoryBudget(
+  Future<ImageGenerationMemoryBudget?> memoryBudget(
     ImageGenerationComputeDevice device,
-  ) => null;
+  ) async => null;
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>

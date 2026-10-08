@@ -299,7 +299,9 @@ dart run tool/testing/run_local_e2e.dart \
 # model cache directory) to load SDXS from its pinned Hugging Face file
 # through the resolver, 683 MB on the first run, and
 # LLAMADART_IMAGE_SPLIT_MODEL (a split model's files, comma separated in any
-# order) to check role detection on a real split model.
+# order) to check role detection on a real split model. It also checks the
+# runtime's reason in the error of a rejected load, the runtime's messages in
+# the log handler, and on macOS the runtime's GPU memory figure.
 dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
   --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
 
@@ -589,7 +591,11 @@ stable_diffusion runtime. It runs
 ends it while an image model is alive on Metal: C `exit` through FFI from the
 main isolate with the model idle, generating, loading, or already disposed;
 an unhandled error while generating or loading; and an isolate killed inside
-the native load. Each run must reach its exit point, print neither
+the native load. The idle, generating and loading exits run a second time
+with the runtime's log forwarded at debug level (`-logging`), so the worker
+reads the log around the exit, and `quiet` loads, generates and disposes at
+the default log levels and must leave no `ggml_` line on stderr. Each run
+must reach its exit point, print neither
 `GGML_ASSERT` nor `GetFfiCallbackMetadata`, and end with exit code 0, or 255
 for the unhandled errors. The loading scenarios time a second load of the
 model and exit halfway through a third, because the first load of a process
@@ -598,7 +604,8 @@ native host that exits without shutting Dart down, not a Flutter quit
 ([exit teardown](llama_cpp_exit_teardown.md#image-models)).
 
 The row also checks that each `sd_dart_` function `StableDiffusionCalls`
-looks up resolves to the runtime's own export of that name, which default CI
+looks up, the optional log and device memory functions included, resolves to
+the runtime's own export of that name, which default CI
 cannot (the root package does not bundle the runtime), and that batches of
 two and three images report every sampling step in order and end with the
 `decoding` event.

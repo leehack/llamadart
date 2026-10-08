@@ -7,6 +7,25 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
+  `stable_diffusion` image runtime.
+- Check the memory of a Vulkan GPU before loading an image model on Linux and
+  Windows: `ImageGenerationEngine.load` refuses a model whose estimate
+  exceeds the GPU's free memory, or its total memory when the driver reports
+  no free figure, with `LlamaModelException`
+  ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
+  The check has not run on a physical Vulkan GPU yet, and
+  `ImageModelParams(checkMemory: false)` loads anyway.
+- Quote the errors stable-diffusion.cpp logged in the `LlamaModelException`
+  of an image model it cannot load, with files named by role
+  ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
+- Send the image runtime's messages to the `LlamaLogging.configure` handler
+  at the configured levels, after each load and generation. The runtime no
+  longer prints ggml's device messages to stderr: at the default level
+  `none` it logs nothing.
+
 ## 0.11.1
 
 - Give a chat template that reads content part lists but rejects image and

@@ -96,8 +96,8 @@ enum ImageGenerationComputeDevice {
   /// recommended working set.
   metal,
 
-  /// Any other GPU, such as Vulkan: its own device memory, which the runtime
-  /// does not report.
+  /// Any other GPU, such as Vulkan: its own device memory as the runtime
+  /// reports it, or host memory when the GPU is an integrated one.
   otherGpu,
 }
 
@@ -142,14 +142,18 @@ abstract interface class ImageGenerationDriver {
   Future<Uint8List> readFileRange(String path, int offset, int length);
 
   /// Memory available to a new model on [device], or `null` when it is not
-  /// known.
-  ImageGenerationMemoryBudget? memoryBudget(
+  /// known. Asking a GPU other than Metal is a native call that can block, so
+  /// on native platforms it runs in a short-lived isolate.
+  Future<ImageGenerationMemoryBudget?> memoryBudget(
     ImageGenerationComputeDevice device,
   );
 
-  /// Loads a native context.
+  /// Loads a native context. On native platforms the runtime's messages
+  /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when
+  /// this is called.
   ///
-  /// Throws `LlamaModelException` when the runtime rejects the files.
+  /// Throws `LlamaModelException` when the runtime rejects the files, with
+  /// the runtime's reason when it gives one.
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config);
 }
 

@@ -23,6 +23,16 @@ const _symbols = [
   'sd_dart_exit_free',
 ];
 
+// The exports of stable-diffusion-native v0.2.0-2 it works without.
+const _logSymbols = [
+  'sd_dart_log_enable',
+  'sd_dart_log_set_level',
+  'sd_dart_log_read',
+  'sd_dart_log_dropped',
+  'sd_dart_last_error',
+];
+const _deviceMemorySymbols = ['sd_dart_gpu_device_memory'];
+
 // The root package does not bundle the stable_diffusion runtime, so these
 // tests resolve the functions from stand-ins. That each name resolves to the
 // runtime's own export is checked against the real runtime by
@@ -37,7 +47,10 @@ void main() {
     }
 
     expect(StableDiffusionCalls.tryResolve(symbol: exported), isNotNull);
-    expect(requested, unorderedEquals(_symbols));
+    expect(
+      requested,
+      unorderedEquals([..._symbols, ..._logSymbols, ..._deviceMemorySymbols]),
+    );
     expect(StableDiffusionCalls.wrapperSymbols, unorderedEquals(_symbols));
 
     for (final missing in _symbols) {
@@ -53,6 +66,45 @@ void main() {
     }
   });
 
+  test('a runtime of v0.2.0-1, without the log and device memory functions, '
+      'resolves with both absent', () {
+    final calls = StableDiffusionCalls.tryResolve(
+      symbol: (name) => _symbols.contains(name)
+          ? Pointer.fromAddress(0x1000)
+          : throw ArgumentError("Couldn't resolve native function '$name'"),
+    );
+
+    expect(calls, isNotNull);
+    expect(calls!.log, isNull);
+    expect(calls.gpuDeviceMemory, isNull);
+  });
+
+  test('the log is bound only when the runtime exports all of its '
+      'functions, and the device memory query on its own', () {
+    expect(StableDiffusionCalls.logSymbols, unorderedEquals(_logSymbols));
+    expect(
+      StableDiffusionCalls.deviceMemorySymbols,
+      unorderedEquals(_deviceMemorySymbols),
+    );
+    expect(StableDiffusionCalls.optionalNativeRelease, 'v0.2.0-2');
+
+    StableDiffusionCalls without(String missing) =>
+        StableDiffusionCalls.tryResolve(
+          symbol: (name) => name == missing
+              ? throw ArgumentError("Couldn't resolve native function '$name'")
+              : Pointer.fromAddress(0x1000),
+        )!;
+
+    for (final missing in _logSymbols) {
+      final calls = without(missing);
+      expect(calls.log, isNull, reason: missing);
+      expect(calls.gpuDeviceMemory, isNotNull, reason: missing);
+    }
+    final calls = without(_deviceMemorySymbols.single);
+    expect(calls.gpuDeviceMemory, isNull);
+    expect(calls.log, isNotNull);
+  });
+
   test('calls the function exported under the name of each of its '
       'members', () {
     final exports = _RecordingExports();
@@ -66,6 +118,14 @@ void main() {
           calls.generateImage(nullptr, nullptr, nullptr, nullptr),
       'sd_dart_cancel_generation': () => calls.cancelGeneration(nullptr),
       'sd_dart_exit_free': () => calls.exitFree(nullptr),
+      'sd_dart_log_enable': calls.log!.enable,
+      'sd_dart_log_set_level': () => calls.log!.setLevel(3),
+      'sd_dart_log_read': () =>
+          expect(calls.log!.read(41, nullptr, 0, nullptr, nullptr), 42),
+      'sd_dart_log_dropped': () => expect(calls.log!.dropped(), 7),
+      'sd_dart_last_error': () => expect(calls.log!.lastError(nullptr, 9), 9),
+      'sd_dart_gpu_device_memory': () =>
+          expect(calls.gpuDeviceMemory!(-1, nullptr), -3),
     };
     for (final MapEntry(key: name, value: call) in members.entries) {
       exports.called.clear();
@@ -73,6 +133,8 @@ void main() {
       expect(exports.called, [name]);
     }
     expect(exports.cancelMode, sd.sd_cancel_mode_t.SD_CANCEL_ALL.value);
+    expect(exports.logLevel, 3);
+    expect(exports.deviceIndex, -1);
     expect(calls.exitFreeAddress, exports.symbol('sd_dart_exit_free'));
 
     // sd_dart_progress_read is a leaf call, which cannot call back into
@@ -107,6 +169,9 @@ void main() {
     for (final symbol in _symbols) {
       expect(message, contains(symbol));
     }
+    for (final symbol in [..._logSymbols, ..._deviceMemorySymbols]) {
+      expect(message, isNot(contains(symbol)));
+    }
     expect(message, contains('stable-diffusion-native v0.2.0-1 or later'));
     expect(message, contains('pinned release $stableDiffusionReleaseTag'));
   });
@@ -128,6 +193,8 @@ void main() {
       }
     });
 
+    // sd_dart_log_read and sd_dart_last_error can wait 100 ms for another
+    // thread, and the first device query initializes the GPU backend.
     test('bind only sd_dart_progress_read as a leaf call', () {
       final leaves = RegExp(
         r'isLeaf: true\)\s*external \w[\w<>.]* (\w+)\(',
@@ -144,6 +211,8 @@ void main() {
 final class _RecordingExports {
   final List<String> called = <String>[];
   int? cancelMode;
+  int? logLevel;
+  int? deviceIndex;
 
   late final Map<String, NativeCallable<Function>> _functions = {
     'sd_dart_progress_enable': NativeCallable<Void Function()>.isolateLocal(
@@ -184,6 +253,51 @@ final class _RecordingExports {
         NativeCallable<Void Function(Pointer<Void>)>.isolateLocal(
           (Pointer<Void> _) => _record('sd_dart_exit_free', null),
         ),
+    'sd_dart_log_enable': NativeCallable<Void Function()>.isolateLocal(
+      () => _record('sd_dart_log_enable', null),
+    ),
+    'sd_dart_log_set_level': NativeCallable<Void Function(Int32)>.isolateLocal((
+      int level,
+    ) {
+      logLevel = level;
+      _record('sd_dart_log_set_level', null);
+    }),
+    'sd_dart_log_read':
+        NativeCallable<
+          Uint64 Function(
+            Uint64,
+            Pointer<Char>,
+            Size,
+            Pointer<Int32>,
+            Pointer<Size>,
+          )
+        >.isolateLocal(
+          (
+            int after,
+            Pointer<Char> _,
+            int _,
+            Pointer<Int32> _,
+            Pointer<Size> _,
+          ) => _record('sd_dart_log_read', after + 1),
+          exceptionalReturn: 0,
+        ),
+    'sd_dart_log_dropped': NativeCallable<Uint64 Function()>.isolateLocal(
+      () => _record('sd_dart_log_dropped', 7),
+      exceptionalReturn: 0,
+    ),
+    'sd_dart_last_error':
+        NativeCallable<Size Function(Pointer<Char>, Size)>.isolateLocal(
+          (Pointer<Char> _, int capacity) =>
+              _record('sd_dart_last_error', capacity),
+          exceptionalReturn: 0,
+        ),
+    'sd_dart_gpu_device_memory':
+        NativeCallable<
+          Int32 Function(Int32, Pointer<sd.sd_dart_gpu_device_memory_t>)
+        >.isolateLocal((int index, Pointer<sd.sd_dart_gpu_device_memory_t> _) {
+          deviceIndex = index;
+          return _record('sd_dart_gpu_device_memory', -3);
+        }, exceptionalReturn: 0),
   };
 
   T _record<T>(String name, T result) {

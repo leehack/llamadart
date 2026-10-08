@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
@@ -24,12 +25,38 @@ const _pauseAfter = 8;
 const _loadReports = 12;
 const _decodeReports = 16;
 const _reportsPerRead = 20;
+const _olderRelease = 24;
+const _logEnabled = 25;
+const _quietReject = 26;
 const _racingReads = 28;
 const _latest = 32;
 const _modelVersion = 40;
 const _ring = 64;
 const _ringSlots = 16384;
-const _stateBytes = _ring + _ringSlots * 8;
+const _logState = _ring + _ringSlots * 8;
+const _logThreshold = _logState;
+const _logHistory = _logState + 4;
+const _logLatest = _logState + 8;
+const _logReadTo = _logState + 16;
+const _logDropped = _logState + 24;
+const _gpuStatus = _logState + 32;
+const _gpuType = _logState + 36;
+const _gpuTotal = _logState + 40;
+const _gpuFree = _logState + 48;
+const _lastErrorLength = _logState + 56;
+const _lastError = _logState + 64;
+const _lastErrorBytes = 1024;
+const _modelPath = _lastError + _lastErrorBytes;
+const _modelPathBytes = 512;
+const _logSlots = _modelPath + _modelPathBytes;
+const _logSlotCount = 256;
+const _logSlotBytes = 512;
+const _stateBytes = _logSlots + _logSlotCount * _logSlotBytes;
+
+// sd_log_level_t.
+const _sdLogDebug = 0;
+const _sdLogInfo = 2;
+const _sdLogError = 4;
 
 /// A stand-in for the stable_diffusion runtime, shared by the two isolates of
 /// a `StableDiffusionImageWorker`.
@@ -41,12 +68,24 @@ const _stateBytes = _ring + _ringSlots * 8;
 /// decodes, and looks at a cancel before each step and before each decode.
 /// Like the real recorder it numbers reports from 1 for the whole process and
 /// keeps the [history] most recent ones.
+///
+/// It logs the way the runtime of `StableDiffusionCalls.optionalNativeRelease`
+/// does once its recorder is enabled: a load logs the file it loads at
+/// `SD_LOG_INFO` and why it failed at `SD_LOG_ERROR`, and a generation logs
+/// one `SD_LOG_DEBUG` and one `SD_LOG_INFO` message. Messages below the level
+/// set are not recorded, and the oldest ones leave when more than
+/// `logHistory` are kept.
 final class FakeStableDiffusionRuntime {
-  /// Creates a runtime that keeps [history] progress reports.
+  /// Creates a runtime that keeps [history] progress reports and [logHistory]
+  /// log messages.
   FakeStableDiffusionRuntime({
     this.history = StableDiffusionCalls.progressHistory,
+    int logHistory = 64,
   }) : _state = calloc<Uint8>(_stateBytes) {
     _state.cast<Int32>()[_pauseAfter ~/ 4] = -1;
+    _state.cast<Int32>()[_logThreshold ~/ 4] = _sdLogInfo;
+    _state.cast<Int32>()[_logHistory ~/ 4] = logHistory;
+    _state.cast<Int32>()[_gpuStatus ~/ 4] = -2;
     final version = 'SD 2.x'.codeUnits;
     for (var i = 0; i < version.length; i++) {
       _state[_modelVersion + i] = version[i];
@@ -73,6 +112,42 @@ final class FakeStableDiffusionRuntime {
 
   /// Makes the load fail.
   set rejectLoad(bool value) => _state[_rejectLoad] = value ? 1 : 0;
+
+  /// Makes a failed load log no error.
+  set quietReject(bool value) => _state[_quietReject] = value ? 1 : 0;
+
+  /// Makes [resolver] return the calls of a runtime older than
+  /// `StableDiffusionCalls.optionalNativeRelease`: no log and no device
+  /// memory.
+  set olderRelease(bool value) => _state[_olderRelease] = value ? 1 : 0;
+
+  /// What `sd_dart_gpu_device_memory` answers for the default device: a
+  /// [status] other than 0 (`SD_DART_GPU_NO_BACKEND` at first) and nothing
+  /// else, or `Vulkan0`, a `Fake GPU`, with [total] and [free] bytes.
+  void setGpuMemory({
+    int status = 0,
+    int total = 0,
+    int free = 0,
+    bool integrated = false,
+  }) {
+    _state.cast<Int32>()[_gpuStatus ~/ 4] = status;
+    _state.cast<Int32>()[_gpuType ~/ 4] = integrated ? 2 : 1;
+    _state.cast<Int64>()[_gpuTotal ~/ 8] = total;
+    _state.cast<Int64>()[_gpuFree ~/ 8] = free;
+  }
+
+  /// The model path the last load read from its context parameters, or an
+  /// empty string when they had none.
+  String get loadedModelPath =>
+      Pointer<Utf8>.fromAddress(_state.address + _modelPath).toDartString();
+
+  /// Records [bytes] as a log message at `sd_log_level_t` [level], as a
+  /// thread of the runtime does.
+  void log(int level, List<int> bytes) => _FakeCalls(
+    _state.address,
+    _port.sendPort,
+    history,
+  )._logMessage(level, bytes);
 
   /// Makes the loaded model one that cannot generate images.
   set videoOnly(bool value) => _state[_videoOnly] = value ? 1 : 0;
@@ -198,6 +273,133 @@ final class _FakeCalls {
     return expected ? '+held' : '+held-wrong';
   }
 
+  Pointer<Int64> get _longs => _state.cast();
+
+  Pointer<Uint8> _logSlot(int sequence) =>
+      _state + _logSlots + (sequence % _logSlotCount) * _logSlotBytes;
+
+  /// Records a message when the recorder is enabled and [level] reaches the
+  /// level set. The oldest message kept leaves when there are too many, and
+  /// counts as dropped when no read had reached it.
+  void _logMessage(int level, List<int> bytes) {
+    if (_state[_logEnabled] == 0 || level < _ints[_logThreshold ~/ 4]) {
+      return;
+    }
+    final sequence = ++_longs[_logLatest ~/ 8];
+    final slot = _logSlot(sequence);
+    slot.cast<Int32>()[0] = level;
+    slot.cast<Int32>()[1] = bytes.length;
+    (slot + 8).asTypedList(bytes.length).setAll(0, bytes);
+    final gone = sequence - _ints[_logHistory ~/ 4];
+    if (gone > _longs[_logReadTo ~/ 8]) {
+      _longs[_logDropped ~/ 8]++;
+    }
+  }
+
+  void _logText(int level, String text) =>
+      _logMessage(level, utf8.encode(text));
+
+  int _logRead(
+    int after,
+    Pointer<Char> text,
+    int capacity,
+    Pointer<Int32> level,
+    Pointer<Size> length,
+  ) {
+    _record('sd_dart_log_read');
+    final newest = _longs[_logLatest ~/ 8];
+    final oldest = newest - _ints[_logHistory ~/ 4] + 1;
+    final sequence = after + 1 > oldest ? after + 1 : oldest;
+    if (sequence > newest) {
+      return 0;
+    }
+    final slot = _logSlot(sequence);
+    final size = slot.cast<Int32>()[1];
+    final copied = size < capacity ? size : capacity - 1;
+    text.cast<Uint8>().asTypedList(capacity)
+      ..setRange(0, copied, (slot + 8).asTypedList(copied))
+      ..[copied] = 0;
+    level.value = slot.cast<Int32>()[0];
+    if (length != nullptr) {
+      length.value = size;
+    }
+    if (sequence > _longs[_logReadTo ~/ 8]) {
+      _longs[_logReadTo ~/ 8] = sequence;
+    }
+    return sequence;
+  }
+
+  int _readLastError(Pointer<Char> text, int capacity) {
+    _record('sd_dart_last_error');
+    final size = _ints[_lastErrorLength ~/ 4];
+    text.cast<Uint8>().asTypedList(capacity)
+      ..setRange(0, size, (_state + _lastError).asTypedList(size))
+      ..[size] = 0;
+    return size;
+  }
+
+  int _gpuDeviceMemory(
+    int deviceIndex,
+    Pointer<sd.sd_dart_gpu_device_memory_t> out,
+  ) {
+    _record(
+      _state[_logEnabled] != 0
+          ? 'sd_dart_gpu_device_memory:$deviceIndex'
+          : 'sd_dart_gpu_device_memory:$deviceIndex:before-log-enable',
+    );
+    final status = _ints[_gpuStatus ~/ 4];
+    if (status != 0) {
+      return status;
+    }
+    out.ref
+      ..total_bytes = _longs[_gpuTotal ~/ 8]
+      ..free_bytes = _longs[_gpuFree ~/ 8]
+      ..type = _ints[_gpuType ~/ 4];
+    for (final (index, unit) in 'Vulkan0'.codeUnits.indexed) {
+      out.ref.name[index] = unit;
+    }
+    for (final (index, unit) in 'Fake GPU'.codeUnits.indexed) {
+      out.ref.description[index] = unit;
+    }
+    return 0;
+  }
+
+  Pointer<sd.sd_ctx_t> _newContext(Pointer<sd.sd_ctx_params_t> params) {
+    _record(
+      _state[_enabled] != 0
+          ? 'sd_dart_new_sd_ctx'
+          : 'sd_dart_new_sd_ctx:before-enable',
+    );
+    final modelPath = params.ref.model_path == nullptr
+        ? ''
+        : params.ref.model_path.cast<Utf8>().toDartString();
+    (_state + _modelPath).asTypedList(_modelPathBytes)
+      ..fillRange(0, _modelPathBytes, 0)
+      ..setAll(0, utf8.encode(modelPath));
+    _ints[_lastErrorLength ~/ 4] = 0;
+    _logText(
+      _sdLogInfo,
+      "stable-diffusion.cpp:262 - loading model from '$modelPath'",
+    );
+    if (_state[_rejectLoad] != 0) {
+      if (_state[_quietReject] == 0 && _state[_logEnabled] != 0) {
+        final error = utf8.encode(
+          "model_loader.cpp:1061 - cannot inspect model source '$modelPath': "
+          'No such file or directory',
+        );
+        _logMessage(_sdLogError, error);
+        _ints[_lastErrorLength ~/ 4] = error.length;
+        (_state + _lastError).asTypedList(error.length).setAll(0, error);
+      }
+      return nullptr;
+    }
+    final reports = _ints[_loadReports ~/ 4];
+    for (var i = 1; i <= reports; i++) {
+      _report(i, reports);
+    }
+    return malloc<Uint8>(16).cast();
+  }
+
   void _report(int step, int steps) {
     final sequence = _latestSequence.value + 1;
     final slot = Pointer<Int32>.fromAddress(
@@ -218,21 +420,7 @@ final class _FakeCalls {
         _state[_enabled] = 1;
       },
       progressRead: _progressRead,
-      newContext: (params) {
-        _record(
-          _state[_enabled] != 0
-              ? 'sd_dart_new_sd_ctx'
-              : 'sd_dart_new_sd_ctx:before-enable',
-        );
-        if (_state[_rejectLoad] != 0) {
-          return nullptr;
-        }
-        final reports = _ints[_loadReports ~/ 4];
-        for (var i = 1; i <= reports; i++) {
-          _report(i, reports);
-        }
-        return malloc<Uint8>(16).cast();
-      },
+      newContext: _newContext,
       generateImage: _generateImage,
       cancelGeneration: (context) {
         _record('sd_dart_cancel_generation');
@@ -243,7 +431,11 @@ final class _FakeCalls {
         malloc.free(context);
       },
       exitFreeAddress: malloc.nativeFree,
-      contextParamsInit: (params) => _record('sd_ctx_params_init'),
+      contextParamsInit: (params) {
+        _record('sd_ctx_params_init');
+        // What sd_ctx_params_init leaves, whatever the caller wrote before.
+        params.ref.model_path = nullptr;
+      },
       supportsImageGeneration: (context) {
         _record('sd_ctx_supports_image_generation$_held');
         return _state[_videoOnly] == 0;
@@ -261,6 +453,25 @@ final class _FakeCalls {
         }
         malloc.free(images);
       },
+      log: _state[_olderRelease] != 0
+          ? null
+          : StableDiffusionLogCalls(
+              enable: () {
+                _record('sd_dart_log_enable');
+                _state[_logEnabled] = 1;
+              },
+              setLevel: (level) {
+                _record('sd_dart_log_set_level:$level');
+                _ints[_logThreshold ~/ 4] = level;
+              },
+              read: _logRead,
+              dropped: () {
+                _record('sd_dart_log_dropped');
+                return _longs[_logDropped ~/ 8];
+              },
+              lastError: _readLastError,
+            ),
+      gpuDeviceMemory: _state[_olderRelease] != 0 ? null : _gpuDeviceMemory,
     );
   }
 
@@ -320,6 +531,8 @@ final class _FakeCalls {
     Pointer<Int> countOut,
   ) {
     _record('sd_dart_generate_image$_held');
+    _logText(_sdLogDebug, 'stable-diffusion.cpp:3120 - sampling');
+    _logText(_sdLogInfo, 'stable-diffusion.cpp:3391 - generating');
     imagesOut.value = nullptr;
     countOut.value = 0;
     _waitWhile(() => _state[_holdStart] != 0);
