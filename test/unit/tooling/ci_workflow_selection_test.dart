@@ -26,6 +26,27 @@ Future<Map<String, dynamic>> selected(List<String> paths) async {
   return jsonDecode(result.stdout as String) as Map<String, dynamic>;
 }
 
+/// The upload directly follows the superseded-build check, and nothing after
+/// that check runs unless it allowed the deploy.
+void expectGuardedUpload(List<dynamic> steps, String demo) {
+  final guard = steps.indexWhere((step) => step['id'] == 'current');
+  expect(guard, greaterThanOrEqualTo(0));
+  expect(steps[guard]['run'], 'python3 tool/ci/deploy_guard.py $demo');
+  expect((steps[guard] as Map).containsKey('if'), isFalse);
+  expect(jsonEncode(steps[guard]), isNot(contains('secrets.')));
+  final upload = steps.indexWhere(
+    (step) => jsonEncode(step).contains('secrets.HF_TOKEN'),
+  );
+  expect(upload, guard + 1);
+  expect(steps.length, greaterThan(upload + 1));
+  for (final step in steps.skip(guard + 1)) {
+    expect(step['if'], "steps.current.outputs.deploy == 'true'");
+  }
+  for (final step in steps) {
+    expect((step as Map).containsKey('continue-on-error'), isFalse);
+  }
+}
+
 void main() {
   test(
     'production deployment consumes the gated same-run artifact without rebuild',
@@ -36,9 +57,12 @@ void main() {
       // GitHub's implicit success() includes skipped ancestors of the aggregate.
       // Explicit cancellation status lets direct successful needs decide eligibility.
       expect(deploy['if'], startsWith('!cancelled() &&'));
+      const mainOnly =
+          "(github.event_name == 'push' || "
+          "github.event_name == 'workflow_dispatch') && "
+          "github.ref == 'refs/heads/main'";
       for (final guard in [
-        "github.event_name == 'push'",
-        "github.ref == 'refs/heads/main'",
+        mainOnly,
         "github.repository == 'leehack/llamadart'",
         "needs.test-linux-web.result == 'success'",
         "needs.web-chat-contract.result == 'success'",
@@ -64,68 +88,80 @@ void main() {
       );
       expect(smoke, greaterThanOrEqualTo(0));
       expect(upload, greaterThan(smoke));
-      expect(steps[upload]['if'], contains("github.event_name == 'push'"));
+      expect(steps[upload]['if'], mainOnly);
       final workflow = readWorkflow('chat_app_hf_static_deploy');
       expect((workflow['on'] as Map).keys, ['workflow_call']);
       final callee = workflow['jobs']['deploy'];
-      expect(callee['if'], contains("github.event_name == 'push'"));
-      expect(callee['if'], contains("github.ref == 'refs/heads/main'"));
       expect(
         callee['if'],
-        contains("github.repository == 'leehack/llamadart'"),
+        "$mainOnly && github.repository == 'leehack/llamadart'",
       );
       final text = jsonEncode(callee);
       expect(text, contains('web_deployment.py verify'));
-      expect(text, contains('git/ref/heads/main'));
+      expectGuardedUpload(callee['steps'] as List, 'chat-app');
       expect(text, isNot(contains('build_chat_app_web.sh')));
       expect(text, isNot(contains('flutter-action')));
     },
   );
 
-  test('Laya Tetris deploys only tested main commits of this repository', () {
-    final workflow = readWorkflow('laya_tetris_hf_static_deploy');
-    final trigger = workflow['on'] as Map;
-    expect(trigger.keys, unorderedEquals(['push', 'workflow_dispatch']));
-    expect(trigger['push']['branches'], ['main']);
-    expect(workflow['permissions'], {'contents': 'read'});
-    final deploy = workflow['jobs']['deploy'] as Map;
-    expect(
-      deploy['if'],
-      "github.ref == 'refs/heads/main' && "
-      "github.repository == 'leehack/llamadart'",
-    );
-    expect(deploy.containsKey('continue-on-error'), isFalse);
-    final steps = deploy['steps'] as List;
-    for (final step in steps) {
-      expect((step as Map).containsKey('continue-on-error'), isFalse);
-    }
-    final tests = steps.indexWhere(
-      (step) => '${step['run']}'.contains('flutter test'),
-    );
-    final secretSteps = [
-      for (var i = 0; i < steps.length; i++)
-        if (jsonEncode(steps[i]).contains('secrets.')) i,
-    ];
-    expect(tests, greaterThanOrEqualTo(0));
-    expect(secretSteps, hasLength(1));
-    expect(secretSteps.single, greaterThan(tests));
-    int secretReferences(Object? value) =>
-        'secrets.'.allMatches(jsonEncode(value)).length;
-    expect(
-      secretReferences(workflow),
-      secretReferences(steps[secretSteps.single]),
-    );
-    final checkout = steps.singleWhere(
-      (step) => '${step['uses']}'.contains('checkout@'),
-    );
-    expect(checkout['with'], {
-      'ref': r'${{ github.sha }}',
-      'persist-credentials': false,
-    });
-    final upload = '${steps[secretSteps.single]['run']}';
-    expect(upload, contains('git/ref/heads/main'));
-    expect(upload, contains('private=False'));
-  });
+  test(
+    'Laya Tetris deploys only tested main commits of this repository',
+    () async {
+      final workflow = readWorkflow('laya_tetris_hf_static_deploy');
+      final trigger = workflow['on'] as Map;
+      expect(trigger.keys, unorderedEquals(['push', 'workflow_dispatch']));
+      expect(trigger['push']['branches'], ['main']);
+      final guardInputs = await Process.run(
+        Platform.isWindows ? 'python' : 'python3',
+        [
+          '-c',
+          'import json,sys; sys.path.insert(0, "tool/ci"); import deploy_guard; '
+              'print(json.dumps(deploy_guard.LAYA_TETRIS_INPUTS))',
+        ],
+      );
+      expect(guardInputs.exitCode, 0, reason: '${guardInputs.stderr}');
+      // A commit outside these paths starts no deploy, so the guard must not
+      // let it supersede one either.
+      expect(
+        trigger['push']['paths'],
+        jsonDecode(guardInputs.stdout as String),
+      );
+      expect(workflow['permissions'], {'contents': 'read'});
+      final deploy = workflow['jobs']['deploy'] as Map;
+      expect(
+        deploy['if'],
+        "github.ref == 'refs/heads/main' && "
+        "github.repository == 'leehack/llamadart'",
+      );
+      expect(deploy.containsKey('continue-on-error'), isFalse);
+      final steps = deploy['steps'] as List;
+      expectGuardedUpload(steps, 'laya-tetris');
+      final tests = steps.indexWhere(
+        (step) => '${step['run']}'.contains('flutter test'),
+      );
+      final secretSteps = [
+        for (var i = 0; i < steps.length; i++)
+          if (jsonEncode(steps[i]).contains('secrets.')) i,
+      ];
+      expect(tests, greaterThanOrEqualTo(0));
+      expect(secretSteps, hasLength(1));
+      expect(secretSteps.single, greaterThan(tests));
+      int secretReferences(Object? value) =>
+          'secrets.'.allMatches(jsonEncode(value)).length;
+      expect(
+        secretReferences(workflow),
+        secretReferences(steps[secretSteps.single]),
+      );
+      final checkout = steps.singleWhere(
+        (step) => '${step['uses']}'.contains('checkout@'),
+      );
+      expect(checkout['with'], {
+        'ref': r'${{ github.sha }}',
+        'persist-credentials': false,
+      });
+      expect('${steps[secretSteps.single]['run']}', contains('private=False'));
+    },
+  );
 
   test(
     'preview selection precedes SDK and secrets while close cleanup is unfiltered',
@@ -205,9 +241,16 @@ void main() {
         r'${{ fromJSON(needs.changes.outputs.companions) }}',
       );
       final triggers = workflow['on'] as Map;
-      expect(triggers.keys.toSet(), {'push', 'pull_request'});
-      for (final trigger in triggers.values) {
-        expect((trigger as Map).containsKey('paths'), isFalse);
+      expect(triggers.keys.toSet(), {
+        'push',
+        'pull_request',
+        'workflow_dispatch',
+      });
+      // No inputs: a manual run cannot name another ref or artifact to deploy.
+      expect(triggers['workflow_dispatch'], isNull);
+      for (final name in ['push', 'pull_request']) {
+        final trigger = triggers[name] as Map;
+        expect(trigger.containsKey('paths'), isFalse);
         expect(trigger.containsKey('paths-ignore'), isFalse);
       }
     },

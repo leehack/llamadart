@@ -25,8 +25,8 @@ jobs:
   deploy:
     name: Deploy tested chat app
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      github.repository == 'leehack/llamadart'
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && github.repository == 'leehack/llamadart'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -68,13 +68,18 @@ jobs:
         run: |
           python3 -m pip install --upgrade "huggingface_hub>=0.36.0,<0.37.0"
 
+      - name: Check that main has not superseded this artifact
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tool/ci/deploy_guard.py chat-app
+
       - name: Deploy to Hugging Face Space
+        if: steps.current.outputs.deploy == 'true'
         env:
           SPACE_REPO: ${{ steps.target.outputs.space_repo }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$DEPLOY_SHA"
           rm -rf hf-space-sync
           mkdir -p hf-space-sync
 
@@ -124,6 +129,7 @@ jobs:
           PY
 
       - name: Verify deployed production artifact
+        if: steps.current.outputs.deploy == 'true'
         env:
           APP_URL: ${{ steps.target.outputs.app_url }}
         run: |

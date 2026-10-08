@@ -81,12 +81,18 @@ jobs:
       - name: Install Hugging Face Hub client
         run: python3 -m pip install --upgrade "huggingface_hub>=0.36.0,<0.37.0"
 
+      - name: Check that main has not superseded this build
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: python3 tool/ci/deploy_guard.py laya-tetris
+
       - name: Deploy to Hugging Face Space
+        if: steps.current.outputs.deploy == 'true'
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
           python3 - <<'PY'
           import os
 
@@ -112,6 +118,7 @@ jobs:
           PY
 
       - name: Verify the deployed app
+        if: steps.current.outputs.deploy == 'true'
         run: |
           for attempt in $(seq 1 30); do
             if [ "$(curl -fsS "$APP_URL/deploy-sha.txt?attempt=$attempt" || true)" = "$GITHUB_SHA" ]; then

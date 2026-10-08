@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -425,7 +426,9 @@ jobs:
 
       - name: Keep tested production artifact
         id: production-artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: >-
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
         with:
           name: chat-app-web-${{ github.sha }}-${{ github.run_attempt }}
@@ -710,8 +713,8 @@ jobs:
     needs: [test-linux-web, web-chat-contract]
     if: >-
       !cancelled() &&
-      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      github.repository == 'leehack/llamadart' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' && github.repository == 'leehack/llamadart' &&
       needs.test-linux-web.result == 'success' && needs.web-chat-contract.result == 'success'
     permissions:
       contents: read

@@ -95,8 +95,8 @@ full-code speedup or local measurements as GitHub-hosted results.
 
 ## Tested Web deployment and previews
 
-On canonical-repository main pushes, Web Chat Contract builds the production
-root (`/`) once, runs mock and real tiny-GGUF browser smokes against those files,
+On canonical-repository main pushes and manual main runs, Web Chat Contract
+builds the production root (`/`) once, runs mock and real tiny-GGUF browser smokes against those files,
 and uploads the successful artifact. The production reusable workflow waits for
 both Web Chat and the existing all-selected-checks aggregate to succeed. An
 explicit cancellation status check prevents intentionally skipped ancestors from
@@ -105,14 +105,48 @@ direct requirements still block deployment. It
 verifies the same run's artifact ID, archive digest, source commit/tree, pinned
 Flutter version and production build target before uploading those files to HF.
 It does not install Flutter or rebuild. HF's README remains hosting metadata.
-A latest-main check before upload rejects obsolete deployments.
 
-The former manual arbitrary-ref deployment is removed. Retry a failed deployment
-through its original CI run while it remains current main and its seven-day
-artifact is available; otherwise rerun the full current-main CI run. No artifact
-from another run or untested rebuild is accepted. GitHub-hosted promotion and HF
-upload must still be verified after an approved PR/merge; local tests do not
-claim hosted deployment evidence.
+Directly before the upload, `tool/ci/deploy_guard.py` fetches `main` and
+compares its tip with the artifact's commit:
+
+| `main` since the artifact's commit | Outcome |
+|---|---|
+| Unchanged | Upload and verify. |
+| Only commits that would not select Web Chat on their own, such as a docs version cut | Upload and verify; a notice names `main`'s tip. |
+| Any commit that selects Web Chat, even one reverted later | Superseded: upload and verification are skipped, the job passes, and a notice plus the job summary name `main`'s tip and the changed inputs. |
+| `main` no longer contains the commit, or the fetch fails | The job fails. |
+
+A commit that selects Web Chat deploys through its own CI run, so a superseded
+artifact is never uploaded over it. The Laya Tetris deploy runs the same guard
+with its workflow's `paths` filter as the input list, since a push outside that
+filter starts no Laya Tetris run.
+
+`main` can still move between the guard and the Hugging Face commit. A push
+that changes the demo's inputs starts its own deploy run, and the deploy
+concurrency group lets that run upload only after the older one has finished or
+been cancelled, so the newer build lands last. An input change pushed with
+`GITHUB_TOKEN` starts no workflow and stays undeployed until the next run;
+today only the docs version cut pushes that way, and it changes no demo input.
+
+CI cancels an in-progress `main` run when a newer push arrives. If that newer
+push does not select Web Chat, the chat app stays on the older build until the
+next selecting push or a manual run.
+
+The former manual arbitrary-ref deployment is removed. A manual CI run on
+`main` selects the full graph and deploys the artifact that run built and
+tested; on any other ref it deploys nothing:
+
+```bash
+gh workflow run ci.yml --ref main
+gh workflow run laya_tetris_hf_static_deploy.yml --ref main
+```
+
+The manual CI run shares the `main` concurrency group, so it replaces a `main`
+run in progress and a later push replaces it. Retry a failed upload through its
+original CI run while the guard still accepts that commit and its seven-day
+artifact is available. No artifact from another run or untested rebuild is
+accepted. GitHub-hosted promotion and HF upload must still be verified after an
+approved PR/merge; local tests do not claim hosted deployment evidence.
 
 PR previews default to non-draft same-repository changes selected for Web Chat
 (including shared runtime dependencies and conservative unknown inputs).
