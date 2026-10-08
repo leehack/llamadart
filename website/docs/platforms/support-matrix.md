@@ -162,9 +162,12 @@ output and grammars, sampling controls and speculative decoding. Guides:
   micro-batches of at most 8 tokens by default. On a Pixel 9 Pro, prompt
   evaluation with 8-token micro-batches ran at about the speed uncapped
   decoding did (about 34 tokens/s against about 30 tokens/s for a 59-token
-  prompt); other GPUs are not measured. An explicit
-  `ModelParams.microBatchSize` above 32 brings the wrong text back on
-  affected GPUs. The cap applies to
+  prompt); other GPUs are not measured. On a GPU without the defect, decoding
+  a prompt in 8-token micro-batches can be slower than decoding it in one
+  batch. An app that has validated Vulkan on its target devices can set
+  `ModelParams.microBatchSize` to choose the micro-batch size itself: an
+  explicit value is used as given, and one above 32 brings the wrong text
+  back on affected GPUs. The cap applies to
   text-prompt decoding only: it does not cover prompts with image or audio
   input, embeddings, decision models, text-to-speech, or speculative-decoding
   verification batches during generation. Those batches can exceed 32 tokens,

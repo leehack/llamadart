@@ -64,6 +64,9 @@ const modelParams = ModelParams(
   most `8` tokens at a time while `microBatchSize` is `0`, and an explicit
   value above `32` can return wrong text on some GPUs
   ([known limitations](../platforms/support-matrix#known-limitations)).
+  On a GPU without that defect the `8`-token default can be slower than
+  decoding the prompt in one batch; an app that has validated Vulkan on its
+  target devices can set `microBatchSize` explicitly.
   The cap applies to text-prompt decoding only: it does not cover prompts
   with image or audio input, embeddings, decision models, text-to-speech, or
   speculative-decoding verification batches during generation, which can
