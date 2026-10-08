@@ -90,7 +90,7 @@ description: >-
   `{"type": "text", "text": ...}` parts, so read both the string and the
   list shape.
 - Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
-  LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.18.0` with
+  LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.15.0` with
   `LlamaUnsupportedException` before generation or history mutation: those
   runtimes expose no reliable token-limit termination cause. Manual
   `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`

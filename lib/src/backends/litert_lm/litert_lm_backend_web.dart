@@ -31,7 +31,7 @@ import 'litert_lm_sampler_params.dart';
 /// This backend wraps the official `@litert-lm/core` browser API. Apps can
 /// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
 /// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
-/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm`.
+/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm`.
 class LiteRtLmBackend
     implements
         BackendRuntimeIdentity,
@@ -100,7 +100,7 @@ class LiteRtLmBackend
 
   @override
   String? get generationLimitUnsupportedReason =>
-      'LiteRT-LM Web @litert-lm/core@0.18.0 does not expose a reliable generation termination reason. '
+      'LiteRT-LM Web @litert-lm/core@0.15.0 does not expose a reliable generation termination reason. '
       'Automatic tool loops require a qualified Web runtime with token-limit reporting; '
       'use ChatSession.create or LlamaEngine.create for manual completion.';
 

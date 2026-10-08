@@ -70,7 +70,7 @@ void main() {
             isA<api.LlamaUnsupportedException>().having(
               (error) => error.message,
               'diagnostic',
-              contains('@0.18.0'),
+              contains('@0.15.0'),
             ),
           ),
         );

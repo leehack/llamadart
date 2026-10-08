@@ -263,12 +263,12 @@ void main() {
           reason: path,
         );
         expect(current, contains(bridgeNativeReleaseTag), reason: path);
-        expect(current, contains('@litert-lm/core@0.18.0'), reason: path);
+        expect(current, contains('@litert-lm/core@0.15.0'), reason: path);
       }
 
       expect(
         File('example/chat_app/web/index.html').readAsStringSync(),
-        contains('@litert-lm/core@0.18.0/+esm'),
+        contains('@litert-lm/core@0.15.0/+esm'),
       );
       expect(
         File(nativeLlamaCppTagPath).readAsStringSync(),
