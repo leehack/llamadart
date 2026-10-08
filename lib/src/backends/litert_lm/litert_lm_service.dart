@@ -437,6 +437,21 @@ class LiteRtLmService {
         }
         yield chunk;
       }
+    } on StateError catch (error, stackTrace) {
+      if (promptTemplate == null || _modelParams?.chatTemplate == null) {
+        rethrow;
+      }
+      // The runtime reports a template that fails to render only as a failed
+      // send, and from v0.18 it renders with content as a list of parts.
+      Error.throwWithStackTrace(
+        StateError(
+          '${error.message} ModelParams.chatTemplate is set: from LiteRT-LM '
+          'v0.18 the runtime passes each message content to the template as '
+          'a list of {"type": "text", "text": ...} parts, so a template that '
+          'reads content as a string can fail here.',
+        ),
+        stackTrace,
+      );
     } finally {
       sw.stop();
       try {
@@ -863,10 +878,10 @@ class LiteRtLmService {
     } on LiteRtLmEngineCreateError catch (error, stackTrace) {
       // From LiteRT-LM v0.18 a cache directory the runtime cannot write fails
       // engine creation on every backend, with no reason reported.
-      final cacheHint = runtimeCacheDir == null
+      final cacheHint = modelParams.liteRtLmCacheDir == null
           ? ''
-          : ' Engine creation also fails when the runtime cannot write its '
-                'cache directory; see ModelParams.liteRtLmCacheDir.';
+          : ' Engine creation also fails when the runtime cannot write '
+                'ModelParams.liteRtLmCacheDir.';
       final device = modelParams.device;
       if (device != ComputeDevice.gpu && device != ComputeDevice.npu) {
         Error.throwWithStackTrace(

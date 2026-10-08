@@ -111,17 +111,24 @@ void main() {
           ),
         ),
       );
-      await expectLater(
-        loaded.engine.create(hello).drain<void>(),
-        engineCreateFailure,
-      );
-      await expectLater(
-        ChatSession(
-          loaded.engine,
-        ).create(const [LlamaTextContent('Hello')]).drain<void>(),
-        engineCreateFailure,
-      );
-      await expectLater(loaded.engine.tokenize('Hello'), engineCreateFailure);
+      final engine = loaded.engine;
+      for (final (entryPoint, firstUse) in <(String, Future<void> Function())>[
+        ('create', () => engine.create(hello).drain<void>()),
+        ('generate', () => engine.generate('Hello').drain<void>()),
+        ('complete', () => engine.complete(hello)),
+        (
+          'ChatSession.create',
+          () => ChatSession(
+            engine,
+          ).create(const [LlamaTextContent('Hello')]).drain<void>(),
+        ),
+        ('tokenize', () => engine.tokenize('Hello')),
+        ('detokenize', () => engine.detokenize(const [1, 2])),
+        ('getTokenCount', () => engine.getTokenCount('Hello')),
+        ('chatTemplate', () => engine.chatTemplate(hello)),
+      ]) {
+        await expectLater(firstUse(), engineCreateFailure, reason: entryPoint);
+      }
       expect(loaded.clients.map((client) => client.backend).toSet(), {'gpu'});
       expect(loaded.clients.every((client) => client.conversations == 0), true);
     } finally {
