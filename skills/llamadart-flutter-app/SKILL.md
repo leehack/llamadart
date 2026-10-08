@@ -166,12 +166,12 @@ or shipping runtimes the app does not use.
   on the CPU there; Vulkan is experimental and device-dependent, so request
   `ComputeDevice.gpu` only on devices the app has validated. Leave
   `ModelParams.microBatchSize` unset on Android Vulkan: a text prompt is then
-  decoded at most 32 tokens at a time, and a larger value returns wrong text
+  decoded at most 8 tokens at a time, and a value above 32 returns wrong text
   on some GPUs. The cap applies to text-prompt decoding only: it does not
   cover prompts with image or audio input, embeddings, decision models,
   text-to-speech, or speculative-decoding verification batches during
-  generation, which exceed 32 tokens with the default n-gram settings, so
-  speculative decoding can still produce wrong output on an affected GPU.
+  generation, which can exceed 32 tokens, so speculative decoding can still
+  produce wrong output on an affected GPU.
   LiteRT-LM defaults to the GPU on
   Android (`ComputeDevice.auto`), and on adapters with a 128 MiB
   storage-buffer limit (for example Adreno 750) a model with a larger weight
