@@ -12,7 +12,8 @@ import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 
 /// Stands in for libmtmd through [service]'s fallback API: a projector whose
-/// one media part evaluates [tokens] as text.
+/// one media part evaluates [tokens] as text. It reports an audio encoder and
+/// no vision encoder unless told otherwise.
 ///
 /// It records the upstream mtmd function behind each call that creates,
 /// tokenizes with, evaluates with or frees the projector. A service on the
@@ -28,14 +29,20 @@ final class FakeMtmd {
     this.chunkEval = false,
     this.decode = llama_decode,
     this.audioBitmap = _audioBitmap,
+    this.vision = false,
+    this.audio = true,
   }) {
     final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
     final apiClass =
         owner.declarations[MirrorSystem.getSymbol('_MtmdApi', owner)]
             as ClassMirror;
-    Never unused([Object? _, Object? _, Object? _, Object? _, Object? _]) =>
-        throw StateError('unexpected mtmd call');
-    final api = apiClass.newInstance(Symbol.empty, const [], {
+    mtmd_helper_bitmap_wrapper encodedBitmap() {
+      final wrapper = Struct.create<mtmd_helper_bitmap_wrapper>();
+      if (encodedBitmapLoads) wrapper.bitmap = _encodedBitmap;
+      return wrapper;
+    }
+
+    _api = apiClass.newInstance(Symbol.empty, const [], {
       #defaultMarker: () => _marker.cast<Char>(),
       #contextParamsDefault: () => Struct.create<mtmd_context_params>(),
       #initFromFile:
@@ -54,7 +61,13 @@ final class FakeMtmd {
       #inputChunksInit: () => Pointer<mtmd_input_chunks>.fromAddress(0x10),
       #inputChunksFree: (Pointer<mtmd_input_chunks> _) {},
       #helperInitOptDefault: () => Struct.create<mtmd_helper_init_opt>(),
-      #helperBitmapInitFromFile: unused,
+      #helperBitmapInitFromFile:
+          (
+            Pointer<mtmd_context> _,
+            Pointer<Char> _,
+            bool _,
+            mtmd_helper_init_opt _,
+          ) => encodedBitmap(),
       #helperBitmapInitFromBuf:
           (
             Pointer<mtmd_context> _,
@@ -62,13 +75,11 @@ final class FakeMtmd {
             int _,
             bool _,
             mtmd_helper_init_opt _,
-          ) =>
-              Struct.create<mtmd_helper_bitmap_wrapper>()
-                ..bitmap = _encodedBitmap,
+          ) => encodedBitmap(),
       #bitmapInitFromAudio: (int sampleCount, Pointer<Float> _) =>
           audioBitmap(sampleCount),
-      #supportsVision: (Pointer<mtmd_context> _) => false,
-      #supportsAudio: (Pointer<mtmd_context> _) => true,
+      #supportsVision: (Pointer<mtmd_context> _) => vision,
+      #supportsAudio: (Pointer<mtmd_context> _) => audio,
       #supportsVideo: (Pointer<mtmd_context> _) => false,
       #bitmapFree: (Pointer<mtmd_bitmap> bitmap) {
         freedBitmaps.add(bitmap.address);
@@ -87,7 +98,7 @@ final class FakeMtmd {
                 length: text.ref.text_len,
               ),
             );
-            return 0;
+            return tokenizeResult;
           },
       #helperEvalChunks:
           (
@@ -109,8 +120,10 @@ final class FakeMtmd {
     }).reflectee;
     _setPrivate('_mtmdPrimarySymbolsUnavailable', true);
     _setPrivate('_mtmdFallbackLookupAttempted', true);
-    _setPrivate('_mtmdFallbackApi', api);
+    _setPrivate('_mtmdFallbackApi', _api);
   }
+
+  late final Object _api;
 
   /// The projector the fake `mtmd_init_from_file` returns.
   static final Pointer<mtmd_context> projector = Pointer.fromAddress(0x30);
@@ -130,6 +143,21 @@ final class FakeMtmd {
   /// The bitmap the fake `mtmd_bitmap_init_from_audio` returns for an audio
   /// part of a sample count; a null pointer fails that part.
   final Pointer<mtmd_bitmap> Function(int sampleCount) audioBitmap;
+
+  /// Whether the fake `mtmd_support_vision` reports a vision encoder.
+  final bool vision;
+
+  /// Whether the fake `mtmd_support_audio` reports an audio encoder.
+  final bool audio;
+
+  /// Whether the fake bitmap helpers load a path or encoded bytes; when
+  /// false they return a null bitmap, as mtmd does for a source it cannot
+  /// decode and for audio on a projector without an audio encoder.
+  bool encodedBitmapLoads = true;
+
+  /// What the fake `mtmd_tokenize` returns; mtmd returns 2 for a bitmap the
+  /// projector has no encoder for.
+  int tokenizeResult = 0;
 
   /// Upstream mtmd functions called on the projector so far, in order.
   final List<String> calls = <String>[];
@@ -192,6 +220,12 @@ final class FakeMtmd {
 
   /// The bitmap the fake gives an encoded image or audio part.
   static final Pointer<mtmd_bitmap> _encodedBitmap = Pointer.fromAddress(0x21);
+
+  /// Leaves [service] with neither its own mtmd functions nor a fallback
+  /// library, as a native runtime that lacks them does, when [present] is
+  /// false; puts this fake back when it is true.
+  void setFallback({required bool present}) =>
+      _setPrivate('_mtmdFallbackApi', present ? _api : null);
 
   /// Frees the marker text; call after the service is disposed.
   void dispose() => malloc.free(_marker);

@@ -520,6 +520,111 @@ void main() {
       }
     });
 
+    group('a chat template that fails to render', () {
+      const mustAlternate =
+          '{% for message in messages %}'
+          '{% if loop.index0 > 0 and '
+          'message.role == messages[loop.index0 - 1].role %}'
+          "{{ raise_exception('Conversation roles must alternate') }}"
+          '{% endif %}{{ message.content }}'
+          '{% endfor %}';
+      const twoUserTurns = [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'a'),
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'b'),
+      ];
+
+      Matcher throwsRenderFailure(Object message) => throwsA(
+        isA<LlamaInferenceException>().having(
+          (e) => e.message,
+          'message',
+          message,
+        ),
+      );
+
+      test('throws a typed exception carrying what the template raised', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: mustAlternate,
+            messages: twoUserTurns,
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            'The chat template failed to render: '
+            'Conversation roles must alternate',
+          ),
+        );
+      });
+
+      test('throws a typed exception when it raises in a request with '
+          'media', () {
+        // Reads strings and part lists, so a request with media takes the
+        // other handler call.
+        const alternatingPartLists =
+            '{% for message in messages %}'
+            '{% if loop.index0 > 0 and '
+            'message.role == messages[loop.index0 - 1].role %}'
+            "{{ raise_exception('Conversation roles must alternate') }}"
+            '{% endif %}'
+            '{% if message.content is string %}{{ message.content }}'
+            '{% else %}{% for part in message.content %}{{ part.text }}'
+            '{% endfor %}{% endif %}'
+            '{% endfor %}';
+        const image = LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaTextContent('Describe:'),
+            LlamaImageContent(path: '/tmp/page.png'),
+          ],
+        );
+
+        expect(
+          ChatTemplateEngine.render(
+            templateSource: alternatingPartLists,
+            messages: const [image],
+            metadata: const {},
+          ).prompt,
+          'Describe:<__media__>',
+        );
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: alternatingPartLists,
+            messages: const [image, image],
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            'The chat template failed to render: '
+            'Conversation roles must alternate',
+          ),
+        );
+      });
+
+      test('throws a typed exception for invalid template syntax', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: '{% for message in messages %}{{ message.content',
+            messages: twoUserTurns,
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            startsWith('The chat template failed to render: ParserException'),
+          ),
+        );
+      });
+
+      test('renders the conversation it accepts', () {
+        final result = ChatTemplateEngine.render(
+          templateSource: mustAlternate,
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'a'),
+            LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: 'b'),
+          ],
+          metadata: const {},
+        );
+
+        expect(result.prompt, 'ab');
+      });
+    });
+
     test('keeps GLM-OCR image marker when GLM tool-call policy runs', () {
       const history = [
         LlamaChatMessage.withContent(

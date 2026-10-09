@@ -5828,7 +5828,8 @@ class LlamaCppService {
             LlamaInferenceException.new,
             windowsFreeOnly: [mmCtx],
           );
-          throw Exception("Failed to load media part $i");
+          throw _missingEncoderFor(mmCtx, [p]) ??
+              Exception("Failed to load media part $i");
         }
       }
 
@@ -5913,7 +5914,8 @@ class LlamaCppService {
           malloc.free(newPast);
         }
       } else {
-        throw Exception("mtmd_tokenize failed: $res");
+        throw _missingEncoderFor(mmCtx, mediaParts) ??
+            Exception("mtmd_tokenize failed: $res");
       }
     } finally {
       // Free in finally so a tokenize/eval failure above does not leak the
@@ -8815,17 +8817,7 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
-
-    if (!_mtmdPrimarySymbolsUnavailable) {
-      try {
-        return mtmd_support_vision(mmCtx);
-      } on ArgumentError {
-        _mtmdPrimarySymbolsUnavailable = true;
-      }
-    }
-
-    final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVision(mmCtx) ?? false;
+    return _mtmdHasEncoder(mmCtx, audio: false) ?? false;
   }
 
   /// Returns whether the active multimodal projector supports audio input.
@@ -8834,22 +8826,94 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
+    return _mtmdHasEncoder(mmCtx, audio: true) ??
+        (throw LlamaUnsupportedException(
+          _mtmdUnavailableMessage('mtmd_support_audio'),
+        ));
+  }
 
+  /// Whether the projector [mmCtx] has an audio encoder, or with [audio]
+  /// false a vision encoder, as mtmd reports it.
+  ///
+  /// Null when neither the llamadart library nor the fallback mtmd library
+  /// has the probe function.
+  bool? _mtmdHasEncoder(Pointer<mtmd_context> mmCtx, {required bool audio}) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_support_audio(mmCtx);
+        return audio ? mtmd_support_audio(mmCtx) : mtmd_support_vision(mmCtx);
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    if (fallback == null) {
-      throw LlamaUnsupportedException(
-        _mtmdUnavailableMessage('mtmd_support_audio'),
-      );
+    if (fallback == null) return null;
+    return audio
+        ? fallback.supportsAudio(mmCtx)
+        : fallback.supportsVision(mmCtx);
+  }
+
+  /// The error for [parts] that mtmd failed to load or tokenize when the
+  /// projector [mmCtx] reports no encoder for the kind of one of them, and
+  /// null otherwise, as when the runtime lacks the probe function.
+  LlamaUnsupportedException? _missingEncoderFor(
+    Pointer<mtmd_context> mmCtx,
+    List<LlamaContentPart> parts,
+  ) {
+    final readAsAudio = parts.map(_mtmdReadsAsAudio).toList(growable: false);
+    for (final (kind, audio) in const [('Image', false), ('Audio', true)]) {
+      if (readAsAudio.contains(audio) &&
+          _mtmdHasEncoder(mmCtx, audio: audio) == false) {
+        return LlamaUnsupportedException(
+          '$kind input is not supported by the loaded multimodal projector: '
+          'it has no ${kind.toLowerCase()} encoder. Load a projector that has '
+          'one, or leave ${kind.toLowerCase()} input out of the request.',
+        );
+      }
     }
-    return fallback.supportsAudio(mmCtx);
+    return null;
+  }
+
+  /// Whether mtmd reads [part] as audio rather than as an image, or null
+  /// when its source cannot be read.
+  ///
+  /// mtmd decides by content for a path or encoded bytes, whatever the type
+  /// of the part: this is `is_audio_file` of llama.cpp's `mtmd-helper.cpp`.
+  static bool? _mtmdReadsAsAudio(LlamaContentPart part) {
+    final (path, bytes) = switch (part) {
+      LlamaImageContent() => (part.path, part.bytes),
+      LlamaAudioContent() => (part.path, part.bytes),
+      _ => (null, null),
+    };
+    final List<int> head;
+    if (path != null) {
+      try {
+        final file = File(path).openSync();
+        try {
+          head = file.readSync(12);
+        } finally {
+          file.closeSync();
+        }
+      } on FileSystemException {
+        return null;
+      }
+    } else if (bytes != null) {
+      head = bytes;
+    } else {
+      return part is LlamaAudioContent ? true : null;
+    }
+    if (head.length < 12) return false;
+    bool has(String magic, [int offset = 0]) {
+      for (var i = 0; i < magic.length; i++) {
+        if (head[offset + i] != magic.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+
+    return has('RIFF') && has('WAVE', 8) ||
+        has('ID3') ||
+        head[0] == 0xFF && head[1] & 0xE0 == 0xE0 ||
+        has('fLaC');
   }
 
   /// Returns whether the active native mtmd build and projector report video.

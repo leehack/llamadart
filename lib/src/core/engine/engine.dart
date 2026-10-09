@@ -1544,6 +1544,11 @@ class LlamaEngine {
   /// parse compatible best-effort tool-call text, but it does not currently
   /// enforce arbitrary JSON-schema constraints.
   ///
+  /// On native llama.cpp, image or audio input that the loaded multimodal
+  /// projector has no encoder for throws [LlamaUnsupportedException]. A
+  /// template that fails to render, by raising or through invalid syntax,
+  /// throws [LlamaInferenceException] with the template's message.
+  ///
   /// Example:
   /// ```dart
   /// final messages = [
@@ -1786,6 +1791,9 @@ class LlamaEngine {
   /// [LlamaUnsupportedException] for any other.
   /// Use [LlamaStructuredOutput.responseFormat] to avoid hand-writing these
   /// maps in application code.
+  ///
+  /// A template that fails to render, by raising or through invalid syntax,
+  /// throws [LlamaInferenceException] with the template's message.
   ///
   /// For messages that carry image, audio or video parts the prompt has
   /// `<__media__>` where each part was, and [generate] takes it with those
