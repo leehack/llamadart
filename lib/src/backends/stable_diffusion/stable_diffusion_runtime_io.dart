@@ -197,13 +197,22 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
   final detail = '${error.message ?? error}';
   final isApple = platform.startsWith('ios-') || platform.startsWith('macos-');
   if (detail.contains('No asset with id')) {
-    final companionAdvice = isApple
-        ? ', or add the $_appleCompanion package to a Flutter iOS/macOS app,'
-        : '';
+    const key = 'hooks.user_defines.llamadart.llamadart_native_runtimes';
+    const hookAdvice =
+        'set $key to all, or add stable_diffusion to its list, and rebuild. '
+        'A list replaces the default llama_cpp and litert_lm.';
+    if (isApple) {
+      return LlamaUnsupportedException(
+        'stable_diffusion runtime is not bundled for $platform. In a Flutter '
+        'iOS/macOS app, add the $_appleCompanion package and rebuild: '
+        'without it the build hook leaves out a stable_diffusion that all '
+        'only implies. Naming stable_diffusion in $key bundles it through '
+        'the hook instead, in a framework App Store Connect rejects on iOS. '
+        'In any other build, $hookAdvice',
+      );
+    }
     return LlamaUnsupportedException(
-      'stable_diffusion runtime is not bundled for $platform; add '
-      'stable_diffusion to hooks.user_defines.llamadart.'
-      'llamadart_native_runtimes$companionAdvice and rebuild.',
+      'stable_diffusion runtime is not bundled for $platform; $hookAdvice',
     );
   }
   if (_vulkanLoaderNames.any(detail.toLowerCase().contains)) {

@@ -20,26 +20,31 @@ description: >-
   stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
   Text-to-image only: no image-to-image, inpainting, LoRA or ControlNet.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
-  included by default or by `all`. In the app's `pubspec.yaml`:
+  included by default. In the app's `pubspec.yaml`:
 
   ```yaml
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+        llamadart_native_runtimes: all
   ```
 
-  Keep `litert_lm` in the list if the app also loads `.litertlm` models. Run
+  Unset, the key bundles `llama_cpp` and `litert_lm`. A list replaces those
+  defaults, so it names everything the app loads: `all` is every runtime
+  published for the target, `[llama_cpp, stable_diffusion]` is GGUF chat and
+  images without LiteRT-LM, and `[stable_diffusion]` is images only. Run
   `flutter clean` once after changing it. Linux and Windows bundle the Vulkan
   build when `llamadart_native_backends` selects Vulkan (the default);
   `llamadart_stable_diffusion_backends: [cpu]` picks the CPU build.
 - Flutter iOS and macOS apps should add the
   `llamadart_stable_diffusion_flutter` companion package. It links the
   runtime's XCFramework through Swift Package Manager and selects the runtime
-  on iOS and macOS without the entry above. Without it the hook bundles the
-  runtime, and App Store Connect rejects that iOS framework's
-  `MinimumOSVersion`; only Xcode and `xcodebuild` show the build warning about
-  it. Pair companion `0.0.2` with core `0.11.1` and `0.11.0`; adding it opts
+  on iOS and macOS without the entry above. Without it, `all` leaves the
+  image runtime out of a Flutter iOS/macOS app and `checkRuntime()` reports
+  it as not bundled; a list naming `stable_diffusion` bundles it through the
+  hook, and App Store Connect rejects that iOS framework's
+  `MinimumOSVersion`. `flutter build ios` output shows neither build warning;
+  Xcode and `xcodebuild` show both. Pair companion `0.0.2` with core `0.11.1` and `0.11.0`; adding it opts
   the app into the runtime (about 37 MB per Apple target).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
