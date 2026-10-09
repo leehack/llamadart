@@ -9,15 +9,6 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix a process abort on an image with more tokens than the context's
-  micro-batch when the projector's images are decoded with non-causal
-  attention (Gemma 3 and Gemma 4 other than E2B and E4B, among others): the
-  prompt now throws `LlamaInferenceException` naming the
-  `ModelParams.microBatchSize` it needs. With default batch sizes that is an
-  image above 512 tokens. A context whose batch equals its micro-batch still
-  decodes such an image in several batches, and now logs a warning that this
-  can reduce accuracy
-  ([#958](https://github.com/leehack/llamadart/issues/958)).
 - Update the default LiteRT-LM runtime to
   `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
   macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer
@@ -105,6 +96,26 @@ For canonical full release notes, use:
   llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity; Web
   LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
+- **Behavior change:** chat content keeps the whitespace that ends a reply,
+  as llama.cpp's `llama-server` does. `LlamaEngine.create`, `ChatSession` and
+  `ChatTemplateEngine.parse` trimmed it in every chat format except Gemma 4,
+  so the text before a caller stop sequence lost a trailing space or newline:
+  `alpha ` before the stop `cedar17` came back as `alpha`
+  ([#951](https://github.com/leehack/llamadart/issues/951)). A reply the model
+  ends with a newline now keeps it, as does a JSON-mode reply where the
+  grammar allows whitespace after the value (`createStructuredJson` and
+  `LlamaStructuredOutput.parse` still decode it); trim replies you compare
+  exactly. `ChatSession` and its tool loop store assistant turns in `history`
+  without that whitespace, so the next prompt is unchanged.
+- Fix a process abort on an image with more tokens than the context's
+  micro-batch when the projector's images are decoded with non-causal
+  attention (Gemma 3 and Gemma 4 other than E2B and E4B, among others): the
+  prompt now throws `LlamaInferenceException` naming the
+  `ModelParams.microBatchSize` it needs. With default batch sizes that is an
+  image above 512 tokens. A context whose batch equals its micro-batch still
+  decodes such an image in several batches, and now logs a warning that this
+  can reduce accuracy
+  ([#958](https://github.com/leehack/llamadart/issues/958)).
 
 ## 0.11.1
 
