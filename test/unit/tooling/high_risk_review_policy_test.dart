@@ -40,6 +40,23 @@ void main() {
       expect(matrix, contains('compiled production-path coverage'));
     });
 
+    test('batch integration PR rule keeps its audit and merge boundaries', () {
+      final agentGuidance = read('AGENTS.md');
+      final runbook = read('doc/high_risk_pre_merge_readiness.md');
+      const auditBoundary =
+          'only together with a passing integration audit of the integration '
+          'head';
+
+      for (final document in [agentGuidance, runbook]) {
+        expect(document, contains('rebase merge, never squash'));
+        expect(document, contains(auditBoundary));
+      }
+      expect(agentGuidance, contains('a new integration branch and PR'));
+      expect(runbook, contains('listed per hunk, not per file'));
+      expect(runbook, contains('new integration branch and PR cut from'));
+      expect(runbook, contains('reviewed as a change in its own right'));
+    });
+
     test('classifier help preserves rename and deletion visibility', () {
       final classifier = read('tool/testing/classify_high_risk_changes.dart');
 

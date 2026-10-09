@@ -236,46 +236,82 @@ costs N rounds of merging `main` in, re-audit, CI and post-merge QA. A batch
 integration PR is the allowed alternative. It changes nothing for a PR that
 lands on its own.
 
+A release-prep PR is never a constituent, and the integration PR never carries
+the `release-prep` label or a `release/prep-*` branch name.
+
 1. **Constituent gates.** Each constituent PR first passes its own pre-merge
-   gate at its own exact head, exactly as if it were landing alone. For a
-   high-risk PR that is the [independent audit](#independent-audit):
-   blocking-only, by an auditor who took no part in the implementation, with
-   decision `accepted`, zero known PR-caused P1 regressions and zero unresolved
-   review threads. A constituent whose head moves afterwards is re-audited
-   before it joins the batch.
-2. **Integration branch.** Cut one branch from current `main` and add the
-   accepted PRs as one commit per constituent, so each stays individually
-   revertable. Resolve conflicts once. Publish and update the branch only
-   through `tool/git/safe_pr_head_update.dart`.
-3. **Integration PR body.** Besides the normal template, list for every
-   constituent its PR number, audited head SHA and audit result, and list every
-   conflict resolution with the files it touched. A change that is neither a
-   constituent's audited diff nor a listed resolution does not belong on the
-   branch.
-4. **Integration audit.** One independent auditor, who took no part in any
-   constituent or in the integration, reviews the integration PR's exact head
-   against current `main`, blocking-only. It checks only what is new:
-   - the tree is a clean combination of the audited heads plus the listed
-     conflict resolutions and nothing else: each commit's diff matches
-     `git diff main...<audited-head>` of its constituent, and every
-     difference is a listed resolution;
+   gate at its own exact head, exactly as if it were landing alone.
+   - A high-risk constituent has its [independent audit](#independent-audit)
+     at that head: blocking-only, by an auditor who took no part in the
+     implementation, with decision `accepted`, zero known PR-caused P1
+     regressions and zero unresolved review threads.
+   - A standard-risk constituent is pinned at the exact head whose CI passed.
+
+   A constituent whose head moves afterwards passes its gate again at the new
+   head before it joins a batch.
+2. **Integration branch.** Cut a new branch from current `main` and add the
+   constituents as one commit each, so each stays individually revertable.
+   Each commit subject ends with `(#<constituent PR number>)`. Resolve
+   conflicts once, inside the commit of the constituent being applied. Publish
+   the branch through `tool/git/safe_pr_head_update.dart`.
+3. **Conflict resolutions.** A resolution only reconciles hunks that two sides
+   both changed: a real merge conflict, or the mechanical union of changelog
+   or doc lines. Anything else, including a fix for a defect found in a
+   constituent, goes back to that constituent's PR and is re-audited there.
+4. **Integration PR body.** Besides the normal template, it lists:
+   - for every constituent, its PR number, risk class, pinned head SHA and
+     audit result (or the passing CI run for a standard-risk one);
+   - every conflict resolution, listed per hunk, not per file;
+   - the closing keywords (`Closes #N`) of every constituent, because a PR
+     that is closed without merging does not close its issues.
+5. **Integration audit.** One independent auditor reviews the integration PR's
+   exact head against current `main`, blocking-only. The auditor took no part
+   in implementing any constituent or in the integration; having audited a
+   constituent does not disqualify. The audit checks only what is new:
+   - the tree is a clean combination of the pinned heads plus the listed
+     resolutions and nothing else: each commit's diff matches
+     `git diff main...<pinned-head>` of its constituent, for audited and
+     standard-risk constituents alike, and every difference is a listed hunk;
+   - each listed resolution, reviewed as a change in its own right;
    - the full default suites and the relevant real-model smokes pass on the
      combined tree;
    - the readiness evidence is valid for the integration head (below).
 
-   The constituent audits count only if this audit passes.
-5. **CI** runs once, on the integration head.
-6. **Merge** with a rebase merge, never squash, so `main` stays linear and
-   keeps one commit per constituent. Then close each constituent PR with a
-   link to the integration PR.
-7. **Post-merge QA** runs once for the batch. See
+   A constituent audit lets its diff land through a batch
+   only together with a passing integration audit of the integration head. It
+   stays valid for landing that PR alone at its audited head against the base
+   it was audited on, under the normal single-PR rules.
+6. **CI** runs once, on the integration head.
+7. **Review threads.** Before the merge, every review thread on the
+   integration PR and on every constituent PR is replied to and resolved. The
+   live unresolved count per constituent, which must be 0, is recorded in the
+   integration PR body at merge time.
+8. **Merge** with a rebase merge, never squash, so `main` stays linear and
+   keeps one commit per constituent. Only then close each constituent PR with
+   a link to the integration PR.
+9. **Post-merge QA** runs once for the batch. See
    [Post-merge QA scope](#post-merge-qa-scope).
 
-If the integration audit finds a problem caused by one constituent, either fix
-it on the integration branch or drop that constituent from the batch. Both move
-the integration head, so its own audit, CI and evidence are redone against the
-new head; the audits of the untouched constituents still stand. A PR-caused P1
-found in post-merge QA is handled as for any other merge.
+### When the batch has to change
+
+`tool/git/safe_pr_head_update.dart` is fast-forward only, so the integration
+branch can only gain commits. Appending a constituent moves the integration
+head, so its audit, CI and evidence are redone. Each of these needs a
+new integration branch and PR cut from current `main`, and the old integration
+PR is closed:
+
+- dropping a constituent;
+- replacing a constituent's commit after that constituent was fixed and
+  re-audited in its own PR;
+- `main` moving after the branch was cut.
+
+The integration branch never takes a history rewrite, a revert commit or a
+merge-from-`main` commit. If the integration audit finds a problem caused by
+one constituent, that constituent is either fixed in its own PR or dropped;
+both lead to a new integration branch. Its audit, CI and evidence are done
+against the new integration head; the gates of the untouched constituents
+still stand. A PR-caused P1 found in post-merge QA is handled as for any other
+merge.
 
 ### Evidence for the integration head
 
@@ -283,29 +319,47 @@ The integration PR is an ordinary PR to the evaluator. Its evidence document
 binds the integration PR number, author, exact head and current base; its
 `independent_audit` is the integration audit; and its surfaces, matrix rows,
 impacts and `test_evidence` cover the whole combined diff, which the evaluator
-derives from Git as usual. Each high-risk constituent keeps its own evidence
+derives from Git as usual. That includes `test_evidence` controls for the
+changed `lib/`, `tool/` and `hook/` paths of standard-risk constituents, which
+had none of their own. Each high-risk constituent keeps its own evidence
 document for its own audited head.
 
 A `test_evidence` control (`control_result`) observed on a constituent's
-audited head may be carried over when the production path and the cited test
-file are byte-identical on the integration head; the integration auditor
-verifies that with `git diff <audited-head> <integration-head> -- <paths>`.
-Otherwise the control is re-observed on the integration head.
+audited head may be carried over only when every `production_refs` path and
+the cited test file are identical on the integration head:
 
-The schema has no field for constituent PR numbers, audited heads, audit
+```bash
+git diff --exit-code <audited-head> <integration-head> -- <paths>
+```
+
+Take the paths from the evidence and check that each exists at both commits; a
+mistyped path prints nothing. Re-observe the control on the integration head
+when the files differ, or when another constituent, or `main` since the
+constituent's audited base, changed anything the test runs through. A cited
+`local-only` test is always re-run on the integration head.
+
+The schema has no field for constituent PR numbers, pinned heads, audit
 results or conflict resolutions. Those live in the integration PR body, and the
-integration audit's `summary` names the constituents it verified. The evaluator
-does not check them.
+integration audit's `summary` names the constituents it verified. The
+readiness tool therefore cannot check the clean-combination claim; it rests on
+the integration auditor.
 
 ## Post-merge QA scope
 
 Post-merge QA is still required and is never the first adversarial pass. When
-the merged tree equals an audited head
-(`git rev-parse <merge-commit>^{tree}` equals `<audited-head>^{tree}`), it need
-not repeat checks already run on that head. It is then limited to what cannot
-be checked before merge: workflow runs on `main`, deployed demos and anything
-else environment-specific. Local suites are not repeated. When the trees
-differ, the checks run on the audited head do not carry over.
+the merged tree equals an audited head, it need not repeat checks the
+independent audit already ran on that head. Compare the tree of the commit
+`main` points to once the merge lands (after a rebase merge, the last rebased
+commit) with the audited head's tree:
+
+```bash
+git rev-parse <main-after-merge>^{tree} <audited-head>^{tree}
+```
+
+QA is then limited to what cannot be checked before merge: workflow runs on
+`main`, deployed demos and anything else environment-specific. Local suites
+are not repeated. When the trees differ, the checks run on the audited head do
+not carry over.
 
 ## CLI
 
