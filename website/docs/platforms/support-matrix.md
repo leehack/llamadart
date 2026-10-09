@@ -164,10 +164,10 @@ output and grammars, sampling controls and speculative decoding. Guides:
   ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
-  The first of these is a llama.cpp defect at Vulkan subgroup sizes of 16 and
-  below 8
+  The first of these is a llama.cpp defect at a Vulkan subgroup size of 16
   ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637)),
-  which llama.cpp `v0.6.0` still has. On Android, llamadart reads the
+  which llama.cpp `v0.6.0` still has; the same code mis-tiles subgroup sizes
+  below 8, which no device run has confirmed. On Android, llamadart reads the
   subgroup size of the Vulkan GPUs when it creates a context: on such a GPU,
   and on any GPU whose subgroup size it cannot read, the context decodes a
   text prompt in micro-batches of at most 8 tokens by default; on other GPUs
