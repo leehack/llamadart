@@ -2487,6 +2487,36 @@ void main() {
     });
 
     test(
+      'create throws a typed exception when the chat template raises',
+      () async {
+        final raising = MockLlamaBackend(
+          modelMetadataResponse: {
+            'tokenizer.chat_template':
+                "{{ raise_exception('Conversation roles must alternate') }}",
+          },
+        );
+        final raisingEngine = LlamaEngine(raising);
+        addTearDown(raisingEngine.dispose);
+        await raisingEngine.loadModel('qwen-test.gguf');
+
+        await expectLater(
+          raisingEngine.create(const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ]).drain<void>(),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'The chat template failed to render: '
+                  'Conversation roles must alternate',
+            ),
+          ),
+        );
+        expect(raising.lastGenerationPrompt, isNull);
+      },
+    );
+
+    test(
       'multimodal projector can be unloaded without unloading model',
       () async {
         await engine.loadModel('qwen-test.gguf');
