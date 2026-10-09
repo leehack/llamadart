@@ -419,15 +419,21 @@ class LiteRtLmService {
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     final sw = Stopwatch()..start();
+    var outputStarted = false;
     try {
       final stream = _applyStopSequences(
-        client.generateMessageJson(
-          activeMessageJson,
-          visualTokenBudget: maxNumImages == null
-              ? null
-              : _gemma4DefaultVisualTokenBudget,
-          maxOutputTokens: params.maxTokens,
-        ),
+        client
+            .generateMessageJson(
+              activeMessageJson,
+              visualTokenBudget: maxNumImages == null
+                  ? null
+                  : _gemma4DefaultVisualTokenBudget,
+              maxOutputTokens: params.maxTokens,
+            )
+            .map((chunk) {
+              outputStarted = true;
+              return chunk;
+            }),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -438,11 +444,14 @@ class LiteRtLmService {
         yield chunk;
       }
     } on StateError catch (error, stackTrace) {
-      if (promptTemplate == null || _modelParams?.chatTemplate == null) {
+      if (outputStarted ||
+          promptTemplate == null ||
+          _modelParams?.chatTemplate == null) {
         rethrow;
       }
       // The runtime reports a template that fails to render only as a failed
-      // send, and from v0.18 it renders with content as a list of parts.
+      // send, before any output, and from v0.18 it renders with content as a
+      // list of parts.
       Error.throwWithStackTrace(
         StateError(
           '${error.message} ModelParams.chatTemplate is set: from LiteRT-LM '
@@ -814,7 +823,7 @@ class LiteRtLmService {
         : null;
 
     final cacheDir = _effectiveCacheDir(modelParams);
-    final runtimeCacheDir = cacheDir ?? _modelLink?.cacheDirectory;
+    final runtimeCacheDir = cacheDir ?? _modelLink?.runtimeCacheDirectory();
 
     Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
       _pruneProgramCaches(cacheDir, modelParams.liteRtLmMaxProgramCacheBytes);
@@ -878,10 +887,20 @@ class LiteRtLmService {
     } on LiteRtLmEngineCreateError catch (error, stackTrace) {
       // From LiteRT-LM v0.18 a cache directory the runtime cannot write fails
       // engine creation on every backend, with no reason reported.
-      final cacheHint = modelParams.liteRtLmCacheDir == null
-          ? ''
-          : ' Engine creation also fails when the runtime cannot write '
-                'ModelParams.liteRtLmCacheDir.';
+      final String cacheHint;
+      if (modelParams.liteRtLmCacheDir != null) {
+        cacheHint =
+            ' Engine creation also fails when the runtime cannot write '
+            'ModelParams.liteRtLmCacheDir.';
+      } else if (runtimeCacheDir != null &&
+          runtimeCacheDir != liteRtLmNoCacheDirectory) {
+        cacheHint =
+            ' Engine creation also fails when the runtime cannot write its '
+            'cache directory; set ModelParams.liteRtLmCacheDir to one it can '
+            'write.';
+      } else {
+        cacheHint = '';
+      }
       final device = modelParams.device;
       if (device != ComputeDevice.gpu && device != ComputeDevice.npu) {
         Error.throwWithStackTrace(
