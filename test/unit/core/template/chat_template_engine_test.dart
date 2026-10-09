@@ -1397,6 +1397,114 @@ void main() {
       expect(result.grammar, isNotNull);
     });
   });
+
+  group('ChatTemplateEngine.parse whitespace after content', () {
+    const hermesCall =
+        '<tool_call>\n'
+        '{"name": "get_weather", "arguments": {"city": "Paris"}}\n'
+        '</tool_call>';
+
+    test('stays when the content ends the output, in every format', () {
+      for (final format in ChatFormat.values) {
+        if (format.name.startsWith('peg')) {
+          continue;
+        }
+        for (final parseToolCalls in const [true, false]) {
+          for (final output in const ['Hi there. \n ', 'alpha ', 'Hi.\n\n']) {
+            expect(
+              ChatTemplateEngine.parse(
+                format.index,
+                output,
+                parseToolCalls: parseToolCalls,
+              ).content,
+              output,
+              reason: '${format.name} parseToolCalls: $parseToolCalls',
+            );
+          }
+        }
+      }
+    });
+
+    test('stays in a PEG parse', () {
+      final result = ChatTemplateEngine.render(
+        templateSource:
+            '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT]'
+            '[TOOL_CALLS]get_weather[ARGS]{}',
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        metadata: const {},
+        tools: [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: _noopHandler,
+          ),
+        ],
+        toolChoice: ToolChoice.auto,
+      );
+      expect(result.format, ChatFormat.ministral.index);
+
+      final parsed = ChatTemplateEngine.parse(
+        result.format,
+        '[THINK]Plan.[/THINK]Sure. \n',
+        parser: result.parser,
+      );
+
+      expect(parsed.reasoningContent, 'Plan.');
+      expect(parsed.content, 'Sure. \n');
+    });
+
+    test('stays after a thought and loses only leading whitespace', () {
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        '<think>\nPlan.\n</think>\n\n Sure. \n',
+      );
+
+      expect(parsed.reasoningContent, 'Plan.');
+      expect(parsed.content, 'Sure. \n');
+    });
+
+    test('is dropped when the output does not end with the content', () {
+      final beforeCall = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        'Let me check. \n$hermesCall\n',
+      );
+      expect(beforeCall.toolCalls, hasLength(1));
+      expect(beforeCall.content, 'Let me check.');
+
+      final callOnly = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        '$hermesCall \n',
+      );
+      expect(callOnly.toolCalls, hasLength(1));
+      expect(callOnly.content, isEmpty);
+
+      final thoughtOnly = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        '<think>Plan.</think> \n',
+      );
+      expect(thoughtOnly.reasoningContent, 'Plan.');
+      expect(thoughtOnly.content, isEmpty);
+
+      expect(
+        ChatTemplateEngine.parse(ChatFormat.hermes.index, ' \n ').content,
+        isEmpty,
+      );
+    });
+
+    test('is dropped from a partial parse', () {
+      expect(
+        ChatTemplateEngine.parse(
+          ChatFormat.hermes.index,
+          'Hi there. \n',
+          isPartial: true,
+        ).content,
+        'Hi there.',
+      );
+    });
+  });
 }
 
 int _mediaPlaceholderCount(String prompt) {

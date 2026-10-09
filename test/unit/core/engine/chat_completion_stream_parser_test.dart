@@ -1440,6 +1440,50 @@ void main() {
         },
       );
 
+      test('whitespace after the last content arrives when the stream '
+          'ends', () async {
+        for (final format in const [
+          ChatFormat.contentOnly,
+          ChatFormat.hermes,
+          ChatFormat.kimiK3,
+        ]) {
+          for (final tools in const [true, false]) {
+            final tokens = StreamController<String>();
+            final content = StringBuffer();
+            String? finishReason;
+            final subscription =
+                ChatCompletionStreamParser.parse(
+                  tokenStream: tokens.stream,
+                  templateResult: LlamaChatTemplateResult(
+                    prompt: 'prompt',
+                    format: format.index,
+                  ),
+                  parseToolCallsEnabled: tools,
+                  enableThinking: true,
+                  modelName: 'test-model',
+                  completionId: 'trailing-whitespace',
+                  tools: tools ? [_weatherTool] : null,
+                ).listen((chunk) {
+                  content.write(chunk.choices.single.delta.content ?? '');
+                  finishReason = chunk.choices.single.finishReason;
+                });
+            addTearDown(subscription.cancel);
+            addTearDown(tokens.close);
+
+            for (final token in const ['alpha', ' ', '\n']) {
+              tokens.add(token);
+              await pumpEventQueue();
+              expect(content.toString(), 'alpha', reason: format.name);
+            }
+            await tokens.close();
+            await subscription.asFuture<void>();
+
+            expect(content.toString(), 'alpha \n', reason: format.name);
+            expect(finishReason, 'stop');
+          }
+        }
+      });
+
       test('trailing whitespace of partial parses waits', () async {
         const namespace = ']<]minimax[>[';
         await _expectStreamMatchesParse(

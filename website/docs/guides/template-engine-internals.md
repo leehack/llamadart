@@ -111,8 +111,13 @@ call.
 
 Streamed content and reasoning start and end with the whitespace the final
 parse keeps, with or without tools, apart from the cases below. The parse
-trims content, so the stream holds back leading whitespace until other text
-arrives, and trailing whitespace until more text arrives or generation ends.
+trims content, except that content at the end of the output keeps the
+whitespace after it, as upstream llama.cpp (`d8123504`) does: `"Sure. \n"`
+stays `"Sure. \n"`, also when a caller stop sequence cut the output there,
+while whitespace before a thought or a tool call is dropped. So the stream
+holds back leading whitespace until other text arrives, and trailing
+whitespace until more text arrives or generation ends; a stream that ends
+with an error does not deliver it.
 Other text waits only as described below, for example while it may be a
 thinking tag or, with tools, a tool-call opening.
 
@@ -157,8 +162,8 @@ Qwen3-Coder XML given a parser) streams the content and reasoning of partial
 PEG parses when tool calls are parsed. Those parses hold back a possible
 opening themselves. A Ministral thought cut off by the token limit therefore
 streams as reasoning, although the final parse returns it, with its `[THINK]`
-tag, as content. Without tools, the PEG parse trims only trailing whitespace,
-so the stream keeps leading whitespace.
+tag, as content. Without tools, the PEG parse does not trim leading
+whitespace, so the stream keeps it.
 
 Streams built from partial parses hold back trailing whitespace until more
 text arrives. They are used for Gemma 4 output, and, when tool calls are
