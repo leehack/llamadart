@@ -248,14 +248,25 @@ void runLlamaWorkerForTesting(
                 final stopwatch = Stopwatch()..start();
                 Duration? timeToFirstToken;
                 BackendGenerationLimit? limit;
-                final stream = service.generate(
-                  message.contextHandle,
-                  message.prompt,
-                  message.params,
-                  message.cancelTokenAddress,
-                  parts: message.parts,
-                  onLimit: (reached) => limit = reached,
-                );
+                final chatMediaMarker = message.chatMediaMarker;
+                final stream = chatMediaMarker == null
+                    ? service.generate(
+                        message.contextHandle,
+                        message.prompt,
+                        message.params,
+                        message.cancelTokenAddress,
+                        parts: message.parts,
+                        onLimit: (reached) => limit = reached,
+                      )
+                    : service.generateChatPrompt(
+                        message.contextHandle,
+                        message.prompt,
+                        message.params,
+                        message.cancelTokenAddress,
+                        mediaMarker: chatMediaMarker,
+                        parts: message.parts,
+                        onLimit: (reached) => limit = reached,
+                      );
 
                 final batcher = NativeTokenStreamBatcher(
                   tokenThreshold: message.params.streamBatchTokenThreshold,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
+import 'media_placeholders.dart';
 import 'tool_call_parsing_utils.dart';
 
 /// Tool-call serialization policy for template render contexts.
@@ -81,6 +82,12 @@ class TemplateRenderContext {
   /// unchanged. A message with several tool results becomes one message per
   /// result, as [splitToolResults] describes.
   ///
+  /// With [multimodal], the text of a message holds [mediaMarker] where each
+  /// image, audio or video part was. llama.cpp also gives a template the
+  /// marker and never the media part: the placeholder a template writes for a
+  /// typed image part is not the marker mtmd matches, and mtmd adds the image
+  /// begin and end tokens itself.
+  ///
   /// When [typedContentOnly] marks a template that reads content only as a
   /// list of parts, every string `content` becomes a list holding one text
   /// part, as llama.cpp's `messages_inp_normalizer` does.
@@ -93,15 +100,16 @@ class TemplateRenderContext {
     TemplateToolCallSerialization toolCallSerialization =
         TemplateToolCallSerialization.none,
     bool multimodal = false,
+    String mediaMarker = mtmdMediaMarker,
     bool objectArguments = false,
     bool typedContentOnly = false,
   }) {
     final renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
     for (final message in splitToolResults(messages)) {
-      final rendered = multimodal
-          ? message.toJsonMultimodal()
-          : message.toJson();
+      final rendered =
+          (multimodal ? _withMediaMarkers(message, mediaMarker) : message)
+              .toJson();
       rendered['content'] ??= '';
       final toolResults = message.parts.whereType<LlamaToolResultContent>();
       if (toolResults.isNotEmpty) {
@@ -143,6 +151,23 @@ class TemplateRenderContext {
     }
 
     return renderedMessages;
+  }
+
+  static LlamaChatMessage _withMediaMarkers(
+    LlamaChatMessage message,
+    String mediaMarker,
+  ) {
+    bool isMedia(LlamaContentPart part) =>
+        part is LlamaImageContent ||
+        part is LlamaAudioContent ||
+        part is LlamaVideoContent;
+    if (!message.parts.any(isMedia)) return message;
+    return message.copyWith(
+      parts: [
+        for (final part in message.parts)
+          isMedia(part) ? LlamaTextContent(mediaMarker) : part,
+      ],
+    );
   }
 
   static void _decodeObjectArguments(List<Map<String, dynamic>> messages) {

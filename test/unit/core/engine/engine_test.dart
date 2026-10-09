@@ -5291,6 +5291,139 @@ void main() {
     });
   });
 
+  group('LlamaEngine chat prompts with media', () {
+    const literal =
+        'Why is my <img> tag not rendering, and what is <__media__>?';
+    const image = LlamaImageContent(path: '/tmp/image.png');
+    final messages = [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: const [image, LlamaTextContent(literal)],
+      ),
+    ];
+
+    Future<LlamaEngine> loaded(MockLlamaBackend backend) async {
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.gguf');
+      return engine;
+    }
+
+    test('create renders a media request with a marker message text cannot '
+        'hold for a backend that takes chat prompts', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(messages).drain<void>();
+
+      final marker = backend.chatMediaMarker!;
+      expect(marker, matches(RegExp(r'^<__media_[A-Za-z0-9]{32}__>$')));
+      expect(backend.chatPrompt, '<s>user: $marker${literal}assistant: ');
+      expect(backend.chatParts, contains(image));
+      expect(backend.lastGenerationPrompt, isNull);
+    });
+
+    test('create gives a backend that takes chat prompts a request without '
+        'media through generate', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: literal),
+      ]).drain<void>();
+
+      expect(backend.chatPrompt, isNull);
+      expect(backend.lastGenerationPrompt, '<s>user: ${literal}assistant: ');
+    });
+
+    // What `generate` would read as a part gets a zero-width space.
+    const broken =
+        'Why is my <\u200Bimg> tag not rendering, and what is '
+        '<\u200B__media__>?';
+
+    test('create gives a backend that takes every prompt through generate '
+        'the default marker where the part was and breaks the placeholders '
+        'the message quotes', () async {
+      final backend = MockLlamaBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(messages).drain<void>();
+
+      expect(
+        backend.lastGenerationPrompt,
+        '<s>user: <__media__>${broken}assistant: ',
+      );
+    });
+
+    test('generate gives a backend that takes chat prompts the prompt its '
+        'caller wrote through generate', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine
+          .generate('<image>Describe', parts: const [image])
+          .drain<void>();
+
+      expect(backend.chatPrompt, isNull);
+      expect(backend.lastGenerationPrompt, '<image>Describe');
+    });
+
+    for (final (name, backend) in [
+      ('takes chat prompts', _ChatPromptBackend.new),
+      ('takes every prompt through generate', MockLlamaBackend.new),
+    ]) {
+      test('chatTemplate renders a media request as a prompt generate '
+          'takes, for a backend that $name', () async {
+        final engine = await loaded(backend());
+
+        final rendered = await engine.chatTemplate(
+          messages,
+          includeTokenCount: false,
+        );
+
+        expect(rendered.prompt, '<s>user: <__media__>${broken}assistant: ');
+      });
+    }
+
+    for (final (kind, part) in <(String, LlamaContentPart)>[
+      ('an audio', const LlamaAudioContent(path: '/tmp/clip.wav')),
+      ('a video', LlamaVideoContent(path: '/tmp/clip.mp4')),
+    ]) {
+      test('chatTemplate renders a request with $kind part as a prompt '
+          'generate takes', () async {
+        final engine = await loaded(MockLlamaBackend());
+
+        final rendered = await engine.chatTemplate([
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [part, const LlamaTextContent(literal)],
+          ),
+        ], includeTokenCount: false);
+
+        expect(rendered.prompt, '<s>user: <__media__>${broken}assistant: ');
+      });
+    }
+
+    test('chatTemplate counts the tokens of the prompt it returns', () async {
+      final backend = _TokenizeRecordingBackend();
+      final engine = await loaded(backend);
+
+      final rendered = await engine.chatTemplate(messages);
+
+      expect(backend.tokenizedTexts, [rendered.prompt]);
+    });
+
+    test('chatTemplate renders a request without media as it is', () async {
+      final engine = await loaded(_ChatPromptBackend());
+
+      final rendered = await engine.chatTemplate(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: literal),
+      ], includeTokenCount: false);
+
+      expect(rendered.prompt, '<s>user: ${literal}assistant: ');
+    });
+  });
+
   group('LlamaEngine TranslateGemma language codes', () {
     const translateGemmaTemplate =
         '[source_lang_code]\n'
@@ -5476,6 +5609,41 @@ class _SourceEchoBackend extends MockLlamaBackend {
     return Exception(
       'File not found: $source (${uri.userInfo} ${uri.query} ${uri.fragment})',
     );
+  }
+}
+
+class _TokenizeRecordingBackend extends MockLlamaBackend {
+  final List<String> tokenizedTexts = <String>[];
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) {
+    tokenizedTexts.add(text);
+    return super.tokenize(modelHandle, text, addSpecial: addSpecial);
+  }
+}
+
+class _ChatPromptBackend extends MockLlamaBackend
+    implements BackendChatPromptGeneration {
+  String? chatPrompt;
+  String? chatMediaMarker;
+  List<LlamaContentPart>? chatParts;
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) async* {
+    chatPrompt = prompt;
+    chatMediaMarker = mediaMarker;
+    chatParts = parts;
+    yield utf8.encode(generationText);
   }
 }
 

@@ -70,6 +70,7 @@ void main() {
       'LlamaBackend',
       'BackendAvailability',
       'BackendBatchEmbeddings',
+      'BackendChatPromptGeneration',
       'BackendDartLogLevel',
       'BackendDecision',
       'BackendDecisionCapabilities',

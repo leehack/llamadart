@@ -24,8 +24,9 @@ class JinjaAnalyzer {
   ///
   /// The media-part probe is not llama.cpp's: a template that reads both
   /// strings and part lists is rendered with an image part and with an audio
-  /// part, and `supportsTypedContent` is cleared when it rejects both. The
-  /// only part lists `ChatTemplateEngine` gives such a template carry media.
+  /// part, and `supportsTypedContent` is cleared when it rejects both.
+  /// `ChatTemplateEngine` gives no template a media part; the probe only
+  /// selects the handler method that renders a request carrying media.
   ///
   /// A probe render that throws is one of llama.cpp's outcomes, not a
   /// failure: it is logged at debug level and read as llama.cpp reads it.
@@ -105,9 +106,9 @@ class JinjaAnalyzer {
       }
     }
 
-    // A template that reads strings too is given a part list only to carry
-    // media. One that reads text part lists but rejects both media kinds is
-    // given strings, with the media marker in the text.
+    // A template that reads strings too and rejects both media kinds as
+    // typed parts renders a request carrying media as every string template
+    // does. Either way it gets the media marker in the message text.
     if (supportsTypedContent && supportsStringContent) {
       bool rejects(String type) => !_render(
         probe,

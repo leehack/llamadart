@@ -55,6 +55,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     bool enableThinking = true,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     return _renderInternal(
       templateSource: templateSource,
@@ -64,6 +65,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
       tools: tools,
       enableThinking: enableThinking,
       multimodalContent: true,
+      mediaMarker: mediaMarker,
     );
   }
 
@@ -75,6 +77,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
     required List<ToolDefinition>? tools,
     required bool enableThinking,
     required bool multimodalContent,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     final template = Template(templateSource);
     var prompt = renderTemplate(
@@ -85,6 +88,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
           templateSource,
           messages,
           multimodalContent: multimodalContent,
+          mediaMarker: mediaMarker,
         ),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
@@ -92,10 +96,6 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? '<eos>',
       },
     );
-
-    if (multimodalContent) {
-      prompt = normalizeMediaPlaceholders(prompt);
-    }
 
     final hasTools = tools != null && tools.isNotEmpty;
     return LlamaChatTemplateResult(
@@ -117,11 +117,13 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
     String templateSource,
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
+    required String mediaMarker,
   }) {
     final split = TemplateRenderContext.splitToolResults(messages);
     final rendered = templateMessages(
       split,
       multimodal: multimodalContent,
+      mediaMarker: mediaMarker,
       templateSource: templateSource,
     );
     return [

@@ -50,9 +50,12 @@ abstract class ChatTemplateHandler {
   /// reads them as objects, and string content becomes a text part when it
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
+  /// With [multimodal], each media part becomes [mediaMarker] in the message
+  /// text.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
+    String mediaMarker = mtmdMediaMarker,
     String? templateSource,
     bool typedContent = true,
   }) {
@@ -64,6 +67,7 @@ abstract class ChatTemplateHandler {
         messages,
         toolCallSerialization: toolCallSerialization,
         multimodal: multimodal,
+        mediaMarker: mediaMarker,
         objectArguments: caps?.supportsObjectArguments ?? false,
         typedContentOnly:
             typedContent &&
@@ -159,14 +163,13 @@ abstract class ChatTemplateHandler {
     });
   }
 
-  /// Re-renders with content always in list-of-parts format.
+  /// Renders a request that carries media for a template that reads both
+  /// string and typed content.
   ///
-  /// Some templates (e.g. SmolVLM) expect `content` to be
-  /// `[{type: 'text', text: '...'}, {type: 'image'}]` rather than a string.
-  /// This method converts messages to multimodal format and re-renders.
-  ///
-  /// After rendering, replaces model-specific image placeholders with
-  /// the mtmd marker `<__media__>` so the native tokenizer can find them.
+  /// Each image, audio or video part becomes [mediaMarker] in the message
+  /// text, where the part was, as llama.cpp renders it. The template's own
+  /// placeholder for a typed media part is not written, and a placeholder
+  /// string in message text stays text.
   LlamaChatTemplateResult renderWithMultimodalContent({
     required String templateSource,
     required List<LlamaChatMessage> messages,
@@ -174,6 +177,7 @@ abstract class ChatTemplateHandler {
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     bool enableThinking = true,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     final template = Template(templateSource);
     var prompt = renderTemplate(
@@ -183,6 +187,7 @@ abstract class ChatTemplateHandler {
         'messages': templateMessages(
           messages,
           multimodal: true,
+          mediaMarker: mediaMarker,
           templateSource: templateSource,
         ),
         'add_generation_prompt': addAssistant,
@@ -201,10 +206,6 @@ abstract class ChatTemplateHandler {
         thinkingForcedOpen = true;
       }
     }
-
-    // Post-process: replace model-specific image placeholders with
-    // the mtmd marker so the native tokenizer can match bitmaps to markers.
-    prompt = normalizeMediaPlaceholders(prompt);
 
     final hasTools = tools != null && tools.isNotEmpty;
 
