@@ -233,6 +233,31 @@ void main() {
       expect(result.stdout, isNot(contains('LITERT_RELOAD_MODEL')));
     });
 
+    test('dry-runs the micro-batch sweep device scenario', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-micro-batch-sweep',
+        '--device',
+        'android',
+        '--model-path',
+        '/data/local/tmp/Qwen3.5-0.8B-Q4_0.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo/example/chat_app && flutter test --run-skipped '
+          '-t local-only '
+          'integration_test/micro_batch_sweep_e2e_test.dart '
+          '-d android '
+          '--dart-define=MICRO_BATCH_SWEEP_MODEL='
+          '/data/local/tmp/Qwen3.5-0.8B-Q4_0.gguf',
+        ),
+      );
+    });
+
     test('dry-runs Web Qwen3-ASR file and microphone transcription', () async {
       final result = await runLocalE2e(const [
         '--scenario',
