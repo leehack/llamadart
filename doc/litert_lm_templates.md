@@ -209,9 +209,10 @@ Templates are committed as jinja under `tool/litert_lm_templates/` and embedded
 into `lib/src/backends/litert_lm/litert_lm_chat_templates.dart` by a generator.
 Start from the canonical template llama.cpp uses. Keep any runtime
 content-shape adapter in this source and cover it with prompt-parity tests.
-An adapter that reads content part lists either renders image and audio parts
-or rejects both: the Dart renderer gives a template that reads part lists
-media as typed parts unless it rejects both kinds. Pin the result in
+The Dart renderer gives an adapter that reads content part lists media as
+typed parts only when it renders every media kind in the request, and the
+media marker in text otherwise, so an adapter may render image parts, audio
+parts, both or neither. Pin the result in
 `test/unit/core/template/template_caps_cache_fixtures_test.dart`.
 
 1. Copy the canonical jinja into `tool/litert_lm_templates/<id>.jinja`

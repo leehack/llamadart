@@ -3,7 +3,12 @@ library;
 
 import 'dart:io';
 
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
+import 'package:llamadart/src/core/template/media_placeholders.dart';
 import 'package:llamadart/src/core/template/template_caps.dart';
 import 'package:llamadart/src/core/template/template_caps_cache.dart';
 import 'package:test/test.dart';
@@ -120,6 +125,101 @@ void main() {
 
     expect(detected, _pinnedCaps);
     expect(failed, isEmpty);
+  });
+
+  test('pins the fixture templates that reject a typed media part', () {
+    final rejecting = <String, List<String>>{};
+    for (final file in _fixtureTemplates()) {
+      final caps = JinjaAnalyzer.analyze(file.readAsStringSync());
+      final rejected = [
+        if (!caps.supportsImageParts) 'image',
+        if (!caps.supportsAudioParts) 'audio',
+      ];
+      if (rejected.isNotEmpty) {
+        rejecting[file.path.replaceAll(r'\', '/')] = rejected;
+      }
+    }
+
+    expect(rejecting, const {
+      'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja': [
+        'audio',
+      ],
+      'test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja':
+          ['audio'],
+      'test/fixtures/templates/Qwen3_5-0_8B.jinja': ['audio'],
+      'tool/litert_lm_templates/qwen3.jinja': ['image', 'audio'],
+    });
+  });
+
+  test('every fixture template renders every mix of media parts', () {
+    const image = LlamaImageContent(path: '/tmp/page.png');
+    const audio = LlamaAudioContent(path: '/tmp/clip.wav');
+    final video = LlamaVideoContent(path: '/tmp/clip.mp4');
+    final requests = <List<LlamaContentPart>>[
+      [image],
+      [audio],
+      [video],
+      [image, audio],
+      [image, video],
+      [audio, video],
+    ];
+
+    for (final file in _fixtureTemplates()) {
+      final source = file.readAsStringSync();
+      for (final media in requests) {
+        final kinds = media.map((part) => part.runtimeType).join(' + ');
+        final prompt = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [const LlamaTextContent('Describe:'), ...media],
+            ),
+          ],
+          metadata: const {},
+        ).prompt;
+
+        expect(prompt, contains('Describe:'), reason: '${file.path} $kinds');
+        expect(prompt, isNot(contains('/tmp/')), reason: '${file.path} $kinds');
+      }
+    }
+  });
+
+  test('gives a vision-only fixture template one media marker per part for '
+      'a request it cannot take as typed parts', () {
+    const image = LlamaImageContent(path: '/tmp/page.png');
+    const audio = LlamaAudioContent(path: '/tmp/clip.wav');
+    final video = LlamaVideoContent(path: '/tmp/clip.mp4');
+
+    for (final path in const [
+      'test/fixtures/llama_cpp_templates/Apriel-1.6-15b-Thinker-fixed.jinja',
+      'test/fixtures/llama_cpp_templates/unsloth-mistral-Devstral-Small-2507.jinja',
+      'test/fixtures/templates/Qwen3_5-0_8B.jinja',
+    ]) {
+      final source = File(path).readAsStringSync();
+      for (final media in <List<LlamaContentPart>>[
+        [audio],
+        [image, audio],
+        [image, video],
+      ]) {
+        final prompt = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [const LlamaTextContent('Describe:'), ...media],
+            ),
+          ],
+          metadata: const {},
+        ).prompt;
+
+        expect(
+          mtmdMediaMarker.allMatches(prompt),
+          hasLength(media.length),
+          reason: '$path ${media.map((part) => part.runtimeType).join(' + ')}',
+        );
+      }
+    }
   });
 
   test('caches every fixture template', () {

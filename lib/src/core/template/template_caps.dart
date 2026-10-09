@@ -34,6 +34,15 @@ class TemplateCaps {
   /// earlier tool calls are rendered with their arguments parsed from JSON.
   final bool supportsObjectArguments;
 
+  /// Whether the template renders a typed image part (`{type: 'image'}`)
+  /// without raising. Probed only for a template that reads both string and
+  /// typed content, and `true` for every other template.
+  final bool supportsImageParts;
+
+  /// Whether the template renders a typed audio part (`{type: 'audio'}`)
+  /// without raising, under the same conditions as [supportsImageParts].
+  final bool supportsAudioParts;
+
   /// Creates a [TemplateCaps] with the specified capabilities.
   const TemplateCaps({
     this.supportsSystemRole = true,
@@ -44,6 +53,8 @@ class TemplateCaps {
     this.supportsTypedContent = false,
     this.supportsThinking = false,
     this.supportsObjectArguments = false,
+    this.supportsImageParts = true,
+    this.supportsAudioParts = true,
   });
 
   /// Detects capabilities with llama.cpp's capability probes, as

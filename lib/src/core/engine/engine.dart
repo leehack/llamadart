@@ -1543,6 +1543,12 @@ class LlamaEngine {
   /// parse compatible best-effort tool-call text, but it does not currently
   /// enforce arbitrary JSON-schema constraints.
   ///
+  /// An image or audio part that the loaded multimodal projector reports no
+  /// encoder for throws [LlamaUnsupportedException] before the chat template
+  /// is rendered. A template that fails to render, by raising or through
+  /// invalid syntax, throws [LlamaInferenceException] with the template's
+  /// message.
+  ///
   /// Example:
   /// ```dart
   /// final messages = [
@@ -1615,9 +1621,9 @@ class LlamaEngine {
     return _generationCancellation.request((request) {
       Stream<LlamaCompletionChunk> chunks() async* {
         _ensureReady();
-        await _rejectUnsupportedVideoInput(
-          messages.expand((message) => message.parts),
-        );
+        final requestParts = messages.expand((message) => message.parts);
+        await _rejectUnsupportedVideoInput(requestParts);
+        await _rejectMediaInputWithoutEncoder(requestParts);
 
         // Keep tools available to template routing even with toolChoice.none,
         // matching llama.cpp behavior.
@@ -1783,6 +1789,9 @@ class LlamaEngine {
   /// Use [LlamaStructuredOutput.responseFormat] to avoid hand-writing these
   /// maps in application code.
   ///
+  /// A template that fails to render, by raising or through invalid syntax,
+  /// throws [LlamaInferenceException] with the template's message.
+  ///
   /// [jsonSchema] is a legacy shortcut for
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
@@ -1932,7 +1941,9 @@ class LlamaEngine {
     required GenerationRequest request,
   }) async* {
     _ensureReady();
-    await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
+    final requestParts = parts ?? const <LlamaContentPart>[];
+    await _rejectUnsupportedVideoInput(requestParts);
+    await _rejectMediaInputWithoutEncoder(requestParts);
     if (request.isCancelled()) return;
     final resolvedParams = await _resolveDraftModel(params, request);
     if (resolvedParams == null) return;
@@ -2588,6 +2599,41 @@ class LlamaEngine {
       'cancellation, and video-context cleanup must be wired before path or '
       'byte input can be accepted. Extract and send image frames instead.',
     );
+  }
+
+  /// Rejects an image or audio part that the loaded multimodal projector
+  /// reports no encoder for.
+  ///
+  /// Without a projector, or when a probe cannot run, the backend's own media
+  /// check answers the request.
+  Future<void> _rejectMediaInputWithoutEncoder(
+    Iterable<LlamaContentPart> parts,
+  ) async {
+    final mmContextHandle = _mmContextHandle;
+    if (mmContextHandle == null) return;
+
+    final candidate = backend;
+    Future<void> require(String kind, Future<bool> Function() probe) async {
+      final bool supported;
+      try {
+        supported = await probe();
+      } catch (_) {
+        return;
+      }
+      if (supported) return;
+      throw LlamaUnsupportedException(
+        '$kind input is not supported by the loaded multimodal projector: it '
+        'reports no ${kind.toLowerCase()} encoder. Load a projector that has '
+        'one, or leave ${kind.toLowerCase()} parts out of the request.',
+      );
+    }
+
+    if (parts.any((part) => part is LlamaImageContent)) {
+      await require('Image', () => candidate.supportsVision(mmContextHandle));
+    }
+    if (parts.any((part) => part is LlamaAudioContent)) {
+      await require('Audio', () => candidate.supportsAudio(mmContextHandle));
+    }
   }
 
   /// Returns the optional [GenerationParams] controls that the loaded model's

@@ -215,22 +215,30 @@ void main() {
       final caps = JinjaAnalyzer.analyze(template());
       expect(caps.supportsStringContent, isTrue);
       expect(caps.supportsTypedContent, isFalse);
+      expect(caps.supportsImageParts, isFalse);
+      expect(caps.supportsAudioParts, isFalse);
     });
 
     for (final type in ['image', 'audio']) {
-      test('a template that renders $type parts takes typed content', () {
+      test('a template that renders $type parts takes typed content, and '
+          'only that media kind as a part', () {
         final caps = JinjaAnalyzer.analyze(
           template(otherParts: accepting(type)),
         );
         expect(caps.supportsStringContent, isTrue);
         expect(caps.supportsTypedContent, isTrue);
+        expect(caps.supportsImageParts, type == 'image');
+        expect(caps.supportsAudioParts, type == 'audio');
       });
     }
 
-    test('a template that skips media parts takes typed content', () {
+    test('a template that skips media parts takes typed content and both '
+        'media kinds as parts', () {
       final caps = JinjaAnalyzer.analyze(template(otherParts: ''));
       expect(caps.supportsStringContent, isTrue);
       expect(caps.supportsTypedContent, isTrue);
+      expect(caps.supportsImageParts, isTrue);
+      expect(caps.supportsAudioParts, isTrue);
     });
 
     test('a template that reads only part lists takes typed content even '

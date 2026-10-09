@@ -66,8 +66,11 @@ sequenceDiagram
   the template reads. Thinking support comes from the template's thinking
   markers.
 - A template that reads both strings and content part lists gets image and
-  audio as typed parts, unless a further probe finds that it rejects both
-  kinds. Every other template gets the media marker in its text.
+  audio as typed parts when a further probe finds that it renders every media
+  kind in the request. Every other template, and any request with a kind the
+  template rejects or with video, gets the media marker in its text.
+- A template that fails to render, by raising or through invalid syntax,
+  throws `LlamaInferenceException` with the template's message.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 

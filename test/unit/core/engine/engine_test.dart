@@ -35,6 +35,8 @@ class MockLlamaBackend
     this.contextFreeDelay,
     this.nativeVideoRuntimeSupported = false,
     this.videoProbeError,
+    this.projectorSupportsAudio = false,
+    this.audioProbeError,
   });
 
   Object? modelLoadError;
@@ -74,6 +76,8 @@ class MockLlamaBackend
   Future<void>? contextFreeDelay;
   final bool? nativeVideoRuntimeSupported;
   final Object? videoProbeError;
+  final bool projectorSupportsAudio;
+  final Object? audioProbeError;
   int? lastVideoProbeHandle;
 
   @override
@@ -256,7 +260,12 @@ class MockLlamaBackend
   Future<bool> supportsVision(int mmContextHandle) async => true;
 
   @override
-  Future<bool> supportsAudio(int mmContextHandle) async => false;
+  Future<bool> supportsAudio(int mmContextHandle) async {
+    if (audioProbeError case final error?) {
+      throw error;
+    }
+    return projectorSupportsAudio;
+  }
 
   @override
   Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
@@ -2485,6 +2494,161 @@ void main() {
         await videoEngine.dispose();
       }
     });
+
+    group('media the loaded projector has no encoder for', () {
+      const visionOnlyTemplate =
+          '{% for message in messages %}'
+          '{% if message.content is string %}{{ message.content }}'
+          '{% else %}{% for part in message.content %}'
+          "{% if part.type == 'text' %}{{ part.text }}"
+          "{% elif part.type == 'image' %}[image part]"
+          "{% else %}{{ raise_exception('Unexpected item type in content.') }}"
+          '{% endif %}{% endfor %}{% endif %}'
+          '{% endfor %}';
+      const audio = LlamaAudioContent(path: '/tmp/clip.wav');
+      const image = LlamaImageContent(path: '/tmp/page.png');
+
+      Future<LlamaEngine> loaded(MockLlamaBackend backend) async {
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+        await engine.loadMultimodalProjector('proj.gguf');
+        return engine;
+      }
+
+      List<LlamaChatMessage> request(List<LlamaContentPart> media) => [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [const LlamaTextContent('Describe:'), ...media],
+        ),
+      ];
+
+      final noAudioEncoder = throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          'Audio input is not supported by the loaded multimodal projector: '
+              'it reports no audio encoder. Load a projector that has one, or '
+              'leave audio parts out of the request.',
+        ),
+      );
+
+      for (final MapEntry(key: label, value: media) in {
+        'an audio part': [audio],
+        'an audio part next to an image': [image, audio],
+      }.entries) {
+        test('create rejects $label for a vision-only template before '
+            'rendering it', () async {
+          final backend = MockLlamaBackend(
+            modelMetadataResponse: {
+              'tokenizer.chat_template': visionOnlyTemplate,
+            },
+          );
+          final engine = await loaded(backend);
+
+          await expectLater(
+            engine.create(request(media)).drain<void>(),
+            noAudioEncoder,
+          );
+          expect(backend.lastGenerationPrompt, isNull);
+        });
+      }
+
+      test('generate rejects an audio part', () async {
+        final backend = MockLlamaBackend();
+        final engine = await loaded(backend);
+
+        await expectLater(
+          engine.generate('describe', parts: [audio]).drain<void>(),
+          noAudioEncoder,
+        );
+        expect(backend.lastGenerationPrompt, isNull);
+      });
+
+      test('create sends an image part, which the projector encodes, as a '
+          'typed part', () async {
+        final backend = MockLlamaBackend(
+          modelMetadataResponse: {
+            'tokenizer.chat_template': visionOnlyTemplate,
+          },
+        );
+        final engine = await loaded(backend);
+
+        await engine.create(request([image])).drain<void>();
+
+        expect(backend.lastGenerationPrompt, 'Describe:[image part]');
+      });
+
+      test('create sends audio to a vision-only template as the media '
+          'marker when the projector encodes audio', () async {
+        final backend = MockLlamaBackend(
+          projectorSupportsAudio: true,
+          modelMetadataResponse: {
+            'tokenizer.chat_template': visionOnlyTemplate,
+          },
+        );
+        final engine = await loaded(backend);
+
+        await engine.create(request([image, audio])).drain<void>();
+
+        expect(backend.lastGenerationPrompt, 'Describe:<__media__><__media__>');
+      });
+
+      test(
+        'a probe that cannot run leaves the request to the backend',
+        () async {
+          final backend = MockLlamaBackend(
+            audioProbeError: LlamaUnsupportedException('probe unavailable'),
+          );
+          final engine = await loaded(backend);
+
+          await engine.generate('describe', parts: [audio]).drain<void>();
+
+          expect(backend.lastGenerationPrompt, 'describe');
+        },
+      );
+
+      test('without a projector the request reaches the backend', () async {
+        final backend = MockLlamaBackend();
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+
+        await engine.generate('describe', parts: [audio]).drain<void>();
+
+        expect(backend.lastGenerationPrompt, 'describe');
+      });
+    });
+
+    test(
+      'create throws a typed exception when the chat template raises',
+      () async {
+        final raising = MockLlamaBackend(
+          modelMetadataResponse: {
+            'tokenizer.chat_template':
+                "{{ raise_exception('Conversation roles must alternate') }}",
+          },
+        );
+        final raisingEngine = LlamaEngine(raising);
+        addTearDown(raisingEngine.dispose);
+        await raisingEngine.loadModel('qwen-test.gguf');
+
+        await expectLater(
+          raisingEngine.create(const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+          ]).drain<void>(),
+          throwsA(
+            isA<LlamaInferenceException>().having(
+              (error) => error.message,
+              'message',
+              'The chat template failed to render: '
+                  'Conversation roles must alternate',
+            ),
+          ),
+        );
+        expect(raising.lastGenerationPrompt, isNull);
+      },
+    );
 
     test(
       'multimodal projector can be unloaded without unloading model',

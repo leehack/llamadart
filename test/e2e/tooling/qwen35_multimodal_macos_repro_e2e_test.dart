@@ -10,6 +10,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as path;
@@ -122,6 +123,8 @@ Future<void> _runScenario({
       reason: 'Expected Qwen3.5 0.8B + mmproj to report vision support.',
     );
 
+    await _expectAudioRejected(engine, prompt);
+
     final GenerationParams generationParams = GenerationParams(
       maxTokens: maxTokens,
       temp: 0.2,
@@ -167,6 +170,38 @@ Future<void> _runScenario({
   } finally {
     await engine.dispose();
   }
+}
+
+/// The Qwen3.5 template takes typed image parts only and its projector has no
+/// audio encoder: an audio part is refused by name, and still renders.
+Future<void> _expectAudioRejected(LlamaEngine engine, String prompt) async {
+  expect(await engine.supportsAudio, isFalse);
+  final List<LlamaChatMessage> messages = <LlamaChatMessage>[
+    LlamaChatMessage.withContent(
+      role: LlamaChatRole.user,
+      content: <LlamaContentPart>[
+        LlamaAudioContent(samples: Float32List(16000)),
+        LlamaTextContent(prompt),
+      ],
+    ),
+  ];
+
+  stdout.writeln('Sending an audio part to the vision-only projector...');
+  await expectLater(
+    engine.create(messages).drain<void>(),
+    throwsA(
+      isA<LlamaUnsupportedException>().having(
+        (LlamaUnsupportedException error) => error.message,
+        'message',
+        contains('it reports no audio encoder'),
+      ),
+    ),
+  );
+  final LlamaChatTemplateResult rendered = await engine.chatTemplate(
+    messages,
+    includeTokenCount: false,
+  );
+  expect(rendered.prompt, contains('<__media__>'));
 }
 
 Future<String> _runSessionTurn({

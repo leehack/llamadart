@@ -435,6 +435,161 @@ void main() {
       }
     });
 
+    group('a template that takes typed parts of one media kind only', () {
+      String only(String type) =>
+          '{% for message in messages %}'
+          '{% if message.content is string %}{{ message.content }}'
+          '{% else %}{% for part in message.content %}'
+          "{% if part.type == 'text' %}{{ part.text }}"
+          "{% elif part.type == '$type' %}[$type part]"
+          "{% else %}{{ raise_exception('Unexpected item type in content.') }}"
+          '{% endif %}{% endfor %}{% endif %}'
+          '{% endfor %}';
+
+      const image = LlamaImageContent(path: '/tmp/page.png');
+      const audio = LlamaAudioContent(path: '/tmp/clip.wav');
+      final video = LlamaVideoContent(path: '/tmp/clip.mp4');
+
+      String prompt(String type, List<LlamaContentPart> media) =>
+          ChatTemplateEngine.render(
+            templateSource: only(type),
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [const LlamaTextContent('Describe:'), ...media],
+              ),
+            ],
+            metadata: const {},
+          ).prompt;
+
+      test('renders the kind it takes as a typed part', () {
+        expect(prompt('image', [image]), 'Describe:[image part]');
+        expect(prompt('audio', [audio]), 'Describe:[audio part]');
+        expect(
+          prompt('image', [image, image]),
+          'Describe:[image part][image part]',
+        );
+      });
+
+      test('gets the media marker in text for a kind it rejects', () {
+        expect(prompt('image', [audio]), 'Describe:<__media__>');
+        expect(prompt('audio', [image]), 'Describe:<__media__>');
+      });
+
+      test('gets one media marker per part, in order, when a request mixes '
+          'a kind it takes with one it rejects', () {
+        expect(
+          prompt('image', [image, audio]),
+          'Describe:<__media__><__media__>',
+        );
+        expect(
+          prompt('audio', [image, audio]),
+          'Describe:<__media__><__media__>',
+        );
+      });
+
+      test('gets the media marker in text for a video part next to a kind '
+          'it takes, without the video source', () {
+        final rendered = prompt('image', [image, video]);
+        expect(rendered, 'Describe:<__media__><__media__>');
+        expect(rendered, isNot(contains('clip.mp4')));
+      });
+    });
+
+    group('a chat template that fails to render', () {
+      const mustAlternate =
+          '{% for message in messages %}'
+          '{% if loop.index0 > 0 and '
+          'message.role == messages[loop.index0 - 1].role %}'
+          "{{ raise_exception('Conversation roles must alternate') }}"
+          '{% endif %}{{ message.content }}'
+          '{% endfor %}';
+
+      Matcher throwsRenderFailure(Object message) => throwsA(
+        isA<LlamaInferenceException>().having(
+          (e) => e.message,
+          'message',
+          message,
+        ),
+      );
+
+      test('throws a typed exception carrying what the template raised', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: mustAlternate,
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'a'),
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'b'),
+            ],
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            'The chat template failed to render: '
+            'Conversation roles must alternate',
+          ),
+        );
+      });
+
+      test('throws a typed exception when it raises on typed parts', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource:
+                '{% for message in messages %}'
+                '{% if message.content is string %}{{ message.content }}'
+                '{% else %}{% for part in message.content %}'
+                "{% if part.type == 'image' %}"
+                '{% if loop.index0 > 1 %}'
+                "{{ raise_exception('one image only') }}{% endif %}"
+                '[image part]{% else %}{{ part.text }}{% endif %}'
+                '{% endfor %}{% endif %}'
+                '{% endfor %}',
+            messages: const [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [
+                  LlamaTextContent('Compare:'),
+                  LlamaImageContent(path: '/tmp/a.png'),
+                  LlamaImageContent(path: '/tmp/b.png'),
+                ],
+              ),
+            ],
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            'The chat template failed to render: one image only',
+          ),
+        );
+      });
+
+      test('throws a typed exception for invalid template syntax', () {
+        expect(
+          () => ChatTemplateEngine.render(
+            templateSource: '{% for message in messages %}{{ message.content',
+            messages: const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'a'),
+            ],
+            metadata: const {},
+          ),
+          throwsRenderFailure(
+            startsWith('The chat template failed to render: '),
+          ),
+        );
+      });
+
+      test('renders the conversation it accepts', () {
+        final result = ChatTemplateEngine.render(
+          templateSource: mustAlternate,
+          messages: const [
+            LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'a'),
+            LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: 'b'),
+          ],
+          metadata: const {},
+        );
+
+        expect(result.prompt, 'ab');
+      });
+    });
+
     test('keeps GLM-OCR image marker when GLM tool-call policy runs', () {
       const history = [
         LlamaChatMessage.withContent(

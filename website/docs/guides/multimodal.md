@@ -119,7 +119,8 @@ Always prefer these runtime checks over model-card assumptions. Read
 projector loaded, a GGUF model (native `llama.cpp` or WebGPU) rejects image
 and audio parts with `LlamaUnsupportedException` instead of answering from the
 text alone. A loaded projector can expose only a subset of the family-level
-modalities. The current Gemma 4 E2B GGUF projector path in native `llama.cpp`
+modalities, and a part it reports no encoder for (audio with a vision-only
+projector, for example) is rejected the same way. The current Gemma 4 E2B GGUF projector path in native `llama.cpp`
 mtmd reports both vision and audio support; audio remains experimental
 upstream. Web continues to rely
 on the loaded bridge's runtime capability report.

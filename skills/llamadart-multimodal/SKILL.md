@@ -42,7 +42,7 @@ description: >-
   values as `capabilities`.
 - Always check before sending media to a GGUF model. With no projector loaded,
   image or audio parts throw `LlamaUnsupportedException` on llama.cpp, native
-  and WebGPU.
+  and WebGPU, and so does a part the loaded projector reports no encoder for.
 - Put media in a message with
   `LlamaChatMessage.withContent(role: ..., content: [...])`, or pass the parts
   to `ChatSession.create`. Place media before the text that refers to it.
