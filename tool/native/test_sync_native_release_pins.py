@@ -823,20 +823,83 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), "old-a")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-b")
 
-    def test_v017_requires_exact_android_dawn_repair_provenance(self) -> None:
+    def test_v017_and_v018_require_exact_android_dawn_repair_provenance(self) -> None:
         expected = [
             ("arm64", "android_arm64", "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"),
             ("x64", "android_x86_64", "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087"),
         ]
-        self.assertEqual(pins.LITERT_PREBUILT_OVERRIDES.get("v0.17.0"), [
-            {
-                "sourceRepository": "google-ai-edge/LiteRT-LM",
-                "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
-                "sourcePath": f"prebuilt/{upstream}/libwebgpu_dawn.so",
-                "targetPath": f"bin/android/{arch}/libwebgpu_dawn.so",
-                "sha256": digest,
-            } for arch, upstream, digest in expected
-        ])
+        for upstream_version in ("v0.17.0", "v0.17.1", "v0.18.0"):
+            with self.subTest(upstream_version=upstream_version):
+                self.assertEqual(
+                    pins.LITERT_PREBUILT_OVERRIDES.get(upstream_version),
+                    [
+                        {
+                            "sourceRepository": "google-ai-edge/LiteRT-LM",
+                            "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+                            "sourcePath": f"prebuilt/{upstream}/libwebgpu_dawn.so",
+                            "targetPath": f"bin/android/{arch}/libwebgpu_dawn.so",
+                            "sha256": digest,
+                        }
+                        for arch, upstream, digest in expected
+                    ],
+                )
+
+    def test_override_table_has_an_entry_for_the_pinned_upstream_version(self) -> None:
+        tag = re.search(
+            r"const liteRtLmReleaseTag = '([^']+)';",
+            (
+                Path(__file__).resolve().parents[2]
+                / "lib/src/hook/native_release_pins.dart"
+            ).read_text(encoding="utf-8"),
+        )[1]
+        if pins.DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag):
+            self.skipTest(
+                "the upstream version of a development pin is only in its "
+                "release manifest"
+            )
+        upstream = re.fullmatch(r"(v\d+\.\d+\.\d+)(?:-.+)?", tag)
+        self.assertIsNotNone(upstream, f"unrecognized LiteRT-LM pin {tag}")
+        self.assertIn(upstream[1], pins.LITERT_PREBUILT_OVERRIDES)
+
+    def test_override_mismatch_names_the_upstream_version_missing_from_the_table(
+        self,
+    ) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        compatibility_tag = manifest["upstream"]["compatibilityTag"]
+        required_bundles = [
+            f"{item['platform']}-{item['arch']}" for item in manifest["platforms"]
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            _materialize_schema2_release_fixtures(Path(temp), manifest, release)
+            validate_litert_lm_release_manifest(
+                release,
+                repo="leehack/litert-lm-native",
+                tag=tag,
+                release_json_dir=temp,
+                required_bundles=required_bundles,
+            )
+            stale_table = {
+                key: value
+                for key, value in pins.LITERT_PREBUILT_OVERRIDES.items()
+                if key != compatibility_tag
+            }
+            with patch.object(pins, "LITERT_PREBUILT_OVERRIDES", stale_table):
+                with self.assertRaises(ReleaseError) as raised:
+                    validate_litert_lm_release_manifest(
+                        release,
+                        repo="leehack/litert-lm-native",
+                        tag=tag,
+                        release_json_dir=temp,
+                        required_bundles=required_bundles,
+                    )
+        message = str(raised.exception)
+        self.assertIn(
+            f"LITERT_PREBUILT_OVERRIDES has no entry for upstream {compatibility_tag}",
+            message,
+        )
+        self.assertIn("bin/android/arm64/libwebgpu_dawn.so", message)
+        self.assertIn("tools/prebuilt_overrides.py", message)
 
     def test_owner_generated_schema_2_manifest_is_consumed_exactly(self) -> None:
         owner_fixture = (

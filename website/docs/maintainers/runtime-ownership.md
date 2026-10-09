@@ -38,25 +38,25 @@ integration correctness.
 
 The consumer safety gate leaves
 [#919](https://github.com/leehack/llamadart/issues/919) open for reliable runtime
-reporting. The pinned native `v0.17.0-8` and Web `@litert-lm/core@0.15.0` do
+reporting. The pinned native `v0.18.0` and Web `@litert-lm/core@0.15.0` do
 not expose a cause that distinguishes EOS from per-request output exhaustion.
 They cannot safely drive automatic tool loops. Plain completion remains
 available; its `stop` value is an unverified termination reason on those pins.
 
 Verified source chain for the native artifact:
 
-- [Owner release `v0.17.0-8`](https://github.com/leehack/litert-lm-native/releases/tag/v0.17.0-8)
-  records owner `e486b51bf9f06ec6df3c3d5e8e782f24957a1724` and upstream
-  `e9fd8c53ff968071774206163027dd84bedfe925`.
-- [Upstream decode](https://github.com/google-ai-edge/LiteRT-LM/blob/e9fd8c53ff968071774206163027dd84bedfe925/runtime/core/tasks.cc)
+- [Owner release `v0.18.0`](https://github.com/leehack/litert-lm-native/releases/tag/v0.18.0)
+  records owner `29537be97949ef4eca8da793c4df4fb487f3993c` and upstream
+  `b2f686e2ed4718fb84ec398a61dd59ca0f0aff27`.
+- [Upstream decode](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/core/tasks.cc)
   checks EOS before context and output budgets in `ShouldStop`, but discards
   which branch stopped decoding. Output-limit and EOS termination both return
   `TaskState::kDone`; recovering a cause from counts changes this precedence.
-- [Conversation callback](https://github.com/google-ai-edge/LiteRT-LM/blob/e9fd8c53ff968071774206163027dd84bedfe925/runtime/conversation/internal_callback_util.cc)
+- [Conversation callback](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/runtime/conversation/internal_callback_util.cc)
   collapses ordinary terminal states to an empty message. The
-  [C callback](https://github.com/google-ai-edge/LiteRT-LM/blob/e9fd8c53ff968071774206163027dd84bedfe925/c/conversation.cc)
+  [C callback](https://github.com/google-ai-edge/LiteRT-LM/blob/b2f686e2ed4718fb84ec398a61dd59ca0f0aff27/c/conversation.cc)
   maps that message to a final chunk with no text or error. The
-  [owner proxy](https://github.com/leehack/litert-lm-native/blob/e486b51bf9f06ec6df3c3d5e8e782f24957a1724/native/bridge/litert_lm_bridge.c)
+  [owner proxy](https://github.com/leehack/litert-lm-native/blob/29537be97949ef4eca8da793c4df4fb487f3993c/native/bridge/litert_lm_bridge.c)
   forwards only text, final and error, so a proxy-only change cannot recover
   the discarded cause.
 - The official pinned

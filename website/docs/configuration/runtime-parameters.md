@@ -98,8 +98,9 @@ Important fields:
   with it instead of the embedded template and its `tool_use` variant; null
   or empty keeps the embedded template. On `.litertlm` models it replaces the
   built-in template (an empty string included); see
-  [Chat templates](../guides/chat-template-and-parsing) for when native
-  LiteRT-LM uses it. A per-call `customTemplate` wins. The value is Jinja
+  [Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)
+  for when native LiteRT-LM uses it and for the list-of-parts `content` it
+  passes from `v0.18.0`. A per-call `customTemplate` wins. The value is Jinja
   source: names such as `chatml` are not mapped to llama.cpp's built-in
   templates. `engine.getMetadata()` still reports the GGUF template.
 - `preferMemory64` / `modelBytesHint` (web/WebGPU only): select the 64-bit
@@ -182,6 +183,27 @@ on the macOS GPU backend, every engine create appended about 0.5 GB to
 create. llamadart can create an engine more than once per loaded model: on the
 first generation or tokenization after each context create, and again when
 speculative decoding, vision, audio or image-count settings change.
+
+With the pinned `v0.18.0` on the macOS GPU backend, the program cache of
+Qwen3 0.6B (4 MB) and Gemma 4 E2B (11 MB) no longer grows after the first
+engine create, where `v0.17.0-8` doubled Qwen3 0.6B's on the second. The
+Qwen3.5 0.8B VL int8 bundle still appends about 270 MB per create, as it did
+on `v0.17.0-8`, so keep the cap for models that grow.
+
+The cache file names carry the model file's name, modification time and size,
+not the runtime version, so an app that updates llamadart keeps the files the
+previous runtime wrote. Over a `v0.17.0-8` cache, `v0.18.0` leaves the weight
+cache at its size and appends its own programs to the program cache, which
+keeps the bytes the older runtime wrote. To reclaim them, delete the
+`*_mldrift_program_cache.bin` files once after updating, or run once with
+`liteRtLmMaxProgramCacheBytes: 0`; the runtime rebuilds the file.
+
+From `v0.18.0` the runtime fails engine creation when it cannot write the
+cache directory, on the CPU backend too: `v0.17.0-8` ran the CPU backend
+uncached there. A missing `liteRtLmCacheDir` is created, so this affects a
+directory that exists and is read-only. The first generation then throws
+`LlamaModelException`, or `LlamaUnsupportedException` when
+`ComputeDevice.gpu` or `ComputeDevice.npu` was requested.
 
 ## Embedding-oriented model params
 

@@ -736,6 +736,7 @@ const List<String> _windowsLiteRtLibraries = [
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libwebgpu_dawn.dll',
+  'webgpu_dawn.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
 ];

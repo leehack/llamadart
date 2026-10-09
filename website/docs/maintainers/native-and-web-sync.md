@@ -217,6 +217,11 @@ Use this checklist in native sync PRs:
   Linux/Windows real-model smoke evidence before changing any pin.
 - Confirm the schema-2 bytes match the owner-generated fixture contract under
   `tool/native/fixtures/`; do not add a downstream-only manifest variant.
+- For a LiteRT-LM release on a new upstream version, first mirror that
+  version's entry of the owner's `tools/prebuilt_overrides.py` in
+  `LITERT_PREBUILT_OVERRIDES` (`tool/native/sync_native_release_pins.py`). The
+  table is kept by hand, and the sync rejects a manifest whose prebuilt
+  overrides it does not list.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
   artifacts when companion package pins should move.
 - Update `lib/src/hook/native_release_pins.dart` native pins with
@@ -237,9 +242,10 @@ Use this checklist in native sync PRs:
 
 ## Companion package release handoff
 
-The repository LiteRT-LM pin is `v0.17.0-8`; companion `0.0.13` ships its
-provider-free iOS SwiftPM manifest and the frameworks' Apple privacy
-manifests, and companion `0.0.12` retains `v0.17.0-6`. The iOS artifacts
+The repository LiteRT-LM pin is `v0.18.0`; it must ship in a new companion
+package release before the next core release. Published companion `0.0.13`
+retains `v0.17.0-8`. Do not present the repository manifest as an already
+published pub.dev package. The iOS artifacts
 meet the declared 16.4 deployment floor, but runtime execution at 16.4 remains
 unqualified; keep [#831](https://github.com/leehack/llamadart/issues/831) open.
 
