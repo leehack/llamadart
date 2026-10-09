@@ -149,6 +149,12 @@ For canonical full release notes, use:
   `package:llamadart/backend.dart` now exports. A prompt written for
   `generate` keeps its placeholders, and `chatTemplate` output for messages
   without media is unchanged.
+- On native llama.cpp, image or audio input that the loaded projector has no
+  encoder for throws `LlamaUnsupportedException` naming the encoder, where
+  `create` and `generate` threw `LlamaInferenceException`. A chat template
+  that raises or has invalid syntax throws `LlamaInferenceException` with the
+  template's message instead of a raw `Exception`
+  ([#963](https://github.com/leehack/llamadart/issues/963)).
 
 ## 0.11.1
 

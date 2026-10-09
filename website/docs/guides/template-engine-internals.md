@@ -84,6 +84,8 @@ sequenceDiagram
   `generate`. They have `<__media__>` where each part was and the zero-width
   space in every other string `generate` reads as a part. Messages without
   media render as they are.
+- A template that fails to render, by raising or through invalid syntax,
+  throws `LlamaInferenceException` with the template's message.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 
