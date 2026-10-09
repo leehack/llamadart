@@ -1032,6 +1032,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'chat-app-micro-batch-sweep',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Answer history and tool prompts at the default and at explicit '
+          'micro-batch sizes in one process, and record the Android Vulkan '
+          'prompt cap decision with the Vulkan device facts.',
+      requiresDevice: true,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'integration_test/micro_batch_sweep_e2e_test.dart',
+            '-d',
+            context.device,
+            if (context.modelPath != null)
+              '--dart-define=MICRO_BATCH_SWEEP_MODEL=${context.modelPath}',
+          ],
+          description: 'Flutter chat app micro-batch sweep E2E',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'chat-app-macos-quit',
       group: LocalE2eScenarioGroup.flutterDevice,
       description:

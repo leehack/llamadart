@@ -21,5 +21,7 @@ dev_dependencies:
 hooks:
   user_defines:
     llamadart:
-      # The image example needs the opt-in stable_diffusion runtime.
+      # The image example needs the opt-in stable_diffusion runtime. A list
+      # replaces the defaults; every example here loads GGUF, so litert_lm is
+      # left out. `all` would keep it.
       llamadart_native_runtimes: [llama_cpp, stable_diffusion]

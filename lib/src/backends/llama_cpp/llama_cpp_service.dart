@@ -4707,12 +4707,53 @@ class LlamaCppService {
   /// Supports multimodal input via [parts].
   /// Calls [onLimit] before the stream closes when a token limit ended the
   /// generation.
+  ///
+  /// The caller wrote [prompt]: a media placeholder in it stands for a part,
+  /// and parts without one go before the prompt.
   Stream<List<int>> generate(
     int contextHandle,
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    cancelTokenAddress,
+    parts: parts,
+    onLimit: onLimit,
+  );
+
+  /// Generates like [generate] from a [prompt] that a chat template rendered
+  /// with [mediaMarker] where each part was. A placeholder string elsewhere
+  /// in it is message text.
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    cancelTokenAddress,
+    parts: parts,
+    chatMediaMarker: mediaMarker,
+    onLimit: onLimit,
+  );
+
+  Stream<List<int>> _generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+    String? chatMediaMarker,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     var ctx = _contexts[contextHandle];
@@ -4876,6 +4917,7 @@ class LlamaCppService {
         tokensPtr,
         nCtx,
         modelParams,
+        chatMediaMarker: chatMediaMarker,
         allowTextPromptReuse:
             speculativeConfig == null &&
             !hasMediaParts &&
@@ -5673,6 +5715,7 @@ class LlamaCppService {
     Pointer<Int32> tokensPtr,
     int nCtx,
     llama_context_params modelParams, {
+    required String? chatMediaMarker,
     required bool allowTextPromptReuse,
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
@@ -5696,6 +5739,7 @@ class LlamaCppService {
         mediaParts,
         modelParams,
         cancelToken,
+        chatMediaMarker: chatMediaMarker,
       );
       return (nPast: nPast, promptTokenCount: 0);
     } else {
@@ -5724,8 +5768,9 @@ class LlamaCppService {
     String prompt,
     List<LlamaContentPart> mediaParts,
     llama_context_params modelParams,
-    Pointer<Int8> cancelToken,
-  ) {
+    Pointer<Int8> cancelToken, {
+    required String? chatMediaMarker,
+  }) {
     _calls.failures.ensureUsable(mmCtx, 'This multimodal projector');
     int initialTokens = 0;
     // Zeroed, so the cleanup of a part that failed skips the slots after it.
@@ -5783,7 +5828,8 @@ class LlamaCppService {
             LlamaInferenceException.new,
             windowsFreeOnly: [mmCtx],
           );
-          throw Exception("Failed to load media part $i");
+          throw _missingEncoderFor(mmCtx, [p]) ??
+              Exception("Failed to load media part $i");
         }
       }
 
@@ -5791,6 +5837,7 @@ class LlamaCppService {
       final normalizedPrompt = _normalizeMtmdPromptMarkers(
         prompt,
         mediaParts.length,
+        chatMediaMarker: chatMediaMarker,
       );
       promptPtr = normalizedPrompt.toNativeUtf8();
       inputText.ref.text = promptPtr.cast();
@@ -5836,6 +5883,13 @@ class LlamaCppService {
               newPast,
             );
           } else {
+            _checkNonCausalMediaChunks(
+              chunkEvalApi,
+              mmCtx,
+              chunks,
+              batchTokens: modelParams.n_batch,
+              microBatchTokens: llama_n_ubatch(ctx.pointer),
+            );
             chunkFailure = evalMtmdChunksUntilCancelled(
               chunkEvalApi,
               mmCtx,
@@ -5867,7 +5921,8 @@ class LlamaCppService {
           malloc.free(newPast);
         }
       } else {
-        throw Exception("mtmd_tokenize failed: $res");
+        throw _missingEncoderFor(mmCtx, mediaParts) ??
+            Exception("mtmd_tokenize failed: $res");
       }
     } finally {
       // Free in finally so a tokenize/eval failure above does not leak the
@@ -5884,6 +5939,50 @@ class LlamaCppService {
     return initialTokens;
   }
 
+  /// Rejects a prompt whose non-causal media chunk llama.cpp would abort on.
+  ///
+  /// `mtmd_helper_decode_image_chunk` decodes such a chunk in pieces of
+  /// [batchTokens], the `n_batch` it is given, and `llama_context::decode`
+  /// aborts on a non-causal piece above [microBatchTokens]. With the two
+  /// equal the pieces pass, and the chunk is decoded in several non-causal
+  /// batches, which is logged.
+  void _checkNonCausalMediaChunks(
+    MtmdChunkEvalApi api,
+    Pointer<mtmd_context> mmCtx,
+    Pointer<mtmd_input_chunks> chunks, {
+    required int batchTokens,
+    required int microBatchTokens,
+  }) {
+    final chunk = findMtmdChunkAboveMicroBatch(
+      api,
+      mmCtx,
+      chunks,
+      microBatchTokens,
+    );
+    if (chunk == null) return;
+    final media = mtmdMediaChunkName(chunk.chunkType);
+    if (batchTokens <= microBatchTokens) {
+      LlamaLogger.instance.warning(
+        'llama_cpp_service: the $media input has ${chunk.tokenCount} tokens, '
+        'more than the context\'s micro-batch of $microBatchTokens tokens '
+        '(n_ubatch), so it is decoded in several non-causal batches, which '
+        'can reduce accuracy. Load the model with '
+        'ModelParams.microBatchSize and ModelParams.batchSize of at least '
+        '${chunk.tokenCount} to decode it in one.',
+      );
+      return;
+    }
+    throw LlamaInferenceException(
+      'The $media input has ${chunk.tokenCount} tokens, more than the '
+      'context\'s micro-batch of $microBatchTokens tokens (n_ubatch), and '
+      'this projector decodes it with non-causal attention, which llama.cpp '
+      'cannot split across micro-batches. Raise ModelParams.microBatchSize '
+      'to at least ${chunk.tokenCount}, and ModelParams.batchSize with it, '
+      'or pass a smaller $media if the projector sizes its output by the '
+      'input.',
+    );
+  }
+
   void _ensureLogitsAvailableAfterPromptEval(Pointer<llama_context> ctx) {
     if (llama_get_logits(ctx) != nullptr) {
       return;
@@ -5895,13 +5994,27 @@ class LlamaCppService {
     );
   }
 
-  String _normalizeMtmdPromptMarkers(String prompt, int mediaPartCount) {
+  String _normalizeMtmdPromptMarkers(
+    String prompt,
+    int mediaPartCount, {
+    required String? chatMediaMarker,
+  }) {
     final markerPtr = _mtmdDefaultMarker();
     final marker = markerPtr == nullptr
         ? '<__media__>'
         : markerPtr.cast<Utf8>().toDartString();
 
-    var normalized = normalizeMediaPlaceholders(prompt, marker: marker);
+    // The projector splits a prompt on its marker wherever it is. Its helper
+    // for speech output writes the default marker itself, so the projector
+    // cannot be given another one.
+    var normalized = chatMediaMarker == null
+        ? normalizeMediaPlaceholders(prompt, marker: marker)
+        : chatPromptForMarkerRuntime(
+            prompt,
+            chatMarker: chatMediaMarker,
+            marker: marker,
+            runtimePlaceholders: marker,
+          );
 
     if (mediaPartCount <= 0) {
       return normalized;
@@ -8755,17 +8868,7 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
-
-    if (!_mtmdPrimarySymbolsUnavailable) {
-      try {
-        return mtmd_support_vision(mmCtx);
-      } on ArgumentError {
-        _mtmdPrimarySymbolsUnavailable = true;
-      }
-    }
-
-    final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVision(mmCtx) ?? false;
+    return _mtmdHasEncoder(mmCtx, audio: false) ?? false;
   }
 
   /// Returns whether the active multimodal projector supports audio input.
@@ -8774,22 +8877,108 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
+    return _mtmdHasEncoder(mmCtx, audio: true) ??
+        (throw LlamaUnsupportedException(
+          _mtmdUnavailableMessage('mtmd_support_audio'),
+        ));
+  }
 
+  /// Whether the projector [mmCtx] has an audio encoder, or with [audio]
+  /// false a vision encoder, as mtmd reports it.
+  ///
+  /// Null when neither the llamadart library nor the fallback mtmd library
+  /// has the probe function.
+  bool? _mtmdHasEncoder(Pointer<mtmd_context> mmCtx, {required bool audio}) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_support_audio(mmCtx);
+        return audio ? mtmd_support_audio(mmCtx) : mtmd_support_vision(mmCtx);
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    if (fallback == null) {
-      throw LlamaUnsupportedException(
-        _mtmdUnavailableMessage('mtmd_support_audio'),
-      );
+    if (fallback == null) return null;
+    return audio
+        ? fallback.supportsAudio(mmCtx)
+        : fallback.supportsVision(mmCtx);
+  }
+
+  /// The error for [parts] that mtmd failed to load or tokenize when the
+  /// projector [mmCtx] reports no encoder for the kind of one of them, and
+  /// null otherwise, as when the runtime lacks the probe function.
+  LlamaUnsupportedException? _missingEncoderFor(
+    Pointer<mtmd_context> mmCtx,
+    List<LlamaContentPart> parts,
+  ) {
+    final kinds = parts.map(_isAudioRatherThanImage).toList(growable: false);
+    for (final (kind, audio) in const [('Image', false), ('Audio', true)]) {
+      if (kinds.contains(audio) &&
+          _mtmdHasEncoder(mmCtx, audio: audio) == false) {
+        return LlamaUnsupportedException(
+          '$kind input is not supported by the loaded multimodal projector: '
+          'it has no ${kind.toLowerCase()} encoder. Load a projector that has '
+          'one, or leave ${kind.toLowerCase()} input out of the request.',
+        );
+      }
     }
-    return fallback.supportsAudio(mmCtx);
+    return null;
+  }
+
+  /// Whether [part] is audio (true) or an image (false) to mtmd, or null
+  /// when neither is established.
+  ///
+  /// mtmd decides by content for a path or encoded bytes, whatever the type
+  /// of the part: audio by the magic of `is_audio_file` in llama.cpp's
+  /// `mtmd-helper.cpp`, and anything else is tried as an image. Other content
+  /// is an image here when it has the magic of an image format, or when the
+  /// caller typed the part as an image too. An audio part that mtmd does not
+  /// read as audio, such as an m4a or Ogg file, and a source that cannot be
+  /// read are neither, so their mtmd error is kept.
+  static bool? _isAudioRatherThanImage(LlamaContentPart part) {
+    final (path, bytes) = switch (part) {
+      LlamaImageContent() => (part.path, part.bytes),
+      LlamaAudioContent() => (part.path, part.bytes),
+      _ => (null, null),
+    };
+    final List<int> head;
+    if (path != null) {
+      try {
+        final file = File(path).openSync();
+        try {
+          head = file.readSync(12);
+        } finally {
+          file.closeSync();
+        }
+      } on FileSystemException {
+        return null;
+      }
+    } else if (bytes != null) {
+      head = bytes;
+    } else {
+      return part is LlamaAudioContent ? true : null;
+    }
+    bool has(String magic, [int offset = 0]) {
+      if (head.length < offset + magic.length) return false;
+      for (var i = 0; i < magic.length; i++) {
+        if (head[offset + i] != magic.codeUnitAt(i)) return false;
+      }
+      return true;
+    }
+
+    if (head.length >= 12 &&
+        (has('RIFF') && has('WAVE', 8) ||
+            has('ID3') ||
+            head[0] == 0xFF && head[1] & 0xE0 == 0xE0 ||
+            has('fLaC'))) {
+      return true;
+    }
+    final imageMagic =
+        has('\x89PNG\r\n\x1a\n') ||
+        has('\xff\xd8\xff') ||
+        has('GIF8') ||
+        has('BM');
+    return imageMagic || part is LlamaImageContent ? false : null;
   }
 
   /// Returns whether the active native mtmd build and projector report video.

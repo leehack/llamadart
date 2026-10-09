@@ -150,6 +150,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | LiteRT-LM engine reload memory on a device | `chat-app-litert-reload-memory` |
+| Android Vulkan prompt cap, Vulkan device facts or the Vulkan 1.2 load refusal on a device | `chat-app-micro-batch-sweep` |
 | Isolate shutdown releases, exit teardown, a Flutter pin bump, or app-exit guidance | `chat-app-macos-quit` |
 | Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke`, plus `web-text-to-speech-smoke` for browser synthesis/playback/export |
@@ -545,6 +546,29 @@ after reload or replacement. Pair them with
 `test/unit/core/engine/engine_lifecycle_cancellation_test.dart`, which controls
 pre-output stops, buffered tool calls, running handlers, projector creation
 and teardown races, and speech parameter validation before file resolution.
+
+### Image above the context micro-batch
+
+```bash
+MULTIMODAL_MICRO_BATCH_MODEL=/path/to/gemma-4-12B-it.gguf \
+MULTIMODAL_MICRO_BATCH_MMPROJ=/path/to/mmproj.gguf \
+MULTIMODAL_MICRO_BATCH_BACKEND=cpu \
+dart test -p vm -j 1 --run-skipped \
+  test/e2e/backends/multimodal_micro_batch_e2e_test.dart
+```
+
+These local-only tests need a model whose projector decodes an image with
+non-causal attention: Gemma 3, or Gemma 4 other than E2B and E4B. They answer
+a small image at the default batch sizes; require a typed error and a working
+engine for an image above a micro-batch that is below the batch, explicit or
+default, and answer the large image with the micro-batch the error names; and
+require an answer and one warning per request where the batch equals the
+micro-batch (32/32, batch 32 alone, 256/256, 512/512, and a text turn after
+an image turn). Repeat with `MULTIMODAL_MICRO_BATCH_BACKEND=metal` on macOS.
+Without the check the first group aborts the process on llama.cpp's
+`non-causal attention requires n_ubatch >= n_tokens` assertion. `test/unit/backends/llama_cpp/llama_cpp_service_media_micro_batch_test.dart`
+covers the same paths in default CI with a stand-in projector on the real
+runtime.
 
 ### Native exit teardown
 

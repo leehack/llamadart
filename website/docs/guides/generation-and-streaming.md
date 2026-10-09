@@ -117,7 +117,9 @@ messages.add(completion.message); // Assistant turn for the next request.
 
 `engine.complete(messages, ...)` is `engine.create(messages, ...).collect()`,
 and `session.send('...')` sends one text turn through a `ChatSession` and
-collects the reply.
+collects the reply. `completion.message` keeps the whitespace the model ended
+the reply with; `ChatSession` stores the turn without it, so `trimRight()` the
+text of a turn you keep yourself if the next prompt should not carry it.
 
 `finishReason` does not tell you that a generation was cancelled. On native
 llama.cpp and LiteRT-LM, a stream stopped by `engine.cancelGeneration()`,

@@ -30,6 +30,7 @@ public class MainActivityTest {
         Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
         if ("true".equals(arguments.getString("stageModel"))) stageModel(instrumentation);
         forwardReloadMemoryArguments(arguments, instrumentation);
+        forwardMicroBatchSweepArguments(arguments, instrumentation);
     }
 
     private static void stageModel(Instrumentation instrumentation) throws IOException {
@@ -85,6 +86,33 @@ public class MainActivityTest {
         if (snapshots) startDumpsysResponder(instrumentation, cache);
     }
 
+    // Hands micro_batch_sweep_e2e_test.dart its instrumentation arguments, and
+    // with any of them saves the device facts next to its journal.
+    private static void forwardMicroBatchSweepArguments(Bundle arguments, Instrumentation instrumentation)
+            throws IOException {
+        File file = new File(instrumentation.getTargetContext().getCacheDir(), "micro_batch_sweep_args.json");
+        JSONObject json = new JSONObject();
+        try {
+            json.put("arms", optional(arguments, "microBatchArms"));
+            json.put("repeats", optional(arguments, "microBatchRepeats"));
+            json.put("budget_seconds", optional(arguments, "microBatchBudgetSeconds"));
+            json.put("profile", optional(arguments, "microBatchProfile"));
+            json.put("native_log", optional(arguments, "microBatchNativeLog"));
+            json.put("device", optional(arguments, "microBatchDevice"));
+            if (json.length() == 0) {
+                file.delete();
+                return;
+            }
+            json.put("pid", Process.myPid());
+        } catch (JSONException error) {
+            throw new IOException(error);
+        }
+        write(file, json.toString());
+        // Connect UiAutomation before Flutter starts, as the dumpsys responder does.
+        instrumentation.getUiAutomation();
+        saveDeviceFacts(instrumentation, "micro_batch_sweep");
+    }
+
     // Null for a blank value: a runner that passes an optional argument as an
     // empty string means the default, and JSONObject.put drops a null value.
     private static String optional(Bundle arguments, String name) {
@@ -95,10 +123,10 @@ public class MainActivityTest {
     // Next to the journal: the Vulkan driver's own limits, from which a WebGPU
     // limit that a run trips over is derived, and the hash of the installed
     // app APK, which names the runtime libraries the run loaded.
-    private static void saveDeviceFacts(Instrumentation instrumentation) {
+    private static void saveDeviceFacts(Instrumentation instrumentation, String output) {
         try {
             Context context = instrumentation.getTargetContext();
-            File directory = new File(context.getExternalFilesDir(null), "litert_reload_memory");
+            File directory = new File(context.getExternalFilesDir(null), output);
             if (!directory.isDirectory() && !directory.mkdirs()) {
                 throw new IOException("Unable to create " + directory);
             }
@@ -122,7 +150,7 @@ public class MainActivityTest {
         // semantics. Connect before Flutter starts: a semantics handle that
         // appears during the test fails it at the end.
         instrumentation.getUiAutomation();
-        saveDeviceFacts(instrumentation);
+        saveDeviceFacts(instrumentation, "litert_reload_memory");
         Thread responder = new Thread(() -> {
             while (true) {
                 try {

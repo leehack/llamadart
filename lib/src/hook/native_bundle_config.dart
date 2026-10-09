@@ -12,7 +12,7 @@
 /// [selectNativeRuntimesForBundle] picks the runtime families and
 /// [nativeRuntimeExplicitlySelectedForBundle] and
 /// [nativeRuntimeNamedForExactBundle] say how hard to fail when one is
-/// unpublished; [stableDiffusionBundleForNativeBundle] names the opt-in
+/// unpublished, and whether `all` only implied it; [stableDiffusionBundleForNativeBundle] names the opt-in
 /// stable_diffusion archive; [describeNativeLibrary] classifies a discovered
 /// file; [selectLibrariesForBundling] picks which ship;
 /// [codeAssetNameForLibrary] names each as a code asset. A Flutter Apple build
@@ -20,7 +20,8 @@
 /// llama_cpp and litert_lm families from it, not
 /// [selectNativeRuntimesForBundle]. stable_diffusion is decided on its own: the
 /// stable_diffusion companion selects it, and otherwise it still comes from
-/// [selectNativeRuntimesForBundle].
+/// [selectNativeRuntimesForBundle], unless `all` only implied it: such a build
+/// skips it.
 ///
 /// User-facing docs: `website/docs/platforms/native-build-hooks.md` and
 /// `website/docs/guides/backend-selection.md`.
@@ -63,28 +64,28 @@ const String nativeRuntimeLlamaCpp = 'llama_cpp';
 /// The LiteRT-LM runtime family; not published for every bundle.
 const String nativeRuntimeLiteRtLm = 'litert_lm';
 
-/// The experimental stable-diffusion.cpp runtime family. Opt-in only: it is
-/// bundled when named, never by default and never through `all` or `both`,
-/// because it adds tens of megabytes per platform. Not published for every
-/// bundle; see [stableDiffusionBundleForNativeBundle].
+/// The experimental stable-diffusion.cpp runtime family. Opt-in: it is
+/// bundled when named or through `all`, never by default and never through
+/// `both`, because it adds tens of megabytes per platform. Not published for
+/// every bundle; see [stableDiffusionBundleForNativeBundle].
 const String nativeRuntimeStableDiffusion = 'stable_diffusion';
 
-/// The runtime families `all` and `both` expand to, in that order. Opt-in
-/// families such as [nativeRuntimeStableDiffusion] are not included.
+/// The runtime families `all` expands to, in that order.
 const List<String> allNativeRuntimes = [
   nativeRuntimeLlamaCpp,
   nativeRuntimeLiteRtLm,
-];
-
-/// Every runtime family a config may name.
-const List<String> supportedNativeRuntimes = [
-  ...allNativeRuntimes,
   nativeRuntimeStableDiffusion,
 ];
 
-/// Fallback families for config that names no runtimes. An explicit `none`
-/// selects nothing instead.
-const List<String> defaultNativeRuntimes = allNativeRuntimes;
+/// Every runtime family a config may name.
+const List<String> supportedNativeRuntimes = allNativeRuntimes;
+
+/// The families `both` expands to, and the fallback for config that names no
+/// runtimes. An explicit `none` selects nothing instead.
+const List<String> defaultNativeRuntimes = [
+  nativeRuntimeLlamaCpp,
+  nativeRuntimeLiteRtLm,
+];
 
 const Set<String> _coreLibraries = {
   'llamadart',
@@ -536,7 +537,7 @@ List<String>? parseRequestedBackends({
 ///
 /// Precedence, first match wins: the `platforms` entry canonicalising to
 /// [bundle]; the entry for that bundle's OS; the top-level `runtimes` key; the
-/// top-level `default` key; else [defaultNativeRuntimes], every family. A
+/// top-level `default` key; else [defaultNativeRuntimes]. A
 /// matched platform entry with a `null` value ends the platform search, so the
 /// OS entry is skipped. `runtimes` is consulted by key presence, so an
 /// explicit `runtimes: null` suppresses `default` instead of falling through
@@ -545,14 +546,14 @@ List<String>? parseRequestedBackends({
 /// Tokens are trimmed, lowercased and `_`-to-`-` normalised before alias
 /// lookup: `gguf` and `llama.cpp` reach `llama_cpp`; `litert`, `litertlm` and
 /// `.litertlm` reach `litert_lm`; `stable-diffusion` reaches
-/// `stable_diffusion`. `all` and `both` expand to [allNativeRuntimes], which
-/// leaves out the opt-in `stable_diffusion`; the string tokens `none`, `off` and `false` clear what
-/// has accumulated. A bare YAML boolean `false` clears it too, including in a
-/// list.
+/// `stable_diffusion`. `all` expands to [allNativeRuntimes] and `both` to
+/// [defaultNativeRuntimes], which leaves out the opt-in `stable_diffusion`;
+/// the string tokens `none`, `off` and `false` clear what has accumulated. A
+/// bare YAML boolean `false` clears it too, including in a list.
 /// Unrecognised non-empty tokens are dropped and reported once through
 /// [warn]; empty tokens are ignored silently. A string or list that selects
 /// nothing because it was empty or all-unrecognised yields
-/// [allNativeRuntimes]. Once a `none` token clears the selection only a later
+/// [defaultNativeRuntimes]. Once a `none` token clears the selection only a later
 /// recognised token refills it, so `['none', 'llama_cpp']` selects `llama_cpp`
 /// while `['none', 'tflite']` stays empty, which `hook/build.dart` throws on.
 ///
@@ -587,13 +588,15 @@ List<String> selectNativeRuntimesForBundle({
 }
 
 /// Whether [runtime] was named for [bundle], not implied by a default or by
-/// `all`/`both` expansion. `false` for `all`, `none`, unrecognised spellings,
-/// and for a name a later `none` cleared (`['litert_lm', 'none']`). Order
-/// decides it, so `['none', 'litert_lm']` is explicit.
+/// `all`/`both` expansion. `false` for `all`, `both`, `none`, unrecognised
+/// spellings, and for a name a later `none` cleared (`['litert_lm', 'none']`).
+/// Order decides it, so `['none', 'litert_lm']` is explicit.
 ///
 /// `hook/build.dart` uses this when LiteRT-LM is selected but the bundle
 /// publishes no LiteRT-LM archive: an explicit request throws, an implied one
-/// is dropped with a warning.
+/// is dropped with a warning. It also uses it on Flutter iOS and macOS builds
+/// without the stable_diffusion companion, where a stable_diffusion that
+/// `all` only implied is skipped.
 bool nativeRuntimeExplicitlySelectedForBundle({
   required String bundle,
   required Object? rawUserConfig,
@@ -1243,8 +1246,11 @@ _parseRuntimeList(Object? value) {
       }
       return;
     }
-    if (normalized == 'all') {
-      for (final runtime in allNativeRuntimes) {
+    if (normalized == 'all' || normalized == 'both') {
+      final expansion = normalized == 'all'
+          ? allNativeRuntimes
+          : defaultNativeRuntimes;
+      for (final runtime in expansion) {
         if (!result.contains(runtime)) {
           result.add(runtime);
         }
@@ -1273,7 +1279,9 @@ _parseRuntimeList(Object? value) {
       addToken(token);
     }
     return (
-      runtimes: result.isEmpty && !explicitNone ? allNativeRuntimes : result,
+      runtimes: result.isEmpty && !explicitNone
+          ? defaultNativeRuntimes
+          : result,
       invalid: invalid,
       explicit: explicit,
     );
@@ -1290,7 +1298,9 @@ _parseRuntimeList(Object? value) {
       }
     }
     return (
-      runtimes: result.isEmpty && !explicitNone ? allNativeRuntimes : result,
+      runtimes: result.isEmpty && !explicitNone
+          ? defaultNativeRuntimes
+          : result,
       invalid: invalid,
       explicit: explicit,
     );
@@ -1324,7 +1334,7 @@ String? _normalizeRuntime(String value) {
   }
   normalized = normalized.replaceAll('_', '-');
   if (normalized == 'all' || normalized == 'both') {
-    return 'all';
+    return normalized;
   }
   if (normalized == 'none' || normalized == 'off' || normalized == 'false') {
     return 'none';

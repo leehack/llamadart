@@ -232,6 +232,11 @@ hooks:
       llamadart_native_runtimes: [llama_cpp, stable_diffusion]
 ```
 
+Unset, the key bundles `llama_cpp` and `litert_lm`; a list replaces those
+defaults. This one ships GGUF chat and images without LiteRT-LM, which no
+example here loads; `all` ships every runtime published for the target, and
+`[stable_diffusion]` images only.
+
 The first run downloads the runtime (40 to 70 MB) through the build hook.
 `ImageGenerationEngine.load` then downloads the files this example pins for
 the preset in `lib/services/image_cli_options.dart`, unless a flag names a

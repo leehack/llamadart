@@ -278,14 +278,64 @@ void main() {
           TemplateRenderContext.messagesForTemplate([message]).single,
           message.toJson(),
         );
-        expect(
-          TemplateRenderContext.messagesForTemplate([
-            message,
-          ], multimodal: true).single,
-          message.toJsonMultimodal(),
-        );
       },
     );
+
+    group('multimodal', () {
+      final image = LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3]));
+      const audio = LlamaAudioContent(path: '/tmp/clip.wav');
+      final video = LlamaVideoContent(path: '/tmp/clip.mp4');
+
+      Object? content(List<LlamaContentPart> parts) =>
+          TemplateRenderContext.messagesForTemplate([
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: parts,
+            ),
+          ], multimodal: true).single['content'];
+
+      test('puts the media marker in the text where each image, audio and '
+          'video part was', () {
+        expect(
+          content([
+            const LlamaTextContent('a'),
+            image,
+            const LlamaTextContent('b'),
+            audio,
+            video,
+            const LlamaTextContent('c'),
+          ]),
+          'a<__media__>b<__media__><__media__>c',
+        );
+        expect(content([image, image]), '<__media__><__media__>');
+      });
+
+      test('serializes a message without media as it does otherwise', () {
+        const messages = [
+          LlamaChatMessage.fromText(role: LlamaChatRole.system, text: 'sys'),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [LlamaThinkingContent('why'), LlamaTextContent('answer')],
+          ),
+        ];
+
+        expect(
+          TemplateRenderContext.messagesForTemplate(messages, multimodal: true),
+          TemplateRenderContext.messagesForTemplate(messages),
+        );
+      });
+
+      test('leaves the media parts in the typed message', () {
+        final message = LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [const LlamaTextContent('look'), image],
+        );
+
+        TemplateRenderContext.messagesForTemplate([message], multimodal: true);
+
+        expect(message.parts, [const LlamaTextContent('look'), image]);
+      });
+    });
 
     test('serializes tool-call policy without mutating typed messages', () {
       final imageBytes = Uint8List.fromList([1, 2, 3, 4]);
@@ -604,7 +654,7 @@ void main() {
     });
 
     test(
-      'preserves audio parts when moving tool calls for multimodal contexts',
+      'keeps the audio marker when moving tool calls for multimodal contexts',
       () {
         const messages = [
           LlamaChatMessage.withContent(
@@ -631,9 +681,11 @@ void main() {
         expect(renderedMessages.single.containsKey('tool_calls'), isFalse);
         final content = renderedMessages.single['content'];
         expect(content, isA<List>());
-        expect(content, hasLength(3));
-        expect(content.first, equals({'type': 'audio'}));
-        expect(content[1], equals({'type': 'text', 'text': 'prefix:'}));
+        expect(content, hasLength(2));
+        expect(
+          content.first,
+          equals({'type': 'text', 'text': '<__media__>prefix:'}),
+        );
         expect(content.last['type'], equals('text'));
         expect(content.last['text'], contains('"tool_calls"'));
         expect(content.last['text'], contains('transcribe_hint'));

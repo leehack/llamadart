@@ -65,9 +65,27 @@ sequenceDiagram
   probes: it renders llama.cpp's probe conversations and records which values
   the template reads. Thinking support comes from the template's thinking
   markers.
-- A template that reads both strings and content part lists gets image and
-  audio as typed parts, unless a further probe finds that it rejects both
-  kinds. Every other template gets the media marker in its text.
+- Every template gets the media marker in the message text where an image,
+  audio or video part was, as llama.cpp renders it. A template's own
+  placeholder for a typed image or audio part is not written.
+- A request that carries media is rendered with a random marker, drawn once
+  for the isolate, so a placeholder string that a message quotes (`<img>`,
+  `<image>`, `[IMG]`, `<__media__>`) is not a part. `LlamaEngine.create`
+  hands that prompt to a backend with `BackendChatPromptGeneration` (the
+  llama.cpp and WebGPU backends) as a chat prompt. A prompt passed to
+  `generate` is the caller's: its placeholders and `<__media__>` stand for
+  the parts.
+- mtmd and the WebGPU bridge find a part by a fixed string wherever it is,
+  so a quoted string they would match reaches the model with a zero-width
+  space (U+200B) after its first character: `<__media__>` on native, and
+  the placeholders the bridge rewrites on Web.
+- `chatTemplate` output for messages with media, and the prompt `create`
+  gives a backend without `BackendChatPromptGeneration`, go through
+  `generate`. They have `<__media__>` where each part was and the zero-width
+  space in every other string `generate` reads as a part. Messages without
+  media render as they are.
+- A template that fails to render, by raising or through invalid syntax,
+  throws `LlamaInferenceException` with the template's message.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 

@@ -78,8 +78,18 @@ default. Name it in the app's `pubspec.yaml`, then run `flutter clean` once:
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+      llamadart_native_runtimes: all
 ```
+
+Unset, `llamadart_native_runtimes` bundles `llama_cpp` and `litert_lm`. A list
+replaces those defaults, so it names every runtime the app loads:
+
+| The app loads | `llamadart_native_runtimes` |
+| --- | --- |
+| GGUF and `.litertlm` models | unset |
+| Images only | `[stable_diffusion]` |
+| GGUF models and images | `[llama_cpp, stable_diffusion]` |
+| Every runtime published for the target | `all` |
 
 Linux and Windows get the Vulkan build when `llamadart_native_backends`
 selects Vulkan, which it does by default; set
@@ -97,11 +107,15 @@ dependencies:
   llamadart_stable_diffusion_flutter: ^0.0.2
 ```
 
-Without it, the hook bundles the runtime into a framework that Flutter marks
-`MinimumOSVersion` 13.0 while the library needs iOS 16.4, so App Store Connect
-rejects the iOS upload. The iOS build reports this as an Xcode build warning,
-which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
-output does not. See
+Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app
+and `ImageGenerationEngine.checkRuntime()` reports it as not bundled. The
+build warns about it: `flutter build macos`, Xcode and `xcodebuild` show the
+warning, and `flutter build ios` output does not. A list naming
+`stable_diffusion` bundles the runtime through the hook instead, into a
+framework that Flutter marks `MinimumOSVersion` 13.0 while the library needs
+iOS 16.4, so App Store Connect rejects the iOS upload. The iOS build reports
+this as an Xcode build warning, which Xcode and `xcodebuild` show but plain
+`flutter build` and `flutter run` output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
 The hook-bundled runtime also cannot carry an Apple privacy manifest. The
 companion's XCFramework carries one from `stable-diffusion-native` `v0.2.0-1`,

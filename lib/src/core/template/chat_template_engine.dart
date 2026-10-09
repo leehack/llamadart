@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../exceptions.dart';
 import '../grammar/tool_grammar_generator.dart' as grammar;
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
@@ -122,6 +123,13 @@ class ChatTemplateEngine {
   /// If the template source is null/empty, uses the ChatML fallback.
   /// [responseFormat] takes the shapes documented on `LlamaEngine.create`;
   /// any other shape throws `LlamaUnsupportedException`.
+  ///
+  /// A template that fails to render, by raising or through invalid syntax,
+  /// throws `LlamaInferenceException` with the template's message.
+  ///
+  /// [mediaMarker] is written where each image, audio or video part was.
+  /// Pass one that message text cannot hold to tell the parts from a
+  /// placeholder string a message quotes.
   static LlamaChatTemplateResult render({
     required String? templateSource,
     required List<LlamaChatMessage> messages,
@@ -135,6 +143,7 @@ class ChatTemplateEngine {
     String? customTemplate,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? now,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     final responseSchema = responseFormatSchema(responseFormat);
 
@@ -249,10 +258,11 @@ class ChatTemplateEngine {
       );
     }
 
-    // Templates that also read string content get media as typed parts.
-    // Templates that read only typed parts (e.g. SmolVLM's
-    // `message['content'][0]['type']`) get the media marker in a text part, as
-    // llama.cpp gives them.
+    // No template gets a media part: each becomes the media marker in the
+    // message text, as llama.cpp renders it. Templates that also read string
+    // content take it through renderWithMultimodalContent. Templates that
+    // read only typed parts (e.g. SmolVLM's `message['content'][0]['type']`)
+    // get it in a text part.
     final hasMediaParts = effectiveMessages.any(
       (message) => message.parts.any(
         (part) => part is LlamaImageContent || part is LlamaAudioContent,
@@ -268,13 +278,16 @@ class ChatTemplateEngine {
         'ChatTemplateEngine: Using multimodal content format '
         'for template that accesses content as list',
       );
-      var rendered = handler.renderWithMultimodalContent(
-        templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
-        messages: effectiveMessages,
-        metadata: handlerMetadata,
-        addAssistant: addAssistant,
-        tools: effectiveTools,
-        enableThinking: enableThinking,
+      var rendered = _renderTemplate(
+        () => handler.renderWithMultimodalContent(
+          templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
+          messages: effectiveMessages,
+          metadata: handlerMetadata,
+          addAssistant: addAssistant,
+          tools: effectiveTools,
+          enableThinking: enableThinking,
+          mediaMarker: mediaMarker,
+        ),
       );
       if (effectiveFormat == ChatFormat.contentOnly) {
         rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
@@ -303,7 +316,7 @@ class ChatTemplateEngine {
               parts: message.parts
                   .map((part) {
                     return isTransport(part)
-                        ? const LlamaTextContent(mtmdMediaMarker)
+                        ? LlamaTextContent(mediaMarker)
                         : part;
                   })
                   .toList(growable: false),
@@ -312,13 +325,15 @@ class ChatTemplateEngine {
           .toList(growable: false);
     }
 
-    var baseResult = handler.render(
-      templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
-      messages: effectiveMessages,
-      metadata: handlerMetadata,
-      addAssistant: addAssistant,
-      tools: effectiveTools,
-      enableThinking: enableThinking,
+    var baseResult = _renderTemplate(
+      () => handler.render(
+        templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
+        messages: effectiveMessages,
+        metadata: handlerMetadata,
+        addAssistant: addAssistant,
+        tools: effectiveTools,
+        enableThinking: enableThinking,
+      ),
     );
 
     if (effectiveFormat == ChatFormat.contentOnly) {
@@ -333,6 +348,31 @@ class ChatTemplateEngine {
       responseSchema,
     );
     return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
+  }
+
+  /// Runs a handler [render], turning an [Exception] that is not already a
+  /// [LlamaException] (a template's own `raise_exception`, a failure the
+  /// Jinja runtime throws as an `Exception`, invalid template syntax) into a
+  /// [LlamaInferenceException]. An [Error] the renderer throws, such as an
+  /// integer division by zero or a stack overflow, is left as it is.
+  static LlamaChatTemplateResult _renderTemplate(
+    LlamaChatTemplateResult Function() render,
+  ) {
+    try {
+      return render();
+    } on LlamaException {
+      rethrow;
+    } on Exception catch (error, stackTrace) {
+      final cause = error.toString();
+      const prefix = 'Exception: ';
+      Error.throwWithStackTrace(
+        LlamaInferenceException(
+          'The chat template failed to render: '
+          '${cause.startsWith(prefix) ? cause.substring(prefix.length) : cause}',
+        ),
+        stackTrace,
+      );
+    }
   }
 
   /// Apply grammar constraints based on tool definitions and response format.

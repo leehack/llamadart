@@ -42,7 +42,7 @@ description: >-
   values as `capabilities`.
 - Always check before sending media to a GGUF model. With no projector loaded,
   image or audio parts throw `LlamaUnsupportedException` on llama.cpp, native
-  and WebGPU.
+  and WebGPU; on native so does input the loaded projector cannot encode.
 - Put media in a message with
   `LlamaChatMessage.withContent(role: ..., content: [...])`, or pass the parts
   to `ChatSession.create`. Place media before the text that refers to it.
@@ -70,6 +70,15 @@ description: >-
 - On llama.cpp, `GenerationParams.thinkingBudget` and speculative decoding
   throw `LlamaUnsupportedException` for requests that contain media. Leave
   them unset for multimodal turns.
+- llama.cpp decodes the images of some projectors with non-causal attention
+  (Gemma 3 and Gemma 4 other than E2B and E4B, among others) and cannot
+  split one across micro-batches. An image with more tokens than
+  `ModelParams.microBatchSize` (512 by default) then throws
+  `LlamaInferenceException` naming the token count: load the model with
+  `microBatchSize` of at least that and `batchSize` no smaller, or downscale
+  the image. Gemma 4 gives an image up to 1120 tokens. When `batchSize`
+  equals `microBatchSize` there is no error; the image is decoded in several
+  batches with a logged warning, and answers can be less accurate.
 - The package does not resize media. Downscale large images (the example chat
   app caps the long edge at 384px) and keep `maxTokens` and context budgets
   tighter than for text; images in history keep consuming context on later

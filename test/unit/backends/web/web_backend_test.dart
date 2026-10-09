@@ -15,6 +15,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/generation_usage.dart';
@@ -481,6 +482,57 @@ void main() {
     await backend.decisionHeadFree(1);
   });
 
+  group('WebAutoBackend generateChatPrompt', () {
+    test('gives a delegate that takes chat prompts the prompt and its '
+        'marker', () async {
+      final webGpu = _ChatPromptBackend('webgpu');
+      final backend = WebAutoBackend(
+        webGpuFactory: () => webGpu,
+        liteRtLmFactory: () => _RecordingBackend('litert'),
+      );
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      await backend
+          .generateChatPrompt(
+            1,
+            '<m>a <__media__>',
+            const GenerationParams(),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+
+      expect(webGpu.chatPrompts, [('<m>a <__media__>', '<m>')]);
+      expect(webGpu.prompts, isEmpty);
+    });
+
+    test('gives any other delegate the prompt with the default marker '
+        'through generate', () async {
+      final liteRtLm = _PromptBackend('litert');
+      final backend = WebAutoBackend(
+        webGpuFactory: () => _RecordingBackend('webgpu'),
+        liteRtLmFactory: () => liteRtLm,
+      );
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+
+      await backend
+          .generateChatPrompt(
+            1,
+            '<m>a',
+            const GenerationParams(),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+
+      expect(liteRtLm.prompts, ['<__media__>a']);
+    });
+  });
+
   test('WebAutoBackend routes .litertlm URLs to LiteRT-LM delegate', () async {
     final webGpu = _RecordingBackend('webgpu');
     final liteRtLm = _RecordingBackend('litert');
@@ -669,6 +721,42 @@ class _NoStateBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _PromptBackend extends _RecordingBackend {
+  _PromptBackend(super.name);
+
+  final prompts = <String>[];
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    prompts.add(prompt);
+    return const Stream<List<int>>.empty();
+  }
+}
+
+class _ChatPromptBackend extends _PromptBackend
+    implements BackendChatPromptGeneration {
+  _ChatPromptBackend(super.name);
+
+  final chatPrompts = <(String, String)>[];
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    chatPrompts.add((prompt, mediaMarker));
+    return const Stream<List<int>>.empty();
+  }
 }
 
 class _RecordingBackend implements LlamaBackend {

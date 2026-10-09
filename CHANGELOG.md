@@ -13,16 +13,6 @@
   one that interpolates it renders the list into the prompt; read both shapes
   ([Chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing#litert-lm-template-registry)).
   The built-in templates are unaffected.
-- Fix LiteRT-LM bundles whose own chat template reads message content as a
-  string, such as `Qwen3.5-0.8B_int8.litertlm` builds from before September
-  2026. With LiteRT-LM `v0.18.0` a template that interpolates the content put
-  a serialized `[{"text": ..., "type": "text"}]` list into every prompt, so
-  repeated requests degraded sooner than with `v0.17.0-8`; one that
-  concatenates it failed every request; one that only handles a string
-  rendered empty messages. Native platforms now give such a template the text
-  again. Not covered: Web, and templates in the runtime's single-turn
-  `is_appending_to_prefill` form, for which a warning is logged
-  ([#991](https://github.com/leehack/llamadart/issues/991), [Chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing#litert-lm-template-registry)).
 - Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): with
   `v0.18.0` GPU engine creation fails there, where `v0.17.0-8` generated wrong
   text. The first use throws `LlamaUnsupportedException` under
@@ -108,6 +98,64 @@
   `LlamaStructuredOutput.parse` still decode it); trim replies you compare
   exactly. `ChatSession` and its tool loop store assistant turns in `history`
   without that whitespace, so the next prompt is unchanged.
+- Fix a process abort on an image with more tokens than the context's
+  micro-batch when the projector's images are decoded with non-causal
+  attention (Gemma 3 and Gemma 4 other than E2B and E4B, among others): the
+  prompt now throws `LlamaInferenceException` naming the
+  `ModelParams.microBatchSize` it needs. With default batch sizes that is an
+  image above 512 tokens. A context whose batch equals its micro-batch still
+  decodes such an image in several batches, and now logs a warning that this
+  can reduce accuracy
+  ([#958](https://github.com/leehack/llamadart/issues/958)).
+- **Behavior change:** `all` in `llamadart_native_runtimes` now includes the
+  opt-in `stable_diffusion` image runtime, so `llamadart_native_runtimes: all`
+  ships GGUF, `.litertlm` and image generation together. An app that already
+  sets `all`, or a list containing it, downloads 14.7 to 15.6 MB more per
+  target, or 25.8 to 27.8 MB for the Vulkan build Linux and Windows use by
+  default, and grows by about 37 MB as measured on macOS arm64 and Android
+  arm64. android-x64 and Windows arm64 publish no image runtime and skip it
+  with a warning. A Flutter iOS or macOS app skips it with a build warning
+  unless `llamadart_stable_diffusion_flutter` is a dependency; a pub
+  workspace member, whose user-defines live in the workspace root pubspec, is
+  not recognised as one and bundles it. Leaving the key unset, or setting
+  `both`, still bundles only `llama_cpp` and `litert_lm`
+  ([#856](https://github.com/leehack/llamadart/issues/856)).
+- **Behavior change:** an image or audio part of a chat request to a GGUF
+  model takes the place it has in its message, as llama.cpp's `llama-server`
+  renders it ([#964](https://github.com/leehack/llamadart/issues/964)). For
+  Qwen3.5 and Qwen2.5-Omni it was attached before the whole prompt, and for
+  GLM-OCR it was wrapped in the image start and end tokens twice, so prompts
+  for media turns of these models change. A chat template no longer writes
+  its own text for a media part: Qwen's `Picture N: ` under `add_vision_id`,
+  the Kimi-K2 wrapper, Reka's run of image tokens and Cohere's
+  `<|IMG_PATCH|>` are gone, as on `llama-server`. A placeholder string that
+  a chat message quotes (`<img>`, `<image>`, `[IMG]`, `<__media__>`) is text
+  instead of a part. Where the runtime would still read such a string as a
+  part, it reaches the model with a zero-width space (U+200B) after its
+  first character, which the model may repeat in its answer: a quoted
+  `<__media__>` in `create` on native; every placeholder the bridge
+  rewrites in `create` on Web; and every placeholder `generate` reads in the
+  prompt `chatTemplate` returns for messages with media and in `create` on
+  a custom backend without `BackendChatPromptGeneration`, which
+  `package:llamadart/backend.dart` now exports. A prompt written for
+  `generate` keeps its placeholders, and `chatTemplate` output for messages
+  without media is unchanged.
+- On native llama.cpp, image or audio input that the loaded projector has no
+  encoder for throws `LlamaUnsupportedException` naming the encoder, where
+  `create` and `generate` threw `LlamaInferenceException`. A chat template
+  that raises or has invalid syntax throws `LlamaInferenceException` with the
+  template's message instead of a raw `Exception`
+  ([#963](https://github.com/leehack/llamadart/issues/963)).
+- Fix LiteRT-LM bundles whose own chat template reads message content as a
+  string, such as `Qwen3.5-0.8B_int8.litertlm` builds from before September
+  2026. With LiteRT-LM `v0.18.0` a template that interpolates the content put
+  a serialized `[{"text": ..., "type": "text"}]` list into every prompt, so
+  repeated requests degraded sooner than with `v0.17.0-8`; one that
+  concatenates it failed every request; one that only handles a string
+  rendered empty messages. Native platforms now give such a template the text
+  again. Not covered: Web, and templates in the runtime's single-turn
+  `is_appending_to_prefill` form, for which a warning is logged
+  ([#991](https://github.com/leehack/llamadart/issues/991), [Chat templates](https://llamadart.leehack.com/docs/guides/chat-template-and-parsing#litert-lm-template-registry)).
 
 ## 0.11.1
 

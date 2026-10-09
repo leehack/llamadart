@@ -773,6 +773,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'arguments in example/chat_app/README.md.',
   ),
   TestMatrixRow(
+    id: 'chat-app-micro-batch-sweep',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'llama.cpp history, long-history and grammar-constrained tool '
+        'prompts at the default micro-batch and at explicit sizes in one '
+        'process on a device, with a flushed verdict per attempt, the '
+        'Android Vulkan prompt cap state (capped, not capped, or capped '
+        'without a Vulkan device), the Vulkan device name, API version and '
+        'subgroup size, and a typed load refusal recorded; the default size '
+        'must answer correctly, explicit sizes are controls',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-micro-batch-sweep --device <macos|android>',
+    useWhen:
+        'llama.cpp native pin, Android Vulkan prompt cap, Vulkan device '
+        'facts or the Vulkan 1.2 load refusal changes. Downloads the locked '
+        'chat-gguf-vulkan model unless --model-path names a copy on the '
+        'target device. Only an Android Vulkan device exercises the cap; '
+        'the Test Lab arguments are in example/chat_app/README.md.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-macos-quit',
     tier: 'targeted',
     mode: 'local-only',

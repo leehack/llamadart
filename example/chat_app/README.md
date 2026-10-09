@@ -68,8 +68,10 @@ targets. It also opts into the experimental `stable_diffusion` runtime for the
 image screen, which adds about 37 MB per iOS, macOS and Android arm64 target
 and 38 to 72 MB on Linux and Windows (CPU or Vulkan build; Vulkan by default),
 and declares `llamadart_stable_diffusion_flutter` so iOS and macOS link it
-through SwiftPM. Android x64 has no `stable_diffusion` build and skips it with
-a build warning; the Windows arm64 entry leaves it out. If you copy
+through SwiftPM. Its `llamadart_native_runtimes` is `all`, every runtime
+published for the target; unset, the key bundles only `llama_cpp` and
+`litert_lm`. Android x64 and Windows arm64 have no `stable_diffusion` build and
+skip it with a build warning. If you copy
 this app and only ship GGUF models, set `llamadart_native_runtimes` to
 `[llama_cpp]` and keep only `llamadart_llama_cpp_flutter` to reduce bundle
 size. Flutter iOS/macOS apps should declare the companion package for every
@@ -309,7 +311,10 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
    **Advanced** for Dart and native/bridge log levels.
    - Logical batch size (`n_batch`) and micro-batch size (`n_ubatch`) default to
      `Auto`, which keeps the backend's own defaults; an explicit value applies
-     on the next model load. LiteRT-LM bundles disable these controls.
+     on the next model load. LiteRT-LM bundles disable these controls. On an
+     Android GPU, `Auto` loads a GGUF model with smaller sizes instead: batch
+     32 (64 for Qwen3.5 0.8B) and micro-batch 1 on Vulkan, 256 and 64 on the
+     other GPU backends.
    - `Auto` selects the best supported runtime; on supported Macs it prefers
      Metal. The selector also lists concrete runtime-detected options such as
      CPU/Vulkan/CUDA for GGUF or CPU/GPU/NPU for LiteRT-LM.
@@ -465,6 +470,17 @@ await prefs.setInt('preferred_backend', backendIndex);
 **"Model file not found" error:**
 - Ensure you have successfully downloaded a model from the selection screen.
 - If you manually moved a model, verify the path in the settings sheet.
+
+**`The image input has <n> tokens, more than the context's micro-batch of <m> tokens`:**
+- llama.cpp cannot split the images of some projectors across micro-batches
+  (Gemma 3 and Gemma 4 models other than E2B and E4B, among others). On an
+  Android GPU the `Auto` micro-batch is smaller than an image and smaller
+  than the batch, so an image prompt with these models fails with this error
+  there. Set the logical batch size and the micro-batch size to at least
+  `<n>` and reload the model, or use `CPU`. Those larger sizes have not been
+  run on Android Vulkan devices. Setting the two sizes equal but below `<n>`
+  also avoids the error, with the image decoded in pieces and possibly less
+  accurate answers.
 
 **Slow generation:**
 - Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Linux/Windows).
@@ -807,3 +823,95 @@ temperature 0, seed 1). The matching build-time defaults are
 `LITERT_RELOAD_TEMPERATURE` and `LITERT_RELOAD_SEED`. An argument passed as an
 empty string keeps its default. Fewer than three iterations record the steps
 without the memory check.
+
+#### Micro-batch sweep and the Android Vulkan prompt cap
+
+`integration_test/micro_batch_sweep_e2e_test.dart` loads the locked
+`chat-gguf-vulkan` model at several micro-batch sizes in one process and sends
+a short history prompt, a long history prompt and a tool request with
+`ToolChoice.auto` and `ToolChoice.required` at each. Size `0` is the library
+default and the only one the test judges, so the sizes must include it: a
+default attempt must load, answer both history prompts with the code and
+nothing else, and end both tool requests as the `get_weather` call.
+
+Every other size is a control that is only recorded. An explicit size, even
+`512` (the default `n_ubatch`), makes the library leave the Android Vulkan
+prompt cap off, so `0+512` compares the capped default with the same context
+uncapped. On a Vulkan device with the small matmul tile defect the control is
+expected to answer wrongly (a Pixel 9 Pro's Mali-G715, subgroup size 16,
+answered `8888...`); a correct control there says the cap is no longer needed.
+
+Every repeat of the default size runs first, then the controls repeat by
+repeat, and a control sends the tool requests only in its last repeat, so
+nothing a control does to the process costs a judged repeat.
+
+```sh
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-micro-batch-sweep --device <device>
+```
+
+Only an Android device whose GPU ggml-vulkan registers makes the library
+decide about the cap. Elsewhere the run checks the default path and the
+harness.
+
+For Test Lab, build both APKs from that target as above, then add:
+
+```sh
+--environment-variables=microBatchArms=0+512,microBatchRepeats=6,microBatchBudgetSeconds=450,microBatchNativeLog=debug \
+--directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/micro_batch_sweep
+```
+
+The pulled directory holds `journal.jsonl`, `native_stderr.log`, `vkjson.json`
+(`cmd gpu vkjson`, saved before Flutter starts: the driver's API version and
+subgroup size) and `app_apk.sha256`. Every journal record is written through
+before the next step, and the same records appear in logcat as
+`MICRO_BATCH_SWEEP` lines. In the journal:
+
+- `attempt_verdict` is the verdict of one attempt: `passed`, the judged cases
+  one by one, the failures and the cap state. `judged` is true for the default
+  size. A run that dies keeps the verdicts of the attempts before it.
+- `prompt_cap` is what is known about the cap of an attempt's context, as
+  `state`:
+  - `capped` (with `cap_tokens`) or `not_capped`: the library's own debug
+    line, with the Vulkan devices it decided from (`name`, `api_version`,
+    `loader_api_version`, `subgroup_size`). The library logs it only when it
+    has a Vulkan device to decide from.
+  - `no_vulkan_device`: the load asked Vulkan for GPU layers but ggml-vulkan
+    registered no device. The library logs nothing and applies the cap all the
+    same, although the context runs on the CPU (an emulator, or a load that
+    fell back).
+  - `explicit_size`: an explicit size, which leaves the cap off.
+  - `vulkan_not_requested`, `not_android`: no cap.
+  - `not_logged`: a Vulkan device is registered and the cap was to be decided,
+    but no decision reached the log. Treat the record as missing.
+- `load` holds the backend the model runs on, its GPU layer count and the GPU
+  devices the runtime lists.
+- `log` is every `LlamaLogger` record, among them the warning of a load that
+  fell back to the CPU because the Vulkan driver is below 1.2.
+- `load_refused` is a typed exception from a load.
+- `case` and `case_error` are each answer (with `passed` for a judged case)
+  and each typed exception from a request; `summary` counts the passing
+  answers by size.
+
+`microBatchDevice=gpu` asks each load for `ComputeDevice.gpu` first, records a
+typed refusal as `load_refused` and then loads as the profile does
+(`ComputeDevice.auto`), so one run shows whether a device that cannot run
+Vulkan gets a typed error and a CPU fallback. The other arguments are
+`microBatchProfile` (a validation profile id) and, at build time,
+`--dart-define=MICRO_BATCH_SWEEP_ARMS`, `MICRO_BATCH_SWEEP_REPEATS`,
+`MICRO_BATCH_SWEEP_BUDGET_SECONDS`, `MICRO_BATCH_SWEEP_NATIVE_LOG`,
+`MICRO_BATCH_SWEEP_DEVICE`, `MICRO_BATCH_SWEEP_PROFILE` and
+`MICRO_BATCH_SWEEP_MODEL`.
+
+The budget counts from the end of the model download and check. Past it no
+attempt and no request starts and the test fails, which keeps a slow device
+inside the Test Lab timeout; give the timeout the download on top (it took 1.5
+to 4 minutes for this model on Test Lab) and the length of one request.
+
+`--dart-define=MICRO_BATCH_SWEEP_NEGATIVE_CONTROL=true` checks the judge: it
+expects a code the prompts do not hold, so the test must fail, with failures
+of the default size only.
+
+When a native crash ends the app, Test Lab reports `Test failed to run`. It
+still pulls the directory: the last `attempt_started` or `case_started` record
+without its result names the step that was running.

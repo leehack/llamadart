@@ -16,6 +16,7 @@ class LlamaCliRunner {
   final LlamaCliConfig config;
 
   final ModelLocator _modelLocator;
+  final LlamaEngine? _injectedEngine;
   final List<LlamaChatMessage> _history = <LlamaChatMessage>[];
 
   LlamaEngine? _engine;
@@ -30,8 +31,11 @@ class LlamaCliRunner {
   bool get _simpleIo => config.simpleIo;
 
   /// Creates a runner for one CLI invocation.
-  LlamaCliRunner(this.config)
-    : _modelLocator = ModelLocator(modelsDirectory: config.modelsDirectory);
+  ///
+  /// [engine] replaces the default llama.cpp engine, for tests.
+  LlamaCliRunner(this.config, {LlamaEngine? engine})
+    : _modelLocator = ModelLocator(modelsDirectory: config.modelsDirectory),
+      _injectedEngine = engine;
 
   /// Starts model resolution, loading, and chat mode.
   Future<void> run() async {
@@ -44,8 +48,7 @@ class LlamaCliRunner {
     );
     _loadedModelPath = modelPath;
 
-    final backend = LlamaBackend();
-    final engine = LlamaEngine(backend);
+    final engine = _injectedEngine ?? LlamaEngine(LlamaBackend());
     _engine = engine;
 
     await LlamaLogging.configure(nativeLevel: LlamaLogLevel.warn);
@@ -265,6 +268,10 @@ class LlamaCliRunner {
     final assistantText = StringBuffer();
     final assistantThinking = StringBuffer();
     var printedThinkingStart = false;
+    // A reply keeps the whitespace the model ended it with. It is printed and
+    // stored only once more text follows, so the transcript and the next
+    // prompt do not gain it.
+    var heldWhitespace = '';
     try {
       await for (final chunk in engine.create(messages, params: turnParams)) {
         final thinking = chunk.thinking;
@@ -279,8 +286,13 @@ class LlamaCliRunner {
 
         final content = chunk.text;
         if (content.isNotEmpty) {
-          assistantText.write(content);
-          stdout.write(content);
+          final pending = heldWhitespace + content;
+          final visible = pending.trimRight();
+          heldWhitespace = pending.substring(visible.length);
+          if (visible.isNotEmpty) {
+            assistantText.write(visible);
+            stdout.write(visible);
+          }
         }
       }
       stdout.writeln();

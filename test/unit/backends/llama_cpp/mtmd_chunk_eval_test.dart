@@ -24,10 +24,11 @@ final _chunks = Pointer<mtmd_input_chunks>.fromAddress(0x300);
 final _embd = Pointer<Float>.fromAddress(0x400);
 
 class _FakeChunk {
-  const _FakeChunk(this.type, this.nPos);
+  const _FakeChunk(this.type, this.nPos, {this.nonCausal = false});
 
   final int type;
   final int nPos;
+  final bool nonCausal;
 }
 
 class _FakeMtmd {
@@ -61,6 +62,15 @@ class _FakeMtmd {
     chunkType: (chunk) {
       calls.add('type ${_index(chunk)}');
       return prompt[_index(chunk)].type;
+    },
+    chunkTokenCount: (chunk) {
+      calls.add('tokens ${_index(chunk)}');
+      return prompt[_index(chunk)].nPos;
+    },
+    decodeUseNonCausal: (ctx, chunk) {
+      expect(ctx, _ctx);
+      calls.add('nonCausal ${_index(chunk)}');
+      return prompt[_index(chunk)].nonCausal;
     },
     evalChunkSingle:
         (ctx, lctx, chunk, nPast, seqId, nBatch, logitsLast, newNPast) {
@@ -279,6 +289,90 @@ void main() {
       expect(fake.calls.last, failingCall);
     });
   }
+
+  group('findMtmdChunkAboveMicroBatch', () {
+    ({int chunkType, int tokenCount})? find(_FakeMtmd fake, int maxTokens) =>
+        findMtmdChunkAboveMicroBatch(fake.api, _ctx, _chunks, maxTokens);
+
+    test('returns the first non-causal media chunk above the limit', () {
+      final fake = _FakeMtmd(const [
+        _FakeChunk(_text, 600),
+        _FakeChunk(_image, 256, nonCausal: true),
+        _FakeChunk(_image, 600),
+        _FakeChunk(_audio, 300, nonCausal: true),
+        _FakeChunk(_image, 280, nonCausal: true),
+      ], cancelToken);
+
+      expect(find(fake, 256), (chunkType: _audio, tokenCount: 300));
+      expect(fake.calls, [
+        'size',
+        'get 0',
+        'type 0',
+        'get 1',
+        'type 1',
+        'tokens 1',
+        'get 2',
+        'type 2',
+        'tokens 2',
+        'nonCausal 2',
+        'get 3',
+        'type 3',
+        'tokens 3',
+        'nonCausal 3',
+      ]);
+    });
+
+    test('names an image chunk one token above the limit', () {
+      final fake = _FakeMtmd(const [
+        _FakeChunk(_image, 257, nonCausal: true),
+      ], cancelToken);
+
+      expect(find(fake, 256), (chunkType: _image, tokenCount: 257));
+    });
+
+    test('returns null when every non-causal media chunk fits', () {
+      final fake = _FakeMtmd(const [
+        _FakeChunk(_text, 600),
+        _FakeChunk(_image, 256, nonCausal: true),
+        _FakeChunk(_audio, 600),
+        _FakeChunk(7, 600, nonCausal: true),
+      ], cancelToken);
+
+      expect(find(fake, 256), isNull);
+    });
+
+    test('makes none of the evaluating calls, with exit teardown too', () {
+      final fake = _FakeMtmd(const [
+        _FakeChunk(_image, 64, nonCausal: true),
+      ], cancelToken);
+      final exit = RecordingExitTeardown(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+      );
+
+      expect(
+        findMtmdChunkAboveMicroBatch(
+          fake.api.withExitTeardown(exit.api),
+          _ctx,
+          _chunks,
+          32,
+        ),
+        (chunkType: _image, tokenCount: 64),
+      );
+      expect(exit.calls, isEmpty);
+      expect(fake.calls, [
+        'size',
+        'get 0',
+        'type 0',
+        'tokens 0',
+        'nonCausal 0',
+      ]);
+    });
+  });
+
+  test('mtmdMediaChunkName names image and audio chunks', () {
+    expect(mtmdMediaChunkName(_image), 'image');
+    expect(mtmdMediaChunkName(_audio), 'audio');
+  });
 
   test('tryLoad returns null when a library lacks the mtmd symbols', () {
     final library = DynamicLibrary.open(switch (Platform.operatingSystem) {

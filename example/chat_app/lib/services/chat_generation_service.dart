@@ -257,8 +257,18 @@ class ChatGenerationService {
         fullThinking += thinking
             .replaceAll(r'\n', '\n')
             .replaceAll(r'\r', '\r');
-        generatedTokens++;
-        pendingTokenDelta += 1;
+        // The whitespace that ends a reply arrives as a chunk of its own
+        // after the text; counting it would raise this chunk-count fallback
+        // by one for the same reply.
+        final isWhitespaceOnly =
+            content.isNotEmpty &&
+            content.trim().isEmpty &&
+            thinking.trim().isEmpty &&
+            chunk.toolCalls.isEmpty;
+        if (!isWhitespaceOnly) {
+          generatedTokens++;
+          pendingTokenDelta += 1;
+        }
 
         cleanTarget = cleanResponse(fullResponse);
         if (visibleCleanText.isEmpty && cleanTarget.isNotEmpty) {

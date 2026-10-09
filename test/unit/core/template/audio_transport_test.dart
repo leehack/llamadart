@@ -100,15 +100,13 @@ void main() {
     LlamaAudioContent(bytes: Uint8List.fromList([1, 2, 3])),
   ];
 
-  test('typed audio templates retain their model-specific wrappers', () {
+  test('typed audio templates get the audio marker without their own '
+      'wrappers', () {
     const template =
         '{% if messages[0].content is string %}{{ messages[0].content }}'
         '{% else %}$typedAudioParts{% endif %}';
     for (final audio in audios) {
-      expect(
-        renderListen(template, audio),
-        'listen<audio_start><__media__><audio_end>',
-      );
+      expect(renderListen(template, audio), 'listen<__media__>');
     }
   });
 
