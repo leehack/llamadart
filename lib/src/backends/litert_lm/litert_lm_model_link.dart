@@ -7,6 +7,7 @@ import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
 import '../../core/models/model_format.dart';
+import 'litert_lm_cache.dart';
 
 /// Creates [link] pointing at [target].
 typedef LiteRtLmLinkCreator = Future<Link> Function(Link link, String target);
@@ -29,19 +30,31 @@ typedef LiteRtLmLinkCreator = Future<Link> Function(Link link, String target);
 /// bundle's own name plus a digest of its absolute path: two files with the
 /// same name do not evict each other's caches. Without a configured cache
 /// directory the runtime would write those caches next to the link, so the
-/// caller passes [cacheDirectory] instead, which keeps them next to the
-/// bundle where reloading the same file reuses them.
+/// caller passes [runtimeCacheDirectory] instead, which keeps them next to
+/// the bundle where reloading the same file reuses them.
 class LiteRtLmModelLink {
-  LiteRtLmModelLink._(this._directory, this.path, this.cacheDirectory);
+  LiteRtLmModelLink._(this._directory, this.path, this._bundleDirectory);
 
   final Directory _directory;
 
   /// The `.litertlm` path to hand the runtime.
   final String path;
 
-  /// The directory of the linked bundle, where the runtime should keep its
-  /// caches when none is configured.
-  final String cacheDirectory;
+  final String _bundleDirectory;
+
+  /// The cache directory to hand the runtime when none is configured: the
+  /// directory of the linked bundle, or [liteRtLmNoCacheDirectory] when the
+  /// runtime would refuse that directory as not writable.
+  ///
+  /// From LiteRT-LM v0.18 the runtime creates no engine with a cache
+  /// directory it refuses, and without one it would write the caches next to
+  /// the link, where [dispose] deletes them. A bundle in a read-only
+  /// directory therefore runs uncached, as one named `.litertlm` does on the
+  /// CPU backend.
+  String runtimeCacheDirectory() =>
+      _runtimeAcceptsCacheDirectory(_bundleDirectory)
+      ? _bundleDirectory
+      : liteRtLmNoCacheDirectory;
 
   /// Links the bundle at [modelPath] under a new private directory in
   /// [parent] (default: the system temp directory), or returns null when
@@ -155,10 +168,35 @@ class LiteRtLmModelLink {
       directory.deleteSync(recursive: true);
     } on FileSystemException {
       // The private directory holds only the link; the runtime keeps its
-      // caches in [cacheDirectory].
+      // caches in [runtimeCacheDirectory].
     }
   }
 }
+
+/// Mirrors the cache directory check of LiteRT-LM v0.18: `access(2)` with
+/// `W_OK`. On Windows that check passes every existing directory, so this
+/// does too.
+bool _runtimeAcceptsCacheDirectory(String directory) {
+  final access = _access;
+  if (access == null) return true;
+  final path = directory.toNativeUtf8();
+  try {
+    return access(path, _writeOk) == 0;
+  } finally {
+    malloc.free(path);
+  }
+}
+
+const int _writeOk = 2;
+
+final int Function(Pointer<Utf8>, int)? _access = () {
+  final libc = DynamicLibrary.process();
+  if (Platform.isWindows || !libc.providesSymbol('access')) return null;
+  return libc.lookupFunction<
+    Int Function(Pointer<Utf8>, Int),
+    int Function(Pointer<Utf8>, int)
+  >('access');
+}();
 
 final Pointer<Utf8> Function(Pointer<Utf8>)? _mkdtemp = () {
   final libc = DynamicLibrary.process();

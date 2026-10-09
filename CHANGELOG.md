@@ -27,6 +27,10 @@
   `chatTemplate` with a token count threw a `StateError`. With `v0.18.0` that
   includes a `liteRtLmCacheDir` the runtime cannot write, on the CPU backend
   too.
+- Fix a LiteRT-LM bundle named without `.litertlm` failing engine creation
+  on Linux and iOS when the process cannot write the bundle's directory and
+  `liteRtLmCacheDir` is unset: it now runs without runtime caches
+  ([#973](https://github.com/leehack/llamadart/issues/973)).
 - LiteRT-LM release sync accepts runtimes built on upstream `v0.17.1` and
   `v0.18.0`, and names the upstream version when its prebuilt-override table
   is behind the runtime owner's
