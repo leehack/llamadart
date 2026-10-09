@@ -27,8 +27,9 @@ class _UnsupportedImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(
-    ImageGenerationComputeDevice device,
-  ) async => (refuse: null, slower: null);
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  }) async => (refuse: null, slower: null);
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>

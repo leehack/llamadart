@@ -682,9 +682,9 @@ device the model loads on:
 | iOS: Metal or CPU | The app's remaining memory limit (`os_proc_available_memory`) |
 | macOS: CPU | Physical memory |
 | macOS: Metal | Physical memory, capped at the GPU's `recommendedMaxWorkingSetSize` (about two thirds to three quarters of it) |
-| Linux: Vulkan, discrete GPU | The GPU's memory plus `MemAvailable`; a model larger than the GPU's memory alone loads with a warning |
+| Linux: Vulkan, discrete GPUs | The memory of every discrete GPU plus `MemAvailable`; a model larger than the memory of the GPU that computes loads with a warning |
 | Linux: Vulkan, integrated GPU | `MemAvailable`, as for the CPU |
-| Windows: Vulkan, discrete GPU | Never refused; a model larger than the GPU's memory loads with a warning |
+| Windows: Vulkan, discrete GPUs | Never refused; a model larger than the memory of the GPU that computes loads with a warning |
 | Windows: Vulkan, integrated GPU | Not checked |
 | Windows: CPU | Not checked |
 
@@ -698,36 +698,45 @@ warning.
 A discrete Vulkan GPU does not bound a model by itself. stable-diffusion.cpp
 plans where each part of a model goes when it loads (its automatic fit, which
 the engine leaves on): the diffusion model, the text encoders and the VAE
-each go to the GPU when they fit its free memory with room to compute,
-otherwise to system memory, otherwise to another GPU, otherwise they stay on
-disk. A model larger than the GPU therefore loads and generates more slowly.
+each go to the GPU that computes when they fit its free memory with room to
+compute, otherwise to system memory, otherwise to another GPU, otherwise they
+stay on disk. A model larger than the GPU therefore loads and generates more
+slowly.
 
 So the engine works with two figures:
 
-- **The GPU's memory.** Its free memory when the driver reports a budget
-  (`VK_EXT_memory_budget`): what this process can still allocate, which
-  accounts for other processes and for image models already loaded. Without
-  a budget the runtime reports the total as free, so the engine uses the
-  total, and does the same for a free figure of 0. A model whose estimate
-  exceeds this figure loads, and the engine logs one warning through
-  [`LlamaLogging`](#runtime-logs) with both numbers and the device, saying
-  that part of the model stays in system memory and generation will be
-  slower. It is a `warn` record, so the default level `none` hides it.
-- **The GPU's memory plus system memory** (`MemAvailable`, as for the CPU).
-  On Linux a model whose estimate exceeds this sum is refused. Windows does
-  not read system memory, so nothing is refused there and only the warning
-  applies.
+- **The memory of the GPU that computes.** A GPU's figure is its free memory
+  when the driver reports a budget (`VK_EXT_memory_budget`): what this
+  process can still allocate, which accounts for other processes and for
+  image models already loaded. Without a budget the runtime reports the
+  total as free, so the engine uses the total, and does the same for a free
+  figure of 0. A model whose estimate exceeds this figure loads, and the
+  engine logs one warning through [`LlamaLogging`](#runtime-logs) with both
+  numbers and the device, saying that part of the model stays in system
+  memory and generation will be slower. It is a `warn` record, so the
+  default level `none` hides it.
+- **The memory of every discrete GPU plus system memory** (`MemAvailable`,
+  as for the CPU). On Linux a model whose estimate exceeds this sum is
+  refused. Windows does not read system memory, so nothing is refused there
+  and only the warning applies.
+
+With several discrete GPUs, the one that computes is the runtime's choice:
+for `ComputeDevice.auto` the discrete GPU with the most free memory, wherever
+it is listed, and for `ComputeDevice.gpu` the first one. The engine follows
+that for the warning. `capabilities.backendName` still names the first GPU
+listed.
 
 An integrated GPU uses host memory, and a driver that exposes it as several
-heaps makes the GPU's own figures count it more than once. The engine ignores
-them and compares with `MemAvailable` on Linux, as for the CPU.
+heaps makes the GPU's own figures count it more than once. The engine never
+uses them: beside a discrete GPU an integrated one adds nothing to the sum,
+and with integrated GPUs only it compares with `MemAvailable` on Linux, as
+for the CPU.
 
-Nothing is checked or warned about when the GPU does not report its memory,
-when the `SD_VK_DEVICE` environment variable picks the Vulkan device, or with
-a `stable_diffusion` runtime older than `stable-diffusion-native` `v0.2.0-2`.
+Nothing is checked or warned about when a GPU does not report its memory,
+when the `SD_VK_DEVICE` environment variable is set, or with a
+`stable_diffusion` runtime older than `stable-diffusion-native` `v0.2.0-2`.
 
-The figures are the runtime's, which are ggml's, for the GPU a model loads on
-by default: the first discrete GPU, or else the first integrated one. The
+The figures are the runtime's, which are ggml's, for every GPU it lists. The
 engine asks for them in a short-lived isolate, because the first such call in
 a process can initialize the GPU.
 
@@ -790,6 +799,8 @@ final engine = await ImageGenerationEngine.load(model);
   records from the stricter of the two, and nothing when either is `none`,
   the default. A load takes the levels it finds: configure logging before
   `load`.
+- At `debug` the runtime logs each prompt verbatim, with its tokens. Keep
+  that level out of logs that leave the device.
 - Messages arrive after each load and generation and at `dispose()`, not
   while one runs: a worker isolate reads them from the runtime between its
   calls. Each starts with `stable_diffusion: `, and model file paths are

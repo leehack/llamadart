@@ -13,10 +13,9 @@ import 'image_generation_driver.dart';
 typedef ImageRuntimeProbe =
     StableDiffusionRuntimeStatus Function({LlamaLogLevel logLevel});
 
-/// Reads the memory of the default GPU, recording the runtime's log at a
-/// level.
+/// Reads the memory of every GPU, recording the runtime's log at a level.
 typedef ImageGpuMemoryReader =
-    StableDiffusionGpuMemory? Function({LlamaLogLevel logLevel});
+    List<StableDiffusionGpuMemory>? Function({LlamaLogLevel logLevel});
 
 /// Creates the driver for the bundled stable_diffusion runtime.
 ///
@@ -66,8 +65,9 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(
-    ImageGenerationComputeDevice device,
-  ) async {
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  }) async {
     if (device != ImageGenerationComputeDevice.otherGpu) {
       return (
         refuse: readStableDiffusionMemoryBudget(device: device),
@@ -77,9 +77,10 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
     final readGpuMemory = _readGpuMemory;
     final logLevel = imageRuntimeLogLevel();
     return stableDiffusionGpuMemoryLimits(
-      // The query is a native call that can block: the first one in a
+      // The queries are native calls that can block: the first one in a
       // process initializes the GPU backend.
       await Isolate.run(() => readGpuMemory(logLevel: logLevel)),
+      runtimePicksGpu: runtimePicksGpu,
       hostBudget: readStableDiffusionMemoryBudget,
     );
   }

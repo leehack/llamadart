@@ -136,10 +136,12 @@ description: >-
   of `MemAvailable` and half of `MemTotal` less the app's own memory,
   `MemAvailable` on Linux CPU, the app's limit on iOS, physical memory on
   macOS, capped on Metal by the GPU's recommended working set. On a Vulkan
-  GPU a model larger than the GPU's memory still loads, slower, with one
-  `LlamaLogger` warning (the runtime keeps the rest in system memory); on
-  Linux it is refused only above the GPU's memory plus `MemAvailable`, and
-  on Windows never. An integrated GPU on Linux gets `MemAvailable`. The
+  GPU a model larger than the memory of the GPU that computes (with several
+  discrete GPUs, the one with the most free memory for `ComputeDevice.auto`)
+  still loads, slower, with one `LlamaLogger` warning (the runtime keeps the
+  rest in system memory); on Linux it is refused only above the memory of
+  every discrete GPU plus `MemAvailable`, and on Windows never. An
+  integrated GPU on Linux gets `MemAvailable`. The
   Windows CPU is not checked, and the Vulkan figures are not validated on a
   physical GPU yet. SD-Turbo usually
   loads on 8 GB Android phones when no chat model is loaded, and is usually
@@ -224,7 +226,8 @@ description: >-
 - Runtime messages reach the `LlamaLogging.configure` handler when both
   `level` and `nativeLevel` admit them (default `none`: nothing is logged,
   to stderr either). Configure before `load`; messages arrive after each
-  load and generation, not during one.
+  load and generation, not during one. At `debug` they include each prompt
+  verbatim.
 
 ## Examples
 

@@ -23,16 +23,30 @@ StableDiffusionRuntimeStatus _probeNamingItsIsolate({
   LlamaUnsupportedException('$_isolate isolate, log level ${logLevel.name}'),
 );
 
-StableDiffusionGpuMemory? _gpuMemoryNamingItsIsolate({
+List<StableDiffusionGpuMemory>? _gpuMemoryNamingItsIsolate({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
-}) => (
-  name: '$_isolate isolate, log level ${logLevel.name}',
-  totalBytes: 8 << 30,
-  freeBytes: 6 << 30,
-  integrated: false,
-);
+}) => [
+  (
+    name: '$_isolate isolate, log level ${logLevel.name}',
+    totalBytes: 8 << 30,
+    freeBytes: 6 << 30,
+    integrated: false,
+  ),
+];
 
-StableDiffusionGpuMemory? _noGpuMemory({
+List<StableDiffusionGpuMemory>? _twoGpus({
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
+}) => [
+  (name: 'Vulkan0', totalBytes: 4 << 30, freeBytes: 3 << 30, integrated: false),
+  (
+    name: 'Vulkan1',
+    totalBytes: 24 << 30,
+    freeBytes: 20 << 30,
+    integrated: false,
+  ),
+];
+
+List<StableDiffusionGpuMemory>? _noGpuMemory({
   LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) => null;
 
@@ -120,6 +134,7 @@ void main() {
       expect(
         (await driver.memoryLimits(
           ImageGenerationComputeDevice.otherGpu,
+          runtimePicksGpu: true,
         )).slower?.source,
         contains('log level ${expected.name}'),
         reason: reason,
@@ -136,7 +151,7 @@ void main() {
       ImageGenerationComputeDevice.cpu,
       ImageGenerationComputeDevice.metal,
     ]) {
-      final limits = await driver.memoryLimits(device);
+      final limits = await driver.memoryLimits(device, runtimePicksGpu: true);
       if (Platform.isMacOS || Platform.isLinux) {
         expect(limits.refuse, isNotNull);
         expect(limits.refuse!.bytes, greaterThan(0));
@@ -145,10 +160,13 @@ void main() {
       }
       expect(limits.slower, isNull);
     }
-    expect(await driver.memoryLimits(ImageGenerationComputeDevice.otherGpu), (
-      refuse: null,
-      slower: null,
-    ));
+    expect(
+      await driver.memoryLimits(
+        ImageGenerationComputeDevice.otherGpu,
+        runtimePicksGpu: true,
+      ),
+      (refuse: null, slower: null),
+    );
   });
 
   test('asks another GPU for its memory in another isolate: slower above '
@@ -160,9 +178,11 @@ void main() {
 
     final limits = await driver.memoryLimits(
       ImageGenerationComputeDevice.otherGpu,
+      runtimePicksGpu: true,
     );
     final host = (await driver.memoryLimits(
       ImageGenerationComputeDevice.cpu,
+      runtimePicksGpu: true,
     )).refuse;
 
     expect(limits.slower?.bytes, 6 << 30);
@@ -182,14 +202,32 @@ void main() {
     }
   });
 
+  test('with two GPUs the driver passes on whether the runtime picks the '
+      'one it computes on', () async {
+    final driver = createImageGenerationDriver(readGpuMemory: _twoGpus);
+
+    Future<ImageGenerationMemoryBudget?> slower({
+      required bool runtimePicksGpu,
+    }) async => (await driver.memoryLimits(
+      ImageGenerationComputeDevice.otherGpu,
+      runtimePicksGpu: runtimePicksGpu,
+    )).slower;
+
+    expect((await slower(runtimePicksGpu: true))?.bytes, 20 << 30);
+    expect((await slower(runtimePicksGpu: false))?.bytes, 3 << 30);
+  });
+
   test('a GPU whose memory is not known has no limit, and the CPU and '
       'Metal limits do not ask it', () async {
     final driver = createImageGenerationDriver(readGpuMemory: _noGpuMemory);
 
-    expect(await driver.memoryLimits(ImageGenerationComputeDevice.otherGpu), (
-      refuse: null,
-      slower: null,
-    ));
+    expect(
+      await driver.memoryLimits(
+        ImageGenerationComputeDevice.otherGpu,
+        runtimePicksGpu: true,
+      ),
+      (refuse: null, slower: null),
+    );
 
     final unasked = createImageGenerationDriver(
       readGpuMemory: _gpuMemoryNamingItsIsolate,
@@ -199,7 +237,10 @@ void main() {
       ImageGenerationComputeDevice.metal,
     ]) {
       expect(
-        (await unasked.memoryLimits(device)).refuse?.source,
+        (await unasked.memoryLimits(
+          device,
+          runtimePicksGpu: true,
+        )).refuse?.source,
         isNot(contains('isolate')),
       );
     }

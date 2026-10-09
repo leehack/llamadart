@@ -26,6 +26,7 @@ typedef _GenerateImageNative =
 typedef _CancelGenerationNative =
     Void Function(Pointer<sd.sd_ctx_t>, UnsignedInt);
 typedef _ExitFreeNative = Void Function(Pointer<Void>);
+typedef _GpuDeviceCountNative = Int32 Function();
 typedef _GpuDeviceMemoryNative =
     Int32 Function(Int32, Pointer<sd.sd_dart_gpu_device_memory_t>);
 typedef _LogEnableNative = Void Function();
@@ -58,7 +59,7 @@ typedef _LastErrorNative = Size Function(Pointer<Char>, Size);
 /// has no way to report progress without a Dart callback, so image
 /// generation is unsupported on it rather than falling back.
 ///
-/// [log] and [gpuDeviceMemory] are the functions [optionalNativeRelease]
+/// [log] and [gpu] are the functions [optionalNativeRelease]
 /// added. Each group is bound only when the runtime exports all of it, and is
 /// `null` otherwise: a runtime between the two releases still generates
 /// images, without the runtime's log and its reason for a failed load, and
@@ -89,7 +90,7 @@ final class StableDiffusionCalls {
     required this.imageGenerationParamsInit,
     required this.freeImages,
     this.log,
-    this.gpuDeviceMemory,
+    this.gpu,
   });
 
   /// The oldest `stable-diffusion-native` release that exports the `sd_dart_`
@@ -119,12 +120,15 @@ final class StableDiffusionCalls {
     'sd_dart_last_error',
   ];
 
-  /// The `sd_dart_` function of [gpuDeviceMemory].
-  static const List<String> deviceMemorySymbols = ['sd_dart_gpu_device_memory'];
+  /// The `sd_dart_` functions of [gpu].
+  static const List<String> deviceMemorySymbols = [
+    'sd_dart_gpu_device_count',
+    'sd_dart_gpu_device_memory',
+  ];
 
   /// Resolves the calls from the bundled runtime, or returns `null` when it
-  /// does not export every one of [wrapperSymbols]. [log] and
-  /// [gpuDeviceMemory] are `null` when it does not export theirs.
+  /// does not export every one of [wrapperSymbols]. [log] and [gpu] are
+  /// `null` when it does not export theirs.
   ///
   /// [symbol] replaces the lookup: it returns the address of the function
   /// exported under a name, and throws [ArgumentError] when there is none.
@@ -181,6 +185,10 @@ final class StableDiffusionCalls {
     'sd_dart_last_error' => Native.addressOf<NativeFunction<_LastErrorNative>>(
       sd.sd_dart_last_error,
     ),
+    'sd_dart_gpu_device_count' =>
+      Native.addressOf<NativeFunction<_GpuDeviceCountNative>>(
+        sd.sd_dart_gpu_device_count,
+      ),
     'sd_dart_gpu_device_memory' =>
       Native.addressOf<NativeFunction<_GpuDeviceMemoryNative>>(
         sd.sd_dart_gpu_device_memory,
@@ -246,10 +254,15 @@ final class StableDiffusionCalls {
           ).asFunction(),
         ),
       ),
-      gpuDeviceMemory: optional(
-        () => function<_GpuDeviceMemoryNative>(
-          'sd_dart_gpu_device_memory',
-        ).asFunction(),
+      gpu: optional(
+        () => StableDiffusionGpuCalls(
+          deviceCount: function<_GpuDeviceCountNative>(
+            'sd_dart_gpu_device_count',
+          ).asFunction(),
+          deviceMemory: function<_GpuDeviceMemoryNative>(
+            'sd_dart_gpu_device_memory',
+          ).asFunction(),
+        ),
       ),
     );
   }
@@ -324,20 +337,35 @@ final class StableDiffusionCalls {
   /// [optionalNativeRelease].
   final StableDiffusionLogCalls? log;
 
-  /// `sd_dart_gpu_device_memory`, or `null` on a runtime older than
-  /// [optionalNativeRelease]: writes the memory of GPU `deviceIndex`, or of
-  /// the device a context with no backend uses for
-  /// `SD_DART_GPU_DEFAULT_DEVICE`, to `out` and returns an
-  /// `sd_dart_gpu_status`.
-  ///
-  /// The first query in a process initializes the GPU backend, which on Metal
-  /// with an empty shader cache takes many seconds, so it never runs on a UI
-  /// isolate. It is a call exit teardown waits for, with the bound of a load.
+  /// The runtime's GPU device queries, or `null` on a runtime older than
+  /// [optionalNativeRelease].
+  final StableDiffusionGpuCalls? gpu;
+}
+
+/// The GPU device queries of the stable_diffusion runtime.
+///
+/// The first query in a process initializes the GPU backend, which on Metal
+/// with an empty shader cache takes many seconds, so none runs on a UI
+/// isolate. Each is a call exit teardown waits for, with the bound of a load.
+final class StableDiffusionGpuCalls {
+  /// Creates the calls from functions.
+  const StableDiffusionGpuCalls({
+    required this.deviceCount,
+    required this.deviceMemory,
+  });
+
+  /// `sd_dart_gpu_device_count`: the number of GPU devices, discrete and
+  /// integrated, numbered from 0 in the order `sd_list_devices` lists them,
+  /// or a negative `sd_dart_gpu_status` without a GPU backend.
+  final int Function() deviceCount;
+
+  /// `sd_dart_gpu_device_memory`: writes the memory, type and name of GPU
+  /// `deviceIndex` to `out` and returns an `sd_dart_gpu_status`.
   final int Function(
     int deviceIndex,
     Pointer<sd.sd_dart_gpu_device_memory_t> out,
-  )?
-  gpuDeviceMemory;
+  )
+  deviceMemory;
 }
 
 /// The log recorder of the stable_diffusion runtime: the library copies each

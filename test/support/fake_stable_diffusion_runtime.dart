@@ -39,10 +39,7 @@ const _logHistory = _logState + 4;
 const _logLatest = _logState + 8;
 const _logReadTo = _logState + 16;
 const _logDropped = _logState + 24;
-const _gpuStatus = _logState + 32;
-const _gpuType = _logState + 36;
-const _gpuTotal = _logState + 40;
-const _gpuFree = _logState + 48;
+const _gpuCount = _logState + 32;
 const _lastErrorLength = _logState + 56;
 const _lastError = _logState + 64;
 const _lastErrorBytes = 1024;
@@ -51,7 +48,11 @@ const _modelPathBytes = 512;
 const _logSlots = _modelPath + _modelPathBytes;
 const _logSlotCount = 256;
 const _logSlotBytes = 512;
-const _stateBytes = _logSlots + _logSlotCount * _logSlotBytes;
+// One GPU: status and type as Int32, then total and free as Int64.
+const _gpus = _logSlots + _logSlotCount * _logSlotBytes;
+const _gpuBytes = 24;
+const _maxGpus = 4;
+const _stateBytes = _gpus + _maxGpus * _gpuBytes;
 
 // sd_log_level_t.
 const _sdLogDebug = 0;
@@ -85,7 +86,7 @@ final class FakeStableDiffusionRuntime {
     _state.cast<Int32>()[_pauseAfter ~/ 4] = -1;
     _state.cast<Int32>()[_logThreshold ~/ 4] = _sdLogInfo;
     _state.cast<Int32>()[_logHistory ~/ 4] = logHistory;
-    _state.cast<Int32>()[_gpuStatus ~/ 4] = -2;
+    _state.cast<Int32>()[_gpuCount ~/ 4] = -2;
     final version = 'SD 2.x'.codeUnits;
     for (var i = 0; i < version.length; i++) {
       _state[_modelVersion + i] = version[i];
@@ -121,20 +122,40 @@ final class FakeStableDiffusionRuntime {
   /// memory.
   set olderRelease(bool value) => _state[_olderRelease] = value ? 1 : 0;
 
-  /// What `sd_dart_gpu_device_memory` answers for the default device: a
-  /// [status] other than 0 (`SD_DART_GPU_NO_BACKEND` at first) and nothing
-  /// else, or `Vulkan0`, a `Fake GPU`, with [total] and [free] bytes.
+  /// The GPUs the runtime lists: device `i` is `Vulkan<i>`, a `Fake GPU <i>`,
+  /// with its total and free bytes, and `sd_dart_gpu_device_memory` answers
+  /// its status when that is not 0. Past the last one it answers
+  /// `SD_DART_GPU_NO_DEVICE`.
+  set gpus(List<({int total, int free, bool integrated, int status})> devices) {
+    _state.cast<Int32>()[_gpuCount ~/ 4] = devices.length;
+    for (final (index, device) in devices.indexed) {
+      final entry = _state + _gpus + index * _gpuBytes;
+      entry.cast<Int32>()[0] = device.status;
+      entry.cast<Int32>()[1] = device.integrated ? 2 : 1;
+      entry.cast<Int64>()[1] = device.total;
+      entry.cast<Int64>()[2] = device.free;
+    }
+  }
+
+  /// What `sd_dart_gpu_device_count` answers instead of a count:
+  /// `SD_DART_GPU_NO_BACKEND` at first.
+  set gpuCountStatus(int status) =>
+      _state.cast<Int32>()[_gpuCount ~/ 4] = status;
+
+  /// One GPU, as [gpus].
   void setGpuMemory({
     int status = 0,
     int total = 0,
     int free = 0,
     bool integrated = false,
-  }) {
-    _state.cast<Int32>()[_gpuStatus ~/ 4] = status;
-    _state.cast<Int32>()[_gpuType ~/ 4] = integrated ? 2 : 1;
-    _state.cast<Int64>()[_gpuTotal ~/ 8] = total;
-    _state.cast<Int64>()[_gpuFree ~/ 8] = free;
-  }
+  }) => gpus = [
+    (total: total, free: free, integrated: integrated, status: status),
+  ];
+
+  /// Adds [count] to the messages the runtime dropped without recording
+  /// one, as a recorder that could not take its buffer in time does.
+  void dropUnrecorded(int count) =>
+      _state.cast<Int64>()[_logDropped ~/ 8] += count;
 
   /// The model path the last load read from its context parameters, or an
   /// empty string when they had none.
@@ -347,21 +368,34 @@ final class _FakeCalls {
           ? 'sd_dart_gpu_device_memory:$deviceIndex'
           : 'sd_dart_gpu_device_memory:$deviceIndex:before-log-enable',
     );
-    final status = _ints[_gpuStatus ~/ 4];
+    if (deviceIndex < 0 || deviceIndex >= _ints[_gpuCount ~/ 4]) {
+      return -3;
+    }
+    final entry = _state + _gpus + deviceIndex * _gpuBytes;
+    final status = entry.cast<Int32>()[0];
     if (status != 0) {
       return status;
     }
     out.ref
-      ..total_bytes = _longs[_gpuTotal ~/ 8]
-      ..free_bytes = _longs[_gpuFree ~/ 8]
-      ..type = _ints[_gpuType ~/ 4];
-    for (final (index, unit) in 'Vulkan0'.codeUnits.indexed) {
+      ..total_bytes = entry.cast<Int64>()[1]
+      ..free_bytes = entry.cast<Int64>()[2]
+      ..type = entry.cast<Int32>()[1];
+    for (final (index, unit) in 'Vulkan$deviceIndex\x00'.codeUnits.indexed) {
       out.ref.name[index] = unit;
     }
-    for (final (index, unit) in 'Fake GPU'.codeUnits.indexed) {
+    for (final (index, unit) in 'Fake GPU $deviceIndex\x00'.codeUnits.indexed) {
       out.ref.description[index] = unit;
     }
     return 0;
+  }
+
+  int _gpuDeviceCount() {
+    _record(
+      _state[_logEnabled] != 0
+          ? 'sd_dart_gpu_device_count'
+          : 'sd_dart_gpu_device_count:before-log-enable',
+    );
+    return _ints[_gpuCount ~/ 4];
   }
 
   Pointer<sd.sd_ctx_t> _newContext(Pointer<sd.sd_ctx_params_t> params) {
@@ -471,7 +505,12 @@ final class _FakeCalls {
               },
               lastError: _readLastError,
             ),
-      gpuDeviceMemory: _state[_olderRelease] != 0 ? null : _gpuDeviceMemory,
+      gpu: _state[_olderRelease] != 0
+          ? null
+          : StableDiffusionGpuCalls(
+              deviceCount: _gpuDeviceCount,
+              deviceMemory: _gpuDeviceMemory,
+            ),
     );
   }
 

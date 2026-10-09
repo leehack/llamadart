@@ -19,7 +19,10 @@ void main() {
       throwsA(isA<LlamaUnsupportedException>()),
     );
     for (final device in ImageGenerationComputeDevice.values) {
-      expect(await driver.memoryLimits(device), (refuse: null, slower: null));
+      expect(await driver.memoryLimits(device, runtimePicksGpu: true), (
+        refuse: null,
+        slower: null,
+      ));
     }
     await expectLater(
       driver.start(

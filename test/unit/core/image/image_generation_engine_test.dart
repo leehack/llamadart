@@ -1146,6 +1146,42 @@ void main() {
         expect(records.single.message, contains('more than the 6.00 GiB'));
       });
 
+      test('says that the runtime picks the GPU for ComputeDevice.auto, '
+          'and that it does not for ComputeDevice.gpu', () async {
+        driver.status = _available(
+          'Vulkan0\tGTX 1650\nVulkan1\tRTX 4090\nCPU\tHost\n',
+        );
+
+        await load(_sdxs());
+        await load(
+          _sdxs(),
+          params: const ImageModelParams(device: ComputeDevice.gpu),
+        );
+
+        expect(driver.runtimePicks, [true, false]);
+        expect(
+          driver.budgetDevices,
+          everyElement(ImageGenerationComputeDevice.otherGpu),
+        );
+      });
+
+      test('with a small GPU listed before a large one, a model that fits '
+          'the large one loads: 16.8 GiB against 4, 24 and 9 GiB', () async {
+        driver
+          ..status = _available(
+            'Vulkan0\tGTX 1650\nVulkan1\tRTX 4090\nCPU\tHost\n',
+          )
+          // 13.04 GiB of weights are estimated at 16.8 GiB.
+          ..sizes[_model] = 1304 * _gib ~/ 100
+          ..slowerBudget = (bytes: 24 * _gib, source: 'Vulkan1')
+          ..budget = (bytes: 37 * _gib, source: 'two GPUs and the host');
+
+        await load(_sdxs());
+
+        expect(driver.started, hasLength(1));
+        expect(records, isEmpty);
+      });
+
       test('a model that fits the GPU loads without a warning', () async {
         driver
           ..sizes[_model] = 2 * _gib
@@ -1804,12 +1840,15 @@ final class _FakeDriver implements ImageGenerationDriver {
   }
 
   final List<ImageGenerationComputeDevice> budgetDevices = [];
+  final List<bool> runtimePicks = [];
 
   @override
   Future<ImageGenerationMemoryLimits> memoryLimits(
-    ImageGenerationComputeDevice device,
-  ) async {
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  }) async {
     budgetDevices.add(device);
+    runtimePicks.add(runtimePicksGpu);
     return (refuse: budget, slower: slowerBudget);
   }
 

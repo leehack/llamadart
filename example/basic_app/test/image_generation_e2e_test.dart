@@ -246,13 +246,13 @@ void main() {
 
   test('the GPU memory the runtime reports for Metal is the working set '
       'the memory check reads itself', () async {
-    final memory = await Isolate.run(readStableDiffusionGpuMemory);
+    final memory = (await Isolate.run(readStableDiffusionGpuMemory))!.single;
     final workingSet = readStableDiffusionMemoryBudget(
       device: ImageGenerationComputeDevice.metal,
     )!;
 
     print(
-      'IMAGE_GPU_MEMORY ${memory!.name}: total ${memory.totalBytes}, free '
+      'IMAGE_GPU_MEMORY ${memory.name}: total ${memory.totalBytes}, free '
       '${memory.freeBytes}, integrated ${memory.integrated}; '
       '${workingSet.source}: ${workingSet.bytes}',
     );

@@ -118,16 +118,16 @@ typedef StableDiffusionGpuMemory = ({
   bool integrated,
 });
 
-/// The memory of the GPU a context with no named device loads on (the first
-/// discrete GPU, or else the first integrated one), from
+/// The memory of every GPU the runtime lists, discrete and integrated, in
+/// the runtime's device order, from `sd_dart_gpu_device_count` and
 /// `sd_dart_gpu_device_memory`, or `null` when it is not known:
 ///
 /// - the runtime is older than `StableDiffusionCalls.optionalNativeRelease`
-///   and does not export the query;
-/// - the runtime has no GPU backend or found no GPU, or the device does not
-///   report its memory;
-/// - `SD_VK_DEVICE` is set: such a context then loads on the Vulkan device of
-///   that number if it initializes, which the query does not follow.
+///   and does not export the queries;
+/// - the runtime has no GPU backend or found no GPU, or one of the devices
+///   does not report its memory;
+/// - `SD_VK_DEVICE` is set, which can make the runtime pick a Vulkan device
+///   by number.
 ///
 /// The first query in a process initializes the GPU backend, as a load
 /// otherwise does, which can take many seconds, and exit teardown waits for
@@ -138,7 +138,7 @@ typedef StableDiffusionGpuMemory = ({
 ///
 /// [resolveCalls] and [environment] default to the bundled runtime and the
 /// process environment; tests replace them.
-StableDiffusionGpuMemory? readStableDiffusionGpuMemory({
+List<StableDiffusionGpuMemory>? readStableDiffusionGpuMemory({
   StableDiffusionCalls? Function() resolveCalls =
       StableDiffusionCalls.tryResolve,
   LlamaLogLevel logLevel = LlamaLogLevel.none,
@@ -148,38 +148,47 @@ StableDiffusionGpuMemory? readStableDiffusionGpuMemory({
     return null;
   }
   final calls = resolveCalls();
-  final query = calls?.gpuDeviceMemory;
-  if (calls == null || query == null) {
+  final gpu = calls?.gpu;
+  if (calls == null || gpu == null) {
     return null;
   }
   final log = calls.log;
   if (log != null) {
     recordStableDiffusionLog(log, logLevel);
   }
+  final count = gpu.deviceCount();
+  if (count <= 0) {
+    return null;
+  }
   return using((arena) {
     final out = arena<sd.sd_dart_gpu_device_memory_t>();
-    final status = query(sd.SD_DART_GPU_DEFAULT_DEVICE, out);
-    if (status != sd.sd_dart_gpu_status.SD_DART_GPU_OK.value) {
-      return null;
+    final devices = <StableDiffusionGpuMemory>[];
+    for (var index = 0; index < count; index++) {
+      final status = gpu.deviceMemory(index, out);
+      if (status != sd.sd_dart_gpu_status.SD_DART_GPU_OK.value) {
+        return null;
+      }
+      final memory = out.ref;
+      final name = _text(memory.name, 64);
+      final description = _text(memory.description, 256);
+      devices.add((
+        name: description.isEmpty ? name : '$name ($description)',
+        totalBytes: memory.total_bytes,
+        freeBytes: memory.free_bytes,
+        integrated:
+            memory.type ==
+            sd.sd_dart_gpu_device_type.SD_DART_GPU_DEVICE_INTEGRATED.value,
+      ));
     }
-    final memory = out.ref;
-    final name = _text(memory.name, 64);
-    final description = _text(memory.description, 256);
-    return (
-      name: description.isEmpty ? name : '$name ($description)',
-      totalBytes: memory.total_bytes,
-      freeBytes: memory.free_bytes,
-      integrated:
-          memory.type ==
-          sd.sd_dart_gpu_device_type.SD_DART_GPU_DEVICE_INTEGRATED.value,
-    );
+    return devices;
   });
 }
 
-/// The memory limits of a new image model on the GPU [memory] describes;
-/// neither is known when [memory] is `null`.
+/// The memory limits of a new image model on the GPUs [gpus] describes, in
+/// the runtime's device order; neither is known when [gpus] is `null` or
+/// empty, or one of them reports no memory.
 ///
-/// The GPU's figure:
+/// A GPU's figure:
 /// - with a budget from the driver (`VK_EXT_memory_budget`), its free memory,
 ///   which is what this process can still allocate there and so accounts for
 ///   other processes and for models already loaded;
@@ -187,64 +196,93 @@ StableDiffusionGpuMemory? readStableDiffusionGpuMemory({
 ///   free, so equal figures mean "not reported", and so does a free figure of
 ///   0, which a driver whose budget is below the process's use gives.
 ///
-/// A discrete GPU does not bound a load by itself: stable-diffusion.cpp's
+/// Discrete GPUs do not bound a load by themselves: stable-diffusion.cpp's
 /// automatic fit, which llamadart leaves on, keeps the weights that do not
-/// fit the GPU in host memory. So a model above the GPU's figure is only
-/// `slower`, and it is refused above that figure plus [hostBudget], the
-/// figure the CPU gets. Where host memory is not read, as on Windows,
-/// nothing is refused.
+/// fit the GPU it computes on in host memory, or on another GPU. That GPU is
+/// the discrete one with the most free memory when [runtimePicksGpu] (no
+/// backend is named), and the first discrete one for the backend `gpu`. So a
+/// model above that GPU's figure is only `slower`, and it is refused above
+/// the figures of all discrete GPUs plus [hostBudget], the figure the CPU
+/// gets. Where host memory is not read, as on Windows, nothing is refused.
 ///
 /// An integrated GPU uses host memory, and a driver that exposes that as
 /// several heaps has it counted more than once in the device's figures. They
-/// are not used: a model is refused above [hostBudget] alone.
+/// are never used: beside a discrete GPU an integrated one adds nothing, and
+/// with integrated GPUs only a model is refused above [hostBudget] alone.
 ImageGenerationMemoryLimits stableDiffusionGpuMemoryLimits(
-  StableDiffusionGpuMemory? memory, {
+  List<StableDiffusionGpuMemory>? gpus, {
+  required bool runtimePicksGpu,
   required ImageGenerationMemoryBudget? Function() hostBudget,
 }) {
-  if (memory == null || memory.totalBytes <= 0) {
+  if (gpus == null || gpus.isEmpty || gpus.any((gpu) => gpu.totalBytes <= 0)) {
     return (refuse: null, slower: null);
   }
   final host = hostBudget();
-  if (memory.integrated) {
+  final discrete = [
+    for (final gpu in gpus)
+      if (!gpu.integrated) _gpuFigure(gpu),
+  ];
+  if (discrete.isEmpty) {
     return (
       refuse: host == null
           ? null
           : (
               bytes: host.bytes,
               source:
-                  '${host.source}; ${memory.name} is an integrated GPU, which '
-                  'uses host memory',
+                  '${host.source}; ${gpus.first.name} is an integrated GPU, '
+                  'which uses host memory',
             ),
       slower: null,
     );
   }
-  final budgeted = memory.freeBytes > 0 && memory.freeBytes < memory.totalBytes;
-  final ImageGenerationMemoryBudget gpu = budgeted
-      ? (
-          bytes: memory.freeBytes,
-          source:
-              'free GPU memory of ${memory.name}, out of '
-              '${_gib(memory.totalBytes)} GiB',
-        )
-      : (
-          bytes: memory.totalBytes,
-          source:
-              'the GPU memory of ${memory.name}, whose driver does not '
-              'report how much of it is free',
-        );
+  var computing = discrete.first;
+  if (runtimePicksGpu) {
+    for (final figure in discrete.skip(1)) {
+      if (figure.bytes > computing.bytes) {
+        computing = figure;
+      }
+    }
+  }
+  final gpuBytes = discrete.fold(0, (sum, figure) => sum + figure.bytes);
   return (
     refuse: host == null
         ? null
         : (
-            bytes: gpu.bytes + host.bytes,
-            source:
-                '${_gib(gpu.bytes)} GiB of GPU memory and '
-                '${_gib(host.bytes)} GiB of system memory: ${gpu.source}; '
-                '${host.source}',
+            bytes: gpuBytes + host.bytes,
+            source: [
+              if (discrete.length == 1)
+                '${_gib(gpuBytes)} GiB of GPU memory and '
+                    '${_gib(host.bytes)} GiB of system memory: '
+                    '${discrete.single.source}'
+              else ...[
+                '${_gib(gpuBytes)} GiB of GPU memory on ${discrete.length} '
+                    'GPUs and ${_gib(host.bytes)} GiB of system memory: '
+                    '${_gib(discrete.first.bytes)} GiB, '
+                    '${discrete.first.source}',
+                for (final figure in discrete.skip(1))
+                  '${_gib(figure.bytes)} GiB, ${figure.source}',
+              ],
+              host.source,
+            ].join('; '),
           ),
-    slower: gpu,
+    slower: computing,
   );
 }
+
+ImageGenerationMemoryBudget _gpuFigure(StableDiffusionGpuMemory gpu) =>
+    gpu.freeBytes > 0 && gpu.freeBytes < gpu.totalBytes
+    ? (
+        bytes: gpu.freeBytes,
+        source:
+            'free GPU memory of ${gpu.name}, out of '
+            '${_gib(gpu.totalBytes)} GiB',
+      )
+    : (
+        bytes: gpu.totalBytes,
+        source:
+            'the GPU memory of ${gpu.name}, whose driver does not report how '
+            'much of it is free',
+      );
 
 String _gib(int bytes) {
   final gib = bytes / (1 << 30);

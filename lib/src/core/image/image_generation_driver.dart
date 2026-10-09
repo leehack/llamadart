@@ -151,12 +151,15 @@ abstract interface class ImageGenerationDriver {
   /// model file headers; fewer at the end of the file.
   Future<Uint8List> readFileRange(String path, int offset, int length);
 
-  /// The memory limits of a new model on [device]. Asking a GPU other than
-  /// Metal is a native call that can block, so on native platforms it runs
-  /// in a short-lived isolate.
+  /// The memory limits of a new model on [device]. [runtimePicksGpu] says
+  /// that the load names no backend, so with several GPUs the runtime
+  /// computes on the one with the most free memory, not on the first.
+  /// Asking GPUs other than Metal is a native call that can block, so on
+  /// native platforms it runs in a short-lived isolate.
   Future<ImageGenerationMemoryLimits> memoryLimits(
-    ImageGenerationComputeDevice device,
-  );
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  });
 
   /// Loads a native context. On native platforms the runtime's messages
   /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when

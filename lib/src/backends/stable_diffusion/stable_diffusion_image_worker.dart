@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:math';
 
 import 'package:ffi/ffi.dart';
 
@@ -417,10 +418,12 @@ final class _LogBatch {
 
   void deliver() {
     final known = StableDiffusionImageWorker._logPosition;
-    // Two workers that read at once can finish out of order.
-    if (position.after > known.after) {
-      StableDiffusionImageWorker._logPosition = position;
-    }
+    // Two workers that read at once can finish out of order, and the
+    // dropped count can rise with no new message to read.
+    StableDiffusionImageWorker._logPosition = (
+      after: max(position.after, known.after),
+      dropped: max(position.dropped, known.dropped),
+    );
     // No caller awaits these records, so `emit` prints an error of the log
     // handler instead of throwing it into the port.
     for (final record in records) {

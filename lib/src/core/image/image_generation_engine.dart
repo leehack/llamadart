@@ -316,12 +316,15 @@ class ImageGenerationEngine {
   /// of letting the system kill the app.
   ///
   /// A Vulkan GPU does not bound a model by itself: the runtime keeps the
-  /// weights that do not fit it in host memory. The GPU's figure, asked off
-  /// the calling isolate, is its free memory when its driver reports that
-  /// and its total memory otherwise. A model above it loads, generates more
-  /// slowly, and one `LlamaLogger` warning says so; on Linux it is refused
-  /// only above that figure plus `MemAvailable`. An integrated GPU on Linux
-  /// gets `MemAvailable` alone. Windows, a GPU that does not report its
+  /// weights that do not fit it in host memory, or on another GPU. A GPU's
+  /// figure, asked off the calling isolate, is its free memory when its
+  /// driver reports that and its total memory otherwise. A model above the
+  /// figure of the GPU it computes on (with [ComputeDevice.auto] the
+  /// discrete GPU with the most free memory, with [ComputeDevice.gpu] the
+  /// first) loads, generates more slowly, and one `LlamaLogger` warning says
+  /// so; on Linux it is refused only above the figures of all discrete GPUs
+  /// plus `MemAvailable`. An integrated GPU on Linux gets `MemAvailable`
+  /// alone. Windows, a GPU that does not report its
   /// memory and a load with the `SD_VK_DEVICE` environment variable set are
   /// never refused.
   ///
@@ -425,7 +428,7 @@ class ImageGenerationEngine {
           _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
           _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
           _ => ImageGenerationComputeDevice.cpu,
-        }),
+        }, runtimePicksGpu: params.device == ComputeDevice.auto),
       );
     }
     final files = <String, String>{

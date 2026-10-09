@@ -795,6 +795,30 @@ void main() {
         expect(logged, hasLength(1));
       });
 
+      test('messages dropped with nothing new to read are reported once, '
+          'not again by the next read', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.error);
+        final logged = records();
+        runtime.dropUnrecorded(3);
+
+        await worker.generate(_request(), (_, _) {});
+        await worker.generate(_request(), (_, _) {});
+        await runtime.flush();
+
+        // Nothing is recorded at the error level, so the position stays.
+        expect(runtime.calls('worker'), [
+          ..._generateCalls,
+          ..._logReads(0),
+          ..._generateCalls,
+          ..._logReads(0),
+        ]);
+        expect(logged, hasLength(1));
+        expect(
+          logged.single.$2,
+          startsWith('The stable_diffusion runtime dropped 3 log messages'),
+        );
+      });
+
       test('text that is not valid UTF-8 is delivered, not thrown', () async {
         final worker = await loaded(logLevel: LlamaLogLevel.info);
         final logged = records();

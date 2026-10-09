@@ -169,9 +169,10 @@ stand-in:
 - `sd_dart_log_enable`, `sd_dart_log_set_level`, `sd_dart_log_read`,
   `sd_dart_log_dropped` and `sd_dart_last_error` (`v0.2.0-2`): see "Image
   log".
-- `sd_dart_gpu_device_memory` (`v0.2.0-2`) reads the memory of the default
-  GPU for the memory check of a Vulkan GPU. It runs in a short-lived isolate
-  of its own (`readStableDiffusionGpuMemory`), not in a worker.
+- `sd_dart_gpu_device_count` and `sd_dart_gpu_device_memory` (`v0.2.0-2`)
+  read the memory of every GPU for the memory check of Vulkan GPUs. They run
+  in a short-lived isolate of their own (`readStableDiffusionGpuMemory`), not
+  in a worker.
 - Upstream calls that return at once: `sd_ctx_params_init`,
   `sd_ctx_supports_image_generation` and `sd_get_model_version_name` right
   after the load, `sd_img_gen_params_init` and `free_sd_images`.
@@ -193,7 +194,7 @@ differs from the core pin.
 
 The functions `v0.2.0-2` added are optional: `StableDiffusionCalls.log` binds
 the five log functions when the runtime exports all of them, and
-`gpuDeviceMemory` its one, and each is `null` otherwise
+`gpu` its two device queries, and each is `null` otherwise
 (`StableDiffusionCalls.optionalNativeRelease`). On such a runtime image
 generation works as it did on `v0.2.0-1`: no log call is made, a failed load
 names the missing file roles and the release that reports reasons, and a
@@ -219,10 +220,11 @@ runtime's default waits apply.
 - It waits up to two seconds for an `sd_dart_exit_free` in flight, and gives
   a thread 250 ms after its last such call, which covers the short upstream
   calls after a load.
-- A device query (`sd_dart_gpu_device_memory`) in flight is waited for like a
-  load, up to 15 seconds, also when nothing is tracked: it reads ggml's
-  device registry, which C `exit` destroys. llamadart makes the query only
-  for a Vulkan GPU, on Linux and Windows, where teardown runs only when a
+- A device query (`sd_dart_gpu_device_count`, `sd_dart_gpu_device_memory`)
+  in flight is waited for like a load, up to 15 seconds, also when nothing
+  is tracked: it reads ggml's device registry, which C `exit` destroys.
+  llamadart makes the queries only for Vulkan GPUs, on Linux and Windows,
+  where teardown runs only when a
   native host calls it. The probe's `sd_list_devices`, which initializes the
   devices first, is upstream's function and is not waited for.
 - The log reads (`sd_dart_log_read`, `sd_dart_log_dropped`,

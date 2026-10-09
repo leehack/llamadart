@@ -31,7 +31,10 @@ const _logSymbols = [
   'sd_dart_log_dropped',
   'sd_dart_last_error',
 ];
-const _deviceMemorySymbols = ['sd_dart_gpu_device_memory'];
+const _deviceMemorySymbols = [
+  'sd_dart_gpu_device_count',
+  'sd_dart_gpu_device_memory',
+];
 
 // The root package does not bundle the stable_diffusion runtime, so these
 // tests resolve the functions from stand-ins. That each name resolves to the
@@ -76,11 +79,11 @@ void main() {
 
     expect(calls, isNotNull);
     expect(calls!.log, isNull);
-    expect(calls.gpuDeviceMemory, isNull);
+    expect(calls.gpu, isNull);
   });
 
-  test('the log is bound only when the runtime exports all of its '
-      'functions, and the device memory query on its own', () {
+  test('the log and the GPU queries are each bound only when the runtime '
+      'exports all of their functions, one without the other', () {
     expect(StableDiffusionCalls.logSymbols, unorderedEquals(_logSymbols));
     expect(
       StableDiffusionCalls.deviceMemorySymbols,
@@ -98,11 +101,13 @@ void main() {
     for (final missing in _logSymbols) {
       final calls = without(missing);
       expect(calls.log, isNull, reason: missing);
-      expect(calls.gpuDeviceMemory, isNotNull, reason: missing);
+      expect(calls.gpu, isNotNull, reason: missing);
     }
-    final calls = without(_deviceMemorySymbols.single);
-    expect(calls.gpuDeviceMemory, isNull);
-    expect(calls.log, isNotNull);
+    for (final missing in _deviceMemorySymbols) {
+      final calls = without(missing);
+      expect(calls.gpu, isNull, reason: missing);
+      expect(calls.log, isNotNull, reason: missing);
+    }
   });
 
   test('calls the function exported under the name of each of its '
@@ -124,8 +129,9 @@ void main() {
           expect(calls.log!.read(41, nullptr, 0, nullptr, nullptr), 42),
       'sd_dart_log_dropped': () => expect(calls.log!.dropped(), 7),
       'sd_dart_last_error': () => expect(calls.log!.lastError(nullptr, 9), 9),
+      'sd_dart_gpu_device_count': () => expect(calls.gpu!.deviceCount(), 2),
       'sd_dart_gpu_device_memory': () =>
-          expect(calls.gpuDeviceMemory!(-1, nullptr), -3),
+          expect(calls.gpu!.deviceMemory(1, nullptr), -3),
     };
     for (final MapEntry(key: name, value: call) in members.entries) {
       exports.called.clear();
@@ -134,7 +140,7 @@ void main() {
     }
     expect(exports.cancelMode, sd.sd_cancel_mode_t.SD_CANCEL_ALL.value);
     expect(exports.logLevel, 3);
-    expect(exports.deviceIndex, -1);
+    expect(exports.deviceIndex, 1);
     expect(calls.exitFreeAddress, exports.symbol('sd_dart_exit_free'));
 
     // sd_dart_progress_read is a leaf call, which cannot call back into
@@ -291,6 +297,10 @@ final class _RecordingExports {
               _record('sd_dart_last_error', capacity),
           exceptionalReturn: 0,
         ),
+    'sd_dart_gpu_device_count': NativeCallable<Int32 Function()>.isolateLocal(
+      () => _record('sd_dart_gpu_device_count', 2),
+      exceptionalReturn: 0,
+    ),
     'sd_dart_gpu_device_memory':
         NativeCallable<
           Int32 Function(Int32, Pointer<sd.sd_dart_gpu_device_memory_t>)

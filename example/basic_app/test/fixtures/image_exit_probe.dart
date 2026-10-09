@@ -52,8 +52,8 @@ Future<void> main(List<String> args) async {
         }
       }
       final calls = StableDiffusionCalls.tryResolve()!;
-      if (calls.log == null || calls.gpuDeviceMemory == null) {
-        throw StateError('The pinned runtime lacks the log or device memory');
+      if (calls.log == null || calls.gpu == null) {
+        throw StateError('The pinned runtime lacks the log or the GPU queries');
       }
       _reached(scenario);
     case 'quiet':
