@@ -40,6 +40,15 @@ For canonical full release notes, use:
   `v0.18.0`, and names the upstream version when its prebuilt-override table
   is behind the runtime owner's
   ([#586](https://github.com/leehack/llamadart/issues/586)).
+- Move the documented Web LiteRT-LM default from `@litert-lm/core@0.15.0` to
+  `@litert-lm/core@0.18.0`. An app still chooses the module through
+  `window.__llamadartLiteRtLmModuleUrl`; the chat app's `web/index.html` and
+  the docs now name `0.18.0`.
+- Aligned default WebGPU bridge assets to `v0.1.54`, unchanged from 0.11.1:
+  they embed llama.cpp `v0.5.0`, are qualified against native `v0.5.0`, and keep
+  Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity;
+  Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 - Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
   `stable_diffusion` image runtime.
 - Check the memory of Vulkan GPUs before loading an image model
