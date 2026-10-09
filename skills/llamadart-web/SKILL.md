@@ -139,7 +139,7 @@ Load the bridge (and optionally LiteRT-LM) in `web/index.html`:
     window.__llamadartBridgeLoadError = String(error);
   }
   window.__llamadartLiteRtLmModuleUrl =
-    'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm';
+    'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm';
 </script>
 <script src="flutter_bootstrap.js" async></script>
 ```
