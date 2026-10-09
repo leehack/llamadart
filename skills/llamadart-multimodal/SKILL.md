@@ -70,6 +70,12 @@ description: >-
 - On llama.cpp, `GenerationParams.thinkingBudget` and speculative decoding
   throw `LlamaUnsupportedException` for requests that contain media. Leave
   them unset for multimodal turns.
+- On llama.cpp, a projector that decodes an image in one pass (Gemma 3, and
+  Gemma 4 other than E2B and E4B) needs each image to fit
+  `ModelParams.microBatchSize`, 512 tokens by default. A larger image throws
+  `LlamaInferenceException` naming the token count: load the model with
+  `microBatchSize` and `batchSize` of at least that, or downscale the image.
+  Gemma 4 gives an image up to 1120 tokens.
 - The package does not resize media. Downscale large images (the example chat
   app caps the long edge at 384px) and keep `maxTokens` and context budgets
   tighter than for text; images in history keep consuming context on later

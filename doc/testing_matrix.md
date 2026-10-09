@@ -546,6 +546,28 @@ after reload or replacement. Pair them with
 pre-output stops, buffered tool calls, running handlers, projector creation
 and teardown races, and speech parameter validation before file resolution.
 
+### Image above the context micro-batch
+
+```bash
+MULTIMODAL_MICRO_BATCH_MODEL=/path/to/gemma-4-12B-it.gguf \
+MULTIMODAL_MICRO_BATCH_MMPROJ=/path/to/mmproj.gguf \
+MULTIMODAL_MICRO_BATCH_BACKEND=cpu \
+dart test -p vm -j 1 --run-skipped \
+  test/e2e/backends/multimodal_micro_batch_e2e_test.dart
+```
+
+These local-only tests need a model whose projector decodes an image with
+non-causal attention: Gemma 3, or Gemma 4 other than E2B and E4B. They answer
+a small image at the default batch sizes, require a typed error and a working
+engine for an image above an explicit micro-batch (with a larger and with an
+equal batch) and above the default micro-batch, and answer the large image
+with the micro-batch the error names. Repeat with
+`MULTIMODAL_MICRO_BATCH_BACKEND=metal` on macOS. Without the check the process
+aborts on llama.cpp's `non-causal attention requires n_ubatch >= n_tokens`
+assertion. `test/unit/backends/llama_cpp/llama_cpp_service_media_micro_batch_test.dart`
+covers the same paths in default CI with a stand-in projector on the real
+runtime.
+
 ### Native exit teardown
 
 ```bash

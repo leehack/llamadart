@@ -430,6 +430,39 @@ void main() {
     },
   );
 
+  test('rejects a non-causal image above the micro-batch after the tokenize, '
+      'before any evaluating call', () async {
+    final projectorPath = '${dir.path}/mmproj.gguf';
+    File(projectorPath).writeAsStringSync('GGUF');
+    final small = service.createContext(
+      model,
+      const ModelParams(
+        gpuLayers: 0,
+        contextSize: 64,
+        batchSize: 8,
+        microBatchSize: 8,
+      ),
+    );
+    final fake = mtmd = FakeMtmd.install(
+      service,
+      tokens: service.tokenize(model, 'abcdefgh', true),
+      chunkEval: true,
+      chunk: FakeMtmdChunk.nonCausalImage,
+      decode: recorder.api.decode,
+    );
+    addTearDown(fake.dispose);
+    service.createMultimodalContext(model, projectorPath);
+    recorder.clearCalls();
+
+    await expectLater(
+      _generate(service, small, '<__media__>', _greedy, parts: fake.parts),
+      throwsA(isA<LlamaInferenceException>()),
+    );
+
+    expect(recorder.calls, [_synchronize, 'llama_dart_mtmd_tokenize']);
+    expect(fake.calls, isEmpty);
+  });
+
   for (final chunkEval in [true, false]) {
     final evalCall = chunkEval
         ? 'mtmd_helper_eval_chunk_single'

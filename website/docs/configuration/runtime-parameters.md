@@ -78,6 +78,11 @@ Important fields:
   non-causal attention models, and MEAN/CLS pooling embed each input in one
   micro-batch. `embed()` and `embedBatch()` throw `LlamaInferenceException`
   for longer input; raise `microBatchSize` and `batchSize` or shorten the input.
+  A projector that decodes an image with non-causal attention (Gemma 3, and
+  Gemma 4 other than E2B and E4B) needs each image in one micro-batch too: a
+  prompt with a larger image throws `LlamaInferenceException` before anything
+  is decoded. The default of `512` does not hold the largest Gemma 4 images
+  ([Image input exceeds `n_ubatch`](../troubleshooting/common-issues#image-input-exceeds-n_ubatch)).
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the

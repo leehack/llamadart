@@ -163,6 +163,10 @@ does not by itself provide a transcript contract. For typed transcription, see
 - Projector load success does not imply every modality is available. Re-check
   `capabilities.supportsVision` / `supportsAudio` after loading `mmproj`.
 - Keep context and generation budgets tighter than your text-only defaults.
+- With Gemma 3, and Gemma 4 other than E2B and E4B, each image has to fit
+  `ModelParams.microBatchSize` (512 tokens by default): a larger one throws
+  `LlamaInferenceException` naming the size to load the model with
+  ([Image input exceeds `n_ubatch`](../troubleshooting/common-issues#image-input-exceeds-n_ubatch)).
 - Follow-up turns after an image can still overflow the active context window if
   conversation history grows too large.
 - If multimodal is unstable on GPU, establish a working CPU baseline first.

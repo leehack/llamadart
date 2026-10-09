@@ -309,7 +309,10 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
    **Advanced** for Dart and native/bridge log levels.
    - Logical batch size (`n_batch`) and micro-batch size (`n_ubatch`) default to
      `Auto`, which keeps the backend's own defaults; an explicit value applies
-     on the next model load. LiteRT-LM bundles disable these controls.
+     on the next model load. LiteRT-LM bundles disable these controls. On an
+     Android GPU, `Auto` loads a GGUF model with smaller sizes instead: batch
+     32 (64 for Qwen3.5 0.8B) and micro-batch 1 on Vulkan, 256 and 64 on the
+     other GPU backends.
    - `Auto` selects the best supported runtime; on supported Macs it prefers
      Metal. The selector also lists concrete runtime-detected options such as
      CPU/Vulkan/CUDA for GGUF or CPU/GPU/NPU for LiteRT-LM.
@@ -465,6 +468,14 @@ await prefs.setInt('preferred_backend', backendIndex);
 **"Model file not found" error:**
 - Ensure you have successfully downloaded a model from the selection screen.
 - If you manually moved a model, verify the path in the settings sheet.
+
+**`The image input has <n> tokens, but this projector decodes it in one pass of at most <m> tokens`:**
+- Gemma 3, and Gemma 4 models other than E2B and E4B, need each image in one
+  micro-batch. On an Android GPU the `Auto` batch sizes are smaller than an
+  image, so an image prompt with these models fails with this error there.
+  Set the logical batch size and the micro-batch size to at least `<n>` and
+  reload the model, or use `CPU`. Those larger sizes have not been run on
+  Android Vulkan devices.
 
 **Slow generation:**
 - Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Linux/Windows).

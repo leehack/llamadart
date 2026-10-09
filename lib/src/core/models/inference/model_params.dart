@@ -311,7 +311,10 @@ class ModelParams {
   ///
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a
-  /// longer embedding input throws `LlamaInferenceException`.
+  /// longer embedding input throws `LlamaInferenceException`. So does an
+  /// image with more tokens than the micro-batch when the projector decodes
+  /// an image in one pass, as those of Gemma 3 and of Gemma 4 other than E2B
+  /// and E4B do.
   final int microBatchSize;
 
   /// Maximum parallel sequence slots in context memory (n_seq_max).

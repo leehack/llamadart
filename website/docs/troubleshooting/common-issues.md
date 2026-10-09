@@ -308,6 +308,21 @@ and MEAN/CLS pooling embed each input in one micro-batch. Shorten the input, or
 raise `ModelParams.microBatchSize` and `ModelParams.batchSize`. Batched embedding
 calls reject an oversized input before evaluating any of the batch.
 
+### Image input exceeds `n_ubatch`
+
+`LlamaInferenceException`:
+`The image input has <n> tokens, but this projector decodes it in one pass of at most <m> tokens (n_ubatch).`
+Some projectors have llama.cpp decode an image with non-causal attention,
+which needs the whole image in one micro-batch: Gemma 3, and Gemma 4 other
+than E2B and E4B. Load the model with `ModelParams.microBatchSize` and
+`ModelParams.batchSize` of at least `<n>`, or downscale the image when the
+projector sizes its output by the image. Gemma 4 gives an image up to 1120
+tokens, so the default micro-batch of 512 rejects its larger images: a
+2016 x 2016 image is 1089 tokens with Gemma 4 12B. The prompt is rejected
+before anything is decoded, and the engine stays usable. A runtime without
+llama.cpp's chunk-level multimodal functions, which the pinned one has, is
+not checked: such an image still aborts the process there.
+
 ### Recurrent speculative rollback is unsupported
 
 Native llama.cpp rejects a nonzero `ModelParams.speculativeRollbackTokenMax`

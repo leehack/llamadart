@@ -5836,6 +5836,12 @@ class LlamaCppService {
               newPast,
             );
           } else {
+            _checkMediaChunksFitMicroBatch(
+              chunkEvalApi,
+              mmCtx,
+              chunks,
+              llama_n_ubatch(ctx.pointer),
+            );
             chunkFailure = evalMtmdChunksUntilCancelled(
               chunkEvalApi,
               mmCtx,
@@ -5882,6 +5888,29 @@ class LlamaCppService {
     }
     ctx.cachedPromptTokens = null;
     return initialTokens;
+  }
+
+  void _checkMediaChunksFitMicroBatch(
+    MtmdChunkEvalApi api,
+    Pointer<mtmd_context> mmCtx,
+    Pointer<mtmd_input_chunks> chunks,
+    int microBatchTokens,
+  ) {
+    final chunk = findMtmdChunkAboveMicroBatch(
+      api,
+      mmCtx,
+      chunks,
+      microBatchTokens,
+    );
+    if (chunk == null) return;
+    final media = mtmdMediaChunkName(chunk.chunkType);
+    throw LlamaInferenceException(
+      'The $media input has ${chunk.tokenCount} tokens, but this projector '
+      'decodes it in one pass of at most $microBatchTokens tokens '
+      '(n_ubatch). Raise ModelParams.microBatchSize and '
+      'ModelParams.batchSize to at least ${chunk.tokenCount}, or pass a '
+      'smaller $media if the projector sizes its output by the input.',
+    );
   }
 
   void _ensureLogitsAvailableAfterPromptEval(Pointer<llama_context> ctx) {
