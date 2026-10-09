@@ -126,6 +126,11 @@ python3 tool/native/sync_native_release_pins.py \
   --litert-lm-tag keep
 ```
 
+Run the header and bindings step on Linux, as the workflow does (Ubuntu with
+`llvm-dev`, `libclang-dev` and `clang`): `ggml.h` pulls in the C library's
+`FILE`, so a macOS run of the same `ffigen.yaml` rewrites that struct and
+nothing else.
+
 The pin sync rejects same-channel rollback and release/manifest version skew.
 After the default pin moves to the stable channel, an intentional compatibility
 test against a `bNNNN`, `bNNNN-N`, or legacy `bNNNN-llamadart.N` artifact must
