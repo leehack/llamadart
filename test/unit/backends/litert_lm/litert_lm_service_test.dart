@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -277,6 +278,207 @@ void main() {
         }
       });
     }
+  });
+
+  group('bundle template content shape', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    const bundleTemplate = '{{ messages[0].content }}';
+    final adapter = liteRtLmTextContentAdapter(bundleTemplate);
+    const probeText = liteRtLmContentShapeProbeText;
+    final asList = '<user>[{"text": "$probeText", "type": "text"}]';
+    final asText = '<user>$probeText';
+    final records = <LlamaLogRecord>[];
+    late _FakeLiteRtLmRuntimeClient client;
+    late List<String> readPaths;
+
+    setUp(() {
+      client = _FakeLiteRtLmRuntimeClient();
+      readPaths = <String>[];
+      records.clear();
+      LlamaLogger.instance.setLevel(LlamaLogLevel.warn);
+      LlamaLogger.instance.setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    LiteRtLmService serviceReading(String? template) => LiteRtLmService(
+      clientFactory: () => client,
+      readBundleChatTemplate: (path) {
+        readPaths.add(path);
+        return template;
+      },
+    );
+
+    Future<void> chat(LiteRtLmService service, int context) async {
+      client.generated = StreamController<String>()..add('Hello');
+      unawaited(client.generated.close());
+      await service.generateChat(context, const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+      ], const GenerationParams(maxTokens: 64)).drain<void>();
+    }
+
+    Future<void> raw(LiteRtLmService service, int context) async {
+      client.generated = StreamController<String>()..add('Hello');
+      unawaited(client.generated.close());
+      await service
+          .generate(context, 'Hello', const GenerationParams(maxTokens: 64))
+          .drain<void>();
+    }
+
+    test('adapts a template that writes text parts as a list', () async {
+      client.onRenderMessage = (template) => template == null ? asList : asText;
+      final service = serviceReading(bundleTemplate);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await chat(service, context);
+        expect(client.promptTemplates, [null, adapter]);
+        expect(readPaths, [modelFile.path]);
+
+        await raw(service, context);
+        await chat(service, context);
+        expect(client.promptTemplates, [null, adapter, adapter, adapter]);
+        expect(client.renderMessageCount, 2);
+        expect(readPaths, hasLength(1));
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('keeps a template that reads text parts', () async {
+      client.onRenderMessage = (_) => asText;
+      final service = serviceReading(bundleTemplate);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await raw(service, context);
+        await chat(service, context);
+        expect(client.promptTemplates, [null, null]);
+        expect(client.renderMessageCount, 1);
+        expect(readPaths, isEmpty);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    for (final (name, template, configure) in [
+      (
+        'a bundle whose template it cannot read',
+        null,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) => asList,
+      ),
+      (
+        'a template the adapter does not change',
+        bundleTemplate,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) => asList,
+      ),
+      (
+        'a template the adapter stops from rendering',
+        bundleTemplate,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (template) =>
+                template == null ? asList : throw StateError('render failed'),
+      ),
+      (
+        'a runtime that takes no conversation template',
+        bundleTemplate,
+        (_FakeLiteRtLmRuntimeClient client) {
+          client.onRenderMessage = (_) => asList;
+          client.onCreateConversation = () {
+            if (client.lastPromptTemplate != null) {
+              throw LlamaUnsupportedException('no template setter');
+            }
+          };
+        },
+      ),
+    ]) {
+      test('warns once and keeps the bundle template for $name', () async {
+        configure(client);
+        final service = serviceReading(template);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await chat(service, context);
+          expect(client.lastPromptTemplate, isNull);
+          expect(records, hasLength(1));
+          expect(records.single.level, LlamaLogLevel.warn);
+          expect(records.single.message, contains('list of parts'));
+
+          final created = client.promptTemplates.length;
+          await chat(service, context);
+          expect(client.promptTemplates.skip(created), [null]);
+          expect(records, hasLength(1));
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('probes again after the probe message fails to render', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(bundleTemplate);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await chat(service, context);
+        expect(client.promptTemplates, [null]);
+        expect(records, isEmpty);
+
+        client.onRenderMessage = (template) =>
+            template == null ? asList : asText;
+        await chat(service, context);
+        expect(client.promptTemplates, [null, null, adapter]);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('probes each loaded model', () async {
+      client.onRenderMessage = (template) => template == null ? asList : asText;
+      final service = serviceReading(bundleTemplate);
+      final other = File('${tempDir.path}/other.litertlm');
+      await other.writeAsString('fake model');
+      try {
+        var model = await service.loadModel(modelFile.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(client.lastPromptTemplate, adapter);
+
+        client = _FakeLiteRtLmRuntimeClient()..onRenderMessage = (_) => asText;
+        model = await service.loadModel(other.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(client.promptTemplates, [null]);
+        expect(client.renderMessageCount, 1);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('leaves a conversation that overrides the template alone', () async {
+      client.onRenderMessage = (_) => asList;
+      final service = serviceReading(bundleTemplate);
+      final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+      await file.writeAsString('fake model');
+      try {
+        final model = await service.loadModel(file.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(client.promptTemplates.single, contains('enable_thinking'));
+        expect(client.renderMessageCount, 0);
+        expect(readPaths, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
   });
 
   for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
@@ -4351,6 +4553,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   void Function()? onCreateConversation;
   void Function()? onInitialize;
   String? lastPromptTemplate;
+  final List<String?> promptTemplates = <String?>[];
+  String Function(String? promptTemplate)? onRenderMessage;
+  int renderMessageCount = 0;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -4436,6 +4641,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
     lastPromptTemplate = promptTemplate;
+    promptTemplates.add(promptTemplate);
     lastMessages = messages
         ?.map(Map<String, dynamic>.from)
         .toList(growable: false);
@@ -4445,6 +4651,13 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         : Map<String, dynamic>.from(extraContext);
     createConversationCount += 1;
     onCreateConversation?.call();
+  }
+
+  @override
+  String renderMessageToString(Map<String, dynamic> message) {
+    _checkNotDisposed();
+    renderMessageCount += 1;
+    return onRenderMessage?.call(lastPromptTemplate) ?? '';
   }
 
   @override

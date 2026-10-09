@@ -19,6 +19,7 @@ import '../../core/models/model_format.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
 import '../native/model_format_probe.dart';
+import 'litert_lm_bundle_template.dart';
 import 'litert_lm_cache.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
@@ -39,6 +40,10 @@ typedef LiteRtLmBundleCapabilitiesReader =
       String modelPath,
     );
 
+/// Reads the chat template embedded in the `.litertlm` bundle at a path, as
+/// [readLiteRtLmBundleChatTemplate] does.
+typedef LiteRtLmBundleChatTemplateReader = String? Function(String modelPath);
+
 /// Worker-owned service for the LiteRT-LM backend.
 ///
 /// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
@@ -55,18 +60,22 @@ class LiteRtLmService {
   /// when [ModelParams.liteRtLmCacheDir] is unset; by default only on macOS
   /// and Android. [createLink] replaces [Link.create] for those links in
   /// tests. [readBundleCapabilities] replaces
-  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client.
+  /// [LiteRtLmRuntimeClient.bundleCapabilities] on a fresh client, and
+  /// [readBundleChatTemplate] replaces [readLiteRtLmBundleChatTemplate].
   LiteRtLmService({
     LiteRtLmRuntimeClient Function()? clientFactory,
     Directory? linkParentDirectory,
     bool? useTempCacheDir,
     LiteRtLmLinkCreator? createLink,
     LiteRtLmBundleCapabilitiesReader? readBundleCapabilities,
+    LiteRtLmBundleChatTemplateReader? readBundleChatTemplate,
   }) : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new,
        _readBundleCapabilities =
            readBundleCapabilities ??
            ((modelPath) =>
                LiteRtLmRuntimeClient().bundleCapabilities(modelPath)),
+       _readBundleChatTemplate =
+           readBundleChatTemplate ?? readLiteRtLmBundleChatTemplate,
        _linkParentDirectory = linkParentDirectory,
        _createLink = createLink,
        _useTempCacheDir =
@@ -74,6 +83,7 @@ class LiteRtLmService {
 
   final LiteRtLmRuntimeClient Function() _clientFactory;
   final LiteRtLmBundleCapabilitiesReader _readBundleCapabilities;
+  final LiteRtLmBundleChatTemplateReader _readBundleChatTemplate;
   final Directory? _linkParentDirectory;
   final LiteRtLmLinkCreator? _createLink;
   final bool _useTempCacheDir;
@@ -94,6 +104,8 @@ class LiteRtLmService {
   LiteRtLmRuntimeMetrics? _lastMetrics;
   ({bool vision, bool audio, bool speculativeDecoding})? _bundleCapabilities;
   bool _bundleCapabilitiesRead = false;
+  bool _bundleTemplateContentProbed = false;
+  String? _bundleTemplateAdapter;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -146,6 +158,8 @@ class LiteRtLmService {
     _workingAudioBackend = null;
     _bundleCapabilities = null;
     _bundleCapabilitiesRead = false;
+    _bundleTemplateContentProbed = false;
+    _bundleTemplateAdapter = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -169,6 +183,8 @@ class LiteRtLmService {
     _workingAudioBackend = null;
     _bundleCapabilities = null;
     _bundleCapabilitiesRead = false;
+    _bundleTemplateContentProbed = false;
+    _bundleTemplateAdapter = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -244,14 +260,22 @@ class LiteRtLmService {
     final backend =
         _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
     final loraPath = _activeTextLoraPath();
-    client.createConversation(
-      temperature: params.temp,
-      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
-      topK: liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK),
-      topP: params.topP,
-      seed: params.seed ?? _defaultSamplerSeed(),
-      npuBackend: backend == 'npu',
-      loraPath: loraPath,
+    _createBundleTemplateConversation(
+      client,
+      (template) => client.createConversation(
+        promptTemplate: template,
+        temperature: params.temp,
+        // Zero-temperature LiteRT GPU sampling needs a single greedy
+        // candidate.
+        topK: liteRtLmEffectiveTopK(
+          temperature: params.temp,
+          topK: params.topK,
+        ),
+        topP: params.topP,
+        seed: params.seed ?? _defaultSamplerSeed(),
+        npuBackend: backend == 'npu',
+        loraPath: loraPath,
+      ),
     );
     if (_cancelRequested) {
       client.cancel();
@@ -396,8 +420,8 @@ class LiteRtLmService {
         maxNumImages == null && !enableAudio && isQwen3TextModel
         ? _modelParams?.chatTemplate ?? builtinTemplate?.template
         : null;
-    client.createConversation(
-      promptTemplate: promptTemplate,
+    void createConversation(String? template) => client.createConversation(
+      promptTemplate: template,
       systemMessage: seed.systemMessage,
       messages: seed.messages,
       tools: nativeTools,
@@ -410,6 +434,11 @@ class LiteRtLmService {
       npuBackend: backend == 'npu',
       loraPath: loraPath,
     );
+    if (promptTemplate == null) {
+      _createBundleTemplateConversation(client, createConversation);
+    } else {
+      createConversation(promptTemplate);
+    }
     if (_cancelRequested) {
       client.cancel();
       return;
@@ -470,6 +499,83 @@ class LiteRtLmService {
       } catch (_) {
         _lastMetrics = null;
       }
+    }
+  }
+
+  /// Creates a conversation that renders with the bundle's own template.
+  ///
+  /// [create] creates it with the bundle template when its argument is null,
+  /// and with the given template otherwise.
+  ///
+  /// From LiteRT-LM v0.18 the runtime passes every template content as a list
+  /// of parts and no longer turns a single text part back into a string for a
+  /// template that reads content as one. The first conversation of a loaded
+  /// model shows which the bundle template needs: when it writes the list
+  /// itself into the prompt, the conversations of that model use
+  /// [liteRtLmTextContentAdapter] around the template read from the bundle.
+  void _createBundleTemplateConversation(
+    LiteRtLmRuntimeClient client,
+    void Function(String? template) create,
+  ) {
+    create(_bundleTemplateAdapter);
+    if (_bundleTemplateContentProbed) {
+      return;
+    }
+    final rendersList = _rendersTextPartsAsList(client);
+    if (rendersList == null) {
+      return;
+    }
+    _bundleTemplateContentProbed = true;
+    if (!rendersList) {
+      return;
+    }
+    final bundleTemplate = _readBundleChatTemplate(_modelPath!);
+    if (bundleTemplate != null) {
+      final adapter = liteRtLmTextContentAdapter(bundleTemplate);
+      if (_rendersTextWith(adapter, client, create)) {
+        _bundleTemplateAdapter = adapter;
+        return;
+      }
+      create(null);
+    }
+    _warn(
+      'The chat template of this LiteRT-LM bundle writes message content '
+      'into the prompt as a list of parts, because it reads content as a '
+      'string and the runtime passes a list from LiteRT-LM v0.18. llamadart '
+      'could not adapt it, so replies can degrade. Use a bundle whose '
+      'template reads content parts.',
+    );
+  }
+
+  /// Whether a conversation that [create] creates with [template] renders a
+  /// text part as its text.
+  bool _rendersTextWith(
+    String template,
+    LiteRtLmRuntimeClient client,
+    void Function(String? template) create,
+  ) {
+    try {
+      create(template);
+      return _rendersTextPartsAsList(client) == false;
+    } on StateError {
+      return false;
+    } on LlamaUnsupportedException {
+      return false;
+    }
+  }
+
+  /// Whether the active conversation of [client] renders a text part as a
+  /// serialized list, or null when it cannot render the probe message.
+  bool? _rendersTextPartsAsList(LiteRtLmRuntimeClient client) {
+    try {
+      return liteRtLmRendersTextPartsAsList(
+        client.renderMessageToString(liteRtLmContentShapeProbeMessage),
+      );
+    } on StateError {
+      return null;
+    } on ArgumentError {
+      // A runtime without the render entry point fails the symbol lookup.
+      return null;
     }
   }
 

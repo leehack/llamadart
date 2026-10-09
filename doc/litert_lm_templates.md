@@ -12,7 +12,8 @@ format, and renders/parses with the matching handler. For llama.cpp this
 template is read straight from the GGUF.
 
 `.litertlm` bundles also embed a chat template, but the LiteRT-LM native FFI
-exposes **no way to read it back**. So the backend has to supply
+exposes **no way to read it back**, and a bundle that embeds none gets one the
+runtime builds. So the backend has to supply
 `tokenizer.chat_template` itself for metadata, template inspection, Dart-side
 parsing, web generation, and fallback prompt rendering. It does this by
 detecting the model family from the bundle filename and mapping it to a
@@ -58,6 +59,29 @@ does. `LlamaEngine.chatTemplate` does not show the difference: it renders in
 Dart, not in the runtime. A Flutter iOS or macOS app that links an older
 `llamadart_litert_lm_flutter` still runs the older runtime, which passes
 strings.
+
+The template a bundle embeds receives the same part arrays; every conversation
+that llamadart does not override uses it: Qwen 3.5 and other families, raw
+prompts and media. `v0.17.0-8` gave a template that reads `message.content` as
+a string the text of a single text part. `v0.18.0` dropped that, so such a
+template writes `[{"text": "...", "type": "text"}]` into the prompt on every
+turn and replies degrade
+([#991](https://github.com/leehack/llamadart/issues/991)). On the first
+conversation of a loaded model llamadart renders a probe message through the
+runtime. When its text comes back as a serialized list, llamadart reads the
+template from the bundle file (`litert_lm_bundle_template.dart`) and gives the
+runtime that template behind a prelude that turns a single text part back
+into a string, which restores the `v0.17.0-8` prompt. Content with several
+parts, media parts and tool responses stay as the runtime passed them, and a
+template that reads content parts is not touched. If the template cannot be
+read from the file, or the prelude does not make it render the text, the
+bundle template stays in use and a warning is logged once per loaded model.
+Web is not adapted: the `@litert-lm/core` conversation API takes no template
+and has no render call, so use a bundle whose template reads content parts
+there.
+`LITERT_LM_MODEL=/path/to/model.litertlm dart test --run-skipped -t local-only
+test/e2e/backends/litert_lm_bundle_template_e2e_test.dart` checks the prelude
+against the real runtime and a local bundle.
 
 Media conversations never give this template a media part. Natively they keep
 the bundle template: the override is set only for a conversation with no image
