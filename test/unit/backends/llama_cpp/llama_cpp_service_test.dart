@@ -5251,8 +5251,8 @@ void main() {
         () => VulkanDeviceProbe.devices([
           for (final (index, size) in sizes.indexed)
             VulkanDeviceFacts(
-              index: index,
               name: 'GPU $index',
+              deviceType: 2,
               instanceApiVersion: VulkanDeviceFacts.vulkan12,
               apiVersion: VulkanDeviceFacts.vulkan12,
               subgroupSize: size,
@@ -5360,6 +5360,18 @@ void main() {
       );
       expect(reads, 0);
 
+      // Vulkan was asked for, but ggml-vulkan registered no device.
+      expect(
+        await ingest(
+          vulkan,
+          loadedGpuLayers: 1,
+          vulkanDevices: counted,
+          registeredVulkanDevices: 0,
+        ),
+        decodes(capped),
+      );
+      expect(reads, 0);
+
       await ingest(vulkan, loadedGpuLayers: 1, vulkanDevices: counted);
       expect(reads, 1);
     });
@@ -5429,8 +5441,8 @@ void main() {
       int? apiVersion,
       int subgroupSize = 4,
     }) => VulkanDeviceFacts(
-      index: 0,
       name: name,
+      deviceType: 2,
       instanceApiVersion: instanceApiVersion ?? VulkanDeviceFacts.vulkan12,
       apiVersion: apiVersion ?? VulkanDeviceFacts.vulkan12,
       subgroupSize: subgroupSize,
@@ -5554,52 +5566,78 @@ void main() {
       final gpuType = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
       final igpuType =
           ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value;
-      GgmlDeviceEntry entry(String name, {int? type, String? deviceId}) =>
-          GgmlDeviceEntry(
-            name: name,
-            type: type ?? gpuType,
-            registry: name.replaceAll(RegExp(r'\d+$'), ''),
-            deviceId: deviceId,
-          );
+      const vulkan13 = 1 << 22 | 3 << 12;
 
-      // A host whose ggml registry holds [registered], one Vulkan GPU by
-      // default, and whose Vulkan device N has the driver API version
-      // [apiVersions][N]. [reads] counts the reads of the device facts.
+      // A registered ggml device; [description] is the Vulkan device name
+      // its facts are found by.
+      GgmlDeviceEntry entry(
+        String name, {
+        String description = '',
+        int? type,
+        String? deviceId,
+        int? address,
+      }) => GgmlDeviceEntry(
+        name: name,
+        type: type ?? gpuType,
+        registry: name.replaceAll(RegExp(r'\d+$'), ''),
+        description: description,
+        deviceId: deviceId,
+        device: address == null ? null : Pointer.fromAddress(address),
+      );
+
+      VulkanDeviceFacts fact(
+        String name,
+        int apiVersion, {
+        bool integrated = false,
+      }) => VulkanDeviceFacts(
+        name: name,
+        deviceType: integrated ? 1 : 2,
+        instanceApiVersion: VulkanDeviceFacts.vulkan12,
+        apiVersion: apiVersion,
+        subgroupSize: 32,
+      );
+
+      final mali = entry('Vulkan0', description: 'Mali-G68');
+      final maliOld = fact('Mali-G68', vulkan11);
+      final rtx = entry('Vulkan0', description: 'RTX 4090');
+      final rtxOk = fact('RTX 4090', vulkan13);
+      final uhd = entry(
+        'Vulkan1',
+        description: 'UHD Graphics 630',
+        type: igpuType,
+      );
+      final uhdOld = fact('UHD Graphics 630', vulkan11, integrated: true);
+
+      // A host whose ggml registry holds [registered] and whose Vulkan
+      // devices report [facts], or no facts at all. [reads] counts the reads
+      // of the facts.
       var reads = 0;
       LlamaCppService serviceWith(
-        List<int>? apiVersions, {
-        List<GgmlDeviceEntry>? registered,
+        List<GgmlDeviceEntry> registered,
+        List<VulkanDeviceFacts>? facts, {
+        LlamaCppObjectCalls? objectCalls,
       }) {
         reads = 0;
         final service = LlamaCppService(
           deviceTypes: (_) => [gpuType],
-          registeredDevices: () => registered ?? [entry('Vulkan0')],
+          objectCalls: objectCalls,
+          registeredDevices: () => registered,
           vulkanDeviceProbe: () {
             reads++;
-            return apiVersions == null
+            return facts == null
                 ? const VulkanDeviceProbe.unavailable('no loader')
-                : VulkanDeviceProbe.devices([
-                    for (final (index, version) in apiVersions.indexed)
-                      VulkanDeviceFacts(
-                        index: index,
-                        name: index == 0 ? 'Mali-G68' : 'UHD Graphics 630',
-                        instanceApiVersion: VulkanDeviceFacts.vulkan12,
-                        apiVersion: version,
-                        subgroupSize: 32,
-                      ),
-                  ]);
+                : VulkanDeviceProbe.devices(facts);
           },
         );
         addTearDown(service.dispose);
         return service;
       }
 
-      const vulkan13 = 1 << 22 | 3 << 12;
       Matcher noVulkanWarning() => isNot(contains(contains('Vulkan 1.2')));
 
       test('ComputeDevice.gpu throws and loads nothing when the only '
           'selected device is below Vulkan 1.2', () {
-        final service = serviceWith([vulkan11]);
+        final service = serviceWith([mali], [maliOld]);
 
         expect(
           () => service.loadModel(
@@ -5624,7 +5662,7 @@ void main() {
 
       test('ComputeDevice.auto loads on the CPU with a warning when the only '
           'selected device is below Vulkan 1.2', () {
-        final service = serviceWith([vulkan11]);
+        final service = serviceWith([mali], [maliOld]);
 
         final model = service.loadModel(
           modelPath,
@@ -5661,18 +5699,19 @@ void main() {
         test('${device.name}: a capable discrete GPU is used although an '
             'integrated GPU is on a driver below Vulkan 1.2', () {
           for (final registered in [
-            [entry('Vulkan0'), entry('Vulkan1', type: igpuType)],
+            [rtx, uhd],
             // The discrete GPU also registered by CUDA, as the same device.
             [
               entry('CUDA0', deviceId: '0000:01:00.0'),
-              entry('Vulkan0', deviceId: '0000:01:00.0'),
-              entry('Vulkan1', type: igpuType),
+              entry(
+                'Vulkan0',
+                description: 'RTX 4090',
+                deviceId: '0000:01:00.0',
+              ),
+              uhd,
             ],
           ]) {
-            final service = serviceWith([
-              vulkan13,
-              vulkan11,
-            ], registered: registered);
+            final service = serviceWith(registered, [rtxOk, uhdOld]);
 
             service.loadModel(
               modelPath,
@@ -5687,11 +5726,15 @@ void main() {
         test('${device.name}: a CUDA GPU is used and a discrete Vulkan GPU '
             'below 1.2 is left out of the load', () {
           final service = serviceWith(
-            [vulkan11],
-            registered: [
+            [
               entry('CUDA0', deviceId: '0000:01:00.0'),
-              entry('Vulkan0', deviceId: '0000:02:00.0'),
+              entry(
+                'Vulkan0',
+                description: 'Mali-G68',
+                deviceId: '0000:02:00.0',
+              ),
             ],
+            [maliOld],
           );
 
           service.loadModel(
@@ -5710,32 +5753,88 @@ void main() {
             ),
           );
         });
+
+        // ggml-vulkan and the facts can list different devices.
+        test('${device.name}: facts that also list a device ggml did not '
+            'register are matched by device name, not by position', () {
+          final rx = entry('Vulkan1', description: 'RX 7900');
+          final rxOk = fact('RX 7900', vulkan13);
+          final gtxOld = fact('GTX 660', vulkan11);
+
+          for (final (registered, facts) in [
+            ([rtx], [uhdOld, rtxOk]),
+            ([rtx, rx], [gtxOld, rtxOk, rxOk]),
+            ([rtx, rx], [rtxOk, rxOk, gtxOld]),
+            // No facts for one registered device.
+            ([rtx, rx], [rtxOk]),
+            // Identical GPUs.
+            ([rtx, entry('Vulkan1', description: 'RTX 4090')], [rtxOk, rtxOk]),
+          ]) {
+            warnings.clear();
+            final service = serviceWith(registered, facts);
+
+            service.loadModel(
+              modelPath,
+              ModelParams(contextSize: 64, device: device),
+            );
+
+            expect(reads, 1);
+            expect(service.getResolvedGpuLayers(), greaterThan(0));
+            expect(warnings, noVulkanWarning());
+          }
+        });
       }
+
+      test('an explicit Vulkan backend is matched by device name too', () {
+        final service = serviceWith([rtx], [uhdOld, rtxOk]);
+
+        service.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 64,
+            preferredBackend: GpuBackend.vulkan,
+          ),
+        );
+
+        expect(warnings, noVulkanWarning());
+      });
+
+      test('names the registered device that is below Vulkan 1.2, wherever '
+          'its facts are listed', () {
+        final service = serviceWith(
+          [entry('Vulkan0', description: 'GTX 660')],
+          [rtxOk, fact('GTX 660', vulkan11)],
+        );
+
+        expect(
+          () => service.loadModel(
+            modelPath,
+            const ModelParams(contextSize: 64, device: ComputeDevice.gpu),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('"GTX 660" (Vulkan0) reports driver API 1.1'),
+            ),
+          ),
+        );
+      });
+
+      // The load itself is stopped, so the stand-in devices are never used.
+      RecordingExitTeardown stoppedLoads() => RecordingExitTeardown(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+      )..fail = (name) => name == 'llama_dart_model_load_from_file';
 
       test('lists the usable devices for the load when it leaves one out, '
           'and lists none otherwise', () {
-        // The load itself is stopped, so the stand-in devices are never
-        // used.
         List<int>? listedBy(List<GgmlDeviceEntry> registered) {
-          final recorder = RecordingExitTeardown(
-            ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
-          )..fail = (name) => name == 'llama_dart_model_load_from_file';
-          final service = LlamaCppService(
-            deviceTypes: (_) => [gpuType],
-            objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
-            registeredDevices: () => registered,
-            vulkanDeviceProbe: () => VulkanDeviceProbe.devices([
-              for (final (index, version) in [vulkan13, vulkan11].indexed)
-                VulkanDeviceFacts(
-                  index: index,
-                  name: 'GPU $index',
-                  instanceApiVersion: VulkanDeviceFacts.vulkan12,
-                  apiVersion: version,
-                  subgroupSize: 32,
-                ),
-            ]),
-          );
-          addTearDown(service.dispose);
+          final recorder = stoppedLoads();
+          final service = serviceWith(registered, [
+            rtxOk,
+            fact('GTX 660', vulkan11),
+            uhdOld,
+          ], objectCalls: LlamaCppObjectCalls.tracked(recorder.api));
           expect(
             () => service.loadModel(
               modelPath,
@@ -5746,40 +5845,105 @@ void main() {
           return recorder.loadDevices.single;
         }
 
-        GgmlDeviceEntry standIn(String name, int address, {int? type}) =>
-            GgmlDeviceEntry(
-              name: name,
-              type: type ?? gpuType,
-              registry: name.replaceAll(RegExp(r'\d+$'), ''),
-              device: Pointer.fromAddress(address),
-            );
-
         expect(
           listedBy([
-            standIn('CUDA0', 0xC0DA),
-            standIn('Vulkan0', 0x1000),
-            standIn('Vulkan1', 0x2000),
+            entry('CUDA0', address: 0xC0DA),
+            entry('Vulkan0', description: 'RTX 4090', address: 0x1000),
+            entry('Vulkan1', description: 'GTX 660', address: 0x2000),
           ]),
           [0xC0DA, 0x1000],
           reason: 'Vulkan1 is below Vulkan 1.2',
         );
         expect(
           listedBy([
-            standIn('Vulkan0', 0x1000),
-            standIn('Vulkan1', 0x2000, type: igpuType),
+            entry('Vulkan0', description: 'RTX 4090', address: 0x1000),
+            entry(
+              'Vulkan1',
+              description: 'UHD Graphics 630',
+              type: igpuType,
+              address: 0x2000,
+            ),
           ]),
           isNull,
           reason: 'llama.cpp does not select the integrated GPU itself',
         );
       });
 
+      test('a speculative draft model is loaded on the same usable '
+          'devices', () async {
+        final recorder = RecordingExitTeardown(
+          ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+        );
+        var registered = <GgmlDeviceEntry>[];
+        final service = LlamaCppService(
+          deviceTypes: (_) => [gpuType],
+          objectCalls: LlamaCppObjectCalls.tracked(recorder.api),
+          registeredDevices: () => registered,
+          vulkanDeviceProbe: () =>
+              VulkanDeviceProbe.devices([fact('GTX 660', vulkan11)]),
+        );
+        addTearDown(service.dispose);
+        const params = ModelParams(contextSize: 64, gpuLayers: 0);
+        final model = service.loadModel(modelPath, params);
+        final context = service.createContext(model, params);
+        // The target as a load that kept its layers on a GPU backend this
+        // host may not have.
+        _readPrivateForTesting<Map<int, String>>(
+          service,
+          '_modelBackendNames',
+        )[model] = 'CUDA';
+        _readPrivateForTesting<Map<int, int>>(
+          service,
+          '_modelResolvedGpuLayers',
+        )[model] = 1;
+        _readPrivateForTesting<Map<int, ModelParams>>(
+          service,
+          '_modelLoadParams',
+        )[model] = const ModelParams(
+          contextSize: 64,
+        );
+        registered = [
+          entry('CUDA0', address: 0xC0DA),
+          entry('Vulkan0', description: 'GTX 660', address: 0x2000),
+        ];
+        recorder.fail = (name) => name == 'llama_dart_model_load_from_file';
+
+        final cancel = calloc<Int8>();
+        addTearDown(() => calloc.free(cancel));
+        await expectLater(
+          service
+              .generate(
+                context,
+                'ab',
+                GenerationParams(
+                  maxTokens: 2,
+                  temp: 0,
+                  speculativeDecodingConfig:
+                      SpeculativeDecodingConfig.draftSimple(
+                        // ignore: deprecated_member_use_from_same_package
+                        draftModelPath: modelPath,
+                        draftTokenMax: 4,
+                      ),
+                ),
+                cancel.address,
+              )
+              .drain<void>(),
+          throwsA(isA<Exception>()),
+        );
+
+        expect(recorder.loadDevices, [
+          null,
+          [0xC0DA],
+        ], reason: 'the target load, then the draft load');
+      });
+
       test('an explicit CUDA backend does not read the Vulkan facts', () {
         final service = serviceWith(
-          [vulkan11],
-          registered: [
+          [
             entry('CUDA0', deviceId: '0000:01:00.0'),
-            entry('Vulkan0', deviceId: '0000:02:00.0'),
+            entry('Vulkan0', description: 'Mali-G68', deviceId: '0000:02:00.0'),
           ],
+          [maliOld],
         );
 
         service.loadModel(
@@ -5792,7 +5956,7 @@ void main() {
       });
 
       test('does not read the device facts for a CPU load', () {
-        final service = serviceWith([vulkan11]);
+        final service = serviceWith([mali], [maliOld]);
 
         service.loadModel(
           modelPath,
@@ -5809,11 +5973,11 @@ void main() {
 
       test('loads on the GPU backend when the selected devices meet Vulkan '
           '1.2 or are unknown', () {
-        for (final apiVersions in [
-          [vulkan13],
+        for (final facts in [
+          [fact('Mali-G68', vulkan13)],
           null,
         ]) {
-          final service = serviceWith(apiVersions);
+          final service = serviceWith([mali], facts);
 
           service.loadModel(modelPath, const ModelParams(contextSize: 64));
 
@@ -5822,6 +5986,55 @@ void main() {
           expect(warnings, noVulkanWarning());
         }
       });
+    });
+
+    // Runs the real llama.cpp runtime: its registry has a CPU device.
+    test('reads each registered device with its name, type and registry', () {
+      final service = LlamaCppService()..initializeBackend();
+      addTearDown(service.dispose);
+
+      final registered = _invokePrivateForTesting<List<GgmlDeviceEntry>>(
+        service,
+        '_registeredDevices',
+        const [],
+      );
+
+      expect(registered, isNotEmpty);
+      for (final (index, device) in registered.indexed) {
+        expect(device.device, ggml_backend_dev_get(index));
+        expect(
+          device.name,
+          ggml_backend_dev_name(device.device!).cast<Utf8>().toDartString(),
+        );
+        expect(device.type, ggml_backend_dev_type$1(device.device!).value);
+        expect(
+          device.registry,
+          ggml_backend_reg_name(
+            ggml_backend_dev_backend_reg(device.device!),
+          ).cast<Utf8>().toDartString(),
+        );
+        expect(device.registry, isNotEmpty);
+        final isGpu = const [
+          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU,
+          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU,
+        ].any((type) => type.value == device.type);
+        expect(
+          device.description,
+          isGpu
+              ? ggml_backend_dev_description(
+                  device.device!,
+                ).cast<Utf8>().toDartString()
+              : isEmpty,
+        );
+      }
+      expect(
+        registered.where(
+          (device) =>
+              device.type ==
+              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
+        ),
+        isNotEmpty,
+      );
     });
   });
 

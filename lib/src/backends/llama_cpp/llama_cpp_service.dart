@@ -694,8 +694,9 @@ class LlamaCppService {
   final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
 
   // Reading the facts loads the system's GPU drivers into the process, so
-  // they are read once, and only when a registered Vulkan device is about to
-  // be used: ggml-vulkan has loaded the drivers by then.
+  // they are read once, and only for a load that selects a registered
+  // ggml-vulkan device or an Android context of a registry that has one:
+  // ggml-vulkan has loaded the drivers by then.
   late final VulkanDeviceProbe _vulkanDeviceProbe =
       (_vulkanDeviceProbeOverride ??
       () => VulkanDeviceInfoApi.probeRuntime(isWindows: _isWindows))();
@@ -2115,29 +2116,36 @@ class LlamaCppService {
   List<GgmlDeviceEntry> _registeredDevices() {
     final override = _registeredDevicesOverride;
     if (override != null) return override();
-    final gpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
     final props = calloc<ggml_backend_dev_props>();
     try {
       return [
         for (var i = 0; i < _ggmlBackendDevCount(); i++)
           if (_ggmlBackendDevGet(i) case final device when device != nullptr)
-            GgmlDeviceEntry(
-              name: _utf8OrEmpty(_ggmlBackendDevName(device)),
-              type: _ggmlBackendDevType(device),
-              registry: _registryNameOf(device),
-              // llama.cpp compares the id of discrete GPUs only.
-              deviceId:
-                  _ggmlBackendDevType(device) == gpu &&
-                      _ggmlBackendDevGetProps(device, props) &&
-                      props.ref.device_id != nullptr
-                  ? _utf8OrEmpty(props.ref.device_id)
-                  : null,
-              device: device,
-            ),
+            _describeDevice(device, props),
       ];
     } finally {
       calloc.free(props);
     }
+  }
+
+  GgmlDeviceEntry _describeDevice(
+    ggml_backend_dev_t device,
+    Pointer<ggml_backend_dev_props> props,
+  ) {
+    final type = _ggmlBackendDevType(device);
+    // The properties of a GPU are all llama.cpp and the Vulkan check read.
+    final hasProps =
+        _isGpuClassDevice(device) && _ggmlBackendDevGetProps(device, props);
+    return GgmlDeviceEntry(
+      name: _utf8OrEmpty(_ggmlBackendDevName(device)),
+      type: type,
+      registry: _registryNameOf(device),
+      description: hasProps ? _utf8OrEmpty(props.ref.description) : '',
+      deviceId: hasProps && props.ref.device_id != nullptr
+          ? _utf8OrEmpty(props.ref.device_id)
+          : null,
+      device: device,
+    );
   }
 
   String _registryNameOf(ggml_backend_dev_t device) {
@@ -4176,10 +4184,14 @@ class LlamaCppService {
   }
 
   bool _androidVulkanHasSmallMatmulTileDefect() {
+    final registeredDeviceCount = _registeredVulkanDeviceCount();
+    // Without a ggml-vulkan device there is nothing to learn, and the facts
+    // are not to be read where Vulkan is ruled out.
+    if (registeredDeviceCount == 0) return true;
     final probe = _vulkanDeviceProbe;
     final defect = vulkanSmallMatmulTileDefect(
       probe,
-      registeredDeviceCount: _registeredVulkanDeviceCount(),
+      registeredDeviceCount: registeredDeviceCount,
     );
     LlamaLogger.instance.debug(
       'llama_cpp_service: Android Vulkan text prompt decode is '

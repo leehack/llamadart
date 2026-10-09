@@ -13,10 +13,10 @@ typedef _DeviceInfoNative =
 
 /// One Vulkan device as libllamadart reads it from the Vulkan loader.
 final class VulkanDeviceFacts {
-  /// Creates the facts of device [index].
+  /// Creates the facts of the device called [name].
   const VulkanDeviceFacts({
-    required this.index,
     required this.name,
+    required this.deviceType,
     required this.instanceApiVersion,
     required this.apiVersion,
     required this.subgroupSize,
@@ -25,11 +25,16 @@ final class VulkanDeviceFacts {
   /// Vulkan 1.2 as `VK_MAKE_API_VERSION` encodes it.
   static const int vulkan12 = 1 << 22 | 2 << 12;
 
-  /// The index ggml-vulkan gives the device: `Vulkan0` is index 0.
-  final int index;
-
-  /// `VkPhysicalDeviceProperties.deviceName`.
+  /// `VkPhysicalDeviceProperties.deviceName`, which ggml-vulkan gives its
+  /// device as `ggml_backend_dev_description`.
   final String name;
+
+  /// `VkPhysicalDeviceProperties.deviceType`, a `VkPhysicalDeviceType`.
+  final int deviceType;
+
+  /// Whether the device is `VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU`, which
+  /// ggml-vulkan registers as an integrated GPU.
+  bool get isIntegratedGpu => deviceType == 1;
 
   /// `vkEnumerateInstanceVersion`: the Vulkan loader's version.
   final int instanceApiVersion;
@@ -67,7 +72,7 @@ final class VulkanDeviceFacts {
 
   @override
   String toString() =>
-      'Vulkan$index "$name" (API ${formatApiVersion(apiVersion)}, loader '
+      '"$name" (API ${formatApiVersion(apiVersion)}, loader '
       '${formatApiVersion(instanceApiVersion)}, subgroup size $subgroupSize)';
 }
 
@@ -186,8 +191,8 @@ final class VulkanDeviceInfoApi {
         }
         devices.add(
           VulkanDeviceFacts(
-            index: index,
             name: _deviceName(info.ref),
+            deviceType: info.ref.device_type,
             instanceApiVersion: info.ref.instance_api_version,
             apiVersion: info.ref.api_version,
             subgroupSize: info.ref.subgroup_size,

@@ -23,28 +23,35 @@ GgmlDeviceEntry _device(
   int? type,
   String? registry,
   String? deviceId,
+  String description = '',
 }) => GgmlDeviceEntry(
   name: name,
   type: type ?? _gpuType,
   registry: registry ?? name.replaceAll(RegExp(r'\d+$'), ''),
+  description: description,
   deviceId: deviceId,
 );
 
 final _cpu = _device('CPU', type: _cpuType);
 final _blas = _device('BLAS', type: _accelType);
 
-// Vulkan facts by device index: the driver API version of each.
-VulkanDeviceProbe Function() _facts(List<int> apiVersions) =>
-    () => VulkanDeviceProbe.devices([
-      for (final (index, version) in apiVersions.indexed)
-        VulkanDeviceFacts(
-          index: index,
-          name: 'GPU $index',
-          instanceApiVersion: _vulkan13,
-          apiVersion: version,
-          subgroupSize: 32,
-        ),
-    ]);
+// A Vulkan device as the facts report it: its Vulkan device name, which is
+// the description of the ggml device, and the driver API version.
+VulkanDeviceFacts _fact(
+  String name,
+  int apiVersion, {
+  bool integrated = false,
+  int instanceApiVersion = _vulkan13,
+}) => VulkanDeviceFacts(
+  name: name,
+  deviceType: integrated ? 1 : 2,
+  instanceApiVersion: instanceApiVersion,
+  apiVersion: apiVersion,
+  subgroupSize: 32,
+);
+
+VulkanDeviceProbe Function() _facts(List<VulkanDeviceFacts> facts) =>
+    () => VulkanDeviceProbe.devices(facts);
 
 void main() {
   test('split modes match the llama_split_mode values', () {
@@ -159,6 +166,74 @@ void main() {
     });
   });
 
+  group('vulkanFactsOf', () {
+    final rtx = _device('Vulkan0', description: 'RTX 4090');
+
+    test('finds the facts by the Vulkan device name and kind, not by '
+        'position', () {
+      final facts = [
+        _fact('UHD Graphics 630', _vulkan11, integrated: true),
+        _fact('RTX 4090', _vulkan13),
+      ];
+
+      expect(vulkanFactsOf(rtx, facts), same(facts[1]));
+      expect(
+        vulkanFactsOf(
+          _device('Vulkan1', type: _igpuType, description: 'UHD Graphics 630'),
+          facts,
+        ),
+        same(facts[0]),
+      );
+    });
+
+    test('knows nothing of a device without facts of its name and kind', () {
+      expect(vulkanFactsOf(rtx, [_fact('RX 7900', _vulkan11)]), isNull);
+      expect(
+        vulkanFactsOf(rtx, [_fact('RTX 4090', _vulkan11, integrated: true)]),
+        isNull,
+        reason: 'the same name on an integrated GPU is another device',
+      );
+      expect(vulkanFactsOf(rtx, const []), isNull);
+      expect(
+        vulkanFactsOf(_device('Vulkan0'), [_fact('', _vulkan11)]),
+        isNull,
+        reason: 'a device whose description was not read',
+      );
+      expect(
+        vulkanFactsOf(_device('CUDA0', description: 'RTX 4090'), [
+          _fact('RTX 4090', _vulkan11),
+        ]),
+        isNull,
+        reason: 'not a ggml-vulkan device',
+      );
+    });
+
+    test('takes identical devices together when they agree, and knows '
+        'nothing when they do not', () {
+      expect(
+        vulkanFactsOf(rtx, [
+          _fact('RTX 4090', _vulkan13),
+          _fact('RTX 4090', _vulkan13),
+        ])?.meetsVulkan12,
+        isTrue,
+      );
+      expect(
+        vulkanFactsOf(rtx, [
+          _fact('RTX 4090', _vulkan11),
+          _fact('RTX 4090', _vulkan11),
+        ])?.meetsVulkan12,
+        isFalse,
+      );
+      expect(
+        vulkanFactsOf(rtx, [
+          _fact('RTX 4090', _vulkan13),
+          _fact('RTX 4090', _vulkan11),
+        ]),
+        isNull,
+      );
+    });
+  });
+
   group('resolveVulkanLoadDecision', () {
     late int registryReads;
     late int probeReads;
@@ -210,33 +285,44 @@ void main() {
         .having((d) => d.devices, 'devices', isNull)
         .having((d) => d.refused, 'refused', isTrue);
 
-    final rtx = _device('Vulkan0', deviceId: '0000:01:00.0');
-    final uhd = _device('Vulkan1', type: _igpuType);
+    final rtx = _device(
+      'Vulkan0',
+      deviceId: '0000:01:00.0',
+      description: 'RTX 4090',
+    );
+    final uhd = _device(
+      'Vulkan1',
+      type: _igpuType,
+      description: 'UHD Graphics 630',
+    );
     final cuda = _device('CUDA0', deviceId: '0000:01:00.0');
+    final rtxOk = _fact('RTX 4090', _vulkan13);
+    final uhdOld = _fact('UHD Graphics 630', _vulkan11, integrated: true);
+    final maliOld = _fact('Mali-G68', _vulkan11);
+    final mali = _device('Vulkan0', description: 'Mali-G68');
 
     test('a load that offloads nothing reads neither the registry nor the '
         'facts', () {
-      expect(
-        decide([_device('Vulkan0')], _facts([_vulkan11]), usesGpu: false),
-        unchanged(),
-      );
+      expect(decide([mali], _facts([maliOld]), usesGpu: false), unchanged());
       expect((registryReads, probeReads), (0, 0));
     });
 
     test('refuses when the only selected device is below Vulkan 1.2, naming '
         'it and its versions', () {
-      final decision = decide([_cpu, _device('Vulkan0')], _facts([_vulkan11]));
+      final decision = decide([_cpu, mali], _facts([maliOld]));
 
-      expect(decision, refused('"GPU 0" (Vulkan0)'));
+      expect(decision, refused('"Mali-G68" (Vulkan0)'));
       expect(
         decision.unsupported,
         "llama.cpp's Vulkan backend needs Vulkan 1.2 or later from both the "
-        'Vulkan loader and the GPU driver, and "GPU 0" (Vulkan0) reports '
+        'Vulkan loader and the GPU driver, and "Mali-G68" (Vulkan0) reports '
         'driver API 1.1 with loader API 1.3',
       );
       expect(
-        decide([_device('Vulkan0', type: _igpuType)], _facts([_vulkan11])),
-        refused('(Vulkan0)'),
+        decide([
+          _device('Vulkan0', type: _igpuType, description: 'UHD Graphics 630'),
+        ], _facts([uhdOld])),
+        refused('"UHD Graphics 630" (Vulkan0)'),
         reason: 'an integrated GPU is selected when it is the only GPU',
       );
     });
@@ -247,7 +333,7 @@ void main() {
         [_cpu, rtx, uhd],
         [_cpu, cuda, rtx, uhd],
       ]) {
-        expect(decide(registered, _facts([_vulkan13, _vulkan11])), unchanged());
+        expect(decide(registered, _facts([rtxOk, uhdOld])), unchanged());
       }
     });
 
@@ -266,22 +352,134 @@ void main() {
       expect(
         decide([
           _device('CUDA0', deviceId: '0000:01:00.0'),
-          _device('Vulkan0', deviceId: '0000:02:00.0'),
-        ], _facts([_vulkan11])),
-        without('(Vulkan0)', ['CUDA0']),
+          _device('Vulkan0', deviceId: '0000:02:00.0', description: 'Mali-G68'),
+        ], _facts([maliOld])),
+        without('"Mali-G68" (Vulkan0)', ['CUDA0']),
       );
       expect(
-        decide([
-          _device('Vulkan0'),
-          _device('Vulkan1'),
-          _device('Vulkan2'),
-        ], _facts([_vulkan13, _vulkan11, _vulkan13])),
-        without('"GPU 1" (Vulkan1)', ['Vulkan0', 'Vulkan2']),
+        decide(
+          [
+            _device('Vulkan0', description: 'RTX 4090'),
+            _device('Vulkan1', description: 'GTX 660'),
+            _device('Vulkan2', description: 'RX 7900'),
+          ],
+          _facts([
+            rtxOk,
+            _fact('GTX 660', _vulkan11),
+            _fact('RX 7900', _vulkan13),
+          ]),
+        ),
+        without('"GTX 660" (Vulkan1)', ['Vulkan0', 'Vulkan2']),
       );
     });
 
+    // ggml-vulkan and the facts can list different devices: whether ggml
+    // registers a device below Vulkan 1.2 is undefined.
+    for (final backend in [null, 'Vulkan']) {
+      final how = backend == null ? "llama.cpp's selection" : 'explicit Vulkan';
+
+      test('$how: facts that list a device ggml did not register do not '
+          'shift onto the registered ones', () {
+        final a = _device('Vulkan0', description: 'RTX 4090');
+        final b = _device('Vulkan1', description: 'RX 7900');
+        final bOk = _fact('RX 7900', _vulkan13);
+        final old = _fact('GTX 660', _vulkan11);
+
+        expect(
+          decide([a], _facts([uhdOld, rtxOk]), backend: backend),
+          unchanged(),
+          reason: 'Vulkan0 is the RTX, not the first entry of the facts',
+        );
+        for (final facts in [
+          [old, rtxOk, bOk],
+          [rtxOk, bOk, old],
+          [rtxOk, old, bOk],
+        ]) {
+          expect(
+            decide([a, b], _facts(facts), backend: backend),
+            unchanged(),
+            reason: '${facts.map((fact) => fact.name)}',
+          );
+        }
+      });
+
+      test('$how: names the device that is below Vulkan 1.2, wherever its '
+          'facts are listed', () {
+        final onlyOld = _device('Vulkan0', description: 'GTX 660');
+
+        expect(
+          decide(
+            [onlyOld],
+            _facts([rtxOk, _fact('GTX 660', _vulkan11)]),
+            backend: backend,
+          ),
+          refused('"GTX 660" (Vulkan0)'),
+        );
+      });
+
+      test('$how: identical GPUs are judged together', () {
+        final twins = [
+          _device('Vulkan0', description: 'RTX 4090'),
+          _device('Vulkan1', description: 'RTX 4090'),
+        ];
+
+        expect(
+          decide(twins, _facts([rtxOk, rtxOk]), backend: backend),
+          unchanged(),
+        );
+        expect(
+          decide(
+            twins,
+            _facts([
+              _fact('RTX 4090', _vulkan11),
+              _fact('RTX 4090', _vulkan11),
+            ]),
+            backend: backend,
+          ),
+          refused('"RTX 4090" (Vulkan0)'),
+        );
+        expect(
+          decide(
+            twins,
+            _facts([rtxOk, _fact('RTX 4090', _vulkan11)]),
+            backend: backend,
+          ),
+          unchanged(),
+          reason: 'which twin is on the old driver cannot be told',
+        );
+      });
+
+      test('$how: a device without a facts entry is unknown, and the others '
+          'are still judged', () {
+        final a = _device('Vulkan0', description: 'GTX 660');
+        final b = _device('Vulkan1', description: 'RX 7900');
+
+        expect(
+          decide(
+            [a, b],
+            _facts([_fact('GTX 660', _vulkan11)]),
+            backend: backend,
+          ),
+          without('"GTX 660" (Vulkan0)', ['Vulkan1']),
+        );
+        expect(
+          decide(
+            [a, b],
+            _facts([_fact('RX 7900', _vulkan13)]),
+            backend: backend,
+          ),
+          unchanged(),
+        );
+        expect(decide([a, b], _facts(const []), backend: backend), unchanged());
+      });
+    }
+
     test('an explicit backend is judged by its own devices only', () {
-      final oldVulkan = _device('Vulkan0', deviceId: '0000:02:00.0');
+      final oldVulkan = _device(
+        'Vulkan0',
+        deviceId: '0000:02:00.0',
+        description: 'Mali-G68',
+      );
 
       expect(
         decide(
@@ -295,39 +493,38 @@ void main() {
 
       // The Vulkan backend lists every Vulkan device, integrated ones too.
       expect(
-        decide(
-          [cuda, rtx, uhd],
-          _facts([_vulkan13, _vulkan11]),
-          backend: 'Vulkan',
-        ),
-        without('(Vulkan1)', ['Vulkan0']),
+        decide([cuda, rtx, uhd], _facts([rtxOk, uhdOld]), backend: 'Vulkan'),
+        without('"UHD Graphics 630" (Vulkan1)', ['Vulkan0']),
       );
       expect(
         decide(
           [cuda, rtx, uhd],
-          _facts([_vulkan11, _vulkan11]),
+          _facts([_fact('RTX 4090', _vulkan11), uhdOld]),
           backend: 'vulkan',
         ),
-        refused('(Vulkan0)'),
+        refused('"RTX 4090" (Vulkan0)'),
       );
     });
 
     test('an explicit backend without a registered device falls back to '
         "llama.cpp's own selection", () {
       expect(
-        decide([_device('Vulkan0')], _facts([_vulkan11]), backend: 'CUDA'),
+        decide([mali], _facts([maliOld]), backend: 'CUDA'),
         refused('(Vulkan0)'),
       );
     });
 
     test('single-device mode judges the device mainGpu selects', () {
-      final registered = [_device('Vulkan0'), _device('Vulkan1')];
-      final facts = _facts([_vulkan13, _vulkan11]);
+      final registered = [
+        _device('Vulkan0', description: 'RTX 4090'),
+        _device('Vulkan1', description: 'GTX 660'),
+      ];
+      final facts = _facts([rtxOk, _fact('GTX 660', _vulkan11)]);
 
       expect(decide(registered, facts, splitMode: _none), unchanged());
       expect(
         decide(registered, facts, splitMode: _none, mainGpu: 1),
-        refused('(Vulkan1)'),
+        refused('"GTX 660" (Vulkan1)'),
       );
       expect(
         decide(registered, facts, splitMode: _none, mainGpu: 5),
@@ -338,47 +535,32 @@ void main() {
 
     test('tensor split mode judges every GPU, integrated ones included', () {
       expect(
-        decide([rtx, uhd], _facts([_vulkan13, _vulkan11]), splitMode: _tensor),
+        decide([rtx, uhd], _facts([rtxOk, uhdOld]), splitMode: _tensor),
         without('(Vulkan1)', ['Vulkan0']),
       );
     });
 
     test('unknown devices are not refused', () {
-      final registered = [_device('Vulkan0'), _device('Vulkan1')];
-
       expect(
-        decide(
-          registered,
-          () => const VulkanDeviceProbe.unavailable('no loader'),
-        ),
+        decide([mali], () => const VulkanDeviceProbe.unavailable('no loader')),
         unchanged(),
       );
       expect(
-        decide(registered, _facts([_vulkan13])),
+        decide([_device('Vulkan0')], _facts([maliOld])),
         unchanged(),
-        reason: 'the facts do not cover Vulkan1',
+        reason: 'a device whose description was not read has no facts',
       );
       expect(
-        decide([_device('Renamed', registry: 'Vulkan')], _facts([_vulkan11])),
+        decide([_device('Vulkan0', description: 'RTX 4090')], _facts([rtxOk])),
         unchanged(),
-        reason: 'a name that is not VulkanN has no facts',
       );
-      expect(decide([_device('Vulkan0')], _facts([_vulkan13])), unchanged());
     });
 
     test('a loader below Vulkan 1.2 counts like a driver below it', () {
       expect(
         decide(
-          [_device('Vulkan0')],
-          () => const VulkanDeviceProbe.devices([
-            VulkanDeviceFacts(
-              index: 0,
-              name: 'Mali-G52',
-              instanceApiVersion: _vulkan11,
-              apiVersion: _vulkan13,
-              subgroupSize: 4,
-            ),
-          ]),
+          [_device('Vulkan0', description: 'Mali-G52')],
+          _facts([_fact('Mali-G52', _vulkan13, instanceApiVersion: _vulkan11)]),
         ).unsupported,
         endsWith(
           '"Mali-G52" (Vulkan0) reports driver API 1.3 with loader API 1.1',

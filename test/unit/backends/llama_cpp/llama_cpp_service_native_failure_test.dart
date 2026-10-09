@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:mirrors';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -728,6 +729,28 @@ void main() {
       barrier.calls.where((call) => !call.contains('_ggml_backend_dev_')),
       isEmpty,
     );
+
+    // The memory read is the fallback of a GPU that reports none in its
+    // properties, which a CPU host has no device for.
+    barrier.calls.clear();
+    final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+    final free = calloc<Size>();
+    final total = calloc<Size>();
+    addTearDown(() {
+      calloc.free(free);
+      calloc.free(total);
+    });
+    bool readMemory() =>
+        reflect(service).invoke(
+              MirrorSystem.getSymbol('_ggmlBackendDevMemory', owner),
+              [ggml_backend_dev_get(0), free, total],
+            ).reflectee
+            as bool;
+
+    expect(readMemory(), isTrue);
+    expect(barrier.calls, ['llama_dart_ggml_backend_dev_memory']);
+    barrier.failing.add('llama_dart_ggml_backend_dev_memory');
+    expect(readMemory(), isFalse);
   });
 
   test('a decision encoder pass that throws is a typed error, and the head '

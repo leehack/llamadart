@@ -119,10 +119,19 @@ A failed `GGML_ASSERT` still aborts: the barrier catches exceptions only.
 
 `lib/src/backends/llama_cpp/vulkan_device_probe.dart` binds
 `llama_dart_vulkan_get_device_count` and `llama_dart_vulkan_get_device_info`
-(`v0.6.0-1`), which list the devices ggml-vulkan registers with their API
-versions and subgroup size. Reading them makes the Vulkan loader load the
-system's GPU drivers, so the service reads them once, and only when a
-registered Vulkan device is about to be used by a load or a context:
+(`v0.6.0-1`), which list the system's Vulkan devices with their name, type,
+API versions and subgroup size. Reading them makes the Vulkan loader load
+the system's GPU drivers, so the service reads them once, and only where
+ggml-vulkan has registered a device: for a load that selects one, and for an
+Android Vulkan context.
+
+The list follows ggml-vulkan's order but is not always its list: the two can
+differ for a device below Vulkan 1.2 beside other GPUs and with more than 16
+devices, so `VulkanN` is not entry `N`. A registered device is matched to its
+facts by what both sides report, the Vulkan device name
+(`ggml_backend_dev_props` `description`) and integrated or discrete. A device
+with no such entry, or with several that disagree on Vulkan 1.2, has unknown
+facts.
 
 - llama.cpp `v0.6.0` needs Vulkan 1.2 (`ggml_vk_instance_init` refuses an
   older loader; for an older driver ggml-vulkan reads
@@ -136,7 +145,7 @@ registered Vulkan device is about to be used by a load or a context:
   device id, and integrated GPUs only when there is no discrete one; in
   single-device mode the one `mainGpu` indexes. A CUDA device, an unselected
   integrated GPU and a GPU of another backend never count. When every
-  selected device is below 1.2, `ComputeDevice.gpu` throws
+  selected device is known to be below 1.2, `ComputeDevice.gpu` throws
   `LlamaUnsupportedException` and `ComputeDevice.auto` loads on the CPU with
   a warning. When usable devices remain, the load lists those and logs a
   warning naming the device it left out. A speculative draft model gets the
@@ -150,8 +159,8 @@ registered Vulkan device is about to be used by a load or a context:
   (https://github.com/ggml-org/llama.cpp/issues/28637).
 
 A runtime without the functions, a loader that cannot be queried and a device
-list that does not match ggml's all count as unknown: the cap stays and no
-load is refused.
+that cannot be matched all count as unknown: the cap stays, and no load is
+refused or narrowed.
 
 ## Which exits are covered
 

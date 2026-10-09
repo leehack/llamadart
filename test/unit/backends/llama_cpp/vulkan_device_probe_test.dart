@@ -19,14 +19,14 @@ int _version(int major, int minor, [int patch = 0]) =>
     major << 22 | minor << 12 | patch;
 
 VulkanDeviceFacts _device({
-  int index = 0,
   String name = 'Mali-G715',
+  int deviceType = 1,
   int? instanceApiVersion,
   int? apiVersion,
   int subgroupSize = 16,
 }) => VulkanDeviceFacts(
-  index: index,
   name: name,
+  deviceType: deviceType,
   instanceApiVersion: instanceApiVersion ?? _version(1, 3),
   apiVersion: apiVersion ?? _version(1, 3),
   subgroupSize: subgroupSize,
@@ -85,11 +85,10 @@ void main() {
       expect(VulkanDeviceFacts.formatApiVersion(_version(1, 3, 280)), '1.3');
       expect(
         _device(
-          index: 1,
           apiVersion: _version(1, 1, 177),
           instanceApiVersion: _version(1, 3, 275),
         ).toString(),
-        'Vulkan1 "Mali-G715" (API 1.1, loader 1.3, subgroup size 16)',
+        '"Mali-G715" (API 1.1, loader 1.3, subgroup size 16)',
       );
     });
   });
@@ -168,36 +167,42 @@ void main() {
       expect(called, _symbols);
     });
 
-    test('lists each device with its name, versions and subgroup size', () {
-      final structSizes = <int>[];
-      final api = VulkanDeviceInfoApi(
-        getDeviceCount: () => 2,
-        getDeviceInfo: (index, info) {
-          structSizes.add(info.ref.struct_size);
-          final name = utf8.encode(index == 0 ? 'Mali-G715' : 'Xclipse 940');
-          for (var i = 0; i < name.length; i++) {
-            info.ref.device_name[i] = name[i];
-          }
-          info.ref.device_name[name.length] = 0;
-          info.ref.instance_api_version = _version(1, 3, 275);
-          info.ref.api_version = _version(1, 3 - index, 7);
-          info.ref.subgroup_size = index == 0 ? 16 : 64;
-          return 0;
-        },
-      );
+    test(
+      'lists each device with its name, type, versions and subgroup size',
+      () {
+        final structSizes = <int>[];
+        final api = VulkanDeviceInfoApi(
+          getDeviceCount: () => 2,
+          getDeviceInfo: (index, info) {
+            structSizes.add(info.ref.struct_size);
+            final name = utf8.encode(index == 0 ? 'Mali-G715' : 'Xclipse 940');
+            for (var i = 0; i < name.length; i++) {
+              info.ref.device_name[i] = name[i];
+            }
+            info.ref.device_name[name.length] = 0;
+            info.ref.device_type = index == 0 ? 1 : 2;
+            info.ref.instance_api_version = _version(1, 3, 275);
+            info.ref.api_version = _version(1, 3 - index, 7);
+            info.ref.subgroup_size = index == 0 ? 16 : 64;
+            return 0;
+          },
+        );
 
-      final devices = api.probe().devices!;
+        final devices = api.probe().devices!;
 
-      expect(structSizes, [
-        sizeOf<llama_dart_vulkan_device_info>(),
-        sizeOf<llama_dart_vulkan_device_info>(),
-      ]);
-      expect(devices.map((device) => device.toString()), [
-        'Vulkan0 "Mali-G715" (API 1.3, loader 1.3, subgroup size 16)',
-        'Vulkan1 "Xclipse 940" (API 1.2, loader 1.3, subgroup size 64)',
-      ]);
-      expect(api.probe().unavailableReason, isNull);
-    });
+        expect(structSizes, [
+          sizeOf<llama_dart_vulkan_device_info>(),
+          sizeOf<llama_dart_vulkan_device_info>(),
+        ]);
+        expect(devices.map((device) => device.toString()), [
+          '"Mali-G715" (API 1.3, loader 1.3, subgroup size 16)',
+          '"Xclipse 940" (API 1.2, loader 1.3, subgroup size 64)',
+        ]);
+        expect(devices.map((device) => device.isIntegratedGpu), [true, false]);
+        expect(devices.map((device) => device.deviceType), [1, 2]);
+        expect(api.probe().unavailableReason, isNull);
+      },
+    );
 
     test('lists no device when the loader works and ggml would use none', () {
       final api = VulkanDeviceInfoApi(

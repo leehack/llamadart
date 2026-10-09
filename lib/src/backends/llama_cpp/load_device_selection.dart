@@ -9,6 +9,7 @@ final class GgmlDeviceEntry {
     required this.name,
     required this.type,
     required this.registry,
+    this.description = '',
     this.deviceId,
     this.device,
   });
@@ -21,6 +22,10 @@ final class GgmlDeviceEntry {
 
   /// `ggml_backend_reg_name` of the device's backend, such as `Vulkan`.
   final String registry;
+
+  /// `ggml_backend_dev_description`: for a ggml-vulkan device the
+  /// `VkPhysicalDeviceProperties.deviceName`. Empty when it was not read.
+  final String description;
 
   /// `ggml_backend_dev_props.device_id`, which names one physical GPU across
   /// backends, or `null` when the backend reports none.
@@ -119,7 +124,33 @@ final class VulkanLoadDecision {
   bool get refused => unsupported != null && devices == null;
 }
 
-final RegExp _vulkanDeviceName = RegExp(r'^Vulkan(\d+)$');
+/// The facts of the ggml-vulkan [device] among [facts], or `null` when they
+/// cannot be told.
+///
+/// The two lists are not matched by position: ggml-vulkan and the facts can
+/// disagree on which devices exist, as for a device below Vulkan 1.2 beside
+/// other GPUs. What both report of a device is its Vulkan device name, which
+/// is ggml's description, and whether it is an integrated GPU. Facts of that
+/// name and kind are the device's only when all of them agree on whether
+/// they meet Vulkan 1.2, as identical GPUs on one driver do; otherwise, and
+/// without any, the device is unknown.
+VulkanDeviceFacts? vulkanFactsOf(
+  GgmlDeviceEntry device,
+  List<VulkanDeviceFacts> facts,
+) {
+  if (!device.isVulkan || device.description.isEmpty) return null;
+  final integrated = device.type == _typeIgpu;
+  final named = [
+    for (final fact in facts)
+      if (fact.name == device.description && fact.isIntegratedGpu == integrated)
+        fact,
+  ];
+  if (named.isEmpty ||
+      named.any((fact) => fact.meetsVulkan12 != named.first.meetsVulkan12)) {
+    return null;
+  }
+  return named.first;
+}
 
 /// Decides what a model load does about Vulkan devices below Vulkan 1.2.
 ///
@@ -131,8 +162,8 @@ final RegExp _vulkanDeviceName = RegExp(r'^Vulkan(\d+)$');
 /// Only the devices the load would use count: a registered device that is
 /// not selected is never initialized (`ggml_backend_vk_reg_get_device` only
 /// describes it). [registered] is read only for a load that [usesGpu], and
-/// [probe] only when a Vulkan device is selected. A device the facts do not
-/// cover is taken as usable.
+/// [probe] only when a Vulkan device is selected. A device whose facts
+/// [vulkanFactsOf] cannot tell is taken as usable.
 VulkanLoadDecision resolveVulkanLoadDecision({
   required bool usesGpu,
   required String? backendRegistry,
@@ -155,21 +186,16 @@ VulkanLoadDecision resolveVulkanLoadDecision({
     mainGpu: mainGpu,
   );
 
-  final vulkanIndices = <GgmlDeviceEntry, int>{
-    for (final device in selected)
-      if (device.isVulkan)
-        if (_vulkanDeviceName.firstMatch(device.name) case final match?)
-          device: int.parse(match.group(1)!),
-  };
-  if (vulkanIndices.isEmpty) return VulkanLoadDecision.unchanged;
+  if (!selected.any((device) => device.isVulkan)) {
+    return VulkanLoadDecision.unchanged;
+  }
   final facts = probe().devices;
   if (facts == null) return VulkanLoadDecision.unchanged;
 
   String? unsupported;
   final usable = <GgmlDeviceEntry>[];
   for (final device in selected) {
-    final index = vulkanIndices[device];
-    final fact = index != null && index < facts.length ? facts[index] : null;
+    final fact = vulkanFactsOf(device, facts);
     if (fact == null || fact.meetsVulkan12) {
       usable.add(device);
       continue;
