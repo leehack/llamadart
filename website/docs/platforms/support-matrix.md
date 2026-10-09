@@ -193,6 +193,21 @@ output and grammars, sampling controls and speculative decoding. Guides:
   warning; a GPU llama.cpp would not select, like an integrated GPU beside a
   discrete one, changes nothing. Whether this is what crashes the Galaxy A53
   is not confirmed.
+  On Android, the exact Qualcomm vendor `0x5143`, `Adreno (TM) 750`
+  driver `2150604839` has shader-compiler crashes and incorrect quantized
+  results, including common `Q4_K_M` models. When this device is registered,
+  GPU loads are refused even if another GPU was selected: projector and
+  decision-head GPU selection can independently choose the affected device.
+  `ComputeDevice.auto` loads on CPU with a warning, including when
+  `preferredBackend` requests Vulkan; `ComputeDevice.gpu` throws
+  `LlamaUnsupportedException`. CPU loads do not probe Vulkan. Detection needs
+  the device-facts API in native `v0.6.0-1` or later; an overridden runtime
+  without it cannot enforce this guard. Other driver versions are unchanged.
+  A shader crash workaround alone does not qualify this driver; re-enabling
+  a model requires qualification of the final native artifact on that exact
+  driver.
+  See [native issue #79](https://github.com/leehack/llamadart-native/issues/79).
+
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.
 - Some Vulkan drivers crash in the cooperative-matrix path; see

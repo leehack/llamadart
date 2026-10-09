@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Exclude Android Adreno 750 driver `2150604839` from llama.cpp Vulkan loads: automatic selection falls back to CPU with a warning, and an explicit GPU request throws instead of crashing or producing incorrect text.
+
 - Update the default LiteRT-LM runtime to
   `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
   macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer

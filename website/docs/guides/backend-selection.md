@@ -129,6 +129,11 @@ never falls back to another device:
   LiteRT-LM it needs the GPU backend: Linux arm64 and macOS x64 have none.
 - `npu` is LiteRT-LM on Android only.
 
+Android llama.cpp excludes the known unsafe Adreno 750 driver `2150604839`.
+An explicit GPU request throws; automatic selection with a Vulkan preference
+falls back to CPU with a warning when no usable GPU remains. A native crash
+workaround does not establish correct inference for its quantized models.
+
 Native LiteRT-LM starts its runtime on the first call that needs it, such as
 the first generation or `tokenize`, so a GPU or NPU delegate that fails to
 start throws `LlamaUnsupportedException` there rather than from the load. The

@@ -168,7 +168,10 @@ or shipping runtimes the app does not use.
 - Android: llama.cpp ships `cpu` and `vulkan` by default; `opencl` is opt-in
   through `llamadart_native_backends`. llama.cpp `ComputeDevice.auto` stays
   on the CPU there; Vulkan is experimental and device-dependent, so request
-  `ComputeDevice.gpu` only on devices the app has validated. Leave
+  `ComputeDevice.gpu` only on devices the app has validated. Adreno 750
+  driver `2150604839` is excluded: an explicit GPU request throws; automatic
+  selection with a Vulkan preference falls back to CPU with a warning.
+  A shader-compiler workaround alone does not qualify quantized output. Leave
   `ModelParams.microBatchSize` unset on Android Vulkan: on a GPU whose
   subgroup size is 16, below 8 or unreadable a text prompt is then decoded at
   most 8 tokens at a time, and a value above 32 returns wrong text there. The

@@ -56,6 +56,26 @@ void main() {
       );
     });
 
+    test('matches the Adreno defect by vendor, driver and device name', () {
+      VulkanDeviceFacts fact({
+        int vendor = 0x5143,
+        int driver = 2150604839,
+        String name = 'Adreno (TM) 750',
+      }) => VulkanDeviceFacts(
+        name: name,
+        deviceType: 1,
+        instanceApiVersion: _version(1, 3),
+        apiVersion: _version(1, 3),
+        subgroupSize: 64,
+        vendorId: vendor,
+        driverVersion: driver,
+      );
+      expect(fact().hasAdreno750DriverDefect, isTrue);
+      expect(fact(vendor: 0).hasAdreno750DriverDefect, isFalse);
+      expect(fact(driver: 2150604840).hasAdreno750DriverDefect, isFalse);
+      expect(fact(name: 'Adreno (TM) 740').hasAdreno750DriverDefect, isFalse);
+    });
+
     test('has the small matmul tile defect at every subgroup size '
         'ggml-vulkan mis-tiles', () {
       // llama.cpp v0.6.0 gives a warp 8 rows of the 32-row block only at a
@@ -184,6 +204,8 @@ void main() {
             info.ref.instance_api_version = _version(1, 3, 275);
             info.ref.api_version = _version(1, 3 - index, 7);
             info.ref.subgroup_size = index == 0 ? 16 : 64;
+            info.ref.vendor_id = 0x5143 + index;
+            info.ref.driver_version = 2150604839 + index;
             return 0;
           },
         );
@@ -200,6 +222,11 @@ void main() {
         ]);
         expect(devices.map((device) => device.isIntegratedGpu), [true, false]);
         expect(devices.map((device) => device.deviceType), [1, 2]);
+        expect(devices.map((device) => device.vendorId), [0x5143, 0x5144]);
+        expect(devices.map((device) => device.driverVersion), [
+          2150604839,
+          2150604840,
+        ]);
         expect(api.probe().unavailableReason, isNull);
       },
     );

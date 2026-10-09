@@ -8,7 +8,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Single Response Mode**: Pass a prompt as an argument for quick tasks.
 - **Automatic Model Management**: Accepts local paths, HTTP(S) URLs, and `hf://` Hugging Face model sources, then resolves remote sources through the package-managed cache.
 - **Platform Cache Defaults**: Remote model URLs use `DefaultModelDownloadManager`, so desktop/server runs share the per-user `llamadart` model cache while explicit local paths are loaded directly.
-- **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available.
+- **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available on desktop and CPU for Android llama.cpp. Android Adreno 750 driver `2150604839` is excluded from Vulkan: automatic selection with a Vulkan preference uses CPU with a warning; explicit GPU requests throw.
 - **LoRA Adapters**: Load one or more LoRA adapters with repeated `--lora` flags.
 - **Structured Output**: Pass `--grammar` for GBNF-constrained generation.
 - **Tool Calling Test Mode**: Enable `--tool-test` to exercise function-calling flow.

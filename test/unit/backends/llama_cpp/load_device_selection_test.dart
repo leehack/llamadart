@@ -250,8 +250,10 @@ void main() {
       bool usesGpu = true,
       int splitMode = _layer,
       int mainGpu = 0,
+      bool isAndroid = false,
     }) => resolveVulkanLoadDecision(
       usesGpu: usesGpu,
+      isAndroid: isAndroid,
       backendRegistry: backend,
       splitMode: splitMode,
       mainGpu: mainGpu,
@@ -300,6 +302,67 @@ void main() {
     final uhdOld = _fact('UHD Graphics 630', _vulkan11, integrated: true);
     final maliOld = _fact('Mali-G68', _vulkan11);
     final mali = _device('Vulkan0', description: 'Mali-G68');
+
+    test(
+      'refuses Android GPU loads when the affected driver is registered',
+      () {
+        final adreno = _device('Vulkan0', description: 'Adreno (TM) 750');
+        const bad = VulkanDeviceFacts(
+          name: 'Adreno (TM) 750',
+          deviceType: 2,
+          instanceApiVersion: _vulkan13,
+          apiVersion: _vulkan13,
+          subgroupSize: 64,
+          vendorId: 0x5143,
+          driverVersion: 2150604839,
+        );
+        expect(
+          decide([adreno], _facts([bad]), isAndroid: true),
+          refused('driver 2150604839'),
+        );
+        expect(decide([adreno], _facts([bad])), unchanged());
+        expect(
+          decide([adreno], _facts([bad]), isAndroid: true, usesGpu: false),
+          unchanged(),
+        );
+        expect(
+          decide([adreno, cuda], _facts([bad]), isAndroid: true),
+          refused('driver 2150604839'),
+        );
+        expect(
+          decide(
+            [adreno, rtx],
+            _facts([bad, rtxOk]),
+            isAndroid: true,
+            splitMode: _none,
+            mainGpu: 1,
+          ),
+          refused('driver 2150604839'),
+        );
+        final newer = VulkanDeviceFacts(
+          name: bad.name,
+          deviceType: bad.deviceType,
+          instanceApiVersion: bad.instanceApiVersion,
+          apiVersion: bad.apiVersion,
+          subgroupSize: bad.subgroupSize,
+          vendorId: bad.vendorId,
+          driverVersion: bad.driverVersion + 1,
+        );
+        expect(decide([adreno], _facts([newer]), isAndroid: true), unchanged());
+        expect(
+          decide([adreno], _facts([bad, newer]), isAndroid: true),
+          refused('driver 2150604839'),
+        );
+        expect(
+          decide(
+            [adreno],
+            () => const VulkanDeviceProbe.unavailable('missing'),
+            isAndroid: true,
+          ),
+          unchanged(),
+        );
+      },
+    );
 
     test('a load that offloads nothing reads neither the registry nor the '
         'facts', () {

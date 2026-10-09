@@ -2104,12 +2104,13 @@ class LlamaCppService {
     required int splitMode,
     required int mainGpu,
   }) => resolveVulkanLoadDecision(
-    usesGpu: gpuLayers > 0 && backend != GpuBackend.cpu,
+    usesGpu: gpuLayers != 0 && backend != GpuBackend.cpu,
     backendRegistry: ggmlGpuRegistryName(backend),
     splitMode: splitMode,
     mainGpu: mainGpu,
     registered: _registeredDevices,
     probe: () => _vulkanDeviceProbe,
+    isAndroid: _isAndroid,
   );
 
   /// The registered ggml devices, in registry order.

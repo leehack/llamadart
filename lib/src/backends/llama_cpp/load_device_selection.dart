@@ -117,7 +117,8 @@ final class VulkanLoadDecision {
 
   /// The usable devices to list for the load in place of the selected ones;
   /// `null` when no listed load can avoid the unusable devices, which is when
-  /// every selected device is one, and when nothing changes.
+  /// every selected device is one, or an unsafe Android driver is registered,
+  /// and when nothing changes.
   final List<GgmlDeviceEntry>? devices;
 
   /// Whether no usable device is left, so the load cannot run on the GPU.
@@ -152,18 +153,18 @@ VulkanDeviceFacts? vulkanFactsOf(
   return named.first;
 }
 
-/// Decides what a model load does about Vulkan devices below Vulkan 1.2.
+/// Decides what a model load does about Vulkan devices below Vulkan 1.2 or,
+/// on [isAndroid], the known unsafe Adreno 750 driver.
 ///
 /// [usesGpu] is false for a load that offloads nothing, which never starts a
 /// device. [backendRegistry] is the ggml registry of an explicit GPU backend,
 /// whose devices the load lists (`llama_model_params.devices`) when it has
 /// any, or `null` when llama.cpp selects among every registered device.
 ///
-/// Only the devices the load would use count: a registered device that is
-/// not selected is never initialized (`ggml_backend_vk_reg_get_device` only
-/// describes it). [registered] is read only for a load that [usesGpu], and
-/// [probe] only when a Vulkan device is selected. A device whose facts
-/// [vulkanFactsOf] cannot tell is taken as usable.
+/// Vulkan API floors apply to selected model devices. On Android the driver
+/// guard also covers registered devices that auxiliary GPU selectors could
+/// choose independently. [registered] is read only for a load that [usesGpu].
+/// A device whose facts cannot be matched is taken as usable.
 VulkanLoadDecision resolveVulkanLoadDecision({
   required bool usesGpu,
   required String? backendRegistry,
@@ -171,6 +172,7 @@ VulkanLoadDecision resolveVulkanLoadDecision({
   required int mainGpu,
   required List<GgmlDeviceEntry> Function() registered,
   required VulkanDeviceProbe Function() probe,
+  bool isAndroid = false,
 }) {
   if (!usesGpu) return VulkanLoadDecision.unchanged;
   final devices = registered();
@@ -186,12 +188,33 @@ VulkanLoadDecision resolveVulkanLoadDecision({
     mainGpu: mainGpu,
   );
 
-  if (!selected.any((device) => device.isVulkan)) {
+  final inspected = isAndroid ? devices : selected;
+  if (!inspected.any((device) => device.isVulkan)) {
     return VulkanLoadDecision.unchanged;
   }
   final facts = probe().devices;
   if (facts == null) return VulkanLoadDecision.unchanged;
 
+  // Projector and decision-head GPU selection is independent of the model's
+  // list. Refuse GPU work if any registered Android device has this driver.
+  if (isAndroid) {
+    for (final device in devices.where((device) => device.isVulkan)) {
+      if (facts.any(
+        (fact) =>
+            fact.name == device.description &&
+            fact.isIntegratedGpu == (device.type == _typeIgpu) &&
+            fact.hasAdreno750DriverDefect,
+      )) {
+        return VulkanLoadDecision._(
+          unsupported:
+              '"${device.description}" (${device.name}) on Android driver '
+              '2150604839 has known llama.cpp Vulkan shader-compiler crashes '
+              'and incorrect quantized results. GPU work is excluded until '
+              'a native workaround and the model are qualified',
+        );
+      }
+    }
+  }
   String? unsupported;
   final usable = <GgmlDeviceEntry>[];
   for (final device in selected) {
