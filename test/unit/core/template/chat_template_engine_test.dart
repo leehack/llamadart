@@ -113,10 +113,7 @@ void main() {
           enableThinking: true,
         );
 
-        expect(
-          enabled.prompt,
-          contains('look<|vision_start|><|image_pad|><|vision_end|>'),
-        );
+        expect(enabled.prompt, contains('look<__media__><|im_end|>'));
         expect(enabled.prompt, endsWith('<|im_start|>assistant\n<think>\n'));
         expect(enabled.thinkingForcedOpen, isTrue);
 
@@ -313,7 +310,7 @@ void main() {
     });
 
     test(
-      'preserves GLM-OCR image markers through render-context serialization',
+      'renders a GLM-OCR image as the marker without the template wrappers',
       () {
         const template = '''[gMASK]<sop>
 {# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
@@ -344,11 +341,8 @@ void main() {
         );
 
         expect(result.format, equals(ChatFormat.glm45.index));
-        expect(
-          result.prompt,
-          contains('<|begin_of_image|><__media__><|end_of_image|>'),
-        );
-        expect(result.prompt, contains('Extract text.'));
+        expect(result.prompt, contains('<__media__>Extract text.'));
+        expect(result.prompt, isNot(contains('<|begin_of_image|>')));
       },
     );
 
@@ -382,6 +376,97 @@ void main() {
         expect(result.prompt, isNot(contains('data:image')));
       },
     );
+
+    test('gives a template the media marker where each image was, whatever '
+        'placeholder the template writes for a typed image part', () {
+      const template =
+          '{% for message in messages %}<{{ message.role }}>'
+          '{% if message.content is string %}{{ message.content }}'
+          '{% else %}{% for part in message.content %}'
+          "{% if part.type == 'image' %}"
+          'Picture {{ loop.index }}: [own image placeholder]'
+          '{% else %}{{ part.text }}{% endif %}'
+          '{% endfor %}{% endif %}'
+          '{% endfor %}';
+      const image = LlamaImageContent(path: '/tmp/page.png');
+
+      String prompt(List<LlamaChatMessage> messages) =>
+          ChatTemplateEngine.render(
+            templateSource: template,
+            messages: messages,
+            metadata: const {},
+            addAssistant: false,
+          ).prompt;
+
+      expect(
+        prompt(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.system, text: 'sys'),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [image, LlamaTextContent('What is this?')],
+          ),
+        ]),
+        '<system>sys<user><__media__>What is this?',
+      );
+      expect(
+        prompt(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'Yes?',
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaTextContent('First:'),
+              image,
+              LlamaTextContent('Second:'),
+              image,
+            ],
+          ),
+        ]),
+        '<user>Hi<assistant>Yes?<user>First:<__media__>Second:<__media__>',
+      );
+    });
+
+    for (final (name, template) in const [
+      (
+        'a string or a part list',
+        '{% for message in messages %}'
+            '{% if message.content is string %}{{ message.content }}'
+            '{% else %}{% for part in message.content %}{{ part.text }}'
+            '{% endfor %}{% endif %}{% endfor %}',
+      ),
+      (
+        'a string',
+        '{% for message in messages %}{{ message.content }}{% endfor %}',
+      ),
+    ]) {
+      test('leaves a placeholder a message quotes as text for a template '
+          'that reads content as $name', () {
+        const quoted =
+            'Is <img>, <image>, [IMG], <|image_1|> or <start_of_image> a '
+            'tag, and what is <__media__>?';
+        String prompt([String? marker]) => ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaImageContent(path: '/tmp/page.png'),
+                LlamaTextContent(quoted),
+              ],
+            ),
+          ],
+          metadata: const {},
+          addAssistant: false,
+          mediaMarker: marker ?? '<__media__>',
+        ).prompt;
+
+        expect(prompt(), '<__media__>$quoted');
+        expect(prompt('<__media_x__>'), '<__media_x__>$quoted');
+      });
+    }
 
     test('renders a video part as the media marker without leaking its '
         'source', () {

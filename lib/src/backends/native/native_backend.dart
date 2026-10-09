@@ -14,6 +14,7 @@ import '../../core/models/inference/tool_choice.dart';
 import '../../core/models/model_format.dart';
 import '../../core/models/tools/tool_definition.dart';
 import '../../core/template/handlers/translate_gemma_handler.dart';
+import '../../core/template/media_placeholders.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend.dart';
 import '../llama_cpp/llama_cpp_backend.dart';
@@ -48,6 +49,7 @@ class NativeAutoBackend
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
+        BackendChatPromptGeneration,
         BackendDeferredEngineCreation,
         BackendTextToSpeech,
         BackendDecision,
@@ -189,6 +191,32 @@ class NativeAutoBackend
     return _requireDelegate().generate(
       contextHandle,
       prompt,
+      params,
+      parts: parts,
+    );
+  }
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendChatPromptGeneration) {
+      return (delegate as BackendChatPromptGeneration).generateChatPrompt(
+        contextHandle,
+        prompt,
+        params,
+        mediaMarker: mediaMarker,
+        parts: parts,
+      );
+    }
+    return delegate.generate(
+      contextHandle,
+      prompt.replaceAll(mediaMarker, mtmdMediaMarker),
       params,
       parts: parts,
     );

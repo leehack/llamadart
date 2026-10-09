@@ -11,6 +11,7 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../media_placeholders.dart';
 import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
@@ -93,6 +94,7 @@ class Gemma4Handler extends ChatTemplateHandler
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     bool enableThinking = true,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     return _renderInternal(
       templateSource: templateSource,
@@ -102,6 +104,7 @@ class Gemma4Handler extends ChatTemplateHandler
       tools: tools,
       enableThinking: enableThinking,
       multimodalContent: true,
+      mediaMarker: mediaMarker,
     );
   }
 
@@ -113,6 +116,7 @@ class Gemma4Handler extends ChatTemplateHandler
     required List<ToolDefinition>? tools,
     required bool enableThinking,
     required bool multimodalContent,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     final template = Template(templateSource);
     var prompt = renderTemplate(
@@ -123,6 +127,7 @@ class Gemma4Handler extends ChatTemplateHandler
           templateSource,
           messages,
           multimodalContent: multimodalContent,
+          mediaMarker: mediaMarker,
         ),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
@@ -164,10 +169,12 @@ class Gemma4Handler extends ChatTemplateHandler
     String templateSource,
     List<LlamaChatMessage> messages, {
     required bool multimodalContent,
+    required String mediaMarker,
   }) {
     final rendered = templateMessages(
       messages,
       multimodal: multimodalContent,
+      mediaMarker: mediaMarker,
       templateSource: templateSource,
     );
     return templateSource.contains(_openAiToolMessagesMarker)

@@ -44,6 +44,7 @@ class NativeLlamaBackend
         BackendVideoRuntimeSupport,
         BackendGenerationLimitReporting,
         BackendGenerationUsageReporting,
+        BackendChatPromptGeneration,
         BackendDartLogLevel {
   Isolate? _isolate;
   SendPort? _sendPort;
@@ -506,6 +507,29 @@ class NativeLlamaBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
+  }) => _generate(contextHandle, prompt, params, parts: parts);
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    parts: parts,
+    chatMediaMarker: mediaMarker,
+  );
+
+  Stream<List<int>> _generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+    String? chatMediaMarker,
   }) {
     final failure = _workerFailure;
     if (failure != null) return Stream<List<int>>.error(failure);
@@ -533,6 +557,7 @@ class NativeLlamaBackend
         prompt,
         params,
         parts,
+        chatMediaMarker,
       );
     }
 
@@ -585,6 +610,7 @@ class NativeLlamaBackend
     String prompt,
     GenerationParams params,
     List<LlamaContentPart>? parts,
+    String? chatMediaMarker,
   ) {
     final rp = _openResponsePort();
 
@@ -654,6 +680,7 @@ class NativeLlamaBackend
           cancelToken.address,
           rp.sendPort,
           parts: parts,
+          chatMediaMarker: chatMediaMarker,
         ),
       );
     } catch (error, stackTrace) {

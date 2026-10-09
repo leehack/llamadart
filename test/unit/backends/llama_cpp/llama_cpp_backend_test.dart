@@ -261,6 +261,35 @@ void main() {
       },
     );
 
+    test('generateChatPrompt sends the worker the prompt with its marker, '
+        'generate without one', () async {
+      GenerateRequest sent() =>
+          harness.received.whereType<GenerateRequest>().last;
+
+      final chat = backend
+          .generateChatPrompt(
+            1,
+            '<m>a <img>',
+            const GenerationParams(),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+      await Future<void>.delayed(Duration.zero);
+      expect(sent().prompt, '<m>a <img>');
+      expect(sent().chatMediaMarker, '<m>');
+      sent().sendPort.send(DoneResponse());
+      await chat;
+
+      final caller = backend
+          .generate(1, '<img>b', const GenerationParams())
+          .drain<void>();
+      await Future<void>.delayed(Duration.zero);
+      expect(sent().prompt, '<img>b');
+      expect(sent().chatMediaMarker, isNull);
+      sent().sendPort.send(DoneResponse());
+      await caller;
+    });
+
     test(
       'generationLimitOf ignores a limit after the caller cancels',
       () async {

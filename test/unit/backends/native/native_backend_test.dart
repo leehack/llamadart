@@ -19,6 +19,7 @@ import 'package:llamadart/src/core/llama_logger.dart';
 import 'package:llamadart/src/core/llama_logging.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -539,6 +540,56 @@ void main() {
         ),
         throwsUnsupportedError,
       );
+    });
+  });
+
+  group('generateChatPrompt', () {
+    test('gives a delegate that takes chat prompts the prompt and its '
+        'marker', () async {
+      final llama = _ChatPromptFakeBackend(handle: 11);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => _FakeBackend(handle: 22),
+      );
+      addTearDown(backend.dispose);
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+
+      await backend
+          .generateChatPrompt(
+            1,
+            '<m>a <__media__>',
+            const GenerationParams(),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+
+      expect(llama.chatPrompts, [('<m>a <__media__>', '<m>')]);
+      expect(llama.prompts, isEmpty);
+    });
+
+    test('gives any other delegate the prompt with the default marker '
+        'through generate', () async {
+      final litert = _PromptFakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => _FakeBackend(handle: 11),
+        liteRtLmFactory: () => litert,
+      );
+      addTearDown(backend.dispose);
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(),
+      );
+
+      await backend
+          .generateChatPrompt(
+            1,
+            '<m>a',
+            const GenerationParams(),
+            mediaMarker: '<m>',
+          )
+          .drain<void>();
+
+      expect(litert.prompts, ['<__media__>a']);
     });
   });
 
@@ -1568,6 +1619,42 @@ void main() {
       }
     },
   );
+}
+
+class _PromptFakeBackend extends _FakeBackend {
+  _PromptFakeBackend({required super.handle});
+
+  final List<String> prompts = <String>[];
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) {
+    prompts.add(prompt);
+    return const Stream<List<int>>.empty();
+  }
+}
+
+class _ChatPromptFakeBackend extends _PromptFakeBackend
+    implements BackendChatPromptGeneration {
+  _ChatPromptFakeBackend({required super.handle});
+
+  final List<(String, String)> chatPrompts = <(String, String)>[];
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    chatPrompts.add((prompt, mediaMarker));
+    return const Stream<List<int>>.empty();
+  }
 }
 
 class _RuntimeFakeBackend extends _FakeBackend

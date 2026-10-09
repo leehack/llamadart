@@ -4707,12 +4707,53 @@ class LlamaCppService {
   /// Supports multimodal input via [parts].
   /// Calls [onLimit] before the stream closes when a token limit ended the
   /// generation.
+  ///
+  /// The caller wrote [prompt]: a media placeholder in it stands for a part,
+  /// and parts without one go before the prompt.
   Stream<List<int>> generate(
     int contextHandle,
     String prompt,
     GenerationParams params,
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    cancelTokenAddress,
+    parts: parts,
+    onLimit: onLimit,
+  );
+
+  /// Generates like [generate] from a [prompt] that a chat template rendered
+  /// with [mediaMarker] where each part was. A placeholder string elsewhere
+  /// in it is message text.
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) => _generate(
+    contextHandle,
+    prompt,
+    params,
+    cancelTokenAddress,
+    parts: parts,
+    chatMediaMarker: mediaMarker,
+    onLimit: onLimit,
+  );
+
+  Stream<List<int>> _generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+    String? chatMediaMarker,
     void Function(BackendGenerationLimit limit)? onLimit,
   }) async* {
     var ctx = _contexts[contextHandle];
@@ -4876,6 +4917,7 @@ class LlamaCppService {
         tokensPtr,
         nCtx,
         modelParams,
+        chatMediaMarker: chatMediaMarker,
         allowTextPromptReuse:
             speculativeConfig == null &&
             !hasMediaParts &&
@@ -5673,6 +5715,7 @@ class LlamaCppService {
     Pointer<Int32> tokensPtr,
     int nCtx,
     llama_context_params modelParams, {
+    required String? chatMediaMarker,
     required bool allowTextPromptReuse,
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
@@ -5696,6 +5739,7 @@ class LlamaCppService {
         mediaParts,
         modelParams,
         cancelToken,
+        chatMediaMarker: chatMediaMarker,
       );
       return (nPast: nPast, promptTokenCount: 0);
     } else {
@@ -5724,8 +5768,9 @@ class LlamaCppService {
     String prompt,
     List<LlamaContentPart> mediaParts,
     llama_context_params modelParams,
-    Pointer<Int8> cancelToken,
-  ) {
+    Pointer<Int8> cancelToken, {
+    required String? chatMediaMarker,
+  }) {
     _calls.failures.ensureUsable(mmCtx, 'This multimodal projector');
     int initialTokens = 0;
     // Zeroed, so the cleanup of a part that failed skips the slots after it.
@@ -5791,6 +5836,7 @@ class LlamaCppService {
       final normalizedPrompt = _normalizeMtmdPromptMarkers(
         prompt,
         mediaParts.length,
+        chatMediaMarker: chatMediaMarker,
       );
       promptPtr = normalizedPrompt.toNativeUtf8();
       inputText.ref.text = promptPtr.cast();
@@ -5946,13 +5992,27 @@ class LlamaCppService {
     );
   }
 
-  String _normalizeMtmdPromptMarkers(String prompt, int mediaPartCount) {
+  String _normalizeMtmdPromptMarkers(
+    String prompt,
+    int mediaPartCount, {
+    required String? chatMediaMarker,
+  }) {
     final markerPtr = _mtmdDefaultMarker();
     final marker = markerPtr == nullptr
         ? '<__media__>'
         : markerPtr.cast<Utf8>().toDartString();
 
-    var normalized = normalizeMediaPlaceholders(prompt, marker: marker);
+    // The projector splits a prompt on its marker wherever it is. Its helper
+    // for speech output writes the default marker itself, so the projector
+    // cannot be given another one.
+    var normalized = chatMediaMarker == null
+        ? normalizeMediaPlaceholders(prompt, marker: marker)
+        : chatPromptForMarkerRuntime(
+            prompt,
+            chatMarker: chatMediaMarker,
+            marker: marker,
+            runtimePlaceholders: marker,
+          );
 
     if (mediaPartCount <= 0) {
       return normalized;

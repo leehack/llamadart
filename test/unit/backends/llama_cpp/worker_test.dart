@@ -535,6 +535,41 @@ void main() {
       }
     });
 
+    test('gives the service a chat prompt with its marker and a caller '
+        'prompt without one', () async {
+      final service = _PromptRecordingLlamaCppService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        await _generateUntilDone(
+          worker.sendPort,
+          (sendPort) => GenerateRequest(
+            7,
+            '<m>a <img>',
+            const GenerationParams(),
+            0,
+            sendPort,
+            chatMediaMarker: '<m>',
+          ),
+        );
+        await _generateUntilDone(
+          worker.sendPort,
+          (sendPort) => GenerateRequest(
+            7,
+            '<img>b',
+            const GenerationParams(),
+            0,
+            sendPort,
+          ),
+        );
+
+        expect(service.chatPrompts, [('<m>a <img>', '<m>')]);
+        expect(service.callerPrompts, ['<img>b']);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test(
       'sends generation usage timed from the first non-empty chunk',
       () async {
@@ -1116,6 +1151,47 @@ class _ThrowingTextToSpeechService extends LlamaCppService {
     void Function(BackendTextToSpeechProgress progress)? onProgress,
   }) async {
     throw exception;
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _PromptRecordingLlamaCppService extends LlamaCppService {
+  final List<String> callerPrompts = <String>[];
+  final List<(String, String)> chatPrompts = <(String, String)>[];
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) {
+    callerPrompts.add(prompt);
+    return const Stream<List<int>>.empty();
+  }
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+    void Function(BackendGenerationLimit limit)? onLimit,
+  }) {
+    chatPrompts.add((prompt, mediaMarker));
+    return const Stream<List<int>>.empty();
   }
 
   @override

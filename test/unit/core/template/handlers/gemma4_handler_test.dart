@@ -49,15 +49,15 @@ void main() {
       );
 
       final userTurn = result.prompt.indexOf('<|turn>user');
-      final audioMarker = result.prompt.indexOf('<|audio|>');
+      final audioMarker = result.prompt.indexOf('<__media__>');
       final instruction = result.prompt.indexOf('answer the recording');
       final assistantTurn = result.prompt.indexOf('<|turn>model');
       expect(userTurn, greaterThanOrEqualTo(0));
       expect(audioMarker, greaterThan(userTurn));
       expect(instruction, greaterThan(audioMarker));
       expect(assistantTurn, greaterThan(instruction));
-      expect(result.prompt.indexOf('<|audio|>'), audioMarker);
-      expect(result.prompt.lastIndexOf('<|audio|>'), audioMarker);
+      expect(result.prompt.lastIndexOf('<__media__>'), audioMarker);
+      expect(result.prompt, isNot(contains('<|audio|>')));
     });
 
     test('renders thinking flag into Gemma 4 template context', () {

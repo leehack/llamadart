@@ -7,6 +7,7 @@ import '../../core/models/inference/generation_usage.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/next_token_scores.dart';
 import '../../core/models/model_format.dart';
+import '../../core/template/media_placeholders.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
@@ -39,6 +40,7 @@ class WebAutoBackend
         BackendGenerationUsageReporting,
         BackendGenerationLimitReporting,
         BackendGenerationLimitSupport,
+        BackendChatPromptGeneration,
         BackendNextTokenScoring,
         BackendNextTokenScoringSupport,
         BackendStatePersistence,
@@ -272,6 +274,32 @@ class WebAutoBackend
     return _requireDelegate().generate(
       contextHandle,
       prompt,
+      params,
+      parts: parts,
+    );
+  }
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendChatPromptGeneration) {
+      return (delegate as BackendChatPromptGeneration).generateChatPrompt(
+        contextHandle,
+        prompt,
+        params,
+        mediaMarker: mediaMarker,
+        parts: parts,
+      );
+    }
+    return delegate.generate(
+      contextHandle,
+      prompt.replaceAll(mediaMarker, mtmdMediaMarker),
       params,
       parts: parts,
     );
