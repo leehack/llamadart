@@ -24,9 +24,11 @@ dependencies:
 
 Adding the package selects the `stable_diffusion` runtime for Flutter iOS and
 macOS builds; `llamadart_native_runtimes` still decides the other platforms.
-A list there replaces the default runtimes: `[all, stable_diffusion]` keeps
-them, `[llama_cpp, stable_diffusion]` ships GGUF chat and images without
-LiteRT-LM, and `[stable_diffusion]` ships images only.
+A list there replaces the default `llama_cpp` and `litert_lm`:
+`[llama_cpp, stable_diffusion]` ships GGUF chat and images,
+`[stable_diffusion]` images only, and `[all, stable_diffusion]` every runtime.
+On cores newer than `0.11.1`, `all` alone includes `stable_diffusion`; on
+Flutter iOS and macOS it does so only with this package.
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.

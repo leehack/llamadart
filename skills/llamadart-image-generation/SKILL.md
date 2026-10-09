@@ -20,18 +20,18 @@ description: >-
   stable-diffusion.cpp through the opt-in `stable_diffusion` native runtime.
   Text-to-image only: no image-to-image, inpainting, LoRA or ControlNet.
 - The app must bundle the runtime (about 40 to 70 MB per target); it is never
-  included by default or by `all`. In the app's `pubspec.yaml`:
+  included by default. In the app's `pubspec.yaml`:
 
   ```yaml
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [all, stable_diffusion]
+        llamadart_native_runtimes: all
   ```
 
-  A list replaces the default runtimes, so it names everything the app
-  loads: `[all, stable_diffusion]` is the defaults (`llama_cpp` and
-  `litert_lm`) plus images, `[llama_cpp, stable_diffusion]` is GGUF chat and
+  Unset, the key bundles `llama_cpp` and `litert_lm`. A list replaces those
+  defaults, so it names everything the app loads: `all` is every runtime
+  published for the target, `[llama_cpp, stable_diffusion]` is GGUF chat and
   images without LiteRT-LM, and `[stable_diffusion]` is images only. Run
   `flutter clean` once after changing it. Linux and Windows bundle the Vulkan
   build when `llamadart_native_backends` selects Vulkan (the default);

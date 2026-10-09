@@ -184,6 +184,29 @@ void main(List<String> args) async {
         !selectedRuntimes.contains(nativeRuntimeStableDiffusion)) {
       selectedRuntimes = [...selectedRuntimes, nativeRuntimeStableDiffusion];
     }
+    if (appleCompanions != null &&
+        !stableDiffusionCompanion &&
+        selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
+        !nativeRuntimeExplicitlySelectedForBundle(
+          bundle: spec.bundle,
+          rawUserConfig: rawNativeRuntimeConfig,
+          runtime: nativeRuntimeStableDiffusion,
+        )) {
+      // App Store Connect rejects the iOS framework Flutter wraps the
+      // hook-bundled library in, and only the companion's XCFramework carries
+      // the privacy manifest, so `all` alone must not start shipping it.
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => runtime != nativeRuntimeStableDiffusion)
+          .toList(growable: false);
+      log.warning(
+        'stable_diffusion is only implied by `all` in '
+        '$nativeRuntimesUserDefineKey; skipping it for this Flutter '
+        '${spec.bundle} build because $_stableDiffusionFlutterPackageName is '
+        'not a dependency. Add that package to link the runtime through Swift '
+        'Package Manager, or name stable_diffusion to bundle it through the '
+        'hook.',
+      );
+    }
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
         liteRtLmBundleSpec == null) {

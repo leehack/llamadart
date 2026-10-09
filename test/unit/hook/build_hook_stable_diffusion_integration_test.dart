@@ -120,26 +120,45 @@ void main() {
     }
   });
 
-  test('default and all selections never bundle stable_diffusion', () async {
+  test('unset, empty, unrecognised and both selections never bundle '
+      'stable_diffusion', () async {
     final vulkanCache = stableDiffusionBundle('linux-x64-vulkan');
     await vulkanCache.delete(recursive: true);
     for (final defines in <Map<String, Object?>>[
       {},
+      {'llamadart_native_runtimes': <String>[]},
       {
-        'llamadart_native_runtimes': ['all'],
+        'llamadart_native_runtimes': ['onnx'],
       },
       {'llamadart_native_runtimes': 'both'},
-    ]) {
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.linux,
-        targetArchitecture: Architecture.x64,
-        userDefines: _userDefines(defines),
-        check: (_, output) {
-          final ids = _codeAssetIds(output);
-          expect(ids, contains(_primaryAssetId), reason: '$defines');
-          expect(ids, isNot(contains(_stableDiffusionAssetId)));
+      {
+        'llamadart_native_runtimes': {
+          'platforms': {'android': 'all'},
         },
+      },
+    ]) {
+      final log = await _captureHookLog(
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          userDefines: _userDefines(defines),
+          check: (_, output) {
+            final ids = _codeAssetIds(output);
+            expect(ids, contains(_primaryAssetId), reason: '$defines');
+            expect(
+              ids.any((id) => id.startsWith(_liteRtLmAssetIdPrefix)),
+              isTrue,
+              reason: '$defines',
+            );
+            expect(ids, isNot(contains(_stableDiffusionAssetId)));
+          },
+        ),
+      );
+      expect(
+        log,
+        contains(endsWith('Selected native runtimes: llama_cpp, litert_lm.')),
+        reason: '$defines',
       );
       expect(
         vulkanCache.existsSync(),
@@ -149,101 +168,229 @@ void main() {
     }
   });
 
-  test('[all, stable_diffusion] keeps the default runtimes and skips what a '
-      'target does not publish', () async {
+  test('all bundles every runtime a target publishes and skips the rest with '
+      'a warning', () async {
     const liteRtLmSkipped = 'LiteRT-LM runtime is not available for';
     const stableDiffusionSkipped = 'stable_diffusion runtime is not available';
-    for (final (
-          :os,
-          :architecture,
-          :simulator,
-          :bundle,
-          :liteRtLm,
-          :stableDiffusion,
-        )
-        in const [
-          (
-            os: OS.linux,
-            architecture: Architecture.x64,
-            simulator: false,
-            bundle: 'linux-x64',
-            liteRtLm: true,
-            stableDiffusion: true,
+    const targets = [
+      (
+        os: OS.linux,
+        architecture: Architecture.x64,
+        simulator: false,
+        bundle: 'linux-x64',
+        liteRtLm: true,
+        stableDiffusion: true,
+      ),
+      (
+        os: OS.android,
+        architecture: Architecture.x64,
+        simulator: false,
+        bundle: 'android-x64',
+        liteRtLm: true,
+        stableDiffusion: false,
+      ),
+      (
+        os: OS.iOS,
+        architecture: Architecture.x64,
+        simulator: true,
+        bundle: 'ios-x86_64-sim',
+        liteRtLm: false,
+        stableDiffusion: true,
+      ),
+      (
+        os: OS.windows,
+        architecture: Architecture.arm64,
+        simulator: false,
+        bundle: 'windows-arm64',
+        liteRtLm: false,
+        stableDiffusion: false,
+      ),
+    ];
+    for (final (runtimes, selectsImages) in const <(Object?, bool)>[
+      ('all', true),
+      (['all'], true),
+      (['all', 'stable_diffusion'], true),
+      ({'runtimes': 'all'}, true),
+      ('both', false),
+      (null, false),
+    ]) {
+      for (final target in targets) {
+        final reason = '${target.bundle} $runtimes';
+        final stableDiffusion = selectsImages && target.stableDiffusion;
+        final log = await _captureHookLog(
+          () => testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target.os,
+            targetArchitecture: target.architecture,
+            targetAndroidNdkApi: target.os == OS.android ? 30 : null,
+            targetIOSSdk: target.simulator ? IOSSdk.iPhoneSimulator : null,
+            userDefines: _userDefines({'llamadart_native_runtimes': ?runtimes}),
+            check: (_, output) {
+              final ids = _codeAssetIds(output);
+              expect(ids, contains(_primaryAssetId), reason: reason);
+              expect(
+                ids.any((id) => id.startsWith(_liteRtLmAssetIdPrefix)),
+                target.liteRtLm,
+                reason: reason,
+              );
+              expect(
+                ids.contains(_stableDiffusionAssetId),
+                stableDiffusion,
+                reason: reason,
+              );
+            },
           ),
-          (
-            os: OS.android,
-            architecture: Architecture.x64,
-            simulator: false,
-            bundle: 'android-x64',
-            liteRtLm: true,
-            stableDiffusion: false,
+        );
+        final warnings = log.where((line) => line.startsWith('WARNING: '));
+        expect(
+          warnings.any(
+            (line) => line.contains('$liteRtLmSkipped ${target.bundle}'),
           ),
-          (
-            os: OS.iOS,
-            architecture: Architecture.x64,
-            simulator: true,
-            bundle: 'ios-x86_64-sim',
-            liteRtLm: false,
-            stableDiffusion: true,
+          !target.liteRtLm,
+          reason: reason,
+        );
+        expect(
+          warnings.any(
+            (line) =>
+                line.contains('$stableDiffusionSkipped for ${target.bundle}'),
           ),
-          (
-            os: OS.windows,
-            architecture: Architecture.arm64,
-            simulator: false,
-            bundle: 'windows-arm64',
-            liteRtLm: false,
-            stableDiffusion: false,
+          selectsImages && !target.stableDiffusion,
+          reason: reason,
+        );
+        expect(
+          log,
+          contains(
+            endsWith(
+              'Selected native runtimes: ${['llama_cpp', if (target.liteRtLm) 'litert_lm', if (stableDiffusion) 'stable_diffusion'].join(', ')}.',
+            ),
           ),
-        ]) {
-      final log = await _captureHookLog(
-        () => testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: os,
-          targetArchitecture: architecture,
-          targetAndroidNdkApi: os == OS.android ? 30 : null,
-          targetIOSSdk: simulator ? IOSSdk.iPhoneSimulator : null,
-          userDefines: _userDefines({
-            'llamadart_native_runtimes': ['all', 'stable_diffusion'],
-          }),
-          check: (_, output) {
-            final ids = _codeAssetIds(output);
-            expect(ids, contains(_primaryAssetId), reason: bundle);
-            expect(
-              ids.any((id) => id.startsWith(_liteRtLmAssetIdPrefix)),
-              liteRtLm,
-              reason: bundle,
-            );
-            expect(
-              ids.contains(_stableDiffusionAssetId),
-              stableDiffusion,
-              reason: bundle,
-            );
-          },
-        ),
-      );
-      final warnings = log.where((line) => line.startsWith('WARNING: '));
-      expect(
-        warnings.any((line) => line.contains('$liteRtLmSkipped $bundle')),
-        !liteRtLm,
-        reason: bundle,
-      );
-      expect(
-        warnings.any(
-          (line) => line.contains('$stableDiffusionSkipped for $bundle'),
-        ),
-        !stableDiffusion,
-        reason: bundle,
-      );
-      expect(
-        log,
-        contains(
-          endsWith(
-            'Selected native runtimes: ${['llama_cpp', if (liteRtLm) 'litert_lm', if (stableDiffusion) 'stable_diffusion'].join(', ')}.',
-          ),
-        ),
-        reason: bundle,
-      );
+          reason: reason,
+        );
+      }
     }
+  });
+
+  test('all under an exact bundle key still skips an unpublished '
+      'stable_diffusion', () async {
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.android,
+      targetArchitecture: Architecture.x64,
+      targetAndroidNdkApi: 30,
+      userDefines: _userDefines({
+        'llamadart_native_runtimes': {
+          'platforms': {'android-x64': 'all'},
+        },
+      }),
+      check: (_, output) {
+        final ids = _codeAssetIds(output);
+        expect(ids, contains(_primaryAssetId));
+        expect(ids, isNot(contains(_stableDiffusionAssetId)));
+      },
+    );
+  });
+
+  for (final (os, sdk, bundle) in const [
+    (OS.iOS, IOSSdk.iPhoneOS, 'ios-arm64'),
+    (OS.macOS, null, 'macos-arm64'),
+  ]) {
+    for (final companion in const [false, true]) {
+      for (final (runtimes, explicit) in const <(List<String>, bool)>[
+        (['all'], false),
+        (['all', 'stable_diffusion'], true),
+      ]) {
+        test('Flutter $bundle with $runtimes '
+            '${companion ? 'and' : 'without'} the stable_diffusion '
+            'companion', () async {
+          final defines = await _flutterAppleApp(
+            companions: [
+              _llamaCppCompanionName,
+              if (companion) _stableDiffusionCompanionName,
+            ],
+            defines: {'llamadart_native_runtimes': runtimes},
+          );
+          late final List<String> log;
+          final stderrLines = await _captureStderr(() async {
+            log = await _captureHookLog(
+              () => testCodeBuildHook(
+                mainMethod: build_hook.main,
+                targetOS: os,
+                targetArchitecture: Architecture.arm64,
+                targetIOSSdk: sdk,
+                userDefines: defines,
+                check: (_, output) {
+                  final ids = _codeAssetIds(output);
+                  expect(ids, contains(_primaryAssetId));
+                  expect(
+                    ids.contains(_stableDiffusionAssetId),
+                    companion || explicit,
+                  );
+                  if (companion || explicit) {
+                    expect(
+                      _stableDiffusionAsset(output).linkMode,
+                      companion
+                          ? isA<LookupInProcess>()
+                          : isA<DynamicLoadingBundled>(),
+                    );
+                  }
+                },
+              ),
+            );
+          });
+          final skipped = log.where(
+            (line) =>
+                line.startsWith('WARNING: ') &&
+                line.contains('stable_diffusion is only implied by `all`'),
+          );
+          if (companion || explicit) {
+            expect(skipped, isEmpty);
+          } else {
+            expect(
+              skipped.single,
+              allOf(
+                contains('skipping it for this Flutter $bundle build'),
+                contains(_stableDiffusionCompanionName),
+              ),
+            );
+          }
+          expect(
+            stderrLines.any((line) => line.contains('MinimumOSVersion')),
+            os == OS.iOS && explicit && !companion,
+          );
+        });
+      }
+    }
+  }
+
+  test('a Flutter Apple app without any companion skips a stable_diffusion '
+      'that all only implies', () async {
+    final defines = await _flutterAppleApp(
+      companions: const [],
+      defines: {'llamadart_native_runtimes': 'all'},
+    );
+    final log = await _captureHookLog(
+      () => testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.x64,
+        targetIOSSdk: IOSSdk.iPhoneSimulator,
+        userDefines: defines,
+        check: (_, output) {
+          expect(_codeAssetIds(output), {_primaryAssetId});
+        },
+      ),
+    );
+    expect(
+      log,
+      contains(
+        allOf(
+          startsWith('WARNING: '),
+          contains('stable_diffusion is only implied by `all`'),
+          contains(_stableDiffusionCompanionName),
+        ),
+      ),
+    );
+    expect(log, contains(endsWith('Selected native runtimes: llama_cpp.')));
   });
 
   test('Linux bundles the Vulkan archive with default backends', () async {

@@ -236,5 +236,6 @@ one build can load both GGUF and `.litertlm` models. To ship only one, set
 `llamadart_native_runtimes` as described in
 [Native Build Hooks](../platforms/native-build-hooks). The experimental
 `stable_diffusion` runtime, which [image generation](./image-generation)
-needs, is never included unless named there. A list there replaces the
-defaults: `[all, stable_diffusion]` keeps both families and adds images.
+needs, is never included unless named there or selected with `all`. A list
+there replaces the defaults: `all` bundles every runtime published for the
+target.

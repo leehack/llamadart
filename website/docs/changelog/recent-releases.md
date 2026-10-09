@@ -9,10 +9,16 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- The image generation docs and the `stable_diffusion` "not bundled" error
-  now say that a `llamadart_native_runtimes` list replaces the default
-  runtimes, and that `[all, stable_diffusion]` keeps `llama_cpp` and
-  `litert_lm` ([#856](https://github.com/leehack/llamadart/issues/856)).
+- **Behavior change:** `all` in `llamadart_native_runtimes` now includes the
+  opt-in `stable_diffusion` image runtime, so `llamadart_native_runtimes: all`
+  ships GGUF, `.litertlm` and image generation together. An app that already
+  sets `all`, or a list containing it, gains about 15 MB of download and
+  37 MB in the app per target; the Vulkan build Linux and Windows use by
+  default is about 25 MB and 72 MB. android-x64 and Windows arm64 publish no
+  image runtime and skip it with a warning, and Flutter iOS and macOS skip it
+  unless `llamadart_stable_diffusion_flutter` is a dependency. Leaving the key
+  unset, or setting `both`, still bundles only `llama_cpp` and `litert_lm`
+  ([#856](https://github.com/leehack/llamadart/issues/856)).
 - Update the default LiteRT-LM runtime to
   `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
   macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer

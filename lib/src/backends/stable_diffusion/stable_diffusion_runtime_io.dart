@@ -201,10 +201,10 @@ LlamaUnsupportedException stableDiffusionLoadFailure({
         ? ', or add the $_appleCompanion package to a Flutter iOS/macOS app,'
         : '';
     return LlamaUnsupportedException(
-      'stable_diffusion runtime is not bundled for $platform; add '
-      'stable_diffusion to hooks.user_defines.llamadart.'
-      'llamadart_native_runtimes$companionAdvice and rebuild. That list '
-      'replaces the default runtimes: [all, stable_diffusion] keeps them.',
+      'stable_diffusion runtime is not bundled for $platform; set '
+      'hooks.user_defines.llamadart.llamadart_native_runtimes to all, or add '
+      'stable_diffusion to its list$companionAdvice and rebuild. A list '
+      'replaces the default llama_cpp and litert_lm.',
     );
   }
   if (_vulkanLoaderNames.any(detail.toLowerCase().contains)) {

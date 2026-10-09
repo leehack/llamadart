@@ -65,11 +65,12 @@ hooks:
   exact bundle key wins, then its OS key, then `runtimes`, then every family.
 - Aliases: `gguf`, `llama`, `llama.cpp` for `llama_cpp`; `litert`,
   `litert-lm`, `litertlm`, `.litertlm` for `litert_lm`; `stable-diffusion` for
-  `stable_diffusion`. `all` and `both` select `llama_cpp` and `litert_lm`.
-  Unknown names are dropped with a warning.
+  `stable_diffusion`. `all` selects every family, the opt-in
+  `stable_diffusion` included; `both` selects `llama_cpp` and `litert_lm`, the
+  same as leaving the key unset. Unknown names are dropped with a warning.
 - Selecting `litert_lm` by name for a target without a LiteRT-LM runtime, such
   as the iOS x86_64 simulator or Windows arm64, fails the build. When it is only
-  implied by the default or `all`, the hook drops it with a warning.
+  implied by the default, `both` or `all`, the hook drops it with a warning.
 - An empty or all-unknown selection falls back to `llama_cpp` and
   `litert_lm`; one that leaves no runtime, such as `none`, fails the build.
 
@@ -79,27 +80,33 @@ hooks:
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runtime
 from `leehack/stable-diffusion-native` for the experimental
 [`ImageGenerationEngine`](../guides/image-generation). It adds about 40 to
-70 MB per target, so it is never bundled by default or by `all`/`both`; name it
-explicitly. A `llamadart_native_runtimes` list replaces the default runtimes,
-so it names every runtime the app loads:
+70 MB per target, so it is never bundled by default or by `both`; name it, or
+select `all`. Unset, `llamadart_native_runtimes` bundles `llama_cpp` and
+`litert_lm`; a list replaces those defaults, so it names every runtime the app
+loads:
 
 | The app loads | `llamadart_native_runtimes` |
 | --- | --- |
-| The defaults (GGUF and `.litertlm` models) and images | `[all, stable_diffusion]` |
-| GGUF models and images, no LiteRT-LM | `[llama_cpp, stable_diffusion]` |
+| GGUF and `.litertlm` models | unset |
 | Images only | `[stable_diffusion]` |
+| GGUF models and images | `[llama_cpp, stable_diffusion]` |
+| Every runtime published for the target | `all` |
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes: [all, stable_diffusion]
+      llamadart_native_runtimes: all
 ```
 
-- `all` stands for the default `llama_cpp` and `litert_lm`, so
-  `[all, stable_diffusion]` still skips `litert_lm` with a warning on a target
-  without a LiteRT-LM runtime. `[llama_cpp, litert_lm, stable_diffusion]` names
-  `litert_lm` and fails the build there.
+- `all` only implies its runtimes, so a target without a LiteRT-LM or
+  `stable_diffusion` build skips that runtime with a warning.
+  `[llama_cpp, litert_lm, stable_diffusion]` names `litert_lm` and fails the
+  build on a target without it.
+- On Flutter iOS and macOS, `all` includes `stable_diffusion` only when the
+  `llamadart_stable_diffusion_flutter` companion is a dependency; without it
+  the hook skips the runtime with a warning that names the companion. Naming
+  `stable_diffusion` still bundles it through the hook there.
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS
@@ -315,7 +322,8 @@ When the llama.cpp or LiteRT-LM companion is present, the installed companions
 choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 `llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
 decided on its own: its companion selects it, and otherwise the hook bundles it
-when `llamadart_native_runtimes` names it. Adding only the stable_diffusion
+when `llamadart_native_runtimes` names it, not when `all` only implies it.
+Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. The tag,

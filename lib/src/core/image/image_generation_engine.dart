@@ -145,12 +145,12 @@ class ImageGenerationTask {
 /// Experimental on-device text-to-image generation through the opt-in
 /// stable_diffusion runtime (stable-diffusion.cpp).
 ///
-/// The app must bundle the runtime by adding `stable_diffusion` to
-/// `hooks.user_defines.llamadart.llamadart_native_runtimes`. That list
-/// replaces the default runtimes; `[all, stable_diffusion]` keeps them. It
-/// runs on Android arm64 (CPU), iOS and macOS (Metal), and Linux and Windows
-/// (CPU or Vulkan). On the web and other platforms [load] throws
-/// [LlamaUnsupportedException].
+/// The app must bundle the runtime by setting
+/// `hooks.user_defines.llamadart.llamadart_native_runtimes` to `all` or to a
+/// list naming `stable_diffusion`; a list replaces the default `llama_cpp`
+/// and `litert_lm`. It runs on Android arm64 (CPU), iOS and macOS (Metal), and
+/// Linux and Windows (CPU or Vulkan). On the web and other platforms [load]
+/// throws [LlamaUnsupportedException].
 ///
 /// The model runs in a worker isolate, so the calling isolate stays
 /// responsive. stable-diffusion.cpp reports progress through one

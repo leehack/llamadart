@@ -185,7 +185,7 @@ void main() {
         mainMethod: build_hook.main,
         targetOS: OS.linux,
         targetArchitecture: Architecture.arm64,
-        userDefines: _allRuntimeUserDefines(),
+        userDefines: _bothRuntimeUserDefines(),
         check: (input, output) {
           final codeAssets = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -220,7 +220,7 @@ void main() {
           mainMethod: build_hook.main,
           targetOS: OS.macOS,
           targetArchitecture: architecture,
-          userDefines: _allRuntimeUserDefines(),
+          userDefines: _bothRuntimeUserDefines(),
           check: (input, output) {
             final codeAssets = output.assets.encodedAssets
                 .where((asset) => asset.isCodeAsset)
@@ -290,7 +290,7 @@ void main() {
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
-        userDefines: _allRuntimeUserDefines(),
+        userDefines: _bothRuntimeUserDefines(),
         check: (input, output) {
           final codeAssets = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -740,9 +740,10 @@ dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
     },
   );
 
-  test('build hook drops unavailable LiteRT-LM from all selections', () async {
+  test('build hook drops unavailable LiteRT-LM from both and empty '
+      'selections', () async {
     for (final userDefines in [
-      _allRuntimeUserDefines(),
+      _bothRuntimeUserDefines(),
       _emptyRuntimeUserDefines(),
     ]) {
       await testCodeBuildHook(
@@ -903,10 +904,10 @@ PackageUserDefines _liteRtLmOnlyUserDefines() => PackageUserDefines(
   ),
 );
 
-PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
+PackageUserDefines _bothRuntimeUserDefines() => PackageUserDefines(
   workspacePubspec: PackageUserDefinesSource(
     defines: {
-      'llamadart_native_runtimes': ['all'],
+      'llamadart_native_runtimes': ['both'],
     },
     basePath: Directory.current.uri,
   ),

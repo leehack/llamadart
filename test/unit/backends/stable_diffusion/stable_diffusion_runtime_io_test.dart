@@ -229,7 +229,8 @@ void main() {
           allOf(
             contains('stable_diffusion runtime is not bundled for linux-x64'),
             contains('llamadart_native_runtimes'),
-            contains('[all, stable_diffusion] keeps them'),
+            contains('llamadart_native_runtimes to all, or add'),
+            contains('A list replaces the default llama_cpp and litert_lm.'),
           ),
         ),
       );
@@ -310,7 +311,8 @@ void main() {
           allOf(
             contains('not bundled for $platform'),
             contains('llamadart_native_runtimes'),
-            contains('[all, stable_diffusion] keeps them'),
+            contains('llamadart_native_runtimes to all, or add'),
+            contains('A list replaces the default llama_cpp and litert_lm.'),
             contains('llamadart_stable_diffusion_flutter'),
           ),
           reason: platform,

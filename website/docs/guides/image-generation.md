@@ -78,17 +78,18 @@ default. Name it in the app's `pubspec.yaml`, then run `flutter clean` once:
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes: [all, stable_diffusion]
+      llamadart_native_runtimes: all
 ```
 
-A `llamadart_native_runtimes` list replaces the default runtimes, so it names
-every runtime the app loads:
+Unset, `llamadart_native_runtimes` bundles `llama_cpp` and `litert_lm`. A list
+replaces those defaults, so it names every runtime the app loads:
 
 | The app loads | `llamadart_native_runtimes` |
 | --- | --- |
-| The defaults (GGUF and `.litertlm` models) and images | `[all, stable_diffusion]` |
-| GGUF models and images, no LiteRT-LM | `[llama_cpp, stable_diffusion]` |
+| GGUF and `.litertlm` models | unset |
 | Images only | `[stable_diffusion]` |
+| GGUF models and images | `[llama_cpp, stable_diffusion]` |
+| Every runtime published for the target | `all` |
 
 Linux and Windows get the Vulkan build when `llamadart_native_backends`
 selects Vulkan, which it does by default; set

@@ -197,14 +197,23 @@ void main() {
       expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
     });
 
-    test('parses all as both runtime families on non-Android targets', () {
-      final selected = selectNativeRuntimesForBundle(
-        bundle: 'linux-x64',
-        rawUserConfig: 'all',
-        warn: (_) {},
-      );
+    test('parses both as the two default runtime families', () {
+      for (final rawUserConfig in const <Object>[
+        'both',
+        ' Both ',
+        ['both'],
+      ]) {
+        final selected = selectNativeRuntimesForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: rawUserConfig,
+          warn: (_) {},
+        );
 
-      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+        expect(selected, [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: '$rawUserConfig');
+      }
     });
 
     test('parses empty runtime list as all runtime families', () {
@@ -460,16 +469,18 @@ void main() {
       for (final rawUserConfig in const <Object?>[null, '', <String>[]]) {
         final warnings = <String>[];
 
-        expect(
-          select(rawUserConfig, warnings),
-          allNativeRuntimes,
-          reason: rawUserConfig.toString(),
-        );
+        expect(select(rawUserConfig, warnings), [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: rawUserConfig.toString());
         expect(warnings, isEmpty, reason: rawUserConfig.toString());
       }
 
       final warnings = <String>[];
-      expect(select(true, warnings), allNativeRuntimes);
+      expect(select(true, warnings), [
+        nativeRuntimeLlamaCpp,
+        nativeRuntimeLiteRtLm,
+      ]);
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('true'));
     });
@@ -477,7 +488,10 @@ void main() {
     test('all-unrecognised list warns and stays all runtime families', () {
       final warnings = <String>[];
 
-      expect(select(const ['tflite', 'onnx'], warnings), allNativeRuntimes);
+      expect(select(const ['tflite', 'onnx'], warnings), [
+        nativeRuntimeLlamaCpp,
+        nativeRuntimeLiteRtLm,
+      ]);
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('tflite, onnx'));
 
@@ -901,29 +915,64 @@ void main() {
           warn: warnings.add,
         );
 
-    test('is never selected by default, all or both', () {
+    test('is never selected by default, an empty or unrecognised value, or '
+        'both', () {
       for (final rawUserConfig in const <Object?>[
         null,
         '',
         <String>[],
-        'all',
         'both',
-        ['all'],
+        ['both'],
         ['tflite'],
-        {'runtimes': 'all'},
+        true,
+        {'runtimes': <String>[]},
+        {'runtimes': 'both'},
+        {
+          'platforms': {
+            'android': ['all'],
+          },
+        },
       ]) {
         final warnings = <String>[];
-        expect(
-          select(rawUserConfig, warnings),
-          isNot(contains(nativeRuntimeStableDiffusion)),
-          reason: rawUserConfig.toString(),
-        );
+        expect(select(rawUserConfig, warnings), [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: rawUserConfig.toString());
       }
-      expect(allNativeRuntimes, isNot(contains(nativeRuntimeStableDiffusion)));
-      expect(
-        defaultNativeRuntimes,
-        isNot(contains(nativeRuntimeStableDiffusion)),
-      );
+      expect(defaultNativeRuntimes, [
+        nativeRuntimeLlamaCpp,
+        nativeRuntimeLiteRtLm,
+      ]);
+    });
+
+    test('is selected by all, after the two default families', () {
+      for (final rawUserConfig in const <Object?>[
+        'all',
+        ' ALL ',
+        ['all'],
+        ['both', 'all'],
+        ['all', 'stable_diffusion'],
+        ['llama_cpp', 'all'],
+        {'runtimes': 'all'},
+        {
+          'runtimes': ['llama_cpp'],
+          'platforms': {'linux': 'all'},
+        },
+      ]) {
+        final warnings = <String>[];
+        expect(select(rawUserConfig, warnings), [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+          nativeRuntimeStableDiffusion,
+        ], reason: rawUserConfig.toString());
+        expect(warnings, isEmpty, reason: rawUserConfig.toString());
+      }
+      expect(select(const ['stable_diffusion', 'all'], []), [
+        nativeRuntimeStableDiffusion,
+        nativeRuntimeLlamaCpp,
+        nativeRuntimeLiteRtLm,
+      ]);
+      expect(select(const ['all', 'none'], []), isEmpty);
     });
 
     test('is selected when named, including the stable-diffusion alias', () {
@@ -945,17 +994,11 @@ void main() {
         nativeRuntimeLlamaCpp,
         nativeRuntimeStableDiffusion,
       ]);
-      expect(select(const ['all', 'stable_diffusion'], warnings), [
-        ...allNativeRuntimes,
-        nativeRuntimeStableDiffusion,
-      ]);
       expect(select(const ['stable_diffusion', 'none'], warnings), isEmpty);
       expect(warnings, isEmpty);
     });
 
-    test('[all, stable_diffusion] keeps the defaults on every bundle without '
-        'naming a runtime a bundle may lack', () {
-      const rawUserConfig = ['all', 'stable_diffusion'];
+    test('all implies every runtime on every bundle and names none', () {
       for (final bundle in const [
         'android-arm64',
         'android-x64',
@@ -969,46 +1012,72 @@ void main() {
         'windows-arm64',
         'windows-x64',
       ]) {
-        final warnings = <String>[];
-        expect(
-          selectNativeRuntimesForBundle(
-            bundle: bundle,
-            rawUserConfig: rawUserConfig,
-            warn: warnings.add,
-          ),
-          [...defaultNativeRuntimes, nativeRuntimeStableDiffusion],
-          reason: bundle,
-        );
-        expect(warnings, isEmpty, reason: bundle);
-        // What lets `hook/build.dart` skip an unpublished runtime with a
-        // warning instead of failing the build.
+        for (final rawUserConfig in const <Object>[
+          'all',
+          ['all'],
+          ['all', 'stable_diffusion'],
+        ]) {
+          final reason = '$bundle $rawUserConfig';
+          final warnings = <String>[];
+          expect(
+            selectNativeRuntimesForBundle(
+              bundle: bundle,
+              rawUserConfig: rawUserConfig,
+              warn: warnings.add,
+            ),
+            [
+              nativeRuntimeLlamaCpp,
+              nativeRuntimeLiteRtLm,
+              nativeRuntimeStableDiffusion,
+            ],
+            reason: reason,
+          );
+          expect(warnings, isEmpty, reason: reason);
+          // What lets `hook/build.dart` skip a runtime `all` implies with a
+          // warning instead of failing the build.
+          expect(
+            nativeRuntimeExplicitlySelectedForBundle(
+              bundle: bundle,
+              rawUserConfig: rawUserConfig,
+              runtime: nativeRuntimeLiteRtLm,
+            ),
+            isFalse,
+            reason: reason,
+          );
+          expect(
+            nativeRuntimeExplicitlySelectedForBundle(
+              bundle: bundle,
+              rawUserConfig: rawUserConfig,
+              runtime: nativeRuntimeStableDiffusion,
+            ),
+            rawUserConfig is List && rawUserConfig.length == 2,
+            reason: reason,
+          );
+          expect(
+            nativeRuntimeNamedForExactBundle(
+              bundle: bundle,
+              rawUserConfig: rawUserConfig,
+              runtime: nativeRuntimeStableDiffusion,
+            ),
+            isFalse,
+            reason: reason,
+          );
+        }
+      }
+    });
+
+    test('all and both never count as an explicitly selected runtime', () {
+      for (final runtime in const ['all', 'both', 'none']) {
         expect(
           nativeRuntimeExplicitlySelectedForBundle(
-            bundle: bundle,
-            rawUserConfig: rawUserConfig,
-            runtime: nativeRuntimeLiteRtLm,
+            bundle: 'linux-x64',
+            rawUserConfig: const ['all', 'both', 'llama_cpp'],
+            runtime: runtime,
           ),
           isFalse,
-          reason: bundle,
-        );
-        expect(
-          nativeRuntimeNamedForExactBundle(
-            bundle: bundle,
-            rawUserConfig: rawUserConfig,
-            runtime: nativeRuntimeStableDiffusion,
-          ),
-          isFalse,
-          reason: bundle,
+          reason: runtime,
         );
       }
-      expect(
-        nativeRuntimeExplicitlySelectedForBundle(
-          bundle: 'windows-arm64',
-          rawUserConfig: const ['llama_cpp', 'litert_lm', 'stable_diffusion'],
-          runtime: nativeRuntimeLiteRtLm,
-        ),
-        isTrue,
-      );
     });
 
     test('unknown-runtime warning lists stable_diffusion as supported', () {

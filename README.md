@@ -99,12 +99,13 @@ experimental and may change, and the runtime is opt-in.
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [all, stable_diffusion]
+        llamadart_native_runtimes: all
   ```
 
-  A list replaces the default runtimes, so it names everything the app loads:
-  - `[all, stable_diffusion]`: the defaults (`llama_cpp` and `litert_lm`) plus
-    images.
+  Unset, the key bundles `llama_cpp` and `litert_lm`. A list replaces those
+  defaults, so it names everything the app loads:
+  - `all`: every runtime published for the target, `llama_cpp`, `litert_lm`
+    and `stable_diffusion`.
   - `[llama_cpp, stable_diffusion]`: GGUF chat and images, no LiteRT-LM.
   - `[stable_diffusion]`: images only.
 
