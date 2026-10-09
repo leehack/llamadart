@@ -4,6 +4,7 @@ import 'dart:math';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
+import '../llama_logger.dart';
 import '../models/config/compute_device.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/model_format.dart';
@@ -310,15 +311,19 @@ class ImageGenerationEngine {
   /// available: on Android the larger of `MemAvailable` and half of physical
   /// memory less what the app already holds, `MemAvailable` on Linux, the
   /// app's remaining memory limit on iOS, and physical memory on macOS,
-  /// capped on Metal by the GPU's recommended working set. On a Vulkan GPU
-  /// it is the GPU's free memory when its driver reports that, its total
-  /// memory otherwise, and for an integrated GPU the host figure of its
-  /// platform; the GPU is asked off the calling isolate. The Windows CPU, an
-  /// integrated GPU on Windows, a GPU that does not report its memory and a
-  /// load with the `SD_VK_DEVICE` environment variable set are not checked. A
-  /// model that does not fit throws [LlamaModelException] naming both
-  /// figures, instead of letting the system kill the app or, on a Vulkan
-  /// GPU, the runtime keep the weights that do not fit in host memory.
+  /// capped on Metal by the GPU's recommended working set. A model that
+  /// does not fit throws [LlamaModelException] naming both figures, instead
+  /// of letting the system kill the app.
+  ///
+  /// A Vulkan GPU does not bound a model by itself: the runtime keeps the
+  /// weights that do not fit it in host memory. The GPU's figure, asked off
+  /// the calling isolate, is its free memory when its driver reports that
+  /// and its total memory otherwise. A model above it loads, generates more
+  /// slowly, and one `LlamaLogger` warning says so; on Linux it is refused
+  /// only above that figure plus `MemAvailable`. An integrated GPU on Linux
+  /// gets `MemAvailable` alone. Windows, a GPU that does not report its
+  /// memory and a load with the `SD_VK_DEVICE` environment variable set are
+  /// never refused.
   ///
   /// [download]'s cancel token stops a download at once and is checked again
   /// after classification and after the native load; the native load itself
@@ -416,7 +421,7 @@ class ImageGenerationEngine {
     if (params.checkMemory) {
       _checkMemory(
         weightBytes,
-        await driver.memoryBudget(switch (backendName) {
+        await driver.memoryLimits(switch (backendName) {
           _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
           _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
           _ => ImageGenerationComputeDevice.cpu,
@@ -743,22 +748,28 @@ class ImageGenerationEngine {
 
   static void _checkMemory(
     int weightBytes,
-    ImageGenerationMemoryBudget? budget,
+    ImageGenerationMemoryLimits limits,
   ) {
-    if (budget == null) {
-      return;
-    }
     final required = estimateImageGenerationMemoryBytes(weightBytes);
-    if (required <= budget.bytes) {
-      return;
+    final needs =
+        'The image model needs about ${_gib(required)} GiB '
+        '(${_gib(weightBytes)} GiB of weights plus working memory)';
+    final refuse = limits.refuse;
+    if (refuse != null && required > refuse.bytes) {
+      throw LlamaModelException(
+        '$needs, but only ${_gib(refuse.bytes)} GiB is available '
+        '(${refuse.source}). Use a smaller or more quantized model, free '
+        'memory, or set ImageModelParams.checkMemory to false to try anyway.',
+      );
     }
-    throw LlamaModelException(
-      'The image model needs about ${_gib(required)} GiB '
-      '(${_gib(weightBytes)} GiB of weights plus working memory), but only '
-      '${_gib(budget.bytes)} GiB is available (${budget.source}). Use a '
-      'smaller or more quantized model, free memory, or set '
-      'ImageModelParams.checkMemory to false to try anyway.',
-    );
+    final slower = limits.slower;
+    if (slower != null && required > slower.bytes) {
+      LlamaLogger.instance.warning(
+        '$needs, more than the ${_gib(slower.bytes)} GiB available '
+        '(${slower.source}). stable-diffusion.cpp keeps the part that does '
+        'not fit in system memory, so generation will be slower.',
+      );
+    }
   }
 
   static String _gib(int bytes) {

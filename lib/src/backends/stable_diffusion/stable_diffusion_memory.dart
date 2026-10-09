@@ -63,7 +63,7 @@ int? stableDiffusionFileSize(String path) {
 ///
 /// On other GPUs, such as Vulkan, `null`: the weights live in device memory,
 /// so host memory would be the wrong figure. [readStableDiffusionGpuMemory]
-/// and [stableDiffusionGpuMemoryBudget] give theirs.
+/// and [stableDiffusionGpuMemoryLimits] give theirs.
 ///
 /// [abi], [readMemInfo], [readProcessStatus], [iosAvailableMemory],
 /// [macosPhysicalMemory] and [metalRecommendedWorkingSet] default to the
@@ -176,50 +176,73 @@ StableDiffusionGpuMemory? readStableDiffusionGpuMemory({
   });
 }
 
-/// The memory a new image model can use on the GPU [memory] describes, or
-/// `null` when it is not known.
+/// The memory limits of a new image model on the GPU [memory] describes;
+/// neither is known when [memory] is `null`.
 ///
-/// - A discrete GPU whose driver reports a budget (`VK_EXT_memory_budget`):
-///   its free memory, which is what this process can still allocate there
-///   and so accounts for other processes and for models already loaded.
-/// - A discrete GPU without one: its total memory. The runtime then reports
-///   the total as free, so equal figures mean "not reported", and so does a
-///   free figure of 0, which a driver whose budget is below the process's use
-///   gives. Only a model that cannot fit the device at all is refused.
-/// - An integrated GPU: [hostBudget], the figure the CPU gets. Its memory is
-///   host memory, and a driver that exposes that as several heaps has it
-///   counted more than once in the device's figures, so they are not used.
-///   `null` where host memory is not read, as on Windows.
-ImageGenerationMemoryBudget? stableDiffusionGpuMemoryBudget(
+/// The GPU's figure:
+/// - with a budget from the driver (`VK_EXT_memory_budget`), its free memory,
+///   which is what this process can still allocate there and so accounts for
+///   other processes and for models already loaded;
+/// - without one, its total memory. The runtime then reports the total as
+///   free, so equal figures mean "not reported", and so does a free figure of
+///   0, which a driver whose budget is below the process's use gives.
+///
+/// A discrete GPU does not bound a load by itself: stable-diffusion.cpp's
+/// automatic fit, which llamadart leaves on, keeps the weights that do not
+/// fit the GPU in host memory. So a model above the GPU's figure is only
+/// `slower`, and it is refused above that figure plus [hostBudget], the
+/// figure the CPU gets. Where host memory is not read, as on Windows,
+/// nothing is refused.
+///
+/// An integrated GPU uses host memory, and a driver that exposes that as
+/// several heaps has it counted more than once in the device's figures. They
+/// are not used: a model is refused above [hostBudget] alone.
+ImageGenerationMemoryLimits stableDiffusionGpuMemoryLimits(
   StableDiffusionGpuMemory? memory, {
   required ImageGenerationMemoryBudget? Function() hostBudget,
 }) {
   if (memory == null || memory.totalBytes <= 0) {
-    return null;
+    return (refuse: null, slower: null);
   }
+  final host = hostBudget();
   if (memory.integrated) {
-    final host = hostBudget();
-    return host == null
-        ? null
-        : (
-            bytes: host.bytes,
-            source:
-                '${host.source}; ${memory.name} is an integrated GPU, which '
-                'uses host memory',
-          );
-  }
-  final total = '${_gib(memory.totalBytes)} GiB';
-  if (memory.freeBytes > 0 && memory.freeBytes < memory.totalBytes) {
     return (
-      bytes: memory.freeBytes,
-      source: 'free GPU memory of ${memory.name}, out of $total',
+      refuse: host == null
+          ? null
+          : (
+              bytes: host.bytes,
+              source:
+                  '${host.source}; ${memory.name} is an integrated GPU, which '
+                  'uses host memory',
+            ),
+      slower: null,
     );
   }
+  final budgeted = memory.freeBytes > 0 && memory.freeBytes < memory.totalBytes;
+  final ImageGenerationMemoryBudget gpu = budgeted
+      ? (
+          bytes: memory.freeBytes,
+          source:
+              'free GPU memory of ${memory.name}, out of '
+              '${_gib(memory.totalBytes)} GiB',
+        )
+      : (
+          bytes: memory.totalBytes,
+          source:
+              'the GPU memory of ${memory.name}, whose driver does not '
+              'report how much of it is free',
+        );
   return (
-    bytes: memory.totalBytes,
-    source:
-        'the GPU memory of ${memory.name}, whose driver does not report how '
-        'much of it is free',
+    refuse: host == null
+        ? null
+        : (
+            bytes: gpu.bytes + host.bytes,
+            source:
+                '${_gib(gpu.bytes)} GiB of GPU memory and '
+                '${_gib(host.bytes)} GiB of system memory: ${gpu.source}; '
+                '${host.source}',
+          ),
+    slower: gpu,
   );
 }
 

@@ -65,15 +65,18 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
       readStableDiffusionFileRange(path, offset, length);
 
   @override
-  Future<ImageGenerationMemoryBudget?> memoryBudget(
+  Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device,
   ) async {
     if (device != ImageGenerationComputeDevice.otherGpu) {
-      return readStableDiffusionMemoryBudget(device: device);
+      return (
+        refuse: readStableDiffusionMemoryBudget(device: device),
+        slower: null,
+      );
     }
     final readGpuMemory = _readGpuMemory;
     final logLevel = imageRuntimeLogLevel();
-    return stableDiffusionGpuMemoryBudget(
+    return stableDiffusionGpuMemoryLimits(
       // The query is a native call that can block: the first one in a
       // process initializes the GPU backend.
       await Isolate.run(() => readGpuMemory(logLevel: logLevel)),

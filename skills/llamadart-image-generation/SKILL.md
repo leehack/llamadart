@@ -136,10 +136,12 @@ description: >-
   of `MemAvailable` and half of `MemTotal` less the app's own memory,
   `MemAvailable` on Linux CPU, the app's limit on iOS, physical memory on
   macOS, capped on Metal by the GPU's recommended working set. On a Vulkan
-  GPU (Linux, Windows) it is the GPU's free memory when the driver reports
-  one, otherwise its total; an integrated GPU gets the host figure. The
-  Windows CPU and integrated GPUs on Windows are not checked, and the Vulkan
-  check has not run on a physical GPU yet. SD-Turbo usually
+  GPU a model larger than the GPU's memory still loads, slower, with one
+  `LlamaLogger` warning (the runtime keeps the rest in system memory); on
+  Linux it is refused only above the GPU's memory plus `MemAvailable`, and
+  on Windows never. An integrated GPU on Linux gets `MemAvailable`. The
+  Windows CPU is not checked, and the Vulkan figures are not validated on a
+  physical GPU yet. SD-Turbo usually
   loads on 8 GB Android phones when no chat model is loaded, and is usually
   refused on 6 GB ones; offer SDXS there.
 - `ImageModelParams(device: ComputeDevice.auto | cpu | gpu, threads: 0)`.

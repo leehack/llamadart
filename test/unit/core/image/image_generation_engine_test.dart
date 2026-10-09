@@ -1030,34 +1030,146 @@ void main() {
       expect(driver.started, isEmpty);
     });
 
-    test('refuses a model that does not fit a Vulkan GPU, naming the '
-        'estimate and the memory of the GPU', () async {
-      driver
-        ..status = _available('Vulkan0\tNVIDIA L4\nCPU\tHost\n')
-        ..sizes[_model] = 8 * _gib
-        ..budget = (
-          bytes: 6 * _gib,
-          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB',
-        );
+    group('on a Vulkan GPU', () {
+      const gpuFigure = (
+        bytes: 6 * _gib,
+        source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB',
+      );
+      const gpuAndHost = (
+        bytes: 10 * _gib,
+        source:
+            '6.00 GiB of GPU memory and 4.00 GiB of system memory: free GPU '
+            'memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB; MemAvailable in '
+            '/proc/meminfo',
+      );
+      late List<LlamaLogRecord> records;
 
-      await expectLater(
-        load(_sdxs()),
-        throwsA(
-          isA<LlamaModelException>().having(
-            (error) => error.message,
-            'message',
-            allOf(
-              contains('about 10.5 GiB'),
-              contains('only 6.00 GiB is available'),
-              contains(
-                'free GPU memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB',
+      setUp(() {
+        driver.status = _available('Vulkan0\tNVIDIA L4\nCPU\tHost\n');
+        records = [];
+        final logger = LlamaLogger.instance;
+        final level = logger.level;
+        logger
+          ..setLevel(LlamaLogLevel.debug)
+          ..setHandler(records.add);
+        addTearDown(() {
+          logger
+            ..setLevel(level)
+            ..setHandler(null);
+        });
+      });
+
+      test('refuses a model that fits neither the GPU nor the GPU plus '
+          'system memory, naming the estimate and both figures', () async {
+        driver
+          ..sizes[_model] = 8 * _gib
+          ..budget = gpuAndHost
+          ..slowerBudget = gpuFigure;
+
+        await expectLater(
+          load(_sdxs()),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('about 10.5 GiB'),
+                contains('only 10.0 GiB is available'),
+                contains('6.00 GiB of GPU memory'),
+                contains('4.00 GiB of system memory'),
+                contains('Vulkan0 (NVIDIA L4)'),
+                contains('MemAvailable in /proc/meminfo'),
               ),
             ),
           ),
-        ),
-      );
-      expect(driver.budgetDevices, [ImageGenerationComputeDevice.otherGpu]);
-      expect(driver.started, isEmpty);
+        );
+        expect(driver.budgetDevices, [ImageGenerationComputeDevice.otherGpu]);
+        expect(driver.started, isEmpty);
+        expect(records, isEmpty);
+      });
+
+      test('loads a model larger than the GPU that fits the GPU plus system '
+          'memory, with one warning that names the figures', () async {
+        driver
+          ..sizes[_model] = 6 * _gib
+          ..budget = gpuAndHost
+          ..slowerBudget = gpuFigure;
+
+        await load(_sdxs());
+
+        expect(driver.started, hasLength(1));
+        expect(records, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(
+          records.single.message,
+          'The image model needs about 8.00 GiB (6.00 GiB of weights plus '
+          'working memory), more than the 6.00 GiB available (free GPU '
+          'memory of Vulkan0 (NVIDIA L4), out of 22.5 GiB). '
+          'stable-diffusion.cpp keeps the part that does not fit in system '
+          'memory, so generation will be slower.',
+        );
+      });
+
+      test('the estimate has to exceed a figure, not reach it', () async {
+        // 4 GiB of weights are estimated at 5.5 GiB, and 8 GiB at 10.5 GiB.
+        driver
+          ..slowerBudget = (bytes: 11 * _gib ~/ 2, source: 'the GPU')
+          ..budget = (bytes: 21 * _gib ~/ 2, source: 'the GPU and the host');
+
+        driver.sizes[_model] = 4 * _gib;
+        await load(_sdxs());
+        expect(records, isEmpty);
+
+        driver.sizes[_model] = 8 * _gib;
+        await load(_sdxs());
+        expect(records, hasLength(1));
+        expect(driver.started, hasLength(2));
+
+        driver.sizes[_model] = 8 * _gib + 4;
+        await expectLater(load(_sdxs()), throwsA(isA<LlamaModelException>()));
+        driver.sizes[_model] = 4 * _gib + 4;
+        await load(_sdxs());
+        expect(records, hasLength(2));
+      });
+
+      test('where host memory is not read, as on Windows, a model of any '
+          'size loads with the warning', () async {
+        driver
+          ..sizes[_model] = 64 * _gib
+          ..budget = null
+          ..slowerBudget = gpuFigure;
+
+        await load(_sdxs());
+
+        expect(driver.started, hasLength(1));
+        expect(records.single.level, LlamaLogLevel.warn);
+        expect(records.single.message, contains('more than the 6.00 GiB'));
+      });
+
+      test('a model that fits the GPU loads without a warning', () async {
+        driver
+          ..sizes[_model] = 2 * _gib
+          ..budget = gpuAndHost
+          ..slowerBudget = gpuFigure;
+
+        await load(_sdxs());
+
+        expect(driver.started, hasLength(1));
+        expect(records, isEmpty);
+      });
+
+      test('checkMemory false neither asks, refuses nor warns', () async {
+        driver
+          ..sizes[_model] = 64 * _gib
+          ..budget = gpuAndHost
+          ..slowerBudget = gpuFigure;
+
+        await load(_sdxs(), params: const ImageModelParams(checkMemory: false));
+
+        expect(driver.budgetDevices, isEmpty);
+        expect(driver.started, hasLength(1));
+        expect(records, isEmpty);
+      });
     });
 
     test('counts every file toward the estimate', () async {
@@ -1650,6 +1762,7 @@ final class _FakeDriver implements ImageGenerationDriver {
     _t5xxl: ImageModelHeaders.t5xxl,
   };
   ImageGenerationMemoryBudget? budget;
+  ImageGenerationMemoryBudget? slowerBudget;
   Object? startError;
   final List<ImageGenerationSessionConfig> started = [];
   _FakeSession session = _FakeSession();
@@ -1693,11 +1806,11 @@ final class _FakeDriver implements ImageGenerationDriver {
   final List<ImageGenerationComputeDevice> budgetDevices = [];
 
   @override
-  Future<ImageGenerationMemoryBudget?> memoryBudget(
+  Future<ImageGenerationMemoryLimits> memoryLimits(
     ImageGenerationComputeDevice device,
   ) async {
     budgetDevices.add(device);
-    return budget;
+    return (refuse: budget, slower: slowerBudget);
   }
 
   @override

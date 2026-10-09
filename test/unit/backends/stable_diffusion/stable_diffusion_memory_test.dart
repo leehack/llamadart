@@ -363,13 +363,14 @@ void main() {
     });
   });
 
-  group('stableDiffusionGpuMemoryBudget', () {
+  group('stableDiffusionGpuMemoryLimits', () {
     const host = (bytes: 5 * _gib, source: 'MemAvailable in /proc/meminfo');
+    const noLimits = (refuse: null, slower: null);
 
-    ImageGenerationMemoryBudget? budget(
+    ImageGenerationMemoryLimits limits(
       StableDiffusionGpuMemory? memory, {
       ImageGenerationMemoryBudget? hostBudget = host,
-    }) => stableDiffusionGpuMemoryBudget(memory, hostBudget: () => hostBudget);
+    }) => stableDiffusionGpuMemoryLimits(memory, hostBudget: () => hostBudget);
 
     StableDiffusionGpuMemory gpu({
       required int total,
@@ -382,64 +383,103 @@ void main() {
       integrated: integrated,
     );
 
-    test('a discrete GPU whose driver reports a budget gives its free '
-        'memory', () {
-      expect(budget(gpu(total: 24 * _gib, free: 9 * _gib)), (
-        bytes: 9 * _gib,
-        source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 24.0 GiB',
+    test('a discrete GPU whose driver reports a budget is slower above its '
+        'free memory, and refuses above that plus host memory', () {
+      expect(limits(gpu(total: 24 * _gib, free: 9 * _gib)), (
+        refuse: (
+          bytes: 14 * _gib,
+          source:
+              '9.00 GiB of GPU memory and 5.00 GiB of system memory: free '
+              'GPU memory of Vulkan0 (NVIDIA L4), out of 24.0 GiB; '
+              'MemAvailable in /proc/meminfo',
+        ),
+        slower: (
+          bytes: 9 * _gib,
+          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 24.0 GiB',
+        ),
       ));
-      expect(
-        budget(gpu(total: 8 * _gib, free: 8 * _gib - 1))?.bytes,
-        8 * _gib - 1,
-      );
-      expect(budget(gpu(total: 8 * _gib, free: 1))?.bytes, 1);
+      for (final free in [8 * _gib - 1, 1]) {
+        final result = limits(gpu(total: 8 * _gib, free: free));
+        expect(result.slower?.bytes, free);
+        expect(result.refuse?.bytes, free + 5 * _gib);
+      }
     });
 
     test('a discrete GPU that reports its total as free, or nothing as free, '
-        'gives its total memory and says that free memory is unknown', () {
+        'uses its total memory and says that free memory is unknown', () {
       for (final free in [8 * _gib, 0]) {
-        expect(budget(gpu(total: 8 * _gib, free: free)), (
-          bytes: 8 * _gib,
-          source:
-              'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does not '
-              'report how much of it is free',
+        expect(limits(gpu(total: 8 * _gib, free: free)), (
+          refuse: (
+            bytes: 13 * _gib,
+            source:
+                '8.00 GiB of GPU memory and 5.00 GiB of system memory: the '
+                'GPU memory of Vulkan0 (NVIDIA L4), whose driver does not '
+                'report how much of it is free; MemAvailable in '
+                '/proc/meminfo',
+          ),
+          slower: (
+            bytes: 8 * _gib,
+            source:
+                'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does '
+                'not report how much of it is free',
+          ),
         ), reason: '$free');
       }
     });
 
-    test('an integrated GPU gives the host figure, never its own', () {
-      for (final (total, free) in [(64 * _gib, 60 * _gib), (2 * _gib, _gib)]) {
-        expect(budget(gpu(total: total, free: free, integrated: true)), (
-          bytes: 5 * _gib,
+    test('a discrete GPU where host memory is not read, as on Windows, is '
+        'slower above its figure and refuses nothing', () {
+      expect(limits(gpu(total: 24 * _gib, free: 9 * _gib), hostBudget: null), (
+        refuse: null,
+        slower: (
+          bytes: 9 * _gib,
+          source: 'free GPU memory of Vulkan0 (NVIDIA L4), out of 24.0 GiB',
+        ),
+      ));
+      expect(limits(gpu(total: 8 * _gib, free: 8 * _gib), hostBudget: null), (
+        refuse: null,
+        slower: (
+          bytes: 8 * _gib,
           source:
-              'MemAvailable in /proc/meminfo; Vulkan0 (NVIDIA L4) is an '
-              'integrated GPU, which uses host memory',
+              'the GPU memory of Vulkan0 (NVIDIA L4), whose driver does '
+              'not report how much of it is free',
+        ),
+      ));
+    });
+
+    test('an integrated GPU refuses above the host figure, never its own, '
+        'and has nothing slower', () {
+      for (final (total, free) in [(64 * _gib, 60 * _gib), (2 * _gib, _gib)]) {
+        expect(limits(gpu(total: total, free: free, integrated: true)), (
+          refuse: (
+            bytes: 5 * _gib,
+            source:
+                'MemAvailable in /proc/meminfo; Vulkan0 (NVIDIA L4) is an '
+                'integrated GPU, which uses host memory',
+          ),
+          slower: null,
         ));
       }
     });
 
-    test('an integrated GPU has no budget where host memory is not read', () {
+    test('an integrated GPU has no limit where host memory is not read', () {
       expect(
-        budget(
+        limits(
           gpu(total: 16 * _gib, free: 8 * _gib, integrated: true),
           hostBudget: null,
         ),
-        isNull,
+        noLimits,
       );
     });
 
-    test('unknown memory has no budget, and the host is not asked for a '
-        'discrete GPU', () {
+    test('unknown memory has no limit, and the host is not asked', () {
       ImageGenerationMemoryBudget? unasked() => fail('asked the host');
 
-      expect(budget(null), isNull);
-      expect(budget(gpu(total: 0, free: 0)), isNull);
+      expect(limits(null), noLimits);
+      expect(limits(gpu(total: 0, free: 0)), noLimits);
       expect(
-        stableDiffusionGpuMemoryBudget(
-          gpu(total: 8 * _gib, free: _gib),
-          hostBudget: unasked,
-        )?.bytes,
-        _gib,
+        stableDiffusionGpuMemoryLimits(null, hostBudget: unasked),
+        noLimits,
       );
     });
   });

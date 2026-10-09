@@ -2,13 +2,14 @@
 
 - Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
   `stable_diffusion` image runtime.
-- Check the memory of a Vulkan GPU before loading an image model on Linux and
-  Windows: `ImageGenerationEngine.load` refuses a model whose estimate
-  exceeds the GPU's free memory, or its total memory when the driver reports
-  no free figure, with `LlamaModelException`
+- Check the memory of a Vulkan GPU before loading an image model
   ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
-  The check has not run on a physical Vulkan GPU yet, and
-  `ImageModelParams(checkMemory: false)` loads anyway.
+  On Linux `ImageGenerationEngine.load` refuses, with `LlamaModelException`,
+  a model that fits neither the GPU nor the GPU plus system memory. A model
+  larger than the GPU's memory still loads, with one warning, and runs
+  slower; on Windows it is warned about and never refused. Not validated on
+  a physical Vulkan GPU yet; `ImageModelParams(checkMemory: false)` skips
+  the check and the warning.
 - Quote the errors stable-diffusion.cpp logged in the `LlamaModelException`
   of an image model it cannot load, with files named by role
   ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).

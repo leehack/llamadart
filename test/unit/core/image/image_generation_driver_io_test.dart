@@ -118,59 +118,78 @@ void main() {
         reason: reason,
       );
       expect(
-        (await driver.memoryBudget(
+        (await driver.memoryLimits(
           ImageGenerationComputeDevice.otherGpu,
-        ))?.source,
+        )).slower?.source,
         contains('log level ${expected.name}'),
         reason: reason,
       );
     }
   });
 
-  test('reports a CPU and Metal memory budget on macOS and Linux hosts, and '
-      'none for other GPUs on a host without the runtime', () async {
+  test('the CPU and Metal refuse above their budget on macOS and Linux '
+      'hosts and have nothing slower, and other GPUs have no limit on a host '
+      'without the runtime', () async {
     final driver = createImageGenerationDriver();
 
     for (final device in [
       ImageGenerationComputeDevice.cpu,
       ImageGenerationComputeDevice.metal,
     ]) {
-      final budget = await driver.memoryBudget(device);
+      final limits = await driver.memoryLimits(device);
       if (Platform.isMacOS || Platform.isLinux) {
-        expect(budget, isNotNull);
-        expect(budget!.bytes, greaterThan(0));
+        expect(limits.refuse, isNotNull);
+        expect(limits.refuse!.bytes, greaterThan(0));
       } else if (Platform.isWindows) {
-        expect(budget, isNull);
+        expect(limits.refuse, isNull);
       }
+      expect(limits.slower, isNull);
     }
-    expect(
-      await driver.memoryBudget(ImageGenerationComputeDevice.otherGpu),
-      isNull,
-    );
+    expect(await driver.memoryLimits(ImageGenerationComputeDevice.otherGpu), (
+      refuse: null,
+      slower: null,
+    ));
   });
 
-  test('asks another GPU for its memory in another isolate, and budgets its '
-      'free memory', () async {
+  test('asks another GPU for its memory in another isolate: slower above '
+      'its free memory, refused above that plus host memory where the host '
+      'reads it', () async {
     final driver = createImageGenerationDriver(
       readGpuMemory: _gpuMemoryNamingItsIsolate,
     );
 
-    final budget = await driver.memoryBudget(
+    final limits = await driver.memoryLimits(
       ImageGenerationComputeDevice.otherGpu,
     );
+    final host = (await driver.memoryLimits(
+      ImageGenerationComputeDevice.cpu,
+    )).refuse;
 
-    expect(budget?.bytes, 6 << 30);
-    expect(budget?.source, contains('free GPU memory of spawned isolate'));
+    expect(limits.slower?.bytes, 6 << 30);
+    expect(
+      limits.slower?.source,
+      contains('free GPU memory of spawned isolate'),
+    );
+    if (Platform.isMacOS || Platform.isLinux) {
+      // MemAvailable on Linux moves between the two reads.
+      expect(
+        limits.refuse!.bytes,
+        closeTo((6 << 30) + host!.bytes, Platform.isLinux ? 1 << 30 : 0),
+      );
+      expect(limits.refuse!.source, endsWith(host.source));
+    } else if (Platform.isWindows) {
+      expect(limits.refuse, isNull);
+    }
   });
 
-  test('a GPU whose memory is not known has no budget, and the CPU and '
-      'Metal budgets do not ask it', () async {
+  test('a GPU whose memory is not known has no limit, and the CPU and '
+      'Metal limits do not ask it', () async {
     final driver = createImageGenerationDriver(readGpuMemory: _noGpuMemory);
 
-    expect(
-      await driver.memoryBudget(ImageGenerationComputeDevice.otherGpu),
-      isNull,
-    );
+    expect(await driver.memoryLimits(ImageGenerationComputeDevice.otherGpu), (
+      refuse: null,
+      slower: null,
+    ));
 
     final unasked = createImageGenerationDriver(
       readGpuMemory: _gpuMemoryNamingItsIsolate,
@@ -180,7 +199,7 @@ void main() {
       ImageGenerationComputeDevice.metal,
     ]) {
       expect(
-        (await unasked.memoryBudget(device))?.source,
+        (await unasked.memoryLimits(device)).refuse?.source,
         isNot(contains('isolate')),
       );
     }
