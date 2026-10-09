@@ -319,9 +319,9 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.5.0-2` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.6.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.18.0` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.54` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.59` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve

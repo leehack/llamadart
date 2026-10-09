@@ -10,15 +10,20 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/decision_head.dart';
+import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/ggml_graph_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/safetensors.dart';
 import 'package:llamadart/src/core/decision/decision_decoder.dart';
 import 'package:llamadart/src/core/decision/decision_question.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_native_barrier.dart';
+import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_decision_head.dart';
 
 void main() {
@@ -407,6 +412,201 @@ void main() {
       expect(ledger.schedulerBackends.single, [backends[1], backends[0]]);
       runtime.dispose();
       expect(ledger.live, isEmpty);
+    });
+  });
+
+  group('DecisionHeadRuntime with the exception barrier', () {
+    late _GgmlLedger ledger;
+    late FakeNativeBarrier barrier;
+    late RecordingExitTeardown exit;
+    late SyntheticDecisionHead head;
+
+    const devInit = 'llama_dart_ggml_backend_dev_init';
+    const allocTensors = 'llama_dart_ggml_backend_alloc_ctx_tensors';
+    const tensorSet = 'llama_dart_ggml_backend_tensor_set';
+    const tensorGet = 'llama_dart_ggml_backend_tensor_get';
+    const allocGraph = 'llama_dart_ggml_backend_sched_alloc_graph';
+    const synchronize = 'llama_dart_ggml_backend_sched_synchronize';
+    const compute = 'llama_dart_ggml_backend_sched_graph_compute';
+
+    setUp(() {
+      ledger = _GgmlLedger();
+      final pinned = NativeBarrierApi.tryResolve(
+        isWindows: Platform.isWindows,
+      )!;
+      final api = ledger.api;
+      // The barrier's ggml functions create through the ledger, so it sees
+      // what a failed call leaves behind.
+      barrier = FakeNativeBarrier(
+        real: NativeBarrierApi(
+          lastError: pinned.lastError,
+          clearLastError: pinned.clearLastError,
+          samplerAccept: pinned.samplerAccept,
+          samplerInitGrammarLazyPatterns: pinned.samplerInitGrammarLazyPatterns,
+          tokenize: pinned.tokenize,
+          tokenToPiece: pinned.tokenToPiece,
+          memoryClear: pinned.memoryClear,
+          mtmdBitmapInitFromAudio: pinned.mtmdBitmapInitFromAudio,
+          mtmdBitmapInitFromBuf: pinned.mtmdBitmapInitFromBuf,
+          mtmdBitmapInitFromFile: pinned.mtmdBitmapInitFromFile,
+          ggmlBackendDevInit: api.devInit,
+          ggmlBackendDevMemory: pinned.ggmlBackendDevMemory,
+          ggmlBackendDevGetProps: pinned.ggmlBackendDevGetProps,
+          ggmlBackendAllocCtxTensors: api.allocCtxTensors,
+          ggmlBackendTensorSet: pinned.ggmlBackendTensorSet,
+          ggmlBackendTensorGet: pinned.ggmlBackendTensorGet,
+          ggmlBackendSchedAllocGraph: pinned.ggmlBackendSchedAllocGraph,
+          ggmlBackendSchedSynchronize: pinned.ggmlBackendSchedSynchronize,
+        ),
+      )..message = 'boom';
+      addTearDown(barrier.dispose);
+      exit = RecordingExitTeardown(
+        ExitTeardownApi.tryResolve(isWindows: Platform.isWindows)!,
+      );
+      head = SyntheticDecisionHead(d: 64, layers: 1, seed: 31);
+    });
+
+    DecisionHeadRuntime create() => DecisionHeadRuntime.create(
+      DecisionHeadWeights.read(
+        writeHead(head),
+        hiddenSize: head.d,
+        layers: head.layers,
+      ),
+      cpuThreads: 1,
+      opOffload: false,
+      api: ledger.api,
+      exitTeardown: exit.api,
+      failures: NativeCallFailures(barrier.api, isWindows: false),
+    );
+
+    BackendDecisionOutput run(DecisionHeadRuntime runtime) => runtime.run(
+      head.randomHidden(3),
+      3,
+      DecisionQuestionType.choice,
+      Int32List.fromList([1, 2]),
+    );
+
+    // What create made and nothing freed: tracked objects are freed through
+    // the exit API, the rest through the ggml functions.
+    Set<int> leaked() => ledger.live.difference(exit.freed.toSet());
+
+    Matcher caught<T extends LlamaException>(String call) => isA<T>()
+        .having(
+          (e) => e.message,
+          'message',
+          'llama.cpp raised an exception in $call.',
+        )
+        .having((e) => e.details, 'details', 'boom');
+
+    test('reaches the backends through the barrier and matches the '
+        'reference', () {
+      final runtime = create();
+      addTearDown(runtime.dispose);
+
+      expectMatchesReference(
+        runtime,
+        head,
+        tokens: 3,
+        questionType: DecisionQuestionType.choice,
+        markers: [1, 2],
+      );
+      runtime.dispose();
+
+      expect(barrier.calls.toSet(), {
+        devInit,
+        allocTensors,
+        tensorSet,
+        allocGraph,
+        tensorGet,
+        synchronize,
+      });
+      expect(leaked(), isEmpty);
+    });
+
+    for (final call in [devInit, allocTensors, tensorSet]) {
+      test('create throws the typed error of an exception in $call and '
+          'frees what it made', () {
+        barrier.throwing.add(call);
+
+        expect(
+          create,
+          throwsA(
+            caught<LlamaModelException>(call.replaceFirst('llama_dart_', '')),
+          ),
+        );
+        expect(leaked(), isEmpty);
+      });
+    }
+
+    for (final call in [allocGraph, tensorSet, tensorGet]) {
+      test('a run that catches an exception in $call throws the typed error '
+          'and leaves the head unusable', () {
+        final runtime = create();
+        addTearDown(runtime.dispose);
+        barrier.throwing.add(call);
+        final native = call.replaceFirst('llama_dart_', '');
+
+        expect(
+          () => run(runtime),
+          throwsA(caught<LlamaInferenceException>(native)),
+        );
+
+        barrier.throwing.clear();
+        expect(
+          () => run(runtime),
+          throwsA(
+            isA<LlamaStateException>().having(
+              (e) => e.message,
+              'message',
+              'The decision head is unusable after a llama.cpp exception in '
+                  '$native. Load it again.',
+            ),
+          ),
+        );
+        runtime.dispose();
+        expect(leaked(), isEmpty);
+      });
+    }
+
+    test('a graph compute that catches an exception throws the typed '
+        'error', () {
+      final runtime = create();
+      addTearDown(runtime.dispose);
+      exit.fail = (name) {
+        if (name != compute) return false;
+        barrier.catchException('boom');
+        return true;
+      };
+
+      expect(
+        () => run(runtime),
+        throwsA(
+          caught<LlamaInferenceException>('ggml_backend_sched_graph_compute'),
+        ),
+      );
+      exit.fail = null;
+      expect(() => run(runtime), throwsA(isA<LlamaStateException>()));
+    });
+
+    test('a failure that caught nothing fails as before and leaves the head '
+        'usable', () {
+      final runtime = create();
+      addTearDown(runtime.dispose);
+      barrier.failing.add(allocGraph);
+
+      expect(
+        () => run(runtime),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (e) => e.message,
+            'message',
+            contains('Could not allocate decision head compute buffers'),
+          ),
+        ),
+      );
+
+      barrier.failing.clear();
+      expect(run(runtime).logits, hasLength(2));
     });
   });
 

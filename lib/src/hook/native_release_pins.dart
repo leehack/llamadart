@@ -5,7 +5,7 @@
 library;
 
 /// `leehack/llamadart-native` release tag downloaded for the llama.cpp runtime.
-const llamaCppTag = 'v0.5.0-2';
+const llamaCppTag = 'v0.6.0-1';
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
 const liteRtLmReleaseTag = 'v0.18.0';

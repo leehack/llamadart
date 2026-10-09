@@ -9,6 +9,8 @@ import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/native_barrier_api.dart';
+import 'package:llamadart/src/backends/llama_cpp/vulkan_device_probe.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
@@ -96,6 +98,32 @@ const _exitTeardownSymbols = [
   'llama_dart_mtmd_helper_eval_chunks',
   'llama_dart_mtmd_helper_eval_chunk_single',
   'llama_dart_mtmd_helper_decode_image_chunk',
+];
+
+const _barrierSymbols = [
+  'llama_dart_last_error',
+  'llama_dart_clear_last_error',
+  'llama_dart_sampler_accept',
+  'llama_dart_sampler_init_grammar_lazy_patterns',
+  'llama_dart_tokenize',
+  'llama_dart_token_to_piece',
+  'llama_dart_memory_clear',
+  'llama_dart_mtmd_bitmap_init_from_audio',
+  'llama_dart_mtmd_bitmap_init_from_buf',
+  'llama_dart_mtmd_bitmap_init_from_file',
+  'llama_dart_ggml_backend_dev_init',
+  'llama_dart_ggml_backend_dev_memory',
+  'llama_dart_ggml_backend_dev_get_props',
+  'llama_dart_ggml_backend_alloc_ctx_tensors',
+  'llama_dart_ggml_backend_tensor_set',
+  'llama_dart_ggml_backend_tensor_get',
+  'llama_dart_ggml_backend_sched_alloc_graph',
+  'llama_dart_ggml_backend_sched_synchronize',
+];
+
+const _vulkanDeviceSymbols = [
+  'llama_dart_vulkan_get_device_count',
+  'llama_dart_vulkan_get_device_info',
 ];
 
 // Returns an enum, so ffigen binds it under a private name behind a wrapper.
@@ -517,8 +545,8 @@ void main() {
         llama_model_quantize_default_params().max_buf_size,
         8 * 1024 * 1024 * 1024,
       );
-      expect(LLAMA_SESSION_VERSION, 10);
-      expect(LLAMA_STATE_SEQ_VERSION, 3);
+      expect(LLAMA_SESSION_VERSION, 11);
+      expect(LLAMA_STATE_SEQ_VERSION, 4);
     });
 
     test('Verify speculative symbols are declared in generated bindings', () {
@@ -616,6 +644,64 @@ void main() {
       ]) {
         expect(
           ExitTeardownApi.symbolAddress(
+            symbol,
+            isWindows: Platform.isWindows,
+          ).address,
+          library.lookup<ffi.Void>(symbol).address,
+          reason: symbol,
+        );
+      }
+    });
+
+    test('Verify the pinned wrapper exports the exception barrier and the '
+        'Vulkan device facts the service resolves', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      for (final symbol in [..._barrierSymbols, ..._vulkanDeviceSymbols]) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        wrapper,
+        isNotNull,
+        reason: 'Expected the llama.cpp wrapper library.',
+      );
+      // Resolved through the package first: a raw open of the wrapper cannot
+      // find its sibling DLLs on Windows until the runtime is loaded.
+      expect(
+        NativeBarrierApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
+      expect(
+        VulkanDeviceInfoApi.tryResolve(isWindows: Platform.isWindows),
+        isNotNull,
+      );
+      _expectDynamicLibraryExports(wrapper!, [
+        ..._barrierSymbols,
+        ..._vulkanDeviceSymbols,
+      ]);
+      // Each name resolves to the wrapper's own export of that name, not to
+      // another function with the same signature.
+      final library = ffi.DynamicLibrary.open(wrapper.path);
+      for (final symbol in _barrierSymbols) {
+        expect(
+          NativeBarrierApi.symbolAddress(
+            symbol,
+            isWindows: Platform.isWindows,
+          ).address,
+          library.lookup<ffi.Void>(symbol).address,
+          reason: symbol,
+        );
+      }
+      for (final symbol in _vulkanDeviceSymbols) {
+        expect(
+          VulkanDeviceInfoApi.symbolAddress(
             symbol,
             isWindows: Platform.isWindows,
           ).address,

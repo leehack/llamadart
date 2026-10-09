@@ -27,6 +27,15 @@ runs at exit. The native contract is `src/llama_dart_wrapper.h` in
   warning at its first model load (visible at log level `warn` or lower) and
   exits behave as they did before exit teardown.
 
+`lib/src/backends/llama_cpp/native_barrier_api.dart` holds the functions
+`v0.6.0-1` adds (`NativeBarrierApi`): the last-error accessors, and wrappers
+for the upstream functions the service used to call directly and that throw
+(tokenize, token to piece, sampler accept, the lazy-grammar constructor,
+memory clear, the three mtmd bitmap constructors, and the ggml device and
+backend calls of the decision head). They are calls in flight for teardown
+like the others, and are resolved all or nothing in the same way. See
+"C++ exceptions".
+
 One service uses one of the two for all of its calls.
 `IsolateShutdownReleases` still holds every object and frees it when its
 isolate shuts down; with exit teardown the hold's free function is
@@ -41,10 +50,11 @@ Teardown waits up to two seconds for guarded calls in flight, then for a
 250 ms settle after the end of the last guarded call, and frees the tracked
 objects. It knows nothing about other native calls:
 
-- An unguarded call on a tracked object (tokenize, detokenize, metadata
-  reads, sampler construction, media decode) that is in flight when teardown
-  runs is not protected, however short it is. Teardown frees the object under
-  it.
+- An unguarded call on a tracked object (metadata reads, sampler
+  construction other than the lazy-grammar one, and on a runtime older than
+  `v0.6.0-1` also tokenize, detokenize, sampler accept, memory clear and
+  media decode) that is in flight when teardown runs is not protected,
+  however short it is. Teardown frees the object under it.
 - A guarded call that is still running after two seconds (an image or audio
   evaluation, a long batch) makes teardown free nothing, and ggml-metal
   aborts as before.
@@ -61,8 +71,7 @@ aborted when the object still had Metal buffers allocated. The
 a direct C `exit()` reached it; the exits that shut the isolates down wait
 for the free.
 
-`v0.5.0-2`, which this package pins, fixes it: teardown waits for a free in
-flight. An exit that lands during the last free now takes that free plus the
+`v0.5.0-2` fixes it: teardown waits for a free in flight. An exit that lands during the last free now takes that free plus the
 rest of the 250 ms settle window, about 255 ms in the native measurements,
 where it used to return at once.
 
@@ -70,6 +79,69 @@ The service is a second layer: `dispose()` and `freeModel` free contexts,
 then the projector, then the model, so the last object a service frees is a
 model and never a projector. That is also the lifetime order mtmd needs,
 since a projector points at its model.
+
+## C++ exceptions
+
+llama.cpp reports some failures by throwing a C++ exception, which ends the
+process when it crosses the C ABI into Dart. From `v0.6.0-1` every
+`llama_dart_` function that calls llama.cpp catches it, records its message
+for the calling thread (`llama_dart_last_error`) and returns a failure value.
+
+- `LlamaCppObjectCalls.tracked` checks for that after a call returned its
+  failure value (always, for a call that returns nothing) and throws the
+  typed error of the operation: `LlamaModelException` for a model, LoRA or
+  projector load, `LlamaContextException` for a context,
+  `LlamaStateException` for a state call, `LlamaInferenceException`
+  otherwise. The message names the upstream function and the details are
+  llama.cpp's message. A failure value without a caught exception is
+  returned as before.
+- The message is per thread and the next call with a barrier clears it, so it
+  is read in the same synchronous run as the call, before any other
+  `llama_dart_` call. A call made outside `LlamaCppObjectCalls` (speculative
+  decoding, the reasoning-budget sampler, TTS, the mtmd calls and the decision
+  head's ggml calls) reads it with `NativeCallFailures.throwIfCaught` at the
+  place that sees the failure value.
+- The native contract leaves a llama or mtmd context in no defined state
+  after a call on it caught an exception, and on Windows every object of the
+  call, a model included. `NativeCallFailures` records those objects by
+  address, the service refuses them with `LlamaStateException` at each entry
+  point (`_ensureContextUsable`, `_ensureModelUsable`), and freeing an object
+  forgets it. A decision head that caught an exception in one of its ggml
+  calls stops running the same way.
+- A runtime older than `v0.6.0-1` exports none of this: `NativeBarrierApi`
+  does not resolve, the service calls the upstream functions as before and
+  logs one warning at its first model load, and an exception still ends the
+  process.
+
+A failed `GGML_ASSERT` still aborts: the barrier catches exceptions only.
+
+## Vulkan device facts
+
+`lib/src/backends/llama_cpp/vulkan_device_probe.dart` binds
+`llama_dart_vulkan_get_device_count` and `llama_dart_vulkan_get_device_info`
+(`v0.6.0-1`), which list the devices ggml-vulkan registers with their API
+versions and subgroup size. Reading them makes the Vulkan loader load the
+system's GPU drivers, so the service reads them once, and only after
+ggml-vulkan has registered a device itself and a load or context is about to
+use it:
+
+- A load on Vulkan stops when a device's driver or the loader is below
+  Vulkan 1.2, which llama.cpp `v0.6.0` needs (`ggml_vk_instance_init` refuses
+  an older loader; for an older driver it reads
+  `VkPhysicalDeviceVulkan12Features` the driver never filled in and calls
+  Vulkan 1.2 functions it lacks). `ComputeDevice.gpu` throws
+  `LlamaUnsupportedException`; `ComputeDevice.auto` loads on the CPU with a
+  warning.
+- An Android Vulkan context keeps the 8-token text-prompt decode cap unless
+  the facts list exactly the registered devices and each has a subgroup size
+  ggml-vulkan tiles correctly (8, or 32 and above). llama.cpp `v0.6.0` gives
+  a warp of the small matmul tile 8 rows only at a subgroup size of exactly 8
+  (`s_warptile_wm`), which is wrong at 16 and at every size below 8
+  (https://github.com/ggml-org/llama.cpp/issues/28637).
+
+A runtime without the functions, a loader that cannot be queried and a device
+list that does not match ggml's all count as unknown: the cap stays and no
+load is refused.
 
 ## Which exits are covered
 
@@ -128,6 +200,29 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   allows. Everything created through the API has to be freed through it.
 - `test/unit/backends/llama_cpp/mtmd_chunk_eval_test.dart`: `withExitTeardown`
   replaces the three evaluating calls and keeps the accessors.
+- `test/unit/backends/llama_cpp/native_barrier_api_test.dart`: the lookup
+  requests all 18 names and resolves nothing when any one is missing or from
+  a library that has none; each member calls the function exported under its
+  own name; on the real runtime, a token outside the vocabulary, a trigger
+  pattern that is not a regular expression and a grammar that rejects an
+  accepted token are typed errors; `NativeCallFailures` marks and forgets
+  free-only objects.
+- `test/unit/backends/llama_cpp/exit_teardown_api_test.dart` also pins, for
+  each tracked call, the error a caught exception throws and the objects it
+  leaves free-only on every platform and under the Windows rule.
+- `test/unit/backends/llama_cpp/llama_cpp_service_native_failure_test.dart`:
+  a service on the real CPU runtime whose exit API and barrier fail the calls
+  a test names. Each failed call is the typed error of its operation, the
+  object it leaves undefined is refused afterwards and usable again once
+  freed and recreated, and nothing created stays unfreed. It also loads a
+  state file written by llama.cpp `v0.5.0`.
+- `test/unit/backends/llama_cpp/vulkan_device_probe_test.dart` and the
+  "Vulkan" groups of `llama_cpp_service_test.dart`: the device facts, the
+  version check at load and the cap on each subgroup size, through injected
+  facts. No default-CI test reads a real Vulkan device.
+- No test forces an exception through speculative decoding, the
+  reasoning-budget sampler or TTS: those functions are resolved inside the
+  service and have no stand-in.
 - Two cases of the service test do not run in default CI. The restore and
   replay of a rejected draft needs a model whose memory cannot drop a tail:
   set `LLAMADART_LFM2_MODEL` to an LFM2 GGUF. The decision head's device

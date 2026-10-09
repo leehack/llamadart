@@ -166,9 +166,10 @@ or shipping runtimes the app does not use.
   through `llamadart_native_backends`. llama.cpp `ComputeDevice.auto` stays
   on the CPU there; Vulkan is experimental and device-dependent, so request
   `ComputeDevice.gpu` only on devices the app has validated. Leave
-  `ModelParams.microBatchSize` unset on Android Vulkan: a text prompt is then
-  decoded at most 8 tokens at a time, and a value above 32 returns wrong text
-  on some GPUs. The cap applies to text-prompt decoding only: it does not
+  `ModelParams.microBatchSize` unset on Android Vulkan: on a GPU whose
+  subgroup size is 16, below 8 or unreadable a text prompt is then decoded at
+  most 8 tokens at a time, and a value above 32 returns wrong text there. The
+  cap applies to text-prompt decoding only: it does not
   cover prompts with image or audio input, embeddings, decision models,
   text-to-speech, or speculative-decoding verification batches during
   generation, which can exceed 32 tokens, so speculative decoding can still

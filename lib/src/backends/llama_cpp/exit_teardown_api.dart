@@ -1,10 +1,23 @@
 import 'dart:ffi';
 
+import '../../core/exceptions.dart';
 import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
+import 'native_barrier_api.dart';
 
 const _llamadartAsset = 'package:llamadart/llamadart';
 const _wrapperAsset = 'package:llamadart/llamadart_wrapper';
+
+final int _statusException =
+    llama_dart_status.LLAMA_DART_STATUS_EXCEPTION.value;
+
+/// The embedding-batch callback of `llama_dart_mtmd_helper_decode_image_chunk`.
+///
+/// libllamadart keeps this signature; upstream's
+/// `mtmd_helper_post_decode_callback` takes an `mtmd_helper_embd_batch` since
+/// llama.cpp v0.6.0.
+typedef LlamaDartPostDecodeCallback =
+    Pointer<NativeFunction<Int32 Function(llama_batch, Pointer<Void>)>>;
 
 typedef _FreeNative = Void Function(Pointer<Void>);
 typedef _TrackNative =
@@ -93,7 +106,7 @@ typedef _MtmdDecodeImageChunkNative =
       llama_seq_id,
       Int32,
       Pointer<llama_pos>,
-      mtmd_helper_post_decode_callback,
+      LlamaDartPostDecodeCallback,
       Pointer<Void>,
     );
 typedef _SchedGraphComputeNative =
@@ -425,7 +438,7 @@ final class ExitTeardownApi {
     int seqId,
     int nBatch,
     Pointer<llama_pos> newNPast,
-    mtmd_helper_post_decode_callback callback,
+    LlamaDartPostDecodeCallback callback,
     Pointer<Void> userData,
   )
   mtmdHelperDecodeImageChunk;
@@ -443,9 +456,14 @@ final class ExitTeardownApi {
 /// [ExitTeardownApi.minimumNativeRelease] offers. One service uses one of
 /// them for all of its calls: exit teardown does not wait for an upstream
 /// call on a tracked object.
+///
+/// With a [NativeBarrierApi], a call that caught a C++ exception throws the
+/// typed error of its operation instead of returning its failure value, and
+/// [failures] remembers the objects that call left free-only.
 final class LlamaCppObjectCalls {
   LlamaCppObjectCalls._({
     required this.exit,
+    required this.failures,
     required this.loadModel,
     required this.freeModel,
     required this.modelFreeAddress,
@@ -456,6 +474,11 @@ final class LlamaCppObjectCalls {
     required this.encode,
     required this.synchronize,
     required this.samplerSample,
+    required this.samplerAccept,
+    required this.samplerInitGrammarLazyPatterns,
+    required this.tokenize,
+    required this.tokenToPiece,
+    required this.memoryClear,
     required this.stateSaveFile,
     required this.stateLoadFile,
     required this.stateSeqGetSizeExt,
@@ -465,30 +488,270 @@ final class LlamaCppObjectCalls {
   });
 
   /// The tracked and guarded functions of [exit].
-  factory LlamaCppObjectCalls.tracked(ExitTeardownApi exit) =>
-      LlamaCppObjectCalls._(
-        exit: exit,
-        loadModel: exit.modelLoadFromFile,
-        freeModel: (model) => exit.free(model.cast()),
-        modelFreeAddress: exit.freeAddress,
-        createContext: exit.initFromModel,
-        freeContext: (context) => exit.free(context.cast()),
-        contextFreeAddress: exit.freeAddress,
-        decode: exit.decode,
-        encode: exit.encode,
-        synchronize: exit.synchronize,
-        samplerSample: exit.samplerSample,
-        stateSaveFile: exit.stateSaveFile,
-        stateLoadFile: exit.stateLoadFile,
-        stateSeqGetSizeExt: exit.stateSeqGetSizeExt,
-        stateSeqGetDataExt: exit.stateSeqGetDataExt,
-        stateSeqSetDataExt: exit.stateSeqSetDataExt,
-        adapterLoraInit: exit.adapterLoraInit,
-      );
+  ///
+  /// With [barrier], the calls that used to reach an upstream function that
+  /// throws go through its wrappers, and every call reports a caught
+  /// exception as a typed error. [isWindows] selects the stricter rule for
+  /// the objects of a failed call (see [NativeCallFailures]).
+  factory LlamaCppObjectCalls.tracked(
+    ExitTeardownApi exit, {
+    NativeBarrierApi? barrier,
+    bool isWindows = false,
+  }) {
+    final failures = NativeCallFailures(barrier, isWindows: isWindows);
+    return LlamaCppObjectCalls._(
+      exit: exit,
+      failures: failures,
+      loadModel: (path, params) {
+        final model = exit.modelLoadFromFile(path, params);
+        if (model == nullptr) {
+          failures.throwIfCaught(
+            'llama_model_load_from_file',
+            LlamaModelException.new,
+          );
+        }
+        return model;
+      },
+      freeModel: (model) {
+        failures.forget(model);
+        exit.free(model.cast());
+      },
+      modelFreeAddress: exit.freeAddress,
+      createContext: (model, params) {
+        final context = exit.initFromModel(model, params);
+        if (context == nullptr) {
+          failures.throwIfCaught(
+            'llama_init_from_model',
+            LlamaContextException.new,
+            windowsFreeOnly: [model],
+          );
+        }
+        return context;
+      },
+      freeContext: (context) {
+        failures.forget(context);
+        exit.free(context.cast());
+      },
+      contextFreeAddress: exit.freeAddress,
+      decode: (ctx, batch) {
+        final status = exit.decode(ctx, batch);
+        if (status == _statusException) {
+          failures.throwIfCaught(
+            'llama_decode',
+            LlamaInferenceException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return status;
+      },
+      encode: (ctx, batch) {
+        final status = exit.encode(ctx, batch);
+        if (status == _statusException) {
+          failures.throwIfCaught(
+            'llama_encode',
+            LlamaInferenceException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return status;
+      },
+      synchronize: (ctx) {
+        exit.synchronize(ctx);
+        failures.throwIfCaught(
+          'llama_synchronize',
+          LlamaInferenceException.new,
+          freeOnly: [ctx],
+        );
+      },
+      samplerSample: (sampler, ctx, index) {
+        final token = exit.samplerSample(sampler, ctx, index);
+        if (token == LLAMA_TOKEN_NULL) {
+          failures.throwIfCaught(
+            'llama_sampler_sample',
+            LlamaInferenceException.new,
+            windowsFreeOnly: [ctx],
+          );
+        }
+        return token;
+      },
+      samplerAccept: barrier == null
+          ? llama_sampler_accept
+          : (sampler, token) {
+              if (!barrier.samplerAccept(sampler, token)) {
+                failures.throwIfCaught(
+                  'llama_sampler_accept',
+                  LlamaInferenceException.new,
+                );
+              }
+            },
+      samplerInitGrammarLazyPatterns: barrier == null
+          ? llama_sampler_init_grammar_lazy_patterns
+          : (
+              vocab,
+              grammar,
+              grammarRoot,
+              triggerPatterns,
+              triggerPatternCount,
+              triggerTokens,
+              triggerTokenCount,
+            ) {
+              final sampler = barrier.samplerInitGrammarLazyPatterns(
+                vocab,
+                grammar,
+                grammarRoot,
+                triggerPatterns,
+                triggerPatternCount,
+                triggerTokens,
+                triggerTokenCount,
+              );
+              if (sampler == nullptr) {
+                failures.throwIfCaught(
+                  'llama_sampler_init_grammar_lazy_patterns',
+                  LlamaInferenceException.new,
+                  windowsFreeOnly: [vocab],
+                );
+              }
+              return sampler;
+            },
+      tokenize: barrier == null
+          ? llama_tokenize
+          : (
+              vocab,
+              text,
+              textLength,
+              tokens,
+              tokenCapacity,
+              addSpecial,
+              parseSpecial,
+            ) {
+              final count = barrier.tokenize(
+                vocab,
+                text,
+                textLength,
+                tokens,
+                tokenCapacity,
+                addSpecial,
+                parseSpecial,
+              );
+              if (count == _statusException) {
+                failures.throwIfCaught(
+                  'llama_tokenize',
+                  LlamaInferenceException.new,
+                  windowsFreeOnly: [vocab],
+                );
+              }
+              return count;
+            },
+      tokenToPiece: barrier == null
+          ? llama_token_to_piece
+          : (vocab, token, buffer, length, lstrip, special) {
+              final count = barrier.tokenToPiece(
+                vocab,
+                token,
+                buffer,
+                length,
+                lstrip,
+                special,
+              );
+              if (count == _statusException) {
+                failures.throwIfCaught(
+                  'llama_token_to_piece',
+                  LlamaInferenceException.new,
+                  windowsFreeOnly: [vocab],
+                );
+              }
+              return count;
+            },
+      memoryClear: barrier == null
+          ? (ctx, memory, data) => llama_memory_clear(memory, data)
+          : (ctx, memory, data) {
+              if (!barrier.memoryClear(memory, data)) {
+                failures.throwIfCaught(
+                  'llama_memory_clear',
+                  LlamaInferenceException.new,
+                  freeOnly: [ctx],
+                );
+              }
+            },
+      stateSaveFile: (ctx, path, tokens, tokenCount) {
+        final saved = exit.stateSaveFile(ctx, path, tokens, tokenCount);
+        if (!saved) {
+          failures.throwIfCaught(
+            'llama_state_save_file',
+            LlamaStateException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return saved;
+      },
+      stateLoadFile: (ctx, path, tokensOut, tokenCapacity, tokenCountOut) {
+        final loaded = exit.stateLoadFile(
+          ctx,
+          path,
+          tokensOut,
+          tokenCapacity,
+          tokenCountOut,
+        );
+        if (!loaded) {
+          failures.throwIfCaught(
+            'llama_state_load_file',
+            LlamaStateException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return loaded;
+      },
+      stateSeqGetSizeExt: (ctx, seqId, flags) {
+        final size = exit.stateSeqGetSizeExt(ctx, seqId, flags);
+        if (size == 0) {
+          failures.throwIfCaught(
+            'llama_state_seq_get_size_ext',
+            LlamaStateException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return size;
+      },
+      stateSeqGetDataExt: (ctx, dst, size, seqId, flags) {
+        final written = exit.stateSeqGetDataExt(ctx, dst, size, seqId, flags);
+        if (written == 0) {
+          failures.throwIfCaught(
+            'llama_state_seq_get_data_ext',
+            LlamaStateException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return written;
+      },
+      stateSeqSetDataExt: (ctx, src, size, seqId, flags) {
+        final read = exit.stateSeqSetDataExt(ctx, src, size, seqId, flags);
+        if (read == 0) {
+          failures.throwIfCaught(
+            'llama_state_seq_set_data_ext',
+            LlamaStateException.new,
+            freeOnly: [ctx],
+          );
+        }
+        return read;
+      },
+      adapterLoraInit: (model, path) {
+        final adapter = exit.adapterLoraInit(model, path);
+        if (adapter == nullptr) {
+          failures.throwIfCaught(
+            'llama_adapter_lora_init',
+            LlamaModelException.new,
+            freeOnly: [model],
+          );
+        }
+        return adapter;
+      },
+    );
+  }
 
   /// The upstream llama.cpp functions; nothing is tracked.
   static final LlamaCppObjectCalls upstream = LlamaCppObjectCalls._(
     exit: null,
+    failures: NativeCallFailures(null, isWindows: false),
     loadModel: llama_model_load_from_file,
     freeModel: llama_model_free,
     modelFreeAddress:
@@ -505,6 +768,11 @@ final class LlamaCppObjectCalls {
     encode: llama_encode,
     synchronize: llama_synchronize,
     samplerSample: llama_sampler_sample,
+    samplerAccept: llama_sampler_accept,
+    samplerInitGrammarLazyPatterns: llama_sampler_init_grammar_lazy_patterns,
+    tokenize: llama_tokenize,
+    tokenToPiece: llama_token_to_piece,
+    memoryClear: (ctx, memory, data) => llama_memory_clear(memory, data),
     stateSaveFile: llama_state_save_file,
     stateLoadFile: llama_state_load_file,
     stateSeqGetSizeExt: llama_state_seq_get_size_ext,
@@ -514,15 +782,25 @@ final class LlamaCppObjectCalls {
   );
 
   /// [LlamaCppObjectCalls.tracked] when the loaded runtime exports the whole
-  /// [ExitTeardownApi], otherwise [upstream].
+  /// [ExitTeardownApi], with the [NativeBarrierApi] when it exports that too;
+  /// otherwise [upstream].
   static LlamaCppObjectCalls resolve({required bool isWindows}) {
     final exit = ExitTeardownApi.tryResolve(isWindows: isWindows);
-    return exit == null ? upstream : LlamaCppObjectCalls.tracked(exit);
+    if (exit == null) return upstream;
+    return LlamaCppObjectCalls.tracked(
+      exit,
+      barrier: NativeBarrierApi.tryResolve(isWindows: isWindows),
+      isWindows: isWindows,
+    );
   }
 
   /// The exit-teardown functions these calls go through, or `null` for
   /// [upstream].
   final ExitTeardownApi? exit;
+
+  /// The C++ exceptions these calls caught and the objects they left
+  /// free-only. Reports nothing without an exception barrier.
+  final NativeCallFailures failures;
 
   /// Loads a model; `nullptr` on failure.
   final Pointer<llama_model> Function(
@@ -566,6 +844,53 @@ final class LlamaCppObjectCalls {
     int index,
   )
   samplerSample;
+
+  /// `llama_sampler_accept`.
+  final void Function(Pointer<llama_sampler> sampler, int token) samplerAccept;
+
+  /// `llama_sampler_init_grammar_lazy_patterns`; `nullptr` for a grammar that
+  /// does not parse.
+  final Pointer<llama_sampler> Function(
+    Pointer<llama_vocab> vocab,
+    Pointer<Char> grammar,
+    Pointer<Char> grammarRoot,
+    Pointer<Pointer<Char>> triggerPatterns,
+    int triggerPatternCount,
+    Pointer<llama_token> triggerTokens,
+    int triggerTokenCount,
+  )
+  samplerInitGrammarLazyPatterns;
+
+  /// `llama_tokenize`.
+  final int Function(
+    Pointer<llama_vocab> vocab,
+    Pointer<Char> text,
+    int textLength,
+    Pointer<llama_token> tokens,
+    int tokenCapacity,
+    bool addSpecial,
+    bool parseSpecial,
+  )
+  tokenize;
+
+  /// `llama_token_to_piece`.
+  final int Function(
+    Pointer<llama_vocab> vocab,
+    int token,
+    Pointer<Char> buffer,
+    int length,
+    int lstrip,
+    bool special,
+  )
+  tokenToPiece;
+
+  /// `llama_memory_clear` on the memory of [ctx].
+  final void Function(
+    Pointer<llama_context> ctx,
+    llama_memory_t memory,
+    bool data,
+  )
+  memoryClear;
 
   /// `llama_state_save_file`.
   final bool Function(
@@ -991,7 +1316,7 @@ external int _wrapperMtmdDecodeImageChunk(
   int seqId,
   int nBatch,
   Pointer<llama_pos> newNPast,
-  mtmd_helper_post_decode_callback callback,
+  LlamaDartPostDecodeCallback callback,
   Pointer<Void> userData,
 );
 

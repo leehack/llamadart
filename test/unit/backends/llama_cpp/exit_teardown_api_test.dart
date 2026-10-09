@@ -9,8 +9,10 @@ import 'package:llamadart/src/backends/isolate_shutdown_releases.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/exit_teardown_api.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
+import '../../../support/fake_native_barrier.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
 
 // The exports a service on the tracked calls depends on.
@@ -38,6 +40,8 @@ const _symbols = [
   'llama_dart_mtmd_helper_decode_image_chunk',
   'llama_dart_ggml_backend_sched_graph_compute',
 ];
+
+final _statusException = llama_dart_status.LLAMA_DART_STATUS_EXCEPTION.value;
 
 // Runs the real llama.cpp runtime on the CPU.
 void main() {
@@ -213,22 +217,409 @@ void main() {
       symbol: exports.symbol,
     )!;
     final calls = LlamaCppObjectCalls.tracked(api);
+    final batch = llama_batch_init(1, 0, 1);
+    addTearDown(() => llama_batch_free(batch));
 
-    expect(calls.loadModel, same(api.modelLoadFromFile));
-    expect(calls.createContext, same(api.initFromModel));
-    expect(calls.decode, same(api.decode));
-    expect(calls.encode, same(api.encode));
-    expect(calls.synchronize, same(api.synchronize));
-    expect(calls.samplerSample, same(api.samplerSample));
-    expect(calls.stateSaveFile, same(api.stateSaveFile));
-    expect(calls.stateLoadFile, same(api.stateLoadFile));
-    expect(calls.stateSeqGetSizeExt, same(api.stateSeqGetSizeExt));
-    expect(calls.stateSeqGetDataExt, same(api.stateSeqGetDataExt));
-    expect(calls.stateSeqSetDataExt, same(api.stateSeqSetDataExt));
-    expect(calls.adapterLoraInit, same(api.adapterLoraInit));
+    final members = <String, void Function()>{
+      'llama_dart_model_load_from_file': () =>
+          calls.loadModel(nullptr, llama_model_default_params()),
+      'llama_dart_init_from_model': () =>
+          calls.createContext(nullptr, llama_context_default_params()),
+      'llama_dart_decode': () => calls.decode(nullptr, batch),
+      'llama_dart_encode': () => calls.encode(nullptr, batch),
+      'llama_dart_synchronize': () => calls.synchronize(nullptr),
+      'llama_dart_sampler_sample': () =>
+          calls.samplerSample(nullptr, nullptr, 0),
+      'llama_dart_state_save_file': () =>
+          calls.stateSaveFile(nullptr, nullptr, nullptr, 0),
+      'llama_dart_state_load_file': () =>
+          calls.stateLoadFile(nullptr, nullptr, nullptr, 0, nullptr),
+      'llama_dart_state_seq_get_size_ext': () =>
+          calls.stateSeqGetSizeExt(nullptr, 0, 0),
+      'llama_dart_state_seq_get_data_ext': () =>
+          calls.stateSeqGetDataExt(nullptr, nullptr, 0, 0, 0),
+      'llama_dart_state_seq_set_data_ext': () =>
+          calls.stateSeqSetDataExt(nullptr, nullptr, 0, 0, 0),
+      'llama_dart_adapter_lora_init': () =>
+          calls.adapterLoraInit(nullptr, nullptr),
+    };
+    for (final MapEntry(key: name, value: call) in members.entries) {
+      exports.called.clear();
+      call();
+      expect(exports.called, [name]);
+    }
+    exports.called.clear();
     calls.freeModel(nullptr);
     calls.freeContext(nullptr);
     expect(exports.called, ['llama_dart_exit_free', 'llama_dart_exit_free']);
+    expect(calls.failures.barrier, isNull);
+  });
+
+  group('tracked calls with the exception barrier', () {
+    late FakeNativeBarrier barrier;
+    late bool exitThrows;
+
+    final model = Pointer<llama_model>.fromAddress(0x100);
+    final context = Pointer<llama_context>.fromAddress(0x200);
+    final vocab = Pointer<llama_vocab>.fromAddress(0x300);
+    final sampler = Pointer<llama_sampler>.fromAddress(0x400);
+
+    setUp(() {
+      barrier = FakeNativeBarrier();
+      exitThrows = true;
+    });
+    tearDown(() => barrier.dispose());
+
+    // Every function returns its failure value, after catching an exception
+    // when [exitThrows] is set.
+    T fail<T>(T failure) {
+      barrier.clear();
+      if (exitThrows) barrier.catchException('boom');
+      return failure;
+    }
+
+    ExitTeardownApi failingExit() => ExitTeardownApi(
+      track: (_, _, _) => false,
+      untrack: (_) => false,
+      free: (_) {},
+      freeAddress: nullptr,
+      modelLoadFromFile: (_, _) => fail(nullptr),
+      initFromModel: (_, _) => fail(nullptr),
+      mtmdInitFromFile: (_, _, _) => fail(nullptr),
+      decode: (_, _) => fail(_statusException),
+      encode: (_, _) => fail(_statusException),
+      synchronize: (_) => fail(null),
+      samplerSample: (_, _, _) => fail(LLAMA_TOKEN_NULL),
+      stateSaveFile: (_, _, _, _) => fail(false),
+      stateLoadFile: (_, _, _, _, _) => fail(false),
+      stateSeqGetSizeExt: (_, _, _) => fail(0),
+      stateSeqGetDataExt: (_, _, _, _, _) => fail(0),
+      stateSeqSetDataExt: (_, _, _, _, _) => fail(0),
+      adapterLoraInit: (_, _) => fail(nullptr),
+      mtmdTokenize: (_, _, _, _, _) => fail(_statusException),
+      mtmdEncodeChunk: (_, _) => fail(_statusException),
+      mtmdHelperEvalChunks: (_, _, _, _, _, _, _, _) => fail(_statusException),
+      mtmdHelperEvalChunkSingle: (_, _, _, _, _, _, _, _) =>
+          fail(_statusException),
+      mtmdHelperDecodeImageChunk: (_, _, _, _, _, _, _, _, _, _) =>
+          fail(_statusException),
+      schedGraphCompute: (_, _) => fail(-1),
+    );
+
+    LlamaCppObjectCalls tracked({bool isWindows = false}) =>
+        LlamaCppObjectCalls.tracked(
+          failingExit(),
+          barrier: barrier.api,
+          isWindows: isWindows,
+        );
+
+    // Each call, the error it throws after a caught exception, and the
+    // objects that leaves free-only everywhere and on Windows only.
+    List<
+      (
+        String,
+        void Function(LlamaCppObjectCalls, llama_batch),
+        TypeMatcher<LlamaException>,
+        List<Pointer<NativeType>>,
+        List<Pointer<NativeType>>,
+      )
+    >
+    cases() => [
+      (
+        'llama_model_load_from_file',
+        (calls, _) => calls.loadModel(nullptr, llama_model_default_params()),
+        isA<LlamaModelException>(),
+        [],
+        [],
+      ),
+      (
+        'llama_init_from_model',
+        (calls, _) =>
+            calls.createContext(model, llama_context_default_params()),
+        isA<LlamaContextException>(),
+        [],
+        [model],
+      ),
+      (
+        'llama_decode',
+        (calls, batch) => calls.decode(context, batch),
+        isA<LlamaInferenceException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_encode',
+        (calls, batch) => calls.encode(context, batch),
+        isA<LlamaInferenceException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_synchronize',
+        (calls, _) => calls.synchronize(context),
+        isA<LlamaInferenceException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_sampler_sample',
+        (calls, _) => calls.samplerSample(sampler, context, -1),
+        isA<LlamaInferenceException>(),
+        [],
+        [context],
+      ),
+      (
+        'llama_sampler_accept',
+        (calls, _) => calls.samplerAccept(sampler, 1),
+        isA<LlamaInferenceException>(),
+        [],
+        [],
+      ),
+      (
+        'llama_sampler_init_grammar_lazy_patterns',
+        (calls, _) => calls.samplerInitGrammarLazyPatterns(
+          vocab,
+          nullptr,
+          nullptr,
+          nullptr,
+          0,
+          nullptr,
+          0,
+        ),
+        isA<LlamaInferenceException>(),
+        [],
+        [vocab],
+      ),
+      (
+        'llama_tokenize',
+        (calls, _) =>
+            calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false),
+        isA<LlamaInferenceException>(),
+        [],
+        [vocab],
+      ),
+      (
+        'llama_token_to_piece',
+        (calls, _) => calls.tokenToPiece(vocab, 1, nullptr, 0, 0, false),
+        isA<LlamaInferenceException>(),
+        [],
+        [vocab],
+      ),
+      (
+        'llama_memory_clear',
+        (calls, _) => calls.memoryClear(context, nullptr, true),
+        isA<LlamaInferenceException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_state_save_file',
+        (calls, _) => calls.stateSaveFile(context, nullptr, nullptr, 0),
+        isA<LlamaStateException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_state_load_file',
+        (calls, _) =>
+            calls.stateLoadFile(context, nullptr, nullptr, 0, nullptr),
+        isA<LlamaStateException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_state_seq_get_size_ext',
+        (calls, _) => calls.stateSeqGetSizeExt(context, 0, 0),
+        isA<LlamaStateException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_state_seq_get_data_ext',
+        (calls, _) => calls.stateSeqGetDataExt(context, nullptr, 0, 0, 0),
+        isA<LlamaStateException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_state_seq_set_data_ext',
+        (calls, _) => calls.stateSeqSetDataExt(context, nullptr, 0, 0, 0),
+        isA<LlamaStateException>(),
+        [context],
+        [],
+      ),
+      (
+        'llama_adapter_lora_init',
+        (calls, _) => calls.adapterLoraInit(model, nullptr),
+        isA<LlamaModelException>(),
+        [model],
+        [],
+      ),
+    ];
+
+    const barrierCalls = {
+      'llama_sampler_accept',
+      'llama_sampler_init_grammar_lazy_patterns',
+      'llama_tokenize',
+      'llama_token_to_piece',
+      'llama_memory_clear',
+    };
+
+    for (final isWindows in [false, true]) {
+      test('a caught exception is the typed error of its call and leaves '
+          'the objects of the call free-only (Windows rule: $isWindows)', () {
+        final batch = llama_batch_init(1, 0, 1);
+        addTearDown(() => llama_batch_free(batch));
+        barrier.throwing.addAll([
+          for (final name in barrierCalls)
+            name.replaceFirst('llama_', 'llama_dart_'),
+        ]);
+        barrier.message = 'boom';
+
+        for (final (name, call, error, freeOnly, windowsFreeOnly) in cases()) {
+          final calls = tracked(isWindows: isWindows);
+          expect(
+            () => call(calls, batch),
+            throwsA(
+              error
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    'llama.cpp raised an exception in $name.',
+                  )
+                  .having((e) => e.details, 'details', 'boom'),
+            ),
+            reason: name,
+          );
+          final expected = {...freeOnly, if (isWindows) ...windowsFreeOnly};
+          for (final object in <Pointer<NativeType>>[
+            model,
+            context,
+            vocab,
+            sampler,
+          ]) {
+            expect(
+              () => calls.failures.ensureUsable(object, 'This object'),
+              expected.contains(object)
+                  ? throwsA(isA<LlamaStateException>())
+                  : returnsNormally,
+              reason: '$name ${object.address.toRadixString(16)}',
+            );
+          }
+        }
+      });
+    }
+
+    test('a failure value without a caught exception is returned', () {
+      exitThrows = false;
+      barrier.failing.addAll([
+        for (final name in barrierCalls)
+          name.replaceFirst('llama_', 'llama_dart_'),
+      ]);
+      final batch = llama_batch_init(1, 0, 1);
+      addTearDown(() => llama_batch_free(batch));
+      final calls = tracked(isWindows: true);
+
+      expect(calls.loadModel(nullptr, llama_model_default_params()), nullptr);
+      expect(
+        calls.createContext(model, llama_context_default_params()),
+        nullptr,
+      );
+      expect(calls.decode(context, batch), _statusException);
+      expect(calls.encode(context, batch), _statusException);
+      calls.synchronize(context);
+      expect(calls.samplerSample(sampler, context, -1), LLAMA_TOKEN_NULL);
+      calls.samplerAccept(sampler, 1);
+      expect(
+        calls.samplerInitGrammarLazyPatterns(
+          vocab,
+          nullptr,
+          nullptr,
+          nullptr,
+          0,
+          nullptr,
+          0,
+        ),
+        nullptr,
+      );
+      expect(
+        calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false),
+        _statusException,
+      );
+      expect(
+        calls.tokenToPiece(vocab, 1, nullptr, 0, 0, false),
+        _statusException,
+      );
+      calls.memoryClear(context, nullptr, true);
+      expect(calls.stateSaveFile(context, nullptr, nullptr, 0), isFalse);
+      expect(
+        calls.stateLoadFile(context, nullptr, nullptr, 0, nullptr),
+        isFalse,
+      );
+      expect(calls.stateSeqGetSizeExt(context, 0, 0), 0);
+      expect(calls.stateSeqGetDataExt(context, nullptr, 0, 0, 0), 0);
+      expect(calls.stateSeqSetDataExt(context, nullptr, 0, 0, 0), 0);
+      expect(calls.adapterLoraInit(model, nullptr), nullptr);
+      for (final object in <Pointer<NativeType>>[model, context, vocab]) {
+        calls.failures.ensureUsable(object, 'This object');
+      }
+    });
+
+    test('routes the calls that used to reach an upstream function that '
+        'throws through the barrier wrappers', () {
+      final calls = tracked();
+
+      calls.samplerAccept(sampler, 1);
+      calls.samplerInitGrammarLazyPatterns(
+        vocab,
+        nullptr,
+        nullptr,
+        nullptr,
+        0,
+        nullptr,
+        0,
+      );
+      calls.tokenize(vocab, nullptr, 0, nullptr, 0, false, false);
+      calls.tokenToPiece(vocab, 1, nullptr, 0, 0, false);
+      calls.memoryClear(context, nullptr, true);
+
+      expect(barrier.calls, [
+        'llama_dart_sampler_accept',
+        'llama_dart_sampler_init_grammar_lazy_patterns',
+        'llama_dart_tokenize',
+        'llama_dart_token_to_piece',
+        'llama_dart_memory_clear',
+      ]);
+    });
+
+    test('freeing an object forgets that it was free-only', () {
+      final calls = tracked();
+      final batch = llama_batch_init(1, 0, 1);
+      addTearDown(() => llama_batch_free(batch));
+      expect(
+        () => calls.decode(context, batch),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+      expect(
+        () => calls.adapterLoraInit(model, nullptr),
+        throwsA(isA<LlamaModelException>()),
+      );
+
+      calls.freeContext(context);
+      calls.freeModel(model);
+
+      calls.failures.ensureUsable(context, 'This context');
+      calls.failures.ensureUsable(model, 'This model');
+    });
+  });
+
+  test('resolve adds the exception barrier of the pinned runtime', () {
+    final calls = LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows);
+
+    expect(calls.exit, isNotNull);
+    expect(calls.failures.barrier, isNotNull);
+    expect(calls.failures.isWindows, Platform.isWindows);
+    expect(LlamaCppObjectCalls.upstream.failures.barrier, isNull);
   });
 
   test('frees a tracked object once, with the function it was tracked '
@@ -570,7 +961,7 @@ final class _RecordingExports {
             Int32,
             Int32,
             Pointer<Int32>,
-            mtmd_helper_post_decode_callback,
+            LlamaDartPostDecodeCallback,
             Pointer<Void>,
           )
         >.isolateLocal(
@@ -583,7 +974,7 @@ final class _RecordingExports {
             int _,
             int _,
             Pointer<Int32> _,
-            mtmd_helper_post_decode_callback _,
+            LlamaDartPostDecodeCallback _,
             Pointer<Void> _,
           ) => _record('llama_dart_mtmd_helper_decode_image_chunk', 0),
           exceptionalReturn: 0,

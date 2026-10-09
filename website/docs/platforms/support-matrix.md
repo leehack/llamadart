@@ -164,13 +164,18 @@ output and grammars, sampling controls and speculative decoding. Guides:
   ([#782](https://github.com/leehack/llamadart/issues/782)); a Galaxy S24
   (Adreno 750) crashes on the first generation
   ([llamadart-native#79](https://github.com/leehack/llamadart-native/issues/79)).
-  For the first of these, an Android Vulkan context decodes a text prompt in
-  micro-batches of at most 8 tokens by default. On a Pixel 9 Pro, prompt
+  The first of these is a llama.cpp defect at Vulkan subgroup sizes of 16 and
+  below 8
+  ([llama.cpp#28637](https://github.com/ggml-org/llama.cpp/issues/28637)),
+  which llama.cpp `v0.6.0` still has. On Android, llamadart reads the
+  subgroup size of the Vulkan GPUs when it creates a context: on such a GPU,
+  and on any GPU whose subgroup size it cannot read, the context decodes a
+  text prompt in micro-batches of at most 8 tokens by default; on other GPUs
+  it decodes the prompt in full micro-batches. On a Pixel 9 Pro, prompt
   evaluation with 8-token micro-batches ran at about the speed uncapped
   decoding did (about 34 tokens/s against about 30 tokens/s for a 59-token
-  prompt); other GPUs are not measured. On a GPU without the defect, decoding
-  a prompt in 8-token micro-batches can be slower than decoding it in one
-  batch. An app that has validated Vulkan on its target devices can set
+  prompt); other GPUs are not measured. An app that has validated Vulkan on
+  its target devices can set
   `ModelParams.microBatchSize` to choose the micro-batch size itself: an
   explicit value is used as given, and one above 32 brings the wrong text
   back on affected GPUs. The cap applies to
@@ -178,6 +183,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
   input, embeddings, decision models, text-to-speech, or speculative-decoding
   verification batches during generation. Those batches can exceed 32 tokens,
   so speculative decoding can still produce wrong output on an affected GPU.
+  llama.cpp's Vulkan backend also needs Vulkan 1.2 from the Vulkan loader and
+  the GPU driver. When a registered Vulkan GPU's driver reports an older
+  version, `ComputeDevice.gpu` throws `LlamaUnsupportedException` naming the
+  GPU and both versions, and `ComputeDevice.auto` loads the model on the CPU
+  and logs a warning; on Linux and Windows, `GGML_VK_VISIBLE_DEVICES` can
+  hide such a GPU from llama.cpp. Whether this is what crashes the Galaxy A53
+  is not confirmed.
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.
 - Some Vulkan drivers crash in the cooperative-matrix path; see
@@ -189,13 +201,13 @@ output and grammars, sampling controls and speculative decoding. Guides:
 
 | Runtime | Pinned release |
 | --- | --- |
-| llama.cpp native | `leehack/llamadart-native@v0.5.0-2` |
+| llama.cpp native | `leehack/llamadart-native@v0.6.0-1` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.18.0` |
 | stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag
-`v0.5.0-2` and
+`v0.6.0-1` and
 `litert-lm-native` release `v0.18.0` (`lib/src/hook/native_release_pins.dart`).
 Apps can override the llama.cpp release with `llamadart_native_tag`, which
 takes a `vMAJOR.MINOR.PATCH`, `vMAJOR.MINOR.PATCH-N`, `bNNNN`, `bNNNN-N` or

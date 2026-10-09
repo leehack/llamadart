@@ -116,6 +116,15 @@ fails, replace the file. The deprecated
 `liteRtLmBackend` still throws `LlamaModelException` for an unavailable
 backend; catch `LlamaException` to handle both.
 
+### `ComputeDevice.gpu is not available ...: llama.cpp's Vulkan backend needs Vulkan 1.2`
+
+`LlamaUnsupportedException`: llama.cpp found a Vulkan GPU whose driver, or
+the system's Vulkan loader, reports a version below 1.2, which llama.cpp
+needs. The message names the GPU and both versions. Under
+`ComputeDevice.auto` the same condition loads the model on the CPU and logs a
+warning. Update the GPU driver, or on Linux and Windows hide that GPU from
+llama.cpp with `GGML_VK_VISIBLE_DEVICES`.
+
 ### Vulkan driver crashes in the cooperative-matrix path
 
 Some Vulkan drivers advertise cooperative matrix support but crash inside the
@@ -241,6 +250,24 @@ With some models on the LiteRT-LM GPU backend, each engine create appends to
 `ModelParams.liteRtLmMaxProgramCacheBytes` to prune oversized program cache
 files before each create; see
 [LiteRT-LM cache directory](../configuration/runtime-parameters#litert-lm-cache-directory).
+
+## llama.cpp errors
+
+### `llama.cpp raised an exception in <function>.`
+
+A typed `LlamaException` of the failed operation, such as
+`LlamaInferenceException` for a decode or `LlamaStateException` for a state
+file, whose `details` hold llama.cpp's own message. llama.cpp threw a C++
+exception inside that function: for example `detokenize` was given a token
+outside the vocabulary, or a lazy-grammar trigger pattern is not a regular
+expression. Fix the input the message points at.
+
+### `This context is unusable after a llama.cpp exception in <function>.`
+
+`LlamaStateException`: an earlier call on that context, model or projector
+threw inside llama.cpp and left it in an undefined state, so llamadart
+refuses to use it again. Call `unloadModel()` and load the model again. On
+Windows this follows any llama.cpp exception on the model.
 
 ## API usage errors
 

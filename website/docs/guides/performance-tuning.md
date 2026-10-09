@@ -60,13 +60,14 @@ const modelParams = ModelParams(
 - `batchSize` / `microBatchSize`: native decoder models start at the
   llama.cpp-aligned caps of `2048` and `512`. Lower `microBatchSize` first
   (for example to `256` or `128`) when memory or GPU stability is tight;
-  bigger is not always faster. On Android Vulkan a text prompt is decoded at
-  most `8` tokens at a time while `microBatchSize` is `0`, and an explicit
-  value above `32` can return wrong text on some GPUs
+  bigger is not always faster. On an Android Vulkan GPU whose subgroup size
+  is 16, below 8 or unreadable, a text prompt is decoded at most `8` tokens at
+  a time while `microBatchSize` is `0`, and an explicit value above `32` can
+  return wrong text there
   ([known limitations](../platforms/support-matrix#known-limitations)).
-  On a GPU without that defect the `8`-token default can be slower than
-  decoding the prompt in one batch; an app that has validated Vulkan on its
-  target devices can set `microBatchSize` explicitly.
+  Other Android Vulkan GPUs decode the prompt in full micro-batches; an app
+  that has validated Vulkan on its target devices can set `microBatchSize`
+  explicitly.
   The cap applies to text-prompt decoding only: it does not cover prompts
   with image or audio input, embeddings, decision models, text-to-speech, or
   speculative-decoding verification batches during generation, which can
@@ -265,7 +266,7 @@ unrelated reservations; it does not make recurrent/hybrid reservations safe.
 
 DSpark (`SpeculativeDecodingConfig.draftDspark(draftModel: ...)`) is an
 experimental, opt-in llama.cpp external-draft strategy mapped to upstream
-`draft-dspark`. The default `v0.5.0-2` runtime supports it, including
+`draft-dspark`. The default `v0.6.0-1` runtime supports it, including
 speculators-format checkpoints. Native recurrent/hybrid target pairs such as
 LFM2 remain subject to the rollback restriction above. It is never
 selected automatically, and support still depends on the target, draft and
