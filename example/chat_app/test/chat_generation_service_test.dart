@@ -156,6 +156,32 @@ void main() {
       expect(updates.last.shouldNotify, isTrue);
     });
 
+    test('does not count the whitespace chunk that ends a reply', () async {
+      final updates = <GenerationStreamUpdate>[];
+      final result = await service.consumeStream(
+        stream: Stream<LlamaCompletionChunk>.fromIterable(
+          <LlamaCompletionChunk>[
+            _chunk(content: '4'),
+            _chunk(content: '\n'),
+            _chunk(),
+          ],
+        ),
+        thinkingEnabled: true,
+        uiNotifyIntervalMs: -1,
+        cleanResponse: (value) => value,
+        shouldContinue: () => true,
+        onUpdate: updates.add,
+      );
+
+      expect(result.fullResponse, '4\n');
+      expect(updates.last.cleanText, '4\n');
+      expect(result.generatedTokens, 2);
+      expect(
+        updates.fold<int>(0, (sum, update) => sum + update.generatedTokenDelta),
+        2,
+      );
+    });
+
     test('smooths large streamed chunks and flushes final text', () async {
       final longChunk = List<String>.filled(260, 'x').join();
       final updates = <GenerationStreamUpdate>[];
