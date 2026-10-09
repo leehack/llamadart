@@ -214,11 +214,13 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   sequence is compared for creation and frees, plain generation (one decode
   and one sample per token), one-text and batch embedding on a decoder and on
   an encoder, state files, LoRA init, a decision head, a decision head that
-  fails after its context was created, and a fake projector. N-gram and
+  fails after its context was created, a fake projector, and an image the
+  service rejects after the tokenize without an evaluating call. N-gram and
   draft-model speculation are matched against the sequences their loop
   allows. Everything created through the API has to be freed through it.
 - `test/unit/backends/llama_cpp/mtmd_chunk_eval_test.dart`: `withExitTeardown`
-  replaces the three evaluating calls and keeps the accessors.
+  replaces the three evaluating calls and keeps the accessors, which are all
+  the check of a media chunk against the micro-batch calls.
 - `test/unit/backends/llama_cpp/native_barrier_api_test.dart`: the lookup
   requests all 18 names and resolves nothing when any one is missing or from
   a library that has none; each member calls the function exported under its

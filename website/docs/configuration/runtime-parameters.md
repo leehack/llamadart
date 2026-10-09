@@ -78,6 +78,15 @@ Important fields:
   non-causal attention models, and MEAN/CLS pooling embed each input in one
   micro-batch. `embed()` and `embedBatch()` throw `LlamaInferenceException`
   for longer input; raise `microBatchSize` and `batchSize` or shorten the input.
+  llama.cpp also decodes the images of some projectors with non-causal
+  attention (Gemma 3 and Gemma 4 other than E2B and E4B, among others), and
+  cannot split such an image across micro-batches: when the image has more
+  tokens than `n_ubatch` and `n_batch` is larger than `n_ubatch`, as with the
+  defaults, the prompt throws `LlamaInferenceException` before anything is
+  decoded. With `n_batch` equal to `n_ubatch` the image is decoded in several
+  batches instead, with a logged warning, which can reduce accuracy. The
+  default of `512` does not hold the largest Gemma 4 images
+  ([Image input exceeds `n_ubatch`](../troubleshooting/common-issues#image-input-exceeds-n_ubatch)).
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `loadMtp` (llama.cpp, native and WebGPU): load MTP tensors embedded in the

@@ -12,6 +12,12 @@ typedef _ChunksGetDart =
     Pointer<mtmd_input_chunk> Function(Pointer<mtmd_input_chunks>, int);
 typedef _ChunkTypeNative = UnsignedInt Function(Pointer<mtmd_input_chunk>);
 typedef _ChunkTypeDart = int Function(Pointer<mtmd_input_chunk>);
+typedef _ChunkTokenCountNative = Size Function(Pointer<mtmd_input_chunk>);
+typedef _ChunkTokenCountDart = int Function(Pointer<mtmd_input_chunk>);
+typedef _DecodeUseNonCausalNative =
+    Bool Function(Pointer<mtmd_context>, Pointer<mtmd_input_chunk>);
+typedef _DecodeUseNonCausalDart =
+    bool Function(Pointer<mtmd_context>, Pointer<mtmd_input_chunk>);
 typedef _EvalChunkSingleNative =
     Int32 Function(
       Pointer<mtmd_context>,
@@ -89,14 +95,16 @@ int _primaryDecodeImageChunk(
   nullptr,
 );
 
-/// The mtmd functions [evalMtmdChunksUntilCancelled] calls, resolved from one
-/// library.
+/// The mtmd functions [evalMtmdChunksUntilCancelled] and
+/// [findMtmdChunkAboveMicroBatch] call, resolved from one library.
 final class MtmdChunkEvalApi {
   /// Creates an API from resolved functions.
   const MtmdChunkEvalApi({
     required this.chunksSize,
     required this.chunksGet,
     required this.chunkType,
+    required this.chunkTokenCount,
+    required this.decodeUseNonCausal,
     required this.evalChunkSingle,
     required this.encodeChunk,
     required this.outputEmbd,
@@ -108,6 +116,8 @@ final class MtmdChunkEvalApi {
     chunksSize: mtmd_input_chunks_size,
     chunksGet: mtmd_input_chunks_get,
     chunkType: raw_bindings.mtmd_input_chunk_get_type_raw,
+    chunkTokenCount: mtmd_input_chunk_get_n_tokens,
+    decodeUseNonCausal: mtmd_decode_use_non_causal,
     evalChunkSingle: mtmd_helper_eval_chunk_single,
     encodeChunk: mtmd_encode_chunk,
     outputEmbd: mtmd_get_output_embd,
@@ -132,6 +142,14 @@ final class MtmdChunkEvalApi {
         chunkType: library.lookupFunction<_ChunkTypeNative, _ChunkTypeDart>(
           'mtmd_input_chunk_get_type',
         ),
+        chunkTokenCount: library
+            .lookupFunction<_ChunkTokenCountNative, _ChunkTokenCountDart>(
+              'mtmd_input_chunk_get_n_tokens',
+            ),
+        decodeUseNonCausal: library
+            .lookupFunction<_DecodeUseNonCausalNative, _DecodeUseNonCausalDart>(
+              'mtmd_decode_use_non_causal',
+            ),
         evalChunkSingle: library
             .lookupFunction<_EvalChunkSingleNative, _EvalChunkSingleDart>(
               'mtmd_helper_eval_chunk_single',
@@ -169,6 +187,8 @@ final class MtmdChunkEvalApi {
     chunksSize: chunksSize,
     chunksGet: chunksGet,
     chunkType: chunkType,
+    chunkTokenCount: chunkTokenCount,
+    decodeUseNonCausal: decodeUseNonCausal,
     evalChunkSingle: exit.mtmdHelperEvalChunkSingle,
     encodeChunk: exit.mtmdEncodeChunk,
     outputEmbd: outputEmbd,
@@ -200,6 +220,16 @@ final class MtmdChunkEvalApi {
 
   /// `mtmd_input_chunk_get_type`, as its raw enum value.
   final int Function(Pointer<mtmd_input_chunk> chunk) chunkType;
+
+  /// `mtmd_input_chunk_get_n_tokens`.
+  final int Function(Pointer<mtmd_input_chunk> chunk) chunkTokenCount;
+
+  /// `mtmd_decode_use_non_causal`.
+  final bool Function(
+    Pointer<mtmd_context> ctx,
+    Pointer<mtmd_input_chunk> chunk,
+  )
+  decodeUseNonCausal;
 
   /// `mtmd_helper_eval_chunk_single`.
   final int Function(
@@ -277,10 +307,44 @@ final class MtmdChunkEvalFailure {
       ? 'failed to eval chunk $chunkIndex'
       : 'failed to ${stage.name} $_media chunk $chunkIndex';
 
-  String get _media =>
-      chunkType == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value
-      ? 'image'
-      : 'audio';
+  String get _media => mtmdMediaChunkName(chunkType);
+}
+
+/// `image` or `audio`, for the raw `mtmd_input_chunk_type` of a media chunk.
+String mtmdMediaChunkName(int chunkType) =>
+    chunkType == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value
+    ? 'image'
+    : 'audio';
+
+bool _isMediaChunk(int chunkType) =>
+    chunkType == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value ||
+    chunkType == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_AUDIO.value;
+
+/// Returns the first image or audio chunk of [chunks] that [ctx] decodes with
+/// non-causal attention and that has more than [maxTokens] tokens, as its
+/// raw `mtmd_input_chunk_type` and token count, otherwise `null`.
+///
+/// llama.cpp cannot split such a chunk across micro-batches:
+/// `mtmd_helper_decode_image_chunk` turns causal attention off and splits the
+/// chunk only by its `n_batch` argument, and `llama_context::decode` aborts
+/// on a non-causal batch above `n_ubatch`. Pass `n_ubatch` as [maxTokens].
+({int chunkType, int tokenCount})? findMtmdChunkAboveMicroBatch(
+  MtmdChunkEvalApi api,
+  Pointer<mtmd_context> ctx,
+  Pointer<mtmd_input_chunks> chunks,
+  int maxTokens,
+) {
+  final nChunks = api.chunksSize(chunks);
+  for (var i = 0; i < nChunks; i++) {
+    final chunk = api.chunksGet(chunks, i);
+    final type = api.chunkType(chunk);
+    if (!_isMediaChunk(type)) continue;
+    final tokenCount = api.chunkTokenCount(chunk);
+    if (tokenCount > maxTokens && api.decodeUseNonCausal(ctx, chunk)) {
+      return (chunkType: type, tokenCount: tokenCount);
+    }
+  }
+  return null;
 }
 
 /// Evaluates [chunks] as `mtmd_helper_eval_chunks` does for `n_past` 0,
@@ -309,8 +373,7 @@ MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
     final type = api.chunkType(chunk);
     MtmdChunkEvalStage stage;
     int result;
-    if (type == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value ||
-        type == mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_AUDIO.value) {
+    if (_isMediaChunk(type)) {
       stage = MtmdChunkEvalStage.encode;
       result = api.encodeChunk(ctx, chunk);
       if (result == 0) {

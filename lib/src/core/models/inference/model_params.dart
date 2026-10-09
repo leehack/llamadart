@@ -312,6 +312,14 @@ class ModelParams {
   /// Native encoder-only models and models whose context has no KV cache,
   /// such as BERT and ModernBERT, embed each input in one micro-batch, so a
   /// longer embedding input throws `LlamaInferenceException`.
+  ///
+  /// llama.cpp cannot split an image across micro-batches when the projector
+  /// has it decoded with non-causal attention, as those of Gemma 3 and of
+  /// Gemma 4 other than E2B and E4B do. Such an image with more tokens than
+  /// the micro-batch throws `LlamaInferenceException` when [batchSize] is
+  /// larger than the micro-batch, which the defaults are. With the two equal
+  /// it is decoded in several batches, with a logged warning, and answers
+  /// can be less accurate.
   final int microBatchSize;
 
   /// Maximum parallel sequence slots in context memory (n_seq_max).
