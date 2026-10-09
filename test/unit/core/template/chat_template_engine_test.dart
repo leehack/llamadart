@@ -1466,6 +1466,18 @@ void main() {
       expect(parsed.content, 'Sure. \n');
     });
 
+    test('stays after a tool call, which the parse keeps', () {
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.hermes.index,
+        '$hermesCall\nDone.\n',
+      );
+
+      expect(parsed.content, 'Done.\n');
+      final call = parsed.toolCalls.single;
+      expect(call.function?.name, 'get_weather');
+      expect(jsonDecode(call.function!.arguments!), {'city': 'Paris'});
+    });
+
     test('is dropped when the output does not end with the content', () {
       final beforeCall = ChatTemplateEngine.parse(
         ChatFormat.hermes.index,

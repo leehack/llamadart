@@ -117,7 +117,10 @@ stays `"Sure. \n"`, also when a caller stop sequence cut the output there,
 while whitespace before a thought or a tool call is dropped. So the stream
 holds back leading whitespace until other text arrives, and trailing
 whitespace until more text arrives or generation ends; a stream that ends
-with an error does not deliver it.
+with an error does not deliver it. `ChatSession` and its tool loop deliver
+that whitespace but store the assistant turn in `history` without it, so a
+template that does not trim assistant content renders the next prompt as
+before.
 Other text waits only as described below, for example while it may be a
 thinking tag or, with tools, a tool-call opening.
 

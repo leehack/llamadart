@@ -93,7 +93,11 @@
   so the text before a caller stop sequence lost a trailing space or newline:
   `alpha ` before the stop `cedar17` came back as `alpha`
   ([#951](https://github.com/leehack/llamadart/issues/951)). A reply the model
-  ends with a newline now keeps it; trim replies you compare exactly.
+  ends with a newline now keeps it, as does a JSON-mode reply where the
+  grammar allows whitespace after the value (`createStructuredJson` and
+  `LlamaStructuredOutput.parse` still decode it); trim replies you compare
+  exactly. `ChatSession` and its tool loop store assistant turns in `history`
+  without that whitespace, so the next prompt is unchanged.
 
 ## 0.11.1
 
