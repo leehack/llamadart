@@ -165,6 +165,11 @@ class LiteRtLmRuntimeClient {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
+  /// Whether a runtime is loaded and provides the entry point of
+  /// [renderMessageToString].
+  bool get supportsMessageRendering =>
+      throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+
   /// Renders a message with the active native conversation template.
   String renderMessageToString(Map<String, dynamic> message) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');

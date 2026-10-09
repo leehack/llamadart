@@ -104,8 +104,9 @@ class LiteRtLmService {
   LiteRtLmRuntimeMetrics? _lastMetrics;
   ({bool vision, bool audio, bool speculativeDecoding})? _bundleCapabilities;
   bool _bundleCapabilitiesRead = false;
-  bool _bundleTemplateContentProbed = false;
+  bool _bundleTemplateProbed = false;
   String? _bundleTemplateAdapter;
+  bool _bundleTemplateMisreadsContent = false;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -158,8 +159,9 @@ class LiteRtLmService {
     _workingAudioBackend = null;
     _bundleCapabilities = null;
     _bundleCapabilitiesRead = false;
-    _bundleTemplateContentProbed = false;
+    _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
+    _bundleTemplateMisreadsContent = false;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -183,8 +185,9 @@ class LiteRtLmService {
     _workingAudioBackend = null;
     _bundleCapabilities = null;
     _bundleCapabilitiesRead = false;
-    _bundleTemplateContentProbed = false;
+    _bundleTemplateProbed = false;
     _bundleTemplateAdapter = null;
+    _bundleTemplateMisreadsContent = false;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -260,22 +263,20 @@ class LiteRtLmService {
     final backend =
         _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
     final loraPath = _activeTextLoraPath();
+    void createConversation(String? template) => client.createConversation(
+      promptTemplate: template,
+      temperature: params.temp,
+      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+      topK: liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK),
+      topP: params.topP,
+      seed: params.seed ?? _defaultSamplerSeed(),
+      npuBackend: backend == 'npu',
+      loraPath: loraPath,
+    );
     _createBundleTemplateConversation(
       client,
-      (template) => client.createConversation(
-        promptTemplate: template,
-        temperature: params.temp,
-        // Zero-temperature LiteRT GPU sampling needs a single greedy
-        // candidate.
-        topK: liteRtLmEffectiveTopK(
-          temperature: params.temp,
-          topK: params.topK,
-        ),
-        topP: params.topP,
-        seed: params.seed ?? _defaultSamplerSeed(),
-        npuBackend: backend == 'npu',
-        loraPath: loraPath,
-      ),
+      create: createConversation,
+      createProbe: createConversation,
     );
     if (_cancelRequested) {
       client.cancel();
@@ -286,9 +287,13 @@ class LiteRtLmService {
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     final sw = Stopwatch()..start();
+    var outputStarted = false;
     try {
       final stream = _applyStopSequences(
-        client.generate(prompt, maxOutputTokens: params.maxTokens),
+        client.generate(prompt, maxOutputTokens: params.maxTokens).map((chunk) {
+          outputStarted = true;
+          return chunk;
+        }),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -298,6 +303,8 @@ class LiteRtLmService {
         }
         yield chunk;
       }
+    } on StateError catch (error, stackTrace) {
+      _throwSendFailure(error, stackTrace, outputStarted: outputStarted);
     } finally {
       sw.stop();
       try {
@@ -420,22 +427,31 @@ class LiteRtLmService {
         maxNumImages == null && !enableAudio && isQwen3TextModel
         ? _modelParams?.chatTemplate ?? builtinTemplate?.template
         : null;
-    void createConversation(String? template) => client.createConversation(
-      promptTemplate: template,
-      systemMessage: seed.systemMessage,
-      messages: seed.messages,
-      tools: nativeTools,
-      extraContext: extraContext,
-      temperature: params.temp,
-      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
-      topK: liteRtLmEffectiveTopK(temperature: params.temp, topK: params.topK),
-      topP: params.topP,
-      seed: params.seed ?? _defaultSamplerSeed(),
-      npuBackend: backend == 'npu',
-      loraPath: loraPath,
-    );
+    void createConversation(String? template, {bool seeded = true}) =>
+        client.createConversation(
+          promptTemplate: template,
+          systemMessage: seeded ? seed.systemMessage : null,
+          messages: seeded ? seed.messages : null,
+          tools: seeded ? nativeTools : null,
+          extraContext: seeded ? extraContext : null,
+          temperature: params.temp,
+          // Zero-temperature LiteRT GPU sampling needs a single greedy
+          // candidate.
+          topK: liteRtLmEffectiveTopK(
+            temperature: params.temp,
+            topK: params.topK,
+          ),
+          topP: params.topP,
+          seed: params.seed ?? _defaultSamplerSeed(),
+          npuBackend: backend == 'npu',
+          loraPath: loraPath,
+        );
     if (promptTemplate == null) {
-      _createBundleTemplateConversation(client, createConversation);
+      _createBundleTemplateConversation(
+        client,
+        create: createConversation,
+        createProbe: (template) => createConversation(template, seeded: false),
+      );
     } else {
       createConversation(promptTemplate);
     }
@@ -473,22 +489,11 @@ class LiteRtLmService {
         yield chunk;
       }
     } on StateError catch (error, stackTrace) {
-      if (outputStarted ||
-          promptTemplate == null ||
-          _modelParams?.chatTemplate == null) {
-        rethrow;
-      }
-      // The runtime reports a template that fails to render only as a failed
-      // send, before any output, and from v0.18 it renders with content as a
-      // list of parts.
-      Error.throwWithStackTrace(
-        StateError(
-          '${error.message} ModelParams.chatTemplate is set: from LiteRT-LM '
-          'v0.18 the runtime passes each message content to the template as '
-          'a list of {"type": "text", "text": ...} parts, so a template that '
-          'reads content as a string can fail here.',
-        ),
+      _throwSendFailure(
+        error,
         stackTrace,
+        outputStarted: outputStarted,
+        promptTemplate: promptTemplate,
       );
     } finally {
       sw.stop();
@@ -502,81 +507,117 @@ class LiteRtLmService {
     }
   }
 
+  /// Rethrows [error], a failed native send, naming the template in use when
+  /// the failure came before any output and that template is known not to
+  /// read the content the runtime gives it.
+  ///
+  /// The runtime reports a template that fails to render only as a failed
+  /// send, and from v0.18 it renders with content as a list of parts.
+  Never _throwSendFailure(
+    StateError error,
+    StackTrace stackTrace, {
+    required bool outputStarted,
+    String? promptTemplate,
+  }) {
+    final String? note;
+    if (outputStarted) {
+      note = null;
+    } else if (promptTemplate == null) {
+      note = _bundleTemplateMisreadsContent
+          ? 'The chat template of this bundle does not read message content '
+                'as the runtime passes it: from LiteRT-LM v0.18 that is a '
+                'list of {"type": "text", "text": ...} parts, and llamadart '
+                'could not adapt the template, so it can fail here. Use a '
+                'bundle whose template reads content parts.'
+          : null;
+    } else {
+      note = _modelParams?.chatTemplate == null
+          ? null
+          : 'ModelParams.chatTemplate is set: from LiteRT-LM v0.18 the '
+                'runtime passes each message content to the template as a '
+                'list of {"type": "text", "text": ...} parts, so a template '
+                'that reads content as a string can fail here.';
+    }
+    if (note == null) {
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+    Error.throwWithStackTrace(StateError('${error.message} $note'), stackTrace);
+  }
+
   /// Creates a conversation that renders with the bundle's own template.
   ///
-  /// [create] creates it with the bundle template when its argument is null,
-  /// and with the given template otherwise.
+  /// [create] creates the conversation of the request and [createProbe] one
+  /// with the same session and no messages, each with the bundle template
+  /// when its argument is null and with the given template otherwise.
   ///
   /// From LiteRT-LM v0.18 the runtime passes every template content as a list
   /// of parts and no longer turns a single text part back into a string for a
-  /// template that reads content as one. The first conversation of a loaded
-  /// model shows which the bundle template needs: when it writes the list
-  /// itself into the prompt, the conversations of that model use
+  /// template that reads content as one. The first use of a loaded model
+  /// decides, once, whether its conversations use
   /// [liteRtLmTextContentAdapter] around the template read from the bundle.
   void _createBundleTemplateConversation(
-    LiteRtLmRuntimeClient client,
-    void Function(String? template) create,
-  ) {
+    LiteRtLmRuntimeClient client, {
+    required void Function(String? template) create,
+    required void Function(String? template) createProbe,
+  }) {
+    if (!_bundleTemplateProbed) {
+      _probeBundleTemplate(client, createProbe);
+      _bundleTemplateProbed = true;
+    }
     create(_bundleTemplateAdapter);
-    if (_bundleTemplateContentProbed) {
+  }
+
+  /// Renders [liteRtLmContentShapeProbeMessage] alone with the bundle template
+  /// and, when its text does not come out as text, with the adapter.
+  ///
+  /// A template that renders the text is left alone. Otherwise the adapter is
+  /// adopted when it renders the text; when it does not, or the template
+  /// cannot be read from the bundle, the bundle template stays and a warning
+  /// says so.
+  void _probeBundleTemplate(
+    LiteRtLmRuntimeClient client,
+    void Function(String? template) createProbe,
+  ) {
+    if (!client.supportsMessageRendering) {
       return;
     }
-    final rendersList = _rendersTextPartsAsList(client);
-    if (rendersList == null) {
-      return;
+    bool rendersProbeText() {
+      try {
+        return liteRtLmRendersProbeText(
+          client.renderMessageToString(liteRtLmContentShapeProbeMessage),
+        );
+      } on StateError {
+        return false;
+      }
     }
-    _bundleTemplateContentProbed = true;
-    if (!rendersList) {
+
+    createProbe(null);
+    if (rendersProbeText()) {
       return;
     }
     final bundleTemplate = _readBundleChatTemplate(_modelPath!);
     if (bundleTemplate != null) {
       final adapter = liteRtLmTextContentAdapter(bundleTemplate);
-      if (_rendersTextWith(adapter, client, create)) {
-        _bundleTemplateAdapter = adapter;
-        return;
+      try {
+        createProbe(adapter);
+        if (rendersProbeText()) {
+          _bundleTemplateAdapter = adapter;
+          return;
+        }
+      } on StateError {
+        // The runtime rejected the adapted template.
+      } on LlamaUnsupportedException {
+        // The runtime takes no conversation template.
       }
-      create(null);
     }
+    _bundleTemplateMisreadsContent = true;
     _warn(
-      'The chat template of this LiteRT-LM bundle writes message content '
-      'into the prompt as a list of parts, because it reads content as a '
-      'string and the runtime passes a list from LiteRT-LM v0.18. llamadart '
-      'could not adapt it, so replies can degrade. Use a bundle whose '
-      'template reads content parts.',
+      'The chat template of this LiteRT-LM bundle does not render the text '
+      'of a message as the runtime passes it: from LiteRT-LM v0.18 that is '
+      'a list of {"type": "text", "text": ...} parts. llamadart could not '
+      'adapt the template, so requests can fail or get degraded replies. '
+      'Use a bundle whose template reads content parts.',
     );
-  }
-
-  /// Whether a conversation that [create] creates with [template] renders a
-  /// text part as its text.
-  bool _rendersTextWith(
-    String template,
-    LiteRtLmRuntimeClient client,
-    void Function(String? template) create,
-  ) {
-    try {
-      create(template);
-      return _rendersTextPartsAsList(client) == false;
-    } on StateError {
-      return false;
-    } on LlamaUnsupportedException {
-      return false;
-    }
-  }
-
-  /// Whether the active conversation of [client] renders a text part as a
-  /// serialized list, or null when it cannot render the probe message.
-  bool? _rendersTextPartsAsList(LiteRtLmRuntimeClient client) {
-    try {
-      return liteRtLmRendersTextPartsAsList(
-        client.renderMessageToString(liteRtLmContentShapeProbeMessage),
-      );
-    } on StateError {
-      return null;
-    } on ArgumentError {
-      // A runtime without the render entry point fails the symbol lookup.
-      return null;
-    }
   }
 
   /// Cancels the active LiteRT-LM conversation if one is running.

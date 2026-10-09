@@ -82,6 +82,37 @@ void main() {
       }
     });
 
+    test(
+      'reports whether the runtime renders messages, legacy=$legacy',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('litert_render_');
+        final library = await _compileFixture(dir, [
+          if (legacy) '-DOMIT_RENDER',
+        ]);
+        final client = LiteRtLmRuntimeClient(libraryPath: library);
+        try {
+          expect(client.supportsMessageRendering, isFalse);
+          await client.initialize(
+            modelPath: 'fixture.litertlm',
+            backend: 'cpu',
+          );
+          client.createConversation(npuBackend: true);
+          expect(client.supportsMessageRendering, !legacy);
+          if (legacy) {
+            expect(
+              () => client.renderMessageToString({'role': 'user'}),
+              throwsArgumentError,
+            );
+          } else {
+            expect(client.renderMessageToString({'role': 'user'}), '');
+          }
+        } finally {
+          client.dispose();
+          await dir.delete(recursive: true);
+        }
+      },
+    );
+
     test('zero temperature clamps sampler top-k, legacy=$legacy', () async {
       final dir = await Directory.systemTemp.createTemp('litert_sampler_');
       final library = await _compileFixture(dir, [

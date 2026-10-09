@@ -63,25 +63,46 @@ strings.
 The template a bundle embeds receives the same part arrays; every conversation
 that llamadart does not override uses it: Qwen 3.5 and other families, raw
 prompts and media. `v0.17.0-8` gave a template that reads `message.content` as
-a string the text of a single text part. `v0.18.0` dropped that, so such a
-template writes `[{"text": "...", "type": "text"}]` into the prompt on every
-turn and replies degrade
-([#991](https://github.com/leehack/llamadart/issues/991)). On the first
-conversation of a loaded model llamadart renders a probe message through the
-runtime. When its text comes back as a serialized list, llamadart reads the
-template from the bundle file (`litert_lm_bundle_template.dart`) and gives the
-runtime that template behind a prelude that turns a single text part back
-into a string, which restores the `v0.17.0-8` prompt. Content with several
-parts, media parts and tool responses stay as the runtime passed them, and a
-template that reads content parts is not touched. If the template cannot be
-read from the file, or the prelude does not make it render the text, the
-bundle template stays in use and a warning is logged once per loaded model.
-Web is not adapted: the `@litert-lm/core` conversation API takes no template
-and has no render call, so use a bundle whose template reads content parts
-there.
+a string the text of a single text part. `v0.18.0` dropped that
+([#991](https://github.com/leehack/llamadart/issues/991)), and what happens
+then depends on how the template reads the content:
+
+| The bundle template | On `v0.18.0` without the adapter |
+| --- | --- |
+| interpolates it: `{{ message.content }}` | writes `[{"text": "...", "type": "text"}]` into every prompt; replies degrade |
+| applies a string operation: `'...' + message.content` | fails every request (`litert_lm_conversation_send_message_stream rc=13`) |
+| handles only `message.content is string` | renders every message empty, with no error |
+
+llamadart decides once per loaded model, on its first use. It creates a
+conversation with no messages and renders a probe message through the runtime.
+If the probe text comes out as text, the bundle template is left alone: a
+template that reads parts or both shapes, and the one the runtime builds for a
+bundle that embeds none. Otherwise llamadart reads the template from the
+bundle file (`litert_lm_bundle_template.dart`) and renders the probe again
+with that template behind a prelude that turns a single text part back into a
+string. If that renders the text, every conversation of the model uses it,
+which restores the `v0.17.0-8` prompt for the three shapes above. Content with
+several parts, media parts and tool responses stay as the runtime passed them,
+and so do the other keys of a message. The decision costs one more
+conversation per loaded model, two when the adapter is tried.
+
+Not adapted:
+
+- a bundle whose template cannot be read from the file, or a template the
+  prelude does not make render the text. One warning per loaded model says so,
+  and a send that fails before any output carries a note about the template.
+- a template that reads the message of a turn from `message` instead of
+  `messages`, the runtime's single-turn `is_appending_to_prefill` form. The
+  prelude rebinds `messages` only, so this ends in the warning above.
+- a runtime without the render entry point
+  (`LiteRtLmRuntimeClient.supportsMessageRendering`): nothing is probed.
+- Web: the `@litert-lm/core` conversation API takes no template and has no
+  render call. Use a bundle whose template reads content parts there.
+
 `LITERT_LM_MODEL=/path/to/model.litertlm dart test --run-skipped -t local-only
 test/e2e/backends/litert_lm_bundle_template_e2e_test.dart` checks the prelude
-against the real runtime and a local bundle.
+against the real runtime for the three shapes, and runs the service on copies
+of the bundle with each shape written over its template.
 
 Media conversations never give this template a media part. Natively they keep
 the bundle template: the override is set only for a conversation with no image

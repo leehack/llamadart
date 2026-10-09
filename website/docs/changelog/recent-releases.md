@@ -22,13 +22,15 @@ For canonical full release notes, use:
   one that interpolates it renders the list into the prompt; read both shapes
   ([Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)).
   The built-in templates are unaffected.
-- Fix replies from a LiteRT-LM bundle whose own chat template reads message
-  content as a string, such as `Qwen3.5-0.8B_int8.litertlm` builds from before
-  September 2026: with LiteRT-LM `v0.18.0` every prompt held the content as a
-  serialized `[{"text": ..., "type": "text"}]` list, and repeated requests
-  degraded sooner than with `v0.17.0-8`. Native platforms now give such a
-  template the text again; Web needs a bundle whose template reads content
-  parts
+- Fix LiteRT-LM bundles whose own chat template reads message content as a
+  string, such as `Qwen3.5-0.8B_int8.litertlm` builds from before September
+  2026. With LiteRT-LM `v0.18.0` a template that interpolates the content put
+  a serialized `[{"text": ..., "type": "text"}]` list into every prompt, so
+  repeated requests degraded sooner than with `v0.17.0-8`; one that
+  concatenates it failed every request; one that only handles a string
+  rendered empty messages. Native platforms now give such a template the text
+  again. Not covered: Web, and templates in the runtime's single-turn
+  `is_appending_to_prefill` form, for which a warning is logged
   ([#991](https://github.com/leehack/llamadart/issues/991), [Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)).
 - Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): with
   `v0.18.0` GPU engine creation fails there, where `v0.17.0-8` generated wrong

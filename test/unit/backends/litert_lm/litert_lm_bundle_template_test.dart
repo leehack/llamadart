@@ -9,16 +9,10 @@ import 'package:dinja/dinja.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:test/test.dart';
 
+import '../../../support/litert_lm_content_templates.dart';
+
 const _llmMetadata = 5;
 const _tokenizer = 6;
-
-/// A bundle template that reads content as a string, as bundles built for
-/// LiteRT-LM runtimes before v0.18 do.
-const _stringContentTemplate =
-    '{%- for message in messages -%}\n'
-    '<|im_start|>\n'
-    '{{ message.content }}<|im_end|>\n'
-    '{% endfor -%}';
 
 Uint8List _protoField(int field, List<int> value) =>
     Uint8List.fromList([(field << 3) | 2, ..._varint(value.length), ...value]);
@@ -41,16 +35,21 @@ Uint8List _metadata(String? template) => Uint8List.fromList([
   if (template != null) ..._protoField(7, utf8.encode(template)),
 ]);
 
-/// A `.litertlm` file with [sections] laid out after a FlatBuffers header.
-Uint8List _bundle(List<({int type, Uint8List data})> sections) {
+/// A `.litertlm` file with [sections] laid out after a FlatBuffers header
+/// that [headerPadding] unused bytes follow.
+Uint8List _bundle(
+  List<({int type, Uint8List data})> sections, {
+  int headerPadding = 0,
+}) {
   const headerStart = 32;
   // Root offset, root vtable and table, section-metadata vtable and table,
   // then the vector of section objects.
   final objectsStart = 44 + 4 * sections.length;
-  final headerEnd = headerStart + objectsStart + 36 * sections.length;
+  final headerEnd =
+      headerStart + objectsStart + 36 * sections.length + headerPadding;
   var dataOffset = headerEnd + 16;
 
-  final header = ByteData(headerEnd - headerStart);
+  final header = ByteData(headerEnd - headerStart - headerPadding);
   header.setUint32(0, 12, Endian.little);
   header.setUint16(4, 8, Endian.little);
   header.setUint16(6, 12, Endian.little);
@@ -88,19 +87,13 @@ Uint8List _bundle(List<({int type, Uint8List data})> sections) {
   prefix.setUint32(8, 1, Endian.little);
   prefix.setUint32(12, 7, Endian.little);
   prefix.setUint64(24, headerEnd, Endian.little);
-  return Uint8List.fromList([
-    ...prefix.buffer.asUint8List(),
-    ...header.buffer.asUint8List(),
-    ...List<int>.filled(16, 0),
-    ...body.takeBytes(),
-  ]);
+  return (BytesBuilder()
+        ..add(prefix.buffer.asUint8List())
+        ..add(header.buffer.asUint8List())
+        ..add(Uint8List(headerPadding + 16))
+        ..add(body.takeBytes()))
+      .takeBytes();
 }
-
-String _render(String template, Object? content) => Template(template).render({
-  'messages': [
-    {'role': 'user', 'content': content},
-  ],
-});
 
 void main() {
   late Directory tempDir;
@@ -153,26 +146,103 @@ void main() {
       );
     });
 
-    test('is null for a file it cannot read as a bundle', () {
+    test('reads no header or metadata above its size bound', () {
+      const template = '{{ messages[0].content }}';
+      const bound = 16 * 1024 * 1024;
+      // The header of a bundle with one section is 84 bytes without padding.
+      const headerAtBound = bound - 84;
+      final metadata = _metadata(template);
+      Uint8List metadataOf(int length) =>
+          // An unknown length-delimited field after the template.
+          (BytesBuilder()
+                ..add(metadata)
+                ..add([0x7a, ..._varint(length - metadata.length - 5)])
+                ..add(Uint8List(length - metadata.length - 5)))
+              .takeBytes();
+      String? read(Uint8List data, {int headerPadding = 0}) =>
+          readLiteRtLmBundleChatTemplate(
+            write(
+              _bundle([
+                (type: _llmMetadata, data: data),
+              ], headerPadding: headerPadding),
+            ),
+          );
+
+      expect(read(metadata, headerPadding: headerAtBound), template);
+      expect(read(metadata, headerPadding: headerAtBound + 1), isNull);
+      expect(metadataOf(bound), hasLength(bound));
+      expect(read(metadataOf(bound)), template);
+      expect(read(metadataOf(bound + 1)), isNull);
+    });
+
+    test('is null for a truncated or malformed bundle', () {
       final bundle = _bundle([
         (type: _llmMetadata, data: _metadata('{{ messages }}')),
       ]);
-      final truncatedMetadata = bundle.sublist(0, bundle.length - 4);
-      final truncatedHeader = bundle.sublist(0, 48);
-      final brokenTable = Uint8List.fromList(bundle)
-        ..buffer.asByteData().setInt32(32 + 12, 1 << 20, Endian.little);
-      final brokenMetadata = _bundle([
-        (type: _llmMetadata, data: Uint8List.fromList([0x3a, 0x7f, 0x41])),
-      ]);
+      Uint8List patched(void Function(ByteData data) patch) {
+        final copy = Uint8List.fromList(bundle);
+        patch(ByteData.sublistView(copy));
+        return copy;
+      }
 
-      expect(readLiteRtLmBundleChatTemplate(write(truncatedMetadata)), isNull);
-      expect(readLiteRtLmBundleChatTemplate(write(truncatedHeader)), isNull);
-      expect(readLiteRtLmBundleChatTemplate(write(brokenTable)), isNull);
-      expect(readLiteRtLmBundleChatTemplate(write(brokenMetadata)), isNull);
-      expect(
-        readLiteRtLmBundleChatTemplate(write(utf8.encode('fake model'))),
-        isNull,
-      );
+      // The only section object: its table starts 60 bytes into the header.
+      const beginOffset = 32 + 60 + 8;
+      const endOffset = 32 + 60 + 16;
+      final begin = ByteData.sublistView(
+        bundle,
+      ).getUint64(beginOffset, Endian.little);
+
+      for (final (name, bytes) in <(String, List<int>)>[
+        ('truncated metadata', bundle.sublist(0, bundle.length - 4)),
+        ('truncated header', bundle.sublist(0, 48)),
+        ('truncated prefix', bundle.sublist(0, 16)),
+        ('another magic', patched((data) => data.setUint8(0, 0x4d))),
+        (
+          'a header that ends inside the prefix',
+          patched((data) => data.setUint64(24, 16, Endian.little)),
+        ),
+        (
+          'a header above the size bound',
+          patched((data) => data.setUint64(24, 1 << 40, Endian.little)),
+        ),
+        (
+          'a table outside the header',
+          patched((data) => data.setInt32(32 + 12, 1 << 20, Endian.little)),
+        ),
+        (
+          'metadata above the size bound',
+          patched(
+            (data) =>
+                data.setUint64(endOffset, begin + (1 << 40), Endian.little),
+          ),
+        ),
+        (
+          'metadata that ends before it begins',
+          patched(
+            (data) => data.setUint64(endOffset, begin - 1, Endian.little),
+          ),
+        ),
+        (
+          'metadata at a negative offset',
+          patched((data) {
+            data.setInt64(beginOffset, -4096, Endian.little);
+            data.setInt64(endOffset, -4000, Endian.little);
+          }),
+        ),
+        (
+          'malformed metadata',
+          _bundle([
+            (type: _llmMetadata, data: Uint8List.fromList([0x3a, 0x7f, 0x41])),
+          ]),
+        ),
+        ('another file', utf8.encode('fake model')),
+      ]) {
+        expect(
+          readLiteRtLmBundleChatTemplate(write(bytes)),
+          isNull,
+          reason: name,
+        );
+      }
       expect(
         readLiteRtLmBundleChatTemplate('${tempDir.path}/missing.litertlm'),
         isNull,
@@ -180,96 +250,151 @@ void main() {
     });
   });
 
-  group('liteRtLmRendersTextPartsAsList', () {
+  group('liteRtLmRendersProbeText', () {
     const text = liteRtLmContentShapeProbeText;
 
-    test('recognizes a serialized text part in either key order', () {
+    test('accepts the text itself', () {
+      expect(
+        liteRtLmRendersProbeText(
+          '<|im_start|>user\n$text<|im_end|>\n<|im_start|>assistant\n',
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects a serialized text part in either key order', () {
       for (final rendered in [
         '<|im_start|>user\n[{"text": "$text", "type": "text"}]<|im_end|>',
         '<|im_start|>user\n[{"type": "text", "text": "$text"}]<|im_end|>',
         "[{'type': 'text', 'text': '$text'}]",
       ]) {
-        expect(liteRtLmRendersTextPartsAsList(rendered), isTrue);
+        expect(liteRtLmRendersProbeText(rendered), isFalse);
       }
     });
 
-    test('accepts the text itself', () {
+    test('rejects a prompt without the text', () {
+      expect(liteRtLmRendersProbeText(''), isFalse);
       expect(
-        liteRtLmRendersTextPartsAsList(
-          '<|im_start|>user\n$text<|im_end|>\n<|im_start|>assistant\n',
-        ),
+        liteRtLmRendersProbeText('<|im_start|>user\n<|im_end|>\n'),
         isFalse,
       );
-      expect(liteRtLmRendersTextPartsAsList(''), isFalse);
     });
   });
 
   group('liteRtLmTextContentAdapter', () {
-    final adapted = liteRtLmTextContentAdapter(_stringContentTemplate);
-    const parts = [
-      {'type': 'text', 'text': 'Hello "there"'},
+    const probeParts = [
+      {'type': 'text', 'text': liteRtLmContentShapeProbeText},
     ];
 
-    test('gives a string template the text of a single text part', () {
-      expect(
-        liteRtLmRendersTextPartsAsList(
-          _render(
-            _stringContentTemplate,
-            liteRtLmContentShapeProbeMessage['content'],
-          ),
-        ),
-        isTrue,
-      );
-      expect(
-        _render(adapted, parts),
-        '<|im_start|>\nHello "there"<|im_end|>\n',
-      );
-      expect(
-        _render(adapted, 'Hello "there"'),
-        _render(_stringContentTemplate, 'Hello "there"'),
-      );
-    });
+    bool rendersProbeText(String template) {
+      try {
+        return liteRtLmRendersProbeText(
+          renderLiteRtLmContent(template, probeParts),
+        );
+      } on StateError {
+        return false;
+      }
+    }
 
-    test('leaves other content as the runtime passed it', () {
+    for (final MapEntry(key: shape, value: template)
+        in liteRtLmStringContentTemplates.entries) {
+      final adapted = liteRtLmTextContentAdapter(template);
+
+      test('gives a template $shape content the text of one text part', () {
+        expect(rendersProbeText(template), isFalse);
+        expect(rendersProbeText(adapted), isTrue);
+        expect(
+          renderLiteRtLmContent(adapted, const [
+            {'type': 'text', 'text': 'Hello "there"'},
+          ]),
+          '<|im_start|>\nHello "there"<|im_end|>\n',
+        );
+        expect(
+          renderLiteRtLmContent(adapted, 'Hello "there"'),
+          renderLiteRtLmContent(template, 'Hello "there"'),
+        );
+      });
+    }
+
+    test('leaves a template that reads content parts as it renders', () {
+      final adapted = liteRtLmTextContentAdapter(liteRtLmPartsContentTemplate);
       for (final content in <Object?>[
-        [
+        probeParts,
+        'Hello',
+        const [
           {'type': 'text', 'text': 'one'},
           {'type': 'text', 'text': 'two'},
         ],
-        [
-          {'type': 'tool_response', 'name': 'weather', 'response': 'sunny'},
+      ]) {
+        expect(
+          renderLiteRtLmContent(adapted, content),
+          renderLiteRtLmContent(liteRtLmPartsContentTemplate, content),
+        );
+      }
+      expect(rendersProbeText(liteRtLmPartsContentTemplate), isTrue);
+    });
+
+    test('leaves content that is not one text part as the runtime passed '
+        'it', () {
+      final template = liteRtLmStringContentTemplates['interpolating']!;
+      final adapted = liteRtLmTextContentAdapter(template);
+      for (final content in <Object?>[
+        const [
+          {'type': 'text', 'text': 'one'},
+          {'type': 'text', 'text': 'two'},
         ],
-        [
+        const [
+          {'type': 'tool_response', 'name': 'weather', 'text': 'sunny'},
+        ],
+        const [
           {'type': 'image'},
         ],
+        const [
+          {'type': 'text', 'text': 123},
+        ],
+        const [
+          {'type': 'text'},
+        ],
+        const [
+          {'text': 'untyped'},
+        ],
+        const ['bare'],
         const <Object?>[],
       ]) {
         expect(
-          _render(adapted, content),
-          _render(_stringContentTemplate, content),
+          renderLiteRtLmContent(adapted, content),
+          renderLiteRtLmContent(template, content),
+          reason: '$content',
         );
       }
+      const withoutContent = {
+        'messages': [
+          {'role': 'assistant'},
+        ],
+      };
       expect(
-        Template(adapted).render({
-          'messages': [
-            {'role': 'assistant'},
-          ],
-        }),
-        Template(_stringContentTemplate).render({
-          'messages': [
-            {'role': 'assistant'},
-          ],
-        }),
+        Template(adapted).render(withoutContent),
+        Template(template).render(withoutContent),
       );
     });
 
-    test('keeps the text a template starts with', () {
-      expect(
-        Template(
-          liteRtLmTextContentAdapter('\n  start'),
-        ).render({'messages': const <Object?>[]}),
+    test('keeps how a template handles the whitespace it starts with', () {
+      for (final template in [
         '\n  start',
-      );
+        '  start',
+        '  {% if true %}X{% endif %}',
+        '  {%- if true %}X{% endif %}',
+        "  {{ 'X' }}",
+        '\n{% if true %}\nX{% endif %}',
+      ]) {
+        expect(
+          Template(
+            liteRtLmTextContentAdapter(template),
+          ).render({'messages': const <Object?>[]}),
+          Template(template).render({'messages': const <Object?>[]}),
+          reason: template,
+        );
+      }
     });
   });
 }

@@ -19,8 +19,9 @@ final RegExp _probeTextAsListItem = RegExp(
   '["\']text["\']\\s*:\\s*["\']$liteRtLmContentShapeProbeText["\']',
 );
 
-/// The message whose rendering shows how a native LiteRT-LM conversation
-/// template receives text content. See [liteRtLmRendersTextPartsAsList].
+/// The message whose rendering shows whether a native LiteRT-LM conversation
+/// template reads the content the runtime gives it. See
+/// [liteRtLmRendersProbeText].
 const Map<String, dynamic> liteRtLmContentShapeProbeMessage = {
   'role': 'user',
   'content': [
@@ -29,25 +30,29 @@ const Map<String, dynamic> liteRtLmContentShapeProbeMessage = {
 };
 
 /// Whether [rendered], the prompt a native conversation rendered for
-/// [liteRtLmContentShapeProbeMessage], holds the content as a serialized list
-/// of parts instead of its text.
+/// [liteRtLmContentShapeProbeMessage], holds the text of that message as text.
 ///
 /// From LiteRT-LM v0.18 the runtime hands every template content as a list of
-/// parts. A template that interpolates `message.content` then writes
-/// `[{"text": "...", "type": "text"}]` into the prompt.
-bool liteRtLmRendersTextPartsAsList(String rendered) =>
-    _probeTextAsListItem.hasMatch(rendered);
+/// parts. A template that reads content as a string then loses the text or
+/// writes the list, `[{"text": "...", "type": "text"}]`, into the prompt;
+/// neither counts.
+bool liteRtLmRendersProbeText(String rendered) => rendered
+    .replaceAll(_probeTextAsListItem, '')
+    .contains(liteRtLmContentShapeProbeText);
 
 /// Returns [template] behind a prelude that gives it the content of a message
 /// as a string when that content is a single text part, as LiteRT-LM runtimes
 /// before v0.18 did for a template that reads content as a string.
 ///
-/// Other content stays as the runtime passed it.
+/// Other content stays as the runtime passed it. The prelude rebinds
+/// `messages`, so it does not reach a template that reads the message of a
+/// turn from `message` (the runtime's `is_appending_to_prefill` form).
 String liteRtLmTextContentAdapter(String template) =>
     '$_textContentAdapterPrelude$template';
 
-// Ends with an expression so that no block tag precedes the bundle template:
-// the runtime trims the newline after a block tag.
+// Ends with a block tag and a newline. The runtime trims the newline after a
+// block tag, so [template] starts on a line of its own, where leading
+// whitespace is handled as at the start of a template.
 const String _textContentAdapterPrelude =
     '{%- set llamadart_adapter = namespace(messages=[]) -%}'
     '{%- for llamadart_message in messages -%}'
@@ -65,8 +70,7 @@ const String _textContentAdapterPrelude =
     ' + [llamadart_message] -%}'
     '{%- endif -%}'
     '{%- endfor -%}'
-    '{%- set messages = llamadart_adapter.messages -%}'
-    "{{- '' }}";
+    '{%- set messages = llamadart_adapter.messages %}\n';
 
 /// The Jinja chat template embedded in the `.litertlm` bundle at [path], or
 /// null when the file cannot be read, is not a bundle this reader understands
@@ -106,7 +110,7 @@ String? readLiteRtLmBundleChatTemplate(String path) {
       }
       final beginOffset = header.uint64(begin);
       final length = header.uint64(end) - beginOffset;
-      if (beginOffset < 0 || length <= 0 || length > _maxMetadataBytes) {
+      if (length <= 0 || length > _maxMetadataBytes) {
         return null;
       }
       return _jinjaPromptTemplate(_read(file, beginOffset, length));
