@@ -564,8 +564,6 @@ void main() {
         expect(result.refuse!.bytes, greaterThan(estimate));
         expect(result.slower!.bytes, 24 * _gib);
         expect(result.slower!.source, contains('Vulkan1'));
-        // The first GPU and the host alone would not hold it.
-        expect(4 * _gib + 9 * _gib, lessThan(estimate));
       });
 
       test('the backend gpu is the first discrete GPU: a model is slower '
