@@ -35,13 +35,29 @@ native template override preserves the closed reasoning prefix for
 hidden reasoning as the answer. Qwen 3.5, other families, and media conversations
 retain their model-specific native templates. Native overrides lacking the
 conversation-template setter fail explicitly instead of silently ignoring it.
-LiteRT-LM v0.18 normalizes native conversation content into part arrays. The
-Qwen 3 override accepts both older string content and normalized text parts;
-`tool_response` parts preserve object/array responses as JSON and scalar
-responses as text. Image and audio parts, unknown parts, text parts without
-string text, and tool responses without a response field fail during template
-rendering. This compatibility adapter does not change the default runtime pin
-or add grammar-constrained decoding.
+LiteRT-LM v0.18, the pinned runtime, normalizes native conversation content
+into part arrays before it renders a template: a string `content` reaches the
+template as `[{"type": "text", "text": ...}]`. The Qwen 3 override accepts
+both older string content and normalized text parts; `tool_response` parts
+preserve object/array responses as JSON and scalar responses as text. Image
+and audio parts, unknown parts, text parts without string text, and tool
+responses without a response field fail during template rendering. This
+compatibility adapter does not add grammar-constrained decoding.
+
+A `ModelParams.chatTemplate` set on a Qwen 3 text bundle replaces that
+override in the native conversation, so it receives the same part arrays. A
+template that reads `message.content` as a string no longer works there: with
+Qwen3 0.6B on `v0.18.0`, string concatenation (`'...' + message['content']`)
+fails the generation with `LlamaInferenceException`
+(`litert_lm_conversation_send_message_stream rc=13`, to which llamadart adds a
+note about the content shape when `chatTemplate` is set), and interpolation
+(`{{ message['content'] }}`) renders the list itself into the prompt without
+an error. Both produced the intended prompt on `v0.17.0-8`. Read both shapes,
+as the built-in `content_text` macro in `tool/litert_lm_templates/qwen3.jinja`
+does. `LlamaEngine.chatTemplate` does not show the difference: it renders in
+Dart, not in the runtime. A Flutter iOS or macOS app that links an older
+`llamadart_litert_lm_flutter` still runs the older runtime, which passes
+strings.
 
 Media conversations never give this template a media part. Natively they keep
 the bundle template: the override is set only for a conversation with no image

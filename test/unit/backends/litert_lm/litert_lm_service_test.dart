@@ -324,6 +324,51 @@ void main() {
     }
   }
 
+  for (final custom in [true, false]) {
+    test('a failed native send ${custom ? 'names' : 'does not name'} the '
+        'content-parts change ${custom ? 'with' : 'without'} a custom '
+        'template', () async {
+      final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+      await file.writeAsString('fake model');
+      final client = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => client);
+      final params = ModelParams(
+        liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        chatTemplate: custom ? "{{ 'x' + messages[0]['content'] }}" : null,
+      );
+      try {
+        final model = await service.loadModel(file.path, params);
+        final context = service.createContext(model, params);
+        final pending = service.generateChat(context, const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+        ], const GenerationParams(maxTokens: 8)).toList();
+        const nativeFailure =
+            'litert_lm_conversation_send_message_stream rc=13';
+        final failure = expectLater(
+          pending,
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              custom
+                  ? allOf(
+                      startsWith('$nativeFailure ModelParams.chatTemplate'),
+                      contains('list of {"type": "text", "text": ...} parts'),
+                    )
+                  : nativeFailure,
+            ),
+          ),
+        );
+        await client.generateStarted.future;
+        client.generated.addError(StateError(nativeFailure));
+        await client.generated.close();
+        await failure;
+      } finally {
+        service.dispose();
+      }
+    });
+  }
+
   for (final withMedia in [false, true]) {
     test(
       'Qwen3 custom text override and native media boundary: $withMedia',
@@ -825,7 +870,7 @@ void main() {
 
     test(
       'a GPU engine that fails to start throws '
-      'LlamaUnsupportedException, and auto keeps the runtime error',
+      'LlamaUnsupportedException, and LlamaModelException under auto',
       () async {
         if (!liteRtLmNativeGpuSupportedOnCurrentPlatform()) {
           markTestSkipped('No LiteRT-LM GPU backend on this platform.');
@@ -838,6 +883,9 @@ void main() {
                 'delegate init failed.',
               ),
             ),
+            // The default cache directory is not the caller's, so the
+            // message does not name it.
+            useTempCacheDir: true,
           );
           try {
             final params = ModelParams(
@@ -855,9 +903,15 @@ void main() {
                       'gpu engine',
                       Platform.operatingSystem,
                       'model file',
-                      'delegate init failed',
+                      'delegate init failed. Load with ComputeDevice.cpu',
                     ])
-                  : throwsA(isA<LiteRtLmEngineCreateError>()),
+                  : throwsA(
+                      isA<LlamaModelException>().having(
+                        (error) => error.message,
+                        'message',
+                        'delegate init failed.',
+                      ),
+                    ),
             );
           } finally {
             service.dispose();
@@ -865,6 +919,52 @@ void main() {
         }
       },
     );
+
+    test('an engine that fails to start with a caller-supplied cache '
+        'directory names it as a possible cause', () async {
+      for (final device in [
+        ComputeDevice.cpu,
+        if (liteRtLmNativeGpuSupportedOnCurrentPlatform()) ComputeDevice.gpu,
+      ]) {
+        final service = LiteRtLmService(
+          clientFactory: () => _FakeLiteRtLmRuntimeClient(
+            initializeError: LiteRtLmEngineCreateError('no engine.'),
+          ),
+        );
+        try {
+          final params = ModelParams(
+            device: device,
+            liteRtLmCacheDir: '${tempDir.path}/cache',
+          );
+          final model = await service.loadModel(modelFile.path, params);
+          service.createContext(model, params);
+
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            throwsA(
+              isA<LlamaException>()
+                  .having(
+                    (error) => error,
+                    'type',
+                    device == ComputeDevice.gpu
+                        ? isA<LlamaUnsupportedException>()
+                        : isA<LlamaModelException>(),
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains(
+                      'no engine. Engine creation also fails when the '
+                      'runtime cannot write ModelParams.liteRtLmCacheDir.',
+                    ),
+                  ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      }
+    });
 
     test('a GPU load whose runtime library cannot open keeps the runtime '
         'error', () async {

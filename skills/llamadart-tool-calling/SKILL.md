@@ -84,9 +84,13 @@ description: >-
   wrong, inspect `engine.chatTemplate(...)` to see whether tool definitions
   reach the prompt, and describe the tools in the system prompt if not. To
   replace a broken GGUF template, load with `ModelParams(chatTemplate: ...)`;
-  prompts and tool-call parsing then both follow that template.
+  prompts and tool-call parsing then both follow that template. On a native
+  LiteRT-LM Qwen 3 text bundle the runtime renders that template, and from
+  `v0.18.0` hands it each message's `content` as a list of
+  `{"type": "text", "text": ...}` parts, so read both the string and the
+  list shape.
 - Automatic `sendWithTools` and `completeWithTools` loops reject pinned native
-  LiteRT-LM `v0.17.0-8` and Web `@litert-lm/core@0.18.0` with
+  LiteRT-LM `v0.18.0` and Web `@litert-lm/core@0.18.0` with
   `LlamaUnsupportedException` before generation or history mutation: those
   runtimes expose no reliable token-limit termination cause. Manual
   `ChatSession.create`/`LlamaEngine.create` still work, but LiteRT-LM `stop`

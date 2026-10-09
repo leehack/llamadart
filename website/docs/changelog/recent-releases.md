@@ -9,6 +9,37 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Update the default LiteRT-LM runtime to
+  `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
+  macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer
+  grows on every engine create; Qwen3.5 0.8B's still does
+  ([#552](https://github.com/leehack/llamadart/issues/552)). The Windows
+  bundle adds `webgpu_dawn.dll`, which the GPU accelerator now loads.
+- **Behavior change:** with LiteRT-LM `v0.18.0`, a `ModelParams.chatTemplate`
+  on a Qwen 3 `.litertlm` text bundle receives each message's `content` as a
+  list of `{"type": "text", "text": ...}` parts instead of a string. A
+  template that concatenates `content` as a string fails the generation, and
+  one that interpolates it renders the list into the prompt; read both shapes
+  ([Chat templates](../guides/chat-template-and-parsing#litert-lm-template-registry)).
+  The built-in templates are unaffected.
+- Qwen3 0.6B on the LiteRT-LM GPU of an Adreno 750 (Galaxy S24): with
+  `v0.18.0` GPU engine creation fails there, where `v0.17.0-8` generated wrong
+  text. The first use throws `LlamaUnsupportedException` under
+  `ComputeDevice.gpu` and `LlamaModelException` under `auto`. Load that model
+  with `ComputeDevice.cpu`, which works on the device; Gemma 4 E2B runs on
+  that GPU ([#553](https://github.com/leehack/llamadart/issues/553)).
+- **Behavior change:** a LiteRT-LM engine the runtime cannot create under
+  `ComputeDevice.auto` or `ComputeDevice.cpu` now throws `LlamaModelException`
+  on first use. `LlamaEngine.create`, `generate` and `complete` threw
+  `LlamaInferenceException` there, so a `catch` of that type no longer sees
+  this failure; `ChatSession`, `tokenize`, `detokenize`, `getTokenCount` and
+  `chatTemplate` with a token count threw a `StateError`. With `v0.18.0` that
+  includes a `liteRtLmCacheDir` the runtime cannot write, on the CPU backend
+  too.
+- LiteRT-LM release sync accepts runtimes built on upstream `v0.17.1` and
+  `v0.18.0`, and names the upstream version when its prebuilt-override table
+  is behind the runtime owner's
+  ([#586](https://github.com/leehack/llamadart/issues/586)).
 - Move the documented Web LiteRT-LM default from `@litert-lm/core@0.15.0` to
   `@litert-lm/core@0.18.0`. An app still chooses the module through
   `window.__llamadartLiteRtLmModuleUrl`; the chat app's `web/index.html` and
