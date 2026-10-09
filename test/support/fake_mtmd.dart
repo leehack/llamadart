@@ -11,8 +11,24 @@ import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/mtmd_chunk_eval.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 
+/// What a [FakeMtmd] with chunk-level functions presents its media part as.
+enum FakeMtmdChunk {
+  /// A text chunk.
+  text,
+
+  /// An image chunk the projector decodes causally.
+  causalImage,
+
+  /// An image chunk the projector decodes non-causally.
+  nonCausalImage,
+}
+
 /// Stands in for libmtmd through [service]'s fallback API: a projector whose
 /// one media part evaluates [tokens] as text.
+///
+/// With an image [chunk] the chunk-level functions present the part as an
+/// image chunk of [tokens]. A non-causal one is decoded with causal attention
+/// off, as `mtmd_helper_decode_image_chunk` does.
 ///
 /// It records the upstream mtmd function behind each call that creates,
 /// tokenizes with, evaluates with or frees the projector. A service on the
@@ -26,6 +42,7 @@ final class FakeMtmd {
     this.service, {
     required this.tokens,
     this.chunkEval = false,
+    this.chunk = FakeMtmdChunk.text,
     this.decode = llama_decode,
     this.audioBitmap = _audioBitmap,
   }) {
@@ -110,6 +127,9 @@ final class FakeMtmd {
   /// Whether the fallback has the chunk-level functions.
   final bool chunkEval;
 
+  /// What the chunk-level functions present the media part as.
+  final FakeMtmdChunk chunk;
+
   /// The decode call the media evaluation makes.
   final int Function(Pointer<llama_context> context, llama_batch batch) decode;
 
@@ -137,15 +157,30 @@ final class FakeMtmd {
   late final MtmdChunkEvalApi _chunkEvalApi = MtmdChunkEvalApi(
     chunksSize: (_) => 1,
     chunksGet: (_, _) => Pointer<mtmd_input_chunk>.fromAddress(0x40),
-    chunkType: (_) => mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT.value,
+    chunkType: (_) => chunk == FakeMtmdChunk.text
+        ? mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_TEXT.value
+        : mtmd_input_chunk_type.MTMD_INPUT_CHUNK_TYPE_IMAGE.value,
+    chunkTokenCount: (_) => tokens.length,
+    decodeUseNonCausal: (_, _) => chunk == FakeMtmdChunk.nonCausalImage,
     evalChunkSingle: (_, context, _, nPast, _, nBatch, _, newNPast) {
       calls.add('mtmd_helper_eval_chunk_single');
       return evalMedia(context, nPast, nBatch, newNPast);
     },
-    encodeChunk: (_, _) => throw StateError('unexpected mtmd call'),
-    outputEmbd: (_) => throw StateError('unexpected mtmd call'),
-    decodeImageChunk: (_, _, _, _, _, _, _, _) =>
-        throw StateError('unexpected mtmd call'),
+    encodeChunk: (_, _) {
+      calls.add('mtmd_encode_chunk');
+      return 0;
+    },
+    outputEmbd: (_) => nullptr,
+    decodeImageChunk: (_, context, _, _, nPast, _, nBatch, newNPast) {
+      calls.add('mtmd_helper_decode_image_chunk');
+      final nonCausal = chunk == FakeMtmdChunk.nonCausalImage;
+      if (nonCausal) llama_set_causal_attn(context, false);
+      try {
+        return evalMedia(context, nPast, nBatch, newNPast);
+      } finally {
+        if (nonCausal) llama_set_causal_attn(context, true);
+      }
+    },
   );
 
   /// Decodes [tokens] on [context] from [nPast] in batches of [nBatch].

@@ -65,6 +65,8 @@ const _mtmdChunkEvalSymbols = [
   'mtmd_input_chunks_size',
   'mtmd_input_chunks_get',
   'mtmd_input_chunk_get_type',
+  'mtmd_input_chunk_get_n_tokens',
+  'mtmd_decode_use_non_causal',
   'mtmd_helper_eval_chunk_single',
   'mtmd_encode_chunk',
   'mtmd_get_output_embd',
