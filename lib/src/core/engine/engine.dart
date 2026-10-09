@@ -1637,7 +1637,7 @@ class LlamaEngine {
           chatTemplateKwargs: templateKwargs,
           templateNow: templateNow,
           includeTokenCount: false,
-          mediaMarker: chatMediaMarker ?? mtmdMediaMarker,
+          keepChatMarker: chatMediaMarker != null,
         );
         final plan = ChatCompletionRequestPlanner.build(
           backend: backend,
@@ -1787,6 +1787,13 @@ class LlamaEngine {
   /// Use [LlamaStructuredOutput.responseFormat] to avoid hand-writing these
   /// maps in application code.
   ///
+  /// For messages that carry image, audio or video parts the prompt has
+  /// `<__media__>` where each part was, and [generate] takes it with those
+  /// parts. A string in a message that [generate] would also read as a part
+  /// (`<__media__>`, `<image>`, `<img>`, `[IMG]` and the like) has a
+  /// zero-width space (U+200B) after its first character in that prompt, so
+  /// it stays text. Messages without such parts render as they are.
+  ///
   /// [jsonSchema] is a legacy shortcut for
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
   /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
@@ -1856,7 +1863,7 @@ class LlamaEngine {
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
-    String mediaMarker = mtmdMediaMarker,
+    bool keepChatMarker = false,
   }) async {
     _ensureReady(requireContext: false);
     return ChatTemplateRenderer.render(
@@ -1875,26 +1882,18 @@ class LlamaEngine {
       includeTokenCount: includeTokenCount,
       chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
-      mediaMarker: mediaMarker,
+      keepChatMarker: keepChatMarker,
     );
   }
 
-  /// The marker to render [messages] with for a backend that tells a
-  /// chat-rendered prompt from a caller's: one message text cannot hold.
-  /// `null` when the request has no media or the backend takes every prompt
-  /// through `generate`.
-  String? _chatPromptMediaMarkerFor(List<LlamaChatMessage> messages) {
-    if (backend is! BackendChatPromptGeneration) return null;
-    final hasMedia = messages.any(
-      (message) => message.parts.any(
-        (part) =>
-            part is LlamaImageContent ||
-            part is LlamaAudioContent ||
-            part is LlamaVideoContent,
-      ),
-    );
-    return hasMedia ? chatPromptMediaMarker : null;
-  }
+  /// The marker that stands for each part in the prompt [create] hands a
+  /// backend that takes chat prompts. `null` when the request has no media
+  /// or the backend takes every prompt through `generate`.
+  String? _chatPromptMediaMarkerFor(List<LlamaChatMessage> messages) =>
+      backend is BackendChatPromptGeneration &&
+          ChatTemplateRenderer.carriesMedia(messages)
+      ? chatPromptMediaMarker
+      : null;
 
   // ============================================================
   // LOW-LEVEL GENERATION

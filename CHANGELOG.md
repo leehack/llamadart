@@ -107,10 +107,17 @@
   its own text for a media part: Qwen's `Picture N: ` under `add_vision_id`,
   the Kimi-K2 wrapper, Reka's run of image tokens and Cohere's
   `<|IMG_PATCH|>` are gone, as on `llama-server`. A placeholder string that
-  a message quotes (`<img>`, `<image>`, `[IMG]`) stays text instead of being
-  read as a part; a quoted `<__media__>`, and on Web any placeholder the
-  bridge rewrites, reaches the model with a zero-width space after its first
-  character. A prompt passed to `generate` keeps its placeholders.
+  a chat message quotes (`<img>`, `<image>`, `[IMG]`, `<__media__>`) is text
+  instead of a part. Where the runtime would still read such a string as a
+  part, it reaches the model with a zero-width space (U+200B) after its
+  first character, which the model may repeat in its answer: a quoted
+  `<__media__>` in `create` on native; every placeholder the bridge
+  rewrites in `create` on Web; and every placeholder `generate` reads in the
+  prompt `chatTemplate` returns for messages with media and in `create` on
+  a custom backend without `BackendChatPromptGeneration`, which
+  `package:llamadart/backend.dart` now exports. A prompt written for
+  `generate` keeps its placeholders, and `chatTemplate` output for messages
+  without media is unchanged.
 
 ## 0.11.1
 

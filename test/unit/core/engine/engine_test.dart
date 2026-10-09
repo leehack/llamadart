@@ -6,7 +6,6 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
     show
-        BackendChatPromptGeneration,
         BackendDeferredEngineCreation,
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
@@ -5337,8 +5336,14 @@ void main() {
       expect(backend.lastGenerationPrompt, '<s>user: ${literal}assistant: ');
     });
 
-    test('create renders a media request with the default marker for a '
-        'backend that takes every prompt through generate', () async {
+    // What `generate` would read as a part gets a zero-width space.
+    const broken =
+        'Why is my <\u200Bimg> tag not rendering, and what is '
+        '<\u200B__media__>?';
+
+    test('create gives a backend that takes every prompt through generate '
+        'the default marker where the part was and breaks the placeholders '
+        'the message quotes', () async {
       final backend = MockLlamaBackend();
       final engine = await loaded(backend);
 
@@ -5346,7 +5351,7 @@ void main() {
 
       expect(
         backend.lastGenerationPrompt,
-        '<s>user: <__media__>${literal}assistant: ',
+        '<s>user: <__media__>${broken}assistant: ',
       );
     });
 
@@ -5363,15 +5368,59 @@ void main() {
       expect(backend.lastGenerationPrompt, '<image>Describe');
     });
 
-    test('chatTemplate shows the default marker', () async {
+    for (final (name, backend) in [
+      ('takes chat prompts', _ChatPromptBackend.new),
+      ('takes every prompt through generate', MockLlamaBackend.new),
+    ]) {
+      test('chatTemplate renders a media request as a prompt generate '
+          'takes, for a backend that $name', () async {
+        final engine = await loaded(backend());
+
+        final rendered = await engine.chatTemplate(
+          messages,
+          includeTokenCount: false,
+        );
+
+        expect(rendered.prompt, '<s>user: <__media__>${broken}assistant: ');
+      });
+    }
+
+    for (final (kind, part) in <(String, LlamaContentPart)>[
+      ('an audio', const LlamaAudioContent(path: '/tmp/clip.wav')),
+      ('a video', LlamaVideoContent(path: '/tmp/clip.mp4')),
+    ]) {
+      test('chatTemplate renders a request with $kind part as a prompt '
+          'generate takes', () async {
+        final engine = await loaded(MockLlamaBackend());
+
+        final rendered = await engine.chatTemplate([
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [part, const LlamaTextContent(literal)],
+          ),
+        ], includeTokenCount: false);
+
+        expect(rendered.prompt, '<s>user: <__media__>${broken}assistant: ');
+      });
+    }
+
+    test('chatTemplate counts the tokens of the prompt it returns', () async {
+      final backend = _TokenizeRecordingBackend();
+      final engine = await loaded(backend);
+
+      final rendered = await engine.chatTemplate(messages);
+
+      expect(backend.tokenizedTexts, [rendered.prompt]);
+    });
+
+    test('chatTemplate renders a request without media as it is', () async {
       final engine = await loaded(_ChatPromptBackend());
 
-      final rendered = await engine.chatTemplate(
-        messages,
-        includeTokenCount: false,
-      );
+      final rendered = await engine.chatTemplate(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: literal),
+      ], includeTokenCount: false);
 
-      expect(rendered.prompt, '<s>user: <__media__>${literal}assistant: ');
+      expect(rendered.prompt, '<s>user: ${literal}assistant: ');
     });
   });
 
@@ -5560,6 +5609,20 @@ class _SourceEchoBackend extends MockLlamaBackend {
     return Exception(
       'File not found: $source (${uri.userInfo} ${uri.query} ${uri.fragment})',
     );
+  }
+}
+
+class _TokenizeRecordingBackend extends MockLlamaBackend {
+  final List<String> tokenizedTexts = <String>[];
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) {
+    tokenizedTexts.add(text);
+    return super.tokenize(modelHandle, text, addSpecial: addSpecial);
   }
 }
 

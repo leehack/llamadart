@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/src/core/template/media_placeholders.dart';
 import 'package:test/test.dart';
@@ -101,12 +102,75 @@ void main() {
     });
   });
 
-  test('chatPromptMediaMarker is a marker of 32 random characters, as '
-      "llama-server's is", () {
-    expect(
-      chatPromptMediaMarker,
-      matches(RegExp(r'^<__media_[A-Za-z0-9]{32}__>$')),
-    );
+  group('chatPromptAsCallerPrompt', () {
+    test('writes the default marker where the chat marker stood', () {
+      expect(
+        chatPromptAsCallerPrompt('a<m>b<m>', chatMarker: '<m>'),
+        'a<__media__>b<__media__>',
+      );
+    });
+
+    test('breaks every string the llama.cpp service or the WebGPU bridge '
+        'reads as a part in a caller prompt', () {
+      final quoted = <String>[
+        mtmdMediaMarker,
+        ...mtmdMediaPlaceholders,
+        '<|image_1|>',
+        '<|image_12|>',
+        '<audio>',
+        '<|audio_3|>',
+        '<|vision_start|><|image_pad|><|vision_end|>',
+        '<|vision_start|><|video_pad|><|vision_end|>',
+      ];
+      for (final placeholder in quoted) {
+        final prompt = chatPromptAsCallerPrompt(
+          '<m>before $placeholder after',
+          chatMarker: '<m>',
+        );
+
+        expect(
+          prompt,
+          '<__media__>before ${placeholder[0]}\u200B'
+          '${placeholder.substring(1)} after',
+        );
+        expect(
+          normalizeMediaPlaceholders(prompt),
+          prompt,
+          reason: '$placeholder is no longer a placeholder',
+        );
+        expect(
+          webGpuBridgeMediaPlaceholders.allMatches(prompt),
+          hasLength(1),
+          reason: 'the bridge finds the part marker only',
+        );
+      }
+    });
+
+    test('leaves other text as it is', () {
+      expect(
+        chatPromptAsCallerPrompt(
+          '<m><think>x</think> <imagine> <|im_end|>',
+          chatMarker: '<m>',
+        ),
+        '<__media__><think>x</think> <imagine> <|im_end|>',
+      );
+    });
+  });
+
+  group('chatPromptMediaMarker', () {
+    test("is a marker of 32 random characters, as llama-server's is", () {
+      expect(
+        chatPromptMediaMarker,
+        matches(RegExp(r'^<__media_[A-Za-z0-9]{32}__>$')),
+      );
+    });
+
+    test('is drawn anew for each isolate', () async {
+      expect(
+        await Isolate.run(() => chatPromptMediaMarker),
+        isNot(chatPromptMediaMarker),
+      );
+    });
   });
 
   group('shared table adoption', () {

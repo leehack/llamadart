@@ -152,7 +152,7 @@ void main() {
           // mtmd would read the `<__media__>` a message quotes as a part,
           // so that one string reaches it with a zero-width space in it.
           final expected = (upstream['prompt'] as String)
-              .replaceAll('<__media__>', '<​__media__>')
+              .replaceAll('<__media__>', '<\u200B__media__>')
               .replaceAll(upstream['media_marker'] as String, '<__media__>');
           expect(
             await chatPromptAtMtmd(
@@ -163,6 +163,53 @@ void main() {
                   .length,
             ),
             expected,
+          );
+        });
+
+        test('hands mtmd the $template $conversation prompt llama-server '
+            'renders when it comes as a caller prompt', () async {
+          final messages = _conversation(conversation);
+          final rendered = ChatTemplateEngine.render(
+            templateSource: File(
+              upstream['template'] as String,
+            ).readAsStringSync(),
+            messages: messages,
+            metadata: {
+              'tokenizer.ggml.bos_token': '',
+              'tokenizer.ggml.eos_token': upstream['eos_token'] as String,
+            },
+            mediaMarker: chatPromptMediaMarker,
+          );
+
+          // The caller path reads each of these as a part, so each reaches
+          // mtmd with a zero-width space in it.
+          var expected = upstream['prompt'] as String;
+          for (final quoted in const [
+            '<__media__>',
+            '<img>',
+            '<image>',
+            '[IMG]',
+          ]) {
+            expected = expected.replaceAll(
+              quoted,
+              '${quoted[0]}\u200B${quoted.substring(1)}',
+            );
+          }
+          expect(
+            await callerPromptAtMtmd(
+              chatPromptAsCallerPrompt(
+                rendered.prompt,
+                chatMarker: chatPromptMediaMarker,
+              ),
+              messages
+                  .expand((message) => message.parts)
+                  .whereType<LlamaImageContent>()
+                  .length,
+            ),
+            expected.replaceAll(
+              upstream['media_marker'] as String,
+              '<__media__>',
+            ),
           );
         });
       }

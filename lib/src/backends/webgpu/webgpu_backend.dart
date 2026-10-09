@@ -63,14 +63,6 @@ class WebGpuLlamaBackend
         BackendLazyGrammarSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
 
-  // What the bridge reads as a media part wherever it is in a prompt that
-  // comes with parts: its marker and the placeholders the pinned assets
-  // rewrite to it. It has no option that turns this off.
-  static final RegExp _bridgeMediaPlaceholders = RegExp(
-    r'<__media__>|<image>|\[IMG\]|<\|image\|>|<img>|<\|img\|>'
-    r'|<\|vision_start\|><\|(?:image|video)_pad\|><\|vision_end\|>'
-    r'|<audio>|<\|audio\|>|<\|(?:image|audio)_\d+\|>',
-  );
   static const Duration _bridgePollInterval = Duration(milliseconds: 100);
   static const int _defaultRemoteFetchChunkBytes = 4 * 1024 * 1024;
   static const int _minRemoteFetchChunkBytes = minRemoteFetchChunkBytes;
@@ -1826,7 +1818,7 @@ class WebGpuLlamaBackend
       prompt,
       chatMarker: mediaMarker,
       marker: mtmdMediaMarker,
-      runtimePlaceholders: _bridgeMediaPlaceholders,
+      runtimePlaceholders: webGpuBridgeMediaPlaceholders,
     ),
     params,
     parts: parts,

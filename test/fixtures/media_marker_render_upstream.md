@@ -57,7 +57,8 @@ The templates under `test/fixtures/media_templates/` are the
 conversation through `ChatTemplateEngine.render` with `bos_token` empty, the
 case's `eos_token` and the case's `media_marker`, and expects the exact
 prompt. `test/unit/backends/llama_cpp/llama_cpp_service_media_prompt_test.dart`
-hands the Qwen3.5 and Qwen2.5-Omni prompts to the llama.cpp service as chat
-prompts and expects what reaches `mtmd_tokenize`: the same text with mtmd's
-`<__media__>` where the server's marker was, and a quoted `<__media__>`
-broken with a zero-width space.
+hands the Qwen3.5 and Qwen2.5-Omni prompts to the llama.cpp service and
+expects what reaches `mtmd_tokenize`: the same text with mtmd's `<__media__>`
+where the server's marker was. As a chat prompt a quoted `<__media__>` has a
+zero-width space in it; as a caller prompt, the way `chatTemplate` output
+reaches the service, every quoted placeholder has one.

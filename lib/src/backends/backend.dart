@@ -294,15 +294,25 @@ abstract class BackendRuntimeIdentity {
   LlamaRuntime? get runtime;
 }
 
-/// Internal backend capability for a prompt that a chat template rendered,
-/// as opposed to one the caller wrote.
+/// Optional backend capability for a prompt that `LlamaEngine.create`
+/// rendered from chat messages with media parts, as opposed to a prompt the
+/// caller of `LlamaEngine.generate` wrote.
 ///
-/// In such a prompt `mediaMarker` stands where each media part was and
-/// nothing else is a media placeholder: a placeholder string or `<__media__>`
-/// in message text stays text, as in llama.cpp's server. `generate` keeps
-/// reading the placeholders a caller writes in its own prompt.
+/// A backend that reads media placeholders in the prompt of
+/// [LlamaBackend.generate] (`<__media__>`, `<image>`, `<img>` and the like)
+/// would also read one that a chat message only quotes. With this interface
+/// the engine hands such a backend the rendered prompt apart from a caller's.
+/// Without it the engine passes the prompt to [LlamaBackend.generate] with
+/// `<__media__>` where each part was and a zero-width space (U+200B) after
+/// the first character of every other placeholder string.
 abstract class BackendChatPromptGeneration {
   /// Generates like [LlamaBackend.generate] from the chat-rendered [prompt].
+  ///
+  /// [mediaMarker] stands in [prompt] once for each image or audio part of
+  /// [parts], in order, where that part was in its message. It is a random
+  /// string, drawn once for the isolate, that message text does not hold.
+  /// Everything else in [prompt] is template or message text: the backend
+  /// must not rewrite a placeholder in it or read it as media.
   Stream<List<int>> generateChatPrompt(
     int contextHandle,
     String prompt,

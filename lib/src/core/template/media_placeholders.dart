@@ -39,6 +39,26 @@ const List<String> mtmdMediaPlaceholders = <String>[
 /// Indexed image placeholders such as `<|image_1|>`, used by some VLM templates.
 final RegExp mtmdIndexedImagePlaceholder = RegExp(r'<\|image_\d+\|>');
 
+/// What the WebGPU bridge reads as a media part wherever it is in a prompt
+/// that comes with parts: its marker and the placeholders the pinned assets
+/// rewrite to it. It has no option that turns this off.
+final RegExp webGpuBridgeMediaPlaceholders = RegExp(
+  r'<__media__>|<image>|\[IMG\]|<\|image\|>|<img>|<\|img\|>'
+  r'|<\|vision_start\|><\|(?:image|video)_pad\|><\|vision_end\|>'
+  r'|<audio>|<\|audio\|>|<\|(?:image|audio)_\d+\|>',
+);
+
+/// Every string that a backend's `generate` reads as a media part in a
+/// prompt its caller wrote: what [normalizeMediaPlaceholders] rewrites and
+/// what [webGpuBridgeMediaPlaceholders] matches, [mtmdMediaMarker] among it.
+final RegExp callerPromptMediaPlaceholders = RegExp(
+  [
+    ...mtmdMediaPlaceholders.map(RegExp.escape),
+    mtmdIndexedImagePlaceholder.pattern,
+    webGpuBridgeMediaPlaceholders.pattern,
+  ].join('|'),
+);
+
 /// Rewrites every media placeholder a caller wrote in its [prompt] to
 /// [marker].
 ///
@@ -78,3 +98,14 @@ String chatPromptForMarkerRuntime(
       )
       .join(marker);
 }
+
+/// Turns a [prompt] that a chat template rendered with [chatMarker] into one
+/// that reads the same as a caller's prompt: [mtmdMediaMarker] where each
+/// part was, and no other string that `generate` would read as a part.
+String chatPromptAsCallerPrompt(String prompt, {required String chatMarker}) =>
+    chatPromptForMarkerRuntime(
+      prompt,
+      chatMarker: chatMarker,
+      marker: mtmdMediaMarker,
+      runtimePlaceholders: callerPromptMediaPlaceholders,
+    );

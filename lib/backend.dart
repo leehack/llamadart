@@ -29,6 +29,7 @@ export 'src/backends/backend.dart'
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
+        BackendChatPromptGeneration,
         BackendDartLogLevel,
         BackendDecision,
         BackendDecisionCapabilities,
