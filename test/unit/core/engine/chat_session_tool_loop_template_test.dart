@@ -376,4 +376,102 @@ void main() {
       });
     });
   }
+
+  group('a reply that ends with whitespace', () {
+    const user = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Hi',
+    );
+    const next = LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'And 2 + 2?',
+    );
+    LlamaChatMessage assistant(String text) =>
+        LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: text);
+
+    for (final path in const [
+      'test/fixtures/templates/Phi-4-mini-instruct-reasoning.jinja',
+      'test/fixtures/templates/LFM2_5-1_2B-Thinking.jinja',
+    ]) {
+      final name = path.split('/').last;
+      final weather = _tool('weather', (_) async => 'sunny');
+
+      test('leaves the prompts of $name as they were', () async {
+        final source = File(path).readAsStringSync();
+        String render(
+          List<LlamaChatMessage> messages, [
+          List<ToolDefinition>? tools,
+        ]) => ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: const {},
+          tools: tools,
+        ).prompt;
+
+        Future<
+          ({
+            List<String> prompts,
+            LlamaToolLoopResult result,
+            LlamaCompletion sent,
+            ChatSession session,
+          })
+        >
+        run(String checking, String answer, String second) async {
+          final prompts = <String>[];
+          final engine = ScriptedChatEngine()
+            ..onRequest = (messages, tools) =>
+                prompts.add(render(messages, tools));
+          final session = ChatSession(engine, maxContextTokens: 0);
+          engine.replies
+            ..add(() async* {
+              yield scriptedChunk(content: checking);
+              yield* scriptedCalls([
+                ('call00001', 'weather', '{"city": "Seoul"}'),
+              ])();
+            })
+            ..add(scriptedAnswer(answer))
+            ..add(scriptedAnswer(second))
+            ..add(scriptedAnswer('Bye.'));
+          final result = await session.sendWithTools('Hi', tools: [weather]);
+          final sent = await session.send('And 2 + 2?');
+          await session.send('Thanks.');
+          return (
+            prompts: prompts,
+            result: result,
+            sent: sent,
+            session: session,
+          );
+        }
+
+        final base = await run('Checking.', 'Sunny.', '4');
+        final spaced = await run('Checking. \n', 'Sunny.  \n ', '4\n\n');
+
+        expect(
+          render([user, assistant('Sunny.  \n '), next]),
+          isNot(render([user, assistant('Sunny.'), next])),
+        );
+        expect(spaced.prompts, hasLength(4));
+        expect(spaced.prompts, base.prompts);
+
+        expect(spaced.result.stopReason, LlamaToolLoopStopReason.completed);
+        expect(spaced.result.text, 'Sunny.  \n ');
+        expect(spaced.sent.text, '4\n\n');
+        final history = spaced.session.history;
+        expect(
+          [for (final message in history) message.content],
+          [for (final message in base.session.history) message.content],
+        );
+        expect(
+          history[1].parts.whereType<LlamaTextContent>().single.text,
+          'Checking.',
+        );
+        expect(
+          history[1].parts.whereType<LlamaToolCallContent>().single.rawJson,
+          '{"city": "Seoul"}',
+        );
+        expect(spaced.result.messages.last, same(history[3]));
+        expect(history[3].content, 'Sunny.');
+      });
+    }
+  });
 }

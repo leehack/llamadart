@@ -305,7 +305,8 @@ the same controls and the rest.
 
 Native GGUF `stopSequences` suppress the first completed marker and any text
 following it, including markers split across tokens or embedded inside a token.
-Empty stops are ignored. Unfinished marker prefixes are emitted when generation
+Text before the marker is returned in full, and chat content keeps whitespace
+that ends there. Empty stops are ignored. Unfinished marker prefixes are emitted when generation
 ends without a match. Template tokens listed in `preservedTokens` remain
 available to the chat parser; identical stop entries are excluded from native
 text matching. This applies to ordinary and speculative generation, and
