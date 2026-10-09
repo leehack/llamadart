@@ -2104,7 +2104,7 @@ class LlamaCppService {
     required int splitMode,
     required int mainGpu,
   }) => resolveVulkanLoadDecision(
-    usesGpu: gpuLayers > 0 && backend != GpuBackend.cpu,
+    usesGpu: gpuLayers != 0 && backend != GpuBackend.cpu,
     backendRegistry: ggmlGpuRegistryName(backend),
     splitMode: splitMode,
     mainGpu: mainGpu,
