@@ -26,10 +26,12 @@ description: >-
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+        llamadart_extra_runtimes: [stable_diffusion]
   ```
 
-  Keep `litert_lm` in the list if the app also loads `.litertlm` models. Run
+  The key adds to what `llamadart_native_runtimes` selects, so the default
+  `llama_cpp` and `litert_lm` stay; naming `stable_diffusion` in
+  `llamadart_native_runtimes` instead replaces the defaults. Run
   `flutter clean` once after changing it. Linux and Windows bundle the Vulkan
   build when `llamadart_native_backends` selects Vulkan (the default);
   `llamadart_stable_diffusion_backends: [cpu]` picks the CPU build.

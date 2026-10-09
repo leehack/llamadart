@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Add the `llamadart_extra_runtimes` build-hook key.
+  `llamadart_extra_runtimes: [stable_diffusion]` opts into image generation
+  and keeps the default `llama_cpp` and `litert_lm` runtimes, which naming
+  `stable_diffusion` in `llamadart_native_runtimes` drops
+  ([#856](https://github.com/leehack/llamadart/issues/856)).
 - Update the default LiteRT-LM runtime to
   `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the
   macOS GPU backend the program cache of Qwen3 0.6B and Gemma 4 E2B no longer

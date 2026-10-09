@@ -99,10 +99,13 @@ experimental and may change, and the runtime is opt-in.
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+        llamadart_extra_runtimes: [stable_diffusion]
   ```
 
-  Keep `litert_lm` in the list if the app also loads `.litertlm` models.
+  The key adds to what `llamadart_native_runtimes` selects, so the default
+  `llama_cpp` and `litert_lm` runtimes stay. Naming `stable_diffusion` in
+  `llamadart_native_runtimes` bundles it too, but that list replaces the
+  defaults.
 
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),

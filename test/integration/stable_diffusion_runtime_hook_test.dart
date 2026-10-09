@@ -15,7 +15,7 @@ import 'package:test/test.dart';
 void main() {
   test('opting in bundles a runtime that loads and lists devices', () async {
     final status = await _probeConsumer(
-      runtimesDefine: const ['llama_cpp', 'stable_diffusion'],
+      define: 'llamadart_native_runtimes: [llama_cpp, stable_diffusion]',
     );
 
     expect(status['available'], isTrue, reason: '$status');
@@ -32,8 +32,23 @@ void main() {
     expect(devices, contains(startsWith('MTL')));
   });
 
+  test('llamadart_extra_runtimes bundles it beside the default '
+      'runtimes', () async {
+    final status = await _probeConsumer(
+      define: 'llamadart_extra_runtimes: [stable_diffusion]',
+    );
+
+    expect(status['available'], isTrue, reason: '$status');
+    expect(
+      status['hookLog'],
+      contains(
+        'Selected native runtimes: llama_cpp, litert_lm, stable_diffusion.',
+      ),
+    );
+  });
+
   test('without opting in the runtime is reported as not bundled', () async {
-    final status = await _probeConsumer(runtimesDefine: null);
+    final status = await _probeConsumer(define: null);
 
     expect(status['available'], isFalse);
     expect(
@@ -43,19 +58,18 @@ void main() {
   });
 }
 
-Future<Map<String, Object?>> _probeConsumer({
-  required List<String>? runtimesDefine,
-}) async {
+/// The probe's status for a consumer whose `hooks.user_defines.llamadart`
+/// holds [define], plus the llamadart hook's output under `hookLog`.
+Future<Map<String, Object?>> _probeConsumer({required String? define}) async {
   final consumer = await Directory.systemTemp.createTemp('llamadart-sd-hook-');
   addTearDown(() => consumer.delete(recursive: true));
-  final hooks = runtimesDefine == null
+  final hooks = define == null
       ? ''
       : '''
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes:
-        runtimes: [${runtimesDefine.join(', ')}]
+      $define
 ''';
   await File(path.join(consumer.path, 'pubspec.yaml')).writeAsString('''
 name: llamadart_sd_hook_consumer
@@ -95,7 +109,17 @@ void main() {
   final line = LineSplitter.split(
     output,
   ).singleWhere((line) => line.startsWith('SD_PROBE '));
-  return jsonDecode(line.substring('SD_PROBE '.length)) as Map<String, Object?>;
+  final hookLog =
+      Directory(
+            path.join(consumer.path, '.dart_tool', 'hooks_runner', 'llamadart'),
+          )
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((file) => path.basename(file.path) == 'stdout.txt');
+  return {
+    ...jsonDecode(line.substring('SD_PROBE '.length)) as Map<String, Object?>,
+    'hookLog': hookLog.map((file) => file.readAsStringSync()).join(),
+  };
 }
 
 Future<String> _expectSuccess(

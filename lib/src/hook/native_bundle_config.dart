@@ -2,9 +2,10 @@
 /// `hook/build.dart`. Pure decisions over already-discovered paths and
 /// already-decoded config: nothing here downloads, extracts, or emits assets.
 ///
-/// [nativeRuntimesUserDefineKey] picks the runtime families to build;
+/// [nativeRuntimesUserDefineKey] picks the runtime families to build and
+/// [extraRuntimesUserDefineKey] adds opt-in families to that pick;
 /// [nativeBackendUserDefineKey] filters the split llama.cpp backend modules
-/// within `llama_cpp`. Both scope by platform through a `platforms` map, or —
+/// within `llama_cpp`. All scope by platform through a `platforms` map, or —
 /// kept for backward compatibility — a bare map already keyed by platform.
 ///
 /// Entry-point roles, deliberately not a call order `hook/build.dart` may
@@ -57,6 +58,11 @@ const String nativePathUserDefineKey = 'llamadart_native_path';
 /// [selectNativeRuntimesForBundle].
 const String nativeRuntimesUserDefineKey = 'llamadart_native_runtimes';
 
+/// User-define key adding opt-in runtime families to whatever
+/// [nativeRuntimesUserDefineKey] selects, so the defaults stay without being
+/// restated. Decoded by [selectNativeRuntimesForBundle].
+const String extraRuntimesUserDefineKey = 'llamadart_extra_runtimes';
+
 /// The llama.cpp/GGUF runtime family; the only one with configurable backends.
 const String nativeRuntimeLlamaCpp = 'llama_cpp';
 
@@ -76,10 +82,14 @@ const List<String> allNativeRuntimes = [
   nativeRuntimeLiteRtLm,
 ];
 
+/// The opt-in runtime families, the only ones [extraRuntimesUserDefineKey]
+/// accepts.
+const List<String> optInNativeRuntimes = [nativeRuntimeStableDiffusion];
+
 /// Every runtime family a config may name.
 const List<String> supportedNativeRuntimes = [
   ...allNativeRuntimes,
-  nativeRuntimeStableDiffusion,
+  ...optInNativeRuntimes,
 ];
 
 /// Fallback families for config that names no runtimes. An explicit `none`
@@ -562,20 +572,29 @@ List<String>? parseRequestedBackends({
 /// at all — an unsupported scalar at the *root* included — the fallback to
 /// [defaultNativeRuntimes] is silent when the key is unset or the config is
 /// platform-scoped, and a [warn] otherwise.
+///
+/// [rawExtraConfig] (`llamadart_extra_runtimes`) then appends the
+/// [optInNativeRuntimes] it names for [bundle] that the selection lacks. It
+/// takes the same shapes, platform precedence and aliases, and `none` clears
+/// it; unset, empty, or without an entry for [bundle] it adds nothing. Unlike
+/// [rawUserConfig] it is strict: any other value, `all` and the default
+/// families included, throws a [FormatException], because a dropped name there
+/// would leave the app without a runtime it asked for.
 List<String> selectNativeRuntimesForBundle({
   required String bundle,
   required Object? rawUserConfig,
+  Object? rawExtraConfig,
   required void Function(String message) warn,
 }) {
+  final extras = _extraNativeRuntimesForBundle(
+    bundle: bundle,
+    rawExtraConfig: rawExtraConfig,
+  );
   final parsed = _parseNativeRuntimeConfigForBundle(
     bundle: bundle,
     rawUserConfig: rawUserConfig,
   );
-  if (parsed == null) {
-    return defaultNativeRuntimes;
-  }
-
-  final invalid = parsed.invalid;
+  final invalid = parsed?.invalid ?? const <String>[];
   if (invalid.isNotEmpty) {
     warn(
       'Ignoring unknown native runtime(s) for $bundle: ${invalid.join(', ')}. '
@@ -583,7 +602,32 @@ List<String> selectNativeRuntimesForBundle({
     );
   }
 
-  return parsed.runtimes;
+  final selected = parsed?.runtimes ?? defaultNativeRuntimes;
+  final added = extras.where((runtime) => !selected.contains(runtime));
+  return added.isEmpty ? selected : [...selected, ...added];
+}
+
+List<String> _extraNativeRuntimesForBundle({
+  required String bundle,
+  required Object? rawExtraConfig,
+}) {
+  final parsed = _parseNativeRuntimeConfigForBundle(
+    bundle: bundle,
+    rawUserConfig: rawExtraConfig,
+    optInOnly: true,
+  );
+  if (parsed == null) {
+    return const [];
+  }
+  if (parsed.invalid.isNotEmpty) {
+    throw FormatException(
+      'hooks.user_defines.llamadart.$extraRuntimesUserDefineKey names '
+      '${parsed.invalid.join(', ')} for $bundle; it accepts only the opt-in '
+      'runtimes: ${optInNativeRuntimes.join(', ')}. Select '
+      '${allNativeRuntimes.join(' and ')} with $nativeRuntimesUserDefineKey.',
+    );
+  }
+  return parsed.explicit.toList(growable: false);
 }
 
 /// Whether [runtime] was named for [bundle], not implied by a default or by
@@ -795,6 +839,7 @@ List<String> selectBackendsForBundle({
 _parseNativeRuntimeConfigForBundle({
   required String bundle,
   required Object? rawUserConfig,
+  bool optInOnly = false,
 }) {
   if (rawUserConfig == null) {
     return null;
@@ -803,7 +848,7 @@ _parseNativeRuntimeConfigForBundle({
   if (rawUserConfig is String ||
       rawUserConfig is List<Object?> ||
       rawUserConfig == false) {
-    return _parseRuntimeList(rawUserConfig);
+    return _parseRuntimeList(rawUserConfig, optInOnly: optInOnly);
   }
 
   final root = _toStringMap(rawUserConfig);
@@ -829,15 +874,15 @@ _parseNativeRuntimeConfigForBundle({
     if (platformValue is Map<Object?, Object?>) {
       final platformMap = _toStringMap(platformValue);
       if (platformMap != null && platformMap.containsKey('runtimes')) {
-        return _parseRuntimeList(platformMap['runtimes']);
+        return _parseRuntimeList(platformMap['runtimes'], optInOnly: optInOnly);
       }
-      return _parseRuntimeList(platformValue);
+      return _parseRuntimeList(platformValue, optInOnly: optInOnly);
     }
-    return _parseRuntimeList(platformValue);
+    return _parseRuntimeList(platformValue, optInOnly: optInOnly);
   }
 
   if (globalValue != null) {
-    return _parseRuntimeList(globalValue);
+    return _parseRuntimeList(globalValue, optInOnly: optInOnly);
   }
 
   final hasRuntimeShape =
@@ -1226,8 +1271,10 @@ List<String> _parseBackendList(Object? value) {
   return result;
 }
 
+/// With [optInOnly], a token naming anything but `none` or one of
+/// [optInNativeRuntimes] is reported as invalid.
 ({List<String> runtimes, List<String> invalid, Set<String> explicit})
-_parseRuntimeList(Object? value) {
+_parseRuntimeList(Object? value, {bool optInOnly = false}) {
   final result = <String>[];
   final invalid = <String>[];
   final explicit = <String>{};
@@ -1241,6 +1288,12 @@ _parseRuntimeList(Object? value) {
       if (token.trim().isNotEmpty) {
         invalid.add(token.trim());
       }
+      return;
+    }
+    if (optInOnly &&
+        normalized != 'none' &&
+        !optInNativeRuntimes.contains(normalized)) {
+      invalid.add(token.trim());
       return;
     }
     if (normalized == 'all') {
@@ -1299,7 +1352,7 @@ _parseRuntimeList(Object? value) {
   if (value is Map<Object?, Object?>) {
     final mapped = _toStringMap(value);
     if (mapped != null && mapped.containsKey('runtimes')) {
-      return _parseRuntimeList(mapped['runtimes']);
+      return _parseRuntimeList(mapped['runtimes'], optInOnly: optInOnly);
     }
   }
 

@@ -57,16 +57,10 @@ hooks:
   user_defines:
     llamadart:
       # The chat example intentionally demonstrates both GGUF and .litertlm
-      # model flows, plus the opt-in stable_diffusion runtime for its image
-      # screen. On iOS and macOS the companion packages above link these
-      # runtimes through Swift Package Manager instead. android-x64 has no
-      # stable_diffusion build and skips it with a build warning; the entries
-      # below leave out what is not published. Smaller examples rely on the
-      # package defaults.
-      llamadart_native_runtimes:
-        runtimes: [llama_cpp, litert_lm, stable_diffusion]
-        platforms:
-          # No LiteRT-LM bundle for these targets, nor stable_diffusion for
-          # windows-arm64.
-          ios-x86_64-sim: [llama_cpp, stable_diffusion]
-          windows-arm64: [llama_cpp]
+      # model flows, which the package defaults bundle, plus the opt-in
+      # stable_diffusion runtime for its image screen. On iOS and macOS the
+      # companion packages above link these runtimes through Swift Package
+      # Manager instead. A target without a stable_diffusion or LiteRT-LM
+      # build (android-x64, windows-arm64) skips that runtime with a build
+      # warning.
+      llamadart_extra_runtimes: [stable_diffusion]

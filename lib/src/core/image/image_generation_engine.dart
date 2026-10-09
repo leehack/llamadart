@@ -146,7 +146,7 @@ class ImageGenerationTask {
 /// stable_diffusion runtime (stable-diffusion.cpp).
 ///
 /// The app must bundle the runtime by adding `stable_diffusion` to
-/// `hooks.user_defines.llamadart.llamadart_native_runtimes`. It runs on
+/// `hooks.user_defines.llamadart.llamadart_extra_runtimes`. It runs on
 /// Android arm64 (CPU), iOS and macOS (Metal), and Linux and Windows (CPU or
 /// Vulkan). On the web and other platforms [load] throws
 /// [LlamaUnsupportedException].

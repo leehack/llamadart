@@ -228,7 +228,7 @@ void main() {
           'message',
           allOf(
             contains('stable_diffusion runtime is not bundled for linux-x64'),
-            contains('llamadart_native_runtimes'),
+            contains('llamadart_extra_runtimes'),
           ),
         ),
       );
@@ -308,7 +308,7 @@ void main() {
           message,
           allOf(
             contains('not bundled for $platform'),
-            contains('llamadart_native_runtimes'),
+            contains('llamadart_extra_runtimes'),
             contains('llamadart_stable_diffusion_flutter'),
           ),
           reason: platform,

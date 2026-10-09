@@ -72,14 +72,17 @@ engine's capabilities.
 ## Bundle the runtime
 
 The runtime adds about 40 to 70 MB per target, so it is never bundled by
-default. Name it in the app's `pubspec.yaml`, then run `flutter clean` once:
+default. Add it in the app's `pubspec.yaml`, then run `flutter clean` once:
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+      llamadart_extra_runtimes: [stable_diffusion]
 ```
+
+The key adds to what `llamadart_native_runtimes` selects, so the default
+`llama_cpp` and `litert_lm` runtimes stay.
 
 Linux and Windows get the Vulkan build when `llamadart_native_backends`
 selects Vulkan, which it does by default; set

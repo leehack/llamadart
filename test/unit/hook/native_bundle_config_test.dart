@@ -1022,6 +1022,259 @@ void main() {
     });
   });
 
+  group('llamadart_extra_runtimes', () {
+    const bundles = [
+      'android-arm64',
+      'android-x64',
+      'ios-arm64',
+      'ios-arm64-sim',
+      'ios-x86_64-sim',
+      'linux-arm64',
+      'linux-x64',
+      'macos-arm64',
+      'macos-x86_64',
+      'windows-arm64',
+      'windows-x64',
+    ];
+
+    List<String> select(
+      Object? rawUserConfig,
+      Object? rawExtraConfig, {
+      String bundle = 'linux-x64',
+      List<String>? warnings,
+    }) => selectNativeRuntimesForBundle(
+      bundle: bundle,
+      rawUserConfig: rawUserConfig,
+      rawExtraConfig: rawExtraConfig,
+      warn: (warnings ?? []).add,
+    );
+
+    test('opting in keeps the default runtimes on every bundle', () {
+      for (final bundle in bundles) {
+        final warnings = <String>[];
+        expect(
+          select(
+            null,
+            const ['stable_diffusion'],
+            bundle: bundle,
+            warnings: warnings,
+          ),
+          [...defaultNativeRuntimes, nativeRuntimeStableDiffusion],
+          reason: bundle,
+        );
+        expect(warnings, isEmpty, reason: bundle);
+      }
+    });
+
+    test('adds to an explicit list, an exclusion and none', () {
+      const extra = ['stable_diffusion'];
+      for (final (rawUserConfig, expected) in const <(Object?, List<String>)>[
+        ('all', ['llama_cpp', 'litert_lm', 'stable_diffusion']),
+        (<String>[], ['llama_cpp', 'litert_lm', 'stable_diffusion']),
+        (['llama_cpp'], ['llama_cpp', 'stable_diffusion']),
+        (['litert_lm'], ['litert_lm', 'stable_diffusion']),
+        (['stable_diffusion', 'llama_cpp'], ['stable_diffusion', 'llama_cpp']),
+        ('none', ['stable_diffusion']),
+        (
+          {
+            'runtimes': ['llama_cpp', 'litert_lm'],
+            'platforms': {
+              'linux': ['litert_lm'],
+            },
+          },
+          ['litert_lm', 'stable_diffusion'],
+        ),
+      ]) {
+        expect(
+          select(rawUserConfig, extra),
+          expected,
+          reason: '$rawUserConfig',
+        );
+      }
+    });
+
+    test('adds nothing when unset, empty or cleared', () {
+      for (final rawUserConfig in const <Object?>[
+        null,
+        ['llama_cpp'],
+        ['llama_cpp', 'stable_diffusion'],
+        'none',
+      ]) {
+        final expected = selectNativeRuntimesForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: rawUserConfig,
+          warn: (_) {},
+        );
+        for (final rawExtraConfig in const <Object?>[
+          null,
+          '',
+          <String>[],
+          'none',
+          false,
+          ['stable_diffusion', 'none'],
+          {'runtimes': <String>[]},
+          {
+            'platforms': {
+              'android': ['stable_diffusion'],
+            },
+          },
+          {
+            'runtimes': ['stable_diffusion'],
+            'platforms': {'linux-x64': 'none'},
+          },
+        ]) {
+          expect(
+            select(rawUserConfig, rawExtraConfig),
+            expected,
+            reason: '$rawUserConfig + $rawExtraConfig',
+          );
+        }
+      }
+    });
+
+    test('accepts the shapes and aliases of llamadart_native_runtimes', () {
+      for (final rawExtraConfig in const <Object?>[
+        'stable_diffusion',
+        ' Stable-Diffusion ',
+        ['none', 'stable_diffusion'],
+        {'runtimes': 'stable_diffusion'},
+        {
+          'platforms': {
+            'linux': ['stable_diffusion'],
+          },
+        },
+        {
+          'runtimes': 'none',
+          'platforms': {
+            'linux-x64': {
+              'runtimes': ['stable_diffusion'],
+            },
+          },
+        },
+      ]) {
+        expect(select(null, rawExtraConfig), [
+          ...defaultNativeRuntimes,
+          nativeRuntimeStableDiffusion,
+        ], reason: '$rawExtraConfig');
+      }
+    });
+
+    test('scopes by platform with the exact bundle before its OS', () {
+      const rawExtraConfig = {
+        'platforms': {
+          'android': ['stable_diffusion'],
+          'android-x64': 'none',
+          'macos': ['stable_diffusion'],
+        },
+      };
+      final optedIn = {
+        for (final bundle in bundles)
+          bundle: select(
+            null,
+            rawExtraConfig,
+            bundle: bundle,
+          ).contains(nativeRuntimeStableDiffusion),
+      };
+      expect(optedIn, {
+        for (final bundle in bundles)
+          bundle: const {
+            'android-arm64',
+            'macos-arm64',
+            'macos-x86_64',
+          }.contains(bundle),
+      });
+      expect(
+        nativeRuntimeNamedForExactBundle(
+          bundle: 'android-x64',
+          rawUserConfig: const {
+            'platforms': {
+              'android-x64': ['stable_diffusion'],
+            },
+          },
+          runtime: nativeRuntimeStableDiffusion,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects every name that is not an opt-in runtime', () {
+      for (final (rawExtraConfig, rejected) in const <(Object, String)>[
+        ('onnx', 'onnx'),
+        (['stable_diffusion', 'tflite', 'onnx'], 'tflite, onnx'),
+        ('all', 'all'),
+        (['both'], 'both'),
+        (['llama_cpp', 'stable_diffusion'], 'llama_cpp'),
+        ('litert', 'litert'),
+        (true, 'true'),
+        ([42], '42'),
+        ({'runtimes': 7}, '7'),
+        (
+          {
+            'platforms': {
+              'linux-x64': ['sd'],
+            },
+          },
+          'sd',
+        ),
+        ({'stable_diffusion': true}, '{stable_diffusion: true}'),
+      ]) {
+        expect(
+          () => select(null, rawExtraConfig),
+          throwsA(
+            isA<FormatException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                startsWith(
+                  'hooks.user_defines.llamadart.llamadart_extra_runtimes '
+                  'names $rejected for linux-x64;',
+                ),
+                contains('opt-in runtimes: stable_diffusion.'),
+                contains(
+                  'Select llama_cpp and litert_lm with '
+                  'llamadart_native_runtimes.',
+                ),
+              ),
+            ),
+          ),
+          reason: '$rawExtraConfig',
+        );
+      }
+    });
+
+    test('an unknown llamadart_native_runtimes name is still a warning', () {
+      final warnings = <String>[];
+      expect(
+        select(
+          const ['llama_cpp', 'onnx'],
+          const ['stable_diffusion'],
+          warnings: warnings,
+        ),
+        [nativeRuntimeLlamaCpp, nativeRuntimeStableDiffusion],
+      );
+      expect(
+        warnings.single,
+        allOf(
+          contains('onnx'),
+          contains(
+            'Supported runtimes: llama_cpp, litert_lm, stable_diffusion.',
+          ),
+        ),
+      );
+    });
+
+    test('a name scoped to another platform is not validated here', () {
+      expect(
+        select(null, const {
+          'platforms': {
+            'android': ['onnx'],
+          },
+        }),
+        defaultNativeRuntimes,
+      );
+    });
+  });
+
   group('stableDiffusionBundleForNativeBundle', () {
     NativeBundleSpec spec(OS os, Architecture arch, {bool sim = false}) =>
         resolveNativeBundleSpec(os: os, arch: arch, isIosSimulator: sim)!;

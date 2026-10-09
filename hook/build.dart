@@ -160,6 +160,7 @@ void main(List<String> args) async {
     final pkgRoot = input.packageRoot.toFilePath();
     final rawNativeRuntimeConfig =
         input.userDefines[nativeRuntimesUserDefineKey];
+    final rawExtraRuntimeConfig = input.userDefines[extraRuntimesUserDefineKey];
     final appleCompanions = _flutterAppleCompanions(
       input: input,
       code: code,
@@ -171,6 +172,7 @@ void main(List<String> args) async {
     final configuredRuntimes = selectNativeRuntimesForBundle(
       bundle: spec.bundle,
       rawUserConfig: rawNativeRuntimeConfig,
+      rawExtraConfig: rawExtraRuntimeConfig,
       warn: log.warning,
     );
     var selectedRuntimes = appleSpmRuntimes == null
@@ -217,10 +219,12 @@ void main(List<String> args) async {
         )];
     if (selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
         stableDiffusionBundleSpec == null) {
-      if (nativeRuntimeNamedForExactBundle(
-        bundle: spec.bundle,
-        rawUserConfig: rawNativeRuntimeConfig,
-        runtime: nativeRuntimeStableDiffusion,
+      if ([rawNativeRuntimeConfig, rawExtraRuntimeConfig].any(
+        (rawConfig) => nativeRuntimeNamedForExactBundle(
+          bundle: spec.bundle,
+          rawUserConfig: rawConfig,
+          runtime: nativeRuntimeStableDiffusion,
+        ),
       )) {
         throw Exception(
           'stable_diffusion runtime is not available for ${spec.bundle}.',

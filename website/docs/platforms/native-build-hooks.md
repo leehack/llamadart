@@ -17,6 +17,7 @@ Configure the hook under `hooks.user_defines.llamadart` in the app's
 | Key | Selects | Default |
 | --- | --- | --- |
 | `llamadart_native_runtimes` | Runtime families to bundle: `llama_cpp`, `litert_lm`, and the opt-in `stable_diffusion` | `llama_cpp` and `litert_lm` where published |
+| `llamadart_extra_runtimes` | Opt-in runtime families added to that selection: `stable_diffusion` | None |
 | `llamadart_native_backends` | llama.cpp backend modules, and Android arm64 CPU variants | `cpu` and `vulkan` where present |
 | `llamadart_stable_diffusion_backends` | The `stable_diffusion` build on Linux and Windows: `cpu` or `vulkan` | Follows `llamadart_native_backends` |
 | `llamadart_native_tag` | `leehack/llamadart-native` release to download | The [pinned release](./support-matrix#pinned-runtimes) |
@@ -79,17 +80,24 @@ hooks:
 [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) runtime
 from `leehack/stable-diffusion-native` for the experimental
 [`ImageGenerationEngine`](../guides/image-generation). It adds about 40 to
-70 MB per target, so it is never bundled by default or by `all`/`both`; name it
-explicitly:
+70 MB per target, so it is never bundled by default or by `all`/`both`. Add it
+with `llamadart_extra_runtimes`, which keeps whatever
+`llamadart_native_runtimes` selects, the defaults included:
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes:
-        runtimes: [llama_cpp, stable_diffusion]
+      llamadart_extra_runtimes: [stable_diffusion]
 ```
 
+- `llamadart_extra_runtimes` takes the same list, `runtimes` and `platforms`
+  shapes as `llamadart_native_runtimes`, and `none` adds nothing for a
+  platform. It accepts only opt-in runtimes: any other name, `all` and
+  `llama_cpp` included, fails the build.
+- Naming `stable_diffusion` in `llamadart_native_runtimes` bundles it too, but
+  that list replaces the defaults: `[llama_cpp, stable_diffusion]` ships no
+  `litert_lm`.
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS
@@ -127,8 +135,8 @@ hooks:
   CPU otherwise. A value naming neither `cpu` nor `vulkan` is ignored with a
   build warning and the same fallback applies.
 - Other targets, such as `android-x64` or Windows arm64, are skipped with a
-  warning. Naming it for that exact bundle key, for example
-  `android-x64: [stable_diffusion]`, fails the build instead.
+  warning. Naming it under that exact bundle key in either setting, for
+  example `android-x64: [stable_diffusion]`, fails the build instead.
 - Flutter iOS and macOS apps should add the `llamadart_stable_diffusion_flutter`
   companion instead; see [Flutter Apple apps](#flutter-apple-apps). Without it
   the hook bundles the runtime, and App Store Connect rejects that iOS
@@ -298,7 +306,8 @@ When the llama.cpp or LiteRT-LM companion is present, the installed companions
 choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 `llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
 decided on its own: its companion selects it, and otherwise the hook bundles it
-when `llamadart_native_runtimes` names it. Adding only the stable_diffusion
+when `llamadart_extra_runtimes` or `llamadart_native_runtimes` names it. Adding
+only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core
 package and rejects local `Artifacts` overrides. The tag,

@@ -232,6 +232,10 @@ hooks:
       llamadart_native_runtimes: [llama_cpp, stable_diffusion]
 ```
 
+That list also leaves out `litert_lm`, which no example here loads. An app that
+keeps the default runtimes sets `llamadart_extra_runtimes: [stable_diffusion]`
+instead.
+
 The first run downloads the runtime (40 to 70 MB) through the build hook.
 `ImageGenerationEngine.load` then downloads the files this example pins for
 the preset in `lib/services/image_cli_options.dart`, unless a flag names a

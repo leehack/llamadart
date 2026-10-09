@@ -7,7 +7,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime() {
     LlamaUnsupportedException(
       'stable_diffusion runtime is not available on the web: it needs a '
       'native platform (Android arm64, iOS, macOS, Linux or Windows x64) with '
-      'stable_diffusion in llamadart_native_runtimes.',
+      'stable_diffusion in llamadart_extra_runtimes.',
     ),
   );
 }
