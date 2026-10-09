@@ -359,7 +359,7 @@ void main() {
           .where((event) => event.type == SessionEventType.assistantToken)
           .map((event) => event.message)
           .join(),
-      'First ',
+      'First',
     );
 
     releaseGeneration.complete();
