@@ -22,6 +22,20 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
   });
 
+  test('LiteRT prebuilt override table covers the pinned upstream version '
+      'and names a version it lacks', () async {
+    const suite =
+        'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest';
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      '$suite.test_override_table_has_an_entry_for_the_pinned_upstream_version',
+      '$suite.test_override_mismatch_names_the_upstream_version_missing_from_the_table',
+      '$suite.test_v017_and_v018_require_exact_android_dawn_repair_provenance',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
   test(
     'stable rebuild entry is explicit and retains rollback guards',
     () async {
@@ -1493,7 +1507,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final pins = File(_pinsPath).readAsStringSync();
-    expect(pins, contains("const liteRtLmReleaseTag = 'v0.17.0-8';"));
+    expect(pins, contains("const liteRtLmReleaseTag = 'v0.18.0';"));
     final hook = File('hook/build.dart').readAsStringSync();
     expect(hook, contains(r"'$liteRtLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$liteRtLmVersion")));

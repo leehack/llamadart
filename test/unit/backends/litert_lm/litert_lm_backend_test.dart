@@ -82,7 +82,7 @@ void main() {
         expect(
           (backend as BackendGenerationLimitSupport)
               .generationLimitUnsupportedReason,
-          contains('v0.17.0-8'),
+          contains('v0.18.0'),
         );
         for (final resume in [false, true]) {
           await expectLater(

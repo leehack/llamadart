@@ -8,10 +8,10 @@ library;
 const llamaCppTag = 'v0.5.0-2';
 
 /// `leehack/litert-lm-native` release tag downloaded for the LiteRT-LM runtime.
-const liteRtLmReleaseTag = 'v0.17.0-8';
+const liteRtLmReleaseTag = 'v0.18.0';
 
 /// LiteRT-LM cache directory version derived from [liteRtLmReleaseTag].
-const liteRtLmVersion = '0.17.0-8';
+const liteRtLmVersion = '0.18.0';
 
 /// A published LiteRT-LM runtime archive and the libraries it must contain.
 class LiteRtLmBundleSpec {
@@ -36,7 +36,7 @@ class LiteRtLmBundleSpec {
 const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: '8afd2d06905f7d30f093a03a88a81cc387c018ef2002e77a8387c54db66a44e3',
+    sha256: 'd83f437ce720d78d5fceb07dae681d8db35faa5f276513f70a1209fd552ef276',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -50,7 +50,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'android-x64',
-    sha256: '559db3603551c86febc14d561794dd67cee13441f9a646865f05444bc5dbea88',
+    sha256: 'cfacb036610e4d1b76681be18ef29c54d3f23abb487dcad7c532c1c1ec28e083',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRtGpuAccelerator.so',
@@ -64,7 +64,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: '58e303376a36725b2890db5e08b6e8b98ff65bda22a399eb37919ff651e70d80',
+    sha256: 'a4266862f92eeaa242331f855a956ce3da0cdca8c9c8618a1ae8c1a13c75fe5f',
     requiredLibraries: {
       'CLiteRTLM',
       'LiteRtLm',
@@ -74,7 +74,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: '708ec4d98acd7f39f40874f75674bd2f51cfceeec52acd623d01ef91b436fba0',
+    sha256: '6634cbc7d0e416d387eca727103ea6093fc352d46188f53d7285eeb89c895217',
     requiredLibraries: {
       'CLiteRTLM',
       'LiteRtLm',
@@ -84,7 +84,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: 'fb4492a02cfa94080bf1b8b27c2ad20a011093dd4f6c88fea483e2c1b46d11f4',
+    sha256: '94662b75c45d2d55200e0c846c69f034d94f9724c6e8d0a65d9107b6d1f928c7',
     requiredLibraries: {
       'libCLiteRTLM_mac.dylib',
       'libGemmaModelConstraintProvider.dylib',
@@ -99,12 +99,12 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'macos-x64',
-    sha256: '89bf4fe36745d1ddddba0e194810d148cb1fbbdd76471298740769fd959ad551',
+    sha256: '2f00840579f2d01d38b9bf8549719655e4070c6d6123c1420a6e3e9ecc7a8440',
     requiredLibraries: {'libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'},
   ),
   LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '8f98404ecc2b4580e4d475f630b5d91b9df90a802dd63a62a3c3e1b08d8a2113',
+    sha256: '38b46dc99a38919c24f7374d3b509e08671c62529f77d4aad12aa14467df628c',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -116,7 +116,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: '95f48ad2fcc97d33a847226a3f4917562e03957cb288fa9405889760f92ffbbc',
+    sha256: 'a25c539eeed38bd54d2cc7ddf297a8c4c3ec6b9ac210f5b7833797af03cff850',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -128,7 +128,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
   ),
   LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: 'a3515a6411ab4ed50f62b28531b2bbc725f3f1cc610bd48196e5b998affe1a89',
+    sha256: '7e9918833a807f9aa216f528f609c10eac528a33e9a8041451de918ea979b3bf',
     requiredLibraries: {
       'LiteRtLm.dll',
       'dxcompiler.dll',
@@ -138,6 +138,7 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
       'libwebgpu_dawn.dll',
+      'webgpu_dawn.dll',
     },
   ),
 ];

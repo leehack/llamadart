@@ -23,7 +23,9 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.17.0-8`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.18.0`.
+This repository change awaits a companion package release; published `0.0.13`
+retains its previous pin.
 
 These iOS artifacts omit the Gemma FST constraint provider. Gemma 3/4 and
 FunctionGemma conversations must use constrained decoding disabled, as the Dart
@@ -34,14 +36,14 @@ tool loops and strict structured output remain unsupported. The macOS
 hook-managed bundle still requires its provider.
 
 iOS 16.4 is the declared deployment floor, not a tested one. The Swift package
-requires an iOS 16.4 app target and the `v0.17.0-8` frameworks declare
+requires an iOS 16.4 app target and the `v0.18.0` frameworks declare
 `MinimumOSVersion` 15.0, but nothing has been run on iOS 16.4. On a device,
 model load and generation have run only on an iPhone 16 Pro with iOS 18.3.2;
 no other iOS version is device-verified
 ([#831](https://github.com/leehack/llamadart/issues/831)).
 
 Apps bound for the App Store should use this package for LiteRT-LM on iOS:
-the `v0.17.0-8` iOS frameworks carry Apple privacy manifests for the
+the `v0.18.0` iOS frameworks carry Apple privacy manifests for the
 [required-reason API](https://developer.apple.com/documentation/bundleresources/describing-use-of-required-reason-api)
 they reference, and the dylibs the core package's native-assets fallback
 bundles carry none. `LiteRtLm` declares File Timestamp (`C617.1`, `3B52.1`)
