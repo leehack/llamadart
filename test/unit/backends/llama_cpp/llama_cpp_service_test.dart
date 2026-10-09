@@ -5989,7 +5989,8 @@ void main() {
     });
 
     // Runs the real llama.cpp runtime: its registry has a CPU device.
-    test('reads each registered device with its name, type and registry', () {
+    test('reads each registered device with its name, type, registry and '
+        'description', () {
       final service = LlamaCppService()..initializeBackend();
       addTearDown(service.dispose);
 
@@ -5999,42 +6000,31 @@ void main() {
         const [],
       );
 
-      expect(registered, isNotEmpty);
-      for (final (index, device) in registered.indexed) {
-        expect(device.device, ggml_backend_dev_get(index));
-        expect(
-          device.name,
-          ggml_backend_dev_name(device.device!).cast<Utf8>().toDartString(),
-        );
-        expect(device.type, ggml_backend_dev_type$1(device.device!).value);
-        expect(
-          device.registry,
-          ggml_backend_reg_name(
-            ggml_backend_dev_backend_reg(device.device!),
-          ).cast<Utf8>().toDartString(),
-        );
-        expect(device.registry, isNotEmpty);
-        final isGpu = const [
-          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU,
-          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU,
-        ].any((type) => type.value == device.type);
-        expect(
-          device.description,
-          isGpu
-              ? ggml_backend_dev_description(
-                  device.device!,
-                ).cast<Utf8>().toDartString()
-              : isEmpty,
-        );
-      }
-      expect(
-        registered.where(
-          (device) =>
-              device.type ==
-              ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
-        ),
-        isNotEmpty,
+      final cpu = registered.firstWhere(
+        (device) =>
+            device.type ==
+            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value,
       );
+      expect(cpu.name, 'CPU');
+      expect(cpu.registry, 'CPU');
+      expect(cpu.description, isNotEmpty);
+      expect(cpu.deviceId, isNull);
+      expect(cpu.device, isNot(nullptr));
+      expect(cpu.isVulkan, isFalse);
+      // The public listings read the same registry.
+      expect({
+        for (final device in registered)
+          device.registry.toLowerCase() == device.name.toLowerCase()
+              ? device.registry
+              : '${device.registry} (${device.name})',
+      }, service.getBackendInfo().toSet());
+      for (final gpu in service.listGpuDevices()) {
+        final device = registered.singleWhere(
+          (entry) => entry.name == gpu.name,
+        );
+        expect(device.description, gpu.description);
+        expect(device.deviceId ?? '', gpu.deviceId);
+      }
     });
   });
 

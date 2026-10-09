@@ -2132,13 +2132,10 @@ class LlamaCppService {
     ggml_backend_dev_t device,
     Pointer<ggml_backend_dev_props> props,
   ) {
-    final type = _ggmlBackendDevType(device);
-    // The properties of a GPU are all llama.cpp and the Vulkan check read.
-    final hasProps =
-        _isGpuClassDevice(device) && _ggmlBackendDevGetProps(device, props);
+    final hasProps = _ggmlBackendDevGetProps(device, props);
     return GgmlDeviceEntry(
       name: _utf8OrEmpty(_ggmlBackendDevName(device)),
-      type: type,
+      type: _ggmlBackendDevType(device),
       registry: _registryNameOf(device),
       description: hasProps ? _utf8OrEmpty(props.ref.description) : '',
       deviceId: hasProps && props.ref.device_id != nullptr

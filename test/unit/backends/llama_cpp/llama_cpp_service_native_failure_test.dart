@@ -740,12 +740,12 @@ void main() {
       calloc.free(free);
       calloc.free(total);
     });
+    Object? invoke(String member, List<Object?> arguments) => reflect(
+      service,
+    ).invoke(MirrorSystem.getSymbol(member, owner), arguments).reflectee;
+    final device = invoke('_ggmlBackendDevGet', [0]);
     bool readMemory() =>
-        reflect(service).invoke(
-              MirrorSystem.getSymbol('_ggmlBackendDevMemory', owner),
-              [ggml_backend_dev_get(0), free, total],
-            ).reflectee
-            as bool;
+        invoke('_ggmlBackendDevMemory', [device, free, total])! as bool;
 
     expect(readMemory(), isTrue);
     expect(barrier.calls, ['llama_dart_ggml_backend_dev_memory']);
