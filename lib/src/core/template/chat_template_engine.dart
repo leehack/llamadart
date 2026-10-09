@@ -249,10 +249,11 @@ class ChatTemplateEngine {
       );
     }
 
-    // Templates that also read string content get media as typed parts.
-    // Templates that read only typed parts (e.g. SmolVLM's
-    // `message['content'][0]['type']`) get the media marker in a text part, as
-    // llama.cpp gives them.
+    // No template gets a media part: each becomes the media marker in the
+    // message text, as llama.cpp renders it. Templates that also read string
+    // content take it through renderWithMultimodalContent. Templates that
+    // read only typed parts (e.g. SmolVLM's `message['content'][0]['type']`)
+    // get it in a text part.
     final hasMediaParts = effectiveMessages.any(
       (message) => message.parts.any(
         (part) => part is LlamaImageContent || part is LlamaAudioContent,

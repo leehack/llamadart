@@ -50,6 +50,8 @@ abstract class ChatTemplateHandler {
   /// reads them as objects, and string content becomes a text part when it
   /// reads content only as parts, as llama.cpp does. A handler that builds
   /// typed parts itself passes `typedContent: false` to keep string content.
+  /// With [multimodal], each media part becomes the mtmd marker in the
+  /// message text.
   List<Map<String, dynamic>> templateMessages(
     List<LlamaChatMessage> messages, {
     bool multimodal = false,
@@ -159,14 +161,12 @@ abstract class ChatTemplateHandler {
     });
   }
 
-  /// Re-renders with content always in list-of-parts format.
+  /// Renders a request that carries media for a template that reads both
+  /// string and typed content.
   ///
-  /// Some templates (e.g. SmolVLM) expect `content` to be
-  /// `[{type: 'text', text: '...'}, {type: 'image'}]` rather than a string.
-  /// This method converts messages to multimodal format and re-renders.
-  ///
-  /// After rendering, replaces model-specific image placeholders with
-  /// the mtmd marker `<__media__>` so the native tokenizer can find them.
+  /// Each image, audio or video part becomes the mtmd marker `<__media__>` in
+  /// the message text, where the part was, as llama.cpp renders it. The
+  /// template's own placeholder for a typed media part is not written.
   LlamaChatTemplateResult renderWithMultimodalContent({
     required String templateSource,
     required List<LlamaChatMessage> messages,
@@ -202,8 +202,8 @@ abstract class ChatTemplateHandler {
       }
     }
 
-    // Post-process: replace model-specific image placeholders with
-    // the mtmd marker so the native tokenizer can match bitmaps to markers.
+    // A model-specific placeholder written in the message text also counts
+    // as the mtmd marker.
     prompt = normalizeMediaPlaceholders(prompt);
 
     final hasTools = tools != null && tools.isNotEmpty;

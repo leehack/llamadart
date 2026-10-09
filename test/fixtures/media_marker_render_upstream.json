@@ -1,0 +1,559 @@
+{
+ "upstream_commit": "d81235049",
+ "endpoint": "POST /apply-template",
+ "media_marker": "<__media__>",
+ "vision_model": "LFM2-VL-450M-Q4_0.gguf",
+ "vision_model_sha256": "1fbf4797e8669cdeabd97fa1d31ab046907cb1fc78b1c3d4bda1ba879574e5d7",
+ "vision_mmproj": "mmproj-LFM2-VL-450M-Q8_0.gguf",
+ "vision_mmproj_sha256": "a6a813fae4ba3f90852a990fdd4786a017dba0e80e599a366853ba539ee2b5ef",
+ "audio_model": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+ "audio_model_sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+ "audio_mmproj": "mmproj-ultravox-v0_5-llama-3_2-1b-f16.gguf",
+ "audio_mmproj_sha256": "b34dde1835752949d6b960528269af93c92fec91c61ea0534fcc73f96c1ed8b2",
+ "image_png_base64": "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP4z8CAFWEXHbQSACj/P8Fu7N9hAAAAAElFTkSuQmCC",
+ "audio_wav_base64": "UklGRqQMAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YYAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+ "conversations": {
+  "image_then_text": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "image": true
+     },
+     {
+      "text": "What color is this image? Answer with one word."
+     }
+    ]
+   }
+  ],
+  "text_then_image": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "What color is this image? Answer with one word."
+     },
+     {
+      "image": true
+     }
+    ]
+   }
+  ],
+  "two_images_then_text": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "image": true
+     },
+     {
+      "image": true
+     },
+     {
+      "text": "What are the colors of the first and second image? Answer with two words."
+     }
+    ]
+   }
+  ],
+  "interleaved_two_images": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "First:"
+     },
+     {
+      "image": true
+     },
+     {
+      "text": "Second:"
+     },
+     {
+      "image": true
+     },
+     {
+      "text": "What are the colors of the first and second image? Answer with two words."
+     }
+    ]
+   }
+  ],
+  "image_only": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "image": true
+     }
+    ]
+   }
+  ],
+  "image_in_later_turn": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "Hello."
+     }
+    ]
+   },
+   {
+    "role": "assistant",
+    "parts": [
+     {
+      "text": "Hi! How can I help?"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "parts": [
+     {
+      "image": true
+     },
+     {
+      "text": "What color is this image? Answer with one word."
+     }
+    ]
+   }
+  ],
+  "system_and_image": [
+   {
+    "role": "system",
+    "parts": [
+     {
+      "text": "You are a concise assistant."
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "parts": [
+     {
+      "image": true
+     },
+     {
+      "text": "What color is this image? Answer with one word."
+     }
+    ]
+   }
+  ],
+  "audio_then_text": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "audio": true
+     },
+     {
+      "text": "What do you hear? Answer with one word."
+     }
+    ]
+   }
+  ],
+  "text_then_audio": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "What do you hear? Answer with one word."
+     },
+     {
+      "audio": true
+     }
+    ]
+   }
+  ]
+ },
+ "cases": [
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "image_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\n<__media__>What color is this image? Answer with one word.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "text_then_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\nWhat color is this image? Answer with one word.<__media__><|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "two_images_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\n<__media__><__media__>What are the colors of the first and second image? Answer with two words.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "interleaved_two_images",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\nFirst:<__media__>Second:<__media__>What are the colors of the first and second image? Answer with two words.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "image_only",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\n<__media__><|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "image_in_later_turn",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>user\nHello.<|im_end|>\n<|im_start|>assistant\nHi! How can I help?<|im_end|>\n<|im_start|>user\n<__media__>What color is this image? Answer with one word.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/Qwen3_5-0_8B.jinja",
+   "template_sha256": "273d8e0e683b885071fb17e08d71e5f2a5ddfb5309756181681de4f5a1822d80",
+   "conversation": "system_and_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>system\nYou are a concise assistant.<|im_end|>\n<|im_start|>user\n<__media__>What color is this image? Answer with one word.<|im_end|>\n<|im_start|>assistant\n<think>\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "image_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "text_then_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nWhat color is this image? Answer with one word.<__media__><end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "two_images_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__><__media__>What are the colors of the first and second image? Answer with two words.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "interleaved_two_images",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nFirst:<__media__>Second:<__media__>What are the colors of the first and second image? Answer with two words.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "image_only",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__><end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "image_in_later_turn",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nHello.<end_of_turn>\n<start_of_turn>model\nHi! How can I help?<end_of_turn>\n<start_of_turn>user\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3-4b-it.jinja",
+   "template_sha256": "7de1c58e208eda46e9c7f86397df37ec49883aeece39fb961e0a6b24088dd3c4",
+   "conversation": "system_and_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nYou are a concise assistant.\n\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "image_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "text_then_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nWhat color is this image? Answer with one word.<__media__><end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "two_images_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__><__media__>What are the colors of the first and second image? Answer with two words.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "interleaved_two_images",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nFirst:<__media__>Second:<__media__>What are the colors of the first and second image? Answer with two words.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "image_only",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__><end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "image_in_later_turn",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nHello.<end_of_turn>\n<start_of_turn>model\nHi! How can I help?<end_of_turn>\n<start_of_turn>user\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "system_and_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nYou are a concise assistant.\n\n<__media__>What color is this image? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "audio_then_text",
+   "media_model": "audio",
+   "eos_token": "<|eot_id|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\n<__media__>What do you hear? Answer with one word.<end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-3n-E4B-it.jinja",
+   "template_sha256": "ac03dcb3b09726f1e50ac55ae58fc8d5930eadc3b3a12cb04286dc1d82ac8001",
+   "conversation": "text_then_audio",
+   "media_model": "audio",
+   "eos_token": "<|eot_id|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<start_of_turn>user\nWhat do you hear? Answer with one word.<__media__><end_of_turn>\n<start_of_turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "image_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\n<__media__>What color is this image? Answer with one word.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "text_then_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\nWhat color is this image? Answer with one word.<__media__><turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "two_images_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\n<__media__><__media__>What are the colors of the first and second image? Answer with two words.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "interleaved_two_images",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\nFirst:<__media__>Second:<__media__>What are the colors of the first and second image? Answer with two words.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "image_only",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\n<__media__><turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "image_in_later_turn",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\nHello.<turn|>\n<|turn>model\nHi! How can I help?<turn|>\n<|turn>user\n<__media__>What color is this image? Answer with one word.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "system_and_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\nYou are a concise assistant.<turn|>\n<|turn>user\n<__media__>What color is this image? Answer with one word.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "audio_then_text",
+   "media_model": "audio",
+   "eos_token": "<|eot_id|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\n<__media__>What do you hear? Answer with one word.<turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/gemma-4-E2B-it.jinja",
+   "template_sha256": "33204f1acb5bd0002713e16a593847f24ceeafe711ed88bda2a352dc996a3373",
+   "conversation": "text_then_audio",
+   "media_model": "audio",
+   "eos_token": "<|eot_id|>",
+   "supports_string_content": true,
+   "supports_typed_content": true,
+   "prompt": "<|turn>system\n<|think|>\n<turn|>\n<|turn>user\nWhat do you hear? Answer with one word.<__media__><turn|>\n<|turn>model\n"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "image_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: <__media__>What color is this image? Answer with one word.<end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "text_then_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: What color is this image? Answer with one word.<__media__><end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "two_images_then_text",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: <__media__><__media__>What are the colors of the first and second image? Answer with two words.<end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "interleaved_two_images",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: First:<__media__>Second:<__media__>What are the colors of the first and second image? Answer with two words.<end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "image_only",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: <__media__><end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "image_in_later_turn",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>User: Hello.<end_of_utterance>\nAssistant: Hi! How can I help?<end_of_utterance>\nUser: <__media__>What color is this image? Answer with one word.<end_of_utterance>\nAssistant:"
+  },
+  {
+   "template": "test/fixtures/templates/SmolVLM-500M-Instruct.jinja",
+   "template_sha256": "830005085ddd94cec605b6e21b885b28ffad6e3f82ee6a212c523533e8f04f01",
+   "conversation": "system_and_image",
+   "media_model": "vision",
+   "eos_token": "<|im_end|>",
+   "supports_string_content": false,
+   "supports_typed_content": true,
+   "prompt": "<|im_start|>System: You are a concise assistant.<end_of_utterance>\nUser: <__media__>What color is this image? Answer with one word.<end_of_utterance>\nAssistant:"
+  }
+ ]
+}

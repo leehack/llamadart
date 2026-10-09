@@ -82,6 +82,12 @@
   starting a driver llama.cpp cannot use; a load with other usable GPUs
   leaves that one out
   ([#782](https://github.com/leehack/llamadart/issues/782)).
+- Fix an image or audio part sent to a GGUF model whose chat template writes
+  its own media placeholder (Qwen3.5, Qwen2.5-Omni, GLM-OCR) being attached
+  before the whole prompt, or wrapped in the image start and end tokens
+  twice. Each part now takes the place it has in its message, as llama.cpp's
+  `llama-server` renders it
+  ([#964](https://github.com/leehack/llamadart/issues/964)).
 * Aligned the default WebGPU bridge assets to `v0.1.59`: they embed llama.cpp
   `v0.6.0`, are qualified against native `v0.6.0`, and keep Web/native
   llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity; Web

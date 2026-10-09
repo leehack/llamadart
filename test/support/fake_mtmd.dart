@@ -53,9 +53,18 @@ final class FakeMtmd {
       )!.freeAddress,
       #inputChunksInit: () => Pointer<mtmd_input_chunks>.fromAddress(0x10),
       #inputChunksFree: (Pointer<mtmd_input_chunks> _) {},
-      #helperInitOptDefault: unused,
+      #helperInitOptDefault: () => Struct.create<mtmd_helper_init_opt>(),
       #helperBitmapInitFromFile: unused,
-      #helperBitmapInitFromBuf: unused,
+      #helperBitmapInitFromBuf:
+          (
+            Pointer<mtmd_context> _,
+            Pointer<UnsignedChar> _,
+            int _,
+            bool _,
+            mtmd_helper_init_opt _,
+          ) =>
+              Struct.create<mtmd_helper_bitmap_wrapper>()
+                ..bitmap = _encodedBitmap,
       #bitmapInitFromAudio: (int sampleCount, Pointer<Float> _) =>
           audioBitmap(sampleCount),
       #supportsVision: (Pointer<mtmd_context> _) => false,
@@ -68,11 +77,16 @@ final class FakeMtmd {
           (
             Pointer<mtmd_context> _,
             Pointer<mtmd_input_chunks> _,
-            Pointer<mtmd_input_text> _,
+            Pointer<mtmd_input_text> text,
             Pointer<Pointer<mtmd_bitmap>> _,
             int _,
           ) {
             calls.add('mtmd_tokenize');
+            prompts.add(
+              text.ref.text.cast<Utf8>().toDartString(
+                length: text.ref.text_len,
+              ),
+            );
             return 0;
           },
       #helperEvalChunks:
@@ -123,6 +137,9 @@ final class FakeMtmd {
   /// Addresses passed to the fake `mtmd_bitmap_free` so far, in order.
   final List<int> freedBitmaps = <int>[];
 
+  /// The prompt text of each fake `mtmd_tokenize` call so far, in order.
+  final List<String> prompts = <String>[];
+
   /// Media evaluations so far, through this fake or an `ExitTeardownApi`
   /// given [evalMedia].
   int evaluations = 0;
@@ -172,6 +189,9 @@ final class FakeMtmd {
   }
 
   static Pointer<mtmd_bitmap> _audioBitmap(int _) => Pointer.fromAddress(0x20);
+
+  /// The bitmap the fake gives an encoded image or audio part.
+  static final Pointer<mtmd_bitmap> _encodedBitmap = Pointer.fromAddress(0x21);
 
   /// Frees the marker text; call after the service is disposed.
   void dispose() => malloc.free(_marker);
