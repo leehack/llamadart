@@ -122,6 +122,10 @@ class ChatTemplateEngine {
   /// If the template source is null/empty, uses the ChatML fallback.
   /// [responseFormat] takes the shapes documented on `LlamaEngine.create`;
   /// any other shape throws `LlamaUnsupportedException`.
+  ///
+  /// [mediaMarker] is written where each image, audio or video part was.
+  /// Pass one that message text cannot hold to tell the parts from a
+  /// placeholder string a message quotes.
   static LlamaChatTemplateResult render({
     required String? templateSource,
     required List<LlamaChatMessage> messages,
@@ -135,6 +139,7 @@ class ChatTemplateEngine {
     String? customTemplate,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? now,
+    String mediaMarker = mtmdMediaMarker,
   }) {
     final responseSchema = responseFormatSchema(responseFormat);
 
@@ -276,6 +281,7 @@ class ChatTemplateEngine {
         addAssistant: addAssistant,
         tools: effectiveTools,
         enableThinking: enableThinking,
+        mediaMarker: mediaMarker,
       );
       if (effectiveFormat == ChatFormat.contentOnly) {
         rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
@@ -304,7 +310,7 @@ class ChatTemplateEngine {
               parts: message.parts
                   .map((part) {
                     return isTransport(part)
-                        ? const LlamaTextContent(mtmdMediaMarker)
+                        ? LlamaTextContent(mediaMarker)
                         : part;
                   })
                   .toList(growable: false),

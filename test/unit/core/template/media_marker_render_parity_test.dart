@@ -67,6 +67,7 @@ void main() {
           'tokenizer.ggml.bos_token': '',
           'tokenizer.ggml.eos_token': entry['eos_token'] as String,
         },
+        mediaMarker: entry['media_marker'] as String,
       );
 
       expect(result.prompt, entry['prompt']);

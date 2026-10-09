@@ -342,6 +342,17 @@ gates against real assets and models; its header lists the setup.
   exported from `package:llamadart`.
 - Large model URL loads can use a worker-thread fetch-backed path to reduce
   contiguous `ArrayBuffer` pressure, but only after an explicit opt-in.
+- With media parts the bridge reads its marker `<__media__>` and the
+  placeholders it rewrites to it (`<image>`, `[IMG]`, `<|image|>`, `<img>`,
+  `<|img|>`, `<|vision_start|><|image_pad|><|vision_end|>` and its
+  `video_pad` form, `<audio>`, `<|audio|>`, `<|image_N|>`, `<|audio_N|>`) as
+  a part wherever they are in the prompt, and the pinned assets have no
+  option that turns this off. For a prompt that `LlamaEngine.create` rendered,
+  `WebGpuLlamaBackend` writes `<__media__>` where each part was and puts a
+  zero-width space after the first character of any such string in the rest,
+  so a message that quotes one is not read as media. A prompt passed to
+  `generate` goes to the bridge as written. A bridge option that takes the
+  marker with the request would make the zero-width space unnecessary.
 - Bridge runtimes can provide `llama_webgpu_core_mem64.js/.wasm`. When the
   page sets `__llamadartBridgeCoreModuleUrlMem64` and memory64 is preferred,
   the bridge tries the wasm64 core first and falls back to wasm32.

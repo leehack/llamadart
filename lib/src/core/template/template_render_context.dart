@@ -82,8 +82,8 @@ class TemplateRenderContext {
   /// unchanged. A message with several tool results becomes one message per
   /// result, as [splitToolResults] describes.
   ///
-  /// With [multimodal], the text of a message holds [mtmdMediaMarker] where
-  /// each image, audio or video part was. llama.cpp also gives a template the
+  /// With [multimodal], the text of a message holds [mediaMarker] where each
+  /// image, audio or video part was. llama.cpp also gives a template the
   /// marker and never the media part: the placeholder a template writes for a
   /// typed image part is not the marker mtmd matches, and mtmd adds the image
   /// begin and end tokens itself.
@@ -100,14 +100,16 @@ class TemplateRenderContext {
     TemplateToolCallSerialization toolCallSerialization =
         TemplateToolCallSerialization.none,
     bool multimodal = false,
+    String mediaMarker = mtmdMediaMarker,
     bool objectArguments = false,
     bool typedContentOnly = false,
   }) {
     final renderedMessages = <Map<String, dynamic>>[];
     var hasToolCalls = false;
     for (final message in splitToolResults(messages)) {
-      final rendered = (multimodal ? _withMediaMarkers(message) : message)
-          .toJson();
+      final rendered =
+          (multimodal ? _withMediaMarkers(message, mediaMarker) : message)
+              .toJson();
       rendered['content'] ??= '';
       final toolResults = message.parts.whereType<LlamaToolResultContent>();
       if (toolResults.isNotEmpty) {
@@ -151,7 +153,10 @@ class TemplateRenderContext {
     return renderedMessages;
   }
 
-  static LlamaChatMessage _withMediaMarkers(LlamaChatMessage message) {
+  static LlamaChatMessage _withMediaMarkers(
+    LlamaChatMessage message,
+    String mediaMarker,
+  ) {
     bool isMedia(LlamaContentPart part) =>
         part is LlamaImageContent ||
         part is LlamaAudioContent ||
@@ -160,7 +165,7 @@ class TemplateRenderContext {
     return message.copyWith(
       parts: [
         for (final part in message.parts)
-          isMedia(part) ? const LlamaTextContent(mtmdMediaMarker) : part,
+          isMedia(part) ? LlamaTextContent(mediaMarker) : part,
       ],
     );
   }

@@ -68,6 +68,16 @@ sequenceDiagram
 - Every template gets the media marker in the message text where an image,
   audio or video part was, as llama.cpp renders it. A template's own
   placeholder for a typed image or audio part is not written.
+- `LlamaEngine.create` renders a request that carries media with a random
+  marker and hands it to the llama.cpp and WebGPU backends as a chat prompt,
+  so a placeholder string that a message quotes (`<img>`, `<image>`,
+  `[IMG]`) stays text. `chatTemplate` shows `<__media__>`. A prompt passed to
+  `generate` is the caller's: its placeholders and `<__media__>` stand for
+  the parts.
+- mtmd and the WebGPU bridge find a part by a fixed string wherever it is.
+  A chat message that quotes that string (`<__media__>` on native; on Web
+  also the placeholders the bridge rewrites) reaches the model with a
+  zero-width space after its first character.
 - Routing workarounds mirror llama.cpp behavior for schema mode, tool-choice
   behavior, and system-message adaptation.
 

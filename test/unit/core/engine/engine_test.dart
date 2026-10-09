@@ -6,6 +6,7 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/backend.dart'
     show
+        BackendChatPromptGeneration,
         BackendDeferredEngineCreation,
         BackendGenerationLimit,
         BackendGenerationLimitReporting,
@@ -5291,6 +5292,89 @@ void main() {
     });
   });
 
+  group('LlamaEngine chat prompts with media', () {
+    const literal =
+        'Why is my <img> tag not rendering, and what is <__media__>?';
+    const image = LlamaImageContent(path: '/tmp/image.png');
+    final messages = [
+      LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: const [image, LlamaTextContent(literal)],
+      ),
+    ];
+
+    Future<LlamaEngine> loaded(MockLlamaBackend backend) async {
+      final engine = LlamaEngine(backend);
+      addTearDown(engine.dispose);
+      await engine.loadModel('model.gguf');
+      return engine;
+    }
+
+    test('create renders a media request with a marker message text cannot '
+        'hold for a backend that takes chat prompts', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(messages).drain<void>();
+
+      final marker = backend.chatMediaMarker!;
+      expect(marker, matches(RegExp(r'^<__media_[A-Za-z0-9]{32}__>$')));
+      expect(backend.chatPrompt, '<s>user: $marker${literal}assistant: ');
+      expect(backend.chatParts, contains(image));
+      expect(backend.lastGenerationPrompt, isNull);
+    });
+
+    test('create gives a backend that takes chat prompts a request without '
+        'media through generate', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: literal),
+      ]).drain<void>();
+
+      expect(backend.chatPrompt, isNull);
+      expect(backend.lastGenerationPrompt, '<s>user: ${literal}assistant: ');
+    });
+
+    test('create renders a media request with the default marker for a '
+        'backend that takes every prompt through generate', () async {
+      final backend = MockLlamaBackend();
+      final engine = await loaded(backend);
+
+      await engine.create(messages).drain<void>();
+
+      expect(
+        backend.lastGenerationPrompt,
+        '<s>user: <__media__>${literal}assistant: ',
+      );
+    });
+
+    test('generate gives a backend that takes chat prompts the prompt its '
+        'caller wrote through generate', () async {
+      final backend = _ChatPromptBackend();
+      final engine = await loaded(backend);
+
+      await engine
+          .generate('<image>Describe', parts: const [image])
+          .drain<void>();
+
+      expect(backend.chatPrompt, isNull);
+      expect(backend.lastGenerationPrompt, '<image>Describe');
+    });
+
+    test('chatTemplate shows the default marker', () async {
+      final engine = await loaded(_ChatPromptBackend());
+
+      final rendered = await engine.chatTemplate(
+        messages,
+        includeTokenCount: false,
+      );
+
+      expect(rendered.prompt, '<s>user: <__media__>${literal}assistant: ');
+    });
+  });
+
   group('LlamaEngine TranslateGemma language codes', () {
     const translateGemmaTemplate =
         '[source_lang_code]\n'
@@ -5476,6 +5560,27 @@ class _SourceEchoBackend extends MockLlamaBackend {
     return Exception(
       'File not found: $source (${uri.userInfo} ${uri.query} ${uri.fragment})',
     );
+  }
+}
+
+class _ChatPromptBackend extends MockLlamaBackend
+    implements BackendChatPromptGeneration {
+  String? chatPrompt;
+  String? chatMediaMarker;
+  List<LlamaContentPart>? chatParts;
+
+  @override
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  }) async* {
+    chatPrompt = prompt;
+    chatMediaMarker = mediaMarker;
+    chatParts = parts;
+    yield utf8.encode(generationText);
   }
 }
 

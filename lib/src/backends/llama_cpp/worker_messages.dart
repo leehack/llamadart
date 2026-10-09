@@ -83,6 +83,10 @@ class GenerateRequest extends WorkerRequest {
   /// Multimodal content parts.
   final List<LlamaContentPart>? parts;
 
+  /// The marker a chat template rendered [prompt] with, or null for a prompt
+  /// the caller wrote.
+  final String? chatMediaMarker;
+
   /// Creates a new [GenerateRequest].
   GenerateRequest(
     this.contextHandle,
@@ -91,6 +95,7 @@ class GenerateRequest extends WorkerRequest {
     this.cancelTokenAddress,
     super.sendPort, {
     this.parts,
+    this.chatMediaMarker,
   });
 }
 

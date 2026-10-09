@@ -39,6 +39,7 @@ import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 import '../speech/speech_engine_lease.dart';
 import '../template/handlers/translate_gemma_handler.dart';
+import '../template/media_placeholders.dart';
 import '../url_redaction.dart';
 
 /// Stateless chat completions engine (like OpenAI's Chat Completions API).
@@ -1625,7 +1626,8 @@ class LlamaEngine {
         final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
 
         // Apply chat template with tools - returns grammar for constraining
-        final result = await chatTemplate(
+        final chatMediaMarker = _chatPromptMediaMarkerFor(messages);
+        final result = await _renderChatTemplate(
           messages,
           tools: effectiveTools,
           toolChoice: effectiveToolChoice,
@@ -1635,6 +1637,7 @@ class LlamaEngine {
           chatTemplateKwargs: templateKwargs,
           templateNow: templateNow,
           includeTokenCount: false,
+          mediaMarker: chatMediaMarker ?? mtmdMediaMarker,
         );
         final plan = ChatCompletionRequestPlanner.build(
           backend: backend,
@@ -1675,6 +1678,7 @@ class LlamaEngine {
                 result.prompt,
                 params: plan.generationParams,
                 parts: plan.mediaParts,
+                chatMediaMarker: chatMediaMarker,
                 onLimit: recordLimit,
                 onUsage: recordUsage,
                 request: request,
@@ -1818,6 +1822,41 @@ class LlamaEngine {
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
+  }) {
+    return _renderChatTemplate(
+      messages,
+      addAssistant: addAssistant,
+      jsonSchema: jsonSchema,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      customTemplate: customTemplate,
+      includeTokenCount: includeTokenCount,
+      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
+        chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+      ),
+      templateNow: templateNow,
+    );
+  }
+
+  Future<LlamaChatTemplateResult> _renderChatTemplate(
+    List<LlamaChatMessage> messages, {
+    bool addAssistant = true,
+    Map<String, dynamic>? jsonSchema,
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? customTemplate,
+    bool includeTokenCount = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+    String mediaMarker = mtmdMediaMarker,
   }) async {
     _ensureReady(requireContext: false);
     return ChatTemplateRenderer.render(
@@ -1834,13 +1873,27 @@ class LlamaEngine {
       customTemplate: customTemplate,
       modelTemplate: _modelChatTemplate,
       includeTokenCount: includeTokenCount,
-      chatTemplateKwargs: chatTemplateKwargsWithLanguageCodes(
-        chatTemplateKwargs,
-        sourceLangCode: sourceLangCode,
-        targetLangCode: targetLangCode,
-      ),
+      chatTemplateKwargs: chatTemplateKwargs,
       templateNow: templateNow,
+      mediaMarker: mediaMarker,
     );
+  }
+
+  /// The marker to render [messages] with for a backend that tells a
+  /// chat-rendered prompt from a caller's: one message text cannot hold.
+  /// `null` when the request has no media or the backend takes every prompt
+  /// through `generate`.
+  String? _chatPromptMediaMarkerFor(List<LlamaChatMessage> messages) {
+    if (backend is! BackendChatPromptGeneration) return null;
+    final hasMedia = messages.any(
+      (message) => message.parts.any(
+        (part) =>
+            part is LlamaImageContent ||
+            part is LlamaAudioContent ||
+            part is LlamaVideoContent,
+      ),
+    );
+    return hasMedia ? chatPromptMediaMarker : null;
   }
 
   // ============================================================
@@ -1923,10 +1976,13 @@ class LlamaEngine {
       ? LlamaOperationResult(cancelled: true, usage: usage)
       : LlamaOperationResult(finishReason: finishReason, usage: usage);
 
+  /// With [chatMediaMarker], [prompt] is one a chat template rendered with
+  /// that marker, for a backend that takes it apart from a caller's prompt.
   Stream<String> _generate(
     String prompt, {
     GenerationParams params = const GenerationParams(),
     List<LlamaContentPart>? parts,
+    String? chatMediaMarker,
     void Function(BackendGenerationLimit limit)? onLimit,
     void Function(LlamaGenerationUsage usage)? onUsage,
     required GenerationRequest request,
@@ -1939,12 +1995,22 @@ class LlamaEngine {
     _ensureReady();
 
     try {
-      final stream = backend.generate(
-        _contextHandle!,
-        prompt,
-        resolvedParams,
-        parts: parts,
-      );
+      final candidate = backend;
+      final stream =
+          chatMediaMarker != null && candidate is BackendChatPromptGeneration
+          ? (candidate as BackendChatPromptGeneration).generateChatPrompt(
+              _contextHandle!,
+              prompt,
+              resolvedParams,
+              mediaMarker: chatMediaMarker,
+              parts: parts,
+            )
+          : backend.generate(
+              _contextHandle!,
+              prompt,
+              resolvedParams,
+              parts: parts,
+            );
 
       await for (final token in _cancellableText(
         stream,

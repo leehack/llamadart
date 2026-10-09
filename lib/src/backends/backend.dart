@@ -294,6 +294,24 @@ abstract class BackendRuntimeIdentity {
   LlamaRuntime? get runtime;
 }
 
+/// Internal backend capability for a prompt that a chat template rendered,
+/// as opposed to one the caller wrote.
+///
+/// In such a prompt `mediaMarker` stands where each media part was and
+/// nothing else is a media placeholder: a placeholder string or `<__media__>`
+/// in message text stays text, as in llama.cpp's server. `generate` keeps
+/// reading the placeholders a caller writes in its own prompt.
+abstract class BackendChatPromptGeneration {
+  /// Generates like [LlamaBackend.generate] from the chat-rendered [prompt].
+  Stream<List<int>> generateChatPrompt(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    required String mediaMarker,
+    List<LlamaContentPart>? parts,
+  });
+}
+
 /// Internal backend probe for media the loaded model takes directly, without
 /// a multimodal projector.
 abstract class BackendDirectMediaInput {

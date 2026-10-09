@@ -82,12 +82,6 @@
   starting a driver llama.cpp cannot use; a load with other usable GPUs
   leaves that one out
   ([#782](https://github.com/leehack/llamadart/issues/782)).
-- Fix an image or audio part sent to a GGUF model whose chat template writes
-  its own media placeholder (Qwen3.5, Qwen2.5-Omni, GLM-OCR) being attached
-  before the whole prompt, or wrapped in the image start and end tokens
-  twice. Each part now takes the place it has in its message, as llama.cpp's
-  `llama-server` renders it
-  ([#964](https://github.com/leehack/llamadart/issues/964)).
 * Aligned the default WebGPU bridge assets to `v0.1.59`: they embed llama.cpp
   `v0.6.0`, are qualified against native `v0.6.0`, and keep Web/native
   llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity; Web
@@ -104,6 +98,19 @@
   `LlamaStructuredOutput.parse` still decode it); trim replies you compare
   exactly. `ChatSession` and its tool loop store assistant turns in `history`
   without that whitespace, so the next prompt is unchanged.
+- **Behavior change:** an image or audio part of a chat request to a GGUF
+  model takes the place it has in its message, as llama.cpp's `llama-server`
+  renders it ([#964](https://github.com/leehack/llamadart/issues/964)). For
+  Qwen3.5 and Qwen2.5-Omni it was attached before the whole prompt, and for
+  GLM-OCR it was wrapped in the image start and end tokens twice, so prompts
+  for media turns of these models change. A chat template no longer writes
+  its own text for a media part: Qwen's `Picture N: ` under `add_vision_id`,
+  the Kimi-K2 wrapper, Reka's run of image tokens and Cohere's
+  `<|IMG_PATCH|>` are gone, as on `llama-server`. A placeholder string that
+  a message quotes (`<img>`, `<image>`, `[IMG]`) stays text instead of being
+  read as a part; a quoted `<__media__>`, and on Web any placeholder the
+  bridge rewrites, reaches the model with a zero-width space after its first
+  character. A prompt passed to `generate` keeps its placeholders.
 
 ## 0.11.1
 

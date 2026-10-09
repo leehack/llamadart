@@ -65,14 +65,72 @@ void main() {
     });
   });
 
+  group('chatPromptForMarkerRuntime', () {
+    String forRuntime(String prompt, Pattern placeholders) =>
+        chatPromptForMarkerRuntime(
+          prompt,
+          chatMarker: '<m>',
+          marker: mtmdMediaMarker,
+          runtimePlaceholders: placeholders,
+        );
+
+    test('writes the runtime marker where the chat marker stood', () {
+      expect(
+        forRuntime('a<m>b<m><m>c', mtmdMediaMarker),
+        'a${mtmdMediaMarker}b$mtmdMediaMarker${mtmdMediaMarker}c',
+      );
+    });
+
+    test('breaks a string the runtime would read as a part with a '
+        'zero-width space after its first character', () {
+      expect(
+        forRuntime('<m>What is <__media__>?', mtmdMediaMarker),
+        '<__media__>What is <\u200B__media__>?',
+      );
+      expect(
+        forRuntime('<img><m>[IMG]', RegExp(r'<img>|\[IMG\]')),
+        '<\u200Bimg><__media__>[\u200BIMG]',
+      );
+    });
+
+    test('leaves other placeholder strings as they are', () {
+      expect(
+        forRuntime('<m><img> <image> [IMG]', mtmdMediaMarker),
+        '<__media__><img> <image> [IMG]',
+      );
+    });
+  });
+
+  test('chatPromptMediaMarker is a marker of 32 random characters, as '
+      "llama-server's is", () {
+    expect(
+      chatPromptMediaMarker,
+      matches(RegExp(r'^<__media_[A-Za-z0-9]{32}__>$')),
+    );
+  });
+
   group('shared table adoption', () {
-    // A placeholder added to one consumer and not the other is the drift
-    // this module replaced.
+    // The table is for a prompt its caller wrote. A second copy drifts, and
+    // a chat template handler that reads it turns message text into media.
     const consumers = <String>[
-      'lib/src/core/template/chat_template_handler.dart',
-      'lib/src/core/template/handlers/function_gemma_handler.dart',
       'lib/src/backends/llama_cpp/llama_cpp_service.dart',
     ];
+    const chatRenderers = <String>[
+      'lib/src/core/template/chat_template_engine.dart',
+      'lib/src/core/template/chat_template_handler.dart',
+      'lib/src/core/template/template_render_context.dart',
+      'lib/src/core/template/handlers/function_gemma_handler.dart',
+      'lib/src/core/template/handlers/gemma4_handler.dart',
+    ];
+
+    for (final path in chatRenderers) {
+      test('$path does not rewrite placeholders in a rendered prompt', () {
+        expect(
+          File(path).readAsStringSync(),
+          isNot(contains('normalizeMediaPlaceholders(')),
+        );
+      });
+    }
 
     for (final path in consumers) {
       test('$path normalizes through the shared helper', () {

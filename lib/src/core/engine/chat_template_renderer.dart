@@ -5,6 +5,7 @@ import '../models/chat/chat_template_result.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
 import '../template/chat_template_engine.dart';
+import '../template/media_placeholders.dart';
 
 /// Loads model metadata for chat-template rendering.
 typedef ChatTemplateMetadataLoader = Future<Map<String, String>> Function();
@@ -41,6 +42,7 @@ class ChatTemplateRenderer {
     bool includeTokenCount = true,
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
+    String mediaMarker = mtmdMediaMarker,
   }) async {
     Map<String, String> metadata = {};
     try {
@@ -78,6 +80,7 @@ class ChatTemplateRenderer {
       customTemplate: customTemplate,
       chatTemplateKwargs: chatTemplateKwargs,
       now: templateNow,
+      mediaMarker: mediaMarker,
     );
 
     int? tokenCount;

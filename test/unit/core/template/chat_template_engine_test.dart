@@ -429,6 +429,45 @@ void main() {
       );
     });
 
+    for (final (name, template) in const [
+      (
+        'a string or a part list',
+        '{% for message in messages %}'
+            '{% if message.content is string %}{{ message.content }}'
+            '{% else %}{% for part in message.content %}{{ part.text }}'
+            '{% endfor %}{% endif %}{% endfor %}',
+      ),
+      (
+        'a string',
+        '{% for message in messages %}{{ message.content }}{% endfor %}',
+      ),
+    ]) {
+      test('leaves a placeholder a message quotes as text for a template '
+          'that reads content as $name', () {
+        const quoted =
+            'Is <img>, <image>, [IMG], <|image_1|> or <start_of_image> a '
+            'tag, and what is <__media__>?';
+        String prompt([String? marker]) => ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaImageContent(path: '/tmp/page.png'),
+                LlamaTextContent(quoted),
+              ],
+            ),
+          ],
+          metadata: const {},
+          addAssistant: false,
+          mediaMarker: marker ?? '<__media__>',
+        ).prompt;
+
+        expect(prompt(), '<__media__>$quoted');
+        expect(prompt('<__media_x__>'), '<__media_x__>$quoted');
+      });
+    }
+
     test('renders a video part as the media marker without leaking its '
         'source', () {
       final result = ChatTemplateEngine.render(
