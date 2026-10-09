@@ -16,6 +16,11 @@ Android deployments, NPU. See the
 [support matrix](https://llamadart.leehack.com/docs/platforms/support-matrix)
 for each target.
 
+Android llama.cpp excludes the known unsafe Adreno 750 driver `2150604839`:
+explicit GPU requests throw, while automatic selection with a Vulkan
+preference falls back to CPU with a warning. See the
+[device limitations](https://llamadart.leehack.com/docs/platforms/support-matrix#known-limitations).
+
 ## Start Here
 
 | Need | Link |

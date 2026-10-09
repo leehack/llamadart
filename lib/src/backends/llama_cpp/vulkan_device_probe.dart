@@ -20,6 +20,8 @@ final class VulkanDeviceFacts {
     required this.instanceApiVersion,
     required this.apiVersion,
     required this.subgroupSize,
+    this.vendorId = 0,
+    this.driverVersion = 0,
   });
 
   /// Vulkan 1.2 as `VK_MAKE_API_VERSION` encodes it.
@@ -45,6 +47,23 @@ final class VulkanDeviceFacts {
   /// `VkPhysicalDeviceSubgroupProperties.subgroupSize`, or 0 when the loader
   /// or the driver is older than Vulkan 1.1 and cannot report it.
   final int subgroupSize;
+
+  /// `VkPhysicalDeviceProperties.vendorID`, or 0 when not reported.
+  final int vendorId;
+
+  /// The vendor-specific `VkPhysicalDeviceProperties.driverVersion`.
+  final int driverVersion;
+
+  /// The Android Adreno 750 driver with shader-compiler crashes and
+  /// incorrect quantized matrix-vector results (llamadart-native #79).
+  ///
+  /// A crash workaround alone does not qualify this driver for inference;
+  /// common K-quants remain incorrect. Other driver versions are unaffected
+  /// by this narrowly matched guard.
+  bool get hasAdreno750DriverDefect =>
+      vendorId == 0x5143 &&
+      driverVersion == 2150604839 &&
+      name == 'Adreno (TM) 750';
 
   /// Whether ggml-vulkan can drive the device.
   ///
@@ -196,6 +215,8 @@ final class VulkanDeviceInfoApi {
             instanceApiVersion: info.ref.instance_api_version,
             apiVersion: info.ref.api_version,
             subgroupSize: info.ref.subgroup_size,
+            vendorId: info.ref.vendor_id,
+            driverVersion: info.ref.driver_version,
           ),
         );
       }

@@ -2110,6 +2110,7 @@ class LlamaCppService {
     mainGpu: mainGpu,
     registered: _registeredDevices,
     probe: () => _vulkanDeviceProbe,
+    isAndroid: _isAndroid,
   );
 
   /// The registered ggml devices, in registry order.

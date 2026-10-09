@@ -5616,9 +5616,11 @@ void main() {
         List<GgmlDeviceEntry> registered,
         List<VulkanDeviceFacts>? facts, {
         LlamaCppObjectCalls? objectCalls,
+        bool isAndroid = false,
       }) {
         reads = 0;
         final service = LlamaCppService(
+          isAndroid: isAndroid,
           deviceTypes: (_) => [gpuType],
           objectCalls: objectCalls,
           registeredDevices: () => registered,
@@ -5632,6 +5634,71 @@ void main() {
         addTearDown(service.dispose);
         return service;
       }
+
+      test('Android Adreno guard refuses explicit GPU and loads auto on CPU '
+          'before a native model call can use the unsafe device', () {
+        final adreno = entry('Vulkan0', description: 'Adreno (TM) 750');
+        const bad = VulkanDeviceFacts(
+          name: 'Adreno (TM) 750',
+          deviceType: 2,
+          instanceApiVersion: vulkan13,
+          apiVersion: vulkan13,
+          subgroupSize: 64,
+          vendorId: 0x5143,
+          driverVersion: 2150604839,
+        );
+        // Metal supplies the host's real GPU module; the injected registry
+        // and facts supply Android's selected Vulkan device. No driver is
+        // initialized by the probe and the guarded load must use the CPU.
+        final explicit = serviceWith([adreno], [bad], isAndroid: true);
+        expect(
+          () => explicit.loadModel(
+            modelPath,
+            const ModelParams(
+              contextSize: 64,
+              device: ComputeDevice.gpu,
+              preferredBackend: GpuBackend.metal,
+            ),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              contains('driver 2150604839'),
+            ),
+          ),
+        );
+        expect(_readPrivateForTesting<Map>(explicit, '_models'), isEmpty);
+        final automatic = serviceWith([adreno], [bad], isAndroid: true);
+        final model = automatic.loadModel(
+          modelPath,
+          const ModelParams(
+            contextSize: 64,
+            preferredBackend: GpuBackend.metal,
+          ),
+        );
+        expect(automatic.getResolvedGpuLayers(), 0);
+        expect(automatic.getActiveBackendName(), 'CPU');
+        expect(
+          warnings,
+          contains(
+            allOf(
+              contains('driver 2150604839'),
+              contains('so the model loaded on CPU with 0 GPU layers'),
+            ),
+          ),
+        );
+        final context = automatic.createContext(
+          model,
+          const ModelParams(contextSize: 64),
+        );
+        final params = _readPrivateForTesting<Map<int, llama_context_params>>(
+          automatic,
+          '_contextParams',
+        )[context]!;
+        expect(params.op_offload, isFalse);
+        expect(params.offload_kqv, isFalse);
+      }, testOn: 'mac-os');
 
       Matcher noVulkanWarning() => isNot(contains(contains('Vulkan 1.2')));
 

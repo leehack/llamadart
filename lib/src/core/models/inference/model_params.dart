@@ -129,6 +129,9 @@ class ModelParams {
   /// a GPU or NPU that fails to start throws `LlamaUnsupportedException`
   /// there. [validate] rejects a device that contradicts [preferredBackend],
   /// [gpuLayers], [mainGpu] or [liteRtLmBackend].
+  /// Android llama.cpp excludes the known unsafe Adreno 750 driver
+  /// `2150604839`: [ComputeDevice.gpu] throws, while automatic selection
+  /// with a Vulkan preference falls back to CPU with a warning.
   final ComputeDevice device;
 
   /// Number of model layers to offload to the GPU (n_gpu_layers).

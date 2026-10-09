@@ -152,7 +152,8 @@ VulkanDeviceFacts? vulkanFactsOf(
   return named.first;
 }
 
-/// Decides what a model load does about Vulkan devices below Vulkan 1.2.
+/// Decides what a model load does about Vulkan devices below Vulkan 1.2 or,
+/// on [isAndroid], the known unsafe Adreno 750 driver.
 ///
 /// [usesGpu] is false for a load that offloads nothing, which never starts a
 /// device. [backendRegistry] is the ggml registry of an explicit GPU backend,
@@ -171,6 +172,7 @@ VulkanLoadDecision resolveVulkanLoadDecision({
   required int mainGpu,
   required List<GgmlDeviceEntry> Function() registered,
   required VulkanDeviceProbe Function() probe,
+  bool isAndroid = false,
 }) {
   if (!usesGpu) return VulkanLoadDecision.unchanged;
   final devices = registered();
@@ -195,6 +197,25 @@ VulkanLoadDecision resolveVulkanLoadDecision({
   String? unsupported;
   final usable = <GgmlDeviceEntry>[];
   for (final device in selected) {
+    // Matching names cannot distinguish two identical GPUs on different
+    // drivers. Exclude both when either matching driver is known unsafe.
+    final unsafeAdreno =
+        isAndroid &&
+        device.isVulkan &&
+        facts.any(
+          (fact) =>
+              fact.name == device.description &&
+              fact.isIntegratedGpu == (device.type == _typeIgpu) &&
+              fact.hasAdreno750DriverDefect,
+        );
+    if (unsafeAdreno) {
+      unsupported ??=
+          '"${device.description}" (${device.name}) on Android driver '
+          '2150604839 has known llama.cpp Vulkan shader-compiler crashes '
+          'and incorrect quantized results. This driver is excluded until '
+          'a native workaround and the model are qualified';
+      continue;
+    }
     final fact = vulkanFactsOf(device, facts);
     if (fact == null || fact.meetsVulkan12) {
       usable.add(device);
