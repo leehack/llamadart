@@ -228,6 +228,78 @@ add a focused rendering regression in that case. No unrelated compiled-grammar
 edit is required. This policy example is not a claim that historical #529 had
 already supplied v2 causal evidence or an authenticated audit.
 
+## Batch integration PR
+
+Whenever a PR head moves, earlier CI runs, approvals, audits and matrix
+evidence no longer count. Landing N high-risk PRs one at a time therefore
+costs N rounds of merging `main` in, re-audit, CI and post-merge QA. A batch
+integration PR is the allowed alternative. It changes nothing for a PR that
+lands on its own.
+
+1. **Constituent gates.** Each constituent PR first passes its own pre-merge
+   gate at its own exact head, exactly as if it were landing alone. For a
+   high-risk PR that is the [independent audit](#independent-audit):
+   blocking-only, by an auditor who took no part in the implementation, with
+   decision `accepted`, zero known PR-caused P1 regressions and zero unresolved
+   review threads. A constituent whose head moves afterwards is re-audited
+   before it joins the batch.
+2. **Integration branch.** Cut one branch from current `main` and add the
+   accepted PRs as one commit per constituent, so each stays individually
+   revertable. Resolve conflicts once. Publish and update the branch only
+   through `tool/git/safe_pr_head_update.dart`.
+3. **Integration PR body.** Besides the normal template, list for every
+   constituent its PR number, audited head SHA and audit result, and list every
+   conflict resolution with the files it touched. A change that is neither a
+   constituent's audited diff nor a listed resolution does not belong on the
+   branch.
+4. **Integration audit.** One independent auditor, who took no part in any
+   constituent or in the integration, reviews the integration PR's exact head
+   against current `main`, blocking-only. It checks only what is new:
+   - the tree is a clean combination of the audited heads plus the listed
+     conflict resolutions and nothing else: each commit's diff matches
+     `git diff main...<audited-head>` of its constituent, and every
+     difference is a listed resolution;
+   - the full default suites and the relevant real-model smokes pass on the
+     combined tree;
+   - the readiness evidence is valid for the integration head (below).
+
+   The constituent audits count only if this audit passes.
+5. **CI** runs once, on the integration head.
+6. **Merge** without squashing, so the per-constituent commits reach `main`.
+   Then close each constituent PR with a link to the integration PR.
+7. **Post-merge QA** runs once for the batch. See
+   [Post-merge QA scope](#post-merge-qa-scope).
+
+If the integration audit finds a problem caused by one constituent, either fix
+it on the integration branch or drop that constituent from the batch. Both move
+the integration head, so its own audit, CI and evidence are redone against the
+new head; the audits of the untouched constituents still stand. A PR-caused P1
+found in post-merge QA is handled as for any other merge.
+
+### Evidence for the integration head
+
+The integration PR is an ordinary PR to the evaluator. Its evidence document
+binds the integration PR number, author, exact head and current base; its
+`independent_audit` is the integration audit; and its surfaces, matrix rows,
+impacts and `test_evidence` cover the whole combined diff, which the evaluator
+derives from Git as usual. Each high-risk constituent keeps its own evidence
+document for its own audited head.
+
+The schema has no field for constituent PR numbers, audited heads, audit
+results or conflict resolutions. Those live in the integration PR body, and the
+integration audit's `summary` names the constituents it verified. The evaluator
+does not check them.
+
+## Post-merge QA scope
+
+Post-merge QA is still required and is never the first adversarial pass. When
+the merged tree equals an audited head
+(`git rev-parse <merge-commit>^{tree}` equals `<audited-head>^{tree}`), it need
+not repeat checks already run on that head. It is then limited to what cannot
+be checked before merge: workflow runs on `main`, deployed demos and anything
+else environment-specific. Local suites are not repeated. When the trees
+differ, the checks run on the audited head do not carry over.
+
 ## CLI
 
 ```bash

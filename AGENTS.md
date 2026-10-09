@@ -164,10 +164,17 @@ analyze and the relevant tests before the final commit.
 - Use the closest affected-family model or artifact; if its weights are
   unavailable, name each unavailable family and use primary upstream emissions
   plus durable fixtures. An unrelated model is pipeline-only evidence.
-- Post-merge QA is still required but is never the first adversarial pass. If
-  it finds a PR-caused P1, stop lower-priority merge work, file a causally
-  accurate issue, and prepare one cohesive recovery before resuming feature
-  work.
+- Several PRs may land as one batch integration PR: each is first audited at
+  its own exact head as above, then they are combined on a branch cut from
+  current `main`, one commit per PR. One independent integration audit, one CI
+  run and one post-merge QA cover the integration head; the constituent audits
+  count only if that audit passes. Procedure:
+  `doc/high_risk_pre_merge_readiness.md`, "Batch integration PR".
+- Post-merge QA is still required but is never the first adversarial pass. When
+  the merged tree equals an audited head, it need not repeat checks already run
+  on that head. If it finds a PR-caused P1, stop lower-priority merge work, file
+  a causally accurate issue, and prepare one cohesive recovery before resuming
+  feature work.
 
 ## This file
 
