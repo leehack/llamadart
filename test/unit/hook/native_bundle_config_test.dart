@@ -953,6 +953,64 @@ void main() {
       expect(warnings, isEmpty);
     });
 
+    test('[all, stable_diffusion] keeps the defaults on every bundle without '
+        'naming a runtime a bundle may lack', () {
+      const rawUserConfig = ['all', 'stable_diffusion'];
+      for (final bundle in const [
+        'android-arm64',
+        'android-x64',
+        'ios-arm64',
+        'ios-arm64-sim',
+        'ios-x86_64-sim',
+        'linux-arm64',
+        'linux-x64',
+        'macos-arm64',
+        'macos-x86_64',
+        'windows-arm64',
+        'windows-x64',
+      ]) {
+        final warnings = <String>[];
+        expect(
+          selectNativeRuntimesForBundle(
+            bundle: bundle,
+            rawUserConfig: rawUserConfig,
+            warn: warnings.add,
+          ),
+          [...defaultNativeRuntimes, nativeRuntimeStableDiffusion],
+          reason: bundle,
+        );
+        expect(warnings, isEmpty, reason: bundle);
+        // What lets `hook/build.dart` skip an unpublished runtime with a
+        // warning instead of failing the build.
+        expect(
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: bundle,
+            rawUserConfig: rawUserConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          ),
+          isFalse,
+          reason: bundle,
+        );
+        expect(
+          nativeRuntimeNamedForExactBundle(
+            bundle: bundle,
+            rawUserConfig: rawUserConfig,
+            runtime: nativeRuntimeStableDiffusion,
+          ),
+          isFalse,
+          reason: bundle,
+        );
+      }
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'windows-arm64',
+          rawUserConfig: const ['llama_cpp', 'litert_lm', 'stable_diffusion'],
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isTrue,
+      );
+    });
+
     test('unknown-runtime warning lists stable_diffusion as supported', () {
       final warnings = <String>[];
       select(const ['onnx'], warnings);

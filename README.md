@@ -99,10 +99,14 @@ experimental and may change, and the runtime is opt-in.
   hooks:
     user_defines:
       llamadart:
-        llamadart_native_runtimes: [llama_cpp, stable_diffusion]
+        llamadart_native_runtimes: [all, stable_diffusion]
   ```
 
-  Keep `litert_lm` in the list if the app also loads `.litertlm` models.
+  A list replaces the default runtimes, so it names everything the app loads:
+  - `[all, stable_diffusion]`: the defaults (`llama_cpp` and `litert_lm`) plus
+    images.
+  - `[llama_cpp, stable_diffusion]`: GGUF chat and images, no LiteRT-LM.
+  - `[stable_diffusion]`: images only.
 
 - **Flutter iOS/macOS apps** should add the
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),

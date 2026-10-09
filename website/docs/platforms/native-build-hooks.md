@@ -80,16 +80,26 @@ hooks:
 from `leehack/stable-diffusion-native` for the experimental
 [`ImageGenerationEngine`](../guides/image-generation). It adds about 40 to
 70 MB per target, so it is never bundled by default or by `all`/`both`; name it
-explicitly:
+explicitly. A `llamadart_native_runtimes` list replaces the default runtimes,
+so it names every runtime the app loads:
+
+| The app loads | `llamadart_native_runtimes` |
+| --- | --- |
+| The defaults (GGUF and `.litertlm` models) and images | `[all, stable_diffusion]` |
+| GGUF models and images, no LiteRT-LM | `[llama_cpp, stable_diffusion]` |
+| Images only | `[stable_diffusion]` |
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes:
-        runtimes: [llama_cpp, stable_diffusion]
+      llamadart_native_runtimes: [all, stable_diffusion]
 ```
 
+- `all` stands for the default `llama_cpp` and `litert_lm`, so
+  `[all, stable_diffusion]` still skips `litert_lm` with a warning on a target
+  without a LiteRT-LM runtime. `[llama_cpp, litert_lm, stable_diffusion]` names
+  `litert_lm` and fails the build there.
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS

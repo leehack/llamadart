@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,6 +16,7 @@ import '../../../hook/build.dart' as build_hook;
 
 const _stableDiffusionAssetId = 'package:llamadart/stable_diffusion';
 const _primaryAssetId = 'package:llamadart/llamadart';
+const _liteRtLmAssetIdPrefix = 'package:llamadart/litert_lm_';
 
 void main() {
   final nativeBundlesRoot = '.dart_tool/llamadart/native_bundles/$llamaCppTag';
@@ -43,6 +45,14 @@ void main() {
       'libggml-cpu.so',
     ],
     'macos-arm64': const ['libllamadart.dylib'],
+    'ios-x86_64-sim': const ['libllamadart.dylib'],
+    'windows-arm64': const [
+      'llamadart-windows-arm64.dll',
+      'llama-windows-arm64.dll',
+      'ggml-windows-arm64.dll',
+      'ggml-base-windows-arm64.dll',
+      'ggml-cpu-windows-arm64.dll',
+    ],
   };
   final stableDiffusionBundles = {
     for (final spec in stableDiffusionBundleSpecs)
@@ -51,17 +61,23 @@ void main() {
         'linux-x64-vulkan',
         'macos-arm64',
         'ios-arm64',
+        'ios-x64-sim',
       }.contains(spec.bundle))
         spec.bundle: spec.requiredLibraries.single,
   };
-  final liteRtLmLinuxBundle = Directory(
-    '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/linux/x64',
-  );
+  final liteRtLmBundles = {
+    'linux-x64': Directory(
+      '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/linux/x64',
+    ),
+    'android-x64': Directory(
+      '.dart_tool/llamadart/litert_lm/$liteRtLmVersion/android/x64',
+    ),
+  };
   final backups = [
     for (final bundle in nativeBundles.keys) nativeBundle(bundle),
     for (final bundle in stableDiffusionBundles.keys)
       stableDiffusionBundle(bundle),
-    liteRtLmLinuxBundle,
+    ...liteRtLmBundles.values,
   ];
 
   setUpAll(() async {
@@ -83,13 +99,16 @@ void main() {
         library: 'fake-sd-$bundle',
       });
     }
-    await _writeLibraries(liteRtLmLinuxBundle, {
-      for (final library
-          in liteRtLmBundleSpecs
-              .singleWhere((spec) => spec.bundle == 'linux-x64')
-              .requiredLibraries)
-        library: 'fake-$library',
-    });
+    for (final MapEntry(key: bundle, value: directory)
+        in liteRtLmBundles.entries) {
+      await _writeLibraries(directory, {
+        for (final library
+            in liteRtLmBundleSpecs
+                .singleWhere((spec) => spec.bundle == bundle)
+                .requiredLibraries)
+          library: 'fake-$library',
+      });
+    }
   });
 
   tearDownAll(() async {
@@ -126,6 +145,103 @@ void main() {
         vulkanCache.existsSync(),
         isFalse,
         reason: 'nothing may be downloaded without opting in: $defines',
+      );
+    }
+  });
+
+  test('[all, stable_diffusion] keeps the default runtimes and skips what a '
+      'target does not publish', () async {
+    const liteRtLmSkipped = 'LiteRT-LM runtime is not available for';
+    const stableDiffusionSkipped = 'stable_diffusion runtime is not available';
+    for (final (
+          :os,
+          :architecture,
+          :simulator,
+          :bundle,
+          :liteRtLm,
+          :stableDiffusion,
+        )
+        in const [
+          (
+            os: OS.linux,
+            architecture: Architecture.x64,
+            simulator: false,
+            bundle: 'linux-x64',
+            liteRtLm: true,
+            stableDiffusion: true,
+          ),
+          (
+            os: OS.android,
+            architecture: Architecture.x64,
+            simulator: false,
+            bundle: 'android-x64',
+            liteRtLm: true,
+            stableDiffusion: false,
+          ),
+          (
+            os: OS.iOS,
+            architecture: Architecture.x64,
+            simulator: true,
+            bundle: 'ios-x86_64-sim',
+            liteRtLm: false,
+            stableDiffusion: true,
+          ),
+          (
+            os: OS.windows,
+            architecture: Architecture.arm64,
+            simulator: false,
+            bundle: 'windows-arm64',
+            liteRtLm: false,
+            stableDiffusion: false,
+          ),
+        ]) {
+      final log = await _captureHookLog(
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: os,
+          targetArchitecture: architecture,
+          targetAndroidNdkApi: os == OS.android ? 30 : null,
+          targetIOSSdk: simulator ? IOSSdk.iPhoneSimulator : null,
+          userDefines: _userDefines({
+            'llamadart_native_runtimes': ['all', 'stable_diffusion'],
+          }),
+          check: (_, output) {
+            final ids = _codeAssetIds(output);
+            expect(ids, contains(_primaryAssetId), reason: bundle);
+            expect(
+              ids.any((id) => id.startsWith(_liteRtLmAssetIdPrefix)),
+              liteRtLm,
+              reason: bundle,
+            );
+            expect(
+              ids.contains(_stableDiffusionAssetId),
+              stableDiffusion,
+              reason: bundle,
+            );
+          },
+        ),
+      );
+      final warnings = log.where((line) => line.startsWith('WARNING: '));
+      expect(
+        warnings.any((line) => line.contains('$liteRtLmSkipped $bundle')),
+        !liteRtLm,
+        reason: bundle,
+      );
+      expect(
+        warnings.any(
+          (line) => line.contains('$stableDiffusionSkipped for $bundle'),
+        ),
+        !stableDiffusion,
+        reason: bundle,
+      );
+      expect(
+        log,
+        contains(
+          endsWith(
+            'Selected native runtimes: ${['llama_cpp', if (liteRtLm) 'litert_lm', if (stableDiffusion) 'stable_diffusion'].join(', ')}.',
+          ),
+        ),
+        reason: bundle,
       );
     }
   });
@@ -576,6 +692,18 @@ ${companions.map((name) => '  $name: any').join('\n')}
       basePath: pubspec.uri,
     ),
   );
+}
+
+/// The records the hook logs while [body] runs, as `LEVEL: time: message`.
+Future<List<String>> _captureHookLog(Future<void> Function() body) async {
+  final lines = <String>{};
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (_, _, _, line) => lines.add(line),
+    ),
+  );
+  return lines.toList();
 }
 
 /// Lines the hook writes to stderr while [body] runs; Flutter relays them

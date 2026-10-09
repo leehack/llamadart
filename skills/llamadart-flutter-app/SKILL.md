@@ -142,8 +142,10 @@ or shipping runtimes the app does not use.
   user-defines do not change SwiftPM binaries either. The stable_diffusion
   companion is independent: it selects image generation on iOS and macOS and
   leaves llama.cpp and LiteRT-LM where they were.
-- Image generation (`ImageGenerationEngine`) needs `stable_diffusion` added
-  to `llamadart_native_runtimes`; it is never bundled by default. On iOS and
+- Image generation (`ImageGenerationEngine`) needs `stable_diffusion` named
+  in `llamadart_native_runtimes`; it is never bundled by default. That list
+  replaces the defaults, so use `[all, stable_diffusion]` to keep `llama_cpp`
+  and `litert_lm`. On iOS and
   macOS add `llamadart_stable_diffusion_flutter` instead, since App Store
   Connect rejects the iOS framework the hook bundles. Details are in the
   llamadart-image-generation skill.
