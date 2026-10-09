@@ -31,11 +31,15 @@ def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
         text = safe_body_text(page)
         if lower_needle in text.lower():
             return text
-        if "Something went wrong" in text and "Retry" in text:
+        if "Model failed to load" in text or (
+            "Something went wrong" in text and "Retry" in text
+        ):
             state = page.evaluate(
                 """() => ({
                   bridgeError: window.__llamadartRealBridgeLastError,
                   liteRtLmError: window.__llamadartRealLiteRtLmLastError,
+                  liteRtLmCreateErrorStack:
+                    window.__llamadartRealLiteRtLmCreateErrorStack,
                   liteRtLmSettings: window.__llamadartRealLiteRtLmLastSettings,
                 })"""
             )
@@ -293,6 +297,7 @@ def main() -> int:
     page_errors: list[str] = []
     request_failures: list[str] = []
     mmproj_requests: list[str] = []
+    litert_lm_runtime_requests: list[str] = []
     started_at = time.monotonic()
 
     seeded_settings = {
@@ -442,7 +447,7 @@ def main() -> int:
             typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
             window.__llamadartLiteRtLmModuleUrl.length > 0
               ? window.__llamadartLiteRtLmModuleUrl
-              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm';
+              : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm';
           window.__llamadartLiteRtLmOriginalModuleUrl = originalModuleUrl;
           const moduleSource = [
             'import * as mod from ' + JSON.stringify(originalModuleUrl) + ';',
@@ -509,6 +514,7 @@ def main() -> int:
             '          return wrapEngine(engine);',
             '        }} catch (error) {{',
             '          globalThis.__llamadartRealLiteRtLmLastError = String(error);',
+            '          globalThis.__llamadartRealLiteRtLmCreateErrorStack = String(error?.stack ?? "");',
             '          throw error;',
             '        }}',
             '      }};',
@@ -524,77 +530,6 @@ def main() -> int:
           );
         }};
         window.__llamadartRealLiteRtLmInstallModuleWrapper();
-        window.__llamadartRealLiteRtLmPatchTimer = setInterval(() => {{
-          const EngineClass = window.LiteRtLmEngine;
-          if (!EngineClass || typeof EngineClass.create !== 'function') {{
-            return;
-          }}
-          if (EngineClass.__llamadartRealE2ePatched === true) {{
-            clearInterval(window.__llamadartRealLiteRtLmPatchTimer);
-            return;
-          }}
-          const originalCreate = EngineClass.create.bind(EngineClass);
-          const summarizeSettings = (settings) => {{
-            const mainExecutorSettings = settings?.mainExecutorSettings;
-            return {{
-              model: settings?.model,
-              backend: settings?.backend,
-              mainExecutorSettings: mainExecutorSettings
-                ? {{
-                    maxNumTokens: mainExecutorSettings.maxNumTokens,
-                    samplerBackend: mainExecutorSettings.samplerBackend,
-                    backendConfig: mainExecutorSettings.backendConfig,
-                    advancedSettings: mainExecutorSettings.advancedSettings,
-                  }}
-                : null,
-            }};
-          }};
-          EngineClass.create = async function(settings) {{
-            window.__llamadartRealLiteRtLmLastSettings =
-              summarizeSettings(settings);
-            let engine;
-            try {{
-              engine = await originalCreate(settings);
-            }} catch (error) {{
-              window.__llamadartRealLiteRtLmLastError = String(error);
-              throw error;
-            }}
-            const originalCreateConversation = engine.createConversation?.bind(engine);
-            if (typeof originalCreateConversation !== 'function') {{
-              return engine;
-            }}
-            engine.createConversation = async function(config) {{
-              window.__llamadartRealLiteRtLmLastConversationConfig = config;
-              const conversation = await originalCreateConversation(config);
-              const originalSend = conversation.sendMessageStreaming?.bind(conversation);
-              if (typeof originalSend !== 'function') {{
-                return conversation;
-              }}
-              conversation.sendMessageStreaming = function(prompt) {{
-                window.__llamadartRealLiteRtLmLastResponse = null;
-                window.__llamadartRealLiteRtLmLastError = null;
-                window.__llamadartRealLiteRtLmLastPrompt = String(prompt ?? '');
-                window.__llamadartRealLiteRtLmLastChunks = [];
-                try {{
-                  const stream = originalSend(prompt);
-                  if (stream && typeof stream.tee === 'function') {{
-                    const branches = stream.tee();
-                    window.__llamadartRealLiteRtLmCapture(branches[1]);
-                    return branches[0];
-                  }}
-                  return stream;
-                }} catch (error) {{
-                  window.__llamadartRealLiteRtLmLastError = String(error);
-                  throw error;
-                }}
-              }};
-              return conversation;
-            }};
-            return engine;
-          }};
-          EngineClass.__llamadartRealE2ePatched = true;
-          clearInterval(window.__llamadartRealLiteRtLmPatchTimer);
-        }}, 20);
         {local_storage_init_script(
             seeded_settings,
             remove_keys=() if args.mmproj_url else ("flutter.mmproj_path",),
@@ -662,6 +597,14 @@ def main() -> int:
                     else None
                 ),
             )
+
+        def on_litert_lm_runtime_request(request) -> None:
+            url = request.url
+            if "/@litert-lm/core@" in url and url not in litert_lm_runtime_requests:
+                litert_lm_runtime_requests.append(url)
+                emit("litert_lm_runtime_request", url=url)
+
+        page.on("request", on_litert_lm_runtime_request)
         page.on(
             "requestfailed",
             lambda request: request_failures.append(
@@ -863,7 +806,8 @@ def main() -> int:
               forceRemoteFetchBackend:
                 window.__llamadartBridgeForceRemoteFetchBackend ?? null,
               liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
-              liteRtLmPatched: window.LiteRtLmEngine?.__llamadartRealE2ePatched ?? null,
+              liteRtLmOriginalModuleUrl:
+                window.__llamadartLiteRtLmOriginalModuleUrl ?? null,
               promptSpeechToTextSupported:
                 window.__llamadartBridgeSpeechToTextSupported ?? null,
             })"""
@@ -897,6 +841,7 @@ def main() -> int:
             microphoneBridgeResponse=microphone_bridge_response,
             remoteFetchMode=remote_fetch_mode,
             mmprojRequestCount=len(mmproj_requests),
+            liteRtLmRuntimeRequests=litert_lm_runtime_requests,
             bridgeGlobals=bridge_globals,
             bodyTail=body_after_response[-1200:],
             consoleTail=console_logs[-30:],

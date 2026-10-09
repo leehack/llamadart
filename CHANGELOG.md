@@ -31,6 +31,10 @@
   `v0.18.0`, and names the upstream version when its prebuilt-override table
   is behind the runtime owner's
   ([#586](https://github.com/leehack/llamadart/issues/586)).
+- Move the documented Web LiteRT-LM default from `@litert-lm/core@0.15.0` to
+  `@litert-lm/core@0.18.0`. An app still chooses the module through
+  `window.__llamadartLiteRtLmModuleUrl`; the chat app's `web/index.html` and
+  the docs now name `0.18.0`.
 - Update the default llama.cpp runtime to
   `leehack/llamadart-native@v0.6.0-1` (llama.cpp `v0.6.0`), and the
   `llamadart_llama_cpp_flutter` Apple SwiftPM pin with it.
@@ -58,8 +62,8 @@
   ([#782](https://github.com/leehack/llamadart/issues/782)).
 * Aligned the default WebGPU bridge assets to `v0.1.59`: they embed llama.cpp
   `v0.6.0`, are qualified against native `v0.6.0`, and keep Web/native
-  llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity and Web
-  `@litert-lm/core@0.15.0`. Immutable Web asset manifest:
+  llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity; Web
+  LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.11.1
