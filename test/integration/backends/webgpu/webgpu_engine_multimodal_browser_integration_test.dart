@@ -18,6 +18,7 @@ void main() {
     late bool mmLoaded;
     late bool sawAudioPart;
     late int completionCalls;
+    late bool probesStale;
     String? lastStateSavePath;
     List<int>? lastStateSaveTokens;
     String? lastStateLoadPath;
@@ -38,6 +39,7 @@ void main() {
       mmLoaded = false;
       sawAudioPart = false;
       completionCalls = 0;
+      probesStale = false;
       lastStateSavePath = null;
       lastStateSaveTokens = null;
       lastStateLoadPath = null;
@@ -141,7 +143,10 @@ void main() {
         }).toJS,
       );
       bridge.setProperty('supportsVision'.toJS, (() => false).toJS);
-      bridge.setProperty('supportsAudio'.toJS, (() => mmLoaded).toJS);
+      bridge.setProperty(
+        'supportsAudio'.toJS,
+        (() => mmLoaded && !probesStale).toJS,
+      );
 
       bridge.setProperty(
         'tokenize'.toJS,
@@ -452,33 +457,44 @@ void main() {
       expect(sawAudioPart, isTrue);
     });
 
-    test('LlamaEngine create rejects an image part for a projector with no '
-        'image encoder before the bridge', () async {
+    // The bridge's probes are a snapshot: after its worker falls back to the
+    // main thread they report false until the next media completion restores
+    // the projector.
+    test('LlamaEngine create forwards media parts when the bridge probes go '
+        'stale after loading the projector', () async {
       await engine.loadModelFromUrl(
         'https://example.com/model.gguf',
         modelParams: const ModelParams(contextSize: 1024),
       );
       await engine.loadMultimodalProjector('https://example.com/mmproj.gguf');
+      expect(await engine.supportsAudio, isTrue);
+      probesStale = true;
+      expect(await engine.supportsAudio, isFalse);
+      expect(await engine.supportsVision, isFalse);
 
-      await expectLater(
-        engine.create(<LlamaChatMessage>[
+      for (final LlamaContentPart media in <LlamaContentPart>[
+        LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+        LlamaAudioContent(
+          samples: Float32List.fromList(<double>[0.1, -0.2, 0.3]),
+        ),
+      ]) {
+        final chunks = await engine.create(<LlamaChatMessage>[
           LlamaChatMessage.withContent(
             role: LlamaChatRole.user,
             content: <LlamaContentPart>[
-              const LlamaTextContent('Describe this image.'),
-              LlamaImageContent(bytes: Uint8List.fromList(<int>[1, 2, 3])),
+              const LlamaTextContent('Describe this.'),
+              media,
             ],
           ),
-        ], params: const GenerationParams(maxTokens: 8)).drain<void>(),
-        throwsA(
-          isA<LlamaUnsupportedException>().having(
-            (error) => error.message,
-            'message',
-            contains('it reports no image encoder'),
-          ),
-        ),
-      );
-      expect(completionCalls, 0);
+        ], params: const GenerationParams(maxTokens: 8)).toList();
+
+        expect(
+          chunks.map((chunk) => chunk.choices.first.delta.content ?? '').join(),
+          contains('Hello'),
+        );
+      }
+      expect(completionCalls, 2);
+      expect(sawAudioPart, isTrue);
     });
 
     test('LlamaEngine embed and embedBatch work via web bridge', () async {

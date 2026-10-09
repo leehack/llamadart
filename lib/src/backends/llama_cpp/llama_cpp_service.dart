@@ -4242,14 +4242,16 @@ class LlamaCppService {
       'use an encoder-only or decoder-only embedding model.';
 
   // Without a projector the prompt would be evaluated as text and the media
-  // silently dropped; upstream llama-server rejects such requests too.
+  // silently dropped; upstream llama-server rejects such requests too. With
+  // one, mtmd refuses a part it has no encoder for while loading or
+  // tokenizing it, with a result code that does not say so.
   void _checkLlamaCppMediaParts(
     List<LlamaContentPart> parts, {
-    required bool projectorLoaded,
+    required int? mmHandle,
   }) {
-    if (!projectorLoaded) {
-      final hasImage = parts.any((part) => part is LlamaImageContent);
-      final hasAudio = parts.any((part) => part is LlamaAudioContent);
+    final hasImage = parts.any((part) => part is LlamaImageContent);
+    final hasAudio = parts.any((part) => part is LlamaAudioContent);
+    if (mmHandle == null) {
       final kind = hasImage && hasAudio
           ? 'Image and audio'
           : hasImage
@@ -4270,6 +4272,20 @@ class LlamaCppService {
           'llama.cpp does not load remote image URLs '
           '(LlamaImageContent.url). Pass a local image file path or encoded '
           'image bytes.',
+        );
+      }
+    }
+    final mmCtx = _mtmdContexts[mmHandle];
+    if (mmCtx == null) return;
+    for (final (kind, sent, audio) in [
+      ('Image', hasImage, false),
+      ('Audio', hasAudio, true),
+    ]) {
+      if (sent && _mtmdHasEncoder(mmCtx, audio: audio) == false) {
+        throw LlamaUnsupportedException(
+          '$kind input is not supported by the loaded multimodal projector: '
+          'it has no ${kind.toLowerCase()} encoder. Load a projector that has '
+          'one, or leave ${kind.toLowerCase()} parts out of the request.',
         );
       }
     }
@@ -4776,10 +4792,7 @@ class LlamaCppService {
         );
       }
       if (hasMediaParts) {
-        _checkLlamaCppMediaParts(
-          parts!,
-          projectorLoaded: _modelToMtmd[modelHandle] != null,
-        );
+        _checkLlamaCppMediaParts(parts!, mmHandle: _modelToMtmd[modelHandle]);
       }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
@@ -8755,17 +8768,7 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
-
-    if (!_mtmdPrimarySymbolsUnavailable) {
-      try {
-        return mtmd_support_vision(mmCtx);
-      } on ArgumentError {
-        _mtmdPrimarySymbolsUnavailable = true;
-      }
-    }
-
-    final fallback = _resolveMtmdFallbackApi();
-    return fallback?.supportsVision(mmCtx) ?? false;
+    return _mtmdHasEncoder(mmCtx, audio: false) ?? false;
   }
 
   /// Returns whether the active multimodal projector supports audio input.
@@ -8774,22 +8777,31 @@ class LlamaCppService {
     if (mmCtx == null) {
       return false;
     }
+    return _mtmdHasEncoder(mmCtx, audio: true) ??
+        (throw LlamaUnsupportedException(
+          _mtmdUnavailableMessage('mtmd_support_audio'),
+        ));
+  }
 
+  /// Whether the projector [mmCtx] has an audio encoder, or with [audio]
+  /// false a vision encoder, as mtmd reports it.
+  ///
+  /// Null when neither the llamadart library nor the fallback mtmd library
+  /// has the probe function.
+  bool? _mtmdHasEncoder(Pointer<mtmd_context> mmCtx, {required bool audio}) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_support_audio(mmCtx);
+        return audio ? mtmd_support_audio(mmCtx) : mtmd_support_vision(mmCtx);
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
     }
 
     final fallback = _resolveMtmdFallbackApi();
-    if (fallback == null) {
-      throw LlamaUnsupportedException(
-        _mtmdUnavailableMessage('mtmd_support_audio'),
-      );
-    }
-    return fallback.supportsAudio(mmCtx);
+    if (fallback == null) return null;
+    return audio
+        ? fallback.supportsAudio(mmCtx)
+        : fallback.supportsVision(mmCtx);
   }
 
   /// Returns whether the active native mtmd build and projector report video.

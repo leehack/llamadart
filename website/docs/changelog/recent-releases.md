@@ -98,13 +98,15 @@ For canonical full release notes, use:
   `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 - Fix an audio or video part sent to a chat template that takes typed image
   parts only (Qwen3.5 and others) failing with a raw `Exception` from the
-  template ([#963](https://github.com/leehack/llamadart/issues/963)).
-  `LlamaEngine.create` and `generate` now throw `LlamaUnsupportedException`
-  naming the missing encoder when the loaded GGUF projector does not take an
-  image or audio part, where an untyped runtime failure surfaced as
-  `LlamaInferenceException` before. `chatTemplate` renders a part the
-  template rejects as the media marker, and a chat template that fails to
-  render throws `LlamaInferenceException` with the template's message.
+  template ([#963](https://github.com/leehack/llamadart/issues/963)). On
+  native llama.cpp, an image or audio part the loaded projector has no
+  encoder for now throws `LlamaUnsupportedException` naming the encoder,
+  where `create` and `generate` threw `LlamaInferenceException` or the
+  template's exception. `chatTemplate` renders as the media marker a media
+  part the template rejects and a video part beside an image or audio part,
+  which a template was handed and raised on or dropped. A chat template that
+  raises or has invalid syntax throws `LlamaInferenceException` with the
+  template's message.
 
 ## 0.11.1
 

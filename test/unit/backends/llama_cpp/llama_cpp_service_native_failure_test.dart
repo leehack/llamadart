@@ -548,7 +548,11 @@ void main() {
     Future<BackendGenerationLimit?> describe() =>
         _generate(service, context, '<__media__>', _greedy, parts: mtmd!.parts);
 
-    void attach({bool chunkEval = false}) {
+    void attach({
+      bool chunkEval = false,
+      bool vision = false,
+      bool audio = true,
+    }) {
       start();
       final projectorPath = '${dir.path}/mmproj.gguf';
       File(projectorPath).writeAsStringSync('GGUF');
@@ -557,6 +561,8 @@ void main() {
         tokens: service.tokenize(model, 'ab', true),
         chunkEval: chunkEval,
         decode: recorder.api.decode,
+        vision: vision,
+        audio: audio,
       );
       addTearDown(fake.dispose);
       projector = service.createMultimodalContext(model, projectorPath);
@@ -574,6 +580,82 @@ void main() {
         () => service.createMultimodalContext(model, projectorPath),
         throwsA(_caught<LlamaModelException>('mtmd_init_from_file')),
       );
+    });
+
+    group('a media part of a kind the projector has no encoder for', () {
+      final image = LlamaImageContent(bytes: Uint8List.fromList(const [1]));
+      final audio = LlamaAudioContent(samples: Float32List(1));
+
+      Matcher noEncoder(String kind) => throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          '$kind input is not supported by the loaded multimodal projector: '
+              'it has no ${kind.toLowerCase()} encoder. Load a projector '
+              'that has one, or leave ${kind.toLowerCase()} parts out of the '
+              'request.',
+        ),
+      );
+
+      Future<BackendGenerationLimit?> send(List<LlamaContentPart> parts) =>
+          _generate(
+            service,
+            context,
+            '<__media__>' * parts.length,
+            _greedy,
+            parts: parts,
+          );
+
+      Iterable<String> mediaCalls() => [
+        ...barrier.calls,
+        ...mtmd!.calls,
+      ].where((call) => call.contains('mtmd_'));
+
+      test('is refused by name before mtmd is given the request, and the '
+          'kind it encodes still generates', () async {
+        attach();
+        barrier.calls.clear();
+        mtmd!.calls.clear();
+
+        await expectLater(send([image]), noEncoder('Image'));
+        await expectLater(send([audio, image]), noEncoder('Image'));
+        expect(mediaCalls(), isEmpty);
+
+        expect(await send([audio]), BackendGenerationLimit.maxTokens);
+        expect(mediaCalls(), isNotEmpty);
+      });
+
+      test('is refused by name on a projector with a vision encoder '
+          'only', () async {
+        attach(vision: true, audio: false);
+        barrier.calls.clear();
+        mtmd!.calls.clear();
+
+        await expectLater(send([audio]), noEncoder('Audio'));
+        expect(mediaCalls(), isEmpty);
+      });
+
+      test('is not blamed on the projector when the runtime lacks the mtmd '
+          'probe', () async {
+        attach();
+        mtmd!.setFallback(present: false);
+        // The projector is freed through the fallback.
+        addTearDown(() => mtmd!.setFallback(present: true));
+
+        await expectLater(
+          send([image]),
+          throwsA(
+            isA<Exception>().having(
+              (e) => '$e',
+              'text',
+              allOf(
+                contains('lacks an mtmd function'),
+                isNot(contains('encoder')),
+              ),
+            ),
+          ),
+        );
+      });
     });
 
     test('builds media bitmaps through the barrier, and a constructor that '

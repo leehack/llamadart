@@ -33,6 +33,7 @@ import 'package:llamadart/src/hook/native_release_pins.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
+import '../../../support/fake_mtmd.dart';
 import '../../../support/recording_exit_teardown.dart';
 import '../../../support/synthetic_decision_head.dart';
 import '../../../support/synthetic_embedding_gguf.dart';
@@ -2952,27 +2953,35 @@ void main() {
       );
     });
 
-    test('accepts local image paths and encoded bytes with a projector', () {
-      void check(List<LlamaContentPart> parts, {required bool projector}) =>
+    test('accepts local image paths and encoded bytes with a projector that '
+        'has both encoders', () {
+      final fake = FakeMtmd.install(
+        service,
+        tokens: const [],
+        vision: true,
+        audio: true,
+      );
+      addTearDown(fake.dispose);
+      registerFakeProjector();
+      void check(List<LlamaContentPart> parts) =>
           _invokePrivateForTesting<void>(
             service,
             '_checkLlamaCppMediaParts',
             [parts],
-            {#projectorLoaded: projector},
+            {#mmHandle: fakeMtmdHandle},
           );
 
-      check(const [LlamaImageContent(path: '/tmp/image.png')], projector: true);
+      check(const [LlamaImageContent(path: '/tmp/image.png')]);
       check([
         LlamaImageContent(
           bytes: Uint8List.fromList([1, 2, 3]),
           url: 'https://example.com/a.png',
         ),
         LlamaAudioContent(samples: Float32List(16)),
-      ], projector: true);
+      ]);
       expect(
-        () => check(const [
-          LlamaImageContent(url: 'https://example.com/a.png'),
-        ], projector: true),
+        () =>
+            check(const [LlamaImageContent(url: 'https://example.com/a.png')]),
         throwsA(isA<LlamaUnsupportedException>()),
       );
     });

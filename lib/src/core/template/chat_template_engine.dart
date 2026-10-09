@@ -347,9 +347,11 @@ class ChatTemplateEngine {
     return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
   }
 
-  /// Runs a handler [render], turning a failure that is not already a
-  /// [LlamaException] (a template's own `raise_exception`, a Jinja runtime
-  /// error, invalid template syntax) into a [LlamaInferenceException].
+  /// Runs a handler [render], turning an [Exception] that is not already a
+  /// [LlamaException] (a template's own `raise_exception`, a failure the
+  /// Jinja runtime throws as an `Exception`, invalid template syntax) into a
+  /// [LlamaInferenceException]. An [Error] the renderer throws, such as an
+  /// integer division by zero or a stack overflow, is left as it is.
   static LlamaChatTemplateResult _renderTemplate(
     LlamaChatTemplateResult Function() render,
   ) {

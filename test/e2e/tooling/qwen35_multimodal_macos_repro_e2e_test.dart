@@ -193,7 +193,7 @@ Future<void> _expectAudioRejected(LlamaEngine engine, String prompt) async {
       isA<LlamaUnsupportedException>().having(
         (LlamaUnsupportedException error) => error.message,
         'message',
-        contains('it reports no audio encoder'),
+        contains('it has no audio encoder'),
       ),
     ),
   );
