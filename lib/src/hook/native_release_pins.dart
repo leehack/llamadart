@@ -145,11 +145,11 @@ const liteRtLmBundleSpecs = <LiteRtLmBundleSpec>[
 
 /// `leehack/stable-diffusion-native` release tag downloaded for the opt-in
 /// stable-diffusion.cpp runtime.
-const stableDiffusionReleaseTag = 'v0.2.0-1';
+const stableDiffusionReleaseTag = 'v0.2.0-2';
 
 /// stable_diffusion cache directory version derived from
 /// [stableDiffusionReleaseTag].
-const stableDiffusionVersion = '0.2.0-1';
+const stableDiffusionVersion = '0.2.0-2';
 
 /// A published stable-diffusion-native runtime archive and the library it must
 /// contain under `lib/`.
@@ -176,62 +176,62 @@ class StableDiffusionBundleSpec {
 const stableDiffusionBundleSpecs = <StableDiffusionBundleSpec>[
   StableDiffusionBundleSpec(
     'android-arm64',
-    sha256: 'a0bef58480c213a87dffb72f02bd47a89366510b7ac24f64120e2cfd64ed2c76',
+    sha256: 'd20f4b32a7dbf391c6b1f88f04151410e27ea4b331af6c17d8aba5508c7dfe99',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64',
-    sha256: '82ebb318d695db75d6b384d84aaddb69a2dd369cf68e8411dc345c32e423a714',
+    sha256: 'b4bcd75f314ee578f18217cbe9cdc505c93318acf4364fc45d01d99fa7ec2ee9',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-arm64-sim',
-    sha256: 'b6fa5ac2d35503d4183bf083ce10ed7a6c54a5a8db2eabfbaed5bfda8686d397',
+    sha256: '2776e5d8ca5f02fad338267eaa644cfa73240d3ec982f979e5b5be46a9a74ae5',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'ios-x64-sim',
-    sha256: '1789de5de4c36821b677cff95307f5522d190c6621eeca86fccbc0880ebf27ed',
+    sha256: '7f304084fc47bc97c91613046a93d497f22a3b9669eeaf2e75dc5bdf4c4e1341',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-arm64',
-    sha256: '931f53883c1a31092e28d565c23e5b23e16fba655e1dc000621996d69f8721b1',
+    sha256: '04352812a03e403fa110aec788c1e25f133fff9e33b4617877e6434c2c881a60',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'macos-x64',
-    sha256: '9c5c4d93c9ee6f4640f758a62ff3cfd4aa9ec28e0a6ae01aa12029a5104f7745',
+    sha256: '317a908c3903af35f588ca2e077ac6c3bfcfbd9ba5dc0d56dcf2afc999f9af67',
     requiredLibraries: {'libstable-diffusion.dylib'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64',
-    sha256: 'a32fac5728322e4d3aa985868bae6dcc7a1eda41a2a7cb322021c7a3302bec4d',
+    sha256: '355d582709bc01d4ea7ec1683160e84eceaf8906aa1fbadbb633f72426d78a55',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-arm64-vulkan',
-    sha256: 'ff9383e61f183ce5fc005a5bede927c57df35e701f690e70d68b741d9ed06cae',
+    sha256: '2af80b1a7b8e14e503bc2295e462f888f521e6a429e331b4bf4b7d081b251785',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64',
-    sha256: 'acad806da58a9aedf9e549bd8f949b24cef0535fca0d7b0870b4093ef6bcb103',
+    sha256: '2c850bd7f06abd562416049daca3b141968a2bd967d88c194ce20b249b9971fc',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'linux-x64-vulkan',
-    sha256: '731008d6df747527ec91525d59ca44077f0b97ff0b16849ab77a410787336b0b',
+    sha256: '97e684a0c89b069fbae289dcf19d40aad9c803b545c8c391cbb739eab7eb15a9',
     requiredLibraries: {'libstable-diffusion.so'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64',
-    sha256: '3aa4028117330149cbb3c6b739841145381a9e0e9fba9e45c0a58c70c31d671a',
+    sha256: '8b0a1d79ee6888e92cf41ccaa6a2a49ab88d086df3701cdd3a7b4bf36fa08f4b',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
   StableDiffusionBundleSpec(
     'windows-x64-vulkan',
-    sha256: '127234dcce7ab84a8ba740dfdd57206a0587c2b54edf5683335bae7b06776de3',
+    sha256: 'ccd0c3c7b6508d9af136e061cc5bce7cd78a1e9a45837aaeddc9f1233303dcc1',
     requiredLibraries: {'stable-diffusion.dll'},
   ),
 ];

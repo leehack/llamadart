@@ -44,6 +44,23 @@
   Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity;
   Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
   `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
+- Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
+  `stable_diffusion` image runtime.
+- Check the memory of Vulkan GPUs before loading an image model
+  ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
+  On Linux `ImageGenerationEngine.load` refuses, with `LlamaModelException`,
+  only a model that does not fit the discrete GPUs plus system memory. A
+  model larger than the memory of the GPU that computes still loads, with
+  one warning, and runs slower; on Windows it is warned about and never
+  refused. Not validated on a physical Vulkan GPU yet;
+  `ImageModelParams(checkMemory: false)` skips the check and the warning.
+- Quote the errors stable-diffusion.cpp logged in the `LlamaModelException`
+  of an image model it cannot load, with files named by role
+  ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
+- Send the image runtime's messages to the `LlamaLogging.configure` handler
+  at the configured levels, after each load and generation. The runtime no
+  longer prints ggml's device messages to stderr: at the default level
+  `none` it logs nothing.
 
 ## 0.11.1
 

@@ -1,6 +1,8 @@
 // Subprocess fixture: ends the process in one way while an image model is
 // alive, or prints the progress events of a batch. Arguments: the scenario
 // and an image checkpoint; `quit-both-loaded` also takes a GGUF chat model.
+// A scenario whose name ends in `-logging` runs with the runtime's log
+// forwarded at debug level, so the worker reads the log around the exit.
 //
 // The `quit-` scenarios call C `exit` through FFI from the main isolate while
 // the worker isolate that owns the context is alive: what a native host that
@@ -25,16 +27,41 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 
 Future<void> main(List<String> args) async {
-  final [scenario, modelPath, ...extra] = args;
+  final [requested, modelPath, ...extra] = args;
+  final logging = requested.endsWith(_loggingSuffix);
+  final scenario = logging
+      ? requested.substring(0, requested.length - _loggingSuffix.length)
+      : requested;
+  if (logging) {
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.debug,
+      handler: (_) => _logRecords++,
+    );
+  }
   switch (scenario) {
     case 'symbols':
       await ImageGenerationEngine.checkRuntime();
-      for (final name in StableDiffusionCalls.wrapperSymbols) {
+      for (final name in [
+        ...StableDiffusionCalls.wrapperSymbols,
+        ...StableDiffusionCalls.logSymbols,
+        ...StableDiffusionCalls.deviceMemorySymbols,
+      ]) {
         if (StableDiffusionCalls.symbolAddress(name) !=
             DynamicLibrary.process().lookup(name)) {
           throw StateError('$name does not resolve to the export of its name');
         }
       }
+      final calls = StableDiffusionCalls.tryResolve()!;
+      if (calls.log == null || calls.gpu == null) {
+        throw StateError('The pinned runtime lacks the log or the GPU queries');
+      }
+      _reached(scenario);
+    case 'quiet':
+      // At the default log levels the runtime prints nothing: the test reads
+      // this process's stderr.
+      final engine = await _load(modelPath);
+      await engine.generateImage(_request(steps: 1));
+      await engine.dispose();
       _reached(scenario);
     case 'events':
       final engine = await _load(modelPath);
@@ -105,8 +132,16 @@ Future<void> main(List<String> args) async {
   }
 }
 
-void _reached(String scenario) =>
-    stdout.writeln('IMAGE_PROBE_REACHED $scenario');
+const _loggingSuffix = '-logging';
+
+int _logRecords = 0;
+
+void _reached(String scenario) {
+  if (_logRecords > 0) {
+    stdout.writeln('IMAGE_PROBE_LOG_RECORDS $_logRecords');
+  }
+  stdout.writeln('IMAGE_PROBE_REACHED $scenario');
+}
 
 void _reportTracked() =>
     stdout.writeln('IMAGE_PROBE_TRACKED ${sd.sd_dart_exit_tracked_count()}');
@@ -177,7 +212,10 @@ Future<Duration> _loadTime(String modelPath) async {
     load
       ..reset()
       ..start();
-    final worker = await StableDiffusionImageWorker.start(_config(modelPath));
+    final worker = await StableDiffusionImageWorker.start(
+      _config(modelPath),
+      logLevel: LlamaLogging.level,
+    );
     load.stop();
     await worker.dispose();
   }
@@ -189,7 +227,12 @@ Future<Duration> _loadTime(String modelPath) async {
 /// going by how long one load of it just took.
 Future<void> _insideLoad(String modelPath) async {
   final loadTime = await _loadTime(modelPath);
-  unawaited(StableDiffusionImageWorker.start(_config(modelPath)));
+  unawaited(
+    StableDiffusionImageWorker.start(
+      _config(modelPath),
+      logLevel: LlamaLogging.level,
+    ),
+  );
   await Future<void>.delayed(loadTime ~/ 2);
 }
 

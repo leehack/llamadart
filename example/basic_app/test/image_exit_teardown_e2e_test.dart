@@ -27,9 +27,13 @@ void main() {
   // arguments (null skips it) and the exit code of a clean end.
   for (final (scenario, arguments, exitCode) in <(String, List<String?>, int)>[
     ('symbols', [model], 0),
+    ('quiet', [model], 0),
     ('quit-loaded', [model], 0),
     ('quit-generating', [model], 0),
     ('quit-loading', [model], 0),
+    ('quit-loaded-logging', [model], 0),
+    ('quit-generating-logging', [model], 0),
+    ('quit-loading-logging', [model], 0),
     ('throw-generating', [model], 255),
     ('throw-loading', [model], 255),
     ('kill-loading', [model], 0),
@@ -48,18 +52,28 @@ void main() {
       final seconds = <String>[];
       for (var run = 0; run < runs; run++) {
         final probe = await _runProbe([scenario, ...arguments.nonNulls]);
+        final reached = scenario.replaceFirst(RegExp(r'-logging$'), '');
         expect(
           probe.stdout,
-          contains('IMAGE_PROBE_REACHED $scenario'),
+          contains('IMAGE_PROBE_REACHED $reached'),
           reason: probe.stderr,
         );
+        if (scenario == 'quiet') {
+          // The recorder takes ggml's messages off stderr, and at the
+          // default levels nothing reads them.
+          expect(probe.stderr, isNot(contains('ggml_')));
+          expect(probe.stdout, isNot(contains('IMAGE_PROBE_LOG_RECORDS')));
+        }
+        if (scenario.endsWith('-logging')) {
+          expect(probe.stdout, contains('IMAGE_PROBE_LOG_RECORDS'));
+        }
         if (probe.stdout.contains('IMAGE_PROBE_BACKEND')) {
           expect(probe.stdout, contains('IMAGE_PROBE_BACKEND MTL'));
         }
         if (scenario == 'quit-both-loaded') {
           expect(probe.stdout, contains('IMAGE_PROBE_CHAT_BACKEND Metal'));
         }
-        if (scenario == 'quit-loaded') {
+        if (reached == 'quit-loaded') {
           expect(probe.stdout, contains('IMAGE_PROBE_TRACKED 1'));
         }
         if (scenario == 'dispose-quit') {

@@ -87,6 +87,15 @@ final class ImageGenerationSessionRequest {
 /// Memory the device can give an image model, and where the figure came from.
 typedef ImageGenerationMemoryBudget = ({int bytes, String source});
 
+/// What the memory of a device means for a load: a model that needs more than
+/// [refuse] cannot load, and one that needs more than [slower] loads with
+/// part of it outside the device's own memory, which makes generation slower.
+/// Either is `null` when it is not known or does not apply.
+typedef ImageGenerationMemoryLimits = ({
+  ImageGenerationMemoryBudget? refuse,
+  ImageGenerationMemoryBudget? slower,
+});
+
 /// Kind of device a model loads on, which decides whose memory bounds it.
 enum ImageGenerationComputeDevice {
   /// The CPU: host memory.
@@ -96,8 +105,9 @@ enum ImageGenerationComputeDevice {
   /// recommended working set.
   metal,
 
-  /// Any other GPU, such as Vulkan: its own device memory, which the runtime
-  /// does not report.
+  /// Any other GPU, such as Vulkan: its own device memory as the runtime
+  /// reports it, with host memory behind it for what does not fit, or host
+  /// memory alone when the GPU is an integrated one.
   otherGpu,
 }
 
@@ -141,15 +151,22 @@ abstract interface class ImageGenerationDriver {
   /// model file headers; fewer at the end of the file.
   Future<Uint8List> readFileRange(String path, int offset, int length);
 
-  /// Memory available to a new model on [device], or `null` when it is not
-  /// known.
-  ImageGenerationMemoryBudget? memoryBudget(
-    ImageGenerationComputeDevice device,
-  );
+  /// The memory limits of a new model on [device]. [runtimePicksGpu] says
+  /// that the load names no backend, so with several GPUs the runtime
+  /// computes on the one with the most free memory, not on the first.
+  /// Asking GPUs other than Metal is a native call that can block, so on
+  /// native platforms it runs in a short-lived isolate.
+  Future<ImageGenerationMemoryLimits> memoryLimits(
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  });
 
-  /// Loads a native context.
+  /// Loads a native context. On native platforms the runtime's messages
+  /// reach `LlamaLogger` from then on, at the levels `LlamaLogging` has when
+  /// this is called.
   ///
-  /// Throws `LlamaModelException` when the runtime rejects the files.
+  /// Throws `LlamaModelException` when the runtime rejects the files, with
+  /// the runtime's reason when it gives one.
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config);
 }
 

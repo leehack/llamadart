@@ -163,10 +163,10 @@ the tag explicitly, since `latest` skips GitHub prereleases.
 
 ```bash
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-1 \
+  --stable-diffusion-tag v0.2.0-2 \
   --dry-run
 python3 tool/native/sync_native_release_pins.py \
-  --stable-diffusion-tag v0.2.0-1
+  --stable-diffusion-tag v0.2.0-2
 python3 tool/native/sync_stable_diffusion_bindings.py
 ```
 
@@ -177,7 +177,8 @@ GitHub digest, and rewrites `stableDiffusionReleaseTag`,
 also rewrites the `llamadart_stable_diffusion_flutter` `Package.swift` tag and
 checksum from the manifest's `xcframework` artifact, after checking that
 artifact against its GitHub digest, and records the pin in the companion
-README and CHANGELOG. It
+README and CHANGELOG. It does not touch other docs: update the pin in
+`website/docs/platforms/support-matrix.md` by hand. It
 fails if a pinned bundle is no longer published or the tag moves backwards,
 and only notes new targets: a new target needs a `StableDiffusionBundleSpec`
 and a `stableDiffusionBundleForNativeBundle` mapping by hand.
@@ -192,7 +193,8 @@ and a `stableDiffusionBundleForNativeBundle` mapping by hand.
 That config leaves five `sd_dart_exit_` functions unbound and marks
 `sd_dart_progress_read` as the only leaf call. A new `sd_dart_` function the
 image worker calls also goes into `StableDiffusionCalls`, whose probe decides
-whether the runtime is supported
+whether the runtime is supported, or, when llamadart also has to run on a
+runtime without it, into one of its optional groups, which is `null` there
 ([exit teardown](https://github.com/leehack/llamadart/blob/main/doc/llama_cpp_exit_teardown.md#image-models)).
 
 After a sync, run

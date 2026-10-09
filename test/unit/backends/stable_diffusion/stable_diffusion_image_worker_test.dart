@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:test/test.dart';
 
@@ -49,6 +50,20 @@ List<(int, int)> _upstreamReports({
   for (var tile = 1; tile <= tiles; tile++) (tile, tiles),
 ];
 
+// What a start calls in the calling isolate with no log level: the log
+// recorder is registered, recording nothing, before the progress recorder.
+const _startCalls = [
+  'sd_dart_log_enable',
+  'sd_dart_log_set_level:5',
+  'sd_dart_progress_enable',
+];
+
+// A drain of the log that finds [messages] messages.
+List<String> _logReads(int messages) => [
+  for (var read = 0; read <= messages; read++) 'sd_dart_log_read',
+  'sd_dart_log_dropped',
+];
+
 const _loadCalls = [
   'sd_ctx_params_init',
   'sd_dart_new_sd_ctx',
@@ -84,27 +99,52 @@ void main() {
     late ManualProgressTimers timers;
     final workers = <StableDiffusionImageWorker>[];
 
-    Future<StableDiffusionImageWorker> start() async {
+    Future<StableDiffusionImageWorker> start({
+      LlamaLogLevel logLevel = LlamaLogLevel.none,
+    }) async {
       final worker = await StableDiffusionImageWorker.start(
         _config,
         resolveCalls: runtime.resolver,
         progressTimer: timers.start,
+        logLevel: logLevel,
       );
       workers.add(worker);
       return worker;
     }
 
     /// A started worker, with the calls of its load forgotten.
-    Future<StableDiffusionImageWorker> loaded() async {
-      final worker = await start();
+    Future<StableDiffusionImageWorker> loaded({
+      LlamaLogLevel logLevel = LlamaLogLevel.none,
+    }) async {
+      final worker = await start(logLevel: logLevel);
       await runtime.flush();
       runtime.clearCalls();
       return worker;
     }
 
+    /// The records the calling isolate's logger hands its handler from now
+    /// on, at [level].
+    List<(LlamaLogLevel, String)> records({
+      LlamaLogLevel level = LlamaLogLevel.debug,
+    }) {
+      final records = <(LlamaLogLevel, String)>[];
+      final logger = LlamaLogger.instance;
+      final previous = logger.level;
+      logger
+        ..setLevel(level)
+        ..setHandler((record) => records.add((record.level, record.message)));
+      addTearDown(() {
+        logger
+          ..setLevel(previous)
+          ..setHandler(null);
+      });
+      return records;
+    }
+
     setUp(() {
       runtime = FakeStableDiffusionRuntime();
       timers = ManualProgressTimers();
+      StableDiffusionImageWorker.debugResetLogPositionForTesting();
     });
 
     tearDown(() async {
@@ -120,9 +160,16 @@ void main() {
       final worker = await start();
       await runtime.flush();
 
-      expect(runtime.calls('caller'), ['sd_dart_progress_enable']);
+      expect(runtime.calls('caller'), _startCalls);
       expect(runtime.calls('worker'), _loadCalls);
       expect(worker.modelVersion, 'SD 2.x');
+    });
+
+    test('a load writes its files into the parameters after the runtime '
+        'initialized them', () async {
+      await start();
+
+      expect(runtime.loadedModelPath, '/models/sdxs.gguf');
     });
 
     test('a generation marks its start, reads the reports after the reply '
@@ -448,17 +495,67 @@ void main() {
       expect(runtime.calls('caller'), isEmpty);
     });
 
-    test('a failed load creates nothing to free', () async {
+    test('a failed load creates nothing to free, and its error carries the '
+        'reason the runtime logged, read right after the load, with the '
+        'file named by role', () async {
       runtime.rejectLoad = true;
 
-      await expectLater(start(), throwsA(isA<LlamaModelException>()));
+      await expectLater(
+        start(),
+        throwsA(
+          isA<LlamaModelException>()
+              .having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  startsWith(
+                    'stable-diffusion.cpp could not load the image model '
+                    'files. The runtime reported: "model_loader.cpp:1061 - '
+                    "cannot inspect model source '<checkpoint file>': No "
+                    'such file or directory".',
+                  ),
+                  isNot(contains('Check that they form a model')),
+                  isNot(contains('no reason')),
+                ),
+              )
+              .having((error) => error.details, 'details', 'files: checkpoint')
+              .having(
+                (error) => '$error',
+                'toString',
+                isNot(contains('/models')),
+              ),
+        ),
+      );
       await runtime.flush();
 
-      expect(runtime.calls('caller'), ['sd_dart_progress_enable']);
+      expect(runtime.calls('caller'), _startCalls);
       expect(runtime.calls('worker'), [
         'sd_ctx_params_init',
         'sd_dart_new_sd_ctx',
+        'sd_dart_last_error',
       ]);
+    });
+
+    test('a failed load for which the runtime logged no error says so and '
+        'keeps the general advice', () async {
+      runtime
+        ..rejectLoad = true
+        ..quietReject = true;
+
+      await expectLater(
+        start(),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('Check that they form a model the runtime supports'),
+              endsWith('The runtime logged no reason.'),
+              isNot(contains('reported:')),
+            ),
+          ),
+        ),
+      );
     });
 
     test('a model that cannot generate images is freed through the '
@@ -505,7 +602,7 @@ void main() {
       runtime.missingInWorker = true;
       await expectLater(start(), throwsA(isA<LlamaUnsupportedException>()));
       await runtime.flush();
-      expect(runtime.calls('caller'), ['sd_dart_progress_enable']);
+      expect(runtime.calls('caller'), _startCalls);
       expect(runtime.calls('worker'), isEmpty);
     });
 
@@ -552,9 +649,327 @@ void main() {
       ]);
       expect(runtime.calls('caller'), ['sd_dart_progress_read:mark']);
     });
+
+    group('with a log level', () {
+      test('the recorder is set to the level before the worker starts, and '
+          'the worker reads what the load recorded after its calls on the '
+          'context', () async {
+        final logged = records();
+
+        await start(logLevel: LlamaLogLevel.info);
+        await runtime.flush();
+
+        expect(runtime.calls('caller'), [
+          'sd_dart_log_enable',
+          'sd_dart_log_set_level:2',
+          'sd_dart_progress_enable',
+        ]);
+        expect(runtime.calls('worker'), [..._loadCalls, ..._logReads(1)]);
+        expect(logged, [
+          (
+            LlamaLogLevel.info,
+            'stable_diffusion: stable-diffusion.cpp:262 - loading model from '
+                "'<checkpoint file>'",
+          ),
+        ]);
+      });
+
+      test('each level sets its own sd_log_level_t', () async {
+        for (final (level, threshold) in [
+          (LlamaLogLevel.debug, 0),
+          (LlamaLogLevel.warn, 3),
+          (LlamaLogLevel.error, 4),
+        ]) {
+          final worker = await loaded(logLevel: level);
+          await worker.dispose();
+          workers.remove(worker);
+          runtime.clearCalls();
+          await start(logLevel: level);
+          await runtime.flush();
+
+          expect(
+            runtime.calls('caller')[1],
+            'sd_dart_log_set_level:$threshold',
+          );
+        }
+      });
+
+      test('a generation is followed by a read of what it recorded, after '
+          'its images are freed', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.debug);
+        final logged = records();
+
+        await worker.generate(_request(), (_, _) {});
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), [..._generateCalls, ..._logReads(2)]);
+        expect(logged, [
+          (
+            LlamaLogLevel.debug,
+            'stable_diffusion: stable-diffusion.cpp:3120 - sampling',
+          ),
+          (
+            LlamaLogLevel.info,
+            'stable_diffusion: stable-diffusion.cpp:3391 - generating',
+          ),
+        ]);
+      });
+
+      test('the runtime records nothing below the level, and the logger of '
+          'the calling isolate applies its own level again', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.info);
+        final logged = records(level: LlamaLogLevel.warn);
+        runtime.log(3, utf8.encode('ggml - a warning'));
+
+        await worker.generate(_request(), (_, _) {});
+        await runtime.flush();
+
+        // The warning and "generating"; "sampling" was not recorded.
+        expect(runtime.calls('worker'), [..._generateCalls, ..._logReads(2)]);
+        expect(logged, [
+          (LlamaLogLevel.warn, 'stable_diffusion: ggml - a warning'),
+        ]);
+      });
+
+      test('dispose reads what was recorded since the last read, after the '
+          'context is freed', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.info);
+        final logged = records();
+        runtime.log(4, utf8.encode('ggml - late error'));
+
+        await worker.dispose();
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), ['sd_dart_exit_free', ..._logReads(1)]);
+        expect(logged, [
+          (LlamaLogLevel.error, 'stable_diffusion: ggml - late error'),
+        ]);
+      });
+
+      test('a second worker continues where the first one stopped '
+          'reading', () async {
+        final logged = records();
+        final first = await start(logLevel: LlamaLogLevel.info);
+        await first.generate(_request(), (_, _) {});
+        await first.dispose();
+        expect(logged, hasLength(2));
+        logged.clear();
+        runtime.clearCalls();
+
+        await start(logLevel: LlamaLogLevel.info);
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), [..._loadCalls, ..._logReads(1)]);
+        expect(logged.single.$2, contains('loading model from'));
+      });
+
+      test('messages the runtime dropped are reported in one warning, after '
+          'the ones it kept', () async {
+        runtime.close();
+        runtime = FakeStableDiffusionRuntime(logHistory: 2);
+        final worker = await loaded(logLevel: LlamaLogLevel.info);
+        final logged = records();
+        for (var i = 1; i <= 5; i++) {
+          runtime.log(2, utf8.encode('message $i'));
+        }
+
+        await worker.generate(_request(), (_, _) {});
+
+        // Six were recorded since the last read, and the newest two kept.
+        expect(logged.take(2), [
+          (LlamaLogLevel.info, 'stable_diffusion: message 5'),
+          (
+            LlamaLogLevel.info,
+            'stable_diffusion: stable-diffusion.cpp:3391 - generating',
+          ),
+        ]);
+        expect(logged, hasLength(3));
+        expect(logged.last.$1, LlamaLogLevel.warn);
+        expect(
+          logged.last.$2,
+          startsWith('The stable_diffusion runtime dropped 4 log messages'),
+        );
+
+        logged.clear();
+        await worker.generate(_request(), (_, _) {});
+        expect(logged, hasLength(1));
+      });
+
+      test('messages dropped with nothing new to read are reported once, '
+          'not again by the next read', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.error);
+        final logged = records();
+        runtime.dropUnrecorded(3);
+
+        await worker.generate(_request(), (_, _) {});
+        await worker.generate(_request(), (_, _) {});
+        await runtime.flush();
+
+        // Nothing is recorded at the error level, so the position stays.
+        expect(runtime.calls('worker'), [
+          ..._generateCalls,
+          ..._logReads(0),
+          ..._generateCalls,
+          ..._logReads(0),
+        ]);
+        expect(logged, hasLength(1));
+        expect(
+          logged.single.$2,
+          startsWith('The stable_diffusion runtime dropped 3 log messages'),
+        );
+      });
+
+      test('text that is not valid UTF-8 is delivered, not thrown', () async {
+        final worker = await loaded(logLevel: LlamaLogLevel.info);
+        final logged = records();
+        runtime.log(2, [0x62, 0x61, 0x64, 0xff, 0x21]);
+
+        await worker.generate(_request(), (_, _) {});
+
+        expect(logged.first, (
+          LlamaLogLevel.info,
+          'stable_diffusion: bad\u{fffd}!',
+        ));
+      });
+
+      test('a failed load forwards what the runtime logged before it '
+          'fails', () async {
+        runtime.rejectLoad = true;
+        final logged = records();
+
+        await expectLater(
+          start(logLevel: LlamaLogLevel.error),
+          throwsA(isA<LlamaModelException>()),
+        );
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), [
+          'sd_ctx_params_init',
+          'sd_dart_new_sd_ctx',
+          'sd_dart_last_error',
+          ..._logReads(1),
+        ]);
+        expect(logged, [
+          (
+            LlamaLogLevel.error,
+            'stable_diffusion: model_loader.cpp:1061 - cannot inspect model '
+                "source '<checkpoint file>': No such file or directory",
+          ),
+        ]);
+      });
+
+      test('a model that cannot generate images is freed before the log is '
+          'read', () async {
+        runtime.videoOnly = true;
+
+        await expectLater(
+          start(logLevel: LlamaLogLevel.info),
+          throwsA(isA<LlamaModelException>()),
+        );
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), [
+          'sd_ctx_params_init',
+          'sd_dart_new_sd_ctx',
+          'sd_ctx_supports_image_generation+held',
+          'sd_dart_exit_free',
+          ..._logReads(1),
+        ]);
+      });
+    });
+
+    group('on a runtime older than the log, v0.2.0-1', () {
+      setUp(() => runtime.olderRelease = true);
+
+      test('a worker loads, generates and disposes without any log call, '
+          'whatever the log level', () async {
+        final logged = records();
+
+        final worker = await start(logLevel: LlamaLogLevel.debug);
+        final images = await worker.generate(_request(), (_, _) {});
+        await worker.dispose();
+        await runtime.flush();
+
+        expect(images, hasLength(1));
+        expect(runtime.calls('caller'), [
+          'sd_dart_progress_enable',
+          'sd_dart_progress_read:mark',
+          'sd_dart_progress_read',
+        ]);
+        expect(runtime.calls('worker'), [
+          ..._loadCalls,
+          ..._generateCalls,
+          'sd_dart_exit_free',
+        ]);
+        expect(logged, isEmpty);
+      });
+
+      test('a failed load names the roles and the release that reports the '
+          'reason', () async {
+        runtime.rejectLoad = true;
+
+        await expectLater(
+          start(logLevel: LlamaLogLevel.debug),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('Check that they form a model the runtime supports'),
+                endsWith(
+                  'This stable_diffusion runtime does not report its reason: '
+                  'that needs stable-diffusion-native v0.2.0-2 or later.',
+                ),
+              ),
+            ),
+          ),
+        );
+        await runtime.flush();
+
+        expect(runtime.calls('worker'), [
+          'sd_ctx_params_init',
+          'sd_dart_new_sd_ctx',
+        ]);
+      });
+    });
   });
 
   group('stableDiffusionModelLoadFailure', () {
+    test('puts the runtime\'s reason first and keeps the roles a split '
+        'checkpoint lacks', () {
+      final error = stableDiffusionModelLoadFailure(
+        {'diffusionModel': '/m/sdxs.gguf'},
+        reason: "get sd version from file failed: ''",
+        runtimeReportsReason: true,
+      );
+
+      expect(
+        error.message,
+        allOf(
+          startsWith(
+            'stable-diffusion.cpp could not load the image model files. The '
+            'runtime reported: "get sd version from file failed: \'\'". '
+            'Standalone diffusion weights',
+          ),
+          contains('need a vae or taesd file'),
+          contains('need their text encoders'),
+          isNot(contains('Check that they form a model')),
+          isNot(contains('no reason')),
+          isNot(contains('does not report')),
+        ),
+      );
+      expect(error.details, 'files: diffusionModel');
+    });
+
+    test('says that the runtime logged no reason when it could have', () {
+      final error = stableDiffusionModelLoadFailure({
+        'model': '/m/sd_turbo.gguf',
+      }, runtimeReportsReason: true);
+
+      expect(error.message, contains('enough memory'));
+      expect(error.message, endsWith('The runtime logged no reason.'));
+    });
+
     test('names a missing VAE when a diffusionModel has none', () {
       final error = stableDiffusionModelLoadFailure({
         'diffusionModel': '/m/sd3.5_medium-Q8_0.gguf',

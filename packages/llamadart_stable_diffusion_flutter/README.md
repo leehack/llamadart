@@ -28,7 +28,7 @@ macOS builds; `llamadart_native_runtimes` still decides the other platforms.
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `ImageGenerationEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0-1`.
+The Apple SwiftPM manifest pins `leehack/stable-diffusion-native@v0.2.0-2`.
 
 Apps bound for the App Store should use this package: an Apple privacy
 manifest for the stable-diffusion.cpp runtime ships inside this XCFramework,

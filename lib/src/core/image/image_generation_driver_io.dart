@@ -5,21 +5,56 @@ import '../../backends/stable_diffusion/stable_diffusion_image_worker.dart';
 import '../../backends/stable_diffusion/stable_diffusion_memory.dart';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
+import '../llama_logging.dart';
+import '../models/config/log_level.dart';
 import 'image_generation_driver.dart';
 
+/// Probes the runtime, recording its log at a level.
+typedef ImageRuntimeProbe =
+    StableDiffusionRuntimeStatus Function({LlamaLogLevel logLevel});
+
+/// Reads the memory of every GPU, recording the runtime's log at a level.
+typedef ImageGpuMemoryReader =
+    List<StableDiffusionGpuMemory>? Function({LlamaLogLevel logLevel});
+
 /// Creates the driver for the bundled stable_diffusion runtime.
-ImageGenerationDriver createImageGenerationDriver() =>
-    const _NativeImageGenerationDriver();
+///
+/// [probe] and [readGpuMemory] run in a short-lived isolate, so they have to
+/// be top-level or static functions; tests replace them.
+ImageGenerationDriver createImageGenerationDriver({
+  ImageRuntimeProbe probe = probeStableDiffusionRuntime,
+  ImageGpuMemoryReader readGpuMemory = readStableDiffusionGpuMemory,
+}) => _NativeImageGenerationDriver(probe, readGpuMemory);
+
+/// The level the runtime records its messages at. They reach the app
+/// through `LlamaLogger`, so one has to pass both [LlamaLogging.nativeLevel]
+/// and [LlamaLogging.level]: the runtime records from the stricter of the
+/// two, and nothing when either is [LlamaLogLevel.none].
+LlamaLogLevel imageRuntimeLogLevel() {
+  final dart = LlamaLogging.level;
+  final native = LlamaLogging.nativeLevel;
+  if (dart == LlamaLogLevel.none || native == LlamaLogLevel.none) {
+    return LlamaLogLevel.none;
+  }
+  return dart.index > native.index ? dart : native;
+}
 
 class _NativeImageGenerationDriver implements ImageGenerationDriver {
-  const _NativeImageGenerationDriver();
+  const _NativeImageGenerationDriver(this._probe, this._readGpuMemory);
+
+  final ImageRuntimeProbe _probe;
+  final ImageGpuMemoryReader _readGpuMemory;
 
   @override
-  StableDiffusionRuntimeStatus probe() => probeStableDiffusionRuntime();
+  StableDiffusionRuntimeStatus probe() =>
+      _probe(logLevel: imageRuntimeLogLevel());
 
   @override
-  Future<StableDiffusionRuntimeStatus> probeInBackground() =>
-      Isolate.run(probeStableDiffusionRuntime);
+  Future<StableDiffusionRuntimeStatus> probeInBackground() {
+    final probe = _probe;
+    final logLevel = imageRuntimeLogLevel();
+    return Isolate.run(() => probe(logLevel: logLevel));
+  }
 
   @override
   int? fileSize(String path) => stableDiffusionFileSize(path);
@@ -29,11 +64,31 @@ class _NativeImageGenerationDriver implements ImageGenerationDriver {
       readStableDiffusionFileRange(path, offset, length);
 
   @override
-  ImageGenerationMemoryBudget? memoryBudget(
-    ImageGenerationComputeDevice device,
-  ) => readStableDiffusionMemoryBudget(device: device);
+  Future<ImageGenerationMemoryLimits> memoryLimits(
+    ImageGenerationComputeDevice device, {
+    required bool runtimePicksGpu,
+  }) async {
+    if (device != ImageGenerationComputeDevice.otherGpu) {
+      return (
+        refuse: readStableDiffusionMemoryBudget(device: device),
+        slower: null,
+      );
+    }
+    final readGpuMemory = _readGpuMemory;
+    final logLevel = imageRuntimeLogLevel();
+    return stableDiffusionGpuMemoryLimits(
+      // The queries are native calls that can block: the first one in a
+      // process initializes the GPU backend.
+      await Isolate.run(() => readGpuMemory(logLevel: logLevel)),
+      runtimePicksGpu: runtimePicksGpu,
+      hostBudget: readStableDiffusionMemoryBudget,
+    );
+  }
 
   @override
   Future<ImageGenerationSession> start(ImageGenerationSessionConfig config) =>
-      StableDiffusionImageWorker.start(config);
+      StableDiffusionImageWorker.start(
+        config,
+        logLevel: imageRuntimeLogLevel(),
+      );
 }

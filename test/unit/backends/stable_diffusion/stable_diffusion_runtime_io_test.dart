@@ -8,6 +8,7 @@ import 'package:test/test.dart';
 
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_runtime_io.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 
 const _dotProductCpuInfo =
     'Features\t: fp asimd atomics fphp asimdhp asimddp\n';
@@ -25,6 +26,24 @@ void main() {
       expect(status.version, 'v-test');
       expect(status.commit, 'c0ffee');
       expect(status.devices.map((device) => device.name), ['CPU', 'MTL0']);
+    });
+
+    test('records the log at the given level before the device list, which '
+        'initializes the GPU backend and logs', () {
+      for (final level in [LlamaLogLevel.none, LlamaLogLevel.info]) {
+        final api = _FakeApi();
+
+        probeStableDiffusionRuntime(
+          abi: Abi.macosArm64,
+          api: api,
+          logLevel: level,
+        );
+
+        expect(api.order, ['recordLog ${level.name}', 'listDevices']);
+      }
+      final api = _FakeApi();
+      probeStableDiffusionRuntime(abi: Abi.macosArm64, api: api);
+      expect(api.order.first, 'recordLog none');
     });
 
     test('a runtime without the sd_dart_ functions is unavailable, and the '
@@ -474,6 +493,7 @@ final class _FakeApi implements StableDiffusionNativeApi {
   final ArgumentError? error;
   final bool wrapperCalls;
   int calls = 0;
+  final List<String> order = [];
 
   T _call<T>(T value) {
     calls++;
@@ -491,7 +511,16 @@ final class _FakeApi implements StableDiffusionNativeApi {
   String commit() => _call('c0ffee');
 
   @override
-  String listDevices() => _call(devices);
+  void recordLog(LlamaLogLevel level) {
+    order.add('recordLog ${level.name}');
+    _call(null);
+  }
+
+  @override
+  String listDevices() {
+    order.add('listDevices');
+    return _call(devices);
+  }
 
   @override
   bool exportsWrapperCalls() => _call(wrapperCalls);

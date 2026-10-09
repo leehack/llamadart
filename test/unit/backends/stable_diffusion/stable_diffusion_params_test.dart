@@ -60,6 +60,32 @@ void main() {
       });
     });
 
+    // The memory check of a Vulkan GPU admits a model larger than the GPU
+    // because the runtime's automatic fit keeps the rest in host memory.
+    // The fit is off when auto_fit is false or a params backend is named.
+    test('leaves the automatic fit as the runtime initialized it, for a '
+        'named and an unnamed backend', () {
+      for (final backend in [null, 'gpu', 'cpu']) {
+        using((arena) {
+          final params = arena<sd.sd_ctx_params_t>();
+          params.ref.auto_fit = true;
+          applyStableDiffusionContextParams(
+            params,
+            ImageGenerationSessionConfig(
+              files: const {'model': '/m/sdxs.gguf'},
+              backend: backend,
+              threads: 0,
+            ),
+            arena,
+          );
+
+          expect(params.ref.auto_fit, isTrue, reason: '$backend');
+          expect(params.ref.params_backend, nullptr, reason: '$backend');
+          expect(params.ref.max_vram, nullptr, reason: '$backend');
+        });
+      }
+    });
+
     test('leaves unset roles, backend and threads at their defaults', () {
       using((arena) {
         final params = arena<sd.sd_ctx_params_t>();

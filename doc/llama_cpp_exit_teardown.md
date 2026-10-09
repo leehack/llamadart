@@ -166,6 +166,13 @@ stand-in:
   `IsolateShutdownReleases` hold.
 - `sd_dart_progress_enable` and `sd_dart_progress_read`: see "Image
   progress".
+- `sd_dart_log_enable`, `sd_dart_log_set_level`, `sd_dart_log_read`,
+  `sd_dart_log_dropped` and `sd_dart_last_error` (`v0.2.0-2`): see "Image
+  log".
+- `sd_dart_gpu_device_count` and `sd_dart_gpu_device_memory` (`v0.2.0-2`)
+  read the memory of every GPU for the memory check of Vulkan GPUs. They run
+  in a short-lived isolate of their own (`readStableDiffusionGpuMemory`), not
+  in a worker.
 - Upstream calls that return at once: `sd_ctx_params_init`,
   `sd_ctx_supports_image_generation` and `sd_get_model_version_name` right
   after the load, `sd_img_gen_params_init` and `free_sd_images`.
@@ -185,6 +192,16 @@ runtime: the hook downloads the pinned archives by checksum, this runtime has
 no tag or path override, and the build rejects an Apple companion whose pin
 differs from the core pin.
 
+The functions `v0.2.0-2` added are optional: `StableDiffusionCalls.log` binds
+the five log functions when the runtime exports all of them, and
+`gpu` its two device queries, and each is `null` otherwise
+(`StableDiffusionCalls.optionalNativeRelease`). On such a runtime image
+generation works as it did on `v0.2.0-1`: no log call is made, a failed load
+names the missing file roles and the release that reports reasons, and a
+Vulkan GPU is not memory-checked. The same holds for the reason above: no
+supported configuration reaches it, so the fallback is tested on the
+stand-in and was run once by hand against the `v0.2.0-1` archive.
+
 `sd_dart_exit_teardown`, `sd_dart_exit_call_begin`, `sd_dart_exit_call_end`,
 `sd_dart_exit_track` and `sd_dart_exit_untrack` are excluded from the
 bindings (`ffigen_stable_diffusion.yaml`): none is safe from an isolate that
@@ -203,6 +220,17 @@ runtime's default waits apply.
 - It waits up to two seconds for an `sd_dart_exit_free` in flight, and gives
   a thread 250 ms after its last such call, which covers the short upstream
   calls after a load.
+- A device query (`sd_dart_gpu_device_count`, `sd_dart_gpu_device_memory`)
+  in flight is waited for like a load, up to 15 seconds, also when nothing
+  is tracked: it reads ggml's device registry, which C `exit` destroys.
+  llamadart makes the queries only for Vulkan GPUs, on Linux and Windows,
+  where teardown runs only when a
+  native host calls it. The probe's `sd_list_devices`, which initializes the
+  devices first, is upstream's function and is not waited for.
+- The log reads (`sd_dart_log_read`, `sd_dart_log_dropped`,
+  `sd_dart_last_error`) are not calls in flight and need no wait: they touch
+  no context and stay valid during and after teardown. Each can wait up to
+  100 ms for a thread that is copying a message.
 - The two runtimes wait one after the other: with a llama.cpp call and an
   image generation both in flight an exit can take about 17.5 seconds.
 
@@ -269,21 +297,81 @@ the reports in a ring, and Dart reads them:
   generation ends, so it lands at most one poll interval after the runtime
   started, whether or not a report arrives.
 
+### Image log
+
+stable-diffusion.cpp logs through a callback on whichever thread logs, with
+a text that is only valid during the call, and returns only `NULL` from a
+load that fails. From `v0.2.0-2` the runtime copies each message of
+stable-diffusion.cpp and ggml into a 256 KiB buffer of its own, and Dart
+reads them:
+
+- `sd_dart_log_enable` and `sd_dart_log_set_level` run before anything that
+  logs: in the runtime probe before `sd_list_devices`, in the isolate that
+  asks a GPU for its memory before the query, and in
+  `StableDiffusionImageWorker.start` on the calling isolate before the worker
+  is spawned. The first registration is not synchronized, and none of the
+  three runs beside a load, a generation or a device query of the same
+  isolate. The recorder is registered at every log level, because
+  `sd_dart_last_error` is empty without it; at `LlamaLogLevel.none` the level
+  is `SD_LOG_ERROR + 1`, which records nothing. Once it is registered, ggml's
+  messages no longer go to stderr.
+- The level is the stricter of `LlamaLogging.level` and
+  `LlamaLogging.nativeLevel` when the load starts
+  (`imageRuntimeLogLevel`), since a message reaches the app through
+  `LlamaLogger`. It is the process's: the last load sets it.
+- The worker isolate reads the log, never the calling isolate: a read can
+  wait 100 ms. It cannot read while it is inside a load or a generation, so
+  it reads after each one and when it is disposed, up to 4096 messages a
+  time, and sends them to the calling isolate before the reply of that
+  operation. There is no timer, so an idle worker costs nothing, and at
+  `LlamaLogLevel.none` nothing is read. Reading the 27 messages of an SDXS
+  load at `info` took 84 microseconds on an M4 Max, and a read that finds
+  nothing 2 to 4.
+- After a load the worker first makes its calls on the context
+  (`sd_ctx_supports_image_generation`, `sd_get_model_version_name`), which
+  have to fall into teardown's 250 ms, and reads the log afterwards. After a
+  failed load it reads `sd_dart_last_error` first, with no asynchronous gap,
+  because the errors belong to the thread until its next load.
+- The calling isolate keeps the position the log was read to and gives it to
+  each worker with every command, so a second engine does not log the first
+  one's messages again. Two isolates that load image models each read the
+  whole log.
+- `sd_dart_log_dropped` counts the messages that left the buffer unread. Its
+  increase since the last read is logged as one warning.
+- Texts are decoded leniently and file paths are replaced by roles
+  (`stableDiffusionPathRedactor`), in forwarded records and in the reason of
+  a failed load.
+
+A C `exit()` while an isolate executes Dart code, rather than waiting in its
+event loop or inside a native call, aborts in the Dart VM
+(`runtime/vm/handles_impl.h: unreachable code`) when a model is loaded: with
+an image model idle on Metal and a second isolate that only decoded UTF-8 in
+a loop, 5 of 5 exits aborted, and none did without the model, where the
+exit takes no time. So the rows of the table above hold for isolates that
+are idle or inside a native call, and what reads the log during an exit can
+only be shown from native code, as the tests of `stable-diffusion-native` do.
+
 ### Tests
 
 - `test/unit/backends/stable_diffusion/stable_diffusion_calls_test.dart`: the
-  lookup requests the six names and resolves nothing when one is missing;
-  each member calls the function exported under its own name; the generated
-  bindings leave out the five unbound functions and mark only
-  `sd_dart_progress_read` as a leaf call.
+  lookup requests the six required names and resolves nothing when one is
+  missing; the log and the device memory query are absent, each on its own,
+  when a name of theirs is missing; each member calls the function exported
+  under its own name; the generated bindings leave out the five unbound
+  functions and mark only `sd_dart_progress_read` as a leaf call.
 - `test/unit/backends/stable_diffusion/stable_diffusion_image_worker_test.dart`:
   the worker's two isolates on `test/support/fake_stable_diffusion_runtime.dart`,
   with a progress timer the test fires by hand. The whole call sequence of
   each isolate is compared for a load, a generation, a batch of three, a
   cancel before the runtime starts and one during a generation, dispose, a
   failed load, a model that cannot generate images and a runtime without the
-  functions.
+  functions; with a log level, for the reads after a load, a generation, a
+  failed load and dispose; and on a stand-in for `v0.2.0-1`, where no log
+  function is called.
+- `test/unit/backends/stable_diffusion/stable_diffusion_log_test.dart`: the
+  level mapping, lenient decoding, a drain's reads, position and dropped
+  count, and the reason of a failed load without paths.
 - The root package does not bundle the runtime, so no default-CI test
   resolves the real exports. `image-exit-teardown` in
   `doc/testing_matrix.md` does, locally on Metal, along with the process
-  exits.
+  exits, three of them with the log forwarded at debug level.
