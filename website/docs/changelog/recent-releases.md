@@ -116,6 +116,19 @@ For canonical full release notes, use:
   decodes such an image in several batches, and now logs a warning that this
   can reduce accuracy
   ([#958](https://github.com/leehack/llamadart/issues/958)).
+- **Behavior change:** `all` in `llamadart_native_runtimes` now includes the
+  opt-in `stable_diffusion` image runtime, so `llamadart_native_runtimes: all`
+  ships GGUF, `.litertlm` and image generation together. An app that already
+  sets `all`, or a list containing it, downloads 14.7 to 15.6 MB more per
+  target, or 25.8 to 27.8 MB for the Vulkan build Linux and Windows use by
+  default, and grows by about 37 MB as measured on macOS arm64 and Android
+  arm64. android-x64 and Windows arm64 publish no image runtime and skip it
+  with a warning. A Flutter iOS or macOS app skips it with a build warning
+  unless `llamadart_stable_diffusion_flutter` is a dependency; a pub
+  workspace member, whose user-defines live in the workspace root pubspec, is
+  not recognised as one and bundles it. Leaving the key unset, or setting
+  `both`, still bundles only `llama_cpp` and `litert_lm`
+  ([#856](https://github.com/leehack/llamadart/issues/856)).
 
 ## 0.11.1
 

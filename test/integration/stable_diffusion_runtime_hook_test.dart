@@ -15,10 +15,14 @@ import 'package:test/test.dart';
 void main() {
   test('opting in bundles a runtime that loads and lists devices', () async {
     final status = await _probeConsumer(
-      runtimesDefine: const ['llama_cpp', 'stable_diffusion'],
+      runtimes: '[llama_cpp, stable_diffusion]',
     );
 
     expect(status['available'], isTrue, reason: '$status');
+    expect(
+      status['hookLog'],
+      contains('Selected native runtimes: llama_cpp, stable_diffusion.'),
+    );
     expect(
       status['version'],
       isA<String>().having((v) => v, 'version', isNotEmpty),
@@ -32,30 +36,52 @@ void main() {
     expect(devices, contains(startsWith('MTL')));
   });
 
-  test('without opting in the runtime is reported as not bundled', () async {
-    final status = await _probeConsumer(runtimesDefine: null);
+  test('all bundles it beside the default runtimes', () async {
+    for (final runtimes in const ['all', '{runtimes: [all]}']) {
+      final status = await _probeConsumer(runtimes: runtimes);
 
-    expect(status['available'], isFalse);
-    expect(
-      status['reason'],
-      contains('stable_diffusion runtime is not bundled'),
-    );
+      expect(status['available'], isTrue, reason: '$runtimes $status');
+      expect(
+        status['hookLog'],
+        contains(
+          'Selected native runtimes: llama_cpp, litert_lm, stable_diffusion.',
+        ),
+        reason: runtimes,
+      );
+    }
+  });
+
+  test('without opting in the runtime is reported as not bundled', () async {
+    for (final runtimes in const [null, 'both']) {
+      final status = await _probeConsumer(runtimes: runtimes);
+
+      expect(status['available'], isFalse, reason: '$runtimes');
+      expect(
+        status['reason'],
+        contains('stable_diffusion runtime is not bundled'),
+        reason: '$runtimes',
+      );
+      expect(
+        status['hookLog'],
+        contains('Selected native runtimes: llama_cpp, litert_lm.'),
+        reason: '$runtimes',
+      );
+    }
   });
 }
 
-Future<Map<String, Object?>> _probeConsumer({
-  required List<String>? runtimesDefine,
-}) async {
+/// The probe's status for a consumer whose `llamadart_native_runtimes` is the
+/// YAML value [runtimes], plus the llamadart hook's output under `hookLog`.
+Future<Map<String, Object?>> _probeConsumer({required String? runtimes}) async {
   final consumer = await Directory.systemTemp.createTemp('llamadart-sd-hook-');
   addTearDown(() => consumer.delete(recursive: true));
-  final hooks = runtimesDefine == null
+  final hooks = runtimes == null
       ? ''
       : '''
 hooks:
   user_defines:
     llamadart:
-      llamadart_native_runtimes:
-        runtimes: [${runtimesDefine.join(', ')}]
+      llamadart_native_runtimes: $runtimes
 ''';
   await File(path.join(consumer.path, 'pubspec.yaml')).writeAsString('''
 name: llamadart_sd_hook_consumer
@@ -95,7 +121,17 @@ void main() {
   final line = LineSplitter.split(
     output,
   ).singleWhere((line) => line.startsWith('SD_PROBE '));
-  return jsonDecode(line.substring('SD_PROBE '.length)) as Map<String, Object?>;
+  final hookLog =
+      Directory(
+            path.join(consumer.path, '.dart_tool', 'hooks_runner', 'llamadart'),
+          )
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((file) => path.basename(file.path) == 'stdout.txt');
+  return {
+    ...jsonDecode(line.substring('SD_PROBE '.length)) as Map<String, Object?>,
+    'hookLog': hookLog.map((file) => file.readAsStringSync()).join(),
+  };
 }
 
 Future<String> _expectSuccess(

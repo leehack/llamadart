@@ -147,7 +147,7 @@ void main() {
     final userDefines = PackageUserDefines(
       workspacePubspec: PackageUserDefinesSource(
         defines: {
-          'llamadart_native_runtimes': ['all'],
+          'llamadart_native_runtimes': ['both'],
           'llamadart_native_backends': {
             'platforms': {
               'windows-x64': ['vulkan'],
@@ -733,6 +733,8 @@ Future<void> _writeBundleLibraries(
 
 const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
+  'dxcompiler.dll',
+  'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libwebgpu_dawn.dll',

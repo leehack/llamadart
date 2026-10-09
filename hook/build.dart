@@ -184,6 +184,33 @@ void main(List<String> args) async {
         !selectedRuntimes.contains(nativeRuntimeStableDiffusion)) {
       selectedRuntimes = [...selectedRuntimes, nativeRuntimeStableDiffusion];
     }
+    if (appleCompanions != null &&
+        !stableDiffusionCompanion &&
+        selectedRuntimes.contains(nativeRuntimeStableDiffusion) &&
+        !nativeRuntimeExplicitlySelectedForBundle(
+          bundle: spec.bundle,
+          rawUserConfig: rawNativeRuntimeConfig,
+          runtime: nativeRuntimeStableDiffusion,
+        )) {
+      // App Store Connect rejects the iOS framework Flutter wraps the
+      // hook-bundled library in, and only the companion's XCFramework carries
+      // the privacy manifest, so `all` alone must not start shipping it.
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => runtime != nativeRuntimeStableDiffusion)
+          .toList(growable: false);
+      const skipped =
+          'stable_diffusion is only implied by `all` in '
+          '$nativeRuntimesUserDefineKey, so this Flutter iOS/macOS build '
+          'leaves the image runtime out: $_stableDiffusionFlutterPackageName '
+          'is not a dependency. Add that package to link the runtime through '
+          'Swift Package Manager, or name stable_diffusion to bundle it '
+          'through the hook.';
+      log.warning('$skipped (${spec.bundle})');
+      // Hook log records stay in the hooks_runner stdout.txt; Flutter relays
+      // hook stderr into the Xcode build, where a `warning:` line becomes an
+      // Xcode build warning.
+      stderr.writeln('warning: llamadart: $skipped');
+    }
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
         liteRtLmBundleSpec == null) {
@@ -203,8 +230,7 @@ void main(List<String> args) async {
           .where((runtime) => runtime != nativeRuntimeLiteRtLm)
           .toList(growable: false);
       log.warning(
-        'LiteRT-LM runtime is not available for ${spec.bundle}; using '
-        'available runtime families: ${selectedRuntimes.join(', ')}.',
+        'LiteRT-LM runtime is not available for ${spec.bundle}; skipping it.',
       );
     }
     final stableDiffusionBundleSpec =

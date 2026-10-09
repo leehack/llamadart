@@ -68,8 +68,10 @@ targets. It also opts into the experimental `stable_diffusion` runtime for the
 image screen, which adds about 37 MB per iOS, macOS and Android arm64 target
 and 38 to 72 MB on Linux and Windows (CPU or Vulkan build; Vulkan by default),
 and declares `llamadart_stable_diffusion_flutter` so iOS and macOS link it
-through SwiftPM. Android x64 has no `stable_diffusion` build and skips it with
-a build warning; the Windows arm64 entry leaves it out. If you copy
+through SwiftPM. Its `llamadart_native_runtimes` is `all`, every runtime
+published for the target; unset, the key bundles only `llama_cpp` and
+`litert_lm`. Android x64 and Windows arm64 have no `stable_diffusion` build and
+skip it with a build warning. If you copy
 this app and only ship GGUF models, set `llamadart_native_runtimes` to
 `[llama_cpp]` and keep only `llamadart_llama_cpp_flutter` to reduce bundle
 size. Flutter iOS/macOS apps should declare the companion package for every
