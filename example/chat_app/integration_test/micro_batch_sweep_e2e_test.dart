@@ -9,14 +9,14 @@
 /// engine, generates the `C03.raw`, `C04.hello`, `C04.arithmetic`,
 /// `C06.history`, `X01.long_history`, `C07.tools.auto` and
 /// `C07.tools.required` requests through the validation engine, and disposes
-/// the engine. Attempts go round-robin over the micro-batch sizes, so every
-/// size is tried in each repeat of the same process.
+/// the engine.
 ///
-/// Size `0` is the library default and the only one the test judges: after
-/// every attempt has run, it fails when a default attempt did not load, did
-/// not answer `C06.history` or `X01.long_history` with the expected code, or
-/// did not end a tool request as the `get_weather` call. On Android Vulkan
-/// that is the capped path wherever the library applies the cap.
+/// Size `0` is the library default and the only one the test judges; the
+/// sizes must include it. A default attempt passes when it loads, answers
+/// `C06.history` and `X01.long_history` with the code and nothing else, and
+/// ends both tool requests as the `get_weather` call. The test fails after
+/// the sweep when a default attempt did not pass. On Android Vulkan the
+/// default is the capped path wherever the library applies the cap.
 ///
 /// Every other size is a control and is only recorded. An explicit size, even
 /// one equal to the default `n_ubatch` (512), makes the library leave the cap
@@ -24,29 +24,44 @@
 /// uncapped. That control is expected to answer wrongly on a Vulkan device
 /// with the small matmul tile defect (a Pixel 9 Pro's Mali-G715, subgroup size
 /// 16, answered `8888...`); a correct control there says the cap is no longer
-/// needed. A control sends the tool requests only in the last repeat: a
-/// grammar over such logits is what aborted the process before native
-/// exceptions were typed, and a death there must not cost the earlier
-/// repeats.
+/// needed.
+///
+/// Every repeat of the default size runs first, then the controls repeat by
+/// repeat, and a control sends the tool requests only in its last repeat: a
+/// grammar over a control's logits is what aborted the process before native
+/// exceptions were typed, and nothing a control does to the process may cost
+/// a judged repeat.
 ///
 /// Records go to `micro_batch_sweep/journal.jsonl` (app external files on
-/// Android, the temporary directory elsewhere) and, shortened, to the log as
-/// `MICRO_BATCH_SWEEP {json}` lines. An `attempt_started` and a
-/// `case_started` record precede each step, so a run that dies names the step
-/// it died in.
+/// Android, the temporary directory elsewhere), each written through before
+/// the next step, and, shortened, to the log as `MICRO_BATCH_SWEEP {json}`
+/// lines. An `attempt_started` and a `case_started` record precede each step,
+/// so a run that dies names the step it died in, and the verdicts of the
+/// attempts before it are already in the file. `t_ms` is the time since the
+/// test opened the journal.
 ///
 /// - `log`: every `LlamaLogger` record at `debug` and above, among them the
 ///   warning of a load that fell back to the CPU.
-/// - `prompt_cap`: the cap decision of an attempt, from the library's debug
-///   line: `capped` with the token count or `not_capped`, and the Vulkan
-///   devices it was made from (name, driver and loader API version, subgroup
-///   size). `not_logged` when the library made no decision: off Android, on
-///   the CPU and at an explicit size.
+/// - `load`: the backend the model runs on, its GPU layer count, the batch
+///   sizes and the GPU devices the runtime lists.
+/// - `prompt_cap`: what is known about the cap of the attempt's context, as
+///   `state`. `capped` (with `cap_tokens`) and `not_capped` are the library's
+///   own debug line, with the Vulkan devices the decision was made from
+///   (name, driver and loader API version, subgroup size). The library logs
+///   that line only when it has a Vulkan device to decide from, so the other
+///   states are derived from the load: `explicit_size` (an explicit size
+///   leaves the cap off), `not_android`, `vulkan_not_requested` (no GPU layer
+///   asked of Vulkan: no cap), `no_vulkan_device` (GPU layers asked of Vulkan
+///   but ggml-vulkan registered no device: the library applies the cap
+///   without logging, and the context runs on the CPU) and `not_logged` (a
+///   Vulkan device is registered but no decision reached the log).
 /// - `load_refused`: a typed exception from a load, such as the refusal of a
 ///   Vulkan driver below 1.2.
-/// - `load`, `case`, `case_error`, `summary`: backend and batch sizes, each
-///   answer with its timings, a typed exception from a request, and the
-///   correct answers by size.
+/// - `case`, `case_error`: each answer with its timings and, for a judged
+///   case, `passed`; a typed exception from a request.
+/// - `attempt_verdict`: whether the attempt passed, case by case, with the
+///   failures and the cap state. `judged` is true for the default size.
+/// - `summary`: the passing answers by size and the test's failures.
 ///
 /// A `case` record times the prompt twice. `native_prompt_ms` is the llama.cpp
 /// worker's own clock around prompt ingestion, valid at every micro-batch
@@ -69,16 +84,21 @@
 /// ```
 ///
 /// `MICRO_BATCH_SWEEP_ARMS` lists the sizes. `MICRO_BATCH_SWEEP_REPEATS`
-/// counts the rounds. `MICRO_BATCH_SWEEP_BUDGET_SECONDS` stops the sweep, and
-/// fails the test, instead of starting an attempt later than that many
-/// seconds into the test. `MICRO_BATCH_SWEEP_PROFILE` names the validation
-/// profile (default `chat-gguf-vulkan`), `MICRO_BATCH_SWEEP_NATIVE_LOG` the
-/// native log level (`info` or `debug`, default `info`) and
-/// `MICRO_BATCH_SWEEP_MODEL` a local copy of the profile's model.
-/// `MICRO_BATCH_SWEEP_DEVICE=gpu` asks each load for `ComputeDevice.gpu`
-/// first, records a typed refusal and then loads as the profile does
-/// (`ComputeDevice.auto`), so one run shows both what a required GPU and what
-/// the default do on the device. A blank value keeps the default.
+/// counts the rounds. `MICRO_BATCH_SWEEP_BUDGET_SECONDS` is the time the sweep
+/// may take, counted from the end of the model download and check: past it no
+/// attempt and no request starts, and the test fails.
+/// `MICRO_BATCH_SWEEP_PROFILE` names the validation profile (default
+/// `chat-gguf-vulkan`), `MICRO_BATCH_SWEEP_NATIVE_LOG` the native log level
+/// (`info` or `debug`, default `info`) and `MICRO_BATCH_SWEEP_MODEL` a local
+/// copy of the profile's model. `MICRO_BATCH_SWEEP_DEVICE=gpu` asks each load
+/// for `ComputeDevice.gpu` first, records a typed refusal and then loads as
+/// the profile does (`ComputeDevice.auto`), so one run shows both what a
+/// required GPU and what the default do on the device. A blank value keeps
+/// the default.
+///
+/// `MICRO_BATCH_SWEEP_NEGATIVE_CONTROL=true` checks the judge: it expects a
+/// code the prompts do not hold, so the test must fail, with failures of the
+/// default size only.
 ///
 /// Under Android instrumentation (Firebase Test Lab or `adb shell am
 /// instrument`), `MainActivityTest` forwards the arguments `microBatchArms`
@@ -117,7 +137,8 @@ const _historyCase = 'C06.history';
 const _longCase = 'X01.long_history';
 // The locked Q4_0 model answers this prompt with `42` on CPU and Metal too;
 // only the Q4_K_M quantization repeats the whole `maple42`.
-const _longExpected = '42';
+const _longCodes = ['42', 'maple42'];
+const _negativeControlCode = 'birch93';
 const _longMaxTokens = 12;
 const _toolMaxTokens = 128;
 const _toolCases = {
@@ -184,7 +205,6 @@ void main() {
   testWidgets('the default micro-batch answers history and tool prompts', (
     tester,
   ) async {
-    final elapsed = Stopwatch()..start();
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(body: Text('Running micro-batch sweep E2E')),
@@ -205,14 +225,23 @@ void main() {
       File(p.join(output.path, 'native_stderr.log')),
     );
     addTearDown(nativeLog.restore);
+    final order = sweepOrder(
+      config.arms,
+      config.repeats,
+      judgedArm: _defaultArm,
+    );
     journal.log({
       'event': 'config',
       'profile': config.profile,
       'arms': config.arms,
       'repeats': config.repeats,
+      'order': [
+        for (final attempt in order) [attempt.repeat, attempt.arm],
+      ],
       'budget_seconds': config.budget?.inSeconds,
       'native_log': config.nativeLevel.name,
       'device': config.device?.name,
+      'negative_control': config.negativeControl,
       'source': config.source,
       'native_stderr_captured': nativeLog.captured,
       'pid': pid,
@@ -231,87 +260,102 @@ void main() {
 
     final profile = await _loadProfile(config.profile);
     final modelPath = await _prepareModel(profile, config.model, journal);
-    final expected = {
-      _historyCase: profile.fixtureText('history', 'expected'),
-      _longCase: _longExpected,
-    };
-    final caseIds = [...expected.keys, ..._toolCases.keys];
+    // The budget is for the sweep: a download takes minutes that vary with
+    // the network, and would otherwise decide how many repeats run.
+    final elapsed = Stopwatch()..start();
+    final budget = config.budget;
+    bool overBudget() => budget != null && elapsed.elapsed > budget;
+    final codes = config.negativeControl
+        ? const {
+            _historyCase: [_negativeControlCode],
+            _longCase: [_negativeControlCode],
+          }
+        : {
+            _historyCase: [profile.fixtureText('history', 'expected')],
+            _longCase: _longCodes,
+          };
+    final judgedCases = [...codes.keys, ..._toolCases.keys];
     final failures = <String>[];
     final correct = {
-      for (final id in caseIds) id: {for (final arm in config.arms) arm: 0},
+      for (final id in judgedCases) id: {for (final arm in config.arms) arm: 0},
     };
-    final capDecisions = {for (final arm in config.arms) arm: <String>{}};
-    final budget = config.budget;
-    sweep:
-    for (var repeat = 1; repeat <= config.repeats; repeat++) {
-      for (final arm in config.arms) {
-        final labels = {'repeat': repeat, 'micro_batch': arm};
-        final judged = arm == _defaultArm;
-        if (budget != null && elapsed.elapsed > budget) {
-          journal.log({
-            'event': 'budget_exhausted',
-            ...labels,
-            'elapsed_seconds': elapsed.elapsed.inSeconds,
-          });
-          failures.add(
-            'stopped before micro-batch $arm repeat $repeat: over the '
-            '${budget.inSeconds} s budget',
-          );
-          break sweep;
-        }
-        logs.labels = labels;
-        try {
-          final results = await _attempt(
-            profile,
-            modelPath,
-            labels,
-            arm,
-            config.device,
-            withTools: judged || repeat == config.repeats,
-            journal: journal,
-            nativeLog: nativeLog,
-          );
-          for (final id in caseIds) {
-            final result = results[id];
-            if (result == null) continue;
-            final passed = switch (result) {
-              _Answer(:final content) when expected.containsKey(id) =>
-                content.toLowerCase().contains(expected[id]!.toLowerCase()),
-              _Answer(:final toolCallMatches) => toolCallMatches,
-              _Failure() => false,
-            };
-            if (passed) {
-              correct[id]![arm] = correct[id]![arm]! + 1;
-            } else if (judged) {
-              failures.add(
-                'default micro-batch repeat $repeat $id: ${result.describe()}',
-              );
-            }
-          }
-        } on LlamaException catch (error) {
-          journal.log({
-            'event': 'attempt_error',
-            ...labels,
-            'error_type': '${error.runtimeType}',
-            'error': '$error',
-          });
-          if (judged) {
-            failures.add('default micro-batch repeat $repeat failed: $error');
-          }
-        }
-        final decision = logs.takeCapDecision();
-        capDecisions[arm]!.add(decision);
-        if (decision == 'not_logged') {
-          journal.log({'event': 'prompt_cap', ...labels, 'decision': decision});
-        }
+    final capStates = {for (final arm in config.arms) arm: <String>{}};
+    var judgedPassed = 0;
+    for (final (:repeat, :arm) in order) {
+      final labels = {'repeat': repeat, 'micro_batch': arm};
+      final judged = arm == _defaultArm;
+      final withTools = judged || repeat == config.repeats;
+      if (overBudget()) {
+        journal.log({
+          'event': 'budget_exhausted',
+          ...labels,
+          'elapsed_seconds': elapsed.elapsed.inSeconds,
+        });
+        failures.add(
+          'stopped before micro-batch $arm repeat $repeat: over the '
+          '${budget!.inSeconds} s budget',
+        );
+        break;
+      }
+      logs.begin(labels);
+      var results = const <String, JudgedCase>{};
+      String? loadError;
+      try {
+        results = await _attempt(
+          profile,
+          modelPath,
+          labels,
+          arm,
+          config.device,
+          withTools: withTools,
+          codes: codes,
+          overBudget: overBudget,
+          journal: journal,
+          nativeLog: nativeLog,
+          logs: logs,
+        );
+      } on LlamaException catch (error) {
+        journal.log({
+          'event': 'attempt_error',
+          ...labels,
+          'error_type': '${error.runtimeType}',
+          'error': '$error',
+        });
+        loadError = '${error.runtimeType}: $error';
+      }
+      final verdict = judgeAttempt(
+        [...codes.keys, if (withTools) ..._toolCases.keys],
+        results,
+        loadError: loadError,
+      );
+      journal.log({
+        'event': 'attempt_verdict',
+        ...labels,
+        'judged': judged,
+        'passed': verdict.passed,
+        'cases': verdict.cases,
+        'failures': verdict.failures,
+        'prompt_cap': logs.capState,
+      });
+      for (final MapEntry(key: id, value: passed) in verdict.cases.entries) {
+        if (passed) correct[id]![arm] = correct[id]![arm]! + 1;
+      }
+      if (logs.capState case final state?) capStates[arm]!.add(state);
+      if (judged) {
+        if (verdict.passed) judgedPassed++;
+        failures.addAll([
+          for (final failure in verdict.failures)
+            'default micro-batch repeat $repeat: $failure',
+        ]);
       }
     }
-    logs.labels = const {};
+    logs.begin(const {});
     journal.log({
       'event': 'summary',
-      'expected': expected,
+      'expected': codes,
       'repeats': config.repeats,
       'judged_micro_batch': _defaultArm,
+      'judged_passed': judgedPassed,
       'correct': {
         for (final MapEntry(key: id, value: arms) in correct.entries)
           id: {
@@ -319,7 +363,7 @@ void main() {
           },
       },
       'prompt_cap': {
-        for (final MapEntry(:key, :value) in capDecisions.entries)
+        for (final MapEntry(:key, :value) in capStates.entries)
           '$key': value.toList(),
       },
       'failures': failures,
@@ -337,8 +381,9 @@ class _Config {
     this.nativeLevel,
     this.device,
     this.model,
-    this.source,
-  );
+    this.source, {
+    required this.negativeControl,
+  });
 
   factory _Config.resolve(Directory temporary) {
     var profile =
@@ -385,8 +430,16 @@ class _Config {
       for (final size in arms.split(RegExp('[,+]')))
         if (size.trim().isNotEmpty) int.parse(size.trim()),
     ];
-    if (sizes.isEmpty || sizes.any((size) => size < 0)) {
+    if (sizes.any((size) => size < 0)) {
       throw ArgumentError.value(arms, 'arms', 'needs non-negative sizes');
+    }
+    if (!sizes.contains(_defaultArm)) {
+      throw ArgumentError.value(
+        arms,
+        'arms',
+        'must include 0, the library default, which is the size the test '
+            'judges',
+      );
     }
     if (repeats < 1) {
       throw ArgumentError.value(repeats, 'repeats', 'must be at least 1');
@@ -409,16 +462,20 @@ class _Config {
       device == null ? null : ComputeDevice.values.byName(device),
       optionalArgument(const String.fromEnvironment('MICRO_BATCH_SWEEP_MODEL')),
       source,
+      negativeControl: const bool.fromEnvironment(
+        'MICRO_BATCH_SWEEP_NEGATIVE_CONTROL',
+      ),
     );
   }
 
   final String profile;
 
-  /// Micro-batch sizes in attempt order; 0 is the library default.
+  /// Micro-batch sizes; 0 is the library default and is always among them.
   final List<int> arms;
   final int repeats;
 
-  /// The time into the test after which no attempt starts; null for no limit.
+  /// The time after the model is ready past which no attempt and no request
+  /// starts; null for no limit.
   final Duration? budget;
   final LlamaLogLevel nativeLevel;
 
@@ -426,6 +483,9 @@ class _Config {
   final ComputeDevice? device;
   final String? model;
   final String source;
+
+  /// Whether the judge expects a code the prompts do not hold.
+  final bool negativeControl;
 }
 
 Future<ValidationProfile> _loadProfile(String id) async {
@@ -468,35 +528,6 @@ Future<String> _prepareModel(
   }
 }
 
-/// How one request of an attempt ended.
-sealed class _Result {
-  String describe();
-}
-
-class _Answer extends _Result {
-  _Answer(this.content, this.finishReasons, {required this.toolCallMatches});
-
-  final String content;
-  final Object? finishReasons;
-
-  /// Whether the request ended as the fixture's tool call.
-  final bool toolCallMatches;
-
-  @override
-  String describe() =>
-      'answered ${jsonEncode(_shorten(content))}, finish '
-      '${jsonEncode(finishReasons)}';
-}
-
-class _Failure extends _Result {
-  _Failure(this.error);
-
-  final LlamaException error;
-
-  @override
-  String describe() => 'threw ${error.runtimeType}: $error';
-}
-
 /// Loads [modelPath] on a new engine with [params].
 ///
 /// With a [first] device other than the one in [params], that device is
@@ -535,17 +566,20 @@ Future<({LlamaEngine engine, ModelParams params})> _load(
   throw StateError('unreachable: the last device rethrows');
 }
 
-/// Runs one load, the requests and the dispose, and returns how each request
-/// ended by case.
-Future<Map<String, _Result>> _attempt(
+/// Runs one load, the requests and the dispose, and returns how each judged
+/// request ended by case. A request that [overBudget] stopped is left out.
+Future<Map<String, JudgedCase>> _attempt(
   ValidationProfile profile,
   String modelPath,
   Map<String, Object?> labels,
   int microBatchSize,
   ComputeDevice? device, {
   required bool withTools,
+  required Map<String, List<String>> codes,
+  required bool Function() overBudget,
   required _Journal journal,
   required _NativeLog nativeLog,
+  required _LibraryLog logs,
 }) async {
   journal.log({'event': 'attempt_started', ...labels});
   final logStart = nativeLog.length;
@@ -569,6 +603,18 @@ Future<Map<String, _Result>> _attempt(
       loaded.params,
       profile.contextSize,
     );
+    List<GpuDeviceInfo>? gpuDevices;
+    try {
+      gpuDevices = await engine.listGpuDevices();
+    } on LlamaException catch (error) {
+      journal.log({
+        'event': 'gpu_devices_error',
+        ...labels,
+        'error_type': '${error.runtimeType}',
+        'message': error.message,
+      });
+    }
+    final gpuLayers = diagnostics['reported_gpu_layers'] as int? ?? 0;
     journal.log({
       'event': 'load',
       ...labels,
@@ -579,8 +625,18 @@ Future<Map<String, _Result>> _attempt(
       'native_n_batch': _contextValue(loadLog, 'n_batch'),
       'native_n_ubatch': _contextValue(loadLog, 'n_ubatch'),
       'backend_name': diagnostics['backend_name'],
-      'reported_gpu_layers': diagnostics['reported_gpu_layers'],
+      'reported_gpu_layers': gpuLayers,
       'context_size': diagnostics['context_size'],
+      'gpu_devices': gpuDevices == null
+          ? null
+          : [
+              for (final gpu in gpuDevices)
+                {
+                  'name': gpu.name,
+                  'backend': gpu.backend.name,
+                  'description': gpu.description,
+                },
+            ],
       'native_log_bytes': loadLog.length,
     });
     for (final line in loadLog.split('\n')) {
@@ -588,6 +644,39 @@ Future<Map<String, _Result>> _attempt(
         journal.log({'event': 'native_device', ...labels, 'line': line.trim()});
       }
     }
+    final vulkanDevices = gpuDevices
+        ?.where((gpu) => gpu.backend == GpuBackend.vulkan)
+        .length;
+    final vulkanRequested =
+        loaded.params.preferredBackend == GpuBackend.vulkan && gpuLayers > 0;
+    final decision = logs.decision;
+    final state = promptCapState(
+      logged: decision,
+      microBatchSize: microBatchSize,
+      isAndroid: Platform.isAndroid,
+      vulkanRequested: vulkanRequested,
+      registeredVulkanDevices: vulkanDevices,
+    );
+    logs.capState = state.wireName;
+    journal.log({
+      'event': 'prompt_cap',
+      ...labels,
+      'state': state.wireName,
+      'cap_tokens': decision?.capTokens,
+      'devices': [
+        for (final vulkan in decision?.devices ?? const <PromptCapDevice>[])
+          {
+            'name': vulkan.name,
+            'api_version': vulkan.apiVersion,
+            'loader_api_version': vulkan.loaderApiVersion,
+            'subgroup_size': vulkan.subgroupSize,
+          },
+      ],
+      'detail': decision?.detail,
+      'backend_name': diagnostics['backend_name'],
+      'vulkan_requested': vulkanRequested,
+      'registered_vulkan_devices': vulkanDevices,
+    });
 
     LlamaChatMessage message(
       LlamaChatRole role,
@@ -622,11 +711,16 @@ Future<Map<String, _Result>> _attempt(
       description: toolFunction['description'] as String,
       parameters: [ToolParam.string('city', required: true)],
     );
-    final results = <String, _Result>{};
+    final results = <String, JudgedCase>{};
     for (final MapEntry(key: id, value: messages) in cases.entries) {
+      if (overBudget()) {
+        journal.log({'event': 'budget_exhausted', ...labels, 'case_id': id});
+        break;
+      }
       journal.log({'event': 'case_started', ...labels, 'case_id': id});
       final rawPrompt = profile.fixtureText('raw', 'prompt');
       final toolChoice = _toolCases[id];
+      final judged = toolChoice != null || codes.containsKey(id);
       final Map<String, dynamic> output;
       try {
         output = messages == null
@@ -656,8 +750,14 @@ Future<Map<String, _Result>> _attempt(
           'error_type': '${error.runtimeType}',
           'message': error.message,
           'details': error.details?.toString(),
+          if (judged) 'passed': false,
         });
-        results[id] = _Failure(error);
+        if (judged) {
+          results[id] = (
+            passed: false,
+            description: 'threw ${error.runtimeType}: $error',
+          );
+        }
         continue;
       }
       // llama.cpp counts a decode of one token as generation, so at
@@ -670,30 +770,36 @@ Future<Map<String, _Result>> _attempt(
               tools: toolChoice == null ? null : [tool],
               toolChoice: toolChoice ?? ToolChoice.auto,
             )).tokenCount;
+      final content = output['content'] as String;
+      final finish = output['finish_reasons'];
       final call = reconstructToolCall(output['tool_call_deltas'] as List);
-      final toolCallMatches =
-          canonicalJson(output['finish_reasons']) ==
-              canonicalJson(['tool_calls']) &&
-          call.wellFormed &&
-          call.name == tool.name &&
-          canonicalJson(call.arguments) ==
-              canonicalJson(toolFixture['expected_arguments']);
+      final passed = toolChoice != null
+          ? toolCallMatches(
+              finishReasons: finish,
+              call: call,
+              name: tool.name,
+              arguments: toolFixture['expected_arguments'],
+            )
+          : codes[id] == null
+          ? null
+          : answerIsCode(content, codes[id]!);
       final metrics = output['metrics'] as Map;
       final promptMs = metrics['native_prompt_ms'] as double?;
       journal.log({
         'event': 'case',
         ...labels,
         'case_id': id,
+        'passed': ?passed,
+        'expected': ?codes[id],
         'prompt_tokens': promptTokens,
         'native_prompt_tokens': metrics['native_prompt_tokens'],
         'native_decode_tokens': metrics['native_decode_tokens'],
-        'finish_reasons': output['finish_reasons'],
-        'content': output['content'],
+        'finish_reasons': finish,
+        'content': content,
         if (toolChoice != null) ...{
           'tool_choice': toolChoice.name,
           'tool_call_name': call.name,
           'tool_call_arguments': call.arguments,
-          'tool_call_matches': toolCallMatches,
         },
         'chunks': output['chunks'],
         'max_tokens': output['max_tokens'],
@@ -706,11 +812,18 @@ Future<Map<String, _Result>> _attempt(
             : promptTokens * 1000 / promptMs,
         'native_decode_ms': metrics['native_decode_ms'],
       });
-      results[id] = _Answer(
-        output['content'] as String,
-        output['finish_reasons'],
-        toolCallMatches: toolCallMatches,
-      );
+      if (passed != null) {
+        results[id] = (
+          passed: passed,
+          description: toolChoice != null
+              ? 'ended as ${call.name}(${jsonEncode(call.arguments)}), '
+                    'finish ${jsonEncode(finish)}, content '
+                    '${jsonEncode(_shorten(content))}'
+              : 'answered ${jsonEncode(_shorten(content))}, finish '
+                    '${jsonEncode(finish)}, wanted one of '
+                    '${jsonEncode(codes[id])}',
+        );
+      }
     }
     return results;
   } finally {
@@ -738,8 +851,10 @@ class _Journal {
   }
 
   final File _file;
+  final _clock = Stopwatch()..start();
 
-  void log(Map<String, Object?> event) {
+  void log(Map<String, Object?> record) {
+    final event = {...record, 't_ms': _clock.elapsedMilliseconds};
     _file.writeAsStringSync(
       '${jsonEncode(event)}\n',
       mode: FileMode.append,
@@ -754,51 +869,36 @@ class _Journal {
   }
 }
 
-/// Journals the `LlamaLogger` records and reads the prompt cap decision out
-/// of them.
+/// Journals the `LlamaLogger` records and keeps the prompt cap decision the
+/// library logged for the attempt that is running.
 class _LibraryLog {
   _LibraryLog(this._journal);
 
   final _Journal _journal;
+  Map<String, Object?> _labels = const {};
 
-  /// The attempt the next records belong to.
-  Map<String, Object?> labels = const {};
-  String? _capDecision;
+  /// The decision the library logged since [begin], or null.
+  PromptCapDecision? decision;
+
+  /// The journal name of the attempt's `PromptCapState`, once it is known.
+  String? capState;
+
+  /// Starts the records of the attempt [labels] name.
+  void begin(Map<String, Object?> labels) {
+    _labels = labels;
+    decision = null;
+    capState = null;
+  }
 
   void record(LlamaLogRecord record) {
     _journal.log({
       'event': 'log',
-      ...labels,
+      ..._labels,
       'level': record.level.name,
       'message': record.message,
       'error': record.error?.toString(),
     });
-    final decision = parsePromptCapDecision(record.message);
-    if (decision == null) return;
-    _capDecision = decision.capTokens == null ? 'not_capped' : 'capped';
-    _journal.log({
-      'event': 'prompt_cap',
-      ...labels,
-      'decision': _capDecision,
-      'cap_tokens': decision.capTokens,
-      'devices': [
-        for (final device in decision.devices)
-          {
-            'name': device.name,
-            'api_version': device.apiVersion,
-            'loader_api_version': device.loaderApiVersion,
-            'subgroup_size': device.subgroupSize,
-          },
-      ],
-      'detail': decision.detail,
-    });
-  }
-
-  /// The decision logged since the last call, or `not_logged`.
-  String takeCapDecision() {
-    final decision = _capDecision ?? 'not_logged';
-    _capDecision = null;
-    return decision;
+    decision = parsePromptCapDecision(record.message) ?? decision;
   }
 }
 

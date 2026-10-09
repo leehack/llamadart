@@ -814,8 +814,9 @@ without the memory check.
 `chat-gguf-vulkan` model at several micro-batch sizes in one process and sends
 a short history prompt, a long history prompt and a tool request with
 `ToolChoice.auto` and `ToolChoice.required` at each. Size `0` is the library
-default and the only one the test judges: it must load, answer both history
-prompts with their code and end both tool requests as the `get_weather` call.
+default and the only one the test judges, so the sizes must include it: a
+default attempt must load, answer both history prompts with the code and
+nothing else, and end both tool requests as the `get_weather` call.
 
 Every other size is a control that is only recorded. An explicit size, even
 `512` (the default `n_ubatch`), makes the library leave the Android Vulkan
@@ -823,38 +824,58 @@ prompt cap off, so `0+512` compares the capped default with the same context
 uncapped. On a Vulkan device with the small matmul tile defect the control is
 expected to answer wrongly (a Pixel 9 Pro's Mali-G715, subgroup size 16,
 answered `8888...`); a correct control there says the cap is no longer needed.
-A control sends the tool requests only in the last repeat.
+
+Every repeat of the default size runs first, then the controls repeat by
+repeat, and a control sends the tool requests only in its last repeat, so
+nothing a control does to the process costs a judged repeat.
 
 ```sh
 dart run tool/testing/run_local_e2e.dart \
   --scenario chat-app-micro-batch-sweep --device <device>
 ```
 
-Off Android, and on the CPU, the library makes no cap decision: the run then
-checks the default path and the harness, not the cap.
+Only an Android device whose GPU ggml-vulkan registers makes the library
+decide about the cap. Elsewhere the run checks the default path and the
+harness.
 
 For Test Lab, build both APKs from that target as above, then add:
 
 ```sh
---environment-variables=microBatchArms=0+512,microBatchRepeats=6,microBatchBudgetSeconds=660,microBatchNativeLog=debug \
+--environment-variables=microBatchArms=0+512,microBatchRepeats=6,microBatchBudgetSeconds=450,microBatchNativeLog=debug \
 --directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/micro_batch_sweep
 ```
 
 The pulled directory holds `journal.jsonl`, `native_stderr.log`, `vkjson.json`
 (`cmd gpu vkjson`, saved before Flutter starts: the driver's API version and
-subgroup size) and `app_apk.sha256`. The same records appear in logcat as
+subgroup size) and `app_apk.sha256`. Every journal record is written through
+before the next step, and the same records appear in logcat as
 `MICRO_BATCH_SWEEP` lines. In the journal:
 
-- `prompt_cap` is the library's decision for an attempt: `capped` with
-  `cap_tokens`, or `not_capped`, and the Vulkan devices it was made from
-  (`name`, `api_version`, `loader_api_version`, `subgroup_size`). `not_logged`
-  means the library made no decision: an explicit size, the CPU, or a platform
-  other than Android.
+- `attempt_verdict` is the verdict of one attempt: `passed`, the judged cases
+  one by one, the failures and the cap state. `judged` is true for the default
+  size. A run that dies keeps the verdicts of the attempts before it.
+- `prompt_cap` is what is known about the cap of an attempt's context, as
+  `state`:
+  - `capped` (with `cap_tokens`) or `not_capped`: the library's own debug
+    line, with the Vulkan devices it decided from (`name`, `api_version`,
+    `loader_api_version`, `subgroup_size`). The library logs it only when it
+    has a Vulkan device to decide from.
+  - `no_vulkan_device`: the load asked Vulkan for GPU layers but ggml-vulkan
+    registered no device. The library logs nothing and applies the cap all the
+    same, although the context runs on the CPU (an emulator, or a load that
+    fell back).
+  - `explicit_size`: an explicit size, which leaves the cap off.
+  - `vulkan_not_requested`, `not_android`: no cap.
+  - `not_logged`: a Vulkan device is registered and the cap was to be decided,
+    but no decision reached the log. Treat the record as missing.
+- `load` holds the backend the model runs on, its GPU layer count and the GPU
+  devices the runtime lists.
 - `log` is every `LlamaLogger` record, among them the warning of a load that
   fell back to the CPU because the Vulkan driver is below 1.2.
 - `load_refused` is a typed exception from a load.
-- `case` and `case_error` are each answer and each typed exception from a
-  request; `summary` counts the correct answers by size.
+- `case` and `case_error` are each answer (with `passed` for a judged case)
+  and each typed exception from a request; `summary` counts the passing
+  answers by size.
 
 `microBatchDevice=gpu` asks each load for `ComputeDevice.gpu` first, records a
 typed refusal as `load_refused` and then loads as the profile does
@@ -864,8 +885,16 @@ Vulkan gets a typed error and a CPU fallback. The other arguments are
 `--dart-define=MICRO_BATCH_SWEEP_ARMS`, `MICRO_BATCH_SWEEP_REPEATS`,
 `MICRO_BATCH_SWEEP_BUDGET_SECONDS`, `MICRO_BATCH_SWEEP_NATIVE_LOG`,
 `MICRO_BATCH_SWEEP_DEVICE`, `MICRO_BATCH_SWEEP_PROFILE` and
-`MICRO_BATCH_SWEEP_MODEL`. Past the budget no attempt starts and the test
-fails, which keeps a slow device inside the Test Lab timeout.
+`MICRO_BATCH_SWEEP_MODEL`.
+
+The budget counts from the end of the model download and check. Past it no
+attempt and no request starts and the test fails, which keeps a slow device
+inside the Test Lab timeout; give the timeout the download on top (it took 1.5
+to 4 minutes for this model on Test Lab) and the length of one request.
+
+`--dart-define=MICRO_BATCH_SWEEP_NEGATIVE_CONTROL=true` checks the judge: it
+expects a code the prompts do not hold, so the test must fail, with failures
+of the default size only.
 
 When a native crash ends the app, Test Lab reports `Test failed to run`. It
 still pulls the directory: the last `attempt_started` or `case_started` record

@@ -779,8 +779,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers:
         'llama.cpp history, long-history and grammar-constrained tool '
         'prompts at the default micro-batch and at explicit sizes in one '
-        'process on a device, with the Android Vulkan prompt cap decision '
-        '(capped or not capped), the Vulkan device name, API version and '
+        'process on a device, with a flushed verdict per attempt, the '
+        'Android Vulkan prompt cap state (capped, not capped, or capped '
+        'without a Vulkan device), the Vulkan device name, API version and '
         'subgroup size, and a typed load refusal recorded; the default size '
         'must answer correctly, explicit sizes are controls',
     command:
