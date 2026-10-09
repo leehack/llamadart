@@ -3,6 +3,9 @@ import 'dart:io';
 /// File name suffix of the LiteRT-LM GPU program cache.
 const String liteRtLmProgramCacheSuffix = '_mldrift_program_cache.bin';
 
+/// Cache directory value that makes the LiteRT-LM runtime keep no cache.
+const String liteRtLmNoCacheDirectory = ':nocache';
+
 /// Deletes LiteRT-LM GPU program cache files larger than [maxBytes].
 ///
 /// Only regular files directly inside [directory] whose name ends with

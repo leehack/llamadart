@@ -28,6 +28,8 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
 
+import '../../../support/read_only_directory.dart';
+
 void main() {
   late Directory tempDir;
   late File modelFile;
@@ -368,6 +370,52 @@ void main() {
       }
     });
   }
+
+  test('a native failure after output started does not name the '
+      'content-parts change', () async {
+    final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+    await file.writeAsString('fake model');
+    final client = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => client);
+    const params = ModelParams(
+      liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+      chatTemplate: '{{ messages[0].content }}',
+    );
+    try {
+      final model = await service.loadModel(file.path, params);
+      final context = service.createContext(model, params);
+      final chunks = <List<int>>[];
+      const nativeFailure = 'litert_lm_conversation_send_message_stream rc=13';
+      final failure = expectLater(
+        service
+            .generateChat(
+              context,
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hi'),
+              ],
+              // The stop sequence holds the chunk back from the caller.
+              const GenerationParams(maxTokens: 8, stopSequences: ['<stop>']),
+            )
+            .forEach(chunks.add),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            nativeFailure,
+          ),
+        ),
+      );
+      await client.generateStarted.future;
+      client.generated
+        ..add('Hel')
+        ..addError(StateError(nativeFailure));
+      await client.generated.close();
+      await failure;
+      expect(chunks, isEmpty);
+    } finally {
+      service.dispose();
+    }
+  });
 
   for (final withMedia in [false, true]) {
     test(
@@ -883,9 +931,8 @@ void main() {
                 'delegate init failed.',
               ),
             ),
-            // The default cache directory is not the caller's, so the
-            // message does not name it.
-            useTempCacheDir: true,
+            // No cache directory is passed, so the message names none.
+            useTempCacheDir: false,
           );
           try {
             final params = ModelParams(
@@ -965,6 +1012,147 @@ void main() {
         }
       }
     });
+
+    for (final linked in [false, true]) {
+      test('an engine that fails to start with '
+          '${linked ? "a linked bundle's directory" : 'the default temp '
+                    'directory'} as its cache directory names a cache '
+          'directory as a possible cause', () async {
+        final service = LiteRtLmService(
+          clientFactory: () => _FakeLiteRtLmRuntimeClient(
+            initializeError: LiteRtLmEngineCreateError('no engine.'),
+          ),
+          linkParentDirectory: await Directory(
+            '${tempDir.path}/links',
+          ).create(),
+          useTempCacheDir: !linked,
+        );
+        final extensionless = File('${tempDir.path}/download');
+        await extensionless.writeAsString('LITERTLM fake model');
+        try {
+          const params = ModelParams(device: ComputeDevice.cpu);
+          final model = await service.loadModel(
+            linked ? extensionless.path : modelFile.path,
+            params,
+          );
+          service.createContext(model, params);
+
+          await expectLater(
+            service.tokenize(model, 'hi', true),
+            throwsA(
+              isA<LlamaModelException>().having(
+                (error) => error.message,
+                'message',
+                'no engine. Engine creation also fails when the runtime '
+                    'cannot write its cache directory; set '
+                    'ModelParams.liteRtLmCacheDir to one it can write.',
+              ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      }, testOn: '!windows');
+    }
+
+    for (final fails in [false, true]) {
+      test('a linked bundle in a directory the process cannot write runs '
+          'uncached${fails ? ', and its failed engine names no cache '
+                    'directory' : ''}', () async {
+        final client = _FakeLiteRtLmRuntimeClient(
+          initializeError: fails
+              ? LiteRtLmEngineCreateError('no engine.')
+              : null,
+        );
+        final service = LiteRtLmService(
+          clientFactory: () => client,
+          linkParentDirectory: await Directory(
+            '${tempDir.path}/links',
+          ).create(),
+          useTempCacheDir: false,
+        );
+        final models = await Directory('${tempDir.path}/models').create();
+        final extensionless = File('${models.path}/download');
+        await extensionless.writeAsString('LITERTLM fake model');
+        if (!makeReadOnly(models)) {
+          markTestSkipped(
+            'This user writes a directory without write permission.',
+          );
+          service.dispose();
+          return;
+        }
+        try {
+          const params = ModelParams(device: ComputeDevice.cpu);
+          final model = await service.loadModel(extensionless.path, params);
+          service.createContext(model, params);
+
+          final tokenized = service.tokenize(model, 'hi', true);
+          if (fails) {
+            await expectLater(
+              tokenized,
+              throwsA(
+                isA<LlamaModelException>().having(
+                  (error) => error.message,
+                  'message',
+                  'no engine.',
+                ),
+              ),
+            );
+          } else {
+            await tokenized;
+          }
+          expect(
+            await Link(client.lastModelPath!).target(),
+            extensionless.absolute.path,
+          );
+          expect(client.lastCacheDir, ':nocache');
+        } finally {
+          service.dispose();
+        }
+      }, testOn: '!windows');
+    }
+
+    test('a caller-supplied cache directory the process cannot write is '
+        'still passed to the runtime and named when the engine '
+        'fails', () async {
+      final client = _FakeLiteRtLmRuntimeClient(
+        initializeError: LiteRtLmEngineCreateError('no engine.'),
+      );
+      final service = LiteRtLmService(
+        clientFactory: () => client,
+        linkParentDirectory: await Directory('${tempDir.path}/links').create(),
+        useTempCacheDir: false,
+      );
+      final models = await Directory('${tempDir.path}/models').create();
+      final extensionless = File('${models.path}/download');
+      await extensionless.writeAsString('LITERTLM fake model');
+      final cacheDir = await Directory('${tempDir.path}/cache').create();
+      makeReadOnly(models);
+      makeReadOnly(cacheDir);
+      try {
+        final params = ModelParams(
+          device: ComputeDevice.cpu,
+          liteRtLmCacheDir: cacheDir.path,
+        );
+        final model = await service.loadModel(extensionless.path, params);
+        service.createContext(model, params);
+
+        await expectLater(
+          service.tokenize(model, 'hi', true),
+          throwsA(
+            isA<LlamaModelException>().having(
+              (error) => error.message,
+              'message',
+              'no engine. Engine creation also fails when the runtime '
+                  'cannot write ModelParams.liteRtLmCacheDir.',
+            ),
+          ),
+        );
+        expect(client.lastCacheDir, cacheDir.path);
+      } finally {
+        service.dispose();
+      }
+    }, testOn: '!windows');
 
     test('a GPU load whose runtime library cannot open keeps the runtime '
         'error', () async {
