@@ -21,18 +21,29 @@ import '../../../support/synthetic_embedding_gguf.dart';
 const _params = ModelParams(gpuLayers: 0, contextSize: 64);
 const _greedy = GenerationParams(maxTokens: 1, temp: 0, topK: 1, seed: 1);
 
-// The first bytes mtmd reads to tell audio from an image.
-final Uint8List _png = Uint8List.fromList([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, //
-  0x49, 0x48, 0x44, 0x52,
-]);
-final Uint8List _wav = Uint8List.fromList(
-  'RIFF\x24\x00\x00\x00WAVEfmt '.codeUnits,
-);
-final Uint8List _mp3 = Uint8List.fromList([0xff, 0xfb, ...List.filled(12, 0)]);
-final Uint8List _flac = Uint8List.fromList(
-  'fLaC\x00\x00\x00\x22data'.codeUnits,
-);
+Uint8List _bytes(String head) =>
+    Uint8List.fromList('$head${'\x00' * 16}'.codeUnits);
+
+// What mtmd reads as audio, by the first bytes.
+final Uint8List _wav = _bytes('RIFF\x24\x00\x00\x00WAVEfmt ');
+final Uint8List _mp3 = _bytes('\xff\xfb\x90\x00');
+final Uint8List _id3 = _bytes('ID3\x03\x00');
+final Uint8List _flac = _bytes('fLaC\x00\x00\x00\x22');
+
+// Image formats by their magic.
+final Uint8List _png = _bytes('\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR');
+final Uint8List _jpeg = _bytes('\xff\xd8\xff\xe0\x00\x10JFIF');
+final Uint8List _gif = _bytes('GIF89a');
+final Uint8List _bmp = _bytes('BM');
+
+// Neither to mtmd, which tries them as images and fails.
+final Uint8List _m4a = _bytes('\x00\x00\x00\x20ftypM4A ');
+final Uint8List _ogg = _bytes('OggS');
+final Uint8List _webp = _bytes('RIFF\x24\x00\x00\x00WEBPVP8 ');
+final Uint8List _tiff = _bytes('II*\x00');
+final Uint8List _random = _bytes('\x12\x34\x56\x78\x9a\xbc');
+// Audio magic in fewer than the 12 bytes mtmd asks for.
+final Uint8List _shortFlac = Uint8List.fromList('fLaC'.codeUnits);
 
 Matcher _noEncoder(String kind) => throwsA(
   isA<LlamaUnsupportedException>().having(
@@ -107,7 +118,7 @@ void main() {
         'whatever the type of the part', () async {
       fake.encodedBitmapLoads = false;
 
-      for (final audio in [_wav, _mp3, _flac]) {
+      for (final audio in [_wav, _mp3, _id3, _flac]) {
         await expectLater(
           send([LlamaAudioContent(bytes: audio)]),
           _noEncoder('Audio'),
@@ -147,17 +158,26 @@ void main() {
       expect(fake.evaluations, 2);
     });
 
-    test('keeps the load error of an image mtmd cannot decode', () async {
+    test('keeps the load error of a source mtmd does not read as '
+        'audio', () async {
       fake.encodedBitmapLoads = false;
 
-      await expectLater(
-        send([LlamaAudioContent(bytes: _png)]),
-        _untyped('Failed to load media part 0'),
-      );
-      await expectLater(
-        send([LlamaImageContent(path: '${dir.path}/missing.png')]),
-        _untyped('Failed to load media part 0'),
-      );
+      for (final part in [
+        LlamaAudioContent(bytes: _png),
+        LlamaAudioContent(bytes: _m4a),
+        LlamaAudioContent(bytes: _ogg),
+        LlamaAudioContent(bytes: _webp),
+        LlamaAudioContent(bytes: _random),
+        LlamaAudioContent(bytes: _shortFlac),
+        LlamaAudioContent(path: file('note.m4a', _m4a)),
+        LlamaImageContent(bytes: _tiff),
+        LlamaImageContent(path: '${dir.path}/missing.png'),
+      ]) {
+        await expectLater(
+          send([part]),
+          _untyped('Failed to load media part 0'),
+        );
+      }
     });
 
     test('keeps the tokenize error of an image request', () async {
@@ -185,14 +205,53 @@ void main() {
         send([LlamaImageContent(path: file('page.png', _png))]),
         _noEncoder('Image'),
       );
-      await expectLater(
-        send([LlamaAudioContent(bytes: _png)]),
-        _noEncoder('Image'),
-      );
+      for (final image in [_png, _jpeg, _gif, _bmp]) {
+        await expectLater(
+          send([LlamaAudioContent(bytes: image)]),
+          _noEncoder('Image'),
+        );
+      }
       await expectLater(
         send([LlamaAudioContent(bytes: _wav), LlamaImageContent(bytes: _png)]),
         _noEncoder('Image'),
       );
+    });
+
+    test('names the image encoder for an image part mtmd cannot '
+        'decode', () async {
+      fake.encodedBitmapLoads = false;
+
+      await expectLater(
+        send([LlamaImageContent(bytes: _tiff)]),
+        _noEncoder('Image'),
+      );
+      await expectLater(
+        send([LlamaImageContent(path: file('page.tiff', _tiff))]),
+        _noEncoder('Image'),
+      );
+    });
+
+    test('keeps the load error of an audio part mtmd does not read as audio '
+        'and of a source it cannot read', () async {
+      fake.encodedBitmapLoads = false;
+
+      for (final part in [
+        LlamaAudioContent(bytes: _m4a),
+        LlamaAudioContent(path: file('note.m4a', _m4a)),
+        LlamaAudioContent(path: file('note.wav', _m4a)),
+        LlamaAudioContent(bytes: _ogg),
+        LlamaAudioContent(bytes: _webp),
+        LlamaAudioContent(bytes: _random),
+        LlamaAudioContent(bytes: _shortFlac),
+        LlamaAudioContent(bytes: Uint8List(0)),
+        LlamaAudioContent(path: '${dir.path}/missing.wav'),
+        LlamaImageContent(path: '${dir.path}/missing.png'),
+      ]) {
+        await expectLater(
+          send([part]),
+          _untyped('Failed to load media part 0'),
+        );
+      }
     });
 
     test('hands mtmd audio sent as an image part, by bytes and by '

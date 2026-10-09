@@ -8860,9 +8860,9 @@ class LlamaCppService {
     Pointer<mtmd_context> mmCtx,
     List<LlamaContentPart> parts,
   ) {
-    final readAsAudio = parts.map(_mtmdReadsAsAudio).toList(growable: false);
+    final kinds = parts.map(_isAudioRatherThanImage).toList(growable: false);
     for (final (kind, audio) in const [('Image', false), ('Audio', true)]) {
-      if (readAsAudio.contains(audio) &&
+      if (kinds.contains(audio) &&
           _mtmdHasEncoder(mmCtx, audio: audio) == false) {
         return LlamaUnsupportedException(
           '$kind input is not supported by the loaded multimodal projector: '
@@ -8874,12 +8874,17 @@ class LlamaCppService {
     return null;
   }
 
-  /// Whether mtmd reads [part] as audio rather than as an image, or null
-  /// when its source cannot be read.
+  /// Whether [part] is audio (true) or an image (false) to mtmd, or null
+  /// when neither is established.
   ///
   /// mtmd decides by content for a path or encoded bytes, whatever the type
-  /// of the part: this is `is_audio_file` of llama.cpp's `mtmd-helper.cpp`.
-  static bool? _mtmdReadsAsAudio(LlamaContentPart part) {
+  /// of the part: audio by the magic of `is_audio_file` in llama.cpp's
+  /// `mtmd-helper.cpp`, and anything else is tried as an image. Other content
+  /// is an image here when it has the magic of an image format, or when the
+  /// caller typed the part as an image too. An audio part that mtmd does not
+  /// read as audio, such as an m4a or Ogg file, and a source that cannot be
+  /// read are neither, so their mtmd error is kept.
+  static bool? _isAudioRatherThanImage(LlamaContentPart part) {
     final (path, bytes) = switch (part) {
       LlamaImageContent() => (part.path, part.bytes),
       LlamaAudioContent() => (part.path, part.bytes),
@@ -8902,18 +8907,27 @@ class LlamaCppService {
     } else {
       return part is LlamaAudioContent ? true : null;
     }
-    if (head.length < 12) return false;
     bool has(String magic, [int offset = 0]) {
+      if (head.length < offset + magic.length) return false;
       for (var i = 0; i < magic.length; i++) {
         if (head[offset + i] != magic.codeUnitAt(i)) return false;
       }
       return true;
     }
 
-    return has('RIFF') && has('WAVE', 8) ||
-        has('ID3') ||
-        head[0] == 0xFF && head[1] & 0xE0 == 0xE0 ||
-        has('fLaC');
+    if (head.length >= 12 &&
+        (has('RIFF') && has('WAVE', 8) ||
+            has('ID3') ||
+            head[0] == 0xFF && head[1] & 0xE0 == 0xE0 ||
+            has('fLaC'))) {
+      return true;
+    }
+    final imageMagic =
+        has('\x89PNG\r\n\x1a\n') ||
+        has('\xff\xd8\xff') ||
+        has('GIF8') ||
+        has('BM');
+    return imageMagic || part is LlamaImageContent ? false : null;
   }
 
   /// Returns whether the active native mtmd build and projector report video.
