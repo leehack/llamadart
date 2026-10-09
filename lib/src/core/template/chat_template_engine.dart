@@ -455,12 +455,55 @@ class ChatTemplateEngine {
   /// The [formatIndex] should come from [LlamaChatTemplateResult.format].
   /// [tools] supplies the schemas needed by formats whose wire representation
   /// does not encode enough type information to reconstruct arguments safely.
+  ///
+  /// Content that ends [output] keeps the whitespace after it, as llama.cpp
+  /// does, unless [isPartial] is true: more output may follow a partial one.
   static ChatParseResult parse(
     int formatIndex,
     String output, {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+    String? parser,
+    List<ToolDefinition>? tools,
+  }) {
+    final result = _parse(
+      formatIndex,
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+      parser: parser,
+      tools: tools,
+    );
+    return isPartial ? result : _withTrailingWhitespace(result, output);
+  }
+
+  /// Returns [result] with the whitespace that ends [output] added to content
+  /// that a handler trimmed it from.
+  static ChatParseResult _withTrailingWhitespace(
+    ChatParseResult result,
+    String output,
+  ) {
+    final body = output.trimRight();
+    if (body.length == output.length ||
+        result.content.isEmpty ||
+        !body.endsWith(result.content)) {
+      return result;
+    }
+    return ChatParseResult(
+      content: result.content + output.substring(body.length),
+      reasoningContent: result.reasoningContent,
+      toolCalls: result.toolCalls,
+    );
+  }
+
+  static ChatParseResult _parse(
+    int formatIndex,
+    String output, {
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
     String? parser,
     List<ToolDefinition>? tools,
   }) {
