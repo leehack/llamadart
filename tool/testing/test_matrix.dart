@@ -457,9 +457,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'real opt-in stable_diffusion runtime bundled by the example hook, '
+        'a runtime probe that leaves the calling isolate responsive, a first '
+        'image after warmUp about as fast as a warm one, '
         'SDXS load and 256x256 one-step generation with labelled progress, '
         'same-seed determinism, pre-start and mid-run cancellation, the '
         'one-generation guard, dispose during generation, and PNG output; '
+        'the runtime\'s reason in the error of a truncated file, a missing '
+        'file and a file in the wrong role, without paths; runtime messages '
+        'through the log handler by level and none at the default levels; on '
+        'macOS the runtime\'s GPU memory total against the Metal working set '
+        'the memory check reads; '
         'SD-Turbo with TAESD when LLAMADART_SD_TURBO_MODEL is set, '
         'SDXL-Lightning warm-up and 1024x1024 generation (with TAESDXL when '
         'LLAMADART_TAESDXL is set) when LLAMADART_SDXL_LIGHTNING_MODEL is '
@@ -483,8 +490,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'FFI with the model idle, generating, loading, disposed and '
         'optionally with a llama.cpp model loaded too, an unhandled error '
         'while generating or loading, and an isolate killed inside a load; '
-        'the exports the sd_dart_ calls resolve to; and the progress events '
-        'of batches of two and three images; not a Flutter quit',
+        'the idle, generating and loading exits again with the runtime log '
+        'forwarded at debug level; nothing on stderr at the default log '
+        'levels; the exports the required and the optional sd_dart_ calls '
+        'resolve to; and the progress events of batches of two and three '
+        'images; not a Flutter quit',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'image-exit-teardown --model-path <sdxs.gguf>',
@@ -626,7 +636,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'chat-app image screen on a device with the bundled stable_diffusion '
-        'runtime: runtime probe, SDXS download through the screen when not '
+        'runtime: a runtime probe that leaves the UI isolate responsive, SDXS '
+        'download through the screen when not '
         'installed, seeded 512x512 generation with the used seed shown, and '
         'PNG plus screen-capture output in the app temporary directory',
     command:

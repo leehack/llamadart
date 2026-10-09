@@ -4,6 +4,7 @@ import 'dart:math';
 import '../../backends/stable_diffusion/stable_diffusion_runtime_status.dart';
 import '../engine/engine_capabilities.dart';
 import '../exceptions.dart';
+import '../llama_logger.dart';
 import '../models/config/compute_device.dart';
 import '../models/download/model_download_manager.dart';
 import '../models/model_format.dart';
@@ -157,9 +158,11 @@ class ImageGenerationTask {
 /// in the same isolate; do not generate from engines in different isolates
 /// at the same time.
 ///
-/// Runtime logs are not forwarded to `LlamaLogger` yet: stable-diffusion.cpp
-/// passes log text that is only valid during a call made from its own
-/// threads.
+/// The runtime's messages reach the handler of `LlamaLogging.configure` when
+/// both of its levels admit them; a load takes the levels it finds. They
+/// arrive after each load and generation and at [dispose], not while one
+/// runs, and name model files by role. At the default levels the runtime
+/// logs nothing, to stderr either.
 ///
 /// ```dart
 /// final engine = await ImageGenerationEngine.load(
@@ -308,10 +311,22 @@ class ImageGenerationEngine {
   /// available: on Android the larger of `MemAvailable` and half of physical
   /// memory less what the app already holds, `MemAvailable` on Linux, the
   /// app's remaining memory limit on iOS, and physical memory on macOS,
-  /// capped on Metal by the GPU's recommended working set. Windows, and GPUs
-  /// other than Metal (whose device memory the runtime does not report), are
-  /// not checked. A model that does not fit throws [LlamaModelException]
-  /// naming both figures, instead of letting the system kill the app.
+  /// capped on Metal by the GPU's recommended working set. A model that
+  /// does not fit throws [LlamaModelException] naming both figures, instead
+  /// of letting the system kill the app.
+  ///
+  /// A Vulkan GPU does not bound a model by itself: the runtime keeps the
+  /// weights that do not fit it in host memory, or on another GPU. A GPU's
+  /// figure, asked off the calling isolate, is its free memory when its
+  /// driver reports that and its total memory otherwise. A model above the
+  /// figure of the GPU it computes on (with [ComputeDevice.auto] the
+  /// discrete GPU with the most free memory, with [ComputeDevice.gpu] the
+  /// first) loads, generates more slowly, and one `LlamaLogger` warning says
+  /// so; on Linux it is refused only above the figures of all discrete GPUs
+  /// plus `MemAvailable`. An integrated GPU on Linux gets `MemAvailable`
+  /// alone. Windows, a GPU that does not report its
+  /// memory and a load with the `SD_VK_DEVICE` environment variable set are
+  /// never refused.
   ///
   /// [download]'s cancel token stops a download at once and is checked again
   /// after classification and after the native load; the native load itself
@@ -335,8 +350,8 @@ class ImageGenerationEngine {
   ///   component (such as a LoRA or ControlNet), shares a role with another
   ///   file, or does not match the diffusion model; when no file holds
   ///   diffusion weights; when the model does not fit; when the runtime
-  ///   cannot load it; and what the download manager throws for a failed
-  ///   download.
+  ///   cannot load it, with the reason the runtime logged when it logged
+  ///   one; and what the download manager throws for a failed download.
   /// - [LlamaStateException] when [download]'s cancel token cancels the
   ///   load, and while another generation or load is running.
   /// - [LlamaArgumentException] when [download] sets a bearer token or
@@ -409,11 +424,11 @@ class ImageGenerationEngine {
     if (params.checkMemory) {
       _checkMemory(
         weightBytes,
-        driver.memoryBudget(switch (backendName) {
+        await driver.memoryLimits(switch (backendName) {
           _ when _isMetal(backendName) => ImageGenerationComputeDevice.metal,
           _ when _isGpu(backendName) => ImageGenerationComputeDevice.otherGpu,
           _ => ImageGenerationComputeDevice.cpu,
-        }),
+        }, runtimePicksGpu: params.device == ComputeDevice.auto),
       );
     }
     final files = <String, String>{
@@ -561,7 +576,7 @@ class ImageGenerationEngine {
   /// one sampling step and a decode at that size: about 2 to 4 s for
   /// SDXL-Lightning with TAESDXL on an M4 Max, and the same peak memory as
   /// an image, which the memory check in [load] covers where it runs (not
-  /// on Vulkan or the Windows CPU).
+  /// on the Windows CPU).
   ///
   /// On the CPU there is nothing to compile, so this returns at once.
   ///
@@ -736,22 +751,28 @@ class ImageGenerationEngine {
 
   static void _checkMemory(
     int weightBytes,
-    ImageGenerationMemoryBudget? budget,
+    ImageGenerationMemoryLimits limits,
   ) {
-    if (budget == null) {
-      return;
-    }
     final required = estimateImageGenerationMemoryBytes(weightBytes);
-    if (required <= budget.bytes) {
-      return;
+    final needs =
+        'The image model needs about ${_gib(required)} GiB '
+        '(${_gib(weightBytes)} GiB of weights plus working memory)';
+    final refuse = limits.refuse;
+    if (refuse != null && required > refuse.bytes) {
+      throw LlamaModelException(
+        '$needs, but only ${_gib(refuse.bytes)} GiB is available '
+        '(${refuse.source}). Use a smaller or more quantized model, free '
+        'memory, or set ImageModelParams.checkMemory to false to try anyway.',
+      );
     }
-    throw LlamaModelException(
-      'The image model needs about ${_gib(required)} GiB '
-      '(${_gib(weightBytes)} GiB of weights plus working memory), but only '
-      '${_gib(budget.bytes)} GiB is available (${budget.source}). Use a '
-      'smaller or more quantized model, free memory, or set '
-      'ImageModelParams.checkMemory to false to try anyway.',
-    );
+    final slower = limits.slower;
+    if (slower != null && required > slower.bytes) {
+      LlamaLogger.instance.warning(
+        '$needs, more than the ${_gib(slower.bytes)} GiB available '
+        '(${slower.source}). stable-diffusion.cpp keeps the part that does '
+        'not fit in system memory, so generation will be slower.',
+      );
+    }
   }
 
   static String _gib(int bytes) {

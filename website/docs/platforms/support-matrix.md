@@ -206,7 +206,7 @@ output and grammars, sampling controls and speculative decoding. Guides:
 | --- | --- |
 | llama.cpp native | `leehack/llamadart-native@v0.6.0-1` |
 | LiteRT-LM native | `leehack/litert-lm-native@v0.18.0` |
-| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-1`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
+| stable-diffusion.cpp native (opt-in, Preview) | `leehack/stable-diffusion-native@v0.2.0-2`, for [image generation](../guides/image-generation); see [Opt-in stable_diffusion runtime](./native-build-hooks#opt-in-stable_diffusion-runtime-experimental). Flutter iOS/macOS apps link its XCFramework through `llamadart_stable_diffusion_flutter` |
 | WebGPU bridge assets | `leehack/llama-web-bridge-assets`; see [Pinned bridge assets](./webgpu-bridge#pinned-bridge-assets) |
 
 The native-assets hook currently pins `llamadart-native` tag

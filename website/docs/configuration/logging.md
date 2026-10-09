@@ -51,6 +51,15 @@ above `debug` are never capped. An error thrown by the handler on a forwarded
 record is printed, not thrown. Web backends run on the main isolate and are
 unaffected.
 
+## Image generation runtime
+
+The opt-in `stable_diffusion` runtime logs through the same handler.
+`ImageGenerationEngine.load` takes the levels it finds and the runtime
+records from the stricter of `level` and `nativeLevel`, so a later
+`configure` call applies to the next load. Its messages arrive after each
+load and generation, not while one runs, and are not printed to stderr at
+any level; see [Runtime logs](../guides/image-generation#runtime-logs).
+
 ## Recommended profiles
 
 - Local debugging: `level: info`, `nativeLevel: warn`.

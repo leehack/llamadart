@@ -36,6 +36,10 @@ For canonical full release notes, use:
   `chatTemplate` with a token count threw a `StateError`. With `v0.18.0` that
   includes a `liteRtLmCacheDir` the runtime cannot write, on the CPU backend
   too.
+- Fix a LiteRT-LM bundle named without `.litertlm` failing engine creation
+  when the process cannot write the bundle's directory and `liteRtLmCacheDir`
+  is unset, as on Linux: it now runs without runtime caches
+  ([#973](https://github.com/leehack/llamadart/issues/973)).
 - LiteRT-LM release sync accepts runtimes built on upstream `v0.17.1` and
   `v0.18.0`, and names the upstream version when its prebuilt-override table
   is behind the runtime owner's
@@ -44,6 +48,23 @@ For canonical full release notes, use:
   `@litert-lm/core@0.18.0`. An app still chooses the module through
   `window.__llamadartLiteRtLmModuleUrl`; the chat app's `web/index.html` and
   the docs now name `0.18.0`.
+- Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
+  `stable_diffusion` image runtime.
+- Check the memory of Vulkan GPUs before loading an image model
+  ([stable-diffusion-native#9](https://github.com/leehack/stable-diffusion-native/issues/9)).
+  On Linux `ImageGenerationEngine.load` refuses, with `LlamaModelException`,
+  only a model that does not fit the discrete GPUs plus system memory. A
+  model larger than the memory of the GPU that computes still loads, with
+  one warning, and runs slower; on Windows it is warned about and never
+  refused. Not validated on a physical Vulkan GPU yet;
+  `ImageModelParams(checkMemory: false)` skips the check and the warning.
+- Quote the errors stable-diffusion.cpp logged in the `LlamaModelException`
+  of an image model it cannot load, with files named by role
+  ([stable-diffusion-native#3](https://github.com/leehack/stable-diffusion-native/issues/3)).
+- Send the image runtime's messages to the `LlamaLogging.configure` handler
+  at the configured levels, after each load and generation. The runtime no
+  longer prints ggml's device messages to stderr: at the default level
+  `none` it logs nothing.
 - Update the default llama.cpp runtime to
   `leehack/llamadart-native@v0.6.0-1` (llama.cpp `v0.6.0`), and the
   `llamadart_llama_cpp_flutter` Apple SwiftPM pin with it.

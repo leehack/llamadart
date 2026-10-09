@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 import '../../core/exceptions.dart';
+import '../../core/models/config/log_level.dart';
 import '../windows_runtime_libraries.dart';
 import 'stable_diffusion_bindings.dart' as sd;
 import 'stable_diffusion_calls.dart';
+import 'stable_diffusion_log.dart';
 import 'stable_diffusion_runtime_status.dart';
 
 /// The native calls the probe makes; tests substitute a fake.
@@ -16,6 +18,11 @@ abstract interface class StableDiffusionNativeApi {
 
   /// `sd_commit()`.
   String commit();
+
+  /// Starts the runtime's log recorder at [level], where the runtime has
+  /// one: from then on its messages, ggml's among them, are recorded and not
+  /// printed to stderr.
+  void recordLog(LlamaLogLevel level);
 
   /// `sd_list_devices()` output.
   String listDevices();
@@ -63,6 +70,12 @@ const Set<Abi> stableDiffusionPublishedAbis = {
 /// which a release older than [StableDiffusionCalls.minimumNativeRelease]
 /// does not.
 ///
+/// `sd_list_devices` initializes the GPU backend, which logs through ggml.
+/// The runtime's log recorder is registered before it, at [logLevel], so
+/// those messages are recorded for the next image worker to forward instead
+/// of going to stderr, and the registration, which is not synchronized,
+/// never runs beside a device initialization.
+///
 /// [abi], [readCpuInfo], [windowsHasAvx2], [missingWindowsLibraries] and
 /// [api] default to the host and the bundled library; tests replace them.
 StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
@@ -72,6 +85,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   List<String> Function(List<String> names) missingWindowsLibraries =
       findMissingWindowsLibraries,
   StableDiffusionNativeApi api = const _BundledStableDiffusionApi(),
+  LlamaLogLevel logLevel = LlamaLogLevel.none,
 }) {
   final targetAbi = abi ?? Abi.current();
   final platform = _abiLabel(targetAbi);
@@ -135,6 +149,7 @@ StableDiffusionRuntimeStatus probeStableDiffusionRuntime({
   try {
     final version = api.version();
     final commit = api.commit();
+    api.recordLog(logLevel);
     final devices = parseStableDiffusionDeviceList(api.listDevices());
     if (!api.exportsWrapperCalls()) {
       return StableDiffusionRuntimeStatus.unavailable(
@@ -313,6 +328,14 @@ final class _BundledStableDiffusionApi implements StableDiffusionNativeApi {
 
   @override
   String commit() => _string(sd.sd_commit());
+
+  @override
+  void recordLog(LlamaLogLevel level) {
+    final log = StableDiffusionCalls.tryResolve()?.log;
+    if (log != null) {
+      recordStableDiffusionLog(log, level);
+    }
+  }
 
   @override
   String listDevices() {

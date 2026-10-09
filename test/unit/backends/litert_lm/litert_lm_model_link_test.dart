@@ -9,6 +9,8 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_model_link.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
+import '../../../support/read_only_directory.dart';
+
 void main() {
   late Directory tempDir;
   late Directory links;
@@ -183,7 +185,32 @@ void main() {
     final target = await Link(link.path).target();
     expect(p.isAbsolute(target), isTrue);
     expect(p.equals(target, model.absolute.path), isTrue);
-    expect(p.equals(link.cacheDirectory, tempDir.absolute.path), isTrue);
+    expect(
+      p.equals(link.runtimeCacheDirectory(), tempDir.absolute.path),
+      isTrue,
+    );
+  }, testOn: '!windows');
+
+  test('keeps the runtime caches next to a bundle only while the process '
+      'can write there', () async {
+    final models = await Directory('${tempDir.path}/models').create();
+    final bundle = File('${models.path}/download');
+    await bundle.writeAsString('LITERTLM');
+    final link = (await LiteRtLmModelLink.create(bundle.path, parent: links))!;
+    addTearDown(link.dispose);
+
+    expect(link.runtimeCacheDirectory(), models.absolute.path);
+
+    if (!makeReadOnly(models)) {
+      markTestSkipped('This user writes a directory without write permission.');
+      return;
+    }
+    expect(link.runtimeCacheDirectory(), ':nocache');
+    expect(await File(link.path).readAsString(), 'LITERTLM');
+    expect(models.listSync().map((entry) => entry.path), [bundle.path]);
+
+    Process.runSync('chmod', ['u+w', models.path]);
+    expect(link.runtimeCacheDirectory(), models.absolute.path);
   }, testOn: '!windows');
 
   test('names the link from a sanitized bundle name', () async {

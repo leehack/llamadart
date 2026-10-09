@@ -1,11 +1,16 @@
+// ignore_for_file: implementation_imports
 @Tags(['local-only'])
 @Timeout(Duration(minutes: 10))
 library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_worker.dart';
+import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.dart';
+import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:test/test.dart';
 
 // Real image generation through the stable_diffusion runtime this example
@@ -112,6 +117,151 @@ void main() {
       ),
     );
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
+  test('a load the runtime rejects carries the reason the runtime logged, '
+      'with files named by role', () async {
+    final directory = await Directory.systemTemp.createTemp('llamadart-img-');
+    addTearDown(() => directory.delete(recursive: true));
+    // The header and the first tensors: the roles are detected, and the
+    // runtime finds tensors past the end of the file.
+    final truncated = File('${directory.path}/truncated.gguf');
+    final source = await File(sdxsPath!).open();
+    try {
+      await truncated.writeAsBytes(await source.read(64 << 20));
+    } finally {
+      await source.close();
+    }
+    final missing = '${directory.path}/missing.gguf';
+
+    Future<String> reasonOf(Future<Object?> load) async {
+      try {
+        await load;
+      } on LlamaModelException catch (error) {
+        expect('$error', isNot(contains(directory.path)));
+        expect('$error', isNot(contains(sdxsPath)));
+        return RegExp(
+          r'The runtime reported: "(.*)"\.',
+        ).firstMatch(error.message)!.group(1)!;
+      }
+      fail('The load succeeded.');
+    }
+
+    final reasons = {
+      'truncated file': await reasonOf(
+        ImageGenerationEngine.load(_sdxs(ModelSource.path(truncated.path))),
+      ),
+      // The engine refuses a missing file itself, so this one goes straight
+      // to the worker.
+      'missing file': await reasonOf(
+        StableDiffusionImageWorker.start(
+          ImageGenerationSessionConfig(
+            files: {'model': missing},
+            backend: null,
+            threads: 0,
+          ),
+        ),
+      ),
+      'wrong role': await reasonOf(
+        ImageGenerationEngine.load(
+          ImageGenerationModel(
+            ModelSource.path(sdxsPath),
+            role: ImageModelRole.diffusionModel,
+          ),
+        ),
+      ),
+    };
+
+    print('IMAGE_LOAD_FAILURE_REASONS $reasons');
+    expect(reasons['truncated file'], contains('<checkpoint file>'));
+    expect(reasons['missing file'], contains('<checkpoint file>'));
+    expect(reasons.values.toSet(), hasLength(3));
+
+    // The engine still loads afterwards.
+    final engine = await ImageGenerationEngine.load(
+      _sdxs(ModelSource.path(sdxsPath)),
+    );
+    await engine.dispose();
+  }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
+  test('the runtime\'s messages reach the log handler at the configured '
+      'levels, by level and without paths, and none do by default', () async {
+    Future<List<LlamaLogRecord>> recordsAt(LlamaLogLevel level) async {
+      final records = <LlamaLogRecord>[];
+      await LlamaLogging.configure(level: level, handler: records.add);
+      try {
+        final engine = await ImageGenerationEngine.load(
+          _sdxs(ModelSource.path(sdxsPath!)),
+        );
+        final loaded = records.length;
+        await engine.generateImage(
+          const ImageGenerationRequest(
+            prompt: 'a red fox in autumn leaves',
+            width: 256,
+            height: 256,
+            steps: 1,
+            guidanceScale: 1,
+            seed: 42,
+          ),
+        );
+        final generated = records.length;
+        await engine.dispose();
+        print(
+          'IMAGE_LOG ${level.name}: ${records.length} records ($loaded after '
+          'the load, ${generated - loaded} after the generation, '
+          '${records.length - generated} at dispose); by level '
+          '${{for (final l in LlamaLogLevel.values) l.name: records.where((r) => r.level == l).length}}',
+        );
+      } finally {
+        await LlamaLogging.configure();
+      }
+      return records;
+    }
+
+    final silent = await recordsAt(LlamaLogLevel.none);
+    final info = await recordsAt(LlamaLogLevel.info);
+    final debug = await recordsAt(LlamaLogLevel.debug);
+    final error = await recordsAt(LlamaLogLevel.error);
+
+    expect(silent, isEmpty);
+    expect(error, isEmpty);
+    expect(info, isNotEmpty);
+    for (final record in info.take(6)) {
+      print('IMAGE_LOG_RECORD [${record.level.name}] ${record.message}');
+    }
+    expect(
+      info.map((record) => record.level),
+      everyElement(isIn([LlamaLogLevel.info, LlamaLogLevel.warn])),
+    );
+    expect(debug.length, greaterThan(info.length));
+    expect(debug.map((record) => record.level), contains(LlamaLogLevel.debug));
+    for (final record in debug) {
+      expect(record.message, startsWith('stable_diffusion: '));
+      expect(record.message, isNot(contains(sdxsPath!)));
+    }
+    expect(
+      debug.map((record) => record.message),
+      contains(contains('<checkpoint file>')),
+    );
+  }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
+
+  test('the GPU memory the runtime reports for Metal is the working set '
+      'the memory check reads itself', () async {
+    final memory = (await Isolate.run(readStableDiffusionGpuMemory))!.single;
+    final workingSet = readStableDiffusionMemoryBudget(
+      device: ImageGenerationComputeDevice.metal,
+    )!;
+
+    print(
+      'IMAGE_GPU_MEMORY ${memory.name}: total ${memory.totalBytes}, free '
+      '${memory.freeBytes}, integrated ${memory.integrated}; '
+      '${workingSet.source}: ${workingSet.bytes}',
+    );
+    expect(memory.name, startsWith('MTL'));
+    expect(memory.integrated, isFalse);
+    expect(memory.freeBytes, inInclusiveRange(1, memory.totalBytes));
+    expect(workingSet.source, "Metal's recommended GPU working set");
+    expect(memory.totalBytes, workingSet.bytes);
+  }, skip: Platform.isMacOS ? false : 'macOS only');
 
   group('SDXS', () {
     late ImageGenerationEngine engine;

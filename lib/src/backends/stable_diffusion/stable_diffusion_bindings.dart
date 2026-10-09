@@ -336,6 +336,46 @@ external bool sd_dart_generate_image(
   ffi.Pointer<ffi.Int> num_images_out,
 );
 
+@ffi.Native<ffi.Int32 Function()>()
+external int sd_dart_gpu_device_count();
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Int32, ffi.Pointer<sd_dart_gpu_device_memory_t>)
+>()
+external int sd_dart_gpu_device_memory(
+  int device_index,
+  ffi.Pointer<sd_dart_gpu_device_memory_t> out,
+);
+
+@ffi.Native<ffi.Size Function(ffi.Pointer<ffi.Char>, ffi.Size)>()
+external int sd_dart_last_error(ffi.Pointer<ffi.Char> text, int capacity);
+
+@ffi.Native<ffi.Uint64 Function()>()
+external int sd_dart_log_dropped();
+
+@ffi.Native<ffi.Void Function()>()
+external void sd_dart_log_enable();
+
+@ffi.Native<
+  ffi.Uint64 Function(
+    ffi.Uint64,
+    ffi.Pointer<ffi.Char>,
+    ffi.Size,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int sd_dart_log_read(
+  int after,
+  ffi.Pointer<ffi.Char> text,
+  int capacity,
+  ffi.Pointer<ffi.Int32> level,
+  ffi.Pointer<ffi.Size> length,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Int32)>()
+external void sd_dart_log_set_level(int level);
+
 @ffi.Native<ffi.Pointer<sd_ctx_t> Function(ffi.Pointer<sd_ctx_params_t>)>()
 external ffi.Pointer<sd_ctx_t> sd_dart_new_sd_ctx(
   ffi.Pointer<sd_ctx_params_t> sd_ctx_params,
@@ -647,6 +687,10 @@ external bool upscale(
   ffi.Pointer<ffi.Pointer<sd_image_t>> images_out,
   ffi.Pointer<ffi.Int> num_images_out,
 );
+
+const int SD_DART_GPU_DEFAULT_DEVICE = -1;
+
+const int SD_DART_LOG_TEXT_SIZE = 4096;
 
 final class adetailer_ctx_t extends ffi.Opaque {}
 
@@ -1320,6 +1364,59 @@ enum sd_dart_exit_stage {
     1 => SD_DART_EXIT_STAGE_CONTEXT,
     2 => SD_DART_EXIT_STAGE_RESOURCE,
     _ => throw ArgumentError('Unknown value for sd_dart_exit_stage: $value'),
+  };
+}
+
+final class sd_dart_gpu_device_memory_t extends ffi.Struct {
+  @ffi.Uint64()
+  external int total_bytes;
+
+  @ffi.Uint64()
+  external int free_bytes;
+
+  @ffi.Int32()
+  external int type;
+
+  @ffi.Array.multi([64])
+  external ffi.Array<ffi.Char> name;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> description;
+}
+
+enum sd_dart_gpu_device_type {
+  SD_DART_GPU_DEVICE_DISCRETE(1),
+  SD_DART_GPU_DEVICE_INTEGRATED(2);
+
+  final int value;
+  const sd_dart_gpu_device_type(this.value);
+
+  static sd_dart_gpu_device_type fromValue(int value) => switch (value) {
+    1 => SD_DART_GPU_DEVICE_DISCRETE,
+    2 => SD_DART_GPU_DEVICE_INTEGRATED,
+    _ => throw ArgumentError(
+      'Unknown value for sd_dart_gpu_device_type: $value',
+    ),
+  };
+}
+
+enum sd_dart_gpu_status {
+  SD_DART_GPU_OK(0),
+  SD_DART_GPU_INVALID_ARGUMENT(-1),
+  SD_DART_GPU_NO_BACKEND(-2),
+  SD_DART_GPU_NO_DEVICE(-3),
+  SD_DART_GPU_UNAVAILABLE(-4);
+
+  final int value;
+  const sd_dart_gpu_status(this.value);
+
+  static sd_dart_gpu_status fromValue(int value) => switch (value) {
+    0 => SD_DART_GPU_OK,
+    -1 => SD_DART_GPU_INVALID_ARGUMENT,
+    -2 => SD_DART_GPU_NO_BACKEND,
+    -3 => SD_DART_GPU_NO_DEVICE,
+    -4 => SD_DART_GPU_UNAVAILABLE,
+    _ => throw ArgumentError('Unknown value for sd_dart_gpu_status: $value'),
   };
 }
 

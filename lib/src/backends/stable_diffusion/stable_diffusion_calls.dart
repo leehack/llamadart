@@ -26,6 +26,15 @@ typedef _GenerateImageNative =
 typedef _CancelGenerationNative =
     Void Function(Pointer<sd.sd_ctx_t>, UnsignedInt);
 typedef _ExitFreeNative = Void Function(Pointer<Void>);
+typedef _GpuDeviceCountNative = Int32 Function();
+typedef _GpuDeviceMemoryNative =
+    Int32 Function(Int32, Pointer<sd.sd_dart_gpu_device_memory_t>);
+typedef _LogEnableNative = Void Function();
+typedef _LogSetLevelNative = Void Function(Int32);
+typedef _LogReadNative =
+    Uint64 Function(Uint64, Pointer<Char>, Size, Pointer<Int32>, Pointer<Size>);
+typedef _LogDroppedNative = Uint64 Function();
+typedef _LastErrorNative = Size Function(Pointer<Char>, Size);
 
 /// Every native call an image worker makes.
 ///
@@ -49,6 +58,12 @@ typedef _ExitFreeNative = Void Function(Pointer<Void>);
 /// the calls exist only when the runtime exports all six. An older runtime
 /// has no way to report progress without a Dart callback, so image
 /// generation is unsupported on it rather than falling back.
+///
+/// [log] and [gpu] are the functions [optionalNativeRelease]
+/// added. Each group is bound only when the runtime exports all of it, and is
+/// `null` otherwise: a runtime between the two releases still generates
+/// images, without the runtime's log and its reason for a failed load, and
+/// without the memory check of a Vulkan GPU.
 ///
 /// `sd_dart_exit_teardown`, `sd_dart_exit_call_begin`,
 /// `sd_dart_exit_call_end`, `sd_dart_exit_track` and `sd_dart_exit_untrack`
@@ -74,6 +89,8 @@ final class StableDiffusionCalls {
     required this.modelVersionName,
     required this.imageGenerationParamsInit,
     required this.freeImages,
+    this.log,
+    this.gpu,
   });
 
   /// The oldest `stable-diffusion-native` release that exports the `sd_dart_`
@@ -90,8 +107,28 @@ final class StableDiffusionCalls {
     'sd_dart_exit_free',
   ];
 
+  /// The `stable-diffusion-native` release that added [logSymbols] and
+  /// [deviceMemorySymbols].
+  static const String optionalNativeRelease = 'v0.2.0-2';
+
+  /// The `sd_dart_` functions of [log].
+  static const List<String> logSymbols = [
+    'sd_dart_log_enable',
+    'sd_dart_log_set_level',
+    'sd_dart_log_read',
+    'sd_dart_log_dropped',
+    'sd_dart_last_error',
+  ];
+
+  /// The `sd_dart_` functions of [gpu].
+  static const List<String> deviceMemorySymbols = [
+    'sd_dart_gpu_device_count',
+    'sd_dart_gpu_device_memory',
+  ];
+
   /// Resolves the calls from the bundled runtime, or returns `null` when it
-  /// does not export every one of [wrapperSymbols].
+  /// does not export every one of [wrapperSymbols]. [log] and [gpu] are
+  /// `null` when it does not export theirs.
   ///
   /// [symbol] replaces the lookup: it returns the address of the function
   /// exported under a name, and throws [ArgumentError] when there is none.
@@ -106,7 +143,8 @@ final class StableDiffusionCalls {
   }
 
   /// The address of the function the bundled runtime exports as [name], one
-  /// of [wrapperSymbols]; throws [ArgumentError] when it exports none.
+  /// of [wrapperSymbols], [logSymbols] or [deviceMemorySymbols]; throws
+  /// [ArgumentError] when it exports none.
   static Pointer<NativeType> symbolAddress(String name) => switch (name) {
     'sd_dart_progress_enable' =>
       Native.addressOf<NativeFunction<_ProgressEnableNative>>(
@@ -130,6 +168,31 @@ final class StableDiffusionCalls {
     'sd_dart_exit_free' => Native.addressOf<NativeFunction<_ExitFreeNative>>(
       sd.sd_dart_exit_free,
     ),
+    'sd_dart_log_enable' => Native.addressOf<NativeFunction<_LogEnableNative>>(
+      sd.sd_dart_log_enable,
+    ),
+    'sd_dart_log_set_level' =>
+      Native.addressOf<NativeFunction<_LogSetLevelNative>>(
+        sd.sd_dart_log_set_level,
+      ),
+    'sd_dart_log_read' => Native.addressOf<NativeFunction<_LogReadNative>>(
+      sd.sd_dart_log_read,
+    ),
+    'sd_dart_log_dropped' =>
+      Native.addressOf<NativeFunction<_LogDroppedNative>>(
+        sd.sd_dart_log_dropped,
+      ),
+    'sd_dart_last_error' => Native.addressOf<NativeFunction<_LastErrorNative>>(
+      sd.sd_dart_last_error,
+    ),
+    'sd_dart_gpu_device_count' =>
+      Native.addressOf<NativeFunction<_GpuDeviceCountNative>>(
+        sd.sd_dart_gpu_device_count,
+      ),
+    'sd_dart_gpu_device_memory' =>
+      Native.addressOf<NativeFunction<_GpuDeviceMemoryNative>>(
+        sd.sd_dart_gpu_device_memory,
+      ),
     _ => throw ArgumentError.value(name, 'name', 'not bound'),
   };
 
@@ -140,6 +203,15 @@ final class StableDiffusionCalls {
   ) {
     Pointer<NativeFunction<T>> function<T extends Function>(String name) =>
         symbol(name).cast();
+    // A group whose functions the runtime does not all export.
+    T? optional<T>(T Function() bind) {
+      try {
+        return bind();
+      } on ArgumentError {
+        return null;
+      }
+    }
+
     final exitFree = function<_ExitFreeNative>('sd_dart_exit_free');
     final void Function(Pointer<sd.sd_ctx_t>, int) cancelGeneration =
         function<_CancelGenerationNative>(
@@ -167,6 +239,31 @@ final class StableDiffusionCalls {
       modelVersionName: sd.sd_get_model_version_name,
       imageGenerationParamsInit: sd.sd_img_gen_params_init,
       freeImages: sd.free_sd_images,
+      log: optional(
+        () => StableDiffusionLogCalls(
+          enable: function<_LogEnableNative>('sd_dart_log_enable').asFunction(),
+          setLevel: function<_LogSetLevelNative>(
+            'sd_dart_log_set_level',
+          ).asFunction(),
+          read: function<_LogReadNative>('sd_dart_log_read').asFunction(),
+          dropped: function<_LogDroppedNative>(
+            'sd_dart_log_dropped',
+          ).asFunction(),
+          lastError: function<_LastErrorNative>(
+            'sd_dart_last_error',
+          ).asFunction(),
+        ),
+      ),
+      gpu: optional(
+        () => StableDiffusionGpuCalls(
+          deviceCount: function<_GpuDeviceCountNative>(
+            'sd_dart_gpu_device_count',
+          ).asFunction(),
+          deviceMemory: function<_GpuDeviceMemoryNative>(
+            'sd_dart_gpu_device_memory',
+          ).asFunction(),
+        ),
+      ),
     );
   }
 
@@ -235,6 +332,92 @@ final class StableDiffusionCalls {
 
   /// `free_sd_images`.
   final void Function(Pointer<sd.sd_image_t> images, int count) freeImages;
+
+  /// The runtime's log recorder, or `null` on a runtime older than
+  /// [optionalNativeRelease].
+  final StableDiffusionLogCalls? log;
+
+  /// The runtime's GPU device queries, or `null` on a runtime older than
+  /// [optionalNativeRelease].
+  final StableDiffusionGpuCalls? gpu;
+}
+
+/// The GPU device queries of the stable_diffusion runtime.
+///
+/// The first query in a process initializes the GPU backend, which on Metal
+/// with an empty shader cache takes many seconds, so none runs on a UI
+/// isolate. Each is a call exit teardown waits for, with the bound of a load.
+final class StableDiffusionGpuCalls {
+  /// Creates the calls from functions.
+  const StableDiffusionGpuCalls({
+    required this.deviceCount,
+    required this.deviceMemory,
+  });
+
+  /// `sd_dart_gpu_device_count`: the number of GPU devices, discrete and
+  /// integrated, numbered from 0 in the order `sd_list_devices` lists them,
+  /// or a negative `sd_dart_gpu_status` without a GPU backend.
+  final int Function() deviceCount;
+
+  /// `sd_dart_gpu_device_memory`: writes the memory, type and name of GPU
+  /// `deviceIndex` to `out` and returns an `sd_dart_gpu_status`.
+  final int Function(
+    int deviceIndex,
+    Pointer<sd.sd_dart_gpu_device_memory_t> out,
+  )
+  deviceMemory;
+}
+
+/// The log recorder of the stable_diffusion runtime: the library copies each
+/// message of stable-diffusion.cpp and ggml into a buffer of its own and Dart
+/// reads them, so Dart gives the runtime no log callback either.
+///
+/// [read] and [lastError] wait up to 100 ms for a thread that is copying a
+/// message, so they are not leaf calls and run in the worker isolate. All of
+/// them stay valid during and after exit teardown.
+final class StableDiffusionLogCalls {
+  /// Creates the calls from functions.
+  const StableDiffusionLogCalls({
+    required this.enable,
+    required this.setLevel,
+    required this.read,
+    required this.dropped,
+    required this.lastError,
+  });
+
+  /// `sd_dart_log_enable`: from then on the library records the messages of
+  /// every call in the process, and ggml's no longer go to stderr. Its first
+  /// call is not synchronized with a load, a generation or a device query on
+  /// another thread.
+  final void Function() enable;
+
+  /// `sd_dart_log_set_level`: the lowest `sd_log_level_t` recorded;
+  /// `SD_LOG_ERROR + 1` records nothing.
+  final void Function(int level) setLevel;
+
+  /// `sd_dart_log_read`: copies the oldest message whose sequence is greater
+  /// than `after` to `text` and returns its sequence, or 0 when there is
+  /// none. A sequence other than `after + 1` means the messages in between
+  /// left the buffer.
+  final int Function(
+    int after,
+    Pointer<Char> text,
+    int capacity,
+    Pointer<Int32> level,
+    Pointer<Size> length,
+  )
+  read;
+
+  /// `sd_dart_log_dropped`: messages that left the buffer unread, or could
+  /// not be recorded.
+  final int Function() dropped;
+
+  /// `sd_dart_last_error`: the error messages recorded while the calling
+  /// thread's most recent [StableDiffusionCalls.newContext] or
+  /// [StableDiffusionCalls.generateImage] ran, joined by line breaks; returns
+  /// the bytes of the whole text. Empty unless [enable] was called before
+  /// that call.
+  final int Function(Pointer<Char> text, int capacity) lastError;
 }
 
 /// The error for a stable_diffusion runtime that does not export every

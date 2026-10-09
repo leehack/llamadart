@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let stableDiffusionTag = "v0.2.0-1"
+let stableDiffusionTag = "v0.2.0-2"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,7 +47,7 @@ let package = Package(
             repository: "leehack/stable-diffusion-native",
             artifactName: "stable-diffusion-native-apple-xcframework-\(stableDiffusionTag).zip",
             tag: stableDiffusionTag,
-            checksum: "32c571e9c5204f1e8d2cdbae2371e3fac80bd1170715366e622d657cdca7a39b"
+            checksum: "e82716cea4f747c68b8e9565bf08848f827939810ce550eadc8e1c1bcadb3ae3"
         ),
         .target(
             name: "llamadart_stable_diffusion_flutter",
