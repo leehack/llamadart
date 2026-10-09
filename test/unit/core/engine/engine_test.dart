@@ -3791,38 +3791,36 @@ void main() {
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
 
-    test(
-      'create trims plain tool-enabled content as the final parse does',
-      () async {
-        backend.generationChunks = const ['  hello', '  ', '\n'];
-        await engine.loadModel('qwen-test.gguf');
+    test('create trims only leading whitespace of plain tool-enabled content, '
+        'as the final parse does', () async {
+      backend.generationChunks = const ['  hello', '  ', '\n'];
+      await engine.loadModel('qwen-test.gguf');
 
-        final chunks = await engine
-            .create(
-              const [
-                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
-              ],
-              tools: [
-                ToolDefinition(
-                  name: 'get_weather',
-                  description: 'Get weather',
-                  parameters: [ToolParam.string('city')],
-                  handler: (_) async => 'ok',
-                ),
-              ],
-              toolChoice: ToolChoice.auto,
-            )
-            .toList();
+      final chunks = await engine
+          .create(
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Get weather',
+                parameters: [ToolParam.string('city')],
+                handler: (_) async => 'ok',
+              ),
+            ],
+            toolChoice: ToolChoice.auto,
+          )
+          .toList();
 
-        final streamedContent = chunks
-            .map((chunk) => chunk.choices.first.delta.content)
-            .whereType<String>()
-            .join();
+      final streamedContent = chunks
+          .map((chunk) => chunk.choices.first.delta.content)
+          .whereType<String>()
+          .join();
 
-        expect(streamedContent, equals('hello'));
-        expect(chunks.last.choices.first.finishReason, equals('stop'));
-      },
-    );
+      expect(streamedContent, equals('hello  \n'));
+      expect(chunks.last.choices.first.finishReason, equals('stop'));
+    });
 
     test(
       'create streams no content for whitespace-only output with tools',
@@ -3953,7 +3951,7 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('{"note": 1}'));
+      expect(streamedContent, equals('{"note": 1}\n'));
       expect(contentChunks.length, greaterThan(1));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
@@ -3986,8 +3984,8 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('["note"]'));
-      expect(contentChunks, hasLength(3));
+      expect(streamedContent, equals('["note"]\n'));
+      expect(contentChunks, hasLength(4));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });
 
@@ -4119,7 +4117,7 @@ void main() {
           .map((chunk) => chunk.choices.first.delta.content!)
           .join();
 
-      expect(streamedContent, equals('<div>hello</div>'));
+      expect(streamedContent, equals('<div>hello</div>\n'));
       expect(contentChunks.length, greaterThan(1));
       expect(chunks.last.choices.first.finishReason, equals('stop'));
     });

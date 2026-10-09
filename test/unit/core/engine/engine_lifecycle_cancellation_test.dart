@@ -142,7 +142,16 @@ void main() {
           expect(result.stopReason, LlamaToolLoopStopReason.cancelled);
           expect(result.rolledBack, !partial);
           expect(result.pendingToolCalls, isEmpty);
-          expect(result.text, partial ? 'Partial answer' : '');
+          // Whitespace after the content waits for the end of the stream,
+          // which an error ending does not reach.
+          expect(
+            result.text,
+            !partial
+                ? ''
+                : errorEnding
+                ? 'Partial answer'
+                : 'Partial answer ',
+          );
           expect(
             session.history.map((message) => message.role),
             partial ? [LlamaChatRole.user, LlamaChatRole.assistant] : isEmpty,

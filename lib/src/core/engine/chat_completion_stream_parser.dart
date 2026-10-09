@@ -1033,12 +1033,13 @@ class ChatCompletionStreamParser {
 
 /// Releases raw content that the final parse keeps.
 ///
-/// The parse trims content, and the parse of a tool-call format drops
-/// tool-call envelopes from it. Text from a possible envelope opening on,
-/// found by the [_opening] scanner, and trailing whitespace wait for more
-/// output. After a whole opening, nothing more is released, and the final
-/// parse supplies the rest of the content. Leading whitespace is dropped
-/// when [trimsLeading] is true and otherwise waits for other text.
+/// The parse trims content, keeping only the whitespace after content that
+/// ends the output, and the parse of a tool-call format drops tool-call
+/// envelopes from it. Text from a possible envelope opening on, found by the
+/// [_opening] scanner, and trailing whitespace wait for more output. After a
+/// whole opening, nothing more is released, and the final parse supplies the
+/// rest of the content, as it does that whitespace. Leading whitespace is
+/// dropped when [trimsLeading] is true and otherwise waits for other text.
 class _ContentGate {
   _ContentGate(this._opening, {required this.trimsLeading});
 
