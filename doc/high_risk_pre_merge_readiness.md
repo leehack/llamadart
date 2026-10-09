@@ -265,8 +265,9 @@ lands on its own.
 
    The constituent audits count only if this audit passes.
 5. **CI** runs once, on the integration head.
-6. **Merge** without squashing, so the per-constituent commits reach `main`.
-   Then close each constituent PR with a link to the integration PR.
+6. **Merge** with a rebase merge, never squash, so `main` stays linear and
+   keeps one commit per constituent. Then close each constituent PR with a
+   link to the integration PR.
 7. **Post-merge QA** runs once for the batch. See
    [Post-merge QA scope](#post-merge-qa-scope).
 
@@ -284,6 +285,12 @@ binds the integration PR number, author, exact head and current base; its
 impacts and `test_evidence` cover the whole combined diff, which the evaluator
 derives from Git as usual. Each high-risk constituent keeps its own evidence
 document for its own audited head.
+
+A `test_evidence` control (`control_result`) observed on a constituent's
+audited head may be carried over when the production path and the cited test
+file are byte-identical on the integration head; the integration auditor
+verifies that with `git diff <audited-head> <integration-head> -- <paths>`.
+Otherwise the control is re-observed on the integration head.
 
 The schema has no field for constituent PR numbers, audited heads, audit
 results or conflict resolutions. Those live in the integration PR body, and the
