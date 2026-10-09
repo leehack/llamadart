@@ -62,7 +62,8 @@ hooks:
   bundle keys: `android-arm64`, `android-x64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `linux-arm64`, `linux-x64`, `macos-arm64`,
   `macos-x86_64`, `windows-arm64` and `windows-x64`. For each bundle the
-  exact bundle key wins, then its OS key, then `runtimes`, then every family.
+  exact bundle key wins, then its OS key, then `runtimes`, then the default
+  `llama_cpp` and `litert_lm`.
 - Aliases: `gguf`, `llama`, `llama.cpp` for `llama_cpp`; `litert`,
   `litert-lm`, `litertlm`, `.litertlm` for `litert_lm`; `stable-diffusion` for
   `stable_diffusion`. `all` selects every family, the opt-in
@@ -103,10 +104,17 @@ hooks:
   `stable_diffusion` build skips that runtime with a warning.
   `[llama_cpp, litert_lm, stable_diffusion]` names `litert_lm` and fails the
   build on a target without it.
-- On Flutter iOS and macOS, `all` includes `stable_diffusion` only when the
-  `llamadart_stable_diffusion_flutter` companion is a dependency; without it
-  the hook skips the runtime with a warning that names the companion. Naming
-  `stable_diffusion` still bundles it through the hook there.
+- In a Flutter iOS or macOS app, `all` includes `stable_diffusion` only when
+  the `llamadart_stable_diffusion_flutter` companion is a dependency. Without
+  it the hook leaves the runtime out with a build warning that names the
+  companion, and `ImageGenerationEngine.checkRuntime()` reports it as not
+  bundled. `flutter build macos`, Xcode and `xcodebuild` show the warning;
+  `flutter build ios` output does not. Naming `stable_diffusion` still bundles
+  it through the hook there.
+  The hook reads the pubspec that carries the user-defines, so a Flutter app
+  that is a pub workspace member, whose user-defines live in the workspace
+  root pubspec, is not recognised as a Flutter app: `all` at the root bundles
+  the runtime through the hook with no warning.
 - Published for `android-arm64`, `ios-arm64`, `ios-arm64-sim`,
   `ios-x86_64-sim`, `macos-arm64`, `macos-x86_64`, `linux-arm64`, `linux-x64`
   and `windows-x64`, built for iOS
@@ -148,11 +156,11 @@ hooks:
   `android-x64: [stable_diffusion]`, fails the build instead.
 - Flutter iOS and macOS apps should add the `llamadart_stable_diffusion_flutter`
   companion instead; see [Flutter Apple apps](#flutter-apple-apps). Without it
-  the hook bundles the runtime, and App Store Connect rejects that iOS
-  framework: Flutter writes `MinimumOSVersion` 13.0 into it, while the library
-  needs iOS 16.4. The hook reports this as an Xcode build warning, which Xcode
-  and `xcodebuild` show but plain `flutter build` and `flutter run` output
-  does not.
+  a list naming `stable_diffusion` makes the hook bundle the runtime, and App
+  Store Connect rejects that iOS framework: Flutter writes `MinimumOSVersion`
+  13.0 into it, while the library needs iOS 16.4. The hook reports this as an
+  Xcode build warning, which Xcode and `xcodebuild` show but plain
+  `flutter build` and `flutter run` output does not.
 
 ## Choose llama.cpp backend modules
 
@@ -322,7 +330,9 @@ When the llama.cpp or LiteRT-LM companion is present, the installed companions
 choose the Apple `llama_cpp` and `litert_lm` families and the rest of
 `llamadart_native_runtimes` is ignored with a warning. `stable_diffusion` is
 decided on its own: its companion selects it, and otherwise the hook bundles it
-when `llamadart_native_runtimes` names it, not when `all` only implies it.
+when `llamadart_native_runtimes` names it, not when `all` only implies it;
+a pub workspace member is the exception described under
+[Opt-in stable_diffusion runtime](#opt-in-stable_diffusion-runtime-experimental).
 Adding only the stable_diffusion
 companion leaves llama.cpp and LiteRT-LM on the hook. The build checks the
 resolved llama.cpp and stable_diffusion companions' pins against the core

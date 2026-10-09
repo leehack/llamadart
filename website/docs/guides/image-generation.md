@@ -107,11 +107,15 @@ dependencies:
   llamadart_stable_diffusion_flutter: ^0.0.2
 ```
 
-Without it, the hook bundles the runtime into a framework that Flutter marks
-`MinimumOSVersion` 13.0 while the library needs iOS 16.4, so App Store Connect
-rejects the iOS upload. The iOS build reports this as an Xcode build warning,
-which Xcode and `xcodebuild` show but plain `flutter build` and `flutter run`
-output does not. See
+Without it, `all` leaves the image runtime out of a Flutter iOS or macOS app
+and `ImageGenerationEngine.checkRuntime()` reports it as not bundled. The
+build warns about it: `flutter build macos`, Xcode and `xcodebuild` show the
+warning, and `flutter build ios` output does not. A list naming
+`stable_diffusion` bundles the runtime through the hook instead, into a
+framework that Flutter marks `MinimumOSVersion` 13.0 while the library needs
+iOS 16.4, so App Store Connect rejects the iOS upload. The iOS build reports
+this as an Xcode build warning, which Xcode and `xcodebuild` show but plain
+`flutter build` and `flutter run` output does not. See
 [Flutter Apple apps](../platforms/native-build-hooks#flutter-apple-apps).
 The hook-bundled runtime also cannot carry an Apple privacy manifest. The
 companion's XCFramework carries one from `stable-diffusion-native` `v0.2.0-1`,

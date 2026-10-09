@@ -226,12 +226,10 @@ void main() {
         isA<LlamaUnsupportedException>().having(
           (error) => error.message,
           'message',
-          allOf(
-            contains('stable_diffusion runtime is not bundled for linux-x64'),
-            contains('llamadart_native_runtimes'),
-            contains('llamadart_native_runtimes to all, or add'),
-            contains('A list replaces the default llama_cpp and litert_lm.'),
-          ),
+          'stable_diffusion runtime is not bundled for linux-x64; set '
+              'hooks.user_defines.llamadart.llamadart_native_runtimes to '
+              'all, or add stable_diffusion to its list, and rebuild. A list '
+              'replaces the default llama_cpp and litert_lm.',
         ),
       );
     });
@@ -308,13 +306,17 @@ void main() {
         ).message;
         expect(
           message,
-          allOf(
-            contains('not bundled for $platform'),
-            contains('llamadart_native_runtimes'),
-            contains('llamadart_native_runtimes to all, or add'),
-            contains('A list replaces the default llama_cpp and litert_lm.'),
-            contains('llamadart_stable_diffusion_flutter'),
-          ),
+          'stable_diffusion runtime is not bundled for $platform. In a '
+          'Flutter iOS/macOS app, add the '
+          'llamadart_stable_diffusion_flutter package and rebuild: without '
+          'it the build hook leaves out a stable_diffusion that all only '
+          'implies. Naming stable_diffusion in '
+          'hooks.user_defines.llamadart.llamadart_native_runtimes bundles it '
+          'through the hook instead, in a framework App Store Connect '
+          'rejects on iOS. In any other build, set '
+          'hooks.user_defines.llamadart.llamadart_native_runtimes to all, or '
+          'add stable_diffusion to its list, and rebuild. A list replaces '
+          'the default llama_cpp and litert_lm.',
           reason: platform,
         );
       }

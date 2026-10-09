@@ -142,12 +142,13 @@ or shipping runtimes the app does not use.
   user-defines do not change SwiftPM binaries either. The stable_diffusion
   companion is independent: it selects image generation on iOS and macOS and
   leaves llama.cpp and LiteRT-LM where they were.
-- Image generation (`ImageGenerationEngine`) needs `stable_diffusion` named
-  in `llamadart_native_runtimes`; it is never bundled by default. That list
-  replaces the defaults, so use `all` to keep `llama_cpp` and `litert_lm`
-  too. On iOS and
-  macOS add `llamadart_stable_diffusion_flutter` instead, since App Store
-  Connect rejects the iOS framework the hook bundles. Details are in the
+- Image generation (`ImageGenerationEngine`) needs the `stable_diffusion`
+  runtime, which is never bundled by default. Set `llamadart_native_runtimes`
+  to `all`, or to a list naming `stable_diffusion`; a list replaces the
+  default `llama_cpp` and `litert_lm`. On iOS and macOS add
+  `llamadart_stable_diffusion_flutter`: without it `all` leaves the image
+  runtime out there, and App Store Connect rejects the iOS framework the hook
+  bundles when `stable_diffusion` is named. Details are in the
   llamadart-image-generation skill.
 - Native runtimes are downloaded by the build hook on the first
   `flutter run` or `flutter build` for each target; no C++ toolchain is

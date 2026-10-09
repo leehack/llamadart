@@ -166,7 +166,7 @@ void main() {
   });
 
   group('selectNativeRuntimesForBundle', () {
-    test('defaults to all runtime families', () {
+    test('defaults to the two default runtime families', () {
       for (final bundle in [
         'android-arm64',
         'ios-arm64',
@@ -216,7 +216,7 @@ void main() {
       }
     });
 
-    test('parses empty runtime list as all runtime families', () {
+    test('parses empty runtime list as the two default families', () {
       for (final rawUserConfig in const [
         <String>[],
         '',
@@ -485,7 +485,7 @@ void main() {
       expect(warnings.single, contains('true'));
     });
 
-    test('all-unrecognised list warns and stays all runtime families', () {
+    test('all-unrecognised list warns and stays the two default families', () {
       final warnings = <String>[];
 
       expect(select(const ['tflite', 'onnx'], warnings), [

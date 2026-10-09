@@ -342,16 +342,15 @@ void main() {
                 line.startsWith('WARNING: ') &&
                 line.contains('stable_diffusion is only implied by `all`'),
           );
+          final relayed = stderrLines.where(
+            (line) => line.contains('stable_diffusion is only implied'),
+          );
           if (companion || explicit) {
             expect(skipped, isEmpty);
+            expect(relayed, isEmpty);
           } else {
-            expect(
-              skipped.single,
-              allOf(
-                contains('skipping it for this Flutter $bundle build'),
-                contains(_stableDiffusionCompanionName),
-              ),
-            );
+            expect(skipped.single, endsWith('$_impliedSkipWarning ($bundle)'));
+            expect(relayed.single, 'warning: llamadart: $_impliedSkipWarning');
           }
           expect(
             stderrLines.any((line) => line.contains('MinimumOSVersion')),
@@ -368,28 +367,23 @@ void main() {
       companions: const [],
       defines: {'llamadart_native_runtimes': 'all'},
     );
-    final log = await _captureHookLog(
-      () => testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.x64,
-        targetIOSSdk: IOSSdk.iPhoneSimulator,
-        userDefines: defines,
-        check: (_, output) {
-          expect(_codeAssetIds(output), {_primaryAssetId});
-        },
-      ),
-    );
-    expect(
-      log,
-      contains(
-        allOf(
-          startsWith('WARNING: '),
-          contains('stable_diffusion is only implied by `all`'),
-          contains(_stableDiffusionCompanionName),
+    late final List<String> log;
+    final stderrLines = await _captureStderr(() async {
+      log = await _captureHookLog(
+        () => testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.x64,
+          targetIOSSdk: IOSSdk.iPhoneSimulator,
+          userDefines: defines,
+          check: (_, output) {
+            expect(_codeAssetIds(output), {_primaryAssetId});
+          },
         ),
-      ),
-    );
+      );
+    });
+    expect(log, contains(endsWith('$_impliedSkipWarning (ios-x86_64-sim)')));
+    expect(stderrLines, ['warning: llamadart: $_impliedSkipWarning']);
     expect(log, contains(endsWith('Selected native runtimes: llama_cpp.')));
   });
 
@@ -770,6 +764,13 @@ dependencies:
     );
   }
 }
+
+const _impliedSkipWarning =
+    'stable_diffusion is only implied by `all` in llamadart_native_runtimes, '
+    'so this Flutter iOS/macOS build leaves the image runtime out: '
+    'llamadart_stable_diffusion_flutter is not a dependency. Add that package '
+    'to link the runtime through Swift Package Manager, or name '
+    'stable_diffusion to bundle it through the hook.';
 
 const _llamaCppCompanionName = 'llamadart_llama_cpp_flutter';
 const _stableDiffusionCompanionName = 'llamadart_stable_diffusion_flutter';

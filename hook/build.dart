@@ -198,14 +198,18 @@ void main(List<String> args) async {
       selectedRuntimes = selectedRuntimes
           .where((runtime) => runtime != nativeRuntimeStableDiffusion)
           .toList(growable: false);
-      log.warning(
-        'stable_diffusion is only implied by `all` in '
-        '$nativeRuntimesUserDefineKey; skipping it for this Flutter '
-        '${spec.bundle} build because $_stableDiffusionFlutterPackageName is '
-        'not a dependency. Add that package to link the runtime through Swift '
-        'Package Manager, or name stable_diffusion to bundle it through the '
-        'hook.',
-      );
+      const skipped =
+          'stable_diffusion is only implied by `all` in '
+          '$nativeRuntimesUserDefineKey, so this Flutter iOS/macOS build '
+          'leaves the image runtime out: $_stableDiffusionFlutterPackageName '
+          'is not a dependency. Add that package to link the runtime through '
+          'Swift Package Manager, or name stable_diffusion to bundle it '
+          'through the hook.';
+      log.warning('$skipped (${spec.bundle})');
+      // Hook log records stay in the hooks_runner stdout.txt; Flutter relays
+      // hook stderr into the Xcode build, where a `warning:` line becomes an
+      // Xcode build warning.
+      stderr.writeln('warning: llamadart: $skipped');
     }
     final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
     if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
@@ -226,8 +230,7 @@ void main(List<String> args) async {
           .where((runtime) => runtime != nativeRuntimeLiteRtLm)
           .toList(growable: false);
       log.warning(
-        'LiteRT-LM runtime is not available for ${spec.bundle}; using '
-        'available runtime families: ${selectedRuntimes.join(', ')}.',
+        'LiteRT-LM runtime is not available for ${spec.bundle}; skipping it.',
       );
     }
     final stableDiffusionBundleSpec =

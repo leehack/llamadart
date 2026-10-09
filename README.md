@@ -113,9 +113,11 @@ experimental and may change, and the runtime is opt-in.
   `llamadart_stable_diffusion_flutter` companion (see [Install](#install)),
   which links the runtime through Swift Package Manager and selects it without
   the entry above. Pair companion `0.0.2` with core `0.11.1` and `0.11.0`.
-  Without it the hook bundles the runtime, App Store Connect rejects that iOS
-  framework's `MinimumOSVersion`, and only Xcode and `xcodebuild` show the
-  build warning about it.
+  Without it, `all` leaves the image runtime out of a Flutter iOS/macOS app
+  with a build warning. A list naming `stable_diffusion` bundles it through
+  the hook instead, and App Store Connect rejects that iOS framework's
+  `MinimumOSVersion`. `flutter build ios` output shows neither warning; Xcode
+  and `xcodebuild` show both.
 
 - **Platforms:** Android arm64 (CPU), iOS and macOS (Metal), Linux arm64/x64
   and Windows x64 (CPU or Vulkan). Not available on the web yet

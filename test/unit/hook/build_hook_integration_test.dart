@@ -733,6 +733,8 @@ Future<void> _writeBundleLibraries(
 
 const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
+  'dxcompiler.dll',
+  'dxil.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libwebgpu_dawn.dll',

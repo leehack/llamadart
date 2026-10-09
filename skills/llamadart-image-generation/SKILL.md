@@ -39,10 +39,12 @@ description: >-
 - Flutter iOS and macOS apps should add the
   `llamadart_stable_diffusion_flutter` companion package. It links the
   runtime's XCFramework through Swift Package Manager and selects the runtime
-  on iOS and macOS without the entry above. Without it the hook bundles the
-  runtime, and App Store Connect rejects that iOS framework's
-  `MinimumOSVersion`; only Xcode and `xcodebuild` show the build warning about
-  it. Pair companion `0.0.2` with core `0.11.1` and `0.11.0`; adding it opts
+  on iOS and macOS without the entry above. Without it, `all` leaves the
+  image runtime out of a Flutter iOS/macOS app and `checkRuntime()` reports
+  it as not bundled; a list naming `stable_diffusion` bundles it through the
+  hook, and App Store Connect rejects that iOS framework's
+  `MinimumOSVersion`. `flutter build ios` output shows neither build warning;
+  Xcode and `xcodebuild` show both. Pair companion `0.0.2` with core `0.11.1` and `0.11.0`; adding it opts
   the app into the runtime (about 37 MB per Apple target).
 - Platforms: Android arm64 (CPU only; Armv8.2 dot-product and fp16), iOS 16.4+
   and macOS 13.3+ (Metal), Linux arm64/x64 and Windows x64 (CPU or Vulkan; x64
