@@ -1083,6 +1083,14 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Whether a runtime is loaded and provides the entry point of
+  /// [renderMessageToString].
+  bool get supportsMessageRendering =>
+      _bindings?._library.providesSymbol(
+        'litert_lm_conversation_render_message_to_string',
+      ) ??
+      false;
+
   /// Renders a message with the active native LiteRT-LM conversation template.
   ///
   /// The returned string is copied into Dart before the native conversation may

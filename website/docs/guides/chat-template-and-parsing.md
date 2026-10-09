@@ -116,6 +116,22 @@ renders the list into the prompt without an error. Read both shapes:
 `engine.chatTemplate(...)` renders in Dart and does not show what the runtime
 rendered.
 
+The template embedded in a bundle receives the same list. Bundles built for
+LiteRT-LM before `v0.18.0` often read `message.content` as a string, which the
+older runtime allowed for a single text part. With `v0.18.0` such a template
+writes the serialized list into the prompt when it interpolates the content,
+fails the request when it concatenates it, and renders empty messages when it
+only handles `content is string`.
+
+On native platforms `llamadart` checks this once per loaded model, on its
+first use, and gives a template of any of those three shapes the string again,
+so the bundle answers as it did with `v0.17.0-8`. A template that already
+reads parts is left alone. If `llamadart` cannot adapt a template it logs one
+warning, and a request that then fails names the template. That is the case
+for a template written in the runtime's single-turn `is_appending_to_prefill`
+form. Web LiteRT-LM (`@litert-lm/core` `0.18.0`) has no such adapter: use a
+bundle whose template reads content parts.
+
 ## Custom template overrides
 
 To replace a model's template for every request, such as a GGUF file whose

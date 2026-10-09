@@ -7,6 +7,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_bundle_template.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -28,6 +29,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
 
+import '../../../support/litert_lm_content_templates.dart';
 import '../../../support/read_only_directory.dart';
 
 void main() {
@@ -277,6 +279,390 @@ void main() {
         }
       });
     }
+  });
+
+  group('bundle template content shape', () {
+    const params = ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.cpu);
+    const probeParts = [
+      {'type': 'text', 'text': liteRtLmContentShapeProbeText},
+    ];
+    const history = [
+      LlamaChatMessage.fromText(
+        role: LlamaChatRole.system,
+        text: 'Repeat "text": "$liteRtLmContentShapeProbeText" back.',
+      ),
+      LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: liteRtLmContentShapeProbeText,
+      ),
+      LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: 'Done.'),
+    ];
+    final records = <LlamaLogRecord>[];
+    late _FakeLiteRtLmRuntimeClient client;
+    late List<String> readPaths;
+
+    setUp(() {
+      client = _FakeLiteRtLmRuntimeClient()..rendersMessages = true;
+      readPaths = <String>[];
+      records.clear();
+      LlamaLogger.instance.setLevel(LlamaLogLevel.warn);
+      LlamaLogger.instance.setHandler(records.add);
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+      LlamaLogger.instance.setHandler(null);
+    });
+
+    // Renders as a LiteRT-LM v0.18 runtime does: content is a list of parts.
+    void renderLikeTheRuntime(String bundleTemplate) {
+      client.onRenderMessage = (template) =>
+          renderLiteRtLmContent(template ?? bundleTemplate, probeParts);
+    }
+
+    LiteRtLmService serviceReading(String? template) => LiteRtLmService(
+      clientFactory: () => client,
+      readBundleChatTemplate: (path) {
+        readPaths.add(path);
+        return template;
+      },
+    );
+
+    Future<void> chat(
+      LiteRtLmService service,
+      int context, {
+      Object? sendError,
+    }) async {
+      client.generated = StreamController<String>();
+      if (sendError == null) {
+        client.generated.add('Hello');
+      } else {
+        client.generated.addError(sendError);
+      }
+      unawaited(client.generated.close());
+      await service.generateChat(context, const [
+        ...history,
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello'),
+      ], const GenerationParams(maxTokens: 64)).drain<void>();
+    }
+
+    Future<void> raw(
+      LiteRtLmService service,
+      int context, {
+      Object? sendError,
+    }) async {
+      client.generated = StreamController<String>();
+      if (sendError == null) {
+        client.generated.add('Hello');
+      } else {
+        client.generated.addError(sendError);
+      }
+      unawaited(client.generated.close());
+      await service
+          .generate(context, 'Hello', const GenerationParams(maxTokens: 64))
+          .drain<void>();
+    }
+
+    for (final MapEntry(key: shape, value: bundleTemplate)
+        in liteRtLmStringContentTemplates.entries) {
+      test('adapts a template $shape content', () async {
+        renderLikeTheRuntime(bundleTemplate);
+        final adapter = liteRtLmTextContentAdapter(bundleTemplate);
+        final service = serviceReading(bundleTemplate);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await chat(service, context);
+          expect(client.conversations, [
+            (template: null, seeded: false),
+            (template: adapter, seeded: false),
+            (template: adapter, seeded: true),
+          ]);
+          expect(readPaths, [modelFile.path]);
+
+          await raw(service, context);
+          await chat(service, context);
+          expect(client.conversations.skip(3), [
+            (template: adapter, seeded: false),
+            (template: adapter, seeded: true),
+          ]);
+          expect(client.renderMessageCount, 2);
+          expect(readPaths, hasLength(1));
+          expect(records, isEmpty);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('keeps a template that reads content parts', () async {
+      renderLikeTheRuntime(liteRtLmPartsContentTemplate);
+      final service = serviceReading(liteRtLmPartsContentTemplate);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await raw(service, context);
+        await chat(service, context);
+        expect(client.conversations, [
+          (template: null, seeded: false),
+          (template: null, seeded: false),
+          (template: null, seeded: true),
+        ]);
+        expect(client.renderMessageCount, 1);
+        expect(readPaths, isEmpty);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('does not probe a runtime that cannot render a message', () async {
+      client.rendersMessages = false;
+      final service = serviceReading(
+        liteRtLmStringContentTemplates['interpolating'],
+      );
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+
+        await chat(service, context);
+        await chat(service, context);
+        expect(client.conversations, [
+          (template: null, seeded: true),
+          (template: null, seeded: true),
+        ]);
+        expect(readPaths, isEmpty);
+        expect(records, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    final interpolating = liteRtLmStringContentTemplates['interpolating']!;
+    final concatenating = liteRtLmStringContentTemplates['concatenating']!;
+    for (final (name, template, configure) in [
+      (
+        'a bundle whose template it cannot read',
+        null,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) =>
+                renderLiteRtLmContent(interpolating, probeParts),
+      ),
+      (
+        'a template the adapter does not change',
+        interpolating,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) =>
+                renderLiteRtLmContent(interpolating, probeParts),
+      ),
+      (
+        'a template that drops the text with the adapter too',
+        interpolating,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) => '<|im_start|>\n<|im_end|>\n',
+      ),
+      (
+        'a template that fails to render with the adapter too',
+        concatenating,
+        (_FakeLiteRtLmRuntimeClient client) =>
+            client.onRenderMessage = (_) =>
+                renderLiteRtLmContent(concatenating, probeParts),
+      ),
+      (
+        'an adapted template the runtime rejects',
+        interpolating,
+        (_FakeLiteRtLmRuntimeClient client) {
+          client.onRenderMessage = (_) => '';
+          client.onCreateConversation = () {
+            if (client.lastPromptTemplate != null) {
+              throw StateError('litert_lm_conversation_create returned null');
+            }
+          };
+        },
+      ),
+      (
+        'a runtime that takes no conversation template',
+        interpolating,
+        (_FakeLiteRtLmRuntimeClient client) {
+          client.onRenderMessage = (_) => '';
+          client.onCreateConversation = () {
+            if (client.lastPromptTemplate != null) {
+              throw LlamaUnsupportedException('no template setter');
+            }
+          };
+        },
+      ),
+    ]) {
+      test('warns once and keeps the bundle template for $name', () async {
+        configure(client);
+        final service = serviceReading(template);
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await chat(service, context);
+          expect(client.conversations.last, (template: null, seeded: true));
+          expect(records, hasLength(1));
+          expect(records.single.level, LlamaLogLevel.warn);
+          expect(records.single.message, contains('could not adapt'));
+
+          final created = client.conversations.length;
+          final rendered = client.renderMessageCount;
+          await chat(service, context);
+          await raw(service, context);
+          expect(client.conversations.skip(created), [
+            (template: null, seeded: true),
+            (template: null, seeded: false),
+          ]);
+          expect(client.renderMessageCount, rendered);
+          expect(records, hasLength(1));
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    for (final (name, send) in [('chat', chat), ('raw', raw)]) {
+      test('a failed $name send names a bundle template it could not '
+          'adapt', () async {
+        client.onRenderMessage = (_) => throw StateError('render failed');
+        final service = serviceReading(null);
+        final failure = StateError('send_message_stream rc=13');
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await expectLater(
+            send(service, context, sendError: failure),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                'message',
+                allOf(
+                  startsWith('send_message_stream rc=13 '),
+                  contains('chat template of this bundle'),
+                  contains('list of {"type": "text", "text": ...} parts'),
+                ),
+              ),
+            ),
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+
+      test('a failed $name send stays as it is for a template that reads '
+          'content', () async {
+        final service = serviceReading(liteRtLmPartsContentTemplate);
+        final failure = StateError('send_message_stream rc=13');
+        try {
+          final model = await service.loadModel(modelFile.path, params);
+          final context = service.createContext(model, params);
+
+          await expectLater(
+            send(service, context, sendError: failure),
+            throwsA(same(failure)),
+          );
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+
+    test('a send that fails after output keeps its error', () async {
+      client.onRenderMessage = (_) => throw StateError('render failed');
+      final service = serviceReading(null);
+      final failure = StateError('send_message_stream rc=13');
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        client.generated = StreamController<String>()
+          ..add('Hello')
+          ..addError(failure);
+        unawaited(client.generated.close());
+
+        await expectLater(
+          service
+              .generate(context, 'Hello', const GenerationParams(maxTokens: 8))
+              .drain<void>(),
+          throwsA(same(failure)),
+        );
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('does not decide when the probe conversation cannot be '
+        'created', () async {
+      renderLikeTheRuntime(interpolating);
+      final adapter = liteRtLmTextContentAdapter(interpolating);
+      final service = serviceReading(interpolating);
+      try {
+        final model = await service.loadModel(modelFile.path, params);
+        final context = service.createContext(model, params);
+        client.onCreateConversation = () =>
+            throw StateError('litert_lm_conversation_create returned null');
+
+        await expectLater(chat(service, context), throwsStateError);
+        expect(
+          records.where((record) => record.message.contains('adapt')),
+          isEmpty,
+        );
+
+        client.onCreateConversation = null;
+        await chat(service, context);
+        expect(client.conversations.last, (template: adapter, seeded: true));
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('probes each loaded model', () async {
+      renderLikeTheRuntime(interpolating);
+      final service = serviceReading(interpolating);
+      final other = File('${tempDir.path}/other.litertlm');
+      await other.writeAsString('fake model');
+      try {
+        var model = await service.loadModel(modelFile.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(
+          client.lastPromptTemplate,
+          liteRtLmTextContentAdapter(interpolating),
+        );
+
+        client = _FakeLiteRtLmRuntimeClient()..rendersMessages = true;
+        model = await service.loadModel(other.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(client.conversations, [
+          (template: null, seeded: false),
+          (template: null, seeded: true),
+        ]);
+        expect(client.renderMessageCount, 1);
+      } finally {
+        service.dispose();
+      }
+    });
+
+    test('leaves a conversation that overrides the template alone', () async {
+      renderLikeTheRuntime(interpolating);
+      final service = serviceReading(interpolating);
+      final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+      await file.writeAsString('fake model');
+      try {
+        final model = await service.loadModel(file.path, params);
+        await chat(service, service.createContext(model, params));
+        expect(
+          client.conversations.single.template,
+          contains('enable_thinking'),
+        );
+        expect(client.renderMessageCount, 0);
+        expect(readPaths, isEmpty);
+      } finally {
+        service.dispose();
+      }
+    });
   });
 
   for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
@@ -4351,6 +4737,13 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   void Function()? onCreateConversation;
   void Function()? onInitialize;
   String? lastPromptTemplate;
+  final List<({String? template, bool seeded})> conversations = [];
+  String Function(String? promptTemplate)? onRenderMessage;
+
+  /// Whether this runtime has the render entry point. Without it the service
+  /// creates no probe conversation.
+  bool rendersMessages = false;
+  int renderMessageCount = 0;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -4436,6 +4829,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
     lastPromptTemplate = promptTemplate;
+    conversations.add((
+      template: promptTemplate,
+      seeded:
+          systemMessage != null ||
+          messages != null ||
+          tools != null ||
+          extraContext != null,
+    ));
     lastMessages = messages
         ?.map(Map<String, dynamic>.from)
         .toList(growable: false);
@@ -4445,6 +4846,20 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         : Map<String, dynamic>.from(extraContext);
     createConversationCount += 1;
     onCreateConversation?.call();
+  }
+
+  @override
+  bool get supportsMessageRendering => rendersMessages;
+
+  @override
+  String renderMessageToString(Map<String, dynamic> message) {
+    _checkNotDisposed();
+    if (!rendersMessages) {
+      throw ArgumentError('Failed to lookup the render symbol.');
+    }
+    renderMessageCount += 1;
+    return onRenderMessage?.call(lastPromptTemplate) ??
+        liteRtLmContentShapeProbeText;
   }
 
   @override

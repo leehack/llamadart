@@ -44,4 +44,6 @@ void litert_lm_conversation_config_set_prompt_template(void* p, const char* t) {
 void litert_lm_conversation_config_delete(void* p) {}
 void* litert_lm_conversation_create(void* e, void* c) { return (void*)5; }
 void litert_lm_conversation_delete(void* p) {}
+#ifndef OMIT_RENDER
 const char* litert_lm_conversation_render_message_to_string(void* p, const char* m) { return template_text; }
+#endif
