@@ -175,9 +175,9 @@ analyze and the relevant tests before the final commit.
   Procedure: `doc/high_risk_pre_merge_readiness.md`, "Batch integration PR".
 - Post-merge QA is still required but is never the first adversarial pass. When
   the merged tree equals an audited head, it need not repeat checks the
-  independent audit already ran on that head. If it finds a PR-caused P1, stop lower-priority merge work, file
-  a causally accurate issue, and prepare one cohesive recovery before resuming
-  feature work.
+  independent audit already ran on that head. If it finds a PR-caused P1, stop
+  lower-priority merge work, file a causally accurate issue, and prepare one
+  cohesive recovery before resuming feature work.
 
 ## This file
 
