@@ -51,7 +51,8 @@ device (Mali-G715) a prompt longer than about 32 tokens evaluated in one batch
 returns wrong text, confirmed so far with one model (Qwen3.5-0.8B Q4_0)
 ([#948](https://github.com/leehack/llamadart/issues/948),
 [known limitations](../platforms/support-matrix#known-limitations)).
-As a workaround, llamadart decodes text prompts on Android Vulkan in
+As a workaround, llamadart decodes text prompts on an Android Vulkan GPU with
+this defect (subgroup size 16 or below 8, or one it cannot read) in
 micro-batches of at most 8 tokens by default, so the wrong text needs an
 explicit `ModelParams.microBatchSize` above 32 or one of the paths the cap
 does not cover, listed in the known limitations.

@@ -1221,7 +1221,7 @@ still required for every actual run.
 
 ### Native video input
 
-The pinned `llamadart-native` `v0.5.0` archive exports upstream video helper
+The pinned `llamadart-native` `v0.6.0-1` archive exports upstream video helper
 symbols (`mtmd_helper_video_*`), but the release is not qualified for
 end-to-end video input. The companion build does not opt into
 `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe, so the public Dart
@@ -1378,7 +1378,7 @@ any budget is exceeded:
   by more than 7 MiB in every one of the seven cycles after the first. A
   plateau passes; a steady leak fails. Slower growth passes this check.
 
-With native `v0.4.1-1` (before the current `v0.5.0` pin), the pack has passed
+With native `v0.4.1-1` (before the `v0.5.0` pin), the pack has passed
 on macOS arm64 with CPU and with Metal, and on Linux x64 with CPU (AMD EPYC
 7B12). The Metal runs report the Metal backend; the pack does not verify GPU
 execution.

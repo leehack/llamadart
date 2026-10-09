@@ -81,25 +81,12 @@ class _FakeMtmd {
       calls.add('embd');
       return _embd;
     },
-    decodeImageChunk:
-        (
-          ctx,
-          lctx,
-          chunk,
-          embd,
-          nPast,
-          seqId,
-          nBatch,
-          newNPast,
-          callback,
-          userData,
-        ) {
-          expect((ctx, lctx, embd), (_ctx, _lctx, _embd));
-          expect((callback, userData), (nullptr, nullptr));
-          final i = _index(chunk);
-          newNPast.value = nPast + prompt[i].nPos;
-          return _finish('decode $i nPast=$nPast seq=$seqId batch=$nBatch');
-        },
+    decodeImageChunk: (ctx, lctx, chunk, embd, nPast, seqId, nBatch, newNPast) {
+      expect((ctx, lctx, embd), (_ctx, _lctx, _embd));
+      final i = _index(chunk);
+      newNPast.value = nPast + prompt[i].nPos;
+      return _finish('decode $i nPast=$nPast seq=$seqId batch=$nBatch');
+    },
   );
 }
 

@@ -81,7 +81,8 @@ void main() async {
     );
   });
 
-  test('rejects v0.3.0 session headers and can reload a valid state', () async {
+  test('rejects the session version of llama.cpp v0.5.0 by name and can '
+      'reload a valid state', () async {
     final tokens = await engine.tokenize('Once upon a time');
     await engine
         .generate(
@@ -93,13 +94,23 @@ void main() async {
     expect(await engine.stateSaveFile(validPath, tokens: tokens), isTrue);
     final bytes = File(validPath).readAsBytesSync();
     final header = ByteData.sublistView(bytes);
-    expect(header.getUint32(4, Endian.host), 10);
-    header.setUint32(4, 9, Endian.host);
+    expect(header.getUint32(4, Endian.host), 11);
+    // llamadart 0.11.x wrote version 10 with llama.cpp v0.5.0.
+    header.setUint32(4, 10, Endian.host);
     final oldPath = '${tmpDir.path}/old-version.bin';
     File(oldPath).writeAsBytesSync(bytes);
     await expectLater(
       engine.stateLoadFile(oldPath, tokenCapacity: 256),
-      throwsA(isA<LlamaException>()),
+      throwsA(
+        isA<LlamaStateException>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('has llama.cpp session version 10'),
+            contains('this runtime reads version 11'),
+          ),
+        ),
+      ),
     );
     final restored = await engine.stateLoadFile(validPath, tokenCapacity: 256);
     expect(restored.tokens, tokens);

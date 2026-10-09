@@ -270,6 +270,13 @@ teardown covers abort on Apple Metal as they did before
 ([Exiting with a model loaded](../guides/model-lifecycle#exiting-with-a-model-loaded)).
 `v0.5.0-1` has exit teardown but can still abort when a native host calls C
 `exit()` during the free of the last object; use `v0.5.0-2` or later.
+A runtime older than `v0.6.0-1` has no exception barrier and no Vulkan device
+facts: a C++ exception llama.cpp throws ends the process instead of becoming
+a typed `LlamaException` (llamadart logs a warning at the first model load),
+every Android Vulkan context keeps the 8-token text-prompt decode cap, and no
+Vulkan GPU is refused for a driver below Vulkan 1.2. State files are tied to
+the llama.cpp release of the runtime that wrote them
+([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).
 Two checks fail closed:
 
 - LoRA adapters need both `llama_adapter_get_alora_n_invocation_tokens` and

@@ -144,7 +144,7 @@ final class FakeMtmd {
     },
     encodeChunk: (_, _) => throw StateError('unexpected mtmd call'),
     outputEmbd: (_) => throw StateError('unexpected mtmd call'),
-    decodeImageChunk: (_, _, _, _, _, _, _, _, _, _) =>
+    decodeImageChunk: (_, _, _, _, _, _, _, _) =>
         throw StateError('unexpected mtmd call'),
   );
 

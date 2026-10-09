@@ -12,6 +12,7 @@ import '../isolate_shutdown_releases.dart';
 import 'bindings.dart';
 import 'exit_teardown_api.dart';
 import 'ggml_graph_api.dart';
+import 'native_barrier_api.dart';
 import 'safetensors.dart';
 
 const double _layerNormEpsilon = 1e-5;
@@ -221,6 +222,7 @@ final class DecisionHeadRuntime {
   DecisionHeadRuntime._(
     this._api,
     this._exitTeardown,
+    this._failures,
     DecisionHeadWeights weights,
   ) : _hiddenSize = weights.hiddenSize,
       _heads = weights.heads,
@@ -239,8 +241,10 @@ final class DecisionHeadRuntime {
   /// `ggml_backend_sched_new`. [api] is the ggml function table the head
   /// calls, [GgmlGraphApi.current] by default. With [exitTeardown], the
   /// backends, the weights buffer and the scheduler are tracked for exit
-  /// teardown, and the graph is computed as a call it waits for. What was
-  /// created before a failure is freed. Throws [ArgumentError] when
+  /// teardown, and the graph is computed as a call it waits for. With the
+  /// exception barrier of [failures], the calls that reach a backend go
+  /// through its wrappers and report a C++ exception as a typed error. What
+  /// was created before a failure is freed. Throws [ArgumentError] when
   /// [cpuThreads] is below 1,
   /// [LlamaUnsupportedException] when the native library does not export a
   /// ggml function the head calls, [LlamaModelException] when a backend, the
@@ -253,6 +257,7 @@ final class DecisionHeadRuntime {
     required bool opOffload,
     GgmlGraphApi? api,
     ExitTeardownApi? exitTeardown,
+    NativeCallFailures? failures,
   }) {
     if (cpuThreads < 1) {
       throw ArgumentError.value(cpuThreads, 'cpuThreads', 'must be at least 1');
@@ -260,6 +265,7 @@ final class DecisionHeadRuntime {
     final runtime = DecisionHeadRuntime._(
       api ?? GgmlGraphApi.current,
       exitTeardown,
+      failures,
       weights,
     );
     try {
@@ -275,6 +281,8 @@ final class DecisionHeadRuntime {
 
   final GgmlGraphApi _api;
   final ExitTeardownApi? _exitTeardown;
+  final NativeCallFailures? _failures;
+  String? _failedCall;
   final int _hiddenSize;
   final int _heads;
   final int _graphSize;
@@ -314,7 +322,7 @@ final class DecisionHeadRuntime {
         'before loading a decision head.',
       );
     }
-    _cpuBackend = api.devInit(cpuDevice, nullptr);
+    _cpuBackend = _devInit(cpuDevice);
     if (_cpuBackend == nullptr) {
       throw LlamaModelException(
         'Could not start the ggml CPU backend for the decision head.',
@@ -323,7 +331,7 @@ final class DecisionHeadRuntime {
     _own(ShutdownStage.backend, frees.backendFree, _cpuBackend);
     _setCpuThreads(cpuThreads);
     if (device != null && device != nullptr && device != cpuDevice) {
-      _deviceBackend = api.devInit(device, nullptr);
+      _deviceBackend = _devInit(device);
       _own(ShutdownStage.backend, frees.backendFree, _deviceBackend);
       if (_deviceBackend == nullptr) {
         throw LlamaModelException(
@@ -402,7 +410,13 @@ final class DecisionHeadRuntime {
     _scorerOutWeight = matrix('scorer.3.weight', d, 1);
     _scorerOutBias = vector('scorer.3.bias', 1);
 
-    _weightsBuffer = api.allocCtxTensors(_weightsContext, primary);
+    final barrier = _failures?.barrier;
+    _weightsBuffer = barrier == null
+        ? api.allocCtxTensors(_weightsContext, primary)
+        : barrier.ggmlBackendAllocCtxTensors(_weightsContext, primary);
+    if (_weightsBuffer == nullptr) {
+      _throwIfCaught('ggml_backend_alloc_ctx_tensors', LlamaModelException.new);
+    }
     _own(ShutdownStage.modelUser, frees.bufferFree, _weightsBuffer);
     if (_weightsBuffer == nullptr) {
       throw LlamaModelException(
@@ -425,7 +439,12 @@ final class DecisionHeadRuntime {
           staging.asTypedList(tensors.length * size),
         );
         for (final (index, tensor) in tensors.indexed) {
-          api.tensorSet(tensor, (staging + index * size).cast(), 0, size * 4);
+          _tensorSet(
+            tensor,
+            (staging + index * size).cast(),
+            size * 4,
+            LlamaModelException.new,
+          );
         }
       }
     } finally {
@@ -454,6 +473,50 @@ final class DecisionHeadRuntime {
         'Could not create the ggml scheduler for the decision head on '
         '$_deviceName.',
       );
+    }
+  }
+
+  ggml_backend_t _devInit(ggml_backend_dev_t device) {
+    final barrier = _failures?.barrier;
+    if (barrier == null) return _api.devInit(device, nullptr);
+    final backend = barrier.ggmlBackendDevInit(device, nullptr);
+    if (backend == nullptr) {
+      _throwIfCaught('ggml_backend_dev_init', LlamaModelException.new);
+    }
+    return backend;
+  }
+
+  void _tensorSet(
+    Pointer<ggml_tensor> tensor,
+    Pointer<Void> data,
+    int size,
+    NativeCallError error,
+  ) {
+    final barrier = _failures?.barrier;
+    if (barrier == null) {
+      _api.tensorSet(tensor, data, 0, size);
+    } else if (!barrier.ggmlBackendTensorSet(tensor, data, 0, size)) {
+      _throwIfCaught('ggml_backend_tensor_set', error);
+    }
+  }
+
+  void _tensorGet(Pointer<ggml_tensor> tensor, Pointer<Void> data, int size) {
+    final barrier = _failures?.barrier;
+    if (barrier == null) {
+      _api.tensorGet(tensor, data, 0, size);
+    } else if (!barrier.ggmlBackendTensorGet(tensor, data, 0, size)) {
+      _throwIfCaught('ggml_backend_tensor_get', LlamaInferenceException.new);
+    }
+  }
+
+  // The backends, the buffer and the scheduler of a failed call may only be
+  // freed, so the head stops running.
+  void _throwIfCaught(String call, NativeCallError error) {
+    try {
+      _failures?.throwIfCaught(call, error);
+    } on LlamaException {
+      _failedCall = call;
+      rethrow;
     }
   }
 
@@ -497,7 +560,8 @@ final class DecisionHeadRuntime {
   /// logits. Throws [ArgumentError] for inputs outside these bounds,
   /// [LlamaInferenceException] when the graph cannot be allocated or computed,
   /// [LlamaUnsupportedException] when the native library does not export a
-  /// ggml function the head calls, and [LlamaStateException] after [dispose].
+  /// ggml function the head calls, and [LlamaStateException] after [dispose]
+  /// or after a run that failed with a llama.cpp exception.
   BackendDecisionOutput run(
     Float32List hidden,
     int tokenCount,
@@ -506,6 +570,13 @@ final class DecisionHeadRuntime {
   ) {
     if (_disposed) {
       throw LlamaStateException('The decision head has been freed.');
+    }
+    final failedCall = _failedCall;
+    if (failedCall != null) {
+      throw LlamaStateException(
+        'The decision head is unusable after a llama.cpp exception in '
+        '$failedCall. Load it again.',
+      );
     }
     if (tokenCount < 1 || hidden.length != tokenCount * _hiddenSize) {
       throw ArgumentError(
@@ -634,7 +705,15 @@ final class DecisionHeadRuntime {
       api.buildForwardExpand(graph, scores);
       api.buildForwardExpand(graph, rows);
       api.schedReset(_sched);
-      if (!api.schedAllocGraph(_sched, graph)) {
+      final barrier = _failures?.barrier;
+      final allocated = barrier == null
+          ? api.schedAllocGraph(_sched, graph)
+          : barrier.ggmlBackendSchedAllocGraph(_sched, graph);
+      if (!allocated) {
+        _throwIfCaught(
+          'ggml_backend_sched_alloc_graph',
+          LlamaInferenceException.new,
+        );
         throw LlamaInferenceException(
           'Could not allocate decision head compute buffers on $_deviceName '
           'for $n tokens.',
@@ -644,7 +723,12 @@ final class DecisionHeadRuntime {
       final staging = malloc<Float>(math.max(n * d, rowCount));
       try {
         final values = staging.asTypedList(n * d)..setAll(0, hidden);
-        api.tensorSet(hiddenInput, staging.cast(), 0, values.lengthInBytes);
+        _tensorSet(
+          hiddenInput,
+          staging.cast(),
+          values.lengthInBytes,
+          LlamaInferenceException.new,
+        );
         staging
             .asTypedList(d)
             .setAll(
@@ -655,11 +739,21 @@ final class DecisionHeadRuntime {
                 (questionType + 1) * d,
               ),
             );
-        api.tensorSet(typeInput, staging.cast(), 0, d * 4);
+        _tensorSet(
+          typeInput,
+          staging.cast(),
+          d * 4,
+          LlamaInferenceException.new,
+        );
         staging.cast<Int32>().asTypedList(rowCount)
           ..[0] = 0
           ..setAll(1, markers);
-        api.tensorSet(rowsInput, staging.cast(), 0, rowCount * 4);
+        _tensorSet(
+          rowsInput,
+          staging.cast(),
+          rowCount * 4,
+          LlamaInferenceException.new,
+        );
 
         final status =
             (_exitTeardown?.schedGraphCompute ?? api.schedGraphCompute)(
@@ -667,16 +761,20 @@ final class DecisionHeadRuntime {
               graph,
             );
         if (status != ggml_status.GGML_STATUS_SUCCESS.value) {
+          _throwIfCaught(
+            'ggml_backend_sched_graph_compute',
+            LlamaInferenceException.new,
+          );
           throw LlamaInferenceException(
             'Decision head compute failed on $_deviceName (ggml status '
             '$status).',
           );
         }
-        api.tensorGet(scores, staging.cast(), 0, rowCount * 4);
+        _tensorGet(scores, staging.cast(), rowCount * 4);
         final logits = Float32List.fromList(
           staging.asTypedList(rowCount).sublist(1),
         );
-        api.tensorGet(rows, staging.cast(), 0, d * 4);
+        _tensorGet(rows, staging.cast(), d * 4);
         final cls = Float32List.fromList(staging.asTypedList(d));
         return (logits, cls);
       } finally {
@@ -726,7 +824,12 @@ final class DecisionHeadRuntime {
     _disposed = true;
     final api = _api;
     if (_sched != nullptr) {
-      api.schedSynchronize(_sched);
+      final barrier = _failures?.barrier;
+      if (barrier == null) {
+        api.schedSynchronize(_sched);
+      } else {
+        barrier.ggmlBackendSchedSynchronize(_sched);
+      }
       _disown(_sched, api.schedFree);
       _sched = nullptr;
     }

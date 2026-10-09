@@ -48,11 +48,6 @@ For canonical full release notes, use:
   `@litert-lm/core@0.18.0`. An app still chooses the module through
   `window.__llamadartLiteRtLmModuleUrl`; the chat app's `web/index.html` and
   the docs now name `0.18.0`.
-- Aligned default WebGPU bridge assets to `v0.1.54`, unchanged from 0.11.1:
-  they embed llama.cpp `v0.5.0`, are qualified against native `v0.5.0`, and keep
-  Web/native llama.cpp `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b` parity;
-  Web LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
-  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`.
 - Adopt `leehack/stable-diffusion-native@v0.2.0-2` for the opt-in
   `stable_diffusion` image runtime.
 - Check the memory of Vulkan GPUs before loading an image model
@@ -70,6 +65,37 @@ For canonical full release notes, use:
   at the configured levels, after each load and generation. The runtime no
   longer prints ggml's device messages to stderr: at the default level
   `none` it logs nothing.
+- Update the default llama.cpp runtime to
+  `leehack/llamadart-native@v0.6.0-1` (llama.cpp `v0.6.0`), and the
+  `llamadart_llama_cpp_flutter` Apple SwiftPM pin with it.
+- **Behavior change:** a llama.cpp state file saved by llamadart 0.11.x or
+  earlier no longer loads: llama.cpp `v0.6.0` changed the session format.
+  On native, `stateLoadFile` throws `LlamaStateException` naming the file's
+  format version and the one the runtime reads; evaluate the prompt again and
+  save a new file ([Save and restore prompt state](../guides/model-lifecycle#save-and-restore-prompt-state)).
+- Fix a C++ exception inside llama.cpp ending the process on native. The
+  failed call now throws the typed `LlamaException` of its operation with
+  llama.cpp's message, such as `LlamaInferenceException` from `detokenize`
+  for a token outside the vocabulary, or from a lazy-grammar trigger pattern
+  that is not a regular expression. A context the failed call left undefined
+  then throws `LlamaStateException` until its model is loaded again
+  ([llamadart-native#102](https://github.com/leehack/llamadart-native/issues/102)).
+- Android llama.cpp Vulkan: the 8-token text-prompt decode cap now applies
+  only on a GPU whose subgroup size llama.cpp `v0.6.0` mis-tiles (16, or below
+  8) or cannot be read. Other GPUs decode a text prompt in full micro-batches
+  ([#948](https://github.com/leehack/llamadart/issues/948)).
+- llama.cpp Vulkan needs Vulkan 1.2 from the loader and the GPU driver. When
+  the Vulkan GPU a load would run on reports less, `ComputeDevice.gpu` now
+  throws `LlamaUnsupportedException` naming the GPU and both versions, and
+  `ComputeDevice.auto` loads the model on the CPU with a warning, instead of
+  starting a driver llama.cpp cannot use; a load with other usable GPUs
+  leaves that one out
+  ([#782](https://github.com/leehack/llamadart/issues/782)).
+- Aligned default WebGPU bridge assets to `v0.1.59`: they embed llama.cpp
+  `v0.6.0`, are qualified against native `v0.6.0`, and keep Web/native
+  llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14` parity; Web
+  LiteRT-LM is `@litert-lm/core@0.18.0`. Immutable Web asset manifest:
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`.
 
 ## 0.11.1
 

@@ -46,7 +46,7 @@ description: >-
   together (and `contextSize` past its value). Causal LAST/unpooled models
   with memory retain chunked input support.
 - Native diffusion capability and EmbeddingGemma's forced non-causal mode
-  override attention metadata. Other models follow the pinned `v0.5.0`
+  override attention metadata. Other models follow the pinned `v0.6.0`
   boolean attention metadata, whose absent key defaults to causal. Missing
   architecture, invalid metadata or a missing required runtime probe fails
   with `LlamaUnsupportedException` before decoding; use a compatible runtime.

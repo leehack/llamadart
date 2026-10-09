@@ -79,25 +79,25 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "a426cebdfc3c7e51ab267aac9f2f76b3dc92ea1152b0668b6416d47487a2a862",
+      "sha256": "e8d1d3b36eb88d87a0feb2793293bffe8331ad9b08e129867c3a917e239e2c3c",
       "size_bytes": 121082
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "877633c9ba30714d3a72de6b25fd277beb90a39aebe2f2735fe9f26199892743",
-      "size_bytes": 9710458
+      "sha256": "2171189421bfeea92ae023eb62fc5ea810e92493a9d37bff11ed2a332c871500",
+      "size_bytes": 9875080
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "7cbc55d7e7d5bce60726d17b2c8c260387fc8a1a439e4e98296d5b26b5efc17e",
+      "sha256": "a265ec7d2f74965113f6067c9b65a45969d0955a2d97701e4095b98671b0f010",
       "size_bytes": 142469
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "7038c99b95021de0eb81c6b344bb0407370fb9d54ab48565910d677f1ac30dbd",
-      "size_bytes": 9985188
+      "sha256": "6a32324e983acd2ff06e8006885a33c4a56124839bc923d5877e54fb323583c1",
+      "size_bytes": 10150377
     }
   },
   "assets_repository": "leehack/llama-web-bridge-assets",
-  "bridge_assets_tag": "v0.1.54",
-  "bridge_commit": "65622b297b83513db597a760fa067867755010b4",
+  "bridge_assets_tag": "v0.1.59",
+  "bridge_commit": "c1f64536b9a4ea410066b711928c7cba03691fb0",
   "bridge_repository": "leehack/llama-web-bridge",
   "capabilities": {
     "memory64": true,
@@ -140,31 +140,31 @@ const String _approvedManifestJson = '''
       "size_bytes": 257
     },
     "llama_webgpu_core.js": {
-      "sha256": "a426cebdfc3c7e51ab267aac9f2f76b3dc92ea1152b0668b6416d47487a2a862",
+      "sha256": "e8d1d3b36eb88d87a0feb2793293bffe8331ad9b08e129867c3a917e239e2c3c",
       "size_bytes": 121082
     },
     "llama_webgpu_core.wasm": {
-      "sha256": "877633c9ba30714d3a72de6b25fd277beb90a39aebe2f2735fe9f26199892743",
-      "size_bytes": 9710458
+      "sha256": "2171189421bfeea92ae023eb62fc5ea810e92493a9d37bff11ed2a332c871500",
+      "size_bytes": 9875080
     },
     "llama_webgpu_core_mem64.js": {
-      "sha256": "7cbc55d7e7d5bce60726d17b2c8c260387fc8a1a439e4e98296d5b26b5efc17e",
+      "sha256": "a265ec7d2f74965113f6067c9b65a45969d0955a2d97701e4095b98671b0f010",
       "size_bytes": 142469
     },
     "llama_webgpu_core_mem64.wasm": {
-      "sha256": "7038c99b95021de0eb81c6b344bb0407370fb9d54ab48565910d677f1ac30dbd",
-      "size_bytes": 9985188
+      "sha256": "6a32324e983acd2ff06e8006885a33c4a56124839bc923d5877e54fb323583c1",
+      "size_bytes": 10150377
     }
   },
-  "github_run_id": "36260289055",
-  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/36260289055",
-  "llama_cpp_commit": "7fe450e19305b828c199d602c23a8337aaa1f03b",
-  "llama_cpp_tag": "v0.5.0",
-  "native_commit": "aa8ceb95a99f299587a9b0ba5c0e9b6f829bcd64",
-  "native_manifest_sha256": "1ded54a5b3d687dfddde33586acd89bcd5b774ab4301197194b63a7e05541c4b",
-  "native_release_tag": "v0.5.0",
+  "github_run_id": "37675831575",
+  "github_run_url": "https://github.com/leehack/llama-web-bridge/actions/runs/37675831575",
+  "llama_cpp_commit": "d81235049384534c167caea52b85a694f6103d14",
+  "llama_cpp_tag": "v0.6.0",
+  "native_commit": "537e456fdbda841bbec00ff53a43b5879aa94384",
+  "native_manifest_sha256": "5a64a45cf1719963f70ac52c43ec820bdab2fbd2285d8979eb98619193f0d211",
+  "native_release_tag": "v0.6.0",
   "native_repository": "leehack/llamadart-native",
-  "orchestrator_correlation_id": "auto-stable-v0.5.0-1ded54a5b3d687df-build-65622b297b83513d",
+  "orchestrator_correlation_id": "maintainer-v060-recovery-v0159-20261007",
   "qualification_gates": {
     "multimodal": "passed",
     "speech_to_text": "required-automated-qualification",
@@ -173,9 +173,9 @@ const String _approvedManifestJson = '''
   },
   "release_channel": "stable",
   "release_rebuild": 0,
-  "release_tag": "v0.1.54",
+  "release_tag": "v0.1.59",
   "schema_version": 2,
-  "source_commit": "65622b297b83513db597a760fa067867755010b4",
+  "source_commit": "c1f64536b9a4ea410066b711928c7cba03691fb0",
   "source_repository": "leehack/llama-web-bridge",
   "unproven_capabilities": {
     "hardware_gpu_acceleration": "unavailable-on-hosted-runners",
@@ -184,9 +184,9 @@ const String _approvedManifestJson = '''
     "speaker_reference_fidelity": "unproven",
     "wasm32_text_to_speech": "unsupported"
   },
-  "upstream_commit": "7fe450e19305b828c199d602c23a8337aaa1f03b",
+  "upstream_commit": "d81235049384534c167caea52b85a694f6103d14",
   "upstream_repository": "ggml-org/llama.cpp",
-  "upstream_tag": "v0.5.0"
+  "upstream_tag": "v0.6.0"
 }
 ''';
 
@@ -196,7 +196,7 @@ Future<List<String>> _verifyManifestJson(
 }) {
   final bytes = utf8.encode(manifestJson);
   return verifyManifest(
-    expectedTag: 'v0.1.54',
+    expectedTag: 'v0.1.59',
     expectedLlamaCppTag: bridgeLlamaCppTag,
     expectedLlamaCppCommit: bridgeLlamaCppCommit,
     expectedBridgeCommit: bridgeSourceCommit,
@@ -272,7 +272,7 @@ void main() {
         'website/docs/changelog/recent-releases.md',
       ]) {
         final current = _currentReleaseNotes(path);
-        expect(current, contains('`v0.1.54`'), reason: path);
+        expect(current, contains('`v0.1.59`'), reason: path);
         expect(current, contains(bridgeManifestSha256), reason: path);
         expect(
           current,
@@ -858,14 +858,14 @@ void main() {
         // bridgeNativeReleaseTag is a constant, so drive the mismatch from the
         // other side: a tree whose bridge and native pins agree on a family the
         // checked-in anchor does not belong to.
-        final root = _fakeRuntimeRepo(bridgeTag: 'v0.6.0', nativeTag: 'v0.6.0');
+        final root = _fakeRuntimeRepo(bridgeTag: 'v0.7.0', nativeTag: 'v0.7.0');
 
         expect(
-          findBridgeRuntimeDrift(root, 'v0.6.0'),
+          findBridgeRuntimeDrift(root, 'v0.7.0'),
           contains(
             contains(
               'bridgeNativeReleaseTag $bridgeNativeReleaseTag does not belong to '
-              'the recorded upstream llama.cpp release v0.6.0',
+              'the recorded upstream llama.cpp release v0.7.0',
             ),
           ),
         );
@@ -879,8 +879,8 @@ void main() {
     });
 
     test('immutable release identity stays pinned to the approved release', () {
-      expect(bridgeAssetsReleaseId, '397350529');
-      expect(bridgeAssetsTagCommit, 'e161182a09ac560d45ad5e65bb499574f913a466');
+      expect(bridgeAssetsReleaseId, '406130836');
+      expect(bridgeAssetsTagCommit, '189dde2798cb65a5ebe12d40068623e1873a6cd9');
     });
 
     test('accepts equivalent CRLF documentation passages', () {

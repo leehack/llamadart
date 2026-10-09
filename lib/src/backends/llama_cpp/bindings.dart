@@ -391,6 +391,19 @@ external ggml_backend_buffer_t ggml_backend_buft_alloc_buffer(
   int size,
 );
 
+@ffi.Native<
+  ggml_backend_buffer_t Function(
+    ggml_backend_buffer_type_t,
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Int,
+  )
+>()
+external ggml_backend_buffer_t ggml_backend_buft_alloc_buffer_n(
+  ggml_backend_buffer_type_t buft,
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> tensors,
+  int n_tensors,
+);
+
 @ffi.Native<ffi.Size Function(ggml_backend_buffer_type_t)>()
 external int ggml_backend_buft_get_alignment(ggml_backend_buffer_type_t buft);
 
@@ -400,6 +413,19 @@ external int ggml_backend_buft_get_alignment(ggml_backend_buffer_type_t buft);
 external int ggml_backend_buft_get_alloc_size(
   ggml_backend_buffer_type_t buft,
   ffi.Pointer<ggml_tensor> tensor,
+);
+
+@ffi.Native<
+  ffi.Size Function(
+    ggml_backend_buffer_type_t,
+    ffi.Pointer<ffi.Pointer<ggml_tensor>>,
+    ffi.Int,
+  )
+>()
+external int ggml_backend_buft_get_alloc_size_n(
+  ggml_backend_buffer_type_t buft,
+  ffi.Pointer<ffi.Pointer<ggml_tensor>> tensors,
+  int n_tensors,
 );
 
 @ffi.Native<ggml_backend_dev_t Function(ggml_backend_buffer_type_t)>()
@@ -5939,6 +5965,99 @@ external void llama_backend_free();
 @ffi.Native<ffi.Void Function()>()
 external void llama_backend_init();
 
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_batch_ext>, llama_seq_id)>()
+external int llama_batch_ext_add(
+  ffi.Pointer<llama_batch_ext> batch,
+  int seq_id,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<llama_batch_ext>, llama_seq_id, llama_embd)
+>()
+external int llama_batch_ext_add_embd(
+  ffi.Pointer<llama_batch_ext> batch,
+  int seq_id,
+  llama_embd embd,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, llama_seq_id)
+>()
+external bool llama_batch_ext_add_seq(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  int seq_id,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Pointer<llama_batch_ext>, llama_seq_id, llama_token)
+>()
+external int llama_batch_ext_add_token(
+  ffi.Pointer<llama_batch_ext> batch,
+  int seq_id,
+  int id,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_batch_ext>)>()
+external void llama_batch_ext_clear(ffi.Pointer<llama_batch_ext> batch);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_batch_ext>)>()
+external void llama_batch_ext_free(ffi.Pointer<llama_batch_ext> batch);
+
+@ffi.Native<ffi.Pointer<llama_batch_ext> Function(ffi.Pointer<llama_context>)>()
+external ffi.Pointer<llama_batch_ext> llama_batch_ext_init(
+  ffi.Pointer<llama_context> ctx,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, llama_embd)
+>()
+external bool llama_batch_ext_set_embd_state(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  llama_embd embd,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, llama_embd)
+>()
+external bool llama_batch_ext_set_embd_token(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  llama_embd embd,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, ffi.Bool)
+>()
+external bool llama_batch_ext_set_output_embd(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  bool value,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_batch_ext>, ffi.Int32, ffi.Bool)
+>()
+external bool llama_batch_ext_set_output_logits(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  bool value,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_batch_ext>,
+    ffi.Int32,
+    ffi.Pointer<llama_pos>,
+  )
+>()
+external bool llama_batch_ext_set_pos(
+  ffi.Pointer<llama_batch_ext> batch,
+  int idx,
+  ffi.Pointer<llama_pos> pos,
+);
+
 @ffi.Native<ffi.Void Function(llama_batch)>()
 external void llama_batch_free(llama_batch batch);
 
@@ -6009,6 +6128,9 @@ external ffi.Pointer<llama_adapter_lora> llama_dart_adapter_lora_init(
   ffi.Pointer<ffi.Char> path_lora,
 );
 
+@ffi.Native<ffi.Void Function()>()
+external void llama_dart_clear_last_error();
+
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
 external int llama_dart_decode(
   ffi.Pointer<llama_context> ctx,
@@ -6047,6 +6169,49 @@ external int llama_dart_exit_tracked_count();
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ffi.Void>)>()
 external bool llama_dart_exit_untrack(ffi.Pointer<ffi.Void> object);
 
+@ffi.Native<
+  ggml_backend_buffer_t Function(ffi.Pointer<ggml_context>, ggml_backend_t)
+>()
+external ggml_backend_buffer_t llama_dart_ggml_backend_alloc_ctx_tensors(
+  ffi.Pointer<ggml_context> ctx,
+  ggml_backend_t backend,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ggml_backend_dev_t, ffi.Pointer<ggml_backend_dev_props>)
+>()
+external bool llama_dart_ggml_backend_dev_get_props(
+  ggml_backend_dev_t device,
+  ffi.Pointer<ggml_backend_dev_props> props,
+);
+
+@ffi.Native<
+  ggml_backend_t Function(ggml_backend_dev_t, ffi.Pointer<ffi.Char>)
+>()
+external ggml_backend_t llama_dart_ggml_backend_dev_init(
+  ggml_backend_dev_t device,
+  ffi.Pointer<ffi.Char> params,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ggml_backend_dev_t,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external bool llama_dart_ggml_backend_dev_memory(
+  ggml_backend_dev_t device,
+  ffi.Pointer<ffi.Size> free,
+  ffi.Pointer<ffi.Size> total,
+);
+
+@ffi.Native<ffi.Bool Function(ggml_backend_sched_t, ffi.Pointer<ggml_cgraph>)>()
+external bool llama_dart_ggml_backend_sched_alloc_graph(
+  ggml_backend_sched_t sched,
+  ffi.Pointer<ggml_cgraph> graph,
+);
+
 @ffi.Native<ffi.Int Function(ggml_backend_sched_t, ffi.Pointer<ggml_cgraph>)>(
   symbol: 'llama_dart_ggml_backend_sched_graph_compute',
 )
@@ -6064,6 +6229,41 @@ ggml_status llama_dart_ggml_backend_sched_graph_compute(
   );
 }
 
+@ffi.Native<ffi.Bool Function(ggml_backend_sched_t)>()
+external bool llama_dart_ggml_backend_sched_synchronize(
+  ggml_backend_sched_t sched,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Size,
+    ffi.Size,
+  )
+>()
+external bool llama_dart_ggml_backend_tensor_get(
+  ffi.Pointer<ggml_tensor> tensor,
+  ffi.Pointer<ffi.Void> data,
+  int offset,
+  int size,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ffi.Void>,
+    ffi.Size,
+    ffi.Size,
+  )
+>()
+external bool llama_dart_ggml_backend_tensor_set(
+  ffi.Pointer<ggml_tensor> tensor,
+  ffi.Pointer<ffi.Void> data,
+  int offset,
+  int size,
+);
+
 @ffi.Native<
   ffi.Pointer<llama_context> Function(
     ffi.Pointer<llama_model>,
@@ -6075,12 +6275,50 @@ external ffi.Pointer<llama_context> llama_dart_init_from_model(
   llama_context_params params,
 );
 
+@ffi.Native<ffi.Pointer<ffi.Char> Function()>()
+external ffi.Pointer<ffi.Char> llama_dart_last_error();
+
+@ffi.Native<ffi.Bool Function(llama_memory_t, ffi.Bool)>()
+external bool llama_dart_memory_clear(llama_memory_t mem, bool data);
+
 @ffi.Native<
   ffi.Pointer<llama_model> Function(ffi.Pointer<ffi.Char>, llama_model_params)
 >()
 external ffi.Pointer<llama_model> llama_dart_model_load_from_file(
   ffi.Pointer<ffi.Char> path_model,
   llama_model_params params,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_bitmap> Function(ffi.Size, ffi.Pointer<ffi.Float>)
+>()
+external ffi.Pointer<mtmd_bitmap> llama_dart_mtmd_bitmap_init_from_audio(
+  int n_samples,
+  ffi.Pointer<ffi.Float> data,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_bitmap> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.UnsignedChar>,
+    ffi.Size,
+  )
+>()
+external ffi.Pointer<mtmd_bitmap> llama_dart_mtmd_bitmap_init_from_buf(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.UnsignedChar> buf,
+  int len,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_bitmap> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+  )
+>()
+external ffi.Pointer<mtmd_bitmap> llama_dart_mtmd_bitmap_init_from_file(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.Char> fname,
 );
 
 @ffi.Native<
@@ -6372,6 +6610,34 @@ external ffi.Pointer<llama_dart_ngram> llama_dart_ngram_simple_init(
   int draft_token_max,
 );
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_sampler>, llama_token)>()
+external bool llama_dart_sampler_accept(
+  ffi.Pointer<llama_sampler> smpl,
+  int token,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_sampler> Function(
+    ffi.Pointer<llama_vocab>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    ffi.Size,
+    ffi.Pointer<llama_token>,
+    ffi.Size,
+  )
+>()
+external ffi.Pointer<llama_sampler>
+llama_dart_sampler_init_grammar_lazy_patterns(
+  ffi.Pointer<llama_vocab> vocab,
+  ffi.Pointer<ffi.Char> grammar_str,
+  ffi.Pointer<ffi.Char> grammar_root,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> trigger_patterns,
+  int num_trigger_patterns,
+  ffi.Pointer<llama_token> trigger_tokens,
+  int num_trigger_tokens,
+);
+
 @ffi.Native<
   ffi.Pointer<llama_sampler> Function(
     ffi.Pointer<llama_vocab>,
@@ -6614,6 +6880,46 @@ external int llama_dart_state_seq_set_data_ext(
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_context>)>()
 external void llama_dart_synchronize(ffi.Pointer<llama_context> ctx);
 
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_vocab>,
+    llama_token,
+    ffi.Pointer<ffi.Char>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Bool,
+  )
+>()
+external int llama_dart_token_to_piece(
+  ffi.Pointer<llama_vocab> vocab,
+  int token,
+  ffi.Pointer<ffi.Char> buf,
+  int length,
+  int lstrip,
+  bool special,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_vocab>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Int32,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+    ffi.Bool,
+    ffi.Bool,
+  )
+>()
+external int llama_dart_tokenize(
+  ffi.Pointer<llama_vocab> vocab,
+  ffi.Pointer<ffi.Char> text,
+  int text_len,
+  ffi.Pointer<llama_token> tokens,
+  int n_tokens_max,
+  bool add_special,
+  bool parse_special,
+);
+
 @ffi.Native<ffi.Uint32 Function()>()
 external int llama_dart_tts_api_version();
 
@@ -6789,6 +7095,17 @@ llama_dart_tts_status llama_dart_tts_step(
   );
 }
 
+@ffi.Native<ffi.Int32 Function()>()
+external int llama_dart_vulkan_get_device_count();
+
+@ffi.Native<
+  ffi.Int32 Function(ffi.Int32, ffi.Pointer<llama_dart_vulkan_device_info>)
+>()
+external int llama_dart_vulkan_get_device_info(
+  int index,
+  ffi.Pointer<llama_dart_vulkan_device_info> out_info,
+);
+
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_context>, llama_batch)>()
 external int llama_decode(ffi.Pointer<llama_context> ctx, llama_batch batch);
 
@@ -6851,6 +7168,9 @@ external ffi.Pointer<ffi.Char> _llama_ftype_name(int ftype);
 ffi.Pointer<ffi.Char> llama_ftype_name(llama_ftype ftype) {
   return _llama_ftype_name(ftype.value);
 }
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_context>)>()
+external bool llama_get_causal_attn(ffi.Pointer<llama_context> ctx);
 
 @ffi.Native<ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>)>()
 external ffi.Pointer<ffi.Float> llama_get_embeddings(
@@ -7474,6 +7794,27 @@ llama_pooling_type llama_pooling_type$1(ffi.Pointer<llama_context> ctx) {
 
 @ffi.Native<ffi.Pointer<ffi.Char> Function()>()
 external ffi.Pointer<ffi.Char> llama_print_system_info();
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_context>,
+    ffi.UnsignedInt,
+    ffi.Pointer<llama_batch_ext>,
+  )
+>(symbol: 'llama_process')
+external int _llama_process(
+  ffi.Pointer<llama_context> ctx,
+  int type,
+  ffi.Pointer<llama_batch_ext> batch,
+);
+
+int llama_process(
+  ffi.Pointer<llama_context> ctx,
+  llama_process_type type,
+  ffi.Pointer<llama_batch_ext> batch,
+) {
+  return _llama_process(ctx, type.value, batch);
+}
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_sampler>, llama_token)>()
 external void llama_sampler_accept(ffi.Pointer<llama_sampler> smpl, int token);
@@ -9129,7 +9470,7 @@ const int LLAMA_FILE_MAGIC_GGSQ = 1734833009;
 
 const int LLAMA_SESSION_MAGIC = 1734833006;
 
-const int LLAMA_SESSION_VERSION = 10;
+const int LLAMA_SESSION_VERSION = 11;
 
 const int LLAMA_STATE_SEQ_FLAGS_NONE = 0;
 
@@ -9141,7 +9482,7 @@ const int LLAMA_STATE_SEQ_FLAGS_SWA_ONLY = 1;
 
 const int LLAMA_STATE_SEQ_MAGIC = 1734833009;
 
-const int LLAMA_STATE_SEQ_VERSION = 3;
+const int LLAMA_STATE_SEQ_VERSION = 4;
 
 const int LLAMA_TOKEN_NULL = -1;
 
@@ -10687,6 +11028,8 @@ final class llama_batch extends ffi.Struct {
     ..ref.logits = logits;
 }
 
+final class llama_batch_ext extends ffi.Opaque {}
+
 final class llama_chat_message extends ffi.Struct {
   external ffi.Pointer<ffi.Char> role;
 
@@ -11037,6 +11380,18 @@ final class llama_dart_speculative_params extends ffi.Struct {
     ..ref.ngram_cache_dynamic_path = ngram_cache_dynamic_path;
 }
 
+enum llama_dart_status {
+  LLAMA_DART_STATUS_EXCEPTION(-2147483648);
+
+  final int value;
+  const llama_dart_status(this.value);
+
+  static llama_dart_status fromValue(int value) => switch (value) {
+    -2147483648 => LLAMA_DART_STATUS_EXCEPTION,
+    _ => throw ArgumentError('Unknown value for llama_dart_status: $value'),
+  };
+}
+
 final class llama_dart_tts extends ffi.Opaque {}
 
 enum llama_dart_tts_capability {
@@ -11283,6 +11638,82 @@ enum llama_dart_tts_status {
     -6 => LLAMA_DART_TTS_STATUS_CANCELLED,
     _ => throw ArgumentError('Unknown value for llama_dart_tts_status: $value'),
   };
+}
+
+final class llama_dart_vulkan_device_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Uint32()
+  external int instance_api_version;
+
+  @ffi.Uint32()
+  external int physical_device_index;
+
+  @ffi.Uint32()
+  external int api_version;
+
+  @ffi.Uint32()
+  external int driver_version;
+
+  @ffi.Uint32()
+  external int vendor_id;
+
+  @ffi.Uint32()
+  external int device_id;
+
+  @ffi.Uint32()
+  external int device_type;
+
+  @ffi.Uint32()
+  external int subgroup_size;
+
+  @ffi.Array.multi([256])
+  external ffi.Array<ffi.Char> device_name;
+}
+
+enum llama_dart_vulkan_status {
+  LLAMA_DART_VULKAN_STATUS_OK(0),
+  LLAMA_DART_VULKAN_STATUS_INVALID_ARGUMENT(-1),
+  LLAMA_DART_VULKAN_STATUS_UNSUPPORTED(-2),
+  LLAMA_DART_VULKAN_STATUS_NO_LOADER(-3),
+  LLAMA_DART_VULKAN_STATUS_LOADER_ERROR(-4),
+  LLAMA_DART_VULKAN_STATUS_NO_DEVICE(-5);
+
+  final int value;
+  const llama_dart_vulkan_status(this.value);
+
+  static llama_dart_vulkan_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_VULKAN_STATUS_OK,
+    -1 => LLAMA_DART_VULKAN_STATUS_INVALID_ARGUMENT,
+    -2 => LLAMA_DART_VULKAN_STATUS_UNSUPPORTED,
+    -3 => LLAMA_DART_VULKAN_STATUS_NO_LOADER,
+    -4 => LLAMA_DART_VULKAN_STATUS_LOADER_ERROR,
+    -5 => LLAMA_DART_VULKAN_STATUS_NO_DEVICE,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_vulkan_status: $value',
+    ),
+  };
+}
+
+final class llama_embd extends ffi.Struct {
+  external ffi.Pointer<ffi.Float> data;
+
+  @ffi.Size()
+  external int n_rows;
+
+  @ffi.Size()
+  external int n_embd;
+
+  static ffi.Pointer<llama_embd> $allocate(
+    ffi.Allocator $allocator, {
+    required ffi.Pointer<ffi.Float> data,
+    required int n_rows,
+    required int n_embd,
+  }) => $allocator<llama_embd>()
+    ..ref.data = data
+    ..ref.n_rows = n_rows
+    ..ref.n_embd = n_embd;
 }
 
 enum llama_flash_attn_type {
@@ -11894,6 +12325,21 @@ enum llama_pooling_type {
 
 typedef llama_pos = ffi.Int32;
 typedef Dartllama_pos = int;
+
+enum llama_process_type {
+  LLAMA_PROCESS_TYPE_ENCODE(0),
+  LLAMA_PROCESS_TYPE_DECODE(1);
+
+  final int value;
+  const llama_process_type(this.value);
+
+  static llama_process_type fromValue(int value) => switch (value) {
+    0 => LLAMA_PROCESS_TYPE_ENCODE,
+    1 => LLAMA_PROCESS_TYPE_DECODE,
+    _ => throw ArgumentError('Unknown value for llama_process_type: $value'),
+  };
+}
+
 typedef llama_progress_callback =
     ffi.Pointer<ffi.NativeFunction<llama_progress_callbackFunction>>;
 typedef llama_progress_callbackFunction =
@@ -12705,6 +13151,40 @@ final class mtmd_helper_bitmap_wrapper extends ffi.Struct {
     ..ref.video_ctx = video_ctx;
 }
 
+final class mtmd_helper_embd_batch extends ffi.Struct {
+  @ffi.Int32()
+  external int n_tokens;
+
+  external ffi.Pointer<ffi.Float> embd;
+
+  @ffi.Int32()
+  external int n_embd;
+
+  external ffi.Pointer<llama_pos> pos;
+
+  @ffi.Int32()
+  external int n_pos;
+
+  @llama_seq_id()
+  external int seq_id;
+
+  static ffi.Pointer<mtmd_helper_embd_batch> $allocate(
+    ffi.Allocator $allocator, {
+    required int n_tokens,
+    required ffi.Pointer<ffi.Float> embd,
+    required int n_embd,
+    required ffi.Pointer<llama_pos> pos,
+    required int n_pos,
+    required int seq_id,
+  }) => $allocator<mtmd_helper_embd_batch>()
+    ..ref.n_tokens = n_tokens
+    ..ref.embd = embd
+    ..ref.n_embd = n_embd
+    ..ref.pos = pos
+    ..ref.n_pos = n_pos
+    ..ref.seq_id = seq_id;
+}
+
 final class mtmd_helper_gen_audio extends ffi.Opaque {}
 
 final class mtmd_helper_gen_audio_inp extends ffi.Struct {
@@ -12783,9 +13263,15 @@ final class mtmd_helper_init_opt extends ffi.Struct {
 typedef mtmd_helper_post_decode_callback =
     ffi.Pointer<ffi.NativeFunction<mtmd_helper_post_decode_callbackFunction>>;
 typedef mtmd_helper_post_decode_callbackFunction =
-    ffi.Int32 Function(llama_batch batch, ffi.Pointer<ffi.Void> user_data);
+    ffi.Int32 Function(
+      ffi.Pointer<mtmd_helper_embd_batch> batch,
+      ffi.Pointer<ffi.Void> user_data,
+    );
 typedef Dartmtmd_helper_post_decode_callbackFunction =
-    int Function(llama_batch batch, ffi.Pointer<ffi.Void> user_data);
+    int Function(
+      ffi.Pointer<mtmd_helper_embd_batch> batch,
+      ffi.Pointer<ffi.Void> user_data,
+    );
 
 final class mtmd_helper_video extends ffi.Opaque {}
 

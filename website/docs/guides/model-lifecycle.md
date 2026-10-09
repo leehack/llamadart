@@ -302,7 +302,12 @@ print('Restored ${restored.tokens.length} prompt tokens');
 Important caveats:
 
 - State files are opaque llama.cpp artifacts. Treat them as tied to the same
-  model file and compatible runtime/build that created them. Web paths refer to
+  model file and compatible runtime/build that created them. A llama.cpp
+  release can change the format: llama.cpp `v0.6.0`, which llamadart pins
+  after 0.11.x, reads session version 11 and refuses the version 10 files
+  that 0.11.x and earlier wrote. On native, `stateLoadFile(...)` then throws
+  `LlamaStateException` naming both versions; catch it, evaluate the prompt
+  again and save a new file. Web paths refer to
   the bridge WASMFS virtual filesystem and are not durable across page reloads.
   Durable browser storage currently requires app-level export/import outside the
   Dart `stateSaveFile` / `stateLoadFile` helpers.

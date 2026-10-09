@@ -297,23 +297,23 @@ first model load, for diagnosis or controlled deployments:
 
 ## Pinned bridge assets
 
-The example currently pins bridge assets to `v0.1.54`, with local vendored assets
-identified as `v0.1.54-local-v0.5.0`.
+The example currently pins bridge assets to `v0.1.59`, with local vendored assets
+identified as `v0.1.59-local-v0.6.0`.
 
-- The pinned `v0.1.54` bridge assets embed llama.cpp `v0.5.0`, matching the native runtime
-  (`v0.5.0-2`, both built from upstream `v0.5.0@7fe450e19305b828c199d602c23a8337aaa1f03b`)
-  even though the bridge asset tag `v0.1.54` differs from the native runtime tag
-  `v0.5.0-2`. Pinned artifact provenance: release `397350529`, tag commit
-  `e161182a09ac560d45ad5e65bb499574f913a466`, bridge source
-  `65622b297b83513db597a760fa067867755010b4`, manifest SHA-256
-  `8a9f83c15035eeb034a6563e6f753382d7d7f9be81503ef76902138da7841176`. The
-  bridge assets were qualified against native `v0.5.0`; `v0.5.0-2` rebuilds it
+- The pinned `v0.1.59` bridge assets embed llama.cpp `v0.6.0`, matching the native runtime
+  (`v0.6.0-1`, both built from upstream `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
+  even though the bridge asset tag `v0.1.59` differs from the native runtime tag
+  `v0.6.0-1`. Pinned artifact provenance: release `406130836`, tag commit
+  `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
+  `c1f64536b9a4ea410066b711928c7cba03691fb0`, manifest SHA-256
+  `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The
+  bridge assets were qualified against native `v0.6.0`; `v0.6.0-1` rebuilds it
   from the same upstream commit.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.54 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.59 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 The chat app bootstrap takes its CDN source from these globals:
@@ -321,7 +321,7 @@ The chat app bootstrap takes its CDN source from these globals:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.54';
+  window.__llamadartBridgeAssetsTag = 'v0.1.59';
 </script>
 ```
 

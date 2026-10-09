@@ -33,6 +33,16 @@ final class RecordingExitTeardown {
   /// What the fake eval functions run; without it they evaluate nothing.
   final FakeMediaEval? evalMedia;
 
+  /// Called with the native name of each call before it is made.
+  void Function(String name)? onCall;
+
+  /// Decides, for a call that reaches libllamadart or libmtmd, whether it
+  /// returns its failure value instead: `nullptr`, `false`, `0` for a size,
+  /// `LLAMA_TOKEN_NULL` for a sample, `GGML_STATUS_FAILED` for a graph compute
+  /// and `LLAMA_DART_STATUS_EXCEPTION` for another status.
+  /// `llama_dart_synchronize` then does nothing.
+  bool Function(String name)? fail;
+
   /// Native names of the calls made so far, in order.
   final List<String> calls = <String>[];
 
@@ -41,6 +51,11 @@ final class RecordingExitTeardown {
 
   /// Addresses of the objects created or tracked through this API so far.
   final List<int> owned = <int>[];
+
+  /// The addresses in `llama_model_params.devices` of each
+  /// `llama_dart_model_load_from_file` so far; `null` for a load that listed
+  /// no devices.
+  final List<List<int>?> loadDevices = <List<int>?>[];
 
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
@@ -70,6 +85,15 @@ final class RecordingExitTeardown {
     ].join();
   }
 
+  static const int _statusException = -2147483648;
+
+  // Records [name] and returns whether the call goes on to do its work.
+  bool _proceeds(String name) {
+    onCall?.call(name);
+    calls.add(name);
+    return !(fail?.call(name) ?? false);
+  }
+
   /// Forgets the calls recorded so far; [owned] and [freed] are kept.
   void clearCalls() {
     calls.clear();
@@ -83,7 +107,7 @@ final class RecordingExitTeardown {
     int nBatch,
     Pointer<llama_pos> newNPast,
   ) {
-    calls.add(name);
+    if (!_proceeds(name)) return _statusException;
     final evalMedia = this.evalMedia;
     if (evalMedia == null) {
       newNPast.value = nPast;
@@ -95,60 +119,65 @@ final class RecordingExitTeardown {
   /// The recording functions.
   late final ExitTeardownApi api = ExitTeardownApi(
     track: (object, free, stage) {
-      calls.add('llama_dart_exit_track');
+      _proceeds('llama_dart_exit_track');
       owned.add(object.address);
       return real.track(object, free, stage);
     },
     untrack: (object) {
-      calls.add('llama_dart_exit_untrack');
+      _proceeds('llama_dart_exit_untrack');
       return real.untrack(object);
     },
     free: (object) {
-      calls.add('llama_dart_exit_free');
+      _proceeds('llama_dart_exit_free');
       freed.add(object.address);
       real.free(object);
     },
     freeAddress: real.freeAddress,
     modelLoadFromFile: (path, params) {
-      calls.add('llama_dart_model_load_from_file');
+      final devices = params.devices;
+      loadDevices.add(
+        devices == nullptr
+            ? null
+            : [for (var i = 0; devices[i] != nullptr; i++) devices[i].address],
+      );
+      if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;
       final model = real.modelLoadFromFile(path, params);
       owned.add(model.address);
       return model;
     },
     initFromModel: (model, params) {
-      calls.add('llama_dart_init_from_model');
+      if (!_proceeds('llama_dart_init_from_model')) return nullptr;
       final context = real.initFromModel(model, params);
       owned.add(context.address);
       return context;
     },
     mtmdInitFromFile: (path, model, params) {
-      calls.add('llama_dart_mtmd_init_from_file');
+      if (!_proceeds('llama_dart_mtmd_init_from_file')) return nullptr;
       owned.add(projector.address);
       return projector;
     },
     decode: (ctx, batch) {
-      calls.add('llama_dart_decode');
+      final proceeds = _proceeds('llama_dart_decode');
       decodedTokens.add(batch.n_tokens);
-      return real.decode(ctx, batch);
+      return proceeds ? real.decode(ctx, batch) : _statusException;
     },
     encode: (ctx, batch) {
-      calls.add('llama_dart_encode');
+      if (!_proceeds('llama_dart_encode')) return _statusException;
       return real.encode(ctx, batch);
     },
     synchronize: (ctx) {
-      calls.add('llama_dart_synchronize');
-      real.synchronize(ctx);
+      if (_proceeds('llama_dart_synchronize')) real.synchronize(ctx);
     },
     samplerSample: (sampler, ctx, index) {
-      calls.add('llama_dart_sampler_sample');
+      if (!_proceeds('llama_dart_sampler_sample')) return LLAMA_TOKEN_NULL;
       return real.samplerSample(sampler, ctx, index);
     },
     stateSaveFile: (ctx, path, tokens, tokenCount) {
-      calls.add('llama_dart_state_save_file');
+      if (!_proceeds('llama_dart_state_save_file')) return false;
       return real.stateSaveFile(ctx, path, tokens, tokenCount);
     },
     stateLoadFile: (ctx, path, tokensOut, tokenCapacity, tokenCountOut) {
-      calls.add('llama_dart_state_load_file');
+      if (!_proceeds('llama_dart_state_load_file')) return false;
       return real.stateLoadFile(
         ctx,
         path,
@@ -158,27 +187,26 @@ final class RecordingExitTeardown {
       );
     },
     stateSeqGetSizeExt: (ctx, seqId, flags) {
-      calls.add('llama_dart_state_seq_get_size_ext');
+      if (!_proceeds('llama_dart_state_seq_get_size_ext')) return 0;
       return real.stateSeqGetSizeExt(ctx, seqId, flags);
     },
     stateSeqGetDataExt: (ctx, dst, size, seqId, flags) {
-      calls.add('llama_dart_state_seq_get_data_ext');
+      if (!_proceeds('llama_dart_state_seq_get_data_ext')) return 0;
       return real.stateSeqGetDataExt(ctx, dst, size, seqId, flags);
     },
     stateSeqSetDataExt: (ctx, src, size, seqId, flags) {
-      calls.add('llama_dart_state_seq_set_data_ext');
+      if (!_proceeds('llama_dart_state_seq_set_data_ext')) return 0;
       return real.stateSeqSetDataExt(ctx, src, size, seqId, flags);
     },
     adapterLoraInit: (model, path) {
-      calls.add('llama_dart_adapter_lora_init');
+      if (!_proceeds('llama_dart_adapter_lora_init')) return nullptr;
       return real.adapterLoraInit(model, path);
     },
     mtmdTokenize: (ctx, output, text, bitmaps, bitmapCount) {
-      calls.add('llama_dart_mtmd_tokenize');
-      return 0;
+      return _proceeds('llama_dart_mtmd_tokenize') ? 0 : _statusException;
     },
     mtmdEncodeChunk: (ctx, chunk) {
-      calls.add('llama_dart_mtmd_encode_chunk');
+      _proceeds('llama_dart_mtmd_encode_chunk');
       return 0;
     },
     mtmdHelperEvalChunks:
@@ -211,12 +239,14 @@ final class RecordingExitTeardown {
           callback,
           userData,
         ) {
-          calls.add('llama_dart_mtmd_helper_decode_image_chunk');
+          _proceeds('llama_dart_mtmd_helper_decode_image_chunk');
           newNPast.value = nPast;
           return 0;
         },
     schedGraphCompute: (sched, graph) {
-      calls.add('llama_dart_ggml_backend_sched_graph_compute');
+      if (!_proceeds('llama_dart_ggml_backend_sched_graph_compute')) {
+        return ggml_status.GGML_STATUS_FAILED.value;
+      }
       return real.schedGraphCompute(sched, graph);
     },
   );

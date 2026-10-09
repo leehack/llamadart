@@ -67,6 +67,28 @@ typedef _DecodeImageChunkDart =
       Pointer<Void>,
     );
 
+int _primaryDecodeImageChunk(
+  Pointer<mtmd_context> ctx,
+  Pointer<llama_context> lctx,
+  Pointer<mtmd_input_chunk> chunk,
+  Pointer<Float> encodedEmbd,
+  int nPast,
+  int seqId,
+  int nBatch,
+  Pointer<llama_pos> newNPast,
+) => mtmd_helper_decode_image_chunk(
+  ctx,
+  lctx,
+  chunk,
+  encodedEmbd,
+  nPast,
+  seqId,
+  nBatch,
+  newNPast,
+  nullptr,
+  nullptr,
+);
+
 /// The mtmd functions [evalMtmdChunksUntilCancelled] calls, resolved from one
 /// library.
 final class MtmdChunkEvalApi {
@@ -89,13 +111,17 @@ final class MtmdChunkEvalApi {
     evalChunkSingle: mtmd_helper_eval_chunk_single,
     encodeChunk: mtmd_encode_chunk,
     outputEmbd: mtmd_get_output_embd,
-    decodeImageChunk: mtmd_helper_decode_image_chunk,
+    decodeImageChunk: _primaryDecodeImageChunk,
   );
 
   /// Resolves every function from [library], or returns `null` if any symbol
   /// is missing.
   static MtmdChunkEvalApi? tryLoad(DynamicLibrary library) {
     try {
+      final decodeImageChunk = library
+          .lookupFunction<_DecodeImageChunkNative, _DecodeImageChunkDart>(
+            'mtmd_helper_decode_image_chunk',
+          );
       return MtmdChunkEvalApi(
         chunksSize: library.lookupFunction<_ChunksSizeNative, _ChunksSizeDart>(
           'mtmd_input_chunks_size',
@@ -117,10 +143,20 @@ final class MtmdChunkEvalApi {
         outputEmbd: library.lookupFunction<_OutputEmbdNative, _OutputEmbdDart>(
           'mtmd_get_output_embd',
         ),
-        decodeImageChunk: library
-            .lookupFunction<_DecodeImageChunkNative, _DecodeImageChunkDart>(
-              'mtmd_helper_decode_image_chunk',
-            ),
+        decodeImageChunk:
+            (ctx, lctx, chunk, encodedEmbd, nPast, seqId, nBatch, newNPast) =>
+                decodeImageChunk(
+                  ctx,
+                  lctx,
+                  chunk,
+                  encodedEmbd,
+                  nPast,
+                  seqId,
+                  nBatch,
+                  newNPast,
+                  nullptr,
+                  nullptr,
+                ),
       );
     } on ArgumentError {
       return null;
@@ -136,7 +172,20 @@ final class MtmdChunkEvalApi {
     evalChunkSingle: exit.mtmdHelperEvalChunkSingle,
     encodeChunk: exit.mtmdEncodeChunk,
     outputEmbd: outputEmbd,
-    decodeImageChunk: exit.mtmdHelperDecodeImageChunk,
+    decodeImageChunk:
+        (ctx, lctx, chunk, encodedEmbd, nPast, seqId, nBatch, newNPast) =>
+            exit.mtmdHelperDecodeImageChunk(
+              ctx,
+              lctx,
+              chunk,
+              encodedEmbd,
+              nPast,
+              seqId,
+              nBatch,
+              newNPast,
+              nullptr,
+              nullptr,
+            ),
   );
 
   /// `mtmd_input_chunks_size`.
@@ -172,7 +221,8 @@ final class MtmdChunkEvalApi {
   /// `mtmd_get_output_embd`.
   final Pointer<Float> Function(Pointer<mtmd_context> ctx) outputEmbd;
 
-  /// `mtmd_helper_decode_image_chunk`.
+  /// `mtmd_helper_decode_image_chunk` without a post-decode callback, whose
+  /// type differs between upstream and libllamadart.
   final int Function(
     Pointer<mtmd_context> ctx,
     Pointer<llama_context> lctx,
@@ -182,8 +232,6 @@ final class MtmdChunkEvalApi {
     int seqId,
     int nBatch,
     Pointer<llama_pos> newNPast,
-    mtmd_helper_post_decode_callback callback,
-    Pointer<Void> userData,
   )
   decodeImageChunk;
 }
@@ -277,8 +325,6 @@ MtmdChunkEvalFailure? evalMtmdChunksUntilCancelled(
           0,
           nBatch,
           newNPast,
-          nullptr,
-          nullptr,
         );
       }
     } else {
