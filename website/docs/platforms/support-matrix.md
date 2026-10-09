@@ -184,11 +184,14 @@ output and grammars, sampling controls and speculative decoding. Guides:
   verification batches during generation. Those batches can exceed 32 tokens,
   so speculative decoding can still produce wrong output on an affected GPU.
   llama.cpp's Vulkan backend also needs Vulkan 1.2 from the Vulkan loader and
-  the GPU driver. When a registered Vulkan GPU's driver reports an older
+  the GPU driver. When the Vulkan GPU a load would run on reports an older
   version, `ComputeDevice.gpu` throws `LlamaUnsupportedException` naming the
   GPU and both versions, and `ComputeDevice.auto` loads the model on the CPU
-  and logs a warning; on Linux and Windows, `GGML_VK_VISIBLE_DEVICES` can
-  hide such a GPU from llama.cpp. Whether this is what crashes the Galaxy A53
+  and logs a warning. A device that used to run Vulkan on a 1.1 driver now
+  takes that path. When other GPUs of the load are usable, such as a
+  discrete GPU beside an old one, the load leaves the old one out and logs a
+  warning; a GPU llama.cpp would not select, like an integrated GPU beside a
+  discrete one, changes nothing. Whether this is what crashes the Galaxy A53
   is not confirmed.
   Keep `auto` or `cpu` on Android unless the app has validated Vulkan on its
   target devices.

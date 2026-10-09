@@ -31,6 +31,7 @@ import '../../hook/native_release_pins.dart';
 import 'decision_head.dart';
 import 'exit_teardown_api.dart';
 import 'lazy_grammar_triggers.dart';
+import 'load_device_selection.dart';
 import 'load_param_helpers.dart';
 import 'safetensors.dart';
 import 'stop_sequence_buffer.dart';
@@ -650,7 +651,8 @@ class LlamaCppService {
   /// its backend and context policy, the raw `ggml_backend_dev_type` values a
   /// [ComputeDevice.gpu] load checks for a backend, the calls that create,
   /// free and run models and contexts, the calls that allocate and free
-  /// token batches, and the read of the Vulkan device facts.
+  /// token batches, the read of the Vulkan device facts, and the registered
+  /// ggml devices a load selects from.
   LlamaCppService({
     void Function()? backendInit,
     Abi? abi,
@@ -663,6 +665,7 @@ class LlamaCppService {
     llama_batch Function(int tokens, int embd, int sequences)? batchInit,
     void Function(llama_batch batch)? batchFree,
     VulkanDeviceProbe Function()? vulkanDeviceProbe,
+    List<GgmlDeviceEntry> Function()? registeredDevices,
   }) : _backendInit = backendInit ?? (() => llama_backend_init()),
        _abi = abi ?? Abi.current(),
        _isWindows = isWindows ?? Platform.isWindows,
@@ -672,7 +675,8 @@ class LlamaCppService {
        _objectCallsOverride = objectCalls,
        _batchInit = batchInit ?? llama_batch_init,
        _batchFree = batchFree ?? llama_batch_free,
-       _vulkanDeviceProbeOverride = vulkanDeviceProbe;
+       _vulkanDeviceProbeOverride = vulkanDeviceProbe,
+       _registeredDevicesOverride = registeredDevices;
 
   final void Function() _backendInit;
   final Abi _abi;
@@ -687,15 +691,14 @@ class LlamaCppService {
   late final LlamaCppObjectCalls _calls =
       _objectCallsOverride ?? _resolveObjectCalls();
 
-  late final VulkanDeviceProbe _vulkanDeviceProbe =
-      (_vulkanDeviceProbeOverride ?? _probeVulkanDevices)();
+  final List<GgmlDeviceEntry> Function()? _registeredDevicesOverride;
 
-  // The read loads the system's GPU drivers into the process, so it is made
-  // once, and only after ggml-vulkan has registered a device itself.
-  VulkanDeviceProbe _probeVulkanDevices() =>
-      _registeredDeviceTypes(GpuBackend.vulkan).isEmpty
-      ? const VulkanDeviceProbe.unavailable('ggml-vulkan registered no device')
-      : VulkanDeviceInfoApi.probeRuntime(isWindows: _isWindows);
+  // Reading the facts loads the system's GPU drivers into the process, so
+  // they are read once, and only when a registered Vulkan device is about to
+  // be used: ggml-vulkan has loaded the drivers by then.
+  late final VulkanDeviceProbe _vulkanDeviceProbe =
+      (_vulkanDeviceProbeOverride ??
+      () => VulkanDeviceInfoApi.probeRuntime(isWindows: _isWindows))();
   int _nextHandle = 1;
   String? _backendModuleDirectory;
   final Set<String> _loadedBackendModules = <String>{};
@@ -959,23 +962,6 @@ class LlamaCppService {
         devices.isEmpty ||
         devices.length != registeredDeviceCount ||
         devices.any((device) => device.hasSmallMatmulTileDefect);
-  }
-
-  /// Why ggml-vulkan cannot drive the devices of [probe], or `null` when it
-  /// can or the devices are unknown.
-  ///
-  /// llama.cpp v0.6.0 needs Vulkan 1.2 from the loader and from the driver
-  /// of every device it registers (see [VulkanDeviceFacts.meetsVulkan12]).
-  static String? vulkanUnsupportedReason(VulkanDeviceProbe probe) {
-    for (final device in probe.devices ?? const <VulkanDeviceFacts>[]) {
-      if (device.meetsVulkan12) continue;
-      String version(int value) => VulkanDeviceFacts.formatApiVersion(value);
-      return "llama.cpp's Vulkan backend needs Vulkan 1.2 or later from both "
-          'the Vulkan loader and the GPU driver, and "${device.name}" '
-          'reports driver API ${version(device.apiVersion)} with loader API '
-          '${version(device.instanceApiVersion)}';
-    }
-    return null;
   }
 
   /// Resolves effective context batch parameters.
@@ -2005,11 +1991,13 @@ class LlamaCppService {
         _noGpuMessage(effectiveBackend, forcedCpuFallback: forcedCpuFallback),
       );
     }
-    final vulkanUnsupported = _vulkanUnsupportedReasonForLoad(
+    final vulkan = _resolveVulkanLoadDevices(
       effectiveBackend,
-      gpuLayers,
+      gpuLayers: gpuLayers,
+      splitMode: modelParams.splitMode.llamaCppValue,
+      mainGpu: modelParams.mainGpu,
     );
-    if (vulkanUnsupported != null) {
+    if (vulkan.refused) {
       if (preferredDevices != null) {
         malloc.free(preferredDevices);
       }
@@ -2017,12 +2005,17 @@ class LlamaCppService {
         malloc.free(modelPathPtr);
         throw LlamaUnsupportedException(
           'ComputeDevice.gpu is not available for llama.cpp on '
-          '${Platform.operatingSystem}: $vulkanUnsupported. Use '
+          '${Platform.operatingSystem}: ${vulkan.unsupported}. Use '
           'ComputeDevice.auto to run on the CPU instead.',
         );
       }
       preferredDevices = _createPreferredDeviceList(GpuBackend.cpu);
       gpuLayers = 0;
+    } else if (vulkan.devices case final usable?) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      preferredDevices = _createDeviceList(usable);
     }
     final mtmdUseGpu = resolveMtmdUseGpuForLoad(
       modelParams,
@@ -2079,10 +2072,13 @@ class LlamaCppService {
     _modelLoadParams[handle] = modelParams;
     _activeBackendName = resolvedBackend;
     _activeResolvedGpuLayers = gpuLayers;
-    if (vulkanUnsupported != null) {
+    if (vulkan.unsupported case final unsupported?) {
       LlamaLogger.instance.warning(
-        '$vulkanUnsupported, so the model loaded on $resolvedBackend with 0 '
-        'GPU layers.',
+        vulkan.refused
+            ? '$unsupported, so the model loaded on $resolvedBackend with 0 '
+                  'GPU layers.'
+            : '$unsupported, so the model loaded without that device, on '
+                  '${vulkan.devices!.join(', ')}.',
       );
     }
     if (forcedCpuFallback) {
@@ -2099,25 +2095,73 @@ class LlamaCppService {
     return handle;
   }
 
-  /// Why a load on [backend] with [gpuLayers] layers must not use the Vulkan
-  /// devices ggml registered, or `null`.
-  ///
-  /// The device facts are read only when such a device would be used: for
-  /// [GpuBackend.vulkan], and for [GpuBackend.auto] when the Vulkan module is
-  /// the one that loaded.
-  String? _vulkanUnsupportedReasonForLoad(GpuBackend backend, int gpuLayers) {
-    if (gpuLayers <= 0 ||
-        (backend != GpuBackend.vulkan && backend != GpuBackend.auto) ||
-        _registeredVulkanDeviceCount() == 0) {
-      return null;
+  /// What a load on [backend] with [gpuLayers] layers does about Vulkan
+  /// devices below Vulkan 1.2 among the devices llama.cpp would use for it.
+  VulkanLoadDecision _resolveVulkanLoadDevices(
+    GpuBackend backend, {
+    required int gpuLayers,
+    required int splitMode,
+    required int mainGpu,
+  }) => resolveVulkanLoadDecision(
+    usesGpu: gpuLayers > 0 && backend != GpuBackend.cpu,
+    backendRegistry: ggmlGpuRegistryName(backend),
+    splitMode: splitMode,
+    mainGpu: mainGpu,
+    registered: _registeredDevices,
+    probe: () => _vulkanDeviceProbe,
+  );
+
+  /// The registered ggml devices, in registry order.
+  List<GgmlDeviceEntry> _registeredDevices() {
+    final override = _registeredDevicesOverride;
+    if (override != null) return override();
+    final gpu = ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value;
+    final props = calloc<ggml_backend_dev_props>();
+    try {
+      return [
+        for (var i = 0; i < _ggmlBackendDevCount(); i++)
+          if (_ggmlBackendDevGet(i) case final device when device != nullptr)
+            GgmlDeviceEntry(
+              name: _utf8OrEmpty(_ggmlBackendDevName(device)),
+              type: _ggmlBackendDevType(device),
+              registry: _registryNameOf(device),
+              // llama.cpp compares the id of discrete GPUs only.
+              deviceId:
+                  _ggmlBackendDevType(device) == gpu &&
+                      _ggmlBackendDevGetProps(device, props) &&
+                      props.ref.device_id != nullptr
+                  ? _utf8OrEmpty(props.ref.device_id)
+                  : null,
+              device: device,
+            ),
+      ];
+    } finally {
+      calloc.free(props);
     }
-    return vulkanUnsupportedReason(_vulkanDeviceProbe);
+  }
+
+  String _registryNameOf(ggml_backend_dev_t device) {
+    final registry = _ggmlBackendDevBackendReg(device);
+    return registry == nullptr
+        ? ''
+        : _utf8OrEmpty(_ggmlBackendRegName(registry));
   }
 
   int _registeredVulkanDeviceCount() =>
-      (_deviceTypesOverride ?? _registeredDeviceTypes)(
-        GpuBackend.vulkan,
-      ).length;
+      _registeredDevices().where((device) => device.isVulkan).length;
+
+  Pointer<ggml_backend_dev_t> _createDeviceList(List<GgmlDeviceEntry> devices) {
+    final pointers = [
+      for (final entry in devices)
+        if (entry.device case final device? when device != nullptr) device,
+    ];
+    final list = malloc<ggml_backend_dev_t>(pointers.length + 1);
+    for (final (index, device) in pointers.indexed) {
+      list[index] = device;
+    }
+    list[pointers.length] = nullptr;
+    return list;
+  }
 
   /// Whether a GPU device of [backend], or any GPU device for
   /// [GpuBackend.auto], is registered after the backend modules load.
@@ -2222,7 +2266,21 @@ class LlamaCppService {
 
     final modelPathPtr = draftModelPath.toNativeUtf8();
     final mparams = llama_model_default_params();
-    final preferredDevices = _createPreferredDeviceList(draftBackend);
+    var preferredDevices = _createPreferredDeviceList(draftBackend);
+    // The target load already decided whether the GPU is usable; a draft
+    // only needs the same devices left out.
+    final vulkan = _resolveVulkanLoadDevices(
+      draftBackend,
+      gpuLayers: draftGpuLayers,
+      splitMode: targetModelParams.splitMode.llamaCppValue,
+      mainGpu: targetModelParams.mainGpu,
+    );
+    if (vulkan.devices case final usable?) {
+      if (preferredDevices != null) {
+        malloc.free(preferredDevices);
+      }
+      preferredDevices = _createDeviceList(usable);
+    }
     mparams.n_gpu_layers = draftGpuLayers;
     mparams.split_modeAsInt = targetModelParams.splitMode.llamaCppValue;
     mparams.main_gpu = targetModelParams.mainGpu;
@@ -5501,7 +5559,7 @@ class LlamaCppService {
         'that exposes embedding model metadata before decoding.',
       );
     }
-    // llama.cpp v0.5.0 (7fe450e1) forces this non-diffusion architecture's
+    // llama.cpp v0.6.0 (d8123504) forces this non-diffusion architecture's
     // attention to non-causal after loading the optional metadata override.
     if (architecture == 'gemma-embedding') return false;
     final causal = metadata['$architecture.attention.causal'];

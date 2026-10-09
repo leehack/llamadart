@@ -54,11 +54,12 @@
   only on a GPU whose subgroup size llama.cpp `v0.6.0` mis-tiles (16, or below
   8) or cannot be read. Other GPUs decode a text prompt in full micro-batches
   ([#948](https://github.com/leehack/llamadart/issues/948)).
-- llama.cpp Vulkan needs Vulkan 1.2 from the loader and the GPU driver. On a
-  registered Vulkan GPU whose driver reports less, `ComputeDevice.gpu` now
+- llama.cpp Vulkan needs Vulkan 1.2 from the loader and the GPU driver. When
+  the Vulkan GPU a load would run on reports less, `ComputeDevice.gpu` now
   throws `LlamaUnsupportedException` naming the GPU and both versions, and
   `ComputeDevice.auto` loads the model on the CPU with a warning, instead of
-  starting a driver llama.cpp cannot use
+  starting a driver llama.cpp cannot use; a load with other usable GPUs
+  leaves that one out
   ([#782](https://github.com/leehack/llamadart/issues/782)).
 * Aligned the default WebGPU bridge assets to `v0.1.59`: they embed llama.cpp
   `v0.6.0`, are qualified against native `v0.6.0`, and keep Web/native

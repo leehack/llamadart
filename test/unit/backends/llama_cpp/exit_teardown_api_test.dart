@@ -613,6 +613,40 @@ void main() {
     });
   });
 
+  test('resolve picks the calls by what the runtime exports, and passes the '
+      'Windows rule on', () {
+    Pointer<NativeType> exported(String name) => Pointer.fromAddress(0x1000);
+    Never missing(String name) =>
+        throw ArgumentError("Couldn't resolve native function '$name'");
+
+    for (final isWindows in [false, true]) {
+      // llamadart-native v0.6.0-1 and later: exit teardown and the barrier.
+      final current = LlamaCppObjectCalls.resolve(
+        isWindows: isWindows,
+        symbol: exported,
+      );
+      expect(current.exit, isNotNull);
+      expect(current.failures.barrier, isNotNull);
+      expect(current.failures.isWindows, isWindows);
+
+      // v0.5.0-1 to v0.6.0: exit teardown only.
+      final withoutBarrier = LlamaCppObjectCalls.resolve(
+        isWindows: isWindows,
+        symbol: (name) =>
+            _symbols.contains(name) ? exported(name) : missing(name),
+      );
+      expect(withoutBarrier.exit, isNotNull);
+      expect(withoutBarrier.failures.barrier, isNull);
+      expect(withoutBarrier.failures.isWindows, isWindows);
+
+      // Older: the upstream functions.
+      expect(
+        LlamaCppObjectCalls.resolve(isWindows: isWindows, symbol: missing),
+        same(LlamaCppObjectCalls.upstream),
+      );
+    }
+  });
+
   test('resolve adds the exception barrier of the pinned runtime', () {
     final calls = LlamaCppObjectCalls.resolve(isWindows: Platform.isWindows);
 

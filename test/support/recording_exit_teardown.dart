@@ -52,6 +52,11 @@ final class RecordingExitTeardown {
   /// Addresses of the objects created or tracked through this API so far.
   final List<int> owned = <int>[];
 
+  /// The addresses in `llama_model_params.devices` of each
+  /// `llama_dart_model_load_from_file` so far; `null` for a load that listed
+  /// no devices.
+  final List<List<int>?> loadDevices = <List<int>?>[];
+
   /// Token count of the batch of each `llama_dart_decode` so far.
   final List<int> decodedTokens = <int>[];
 
@@ -129,6 +134,12 @@ final class RecordingExitTeardown {
     },
     freeAddress: real.freeAddress,
     modelLoadFromFile: (path, params) {
+      final devices = params.devices;
+      loadDevices.add(
+        devices == nullptr
+            ? null
+            : [for (var i = 0; devices[i] != nullptr; i++) devices[i].address],
+      );
       if (!_proceeds('llama_dart_model_load_from_file')) return nullptr;
       final model = real.modelLoadFromFile(path, params);
       owned.add(model.address);

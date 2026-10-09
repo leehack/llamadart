@@ -616,7 +616,52 @@ void main() {
         await _generate(service, context, 'ab', _greedy),
         BackendGenerationLimit.maxTokens,
       );
+      // A projector loaded afterwards is usable, at the same address too.
       service.freeMultimodalContext(projector);
+      projector = service.createMultimodalContext(
+        model,
+        '${dir.path}/mmproj.gguf',
+      );
+      expect(await describe(), BackendGenerationLimit.maxTokens);
+    });
+
+    test('builds a bitmap of each media source through its own barrier '
+        'constructor', () async {
+      attach();
+      final audioPath = '${dir.path}/clip.wav';
+      File(audioPath).writeAsBytesSync(const [1, 2, 3]);
+
+      for (final (part, constructor) in [
+        (
+          LlamaAudioContent(path: audioPath),
+          'llama_dart_mtmd_bitmap_init_from_file',
+        ),
+        (
+          LlamaAudioContent(bytes: Uint8List.fromList(const [1, 2, 3])),
+          'llama_dart_mtmd_bitmap_init_from_buf',
+        ),
+        (
+          LlamaAudioContent(samples: Float32List(1)),
+          'llama_dart_mtmd_bitmap_init_from_audio',
+        ),
+      ]) {
+        barrier.calls.clear();
+
+        expect(
+          await _generate(
+            service,
+            context,
+            '<__media__>',
+            _greedy,
+            parts: [part],
+          ),
+          BackendGenerationLimit.maxTokens,
+        );
+
+        expect(barrier.calls.where((call) => call.contains('_mtmd_bitmap_')), [
+          constructor,
+        ]);
+      }
     });
 
     test('a media evaluation that throws is a typed error, and the context '
@@ -669,6 +714,20 @@ void main() {
         ),
       );
     });
+  });
+
+  test('reads device properties and memory through the barrier', () {
+    start();
+    barrier.calls.clear();
+
+    // Every registered device is read, the CPU device included.
+    service.listGpuDevices();
+
+    expect(barrier.calls, contains('llama_dart_ggml_backend_dev_get_props'));
+    expect(
+      barrier.calls.where((call) => !call.contains('_ggml_backend_dev_')),
+      isEmpty,
+    );
   });
 
   test('a decision encoder pass that throws is a typed error, and the head '

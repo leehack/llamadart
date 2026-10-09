@@ -784,12 +784,25 @@ final class LlamaCppObjectCalls {
   /// [LlamaCppObjectCalls.tracked] when the loaded runtime exports the whole
   /// [ExitTeardownApi], with the [NativeBarrierApi] when it exports that too;
   /// otherwise [upstream].
-  static LlamaCppObjectCalls resolve({required bool isWindows}) {
-    final exit = ExitTeardownApi.tryResolve(isWindows: isWindows);
+  ///
+  /// [isWindows] selects the asset the functions are bound to and the rule
+  /// for the objects of a failed call. [symbol] replaces the lookup of both
+  /// APIs, as in [ExitTeardownApi.tryResolve].
+  static LlamaCppObjectCalls resolve({
+    required bool isWindows,
+    Pointer<NativeType> Function(String name)? symbol,
+  }) {
+    final exit = ExitTeardownApi.tryResolve(
+      isWindows: isWindows,
+      symbol: symbol,
+    );
     if (exit == null) return upstream;
     return LlamaCppObjectCalls.tracked(
       exit,
-      barrier: NativeBarrierApi.tryResolve(isWindows: isWindows),
+      barrier: NativeBarrierApi.tryResolve(
+        isWindows: isWindows,
+        symbol: symbol,
+      ),
       isWindows: isWindows,
     );
   }

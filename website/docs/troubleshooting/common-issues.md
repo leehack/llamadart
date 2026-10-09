@@ -118,12 +118,13 @@ backend; catch `LlamaException` to handle both.
 
 ### `ComputeDevice.gpu is not available ...: llama.cpp's Vulkan backend needs Vulkan 1.2`
 
-`LlamaUnsupportedException`: llama.cpp found a Vulkan GPU whose driver, or
-the system's Vulkan loader, reports a version below 1.2, which llama.cpp
+`LlamaUnsupportedException`: every Vulkan GPU the load would run on has a
+driver, or a Vulkan loader, that reports a version below 1.2, which llama.cpp
 needs. The message names the GPU and both versions. Under
 `ComputeDevice.auto` the same condition loads the model on the CPU and logs a
-warning. Update the GPU driver, or on Linux and Windows hide that GPU from
-llama.cpp with `GGML_VK_VISIBLE_DEVICES`.
+warning. Update the GPU driver. A GPU the load would not use does not cause
+this, and when another GPU of the load is usable the old one is only left
+out.
 
 ### Vulkan driver crashes in the cooperative-matrix path
 

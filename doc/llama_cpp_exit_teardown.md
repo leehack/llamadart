@@ -121,17 +121,27 @@ A failed `GGML_ASSERT` still aborts: the barrier catches exceptions only.
 `llama_dart_vulkan_get_device_count` and `llama_dart_vulkan_get_device_info`
 (`v0.6.0-1`), which list the devices ggml-vulkan registers with their API
 versions and subgroup size. Reading them makes the Vulkan loader load the
-system's GPU drivers, so the service reads them once, and only after
-ggml-vulkan has registered a device itself and a load or context is about to
-use it:
+system's GPU drivers, so the service reads them once, and only when a
+registered Vulkan device is about to be used by a load or a context:
 
-- A load on Vulkan stops when a device's driver or the loader is below
-  Vulkan 1.2, which llama.cpp `v0.6.0` needs (`ggml_vk_instance_init` refuses
-  an older loader; for an older driver it reads
+- llama.cpp `v0.6.0` needs Vulkan 1.2 (`ggml_vk_instance_init` refuses an
+  older loader; for an older driver ggml-vulkan reads
   `VkPhysicalDeviceVulkan12Features` the driver never filled in and calls
-  Vulkan 1.2 functions it lacks). `ComputeDevice.gpu` throws
-  `LlamaUnsupportedException`; `ComputeDevice.auto` loads on the CPU with a
-  warning.
+  Vulkan 1.2 functions it lacks, once it initializes the device). A device
+  is initialized only when a model uses it, so a load is judged by the
+  devices llama.cpp would select for it, which
+  `lib/src/backends/llama_cpp/load_device_selection.dart` mirrors from
+  `llama_prepare_model_devices` (`src/llama.cpp`): the devices of an explicit
+  backend, which llamadart lists; otherwise the discrete GPUs, one per
+  device id, and integrated GPUs only when there is no discrete one; in
+  single-device mode the one `mainGpu` indexes. A CUDA device, an unselected
+  integrated GPU and a GPU of another backend never count. When every
+  selected device is below 1.2, `ComputeDevice.gpu` throws
+  `LlamaUnsupportedException` and `ComputeDevice.auto` loads on the CPU with
+  a warning. When usable devices remain, the load lists those and logs a
+  warning naming the device it left out. A speculative draft model gets the
+  same list. The projector and a decision head pick their own device and are
+  not covered.
 - An Android Vulkan context keeps the 8-token text-prompt decode cap unless
   the facts list exactly the registered devices and each has a subgroup size
   ggml-vulkan tiles correctly (8, or 32 and above). llama.cpp `v0.6.0` gives
@@ -216,10 +226,12 @@ new call on an `sd_ctx_t` that can run longer than the 250 ms settle time
   object it leaves undefined is refused afterwards and usable again once
   freed and recreated, and nothing created stays unfreed. It also loads a
   state file written by llama.cpp `v0.5.0`.
-- `test/unit/backends/llama_cpp/vulkan_device_probe_test.dart` and the
-  "Vulkan" groups of `llama_cpp_service_test.dart`: the device facts, the
-  version check at load and the cap on each subgroup size, through injected
-  facts. No default-CI test reads a real Vulkan device.
+- `test/unit/backends/llama_cpp/vulkan_device_probe_test.dart`,
+  `load_device_selection_test.dart` and the "Vulkan" groups of
+  `llama_cpp_service_test.dart`: the device facts, the device selection and
+  version check of a load, and the cap on each subgroup size, through an
+  injected registry and injected facts. No default-CI test reads a real
+  Vulkan device.
 - No test forces an exception through speculative decoding, the
   reasoning-budget sampler or TTS: those functions are resolved inside the
   service and have no stand-in.

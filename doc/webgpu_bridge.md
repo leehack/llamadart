@@ -93,8 +93,10 @@ tag commit `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
 `c1f64536b9a4ea410066b711928c7cba03691fb0`, and manifest SHA-256
 `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The bridge
 assets were qualified against native `v0.6.0`; `v0.6.0-1` rebuilds it from the
-same upstream commit. Their bridge JavaScript is byte-identical to `v0.1.54`;
-only the llama.cpp core changed. They add the decision API
+same upstream commit. Their bridge JavaScript, type declarations and worker
+are byte-identical to `v0.1.54`; the WebAssembly core changed, for llama.cpp
+`v0.6.0` and for the bridge's own C++ on the batch and speculative-decoding
+paths that adapts to it. They add the decision API
 (apiVersion 1), next-token scoring (`scoreNextToken`), presence penalty, Min-P,
 thinking budgets, runtime LoRA adapters and speculative decoding, keep the
 Qwen3-ASR typed speech contract from `v0.1.30`, and
