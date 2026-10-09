@@ -6,6 +6,8 @@ import 'package:llamadart/backend.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
 
+import '../../../support/scripted_chat_engine.dart';
+
 class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   int _generateCallCount = 0;
   int generateCalls = 0;
@@ -323,6 +325,132 @@ void main() {
         reply.parts.whereType<LlamaThinkingContent>().single.thinking,
         'Plan.',
       );
+    });
+
+    test('history stores a reply without the whitespace that ends it, and '
+        'send returns it', () async {
+      backend.queueResponse('<think>\nPlan.\n</think>\n\n ok  \n ');
+      final added = <LlamaChatMessage>[];
+
+      final reply = await session.send('Hi', onMessageAdded: added.add);
+
+      expect(reply.text, 'ok  \n ');
+      expect(reply.thinking, 'Plan.');
+      final stored = session.history.last;
+      expect(stored.content, 'ok');
+      expect(
+        stored.parts.whereType<LlamaThinkingContent>().single.thinking,
+        'Plan.',
+      );
+      expect(added.last, same(stored));
+    });
+
+    test('history stores reasoning, leading whitespace and tool-call '
+        'arguments as generated', () async {
+      const arguments = '{"city": "Seoul" }\n ';
+      final scripted = ScriptedChatEngine()
+        ..replies.add(
+          () => Stream.fromIterable([
+            LlamaCompletionChunk(
+              id: 'c',
+              object: 'chat.completion.chunk',
+              created: 1,
+              model: 'm',
+              choices: [
+                LlamaCompletionChunkChoice(
+                  index: 0,
+                  delta: LlamaCompletionChunkDelta(thinking: ' Plan. \n'),
+                ),
+              ],
+            ),
+            scriptedChunk(content: ' Checking. \n'),
+            LlamaCompletionChunk(
+              id: 'c',
+              object: 'chat.completion.chunk',
+              created: 1,
+              model: 'm',
+              choices: [
+                LlamaCompletionChunkChoice(
+                  index: 0,
+                  delta: LlamaCompletionChunkDelta(
+                    toolCalls: [
+                      LlamaCompletionChunkToolCall(
+                        index: 0,
+                        id: 'call_1',
+                        type: 'function',
+                        function: LlamaCompletionChunkFunction(
+                          name: 'weather',
+                          arguments: arguments,
+                        ),
+                      ),
+                    ],
+                  ),
+                  finishReason: 'tool_calls',
+                ),
+              ],
+            ),
+          ]),
+        );
+      final session = ChatSession(scripted, maxContextTokens: 0);
+
+      final reply = await session.send('Hi');
+
+      expect(reply.text, ' Checking. \n');
+      final stored = session.history.last.parts;
+      expect(
+        stored.whereType<LlamaThinkingContent>().single.thinking,
+        ' Plan. \n',
+      );
+      expect(stored.whereType<LlamaTextContent>().single.text, ' Checking.');
+      expect(
+        stored.whereType<LlamaToolCallContent>().single.rawJson,
+        arguments,
+      );
+    });
+
+    test('history stores a message added with addMessage as given', () {
+      session.addMessage(
+        const LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: ' ok  \n ',
+        ),
+      );
+
+      expect(session.history.single.content, ' ok  \n ');
+    });
+
+    test('whitespace that ended a reply does not reach the next prompt of a '
+        'template that does not trim', () async {
+      Future<String> secondPrompt(String firstReply) async {
+        final backend = MockLlamaBackend()..queueResponse(firstReply);
+        final engine = LlamaEngine(backend);
+        addTearDown(engine.dispose);
+        await engine.loadModel('qwen-test.gguf');
+        final session = ChatSession(engine);
+        await session.send('Hi');
+        await session.send('Again');
+        return backend.lastPrompt!;
+      }
+
+      final base = await secondPrompt('ok');
+      expect(base, contains("'ok'"));
+      expect(await secondPrompt('ok  \n '), base);
+
+      // The template itself renders such whitespace.
+      final kept = MockLlamaBackend();
+      final engine = LlamaEngine(kept);
+      addTearDown(engine.dispose);
+      await engine.loadModel('qwen-test.gguf');
+      final seeded = ChatSession(engine)
+        ..addMessage(
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'ok  \n ',
+          ),
+        );
+      await seeded.send('Again');
+      expect(kept.lastPrompt, contains('ok  '));
+      expect(kept.lastPrompt, isNot(contains("'ok'")));
     });
 
     test('enforceContextLimit truncation', () async {

@@ -141,6 +141,13 @@ class ChatSession {
   /// preparing the context throws [LlamaStateException] instead of trimming
   /// messages from the changed conversation.
   ///
+  /// The stream delivers the reply's text in full, including whitespace the
+  /// model ended it with. The assistant turn added to [history], which
+  /// [onMessageAdded] receives, holds that text without the trailing
+  /// whitespace, so it does not reach the next prompt through a template that
+  /// does not trim; leading whitespace, reasoning and tool calls are stored
+  /// as generated. Messages added with [addMessage] are stored as given.
+  ///
   /// To run the tools' handlers until the model answers, use
   /// `sendWithTools`. Running the calls yourself:
   /// ```dart
@@ -266,7 +273,16 @@ class ChatSession {
         // Runs on completion, on an error and on a cancelled subscription.
         if (edits.canCommit &&
             (started || (completed && !request.isCancelled()))) {
-          final assistantMsg = reply.build().message;
+          final completion = reply.build();
+          // The text keeps the whitespace the model ended it with, and a
+          // template that does not trim would render it into the next
+          // prompt. Stored without it, the turn renders as it did before
+          // replies kept that whitespace.
+          final assistantMsg = LlamaCompletion(
+            text: completion.text.trimRight(),
+            thinking: completion.thinking,
+            toolCalls: completion.toolCalls,
+          ).message;
           _history.add(assistantMsg);
           onMessageAdded?.call(assistantMsg);
         } else {

@@ -70,6 +70,9 @@ description: >-
   edit during context preparation throws `LlamaStateException`. Do not parse partial stream chunks as JSON.
 - `session.reset()` clears history (`keepSystemPrompt: false` also clears the
   system prompt). `session.addMessage(...)` restores saved history.
+- Reply text keeps whitespace the model ended it with (`reply.text` can end
+  in `\n`, also before a stop sequence); `trimRight()` it before an exact
+  comparison. `session.history` stores the assistant turn without it.
 - Use `engine.getTokenCount(text)` for context budgeting instead of estimating
   from characters.
 

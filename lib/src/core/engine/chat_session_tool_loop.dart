@@ -242,6 +242,12 @@ extension ChatSessionToolLoopExtension on ChatSession {
   /// [LlamaToolLoopResult.messages] keeps the turn, and [onMessageAdded] has
   /// already reported the messages this call added.
   ///
+  /// Each reply enters the history through [ChatSession.create], so its
+  /// stored text has no trailing whitespace, while
+  /// [LlamaToolLoopResult.completion] keeps the text as generated.
+  /// [LlamaToolLoopResult.messages] and [onMessageAdded] hold the stored
+  /// messages.
+  ///
   /// Tool results are added with [ChatSession.addMessage]. A rollback edits
   /// the history without calling [ChatSession.addMessage] or
   /// [ChatSession.reset], so a subclass that mirrors the history should use

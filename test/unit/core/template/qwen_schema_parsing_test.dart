@@ -114,7 +114,7 @@ void main() {
         tools: [qwenResultTool],
       );
       expect(parsed.toolCalls, isEmpty);
-      expect(parsed.content, entry.value.trim());
+      expect(parsed.content, entry.value);
     });
   }
 

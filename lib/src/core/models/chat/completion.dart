@@ -56,7 +56,7 @@ class LlamaCompletion {
   ///
   /// Its parts are the [thinking], the [text] and then the [toolCalls],
   /// leaving out an empty [thinking] or [text]. `ChatSession` records its
-  /// replies the same way.
+  /// replies the same way, without the whitespace that ends [text].
   LlamaChatMessage get message => LlamaChatMessage.withContent(
     role: LlamaChatRole.assistant,
     content: [
