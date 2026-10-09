@@ -324,11 +324,10 @@ bool _isMediaChunk(int chunkType) =>
 /// non-causal attention and that has more than [maxTokens] tokens, as its
 /// raw `mtmd_input_chunk_type` and token count, otherwise `null`.
 ///
-/// llama.cpp decodes such a chunk in one micro-batch:
+/// llama.cpp cannot split such a chunk across micro-batches:
 /// `mtmd_helper_decode_image_chunk` turns causal attention off and splits the
 /// chunk only by its `n_batch` argument, and `llama_context::decode` aborts
-/// on a non-causal batch above `n_ubatch`. A context's `n_ubatch` is never
-/// above its `n_batch`, so pass `n_ubatch` as [maxTokens].
+/// on a non-causal batch above `n_ubatch`. Pass `n_ubatch` as [maxTokens].
 ({int chunkType, int tokenCount})? findMtmdChunkAboveMicroBatch(
   MtmdChunkEvalApi api,
   Pointer<mtmd_context> ctx,

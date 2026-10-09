@@ -5836,11 +5836,12 @@ class LlamaCppService {
               newPast,
             );
           } else {
-            _checkMediaChunksFitMicroBatch(
+            _checkNonCausalMediaChunks(
               chunkEvalApi,
               mmCtx,
               chunks,
-              llama_n_ubatch(ctx.pointer),
+              batchTokens: modelParams.n_batch,
+              microBatchTokens: llama_n_ubatch(ctx.pointer),
             );
             chunkFailure = evalMtmdChunksUntilCancelled(
               chunkEvalApi,
@@ -5890,12 +5891,20 @@ class LlamaCppService {
     return initialTokens;
   }
 
-  void _checkMediaChunksFitMicroBatch(
+  /// Rejects a prompt whose non-causal media chunk llama.cpp would abort on.
+  ///
+  /// `mtmd_helper_decode_image_chunk` decodes such a chunk in pieces of
+  /// [batchTokens], the `n_batch` it is given, and `llama_context::decode`
+  /// aborts on a non-causal piece above [microBatchTokens]. With the two
+  /// equal the pieces pass, and the chunk is decoded in several non-causal
+  /// batches, which is logged.
+  void _checkNonCausalMediaChunks(
     MtmdChunkEvalApi api,
     Pointer<mtmd_context> mmCtx,
-    Pointer<mtmd_input_chunks> chunks,
-    int microBatchTokens,
-  ) {
+    Pointer<mtmd_input_chunks> chunks, {
+    required int batchTokens,
+    required int microBatchTokens,
+  }) {
     final chunk = findMtmdChunkAboveMicroBatch(
       api,
       mmCtx,
@@ -5904,12 +5913,25 @@ class LlamaCppService {
     );
     if (chunk == null) return;
     final media = mtmdMediaChunkName(chunk.chunkType);
+    if (batchTokens <= microBatchTokens) {
+      LlamaLogger.instance.warning(
+        'llama_cpp_service: the $media input has ${chunk.tokenCount} tokens, '
+        'more than the context\'s micro-batch of $microBatchTokens tokens '
+        '(n_ubatch), so it is decoded in several non-causal batches, which '
+        'can reduce accuracy. Load the model with '
+        'ModelParams.microBatchSize and ModelParams.batchSize of at least '
+        '${chunk.tokenCount} to decode it in one.',
+      );
+      return;
+    }
     throw LlamaInferenceException(
-      'The $media input has ${chunk.tokenCount} tokens, but this projector '
-      'decodes it in one pass of at most $microBatchTokens tokens '
-      '(n_ubatch). Raise ModelParams.microBatchSize and '
-      'ModelParams.batchSize to at least ${chunk.tokenCount}, or pass a '
-      'smaller $media if the projector sizes its output by the input.',
+      'The $media input has ${chunk.tokenCount} tokens, more than the '
+      'context\'s micro-batch of $microBatchTokens tokens (n_ubatch), and '
+      'this projector decodes it with non-causal attention, which llama.cpp '
+      'cannot split across micro-batches. Raise ModelParams.microBatchSize '
+      'to at least ${chunk.tokenCount}, and ModelParams.batchSize with it, '
+      'or pass a smaller $media if the projector sizes its output by the '
+      'input.',
     );
   }
 

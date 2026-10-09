@@ -558,13 +558,14 @@ dart test -p vm -j 1 --run-skipped \
 
 These local-only tests need a model whose projector decodes an image with
 non-causal attention: Gemma 3, or Gemma 4 other than E2B and E4B. They answer
-a small image at the default batch sizes, require a typed error and a working
-engine for an image above an explicit micro-batch (with a larger and with an
-equal batch) and above the default micro-batch, and answer the large image
-with the micro-batch the error names. Repeat with
-`MULTIMODAL_MICRO_BATCH_BACKEND=metal` on macOS. Without the check the process
-aborts on llama.cpp's `non-causal attention requires n_ubatch >= n_tokens`
-assertion. `test/unit/backends/llama_cpp/llama_cpp_service_media_micro_batch_test.dart`
+a small image at the default batch sizes; require a typed error and a working
+engine for an image above a micro-batch that is below the batch, explicit or
+default, and answer the large image with the micro-batch the error names; and
+require an answer and one warning per request where the batch equals the
+micro-batch (32/32, batch 32 alone, 256/256, 512/512, and a text turn after
+an image turn). Repeat with `MULTIMODAL_MICRO_BATCH_BACKEND=metal` on macOS.
+Without the check the first group aborts the process on llama.cpp's
+`non-causal attention requires n_ubatch >= n_tokens` assertion. `test/unit/backends/llama_cpp/llama_cpp_service_media_micro_batch_test.dart`
 covers the same paths in default CI with a stand-in projector on the real
 runtime.
 

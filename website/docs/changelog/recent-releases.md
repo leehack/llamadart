@@ -9,11 +9,14 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Fix a process abort on an image larger than the context's micro-batch
-  with a projector that decodes an image in one pass (Gemma 3, and Gemma 4
-  other than E2B and E4B): the prompt now throws `LlamaInferenceException`
-  naming the `ModelParams.microBatchSize` it needs. With default batch sizes
-  that is an image above 512 tokens
+- Fix a process abort on an image with more tokens than the context's
+  micro-batch when the projector's images are decoded with non-causal
+  attention (Gemma 3 and Gemma 4 other than E2B and E4B, among others): the
+  prompt now throws `LlamaInferenceException` naming the
+  `ModelParams.microBatchSize` it needs. With default batch sizes that is an
+  image above 512 tokens. A context whose batch equals its micro-batch still
+  decodes such an image in several batches, and now logs a warning that this
+  can reduce accuracy
   ([#958](https://github.com/leehack/llamadart/issues/958)).
 - Update the default LiteRT-LM runtime to
   `leehack/litert-lm-native@v0.18.0` (upstream LiteRT-LM `v0.18.0`). On the

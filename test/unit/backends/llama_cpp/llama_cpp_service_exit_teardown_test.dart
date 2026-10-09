@@ -430,8 +430,8 @@ void main() {
     },
   );
 
-  test('rejects a non-causal image above the micro-batch after the tokenize, '
-      'before any evaluating call', () async {
+  test('rejects a non-causal image above a micro-batch below the batch after '
+      'the tokenize, before any evaluating call', () async {
     final projectorPath = '${dir.path}/mmproj.gguf';
     File(projectorPath).writeAsStringSync('GGUF');
     final small = service.createContext(
@@ -439,7 +439,7 @@ void main() {
       const ModelParams(
         gpuLayers: 0,
         contextSize: 64,
-        batchSize: 8,
+        batchSize: 16,
         microBatchSize: 8,
       ),
     );

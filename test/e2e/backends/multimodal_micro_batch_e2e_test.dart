@@ -1,6 +1,6 @@
 @TestOn('vm')
 @Tags(['local-only', 'e2e'])
-@Timeout(Duration(minutes: 20))
+@Timeout(Duration(minutes: 30))
 library;
 
 import 'dart:convert';
@@ -29,6 +29,29 @@ void main() {
       ? 'Set MULTIMODAL_MICRO_BATCH_MODEL and MULTIMODAL_MICRO_BATCH_MMPROJ '
             'to a model with a non-causal projector.'
       : null;
+  const greedy = GenerationParams(maxTokens: 8, temp: 0, seed: 1);
+  const question = LlamaTextContent(
+    'What single color fills this image? Answer with one word.',
+  );
+  final smallImage = _redBitmap(336);
+  final largeImage = _redBitmap(2016);
+  final splitWarnings = <String>[];
+
+  setUpAll(
+    () => LlamaLogging.configure(
+      level: LlamaLogLevel.warn,
+      nativeLevel: LlamaLogLevel.none,
+      handler: (record) {
+        if (record.message.contains('non-causal batches')) {
+          splitWarnings.add(record.message);
+        }
+      },
+    ),
+  );
+
+  setUp(splitWarnings.clear);
+
+  tearDownAll(LlamaLogging.configure);
 
   Future<LlamaEngine> load({int batchSize = 0, int microBatchSize = 0}) =>
       LlamaEngine.load(
@@ -52,13 +75,11 @@ void main() {
           role: LlamaChatRole.user,
           content: [
             LlamaImageContent(bytes: image),
-            const LlamaTextContent(
-              'What single color fills this image? Answer with one word.',
-            ),
+            question,
           ],
         ),
       ],
-      params: const GenerationParams(maxTokens: 8, temp: 0, seed: 1),
+      params: greedy,
       enableThinking: false,
     );
     return reply.text.trim().toLowerCase();
@@ -71,66 +92,22 @@ void main() {
     );
   }
 
-  /// The token count and micro-batch a rejected image's error names.
-  (int imageTokens, int microBatch) limits(LlamaInferenceException error) {
+  /// The image token count and the micro-batch a message names.
+  (int imageTokens, int microBatch) limits(String message) {
     final match = RegExp(
-      r'image input has (\d+) tokens, .* at most (\d+) tokens',
-    ).firstMatch(error.message);
-    expect(match, isNotNull, reason: error.message);
+      r'image input has (\d+) tokens, more than the context.s micro-batch '
+      r'of (\d+) tokens',
+    ).firstMatch(message);
+    expect(match, isNotNull, reason: message);
     return (int.parse(match!.group(1)!), int.parse(match.group(2)!));
   }
 
-  test('an image that fits the default micro-batch is answered', () async {
-    final engine = await load();
-    addTearDown(engine.dispose);
-
-    final answer = await colorOf(engine, _redBitmap(336));
-
-    report('default', {'answer': answer});
-    expect(answer, contains('red'));
-  }, skip: skip);
-
-  for (final (name, batchSize) in [('', 0), (' and equal batch', 32)]) {
-    test('an image above an explicit micro-batch$name is a typed error and '
-        'the engine keeps working', () async {
-      final engine = await load(batchSize: batchSize, microBatchSize: 32);
-      addTearDown(engine.dispose);
-
-      Object? error;
-      String? answer;
-      try {
-        answer = await colorOf(engine, _redBitmap(336));
-      } on LlamaException catch (caught) {
-        error = caught;
-      }
-      report('microBatchSize 32, batchSize $batchSize', {
-        'answer': answer,
-        'error': error?.toString(),
-      });
-
-      expect(error, isA<LlamaInferenceException>());
-      final (imageTokens, microBatch) = limits(
-        error! as LlamaInferenceException,
-      );
-      expect(microBatch, 32);
-      expect(imageTokens, greaterThan(32));
-      expect(error.toString(), contains('ModelParams.microBatchSize'));
-      final text = await engine.complete(const [
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Reply with the word ready.',
-        ),
-      ], params: const GenerationParams(maxTokens: 8, temp: 0, seed: 1));
-      expect('${text.thinking}${text.text}', isNotEmpty);
-    }, skip: skip);
-  }
-
-  test('an image above the default micro-batch is a typed error, and the '
-      'micro-batch the error names answers it', () async {
-    final image = _redBitmap(2016);
-    final engine = await load();
-    addTearDown(engine.dispose);
-
+  /// The typed error [engine] gives [image], after reporting it as [name].
+  Future<LlamaInferenceException> rejection(
+    String name,
+    LlamaEngine engine,
+    Uint8List image,
+  ) async {
     Object? error;
     String? answer;
     try {
@@ -138,22 +115,124 @@ void main() {
     } on LlamaException catch (caught) {
       error = caught;
     }
-    report('default micro-batch, large image', {
-      'answer': answer,
-      'error': error?.toString(),
-    });
+    report(name, {'answer': answer, 'error': error?.toString()});
     expect(error, isA<LlamaInferenceException>());
-    final (imageTokens, microBatch) = limits(error! as LlamaInferenceException);
+    expect(splitWarnings, isEmpty);
+    return error! as LlamaInferenceException;
+  }
+
+  test('an image that fits the default micro-batch is answered', () async {
+    final engine = await load();
+    addTearDown(engine.dispose);
+
+    final answer = await colorOf(engine, smallImage);
+
+    report('default sizes, small image', {'answer': answer});
+    expect(answer, contains('red'));
+    expect(splitWarnings, isEmpty);
+  }, skip: skip);
+
+  test('an image above an explicit micro-batch below the batch is a typed '
+      'error and the engine keeps working', () async {
+    final engine = await load(microBatchSize: 32);
+    addTearDown(engine.dispose);
+
+    final error = await rejection(
+      'microBatchSize 32, small image',
+      engine,
+      smallImage,
+    );
+
+    final (imageTokens, microBatch) = limits(error.message);
+    expect(microBatch, 32);
+    expect(imageTokens, greaterThan(32));
+    expect(error.message, contains('ModelParams.microBatchSize'));
+    final text = await engine.complete(const [
+      LlamaChatMessage.fromText(
+        role: LlamaChatRole.user,
+        text: 'Reply with the word ready.',
+      ),
+    ], params: greedy);
+    expect('${text.thinking}${text.text}', isNotEmpty);
+  }, skip: skip);
+
+  for (final (batchSize, microBatchSize, image, name) in [
+    (32, 32, smallImage, 'small image'),
+    (32, 0, smallImage, 'small image'),
+    (256, 256, largeImage, 'large image'),
+    (512, 512, largeImage, 'large image'),
+  ]) {
+    test('an image above a micro-batch equal to the batch '
+        '($batchSize/$microBatchSize, $name) is answered in several '
+        'non-causal batches, with a warning', () async {
+      final engine = await load(
+        batchSize: batchSize,
+        microBatchSize: microBatchSize,
+      );
+      addTearDown(engine.dispose);
+
+      final answer = await colorOf(engine, image);
+
+      report('batchSize $batchSize, microBatchSize $microBatchSize, $name', {
+        'answer': answer,
+        'warnings': splitWarnings,
+      });
+      expect(answer, contains('red'));
+      expect(splitWarnings, hasLength(1));
+      final (imageTokens, microBatch) = limits(splitWarnings.single);
+      expect(microBatch, batchSize);
+      expect(imageTokens, greaterThan(batchSize));
+    }, skip: skip);
+  }
+
+  test('a text turn after an image turn answers on a context that splits '
+      'the image', () async {
+    final engine = await load(batchSize: 32, microBatchSize: 32);
+    addTearDown(engine.dispose);
+    final session = ChatSession(engine);
+
+    Future<String> turn(List<LlamaContentPart> parts) => session
+        .create(parts, params: greedy, enableThinking: false)
+        .map((chunk) => chunk.choices.first.delta.content ?? '')
+        .join();
+
+    final first = await turn([LlamaImageContent(bytes: smallImage), question]);
+    final second = await turn(const [
+      LlamaTextContent('Answer again with the same one word.'),
+    ]);
+
+    report('32/32, image turn then text turn', {
+      'first': first,
+      'second': second,
+      'warnings': splitWarnings.length,
+    });
+    expect(first.toLowerCase(), contains('red'));
+    expect(second.toLowerCase(), contains('red'));
+    expect(splitWarnings, hasLength(2));
+  }, skip: skip);
+
+  test('an image above the default micro-batch is a typed error, and the '
+      'micro-batch the error names answers it in one pass', () async {
+    final engine = await load();
+    addTearDown(engine.dispose);
+
+    final error = await rejection(
+      'default sizes, large image',
+      engine,
+      largeImage,
+    );
+    final (imageTokens, microBatch) = limits(error.message);
     expect(microBatch, ModelParams.defaultMicroBatchSize);
     expect(imageTokens, greaterThan(microBatch));
     await engine.dispose();
 
     final roomy = await load(batchSize: 2048, microBatchSize: imageTokens);
     addTearDown(roomy.dispose);
-    final roomyAnswer = await colorOf(roomy, image);
+    final roomyAnswer = await colorOf(roomy, largeImage);
 
     report('microBatchSize $imageTokens, large image', {'answer': roomyAnswer});
     expect(roomyAnswer, contains('red'));
+    expect(splitWarnings, isEmpty);
   }, skip: skip);
 }
 

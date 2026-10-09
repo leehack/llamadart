@@ -311,17 +311,29 @@ calls reject an oversized input before evaluating any of the batch.
 ### Image input exceeds `n_ubatch`
 
 `LlamaInferenceException`:
-`The image input has <n> tokens, but this projector decodes it in one pass of at most <m> tokens (n_ubatch).`
-Some projectors have llama.cpp decode an image with non-causal attention,
-which needs the whole image in one micro-batch: Gemma 3, and Gemma 4 other
-than E2B and E4B. Load the model with `ModelParams.microBatchSize` and
-`ModelParams.batchSize` of at least `<n>`, or downscale the image when the
-projector sizes its output by the image. Gemma 4 gives an image up to 1120
-tokens, so the default micro-batch of 512 rejects its larger images: a
-2016 x 2016 image is 1089 tokens with Gemma 4 12B. The prompt is rejected
-before anything is decoded, and the engine stays usable. A runtime without
-llama.cpp's chunk-level multimodal functions, which the pinned one has, is
-not checked: such an image still aborts the process there.
+`The image input has <n> tokens, more than the context's micro-batch of <m> tokens (n_ubatch), and this projector decodes it with non-causal attention, which llama.cpp cannot split across micro-batches.`
+llama.cpp decodes the images of some projectors with non-causal attention:
+Gemma 3 and Gemma 4 other than E2B and E4B, among others. It decodes such an
+image in pieces of the context's batch (`n_batch`), and each piece has to fit
+one micro-batch (`n_ubatch`). The error is thrown when the image has more
+tokens than the micro-batch and the batch is larger than the micro-batch,
+which the default sizes of 2048 and 512 are. The prompt is rejected before
+anything is decoded, and the engine stays usable.
+
+- Load the model with `ModelParams.microBatchSize` of at least `<n>` and a
+  `ModelParams.batchSize` no smaller. The image is then decoded in one pass.
+  Gemma 4 gives an image up to 1120 tokens: a 2016 x 2016 image is 1089
+  tokens with Gemma 4 12B.
+- Or downscale the image, when the projector sizes its output by the image.
+- With `batchSize` equal to `microBatchSize` there is no error: the image is
+  decoded in several non-causal batches, whose tokens do not all attend to
+  each other, and llamadart logs one warning per request (at
+  `LlamaLogLevel.warn`). Answers can be less accurate than with the whole
+  image in one pass.
+
+A runtime without llama.cpp's chunk-level multimodal functions, which the
+pinned one has, is not checked: the failing configuration still aborts the
+process there.
 
 ### Recurrent speculative rollback is unsupported
 

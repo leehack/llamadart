@@ -469,13 +469,16 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Ensure you have successfully downloaded a model from the selection screen.
 - If you manually moved a model, verify the path in the settings sheet.
 
-**`The image input has <n> tokens, but this projector decodes it in one pass of at most <m> tokens`:**
-- Gemma 3, and Gemma 4 models other than E2B and E4B, need each image in one
-  micro-batch. On an Android GPU the `Auto` batch sizes are smaller than an
-  image, so an image prompt with these models fails with this error there.
-  Set the logical batch size and the micro-batch size to at least `<n>` and
-  reload the model, or use `CPU`. Those larger sizes have not been run on
-  Android Vulkan devices.
+**`The image input has <n> tokens, more than the context's micro-batch of <m> tokens`:**
+- llama.cpp cannot split the images of some projectors across micro-batches
+  (Gemma 3 and Gemma 4 models other than E2B and E4B, among others). On an
+  Android GPU the `Auto` micro-batch is smaller than an image and smaller
+  than the batch, so an image prompt with these models fails with this error
+  there. Set the logical batch size and the micro-batch size to at least
+  `<n>` and reload the model, or use `CPU`. Those larger sizes have not been
+  run on Android Vulkan devices. Setting the two sizes equal but below `<n>`
+  also avoids the error, with the image decoded in pieces and possibly less
+  accurate answers.
 
 **Slow generation:**
 - Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Linux/Windows).
