@@ -4,6 +4,12 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 
 ## Features
 
+The Linux Runner explicitly shuts down its Flutter engines before process exit.
+Keep this native host cleanup when adapting the example: an app-level Dart exit
+listener does not cover every required quit. See the
+[shutdown contract](../../doc/llama_cpp_exit_teardown.md#host-shutdown-precondition)
+and [active shutdown tests](../../doc/testing_matrix.md#flutter-shutdown-during-active-native-work).
+
 - 🦙 Real-time chat with local LLM
 - 🖼️ **Runtime-checked multimodal support**: The app enables image/audio inputs
   only when the loaded projector/runtime path actually reports those
@@ -915,3 +921,8 @@ of the default size only.
 When a native crash ends the app, Test Lab reports `Test failed to run`. It
 still pulls the directory: the last `attempt_started` or `case_started` record
 without its result names the step that was running.
+
+Model-backed Flutter startup and image shutdown checks are documented in
+[`doc/testing_matrix.md`](../../doc/testing_matrix.md). They await pending
+startup and disposal before quitting; source-built tests do not qualify
+published runtime bytes.

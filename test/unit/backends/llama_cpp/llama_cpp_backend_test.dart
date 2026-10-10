@@ -27,6 +27,8 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:test/test.dart';
 
+import '../../../support/slow_exiting_worker.dart';
+
 void main() {
   group('NativeLlamaBackend request routing', () {
     late _FakeWorkerHarness harness;
@@ -1371,6 +1373,31 @@ void main() {
       await backend.dispose().timeout(const Duration(seconds: 2));
     }
   });
+
+  test(
+    'dispose waits for synchronous work after the acknowledgement',
+    () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: slowExitingWorkerEntry,
+      );
+      await backend.modelLoad('model.gguf', const ModelParams());
+      final elapsed = Stopwatch()..start();
+      await Future.wait([backend.dispose(), backend.dispose()]);
+      elapsed.stop();
+      expect(elapsed.elapsedMilliseconds, greaterThanOrEqualTo(200));
+      expect(backend.isReady, isFalse);
+    },
+    skip: Platform.isWindows ? 'uses the POSIX usleep function' : false,
+  );
+
+  test('disposal keeps a standalone host alive until worker exit', () async {
+    final result = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'test/fixtures/shutdown/worker_dispose_host.dart',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, contains('DISPOSAL_COMPLETED'));
+  }, skip: Platform.isWindows ? 'uses the POSIX usleep function' : false);
 
   group('worker log forwarding', () {
     final records = <LlamaLogRecord>[];

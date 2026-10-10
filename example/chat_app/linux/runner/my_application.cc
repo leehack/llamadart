@@ -10,9 +10,24 @@
 struct _MyApplication {
   GtkApplication parent_instance;
   char **dart_entrypoint_arguments;
+  GPtrArray *windows;
+  GPtrArray *engines;
 };
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
+
+static void my_application_destroy_windows(MyApplication *self) {
+  for (guint i = 0; i < self->windows->len; i++) {
+    gtk_widget_destroy(GTK_WIDGET(g_ptr_array_index(self->windows, i)));
+  }
+  g_ptr_array_set_size(self->windows, 0);
+  // Plugins can retain engine references after their view is destroyed.
+  // Dispose explicitly to invoke FlutterEngineShutdown before process exit.
+  for (guint i = 0; i < self->engines->len; i++) {
+    g_object_run_dispose(G_OBJECT(g_ptr_array_index(self->engines, i)));
+  }
+  g_ptr_array_set_size(self->engines, 0);
+}
 
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication *self, FlView *view) {
@@ -24,6 +39,7 @@ static void my_application_activate(GApplication *application) {
   MyApplication *self = MY_APPLICATION(application);
   GtkWindow *window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+  g_ptr_array_add(self->windows, g_object_ref(window));
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
@@ -59,6 +75,7 @@ static void my_application_activate(GApplication *application) {
       project, self->dart_entrypoint_arguments);
 
   FlView *view = fl_view_new(project);
+  g_ptr_array_add(self->engines, g_object_ref(fl_view_get_engine(view)));
   GdkRGBA background_color;
   // Background defaults to black, override it here if necessary, e.g. #00000000
   // for transparent.
@@ -110,9 +127,9 @@ static void my_application_startup(GApplication *application) {
 
 // Implements GApplication::shutdown.
 static void my_application_shutdown(GApplication *application) {
-  // MyApplication* self = MY_APPLICATION(object);
-
-  // Perform any actions required at application shutdown.
+  // Flutter detaches windows before quitting GApplication. Destroy our owned
+  // windows explicitly so their Flutter engines finish shutdown before C exit.
+  my_application_destroy_windows(MY_APPLICATION(application));
 
   G_APPLICATION_CLASS(my_application_parent_class)->shutdown(application);
 }
@@ -120,6 +137,11 @@ static void my_application_shutdown(GApplication *application) {
 // Implements GObject::dispose.
 static void my_application_dispose(GObject *object) {
   MyApplication *self = MY_APPLICATION(object);
+  if (self->windows != nullptr) {
+    my_application_destroy_windows(self);
+    g_clear_pointer(&self->windows, g_ptr_array_unref);
+    g_clear_pointer(&self->engines, g_ptr_array_unref);
+  }
   g_clear_pointer(&self->dart_entrypoint_arguments, g_strfreev);
   G_OBJECT_CLASS(my_application_parent_class)->dispose(object);
 }
@@ -133,7 +155,10 @@ static void my_application_class_init(MyApplicationClass *klass) {
   G_OBJECT_CLASS(klass)->dispose = my_application_dispose;
 }
 
-static void my_application_init(MyApplication *self) {}
+static void my_application_init(MyApplication *self) {
+  self->windows = g_ptr_array_new_with_free_func(g_object_unref);
+  self->engines = g_ptr_array_new_with_free_func(g_object_unref);
+}
 
 MyApplication *my_application_new() {
   // Set the program name to the application ID, which helps various systems

@@ -50,6 +50,7 @@ class NativeLlamaBackend
   SendPort? _sendPort;
   RawReceivePort? _workerLogPort;
   RawReceivePort? _workerLifecyclePort;
+  final Map<RawReceivePort, Future<void>> _workerExits = {};
   LlamaStateException? _workerFailure;
   final Set<ReceivePort> _responsePorts = <ReceivePort>{};
   Future<void>? _isolateStart;
@@ -247,9 +248,17 @@ class NativeLlamaBackend
     final logPort = _openWorkerLogPort();
     final lifecyclePort = RawReceivePort();
     var initialized = false;
+    final exited = Completer<void>();
+    _workerExits[lifecyclePort] = exited.future;
+    void recordExit() {
+      if (!exited.isCompleted) exited.complete();
+      _workerExits.remove(lifecyclePort);
+    }
+
     lifecyclePort.keepIsolateAlive = false;
     _workerLifecyclePort = lifecyclePort;
     lifecyclePort.handler = (Object? message) {
+      if (message == null) recordExit();
       if (!identical(_workerLifecyclePort, lifecyclePort)) return;
       if (!completer.isCompleted) {
         tempPort.sendPort.send(message);
@@ -257,6 +266,7 @@ class NativeLlamaBackend
         _workerExited(lifecyclePort);
       }
     };
+    var spawned = false;
     SendPort? workerSendPort;
     tempPort.listen((msg) {
       if (msg is SendPort && workerSendPort == null) {
@@ -317,6 +327,7 @@ class NativeLlamaBackend
         onExit: lifecyclePort.sendPort,
         errorsAreFatal: true,
       );
+      spawned = true;
       await completer.future.timeout(
         _workerStartupTimeout,
         onTimeout: () {
@@ -333,7 +344,8 @@ class NativeLlamaBackend
       _isolate?.kill(priority: Isolate.immediate);
       _isolate = null;
       _closeWorkerLogPort(logPort);
-      lifecyclePort.close();
+      if (!spawned) recordExit();
+      unawaited(exited.future.whenComplete(lifecyclePort.close));
       if (identical(_workerLifecyclePort, lifecyclePort)) {
         _workerLifecyclePort = null;
       }
@@ -1065,18 +1077,20 @@ class NativeLlamaBackend
     // Signal any in-flight generation to stop and close the Dart side, but do
     // not free the shared cancel token yet: the worker may still poll it. The
     // worker awaits the in-flight generation before acking the dispose, so its
-    // terminal response normally frees the token first. After killing the
-    // worker (below) the token is provably unread, so freeing it there is safe
-    // and idempotent (guarded by the freeToken tokenFreed flag).
+    // terminal response normally frees the token first. After receiving the
+    // worker's onExit notification the token is provably unread, so freeing
+    // it there is safe and idempotent (guarded by the freeToken tokenFreed flag).
     cancelGeneration();
     _activeGenerationCleanup?.call();
     cancelTextToSpeech();
 
+    var acknowledgedDispose = false;
     if (_sendPort != null) {
       final rp = _openResponsePort();
       try {
         _dispatchRequest(rp, DisposeRequest(rp.sendPort));
         await _receiveResponse(rp);
+        acknowledgedDispose = true;
         // Normal disposal can also produce onExit before this continuation.
         // Its acknowledgement distinguishes that exit from an abandoned RPC.
         _workerFailure = null;
@@ -1089,6 +1103,15 @@ class NativeLlamaBackend
       }
     }
     _isolate?.kill();
+    // A kill request cannot interrupt synchronous native work. Keep the exit
+    // ports open until the worker and its native finalizers have stopped.
+    for (final port in _workerExits.keys) {
+      port.keepIsolateAlive = true;
+    }
+    await Future.wait(_workerExits.values.toList());
+    // The normal onExit may arrive after the acknowledgement. Clear its
+    // provisional failure only when this disposal actually received a reply.
+    if (acknowledgedDispose) _workerFailure = null;
     _isolate = null;
     _sendPort = null;
     _isolateStart = null;
@@ -1096,7 +1119,7 @@ class NativeLlamaBackend
     _workerLogPort = null;
     _workerLifecyclePort?.close();
     _workerLifecyclePort = null;
-    // Worker is gone; free the token if a terminal response did not already.
+    // onExit proves the worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _queuedGeneration?.close();
     textToSpeechCancelFlag?.free();

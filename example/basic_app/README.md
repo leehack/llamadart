@@ -20,6 +20,10 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 
 ## Usage
 
+Await engine disposal before ending a session. A native host calling C
+`exit()` must also join other native workers and shut down its Dart isolates
+or Flutter engine first; a worker kill request can leave native work running.
+
 First, ensure you have the Dart SDK installed.
 
 ### 1. Install Dependencies

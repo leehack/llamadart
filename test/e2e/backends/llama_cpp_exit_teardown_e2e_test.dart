@@ -1,4 +1,4 @@
-@TestOn('mac-os')
+@TestOn('mac-os || linux')
 @Tags(['local-only', 'e2e'])
 @Timeout(Duration(minutes: 30))
 library;
@@ -31,16 +31,37 @@ void main() {
   // it must report when it reports one.
   for (final (scenario, arguments, exitCode, backend)
       in <(String, List<String?>, int, String?)>[
-        ('quit-loaded', [model], 0, 'Metal'),
-        ('quit-generating', [model], 0, 'Metal'),
-        ('quit-loading', [model], 0, null),
-        ('quit-projector', [model, projector], 0, 'Metal'),
-        ('quit-disposing', [model, projector], 0, null),
-        ('quit-decision', [decisionModel, decisionHead], 0, 'MTL'),
-        ('throw-generating', [model], 255, 'Metal'),
-        ('throw-loading', [model], 255, null),
-        ('kill-loading', [model], 0, null),
-        ('return-loaded', [model], 0, null),
+        if (Platform.isLinux) ...[
+          (
+            'host-shutdown-loaded',
+            [model],
+            0,
+            environment['EXIT_TEARDOWN_BACKEND'] ?? 'CPU',
+          ),
+          (
+            'host-shutdown-generating',
+            [model],
+            0,
+            environment['EXIT_TEARDOWN_BACKEND'] ?? 'CPU',
+          ),
+          (
+            'host-shutdown-loading',
+            [model],
+            0,
+            environment['EXIT_TEARDOWN_BACKEND'] ?? 'CPU',
+          ),
+        ] else ...[
+          ('quit-loaded', [model], 0, 'Metal'),
+          ('quit-generating', [model], 0, 'Metal'),
+          ('quit-loading', [model], 0, null),
+          ('quit-projector', [model, projector], 0, 'Metal'),
+          ('quit-disposing', [model, projector], 0, null),
+          ('quit-decision', [decisionModel, decisionHead], 0, 'MTL'),
+          ('throw-generating', [model], 255, 'Metal'),
+          ('throw-loading', [model], 255, null),
+          ('kill-loading', [model], 0, null),
+          ('return-loaded', [model], 0, null),
+        ],
       ]) {
     test('$scenario ends with exit code $exitCode', () async {
       // Not `skip:`, which --run-skipped (needed for `local-only`) overrides.
@@ -75,9 +96,21 @@ void main() {
           reason: errors,
         );
         if (backend != null) {
-          expect(output, contains('EXIT_PROBE_BACKEND $backend'));
+          expect(
+            output,
+            matches(
+              RegExp(
+                'EXIT_PROBE_BACKEND ${RegExp.escape(backend)}',
+                caseSensitive: false,
+              ),
+            ),
+          );
+        }
+        if (scenario.startsWith('host-shutdown-')) {
+          expect(output, contains('EXIT_PROBE_HOST_SHUTDOWN_COMPLETE'));
         }
         expect(errors, isNot(contains('GGML_ASSERT')));
+        expect(errors, isNot(contains('GetFfiCallbackMetadata')));
         codes.add(code);
       }
       // ignore: avoid_print

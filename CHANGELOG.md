@@ -1,5 +1,9 @@
 ## Unreleased
 
+- Shut down the Linux chat app’s Flutter engines before process exit, including active model work.
+
+- Wait for llama.cpp and image-generation workers to exit before disposal completes, including concurrent disposal calls.
+
 - Exclude Android Adreno 750 driver `2150604839` from llama.cpp Vulkan loads: automatic selection falls back to CPU with a warning, and an explicit GPU request throws instead of crashing or producing incorrect text.
 
 - Update the default LiteRT-LM runtime to

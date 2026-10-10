@@ -40,6 +40,7 @@ const _logLatest = _logState + 8;
 const _logReadTo = _logState + 16;
 const _logDropped = _logState + 24;
 const _gpuCount = _logState + 32;
+const _freeDelay = _logState + 36;
 const _lastErrorLength = _logState + 56;
 const _lastError = _logState + 64;
 const _lastErrorBytes = 1024;
@@ -206,6 +207,10 @@ final class FakeStableDiffusionRuntime {
 
   /// Lets a paused generation continue.
   void resume() => _state[_resume] = 1;
+
+  /// How long the worker's explicit context free takes.
+  set freeDelay(Duration delay) =>
+      _state.cast<Int32>()[_freeDelay ~/ 4] = delay.inMilliseconds;
 
   /// Names of the calls [isolate] (`caller` or `worker`) made so far that
   /// have arrived here; await [flush] first.
@@ -462,6 +467,7 @@ final class _FakeCalls {
       },
       exitFree: (context) {
         _record('sd_dart_exit_free$_held');
+        sleep(Duration(milliseconds: _ints[_freeDelay ~/ 4]));
         malloc.free(context);
       },
       exitFreeAddress: malloc.nativeFree,

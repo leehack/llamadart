@@ -396,8 +396,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'native-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'End macOS processes with llama.cpp objects alive on Metal and '
-          'require a clean exit.',
+          'Check macOS Metal exit teardown and Linux cooperative worker '
+          'shutdown before C exit.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -414,7 +414,10 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/e2e/backends/llama_cpp_exit_teardown_e2e_test.dart',
           ],
-          environment: {'EXIT_TEARDOWN_MODEL': context.modelPath!},
+          environment: {
+            'EXIT_TEARDOWN_MODEL': context.modelPath!,
+            if (Platform.isLinux) 'EXIT_TEARDOWN_BACKEND': context.backend,
+          },
           description: 'Native exit teardown',
         ),
       ],
@@ -653,9 +656,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'image-exit-teardown',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'End macOS processes with an image model alive on Metal and '
-          'require a clean exit; also compare the progress events of image '
-          'batches.',
+          'Check macOS Metal image exit teardown and Linux cooperative '
+          'worker shutdown; compare image batch progress events.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -668,7 +670,11 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             'local-only',
             'test/image_exit_teardown_e2e_test.dart',
           ],
-          environment: {'IMAGE_EXIT_MODEL': context.modelPath!},
+          environment: {
+            'IMAGE_EXIT_MODEL': context.modelPath!,
+            if (Platform.isLinux) 'IMAGE_EXIT_BACKEND': context.backend,
+            if (Platform.isLinux) 'IMAGE_EXIT_CHAT_BACKEND': context.backend,
+          },
           description: 'Image model exit teardown',
         ),
       ],
@@ -1079,6 +1085,53 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           environment: {'MACOS_QUIT_CHAT_MODEL': context.modelPath!},
           description: 'Flutter macOS quit with models loaded',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-flutter-active-shutdown',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Quit a real macOS or Linux Flutter engine during native load and '
+          'generation; verify native call completion, host callbacks and C output.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/flutter_shutdown_e2e_test.dart',
+          ],
+          environment: {'MACOS_QUIT_CHAT_MODEL': context.modelPath!},
+          description: 'Flutter host shutdown during active native work',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-flutter-image-shutdown',
+      group: LocalE2eScenarioGroup.flutterDevice,
+      description:
+          'Quit a real macOS or Linux Flutter engine during image load and '
+          'sampling; await image startup/disposal, host callbacks and C output.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.chatAppDir,
+          executable: 'flutter',
+          arguments: const [
+            'test',
+            '--no-pub',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/flutter_image_shutdown_e2e_test.dart',
+          ],
+          environment: {'MACOS_QUIT_CHAT_MODEL': context.modelPath!},
+          description: 'Flutter host shutdown during image load and sampling',
         ),
       ],
     ),
@@ -1498,6 +1551,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
 Future<LocalE2eResult> runLocalE2e(
   List<String> args, {
   String? projectRoot,
+  Map<String, String>? environment,
   Future<void> Function(int port)? portAvailabilityCheck,
   Future<void> Function(int port, Process owner)? portReadinessWait,
   Future<ProcessResult> Function(LocalE2eCommandStep step)? foregroundStepRun,
@@ -1665,6 +1719,8 @@ Future<LocalE2eResult> runLocalE2e(
           scenario.name == 'native-exit-teardown' ||
           scenario.name == 'image-exit-teardown' ||
           scenario.name == 'chat-app-macos-quit' ||
+          scenario.name == 'chat-app-flutter-active-shutdown' ||
+          scenario.name == 'chat-app-flutter-image-shutdown' ||
           scenario.name == 'gemma4-mtp-smoke' ||
           scenario.name == 'native-embedding-benchmark' ||
           scenario.name == 'native-embedding-sweep') &&
@@ -1672,6 +1728,20 @@ Future<LocalE2eResult> runLocalE2e(
     return LocalE2eResult(
       64,
       stderr: '--model-path is required for ${scenario.name}.\n',
+    );
+  }
+
+  if ((scenario.name == 'chat-app-flutter-active-shutdown' ||
+          scenario.name == 'chat-app-flutter-image-shutdown') &&
+      (environment ?? Platform.environment)['FLUTTER_SHUTDOWN_HEADERS']
+              ?.trim()
+              .isNotEmpty !=
+          true) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'FLUTTER_SHUTDOWN_HEADERS must name the exact runtime header bundle '
+          'for the active Flutter shutdown scenarios.\n',
     );
   }
 
@@ -1951,6 +2021,11 @@ Direct environment for example/chat_app/test/macos_quit_e2e_test.dart:
   MACOS_QUIT_IMAGE_MODEL         Image checkpoint to load too; unset loads the chat
                                  model only.
   MACOS_QUIT_RUNS                Runs of each clean quit (default: 3).
+  MACOS_QUIT_BUILD_MODES         Builds to quit (default: debug,release).
+
+Direct environment for example/chat_app/test/flutter_shutdown_e2e_test.dart:
+  FLUTTER_SHUTDOWN_HEADERS       Extracted header bundle matching the runtime.
+  MACOS_QUIT_RUNS                Runs of each active quit (default: 3).
   MACOS_QUIT_BUILD_MODES         Builds to quit (default: debug,release).
 
 Direct environment for tool/litert_lm_chat_features_smoke.dart:
