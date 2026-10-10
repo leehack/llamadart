@@ -304,8 +304,9 @@ layouts) opens a separate screen for the experimental `ImageGenerationEngine`
   runtime on Windows. It is the device QA path for
   [#779](https://github.com/leehack/llamadart/issues/779): run
   `flutter test --run-skipped -t local-only integration_test/image_generation_e2e_test.dart -d <device>`
-  to download SDXS, generate a seeded image, and save the PNG and a screen
-  capture to the app's temporary directory. It has passed on macOS, the iOS
+  to download SDXS, generate a seeded image, and save both PNGs plus a receipt.
+  Android writes to app external files under `image_generation_e2e/run-*`;
+  other platforms use the app's temporary directory. It has passed on macOS, the iOS
   simulator and Galaxy S24 and A53 phones (the phone results are in #779). On
   an iPhone 16 Pro the earlier `enterText` version failed its seed check; a
   scratch test using the seed entry this test now uses generated with seed 42
@@ -926,3 +927,32 @@ Model-backed Flutter startup and image shutdown checks are documented in
 [`doc/testing_matrix.md`](../../doc/testing_matrix.md). They await pending
 startup and disposal before quitting; source-built tests do not qualify
 published runtime bytes.
+
+
+#### Collecting image device evidence
+
+For Android Test Lab, pull
+`/sdcard/Android/data/com.example.llamadart_chat_example/files/image_generation_e2e`.
+Each run contains `image_generation_e2e.png`, `image_generation_screen.png`
+and `image_evidence.json`. The test verifies the saved byte hashes and PNG
+structure before passing. A test-outcome success or logged file path alone
+is insufficient: download both images and their receipt, then run from the
+repository root:
+
+```bash
+dart run tool/testing/verify_image_e2e_evidence.dart \
+  <downloaded-run-directory> <exact-source-commit> CPU
+```
+
+Build the app and its matching instrumentation APK with
+`--dart-define=VALIDATION_COMMIT=<exact-source-commit>` and
+`--dart-define=VALIDATION_SOURCE_DIRTY=false` only from a verified clean
+checkout. Use the matching base64 `dart-defines` Gradle property when assembling
+Android instrumentation, as in the maintained validation bundle builder.
+Without those definitions the PNGs remain useful locally, but strict source
+verification fails. Inspect the actual images for visual quality separately;
+the validator checks PNG structure, dimensions, byte identity and declared
+clean-build/backend metadata, and compares model/profile and runtime pins with
+the maintained source. APK identity, model integrity, native runtime provenance
+and inference placement require their own evidence. Android image inference
+uses the CPU; this capture test does not qualify GPU or whole-host C exit.
