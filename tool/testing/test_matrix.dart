@@ -38,20 +38,32 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'ci-selection',
     tier: 'targeted',
     mode: 'CI + local; no models',
-    covers:
-        'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
+    covers: 'dependency-aware job/target selection, complete Git inventory and truthful aggregation',
     command: 'dart run tool/testing/run_local_e2e.dart --scenario ci-selection',
     useWhen:
         'CI workflow or impact selection changes; see doc/ci_selection.md.',
   ),
   TestMatrixRow(
+    id: 'android-perfetto-capability',
+    tier: 'platform',
+    mode: 'opt-in; model-free Android build and bounded physical-device probe',
+    covers:
+        'registered render-stage discovery, fresh trace transport and CPU/idle '
+        'controls; never model GPU placement',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'android-perfetto-capability; bounded cloud procedure in '
+        'doc/android_perfetto_capability.md',
+    useWhen:
+        'Android trace capability or evidence validation changes. Real trace '
+        'processor regression and exact APK identity are required for cloud qualification.',
+  ),
+  TestMatrixRow(
     id: 'validation-harness',
     tier: 'targeted',
     mode: 'CI + local; model-free',
-    covers:
-        'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
+    covers: 'private runner, planned model/backend coverage, result integrity, provider lifecycle, artifact and NPU input checks',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
     useWhen:
         'Validation harness, report, bundle or cloud orchestration changes.',
   ),
@@ -59,12 +71,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'validation-model-core',
     tier: 'platform',
     mode: 'opt-in; owned hardware or explicit remote run',
-    covers:
-        'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
+    covers: 'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
     command:
         'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
-    useWhen:
-        'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+    useWhen: 'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
   ),
   TestMatrixRow(
     id: 'validation-speech',
@@ -78,8 +88,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-stt; '
         'dart run tool/testing/run_local_e2e.dart --scenario validation-speech-tts; '
         'dart run tool/testing/run_local_e2e.dart --scenario validation-voice-round-trip',
-    useWhen:
-        'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
+    useWhen: 'Speech model/backend validation; diagnostic results do not qualify GPU placement or listening quality.',
   ),
   TestMatrixRow(
     id: 'gguf-stop-sequences',
@@ -192,8 +201,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'release-metadata-verification',
     tier: 'high-risk',
     mode: 'local exact-head release evidence',
-    covers:
-        'bounded core-patch metadata diff and unchanged release regression suite',
+    covers: 'bounded core-patch metadata diff and unchanged release regression suite',
     command:
         'dart run tool/testing/verify_release_docs_versions.dart --release-prep && '
         'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
@@ -239,8 +247,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/verify_release_docs_versions.dart '
         '(add --release-prep during release prep)',
-    useWhen:
-        'Release prep, companion package version bumps, or current install docs.',
+    useWhen: 'Release prep, companion package version bumps, or current install docs.',
   ),
   TestMatrixRow(
     id: 'webgpu-bridge-tag-consistency',
@@ -299,8 +306,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'dart run tool/testing/native_inference_benchmark.dart '
         '--model <model.gguf> --gpu-layers 0 --mode all --runs 3 '
         '--max-tokens 128',
-    useWhen:
-        'Generation latency, streaming, batching, prompt reuse, or performance changes.',
+    useWhen: 'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
     id: 'native-embedding-benchmark',
@@ -418,8 +424,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '--mmproj-path <mmproj.gguf> '
         '--audio-path <fixture.wav|.mp3|.flac> '
         '--expect "<expected transcript>"',
-    useWhen:
-        'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
+    useWhen: 'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
     id: 'litert-lm-asr-smoke',
@@ -724,12 +729,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'litert-lm-lifecycle',
     tier: 'targeted',
     mode: 'local-only',
-    covers:
-        'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
-    useWhen:
-        'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
+    covers: 'Real-model unload/reload, missing-model recovery, and timed-out native initialization cleanup with outer process deadlines',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario litert-lm-lifecycle --model-path <model.litertlm> --backend cpu',
+    useWhen: 'LiteRT-LM worker lifecycle, request settlement, or native teardown changes. Repeat with the affected requested backend; placement remains unverified.',
   ),
   TestMatrixRow(
     id: 'litert-lm-chat-features-smoke',
@@ -830,8 +832,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
         'tool/testing/run_local_e2e.dart --scenario '
         'chat-app-flutter-active-shutdown --model-path <chat.gguf>',
-    useWhen:
-        'Host shutdown, native worker lifecycle, exit teardown or Flutter pin changes.',
+    useWhen: 'Host shutdown, native worker lifecycle, exit teardown or Flutter pin changes.',
   ),
   TestMatrixRow(
     id: 'chat-app-flutter-image-shutdown',
@@ -844,8 +845,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
         'tool/testing/run_local_e2e.dart --scenario '
         'chat-app-flutter-image-shutdown --model-path <image.gguf>',
-    useWhen:
-        'Image worker shutdown, stable-diffusion runtime or Flutter host changes.',
+    useWhen: 'Image worker shutdown, stable-diffusion runtime or Flutter host changes.',
   ),
   TestMatrixRow(
     id: 'web-bridge-smoke',
@@ -861,10 +861,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers:
         'one production-root build tested by mock and real worker/GGUF smokes',
-    command:
-        'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
-    useWhen:
-        'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
+    command: 'dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-production-smoke',
+    useWhen: 'Web build, CI artifact promotion or static deployment changes. Requires the cached stories15M model or --model-url.',
   ),
   TestMatrixRow(
     id: 'web-mock-chat-smoke',
@@ -874,8 +872,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-mock-smoke',
-    useWhen:
-        'Web chat app UI, prompt wiring, settings, or bridge integration changes.',
+    useWhen: 'Web chat app UI, prompt wiring, settings, or bridge integration changes.',
   ),
   TestMatrixRow(
     id: 'web-real-model-smoke',
@@ -979,8 +976,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'windows-arm64-hook-coverage',
     tier: 'platform',
     mode: 'hook-only + manual/runtime',
-    covers:
-        'Windows arm64 bundle selection; runtime smoke requires Windows arm64 hardware',
+    covers: 'Windows arm64 bundle selection; runtime smoke requires Windows arm64 hardware',
     command:
         'dart test -p vm -j 1 test/unit/hook --exclude-tags local-only; '
         'for runtime proof, run the GGUF local smoke on Windows arm64 hardware.',
