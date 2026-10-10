@@ -86,13 +86,13 @@ the chat app, set the bootstrap globals before the bootstrap runs:
 ```
 
 That release embeds llama.cpp `v0.6.0`, matching the `hook/build.dart` native pin
-(`v0.6.0-1`, both built from upstream llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
+(`v0.6.0-2`, both built from upstream llama.cpp `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
 even though the bridge asset tag `v0.1.59` differs from the native runtime tag
-`v0.6.0-1`. Provenance for this immutable consumer artifact: release `406130836`,
+`v0.6.0-2`. Provenance for this immutable consumer artifact: release `406130836`,
 tag commit `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
 `c1f64536b9a4ea410066b711928c7cba03691fb0`, and manifest SHA-256
 `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The bridge
-assets were qualified against native `v0.6.0`; `v0.6.0-1` rebuilds it from the
+assets were qualified against native `v0.6.0`; `v0.6.0-2` rebuilds it from the
 same upstream commit. Their bridge JavaScript, type declarations and worker
 are byte-identical to `v0.1.54`; the WebAssembly core changed, for llama.cpp
 `v0.6.0` and for the bridge's own C++ on the batch and speculative-decoding

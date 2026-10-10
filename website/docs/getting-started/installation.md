@@ -136,7 +136,7 @@ hooks:
     llamadart:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
       # Compatibility testing only; omit to use the tested pin.
-      # llamadart_native_tag: v0.6.0-1
+      # llamadart_native_tag: v0.6.0-2
 ```
 
 A `llamadart_native_backends` request that names any backend module the target
@@ -151,7 +151,7 @@ rebuild counters start at 1. Build-hook overrides must always name an explicit
 tag; `latest` is limited to maintainer synchronization and header/binding
 regeneration. An override does not regenerate the Dart bindings, so its
 binary must stay ABI-compatible with the default
-`leehack/llamadart-native@v0.6.0-1` runtime.
+`leehack/llamadart-native@v0.6.0-2` runtime.
 
 Every key, per-target backend and Android CPU variant selection, local bundle
 paths, and fallback rules:

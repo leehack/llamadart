@@ -89,6 +89,13 @@ void main() {
         for (var repeat = 0; repeat < runs; repeat++) {
           final environment = Map<String, String>.of(Platform.environment)
             ..remove('FLUTTER_TEST');
+          if (Platform.isMacOS) {
+            environment['IMAGE_VM_FRAMEWORKS'] = p.absolute(
+              'build/macos/Build/Products',
+              modes.last == 'release' ? 'Release' : 'Debug',
+              'llamadart_chat_example.app/Contents/Frameworks',
+            );
+          }
           final result = await _runNaturalVm(dart, [
             'run',
             'test/fixtures/image_vm_shutdown_probe.dart',
@@ -141,7 +148,7 @@ Future<ProcessResult> _runNaturalVm(
   final process = await Process.start(
     dart,
     arguments,
-    workingDirectory: '../..',
+    workingDirectory: '.',
     environment: environment,
     includeParentEnvironment: false,
   );
@@ -283,7 +290,14 @@ Future<void> _run(
       'FLUTTER_SHUTDOWN_RUNTIME': Platform.isMacOS
           ? p.absolute(
               p.dirname(executable),
-              '../Frameworks/llamadart.framework/llamadart',
+              File(
+                    p.join(
+                      p.dirname(executable),
+                      '../Frameworks/llama.framework/llama',
+                    ),
+                  ).existsSync()
+                  ? '../Frameworks/llama.framework/llama'
+                  : '../Frameworks/llamadart.framework/llamadart',
             )
           : p.absolute(p.dirname(executable), 'lib/libllamadart.so'),
     },
