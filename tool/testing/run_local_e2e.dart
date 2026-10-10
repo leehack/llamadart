@@ -222,7 +222,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '-p',
             'test_*.py',
           ],
-          description: 'Git change inventory, dependency selection and aggregate behavior',
+          description:
+              'Git change inventory, dependency selection and aggregate behavior',
         ),
         LocalE2eCommandStep(
           workingDirectory: context.projectRoot,
@@ -240,7 +241,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'android-perfetto-capability',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Build model-free Android trace probe and run evidence negatives; no cloud run.',
+      description:
+          'Build model-free Android trace probe and run evidence negatives; no cloud run.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -460,7 +462,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run real GGUF chat, thinking-budget/suppression, tool-call, and optional image path/bytes smoke.',
+      description:
+          'Run real GGUF chat, thinking-budget/suppression, tool-call, and optional image path/bytes smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];
@@ -579,7 +582,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'speech-to-text-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
+      description:
+          'Run typed native Qwen3-ASR file/bytes transcription, cancellation and recovery against a known fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -606,7 +610,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run the public dedicated LiteRT-LM speech engine against a known PCM16 fixture.',
+      description:
+          'Run the public dedicated LiteRT-LM speech engine against a known PCM16 fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -942,7 +947,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-lifecycle',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
+      description:
+          'Verify real LiteRT-LM reload, recovery, and timed-out cleanup in bounded child processes.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -970,7 +976,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run real LiteRT-LM chat, thinking, tool-call, and optional media smoke.',
+      description:
+          'Run real LiteRT-LM chat, thinking, tool-call, and optional media smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>[
@@ -1168,7 +1175,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'chat-app-web-production-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
-      description: 'Test the exact production-root build with mock and real GGUF smokes.',
+      description:
+          'Test the exact production-root build with mock and real GGUF smokes.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -1634,7 +1642,8 @@ Future<LocalE2eResult> runLocalE2e(
       (parsed.modelPath == null || parsed.headPath == null)) {
     return const LocalE2eResult(
       64,
-      stderr: '--model-path and --head-path are required for decision-model-smoke.\n',
+      stderr:
+          '--model-path and --head-path are required for decision-model-smoke.\n',
     );
   }
   if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
@@ -1706,7 +1715,8 @@ Future<LocalE2eResult> runLocalE2e(
       (parsed.modelPath == null || parsed.mmprojPath == null)) {
     return const LocalE2eResult(
       64,
-      stderr: '--model-path and --mmproj-path are required for text-to-speech-smoke.\n',
+      stderr:
+          '--model-path and --mmproj-path are required for text-to-speech-smoke.\n',
     );
   }
   if (scenario.name == 'gguf-audio-chat-smoke' &&
