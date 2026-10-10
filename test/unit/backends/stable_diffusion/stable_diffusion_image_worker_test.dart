@@ -113,6 +113,18 @@ void main() {
     }
 
     /// A started worker, with the calls of its load forgotten.
+    test('concurrent disposal waits for the same worker cleanup', () async {
+      runtime.freeDelay = const Duration(milliseconds: 300);
+      final worker = await start();
+      final first = worker.dispose();
+      final elapsed = Stopwatch()..start();
+      await worker.dispose();
+      elapsed.stop();
+      expect(elapsed.elapsedMilliseconds, greaterThanOrEqualTo(200));
+      await first;
+    });
+
+    /// A started worker, with the calls of its load forgotten.
     Future<StableDiffusionImageWorker> loaded({
       LlamaLogLevel logLevel = LlamaLogLevel.none,
     }) async {

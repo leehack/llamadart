@@ -118,11 +118,12 @@ progress. That covers:
 
   - The quit waits for a native call that is still running, so a quit
     during an image generation takes the rest of the generation.
-  - Only macOS has been measured. The runtimes free nothing at process exit
-    outside Apple platforms, and on Linux a C `exit()` during a model load
-    or a generation crashes
-    ([#949](https://github.com/leehack/llamadart/issues/949)); whether a
-    Flutter Linux or Windows quit can reach that is not known.
+  - Linux hosts must dispose the Flutter engine before C exit. The chat
+    example's Linux Runner destroys its owned windows and explicitly
+    disposes its engines; quitting `GApplication` alone can leave engines
+    and their models alive. Active llama.cpp load/generation checks cover
+    Linux arm64 CPU with that Runner. Image workers, other GPU devices and
+    Windows host shutdown require their own qualification.
 
   Desktop Flutter apps do not run `State.dispose` on quit, so dispose from
   an exit request instead (`AppExitResponse` comes from `dart:ui`):
@@ -136,6 +137,15 @@ final listener = AppLifecycleListener(
 );
 // Call listener.dispose() when its owner is disposed.
 ```
+
+Before a native host calls C `exit()`, await all engine disposals, stop and
+join other native workers, then shut down its Dart isolates or Flutter engine
+and await native finalizers. llama.cpp and image-worker disposal await actual
+worker exit, including concurrent disposal calls. An isolate kill request
+cannot interrupt synchronous native work. Direct C exit with live Dart
+isolates is outside the Linux shutdown contract; it can abort the VM even
+without a loaded model. Linux GPU and BLAS drivers require their own workers
+to be stopped too.
 
 If the engine's owner can go away before the app quits, such as a pushed
 route, its listener goes with it, and the `dispose()` it started in

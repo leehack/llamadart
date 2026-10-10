@@ -42,11 +42,19 @@ or shipping runtimes the app does not use.
   (`llamadart-native` `v0.5.0-2` and later) and the stable_diffusion runtime
   (`stable-diffusion-native` `v0.2.0-1` and later) free a model the quit
   caught mid-load. Dispose anyway: the quit waits for a native call that is
-  still running, so for the rest of an image generation, and only macOS has
-  been measured (the runtimes free nothing at process exit outside Apple
-  platforms). When the engine's owner can be disposed before quit (a
+  still running, so for the rest of an image generation. Linux hosts must
+  explicitly dispose their Flutter engines before process exit: quitting
+  `GApplication` detaches windows but does not guarantee engine cleanup.
+  Preserve the chat example's native Runner cleanup when adapting it. Active
+  llama.cpp load/generation checks cover Linux arm64 CPU with that Runner;
+  image workers, other GPU devices and Windows need separate qualification.
+  When the engine's owner can be disposed before quit (a
   pushed route), its listener goes with it: make one app-level exit listener
   await every engine's disposal, including one its owner already started.
+  llama.cpp and image-worker disposal wait for actual worker exit. A native
+  host must also stop and join other native workers and shut down its Dart
+  isolates or Flutter engine before C `exit()`; killing an isolate alone
+  cannot interrupt a synchronous native call.
 - Keep inference state out of widgets. Put a plain Dart controller between
   the engine and the UI (example below) and adapt it to `ChangeNotifier`,
   `ValueNotifier`, BLoC or Riverpod. Loading, chat history and streaming

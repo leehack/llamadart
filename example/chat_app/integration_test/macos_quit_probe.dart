@@ -147,6 +147,9 @@ Future<void> _quit(String path) async {
   }
 }
 
+/// Drives the same AppKit quit paths from the active-work shutdown probe.
+Future<void> requestMacosProbeQuit(String path) => _quit(path);
+
 final DynamicLibrary _process = DynamicLibrary.process();
 
 final Pointer<Void> Function(Pointer<Utf8>) _class = _process

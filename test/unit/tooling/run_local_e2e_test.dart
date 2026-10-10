@@ -902,6 +902,7 @@ void main() {
         result.stdout,
         contains(
           'cd /repo/example/basic_app && IMAGE_EXIT_MODEL=/sdxs.gguf '
+          '${Platform.isLinux ? 'IMAGE_EXIT_BACKEND=cpu IMAGE_EXIT_CHAT_BACKEND=cpu ' : ''}'
           'dart test --run-skipped -t local-only '
           'test/image_exit_teardown_e2e_test.dart',
         ),
@@ -938,6 +939,76 @@ void main() {
         ),
       );
     });
+
+    test(
+      'active Flutter shutdown requires model and exact runtime headers',
+      () async {
+        const args = [
+          '--scenario',
+          'chat-app-flutter-active-shutdown',
+          '--dry-run',
+        ];
+        final missingModel = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          environment: const {},
+        );
+        expect(missingModel.exitCode, 64);
+        expect(missingModel.stderr, contains('--model-path is required'));
+        final withModel = [...args, '--model-path', '/chat.gguf'];
+        final missingHeaders = await runLocalE2e(
+          withModel,
+          projectRoot: '/repo',
+          environment: const {},
+        );
+        expect(missingHeaders.exitCode, 64);
+        expect(missingHeaders.stderr, contains('FLUTTER_SHUTDOWN_HEADERS'));
+        final ready = await runLocalE2e(
+          withModel,
+          projectRoot: '/repo',
+          environment: const {'FLUTTER_SHUTDOWN_HEADERS': '/headers'},
+        );
+        expect(ready.exitCode, 0);
+        expect(ready.stdout, contains('test/flutter_shutdown_e2e_test.dart'));
+      },
+    );
+
+    test(
+      'image Flutter shutdown requires model and exact runtime headers',
+      () async {
+        const args = [
+          '--scenario',
+          'chat-app-flutter-image-shutdown',
+          '--dry-run',
+        ];
+        final missingModel = await runLocalE2e(
+          args,
+          projectRoot: '/repo',
+          environment: const {},
+        );
+        expect(missingModel.exitCode, 64);
+        expect(missingModel.stderr, contains('--model-path is required'));
+        final withModel = [...args, '--model-path', '/chat.gguf'];
+        final missingHeaders = await runLocalE2e(
+          withModel,
+          projectRoot: '/repo',
+          environment: const {},
+        );
+        expect(missingHeaders.exitCode, 64);
+        expect(missingHeaders.stderr, contains('FLUTTER_SHUTDOWN_HEADERS'));
+        final ready = await runLocalE2e(
+          withModel,
+          projectRoot: '/repo',
+          environment: const {'FLUTTER_SHUTDOWN_HEADERS': '/headers'},
+        );
+        expect(ready.exitCode, 0);
+        expect(
+          ready.stdout,
+          contains('test/flutter_image_shutdown_e2e_test.dart'),
+        );
+        expect(ready.stdout, contains('--no-pub'));
+      },
+    );
 
     test('requires an SDXS model for image generation', () async {
       final result = await runLocalE2e(const [

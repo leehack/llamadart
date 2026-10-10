@@ -5,6 +5,11 @@
 // `EXIT_PROBE_DISPOSE_DELAY_US` microseconds (default 1000) after the owning
 // isolate starts to dispose.
 //
+// The `host-shutdown-` scenarios dispose engines in a separate owning isolate
+// and await its actual exit notification before C exit. The loading scenario
+// requests shutdown while a load is pending and awaits that load before disposal.
+// The remaining main isolate is a host-control stand-in, not a Flutter engine.
+//
 // The `quit-` scenarios call C `exit` through FFI from the main isolate while
 // the isolate that owns the objects is alive: what a native host that skips
 // the Dart shutdown does. They do not model a Flutter macOS quit, which shuts
@@ -20,6 +25,8 @@ import 'dart:isolate';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 
+import '../support/cooperative_exit_probe.dart';
+
 const _messages = [
   LlamaChatMessage.fromText(
     role: LlamaChatRole.user,
@@ -29,6 +36,13 @@ const _messages = [
 
 Future<void> main(List<String> args) async {
   final [scenario, modelPath, ...extra] = args;
+  if (scenario.startsWith('host-shutdown-')) {
+    await runCooperativeExitProbe(_cooperativeShutdown, [
+      scenario,
+      modelPath,
+    ], completedMarker: 'EXIT_PROBE_HOST_SHUTDOWN_COMPLETE');
+    _quit(scenario);
+  }
   switch (scenario) {
     case 'quit-projector':
       final engine = await LlamaEngine.load(
@@ -96,6 +110,35 @@ Future<void> main(List<String> args) async {
   }
 }
 
+Future<void> _cooperativeShutdown((SendPort, List<String>) message) async {
+  final (completed, [scenario, modelPath]) = message;
+  final loading = _load(modelPath);
+  if (scenario == 'host-shutdown-loading') {
+    // A shutdown requested during load must await the pending load, then
+    // dispose its worker. The native load itself is synchronous.
+    stdout.writeln('EXIT_PROBE_HOST_SHUTDOWN_REQUESTED loading');
+  }
+  final engine = await loading;
+  try {
+    switch (scenario) {
+      case 'host-shutdown-loaded':
+        await engine.create(_messages, params: _tokens(4)).drain<void>();
+      case 'host-shutdown-generating':
+        await disposeAfterProbeGenerationStarts(
+          engine.create(_messages, params: _tokens(512)),
+          engine.dispose,
+        );
+      case 'host-shutdown-loading':
+        break;
+      default:
+        throw ArgumentError.value(scenario, 'scenario');
+    }
+  } finally {
+    await engine.dispose();
+  }
+  completed.send(true);
+}
+
 void _reportBackend(String name) => stdout.writeln('EXIT_PROBE_BACKEND $name');
 
 void _reached(String scenario) =>
@@ -119,9 +162,23 @@ GenerationParams _tokens(int count) => GenerationParams(
 );
 
 Future<LlamaEngine> _load(String modelPath) async {
+  final requested =
+      Platform.environment['EXIT_TEARDOWN_BACKEND'] ??
+      (Platform.isLinux ? 'cpu' : null);
   final engine = await LlamaEngine.load(
     LlamaModel(ModelSource.path(modelPath)),
-    params: const ModelParams(contextSize: 2048),
+    params: ModelParams(
+      contextSize: 2048,
+      preferredBackend: requested == null
+          ? GpuBackend.auto
+          : GpuBackend.values.byName(requested.toLowerCase()),
+      device: requested == null
+          ? ComputeDevice.auto
+          : requested.toLowerCase() == 'cpu' ||
+                requested.toLowerCase() == 'blas'
+          ? ComputeDevice.cpu
+          : ComputeDevice.gpu,
+    ),
   );
   _reportBackend(await engine.getBackendName());
   return engine;

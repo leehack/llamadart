@@ -1,4 +1,4 @@
-@TestOn('mac-os')
+@TestOn('mac-os || linux')
 @Tags(['local-only'])
 @Timeout(Duration(minutes: 30))
 library;
@@ -26,19 +26,30 @@ void main() {
   // A scenario of test/fixtures/image_exit_probe.dart with its remaining
   // arguments (null skips it) and the exit code of a clean end.
   for (final (scenario, arguments, exitCode) in <(String, List<String?>, int)>[
-    ('symbols', [model], 0),
-    ('quiet', [model], 0),
-    ('quit-loaded', [model], 0),
-    ('quit-generating', [model], 0),
-    ('quit-loading', [model], 0),
-    ('quit-loaded-logging', [model], 0),
-    ('quit-generating-logging', [model], 0),
-    ('quit-loading-logging', [model], 0),
-    ('throw-generating', [model], 255),
-    ('throw-loading', [model], 255),
-    ('kill-loading', [model], 0),
-    ('dispose-quit', [model], 0),
-    ('quit-both-loaded', [model, chatModel], 0),
+    if (Platform.isLinux) ...[
+      ('quiet', [model], 0),
+      ('host-shutdown-loaded', [model], 0),
+      ('host-shutdown-generating', [model], 0),
+      ('host-shutdown-loading', [model], 0),
+      ('host-shutdown-loaded-logging', [model], 0),
+      ('host-shutdown-generating-logging', [model], 0),
+      ('host-shutdown-loading-logging', [model], 0),
+      ('host-shutdown-both-loaded', [model, chatModel], 0),
+    ] else ...[
+      ('symbols', [model], 0),
+      ('quiet', [model], 0),
+      ('quit-loaded', [model], 0),
+      ('quit-generating', [model], 0),
+      ('quit-loading', [model], 0),
+      ('quit-loaded-logging', [model], 0),
+      ('quit-generating-logging', [model], 0),
+      ('quit-loading-logging', [model], 0),
+      ('throw-generating', [model], 255),
+      ('throw-loading', [model], 255),
+      ('kill-loading', [model], 0),
+      ('dispose-quit', [model], 0),
+      ('quit-both-loaded', [model, chatModel], 0),
+    ],
   ]) {
     test('$scenario ends with exit code $exitCode', () async {
       // Not `skip:`, which --run-skipped (needed for `local-only`) overrides.
@@ -68,7 +79,18 @@ void main() {
           expect(probe.stdout, contains('IMAGE_PROBE_LOG_RECORDS'));
         }
         if (probe.stdout.contains('IMAGE_PROBE_BACKEND')) {
-          expect(probe.stdout, contains('IMAGE_PROBE_BACKEND MTL'));
+          final backend = Platform.isLinux
+              ? environment['IMAGE_EXIT_BACKEND'] ?? 'CPU'
+              : 'MTL';
+          expect(
+            probe.stdout,
+            matches(
+              RegExp(
+                'IMAGE_PROBE_BACKEND ${RegExp.escape(backend)}',
+                caseSensitive: false,
+              ),
+            ),
+          );
         }
         if (scenario == 'quit-both-loaded') {
           expect(probe.stdout, contains('IMAGE_PROBE_CHAT_BACKEND Metal'));
@@ -78,6 +100,22 @@ void main() {
         }
         if (scenario == 'dispose-quit') {
           expect(probe.stdout, contains('IMAGE_PROBE_TRACKED 0'));
+        }
+        if (scenario.startsWith('host-shutdown-')) {
+          expect(probe.stdout, contains('IMAGE_PROBE_HOST_SHUTDOWN_COMPLETE'));
+          expect(probe.stdout, contains('IMAGE_PROBE_TRACKED 0'));
+        }
+        if (scenario == 'host-shutdown-both-loaded') {
+          final backend = environment['IMAGE_EXIT_CHAT_BACKEND'] ?? 'CPU';
+          expect(
+            probe.stdout,
+            matches(
+              RegExp(
+                'IMAGE_PROBE_CHAT_BACKEND ${RegExp.escape(backend)}',
+                caseSensitive: false,
+              ),
+            ),
+          );
         }
         expect(probe.stderr, isNot(contains('GGML_ASSERT')));
         expect(probe.stderr, isNot(contains('GetFfiCallbackMetadata')));

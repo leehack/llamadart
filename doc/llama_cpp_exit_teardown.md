@@ -10,6 +10,39 @@ runs at exit. The native contract is `src/llama_dart_wrapper.h` in
 
 ## Dart side
 
+### Host shutdown precondition
+
+A native host must stop and join its native workers and shut down its Dart
+isolates or Flutter engine before calling C `exit()`. Await engine disposal,
+including disposals already started elsewhere, then await engine/isolate
+shutdown and native finalizers. A kill request cannot interrupt synchronous
+native work; llama.cpp and image-worker disposal now await actual `onExit`.
+Failed llama.cpp startups retain their exit listener so later disposal also
+waits for a worker still finishing native initialization.
+
+On Linux this protocol preserves ordinary host exit callbacks and C output
+flushing. The runtime retains owned statics but does not force immediate
+process termination or automatically free live objects at C exit. External
+GPU/BLAS libraries still require all their workers to be joined. Direct C
+exit with live Dart isolates is outside this contract: a no-model control
+reproduces the Dart VM abort independently of llama.cpp. The Apple-specific
+teardown coverage below does not establish safety for arbitrary live-isolate
+exit on Linux.
+
+Linux Flutter hosts must explicitly dispose their engines before process exit.
+Flutter detaches its GTK windows when quitting `GApplication`; that alone does
+not destroy the views, and plugins can retain engine references even after a
+view is destroyed. The chat app's Linux Runner owns its windows and engines,
+destroys the windows, and runs engine disposal during application shutdown.
+The `chat-app-flutter-active-shutdown` matrix row checks this ordering with a
+real native load and ongoing generation, including native host callbacks and
+buffered C output. Its high-level startup case also awaits pending model
+loading and repeated disposal before quitting. The image shutdown row checks
+the same cooperative ordering during image loading and sampling. See
+`doc/testing_matrix.md` for the bounded test scope.
+
+### Object ownership
+
 `lib/src/backends/llama_cpp/exit_teardown_api.dart` holds both ways a
 `LlamaCppService` reaches llama.cpp:
 

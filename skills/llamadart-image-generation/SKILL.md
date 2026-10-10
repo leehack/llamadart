@@ -220,6 +220,10 @@ description: >-
   (a pushed route), its listener goes with it: make one app-level exit
   listener await every engine's disposal, including one its owner already
   started.
+  Image-worker disposal waits for actual worker exit, and concurrent callers
+  await the same cleanup. Before C `exit()`, a native host must also stop and
+  join its other native workers and shut down its Dart isolates or Flutter
+  engine. A kill request alone cannot interrupt native generation.
 - A runtime failure (for example an aborted Metal command buffer or out of
   memory) fails the task with `LlamaInferenceException`; the engine stays
   usable for the next request.

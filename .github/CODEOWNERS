@@ -18,6 +18,9 @@ doc/high_risk_pre_merge_readiness.md @leehack
 hook/build.dart @leehack
 lib/src/hook/native_release_pins.dart @leehack
 tool/testing/test_matrix.dart @leehack
+example/chat_app/integration_test/flutter_shutdown_probe.dart @leehack
+example/chat_app/test/flutter_shutdown_e2e_test.dart @leehack
+example/chat_app/test/fixtures/flutter_shutdown_observer.c @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
 tool/testing/high_risk_readiness.dart @leehack
 tool/testing/high_risk_readiness_evidence.schema.json @leehack
@@ -58,3 +61,10 @@ packages/*/pubspec.yaml @leehack
 tool/ci/web_deployment.py @leehack
 tool/ci/deploy_guard.py @leehack
 test/ci/test_deploy_guard.py @leehack
+
+example/chat_app/linux/runner/my_application.cc @leehack
+
+/example/chat_app/integration_test/flutter_image_shutdown_probe.dart @leehack
+/example/chat_app/test/flutter_image_shutdown_e2e_test.dart @leehack
+
+/test/fixtures/image_vm_shutdown_probe.dart @leehack

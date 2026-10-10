@@ -577,7 +577,18 @@ dart run tool/testing/run_local_e2e.dart --scenario native-exit-teardown \
   --model-path /path/to/chat.gguf
 ```
 
-This local-only macOS row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
+On Linux, this local-only row requires `host-shutdown-loaded`,
+`host-shutdown-generating` and `host-shutdown-loading` to pass. A model-owning
+isolate disposes its engine; the control isolate waits for its actual VM exit
+notification before calling C `exit`. A shutdown requested during load waits
+for the pending load before disposal. `--backend cpu` is the default; use
+`--backend vulkan` or `--backend cuda` with the corresponding runtime build.
+Every run must report its requested backend and `EXIT_PROBE_HOST_SHUTDOWN_COMPLETE`.
+Raw C exit with live isolates remains a separately invocable diagnostic and
+is excluded from Linux qualification. These subprocess checks do not prove
+Flutter engine shutdown ordering.
+
+On macOS, the row runs `test/fixtures/llama_cpp_exit_probe.dart` as a
 child process and ends it while llama.cpp objects are alive on Metal: C `exit`
 through FFI from the main isolate with a model idle, generating or loading;
 an unhandled error while generating or loading; an isolate killed inside the
@@ -609,7 +620,17 @@ dart run tool/testing/run_local_e2e.dart --scenario image-exit-teardown \
   --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
 ```
 
-This local-only macOS row runs in `example/basic_app`, which opts into the
+On Linux, this local-only row requires cooperative idle, generation and
+pending-load shutdown, with logging enabled and disabled, and optionally both
+runtimes loaded. It waits for engine disposal and the owning isolate's actual
+exit before C `exit`, requiring `IMAGE_PROBE_HOST_SHUTDOWN_COMPLETE` and zero
+tracked image contexts. Generation uses two steps at 256×256 so shutdown is
+bounded on the CPU. Use `--backend cpu` or `--backend vulkan`; both-runtime
+coverage additionally needs `IMAGE_EXIT_GGUF`. Raw live-isolate exits remain
+diagnostic and are excluded from Linux qualification. Batch progress checks
+still run on both platforms.
+
+On macOS, this row runs in `example/basic_app`, which opts into the
 stable_diffusion runtime. It runs
 `example/basic_app/test/fixtures/image_exit_probe.dart` as a child process and
 ends it while an image model is alive on Metal: C `exit` through FFI from the
@@ -698,6 +719,44 @@ Limits:
   the build replaces `example/chat_app/build/macos`. The app's window opens
   for each run.
 
+### Flutter shutdown during active native work
+
+```bash
+FLUTTER_SHUTDOWN_HEADERS=/path/to/extracted/native/headers \
+  dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-flutter-active-shutdown --model-path /path/to/chat.gguf
+```
+
+This local-only macOS/Linux row builds the actual Flutter Runner in debug and
+release. macOS drives the five quit paths above; Linux drives required and
+cancelable `ServicesBinding.exitApplication`. Each path runs three times
+(`MACOS_QUIT_RUNS`), once a generation has delivered a token and separately
+while the real tracked native loader is inside a two-second native progress
+callback. That callback never enters Dart. Load cleanup stays inside the same
+native call so killing its isolate cannot skip cleanup after the call returns.
+
+An ordinary native host `atexit` observer requires the native load to have
+returned and the tracked-object registry to be empty, and writes buffered C
+stdout that normal process exit must flush. The row requires exit zero and
+rejects native/Dart VM assertions and generation errors. It uses the exact
+runtime's header bundle to compile the observer. The generation must still
+be active at the quit request; completion before that point fails the test.
+
+The `startup` case instead forwards the native loader through a test-only
+C shim while the production service and worker own its returned model. A
+shutdown request during native progress awaits the real `LlamaEngine.load`
+future, starts disposal, and awaits it from a second caller before quitting.
+That cooperative host ordering is distinct from the raw `loading` case, which
+keeps cleanup in one C call. `FLUTTER_SHUTDOWN_WORK_STATES` selects a nonempty
+comma-separated subset of `loading,generating,startup`; all run by default.
+This does not qualify arbitrary embeddings or production SwiftPM linkage
+when the test app uses a native-assets override.
+
+The Linux Runner explicitly disposes its engines during `GApplication`
+shutdown. Destroying the detached windows alone is insufficient when plugins
+retain engine references. Keep the zero-tracked-object and completed-native-call
+assertions; an exit code of zero alone does not satisfy this row.
+
 ### Native prompt-evaluation cancel
 
 ```bash
@@ -715,3 +774,35 @@ It prints each latency as JSON. `PROMPT_CANCEL_THREADS` sets the CPU threads
 (default 4). Repeat with `--backend metal` on macOS. The timings depend on
 machine load, so record `uptime` with the results and rerun a timing failure
 once before treating it as a regression.
+
+### Flutter image startup and sampling shutdown
+
+```bash
+FLUTTER_SHUTDOWN_HEADERS=/path/to/extracted/native/headers \
+  dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-flutter-image-shutdown --model-path /path/to/image.gguf
+```
+
+Run workspace and chat app dependency preparation first: this scenario uses
+`--no-pub` so launching an already prepared test cannot change dependencies.
+This local-only row drives the same five macOS and two Linux quit paths in
+debug/release, three times each. The loading request follows an actual native
+progress record while `ImageGenerationEngine.load` is pending. Sampling
+requests follow an intermediate native sampling event while generation is
+still pending. The host awaits startup and repeated disposal before quitting;
+disposal cancels sampling and joins the worker. Native C observers require
+both registries to be empty and buffered C output to flush at actual host exit.
+The native progress recorder never calls Dart. Completion before the request
+fails the check. `FLUTTER_SHUTDOWN_WORK_STATES` may select `image-loading` or
+`image-generating`, with both enabled by default. This is cooperative host
+shutdown evidence, not direct C exit with live isolates or arbitrary forced
+Flutter engine termination. Source-built runtime checks do not qualify
+published artifacts. Physical devices, other image families and production
+SwiftPM linkage require their own evidence.
+
+The image row also launches a standalone Dart fixture for pending loading and
+sampling. It awaits repeated disposal and worker exit, returns naturally from
+`main`, and requires empty native registries and C output at process shutdown.
+Each state runs three times per platform. This qualifies cooperative natural
+VM termination; fatal errors with pending startup or forced termination that
+skips disposal remain outside this evidence.

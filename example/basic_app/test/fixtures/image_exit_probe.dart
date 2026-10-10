@@ -4,6 +4,11 @@
 // A scenario whose name ends in `-logging` runs with the runtime's log
 // forwarded at debug level, so the worker reads the log around the exit.
 //
+// The `host-shutdown-` scenarios dispose engines in a separate owning isolate
+// and await its actual exit notification before C exit. The loading scenario
+// requests shutdown while a load is pending and awaits that load before disposal.
+// The remaining main isolate is a host-control stand-in, not a Flutter engine.
+//
 // The `quit-` scenarios call C `exit` through FFI from the main isolate while
 // the worker isolate that owns the context is alive: what a native host that
 // skips the Dart shutdown does. `dart:io`'s `exit` does not run the static
@@ -26,6 +31,8 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_image_w
 import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_params.dart';
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 
+import '../../../../test/support/cooperative_exit_probe.dart';
+
 Future<void> main(List<String> args) async {
   final [requested, modelPath, ...extra] = args;
   final logging = requested.endsWith(_loggingSuffix);
@@ -37,6 +44,16 @@ Future<void> main(List<String> args) async {
       level: LlamaLogLevel.debug,
       handler: (_) => _logRecords++,
     );
+  }
+  if (scenario.startsWith('host-shutdown-')) {
+    await runCooperativeExitProbe(_cooperativeShutdown, [
+      scenario,
+      modelPath,
+      ...extra,
+      if (logging) _loggingSuffix,
+    ], completedMarker: 'IMAGE_PROBE_HOST_SHUTDOWN_COMPLETE');
+    _reportTracked();
+    _quit(scenario);
   }
   switch (scenario) {
     case 'symbols':
@@ -132,6 +149,76 @@ Future<void> main(List<String> args) async {
   }
 }
 
+Future<void> _cooperativeShutdown((SendPort, List<String>) message) async {
+  final (completed, arguments) = message;
+  final logging = arguments.last == _loggingSuffix;
+  final [scenario, modelPath, ...extra] = logging
+      ? arguments.sublist(0, arguments.length - 1)
+      : arguments;
+  if (logging) {
+    await LlamaLogging.configure(
+      level: LlamaLogLevel.debug,
+      handler: (_) => _logRecords++,
+    );
+  }
+  LlamaEngine? chat;
+  ImageGenerationEngine? engine;
+  try {
+    if (scenario == 'host-shutdown-both-loaded') {
+      chat = await LlamaEngine.load(
+        LlamaModel(ModelSource.path(extra.single)),
+        params: ModelParams(
+          contextSize: 2048,
+          preferredBackend: GpuBackend.values.byName(
+            (Platform.environment['IMAGE_EXIT_CHAT_BACKEND'] ?? 'cpu')
+                .toLowerCase(),
+          ),
+          device:
+              (Platform.environment['IMAGE_EXIT_CHAT_BACKEND'] ?? 'cpu')
+                      .toLowerCase() ==
+                  'cpu'
+              ? ComputeDevice.cpu
+              : ComputeDevice.gpu,
+        ),
+      );
+      stdout.writeln('IMAGE_PROBE_CHAT_BACKEND ${await chat.getBackendName()}');
+    }
+    final loading = _load(modelPath);
+    if (scenario == 'host-shutdown-loading') {
+      stdout.writeln('IMAGE_PROBE_HOST_SHUTDOWN_REQUESTED loading');
+    }
+    engine = await loading;
+    switch (scenario) {
+      case 'host-shutdown-loaded':
+      case 'host-shutdown-both-loaded':
+        await engine.generateImage(_request(steps: 1));
+      case 'host-shutdown-generating':
+        final generation = await _firstStep(engine, bounded: true);
+        try {
+          await engine.dispose();
+          final completion = await generation.task.done;
+          if (completion.state == ImageGenerationCompletionState.failed) {
+            throw completion.error!;
+          }
+        } finally {
+          await generation.subscription.cancel();
+        }
+      case 'host-shutdown-loading':
+        break;
+      default:
+        throw ArgumentError.value(scenario, 'scenario');
+    }
+  } finally {
+    // Join both independent native workers even if one disposal fails.
+    await Future.wait([
+      if (engine != null) engine.dispose(),
+      if (chat != null) chat.dispose(),
+    ]);
+  }
+  if (_logRecords > 0) stdout.writeln('IMAGE_PROBE_LOG_RECORDS $_logRecords');
+  completed.send(true);
+}
+
 const _loggingSuffix = '-logging';
 
 int _logRecords = 0;
@@ -165,8 +252,18 @@ ImageGenerationRequest _request({required int steps, int count = 1}) =>
     );
 
 Future<ImageGenerationEngine> _load(String modelPath) async {
+  final requested =
+      Platform.environment['IMAGE_EXIT_BACKEND'] ??
+      (Platform.isLinux ? 'cpu' : null);
   final engine = await ImageGenerationEngine.load(
     ImageGenerationModel(ModelSource.path(modelPath)),
+    params: ImageModelParams(
+      device: requested == null
+          ? ComputeDevice.auto
+          : requested.toLowerCase() == 'cpu'
+          ? ComputeDevice.cpu
+          : ComputeDevice.gpu,
+    ),
   );
   stdout.writeln(
     'IMAGE_PROBE_BACKEND ${(await engine.capabilities).backendName}',
@@ -175,25 +272,51 @@ Future<ImageGenerationEngine> _load(String modelPath) async {
 }
 
 // Leaves the generation running: the steps left take longer than the exit.
-Future<void> _firstStep(ImageGenerationEngine engine) async {
+Future<
+  ({
+    StreamSubscription<ImageGenerationEvent> subscription,
+    ImageGenerationTask task,
+  })
+>
+_firstStep(ImageGenerationEngine engine, {bool bounded = false}) async {
   final task = await engine.generate(
-    const ImageGenerationRequest(
-      prompt: 'a red fox in autumn leaves',
-      steps: 40,
-      guidanceScale: 1,
-      seed: 42,
-    ),
+    bounded
+        ? _request(steps: 2)
+        : const ImageGenerationRequest(
+            prompt: 'a red fox in autumn leaves',
+            steps: 40,
+            guidanceScale: 1,
+            seed: 42,
+          ),
   );
   final sampling = Completer<void>();
-  task.events.listen((event) {
-    if (event case ImageGenerationProgressEvent(
-      phase: ImageGenerationPhase.sampling,
-      step: >= 1,
-    ) when !sampling.isCompleted) {
-      sampling.complete();
-    }
-  });
-  await sampling.future;
+  final subscription = task.events.listen(
+    (event) {
+      if (event case ImageGenerationProgressEvent(
+        phase: ImageGenerationPhase.sampling,
+        step: >= 1,
+      ) when !sampling.isCompleted) {
+        sampling.complete();
+      }
+    },
+    onError: (Object error, StackTrace stack) {
+      if (!sampling.isCompleted) sampling.completeError(error, stack);
+    },
+    onDone: () {
+      if (!sampling.isCompleted) {
+        sampling.completeError(
+          StateError('Generation produced no sampling step.'),
+        );
+      }
+    },
+  );
+  try {
+    await sampling.future;
+    return (subscription: subscription, task: task);
+  } catch (_) {
+    await subscription.cancel();
+    rethrow;
+  }
 }
 
 ImageGenerationSessionConfig _config(String modelPath) =>

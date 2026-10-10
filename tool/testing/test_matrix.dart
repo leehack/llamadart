@@ -114,7 +114,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'macOS Metal process ends with llama.cpp objects alive: C exit '
+        'Linux cooperative load/generation/idle shutdown awaits disposal and '
+        'the model-owning isolate exit before C exit; macOS Metal process '
+        'ends with llama.cpp objects alive: C exit '
         'through FFI with a model idle, generating or loading and optionally '
         'with a projector or a decision head, an unhandled error while '
         'generating or loading, an isolate killed inside a load, and an '
@@ -125,8 +127,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'native-exit-teardown --model-path <chat.gguf>',
     useWhen:
         'llama.cpp native pin, exit-teardown call sites, object creation or '
-        'free paths, or isolate shutdown changes. Needs a Mac whose GPU '
-        'loads the model.',
+        'free paths, or isolate shutdown changes. Linux uses the requested '
+        'backend; macOS needs a GPU that loads the model.',
   ),
   TestMatrixRow(
     id: 'static-format-analyze',
@@ -486,7 +488,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'macOS Metal process ends with an image model alive: C exit through '
+        'Linux cooperative load/generation/idle and both-runtime shutdown '
+        'awaits disposal and isolate exit before C exit; macOS Metal '
+        'process ends with an image model alive: C exit through '
         'FFI with the model idle, generating, loading, disposed and '
         'optionally with a llama.cpp model loaded too, an unhandled error '
         'while generating or loading, and an isolate killed inside a load; '
@@ -500,8 +504,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'image-exit-teardown --model-path <sdxs.gguf>',
     useWhen:
         'stable_diffusion runtime pin, image worker call sites, progress '
-        'polling, or isolate shutdown changes. Needs a Mac whose GPU loads '
-        'the model.',
+        'polling, or isolate shutdown changes. Linux uses the requested '
+        'backend; macOS needs a GPU that loads the model.',
   ),
   TestMatrixRow(
     id: 'decision-model-smoke',
@@ -813,6 +817,34 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Isolate shutdown releases, llama.cpp or stable_diffusion exit '
         'teardown, a Flutter pin bump, or app-exit guidance changes. Needs '
         'a Mac whose GPU loads the model.',
+  ),
+  TestMatrixRow(
+    id: 'chat-app-flutter-active-shutdown',
+    tier: 'platform',
+    mode: 'local-only',
+    covers:
+        'Flutter native-call shutdown plus awaiting high-level startup/disposal, '
+        'native call completion, ordinary C host callbacks and buffered output',
+    command:
+        'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
+        'tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-flutter-active-shutdown --model-path <chat.gguf>',
+    useWhen:
+        'Host shutdown, native worker lifecycle, exit teardown or Flutter pin changes.',
+  ),
+  TestMatrixRow(
+    id: 'chat-app-flutter-image-shutdown',
+    tier: 'platform',
+    mode: 'local-only',
+    covers:
+        'Actual Flutter engine shutdown after pending image loading or active sampling, '
+        'native call completion, ordinary C host callbacks and buffered output',
+    command:
+        'FLUTTER_SHUTDOWN_HEADERS=<extracted-native-headers> dart run '
+        'tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-flutter-image-shutdown --model-path <image.gguf>',
+    useWhen:
+        'Image worker shutdown, stable-diffusion runtime or Flutter host changes.',
   ),
   TestMatrixRow(
     id: 'web-bridge-smoke',

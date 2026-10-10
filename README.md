@@ -310,6 +310,11 @@ and model/LoRA downloads receive cancellation without changing caller-owned
 tokens. See [Model lifecycle](https://llamadart.leehack.com/docs/guides/model-lifecycle)
 for lifecycle and cancellation details.
 
+Before a native host calls C `exit()`, await every engine's `dispose()`,
+stop and join any other native workers, and shut down its Dart isolates or
+Flutter engine. llama.cpp and image-worker disposal wait for worker exit;
+requesting an isolate kill alone does not stop an in-flight native call.
+
 For multi-turn chat, wrap the same engine in `ChatSession` and let it maintain
 history:
 [First chat session](https://llamadart.leehack.com/docs/getting-started/first-chat-session).

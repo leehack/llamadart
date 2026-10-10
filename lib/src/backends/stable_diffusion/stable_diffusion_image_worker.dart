@@ -75,6 +75,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   bool _cancelRequested = false;
   bool _disposed = false;
   bool _stopped = false;
+  Future<void>? _disposeStart;
 
   @override
   final String modelVersion;
@@ -145,6 +146,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       );
     } catch (_) {
       isolate?.kill(priority: Isolate.immediate);
+      if (isolate != null) await replies.waitForExit();
       await replies.close();
       rethrow;
     }
@@ -244,10 +246,9 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
   }
 
   @override
-  Future<void> dispose() async {
-    if (_disposed) {
-      return;
-    }
+  Future<void> dispose() => _disposeStart ??= _disposeWorker();
+
+  Future<void> _disposeWorker() async {
     _disposed = true;
     try {
       if (!_stopped) {
@@ -256,6 +257,7 @@ final class StableDiffusionImageWorker implements ImageGenerationSession {
       }
     } finally {
       _isolate.kill(priority: Isolate.immediate);
+      await _replies.waitForExit();
       await _replies.close();
     }
   }
@@ -341,6 +343,7 @@ const List<String> _textEncoderRoles = ['clipL', 'clipG', 't5xxl', 'llm'];
 final class _Replies {
   _Replies() {
     _port = RawReceivePort((Object? message) {
+      if (message == null && !_exited.isCompleted) _exited.complete();
       // The worker sends what it read of the log before the reply of the
       // operation that recorded it.
       if (message is _LogBatch) {
@@ -352,6 +355,7 @@ final class _Replies {
   }
 
   final StreamController<Object?> _messages = StreamController();
+  final Completer<void> _exited = Completer<void>();
   late final StreamIterator<Object?> _iterator = StreamIterator(
     _messages.stream,
   );
@@ -359,6 +363,16 @@ final class _Replies {
   int _waiting = 0;
 
   SendPort get sendPort => _port.sendPort;
+
+  Future<void> waitForExit() async {
+    _waiting++;
+    _port.keepIsolateAlive = true;
+    try {
+      await _exited.future;
+    } finally {
+      if (--_waiting == 0) _port.keepIsolateAlive = false;
+    }
+  }
 
   Future<Object?> next() async {
     _waiting++;
