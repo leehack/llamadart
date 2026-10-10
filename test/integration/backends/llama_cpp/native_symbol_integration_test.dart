@@ -538,6 +538,29 @@ void main() {
       );
     });
 
+    test('published image-token capability binding preserves the invalid '
+        'projector error barrier', () {
+      final barrier = NativeBarrierApi.tryResolve(
+        isWindows: Platform.isWindows,
+      )!;
+      addTearDown(barrier.clearLastError);
+      barrier.clearLastError();
+      final probe = Platform.isWindows
+          ? ffi.DynamicLibrary.open(
+              _llamadartWrapperLibraryFileOrNull()!.path,
+            ).lookupFunction<
+              ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Int32),
+              int Function(ffi.Pointer<ffi.Char>, int)
+            >('llama_dart_mtmd_supports_image_token_limit')
+          : llama_dart_mtmd_supports_image_token_limit;
+
+      expect(probe(ffi.nullptr, 1), -1);
+      expect(
+        barrier.lastError().cast<Utf8>().toDartString(),
+        contains('image token limit needs a projector and a positive limit'),
+      );
+    });
+
     test('v0.4.0 by-value defaults match regenerated model layout', () {
       final params = llama_model_default_params();
       expect(params.lazy_mode, llama_lazy_mode.LLAMA_LAZY_MODE_AUTO);

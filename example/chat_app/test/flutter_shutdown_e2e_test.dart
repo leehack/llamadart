@@ -181,7 +181,14 @@ Future<void> _run(
       'FLUTTER_SHUTDOWN_RUNTIME': Platform.isMacOS
           ? p.absolute(
               p.dirname(executable),
-              '../Frameworks/llamadart.framework/llamadart',
+              File(
+                    p.join(
+                      p.dirname(executable),
+                      '../Frameworks/llama.framework/llama',
+                    ),
+                  ).existsSync()
+                  ? '../Frameworks/llama.framework/llama'
+                  : '../Frameworks/llamadart.framework/llamadart',
             )
           : p.absolute(p.dirname(executable), 'lib/libllamadart.so'),
     },

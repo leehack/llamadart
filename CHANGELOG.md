@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Adopt native runtime `v0.6.0-2` and image runtime `v0.2.0-3` for cooperative application shutdown.
+
 - Shut down the Linux chat app’s Flutter engines before process exit, including active model work.
 
 - Wait for llama.cpp and image-generation workers to exit before disposal completes, including concurrent disposal calls.

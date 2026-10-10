@@ -6424,6 +6424,12 @@ external ffi.Pointer<mtmd_context> llama_dart_mtmd_init_from_file(
   ffi.Pointer<mtmd_context_params> ctx_params,
 );
 
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<ffi.Char>, ffi.Int32)>()
+external int llama_dart_mtmd_supports_image_token_limit(
+  ffi.Pointer<ffi.Char> mmproj_fname,
+  int max_tokens,
+);
+
 @ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<mtmd_context>,

@@ -301,13 +301,13 @@ The example currently pins bridge assets to `v0.1.59`, with local vendored asset
 identified as `v0.1.59-local-v0.6.0`.
 
 - The pinned `v0.1.59` bridge assets embed llama.cpp `v0.6.0`, matching the native runtime
-  (`v0.6.0-1`, both built from upstream `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
+  (`v0.6.0-2`, both built from upstream `v0.6.0@d81235049384534c167caea52b85a694f6103d14`)
   even though the bridge asset tag `v0.1.59` differs from the native runtime tag
-  `v0.6.0-1`. Pinned artifact provenance: release `406130836`, tag commit
+  `v0.6.0-2`. Pinned artifact provenance: release `406130836`, tag commit
   `189dde2798cb65a5ebe12d40068623e1873a6cd9`, bridge source
   `c1f64536b9a4ea410066b711928c7cba03691fb0`, manifest SHA-256
   `f823b10417b212ff1f66aa1c46bf78af7d9c393497dfcf0fa3a4f77adeb260eb`. The
-  bridge assets were qualified against native `v0.6.0`; `v0.6.0-1` rebuilds it
+  bridge assets were qualified against native `v0.6.0`; `v0.6.0-2` rebuilds it
   from the same upstream commit.
 
 In a llamadart checkout, vendor the pinned assets into the chat app with:
