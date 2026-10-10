@@ -902,6 +902,26 @@ void main() {
         result.stdout,
         contains(
           'cd /repo/example/basic_app && IMAGE_EXIT_MODEL=/sdxs.gguf '
+          '${Platform.isLinux ? 'IMAGE_EXIT_BACKEND=auto IMAGE_EXIT_CHAT_BACKEND=auto ' : ''}'
+          'dart test --run-skipped -t local-only '
+          'test/image_exit_teardown_e2e_test.dart',
+        ),
+      );
+
+      final cpu = await runLocalE2e(const [
+        '--scenario',
+        'image-exit-teardown',
+        '--model-path',
+        '/sdxs.gguf',
+        '--backend',
+        'cpu',
+        '--dry-run',
+      ], projectRoot: '/repo');
+      expect(cpu.exitCode, 0);
+      expect(
+        cpu.stdout,
+        contains(
+          'cd /repo/example/basic_app && IMAGE_EXIT_MODEL=/sdxs.gguf '
           '${Platform.isLinux ? 'IMAGE_EXIT_BACKEND=cpu IMAGE_EXIT_CHAT_BACKEND=cpu ' : ''}'
           'dart test --run-skipped -t local-only '
           'test/image_exit_teardown_e2e_test.dart',
