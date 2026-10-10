@@ -90,29 +90,37 @@ void main() {
       expect((await run(commit: '0' * 40)).exitCode, 1);
     },
   );
-  test(
-    'CLI rejects missing PNG, source/backend/runtime/model/profile skew',
-    () async {
-      for (final mutate in <void Function(Map<String, dynamic>)>[
-        (data) => data['source_dirty'] = true,
-        (data) => data['backend'] = 'Vulkan',
-        (data) => data['runtime_tag'] = 'v0.2.0-2',
-        (data) => (data['model_lock'] as Map)['sha256'] = '0' * 64,
-        (data) => (data['model_lock'] as Map)['id'] = 'different-model',
-        (data) =>
-            ((data['artifacts'] as Map)['image_generation_e2e.png']
-                    as Map)['width'] =
-                1,
-      ]) {
-        await prepare();
-        update(mutate);
-        expect((await run()).exitCode, 1);
-      }
+  for (final (name, mutate) in <(String, void Function(Map<String, dynamic>))>[
+    ('dirty source', (data) => data['source_dirty'] = true),
+    ('backend skew', (data) => data['backend'] = 'Vulkan'),
+    ('runtime skew', (data) => data['runtime_tag'] = 'v0.2.0-2'),
+    (
+      'model hash skew',
+      (data) => (data['model_lock'] as Map)['sha256'] = '0' * 64,
+    ),
+    (
+      'model profile skew',
+      (data) => (data['model_lock'] as Map)['id'] = 'different-model',
+    ),
+    (
+      'PNG dimensions skew',
+      (data) =>
+          ((data['artifacts'] as Map)['image_generation_e2e.png']
+                  as Map)['width'] =
+              1,
+    ),
+  ]) {
+    test('CLI rejects $name', () async {
       await prepare();
-      File(p.join(directory.path, 'image_generation_screen.png')).deleteSync();
+      update(mutate);
       expect((await run()).exitCode, 1);
-    },
-  );
+    });
+  }
+  test('CLI rejects missing screen PNG', () async {
+    await prepare();
+    File(p.join(directory.path, 'image_generation_screen.png')).deleteSync();
+    expect((await run()).exitCode, 1);
+  });
   test(
     'CLI rejects truncated PNG even with recomputed manifest identity',
     () async {
