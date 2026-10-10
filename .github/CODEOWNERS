@@ -68,3 +68,7 @@ example/chat_app/linux/runner/my_application.cc @leehack
 /example/chat_app/test/flutter_image_shutdown_e2e_test.dart @leehack
 
 /test/fixtures/image_vm_shutdown_probe.dart @leehack
+
+/example/chat_app/integration_test/image_generation_e2e_test.dart @leehack
+/example/chat_app/integration_test/support/image_evidence.dart @leehack
+/tool/testing/verify_image_e2e_evidence.dart @leehack

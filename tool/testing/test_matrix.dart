@@ -643,7 +643,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'runtime: a runtime probe that leaves the UI isolate responsive, SDXS '
         'download through the screen when not '
         'installed, seeded 512x512 generation with the used seed shown, and '
-        'PNG plus screen-capture output in the app temporary directory',
+        'verified PNG plus screen-capture receipt in app external files on '
+        'Android, or the app temporary directory elsewhere',
     command:
         'cd example/chat_app && flutter test --run-skipped -t local-only '
         'integration_test/image_generation_e2e_test.dart -d <device>',

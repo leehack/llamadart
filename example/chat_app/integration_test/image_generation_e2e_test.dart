@@ -4,7 +4,8 @@
 /// stable_diffusion runtime: checks that the runtime probe leaves the UI
 /// isolate responsive, downloads SDXS-512 (683 MB) through the screen when it
 /// is not installed, generates a seeded 512x512 image, and writes the PNG and
-/// a capture of the screen to the app's temporary directory.
+/// a capture of the screen plus a verified receipt. Android uses app external
+/// files so device runners can pull the evidence; other platforms use cache.
 ///
 /// ```bash
 /// cd example/chat_app
@@ -23,10 +24,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:llamadart/src/hook/native_release_pins.dart';
 
 import 'package:llamadart_chat_example/models/image_model_profile.dart';
 import 'package:llamadart_chat_example/providers/image_generation_provider.dart';
 import 'package:llamadart_chat_example/screens/image_generation_screen.dart';
+
+import 'support/image_evidence.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +75,7 @@ void main() {
     );
     await _pumpUntil(tester, () => provider.isInitialized);
     tick();
+    checking.stop();
     ticker.cancel();
     expect(provider.isSupported, isTrue, reason: provider.unsupportedReason);
     debugPrint(
@@ -131,11 +136,6 @@ void main() {
       '${output.elapsed.inMilliseconds} ms',
     );
 
-    final directory = await (await getTemporaryDirectory()).create(
-      recursive: true,
-    );
-    final imagePath = p.join(directory.path, 'image_generation_e2e.png');
-    await File(imagePath).writeAsBytes(output.png);
     await tester.pump(const Duration(seconds: 1));
     final boundary =
         captureKey.currentContext!.findRenderObject()! as RenderRepaintBoundary;
@@ -148,10 +148,58 @@ void main() {
         image.dispose();
       }
     });
-    final capturePath = p.join(directory.path, 'image_generation_screen.png');
-    await File(capturePath).writeAsBytes(capture!);
-    debugPrint('E2E image written: $imagePath');
-    debugPrint('E2E screen capture written: $capturePath');
+    final base = Platform.isAndroid
+        ? await getExternalStorageDirectory()
+        : await getTemporaryDirectory();
+    if (base == null) throw StateError('No pullable image evidence directory');
+    final directory = Directory(
+      p.join(
+        base.path,
+        imageEvidenceDirectoryName,
+        'run-${DateTime.now().toUtc().microsecondsSinceEpoch}',
+      ),
+    );
+    final modelUri = Uri.parse(profile.modelSource.url);
+    final revisionIndex = modelUri.pathSegments.indexOf('resolve') + 1;
+    final manifest = await writeImageEvidence(
+      directory: directory,
+      generatedPng: output.png,
+      screenPng: capture!,
+      metadata: {
+        'source_commit': const String.fromEnvironment(
+          'VALIDATION_COMMIT',
+          defaultValue: 'unknown',
+        ),
+        'source_dirty': const bool.fromEnvironment(
+          'VALIDATION_SOURCE_DIRTY',
+          defaultValue: true,
+        ),
+        'backend': provider.runtimeBackend,
+        'runtime_tag': stableDiffusionReleaseTag,
+        'model_lock': {
+          'id': profile.id,
+          'filename': profile.modelSource.filename,
+          'sha256': profile.modelSource.sha256,
+          'bytes': profile.modelSource.sizeBytes,
+          'revision': modelUri.pathSegments[revisionIndex],
+        },
+        'seed': output.seed,
+        'width': output.width,
+        'height': output.height,
+        'steps': profile.steps,
+        'guidance_scale': profile.guidanceScale,
+        'runtime_probe_ms': checking.elapsedMilliseconds,
+        'longest_ui_gap_ms': longestGap.inMilliseconds,
+      },
+    );
+    expect(manifest['artifacts'], hasLength(2));
+    debugPrint(
+      'E2E image written: ${p.join(directory.path, 'image_generation_e2e.png')}',
+    );
+    debugPrint(
+      'E2E screen capture written: ${p.join(directory.path, 'image_generation_screen.png')}',
+    );
+    debugPrint('E2E image evidence written and verified: ${directory.path}');
   });
 }
 
