@@ -584,6 +584,32 @@ void main() {
     );
   });
 
+  test('frozen validation journals do not exempt adjacent live tag sites', () {
+    const historyPaths = <String>[
+      'packages/llamadart_validation/test/fixtures/windows_native_log/chat.events.jsonl',
+      'packages/llamadart_validation/test/fixtures/windows_native_log/tiny.events.jsonl',
+    ];
+    const livePath =
+        'packages/llamadart_validation/test/fixtures/windows_native_log/current.json';
+    final root = _fakeRepo(
+      'v0.1.59',
+      files: <String, String>{
+        for (final path in historyPaths)
+          path: '{"bridge_assets_tag":"v0.1.59"}\r\n',
+        livePath: '{"bridge_assets_tag":"v0.1.59"}\n',
+      },
+    );
+    Process.runSync('git', <String>[
+      'init',
+      '--quiet',
+    ], workingDirectory: root.path);
+    Process.runSync('git', <String>['add', '-A'], workingDirectory: root.path);
+
+    final unregistered = findUnregisteredTagSites(root, 'v0.1.59');
+    expect(unregistered, hasLength(1));
+    expect(unregistered.single, startsWith('$livePath:1:'));
+  });
+
   test('an unregistered pin holding a stale tag is still caught', () {
     final root = _fakeRepo('v9.9.9');
     Process.runSync('git', <String>[
