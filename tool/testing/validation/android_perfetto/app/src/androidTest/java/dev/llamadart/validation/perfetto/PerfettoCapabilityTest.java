@@ -66,8 +66,9 @@ public class PerfettoCapabilityTest {
         String config = ProbeConfig.traceConfig(sources);
         save(directory, "config.pbtxt", config.getBytes(StandardCharsets.UTF_8));
 
-        ExecutorService captureExecutor = Executors.newSingleThreadExecutor();
         ShellResult trace;
+        int capturePid = 0;
+        long captureAcknowledged = 0;
         boolean markersEnabled = false;
         String cpuMarker = "llamadart_probe_cpu_" + nonce;
         String idleMarker = "llamadart_probe_idle_" + nonce;
@@ -76,13 +77,11 @@ public class PerfettoCapabilityTest {
         long idleStarted = 0;
         long idleEnded = 0;
         try {
-            Future<ShellResult> capture = captureExecutor.submit(() -> command(
-                instrumentation, "perfetto --txt -c - -o -",
-                config.getBytes(StandardCharsets.UTF_8), 25000, ProbeConfig.MAX_TRACE_BYTES));
-            long readyDeadline = SystemClock.elapsedRealtime() + 5000;
-            while (!Trace.isEnabled() && SystemClock.elapsedRealtime() < readyDeadline && !capture.isDone()) {
-                Thread.sleep(20);
-            }
+            ShellResult acknowledgment = command(instrumentation, "sh",
+                CaptureProtocol.startScript(nonce, config).getBytes(StandardCharsets.UTF_8), 35000, 1024);
+            save(directory, "capture-start-ack.txt", acknowledgment.stdout);
+            capturePid = CaptureProtocol.startedPid(acknowledgment.stdout);
+            captureAcknowledged = SystemClock.elapsedRealtimeNanos();
             markersEnabled = Trace.isEnabled();
             cpuStarted = SystemClock.elapsedRealtimeNanos();
             Trace.beginAsyncSection(cpuMarker, 1);
@@ -105,9 +104,12 @@ public class PerfettoCapabilityTest {
                 Trace.endAsyncSection(idleMarker, 2);
                 idleEnded = SystemClock.elapsedRealtimeNanos();
             }
-            trace = capture.get(30000, TimeUnit.MILLISECONDS);
+            ShellResult payload = command(instrumentation,
+                "sh", CaptureProtocol.completedTraceScript(nonce, capturePid).getBytes(StandardCharsets.UTF_8), 25000, ProbeConfig.MAX_TRACE_BYTES);
+            ShellResult diagnostics = command(instrumentation, CaptureProtocol.stderrCommand(nonce), null, 5000, 1024 * 1024);
+            trace = new ShellResult(payload.stdout, diagnostics.stdout);
         } finally {
-            captureExecutor.shutdownNow();
+            command(instrumentation, CaptureProtocol.cleanupCommand(nonce), null, 5000, 1024);
         }
         save(directory, "capture.perfetto-trace", trace.stdout);
         save(directory, "capture.stderr.txt", trace.stderr);
@@ -133,6 +135,9 @@ public class PerfettoCapabilityTest {
         receipt.put("test_apk_sha256", sha256(new File(instrumentation.getContext().getPackageCodePath())));
         receipt.put("discovered_render_stage_source_names", new JSONArray(sources));
         receipt.put("atrace_enabled_when_markers_submitted", markersEnabled);
+        receipt.put("capture_session_start_acknowledged", true);
+        receipt.put("capture_session_pid", capturePid);
+        receipt.put("capture_ack_boottime_ns", captureAcknowledged);
         receipt.put("cpu_control", new JSONObject().put("marker", cpuMarker)
             .put("start_boottime_ns", cpuStarted).put("end_boottime_ns", cpuEnded).put("result", cpuResult));
         receipt.put("idle_control", new JSONObject().put("marker", idleMarker)
@@ -140,7 +145,7 @@ public class PerfettoCapabilityTest {
         JSONObject files = new JSONObject();
         for (String name : new String[] {"version.txt", "version.stderr.txt", "service-state.txt",
                 "service-state.stderr.txt", "service-state.pb", "service-state-raw.stderr.txt", "config.pbtxt",
-                "capture.perfetto-trace", "capture.stderr.txt"}) {
+                "capture.perfetto-trace", "capture.stderr.txt", "capture-start-ack.txt"}) {
             File file = new File(directory, name);
             files.put(name, new JSONObject().put("sha256", sha256(file)).put("bytes", file.length()));
         }

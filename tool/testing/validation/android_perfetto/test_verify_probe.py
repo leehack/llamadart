@@ -99,6 +99,7 @@ class VerifyProbeTest(unittest.TestCase):
             for name in FILES:
                 (directory / name).write_bytes(b'')
             (directory / 'capture.perfetto-trace').write_bytes(trace_fixture(self.nonce))
+            (directory / 'capture-start-ack.txt').write_bytes(b'987\nREADY:0\n')
             (directory / 'service-state.pb').write_bytes(field(2, field(1, field(1, 'linux.ftrace'))))
             build = {'source_commit': 'a' * 40, 'source_dirty': False, 'submittable': True,
                      'files': {'app.apk': {'sha256': 'b' * 64}, 'test.apk': {'sha256': 'c' * 64}}}
@@ -110,6 +111,7 @@ class VerifyProbeTest(unittest.TestCase):
                            test_apk_sha256='c' * 64, uid=10001, api=36,
                            package='dev.llamadart.validation.perfetto', no_activity_or_flutter_engine=True,
                            app_hardware_accelerated=False, atrace_enabled_when_markers_submitted=True,
+                           capture_session_start_acknowledged=True, capture_session_pid=987, capture_ack_boottime_ns=900000000,
                            discovered_render_stage_source_names=[])
             receipt['files'] = {name: {'sha256': sha256(directory / name), 'bytes': (directory / name).stat().st_size}
                                 for name in FILES}
@@ -121,7 +123,9 @@ class VerifyProbeTest(unittest.TestCase):
             self.assertFalse(result['gpu_inference_qualified'])
             self.assertFalse(result['render_stage_transport_observed'])
             for key, bad in [('app_apk_sha256', 'd' * 64), ('test_apk_sha256', 'd' * 64),
-                             ('source_commit_declaration', 'd' * 40), ('gpu_inference_qualified', True)]:
+                             ('source_commit_declaration', 'd' * 40), ('gpu_inference_qualified', True),
+                             ('capture_session_start_acknowledged', False), ('capture_session_pid', 0),
+                             ('capture_ack_boottime_ns', 1000000001)]:
                 receipt_path.write_text(json.dumps(dict(receipt, **{key: bad})))
                 with self.assertRaises(ValueError):
                     verify(directory, build_path, binary, sha256(binary))

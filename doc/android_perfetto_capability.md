@@ -119,3 +119,14 @@ identity and matching model/partition execution, with CPU and software-rendering
 fallback controls. A timestamp overlap, producer name, busy counter, Activity
 frame, or successful CPU result cannot supply that evidence. See the owning
 LiteRT runtime's GPU qualification procedure before proposing that experiment.
+
+The foreground launcher uses Perfetto v49-compatible `--background-wait` and
+requires its successful all-data-sources-started acknowledgment before submitting
+the judged controls. Global Android `Trace.isEnabled()` alone is insufficient.
+The daemon writes only UUID-scoped finite scratch files; collection waits for its
+normal finite-config exit before reading the trace, then removes those files. No
+termination signal, fallback startup delay, or automatic capture retry is used.
+The receipt binds acknowledgment time/PID before the CPU marker, and the verifier
+still requires both complete CPU and idle controls from the parsed trace.
+See the [official background tracing procedure](https://perfetto.dev/docs/learning-more/tracing-in-background)
+and [v49 implementation](https://github.com/google/perfetto/blob/v49.0/src/perfetto_cmd/perfetto_cmd.cc).

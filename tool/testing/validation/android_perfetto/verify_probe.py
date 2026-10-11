@@ -12,7 +12,7 @@ import uuid
 
 FILES = {'version.txt', 'version.stderr.txt', 'service-state.txt', 'service-state.stderr.txt',
          'service-state.pb', 'service-state-raw.stderr.txt', 'config.pbtxt',
-         'capture.perfetto-trace', 'capture.stderr.txt'}
+         'capture.perfetto-trace', 'capture.stderr.txt', 'capture-start-ack.txt'}
 SOURCE = re.compile(r'gpu\.renderstages(?:\.[A-Za-z0-9_-]+)?\Z')
 
 
@@ -146,6 +146,14 @@ def verify(directory, build_path, binary, expected_binary_sha256):
     require(receipt['no_activity_or_flutter_engine'] is True and receipt['app_hardware_accelerated'] is False,
             'Unexpected application rendering')
     require(receipt['atrace_enabled_when_markers_submitted'] is True, 'ATrace was not enabled')
+    require(receipt.get('capture_session_start_acknowledged') is True, 'Session start was not acknowledged')
+    require(type(receipt.get('capture_session_pid')) is int and receipt['capture_session_pid'] > 0, 'Missing acknowledged capture PID')
+    acknowledgment = (directory / 'capture-start-ack.txt').read_bytes()
+    require(acknowledgment == (str(receipt['capture_session_pid']) + '\nREADY:0\n').encode(),
+            'Invalid session-start acknowledgment payload')
+    require(type(receipt.get('capture_ack_boottime_ns')) is int and
+            0 < receipt['capture_ack_boottime_ns'] <= receipt['cpu_control']['start_boottime_ns'],
+            'CPU control preceded session acknowledgment')
     require(set(receipt['files']) == FILES, 'Receipt file inventory mismatch')
     for name, expected in receipt['files'].items():
         path = directory / name
