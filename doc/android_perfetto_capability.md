@@ -69,7 +69,7 @@ gcloud firebase test android run --type instrumentation \
   --app /absolute/probe-bundle/app.apk \
   --test /absolute/probe-bundle/test.apk \
   --device model=DEVICE_ID,version=36,locale=en,orientation=portrait \
-  --test-targets 'class dev.llamadart.validation.perfetto.PerfettoCapabilityTest' \
+  --test-targets 'class dev.llamadart.validation.perfetto.PerfettoCapabilityTest#collectModelFreeTrace' \
   --environment-variables perfettoProbe=true,validationCommit=FULL_REVIEWED_HEAD \
   --timeout 2m \
   --directories-to-pull /sdcard/Android/data/dev.llamadart.validation.perfetto/files/perfetto_capability \
