@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import '../../../packages/llamadart_validation/lib/src/runtime_environment.dart';
 
 import 'process.dart';
+import 'internal_diagnostic.dart';
 import 'npu.dart';
 import 'runtime_bundle.dart';
 
@@ -80,8 +81,12 @@ Future<Directory> buildValidationBundle(
   String? npuKit,
   String? model,
   String executionPath = 'public_api',
+  String? internalDiagnosticRunId,
   CommandExecutor execute = executeCommand,
 }) async {
+  if (internalDiagnosticRunId != null && target != 'android') {
+    throw const FormatException('Internal diagnostic reports require Android');
+  }
   final destination = Directory(output).absolute;
   if (destination.existsSync()) {
     throw StateError('Bundle destination already exists');
@@ -152,6 +157,18 @@ Future<Directory> buildValidationBundle(
     'VALIDATION_BRIDGE_TAG=${provenance['bridge_tag']}',
     'VALIDATION_HOOK_SHA256=${provenance['hook_sha256']}',
   ];
+  if (internalDiagnosticRunId != null) {
+    final contract = await deriveInternalDiagnosticContract(
+      root,
+      internalDiagnosticRunId,
+      selectedProfile,
+      executionPath,
+      provenance,
+      execute: execute,
+    );
+    defines.addAll(contract.defines);
+    provenance['internal_diagnostic'] = contract.binding;
+  }
   String? npuStage;
   Future<void> command(String binary, List<String> args, String cwd) async {
     final result = await execute(
@@ -411,6 +428,20 @@ Future<Directory> buildValidationBundle(
         (provenance['source_dirty'] == false &&
             finalStatus.output.isNotEmpty)) {
       throw StateError('Source revision changed during the build');
+    }
+    if (internalDiagnosticRunId != null) {
+      final finalContract = await deriveInternalDiagnosticContract(
+        root,
+        internalDiagnosticRunId,
+        selectedProfile,
+        executionPath,
+        provenance,
+        execute: execute,
+      );
+      if (jsonEncode(finalContract.binding) !=
+          jsonEncode(provenance['internal_diagnostic'])) {
+        throw StateError('Diagnostic source bytes changed during the build');
+      }
     }
     provenance['source_dirty'] =
         provenance['source_dirty'] == true || finalStatus.output.isNotEmpty;

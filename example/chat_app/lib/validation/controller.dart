@@ -91,7 +91,9 @@ class ValidationController extends ChangeNotifier {
       if (_cancelled) {
         throw StateError('Run cancelled before model preparation');
       }
-      final runId = 'app-${DateTime.now().toUtc().microsecondsSinceEpoch}';
+      final runId = const bool.fromEnvironment('VALIDATION_INTERNAL_DIAGNOSTIC')
+          ? const String.fromEnvironment('VALIDATION_DIAGNOSTIC_RUN_ID')
+          : 'app-${DateTime.now().toUtc().microsecondsSinceEpoch}';
       await host.start(runId);
       started = true;
       if (_cancelled) {
@@ -130,6 +132,10 @@ class ValidationController extends ChangeNotifier {
               : kProfileMode
               ? 'profile'
               : 'debug',
+          if (const bool.fromEnvironment('VALIDATION_INTERNAL_DIAGNOSTIC'))
+            'source_snapshot_sha256': const String.fromEnvironment(
+              'VALIDATION_DIAGNOSTIC_SOURCE_SHA256',
+            ),
           'source_commit': const String.fromEnvironment(
             'VALIDATION_COMMIT',
             defaultValue: 'unknown',

@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'host.dart';
+import 'internal_diagnostic_output.dart';
 
 /// Creates the mobile/desktop Flutter filesystem host.
 ValidationHost createHost() => _NativeHost();
@@ -31,6 +32,7 @@ class _NativeHost implements ValidationHost {
           decisionConfig: _decision?.config,
         );
   FileValidationJournal? _journal;
+  InternalDiagnosticOutput? _diagnostic;
   Directory? _output;
   http.Client? _client;
   @override
@@ -107,7 +109,7 @@ class _NativeHost implements ValidationHost {
         profile,
         cache,
         client: _client,
-        onProgress: _journal!.emitPreparation,
+        onProgress: _diagnostic?.emitPreparation ?? _journal!.emitPreparation,
         timeout: const Duration(minutes: 10),
       );
       if (!profile.isDecision) return model;
@@ -115,7 +117,7 @@ class _NativeHost implements ValidationHost {
         profile,
         cache,
         client: () => _client = http.Client(),
-        onProgress: _journal!.emitPreparation,
+        onProgress: _diagnostic?.emitPreparation ?? _journal!.emitPreparation,
         timeout: const Duration(minutes: 10),
       );
       return (
@@ -130,6 +132,47 @@ class _NativeHost implements ValidationHost {
 
   @override
   Future<void> start(String runId) async {
+    if (const bool.fromEnvironment('VALIDATION_INTERNAL_DIAGNOSTIC')) {
+      if (!Platform.isAndroid) {
+        throw UnsupportedError(
+          'Internal diagnostic collection is Android-only',
+        );
+      }
+      if (runId !=
+          const String.fromEnvironment('VALIDATION_DIAGNOSTIC_RUN_ID')) {
+        throw StateError('Diagnostic attempt id mismatch');
+      }
+      _diagnostic = InternalDiagnosticOutput.open(
+        await getApplicationSupportDirectory(),
+        {
+          'run_id': runId,
+          'profile_hash': const String.fromEnvironment(
+            'VALIDATION_DIAGNOSTIC_PROFILE_HASH',
+          ),
+          'model_sha256': const String.fromEnvironment(
+            'VALIDATION_DIAGNOSTIC_MODEL_SHA256',
+          ),
+          'model_bytes': const int.fromEnvironment(
+            'VALIDATION_DIAGNOSTIC_MODEL_BYTES',
+          ),
+          'source_snapshot_sha256': const String.fromEnvironment(
+            'VALIDATION_DIAGNOSTIC_SOURCE_SHA256',
+          ),
+          'source_commit': const String.fromEnvironment('VALIDATION_COMMIT'),
+          'source_dirty': const bool.fromEnvironment(
+            'VALIDATION_SOURCE_DIRTY',
+            defaultValue: true,
+          ),
+          'hook_sha256': const String.fromEnvironment('VALIDATION_HOOK_SHA256'),
+          'litert_tag': const String.fromEnvironment('VALIDATION_LITERT_TAG'),
+          'expected_case_ids': const String.fromEnvironment(
+            'VALIDATION_DIAGNOSTIC_CASE_IDS',
+          ).split(','),
+        },
+      );
+      _output = _diagnostic!.directory;
+      return;
+    }
     final base = Platform.isAndroid
         ? await getExternalStorageDirectory()
         : await getApplicationDocumentsDirectory();
@@ -141,10 +184,12 @@ class _NativeHost implements ValidationHost {
   }
 
   @override
-  Future<void> emit(Map<String, dynamic> event) => _journal!.emit(event);
+  Future<void> emit(Map<String, dynamic> event) =>
+      _diagnostic?.emit(event) ?? _journal!.emit(event);
 
   @override
   Future<ValidationReport> finish() async {
+    if (_diagnostic != null) return _diagnostic!.finish();
     _journal!.close();
     return writeReports(_output!);
   }

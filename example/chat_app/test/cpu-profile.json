@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "chat-litert-gpu",
+  "runtime": "litert",
+  "backend": "cpu",
+  "model": {
+    "id": "smollm2-135m-instruct",
+    "revision": "8111e0a65fda719f0a6855e8e1a8ec8c3f9ccb22",
+    "filename": "SmolLM2_135M_Instruct.litertlm",
+    "sha256": "ccdc5c85735743f081b7d44ca309cab569f76c0f2f0e8e163449a63721969c37",
+    "bytes": 142819328,
+    "kind": "chat",
+    "url": "https://huggingface.co/litert-community/SmolLM2-135M-Instruct/resolve/8111e0a65fda719f0a6855e8e1a8ec8c3f9ccb22/SmolLM2_135M_Instruct.litertlm"
+  },
+  "selection": "quick",
+  "context_size": 1024,
+  "threads": 4,
+  "max_tokens": 32,
+  "fixtures": {
+    "hello": {
+      "prompt": "Reply with one short sentence saying hello.",
+      "regex": "\\bhello\\b"
+    },
+    "arithmetic": {
+      "prompt": "What is 3 + 4? Reply with only the number.",
+      "regex": "^(?:3 \\+ 4 = )?7[.!]?$"
+    }
+  }
+}

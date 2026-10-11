@@ -23,7 +23,7 @@ Future<void> main(List<String> arguments) async {
         '  coverage [--platform <id>] [--backend <id>] [--use-case chat|stt|tts|decision]\n'
         '  voice --out <new-directory> [--chat-profile <primary-cpu-profile>] [--chat-model <file>]\n'
         '  speech --pack stt|tts|litert-asr --backend cpu|metal|vulkan|cuda --out <new-directory> [--model <file>] [--projector <file>]\n'
-        '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>]\n'
+        '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>] [--internal-diagnostic-run-id <new-id>]\n'
         '    Android NPU: --kit <directory> --model <file> [--execution-path public_api|native_c_api]\n'
         '  local --profile <id> [--model <path>] [--out <new-directory>]\n'
         '  report --out <run-directory>\n'
@@ -43,6 +43,10 @@ Future<void> main(List<String> arguments) async {
       speech: command == 'speech',
       voice: command == 'voice',
     );
+    if (options.containsKey('internal-diagnostic-run-id') &&
+        command != 'build') {
+      throw const FormatException('Internal diagnostics are a build option');
+    }
     final root = File.fromUri(Platform.script).parent.parent.parent.path;
     final package = p.join(root, 'packages', 'llamadart_validation');
     final runRoot = Directory(p.join(root, '.dart_tool', 'validation', 'runs'));
@@ -147,6 +151,7 @@ Future<void> main(List<String> arguments) async {
         npuKit: options['kit'],
         model: options['model'],
         executionPath: options['execution-path'] ?? 'public_api',
+        internalDiagnosticRunId: options['internal-diagnostic-run-id'],
       );
       stdout.writeln('Bundle: ${bundle.path}');
     } else if (command == 'local' || command == 'report') {
@@ -329,6 +334,7 @@ Map<String, String> _options(
           'model',
           'kit',
           'execution-path',
+          'internal-diagnostic-run-id',
           'config',
           'bundle',
           'plan',

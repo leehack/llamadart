@@ -1542,3 +1542,37 @@ collects registered producer descriptors and a fresh trace with CPU/idle
 controls on Android/API 34+. Use its separate A6-capability row, exact reviewed
 APK source and digest evidence, bounded cloud reservation and no retry. It
 qualifies trace collection only; GPU model placement remains unqualified.
+
+### Android internal diagnostic reports
+
+The maintained Android builder can opt into a fixed app-private report directory:
+
+```sh
+dart run tool/testing/validation.dart build --target android --profile tiny-gguf-cpu --out /tmp/validation-android --internal-diagnostic-run-id attempt-one
+```
+
+Use a new run ID of 1–80 ASCII letters, digits, underscores or hyphens, starting
+with a letter or digit. This option requires clean committed source and the
+public API execution path. The builder supplies the exact executable profile,
+model hash and size, ordered case IDs, commit, tracked-source inventory hash,
+hook hash and LiteRT tag to both APKs. It checks source identity again before
+sealing the bundle. `environment.json` records the complete binding. Ordinary
+builds retain their existing report location.
+
+The opt-in report directory is `files/validation/runs/<run-id>` relative to the
+app-private `run-as` directory. Collect only that exact admitted ID. It contains
+`events.jsonl`, `manifest.json`, `results.json`, `junit.xml`, `samples.csv`,
+`summary.html`, optional `preparation.jsonl`, and `diagnostic-seal.json`. The
+seal binds source/profile/model/cases and each payload's byte size and SHA256.
+Limits are 8 MiB total including the seal, 2 MiB per file, 256 KiB preparation,
+and 64 KiB per event. Existing runs, links and unexpected entries are rejected.
+The app-private directory must have no concurrent independent writer; Dart
+filesystem checks do not provide atomic protection against a same-UID racer.
+
+Failed tests still produce diagnostics where possible. `complete` describes
+report structure; `assertions_passed` describes functional checks. Neither ADB
+transport exit zero nor a partial seal establishes passing instrumentation or
+model qualification. A collector must validate the full binding, fixed inventory,
+checksums and maintained report, and retain failed or incomplete evidence.
+This option requires newly built, separately reviewed app/test APKs; it cannot
+recover reports from historical APKs or authorize another device attempt.

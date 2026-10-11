@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Android validation builds can retain bounded, identity-checked reports in app-private storage.
+
 - Clarify that native KV-state restoration does not guarantee identical next-token scores or continuation.
 
 - Portable validation launchers can use captured native logs for required GPU qualification.
