@@ -10,34 +10,10 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 
+import '../../../../tool/testing/validation/process.dart';
 import '../../../support/fake_stable_diffusion_runtime.dart';
 
 const _gib = 1 << 30;
-
-/// Whether `MTLCreateSystemDefaultDevice` returns a device, checked apart
-/// from the code under test.
-bool _hostHasMetalDevice() {
-  final metal = DynamicLibrary.open(
-    '/System/Library/Frameworks/Metal.framework/Metal',
-  );
-  final createDevice = metal
-      .lookupFunction<Pointer<Void> Function(), Pointer<Void> Function()>(
-        'MTLCreateSystemDefaultDevice',
-      );
-  final release =
-      DynamicLibrary.open(
-        '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation',
-      ).lookupFunction<
-        Void Function(Pointer<Void>),
-        void Function(Pointer<Void>)
-      >('CFRelease');
-  final device = createDevice();
-  if (device == nullptr) {
-    return false;
-  }
-  release(device);
-  return true;
-}
 
 const _memInfo = '''
 MemTotal:        5750000 kB
@@ -270,21 +246,43 @@ void main() {
       }
     });
 
-    test("reads the host Metal device's working set on macOS", () {
-      final physical = readStableDiffusionMemoryBudget()?.bytes;
-      final metal = readStableDiffusionMemoryBudget(
-        device: ImageGenerationComputeDevice.metal,
-      );
-      if (!Platform.isMacOS) {
-        return;
-      }
-      expect(metal!.bytes, inInclusiveRange(1 << 30, physical!));
-      if (_hostHasMetalDevice()) {
-        // Apple GPUs recommend less than physical memory, so the cap applies.
-        expect(metal.source, "Metal's recommended GPU working set");
-        expect(metal.bytes, lessThan(physical));
-      }
-    }, skip: Platform.isMacOS ? false : 'macOS only');
+    test(
+      'reads the exact Metal working set independently reported by Swift',
+      () async {
+        final cache = await Directory.systemTemp.createTemp('llamadart-metal-');
+        addTearDown(() => cache.delete(recursive: true));
+        final reference = await executeCommand('/usr/bin/xcrun', [
+          'swift',
+          '-module-cache-path',
+          cache.path,
+          'test/support/metal_working_set.swift',
+        ], timeout: const Duration(seconds: 45));
+        expect(reference.code, 0, reason: reference.error);
+        final workingSet = int.parse(reference.output.trim());
+        if (workingSet == 0) {
+          // A headless macOS host may have no Metal device. The cap then falls
+          // back to physical memory rather than claiming a device reading.
+          expect(
+            readStableDiffusionMemoryBudget(
+              device: ImageGenerationComputeDevice.metal,
+            ),
+            readStableDiffusionMemoryBudget(),
+          );
+          return;
+        }
+        // Make physical memory larger than the independently read working set
+        // so a wrong selector or altered value cannot pass a range assertion.
+        expect(
+          readStableDiffusionMemoryBudget(
+            device: ImageGenerationComputeDevice.metal,
+            macosPhysicalMemory: () => workingSet + 1,
+          ),
+          (bytes: workingSet, source: "Metal's recommended GPU working set"),
+        );
+      },
+      skip: Platform.isMacOS ? false : 'macOS only',
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
   });
 
   group('readStableDiffusionGpuMemory', () {

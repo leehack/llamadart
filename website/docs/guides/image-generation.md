@@ -510,8 +510,9 @@ task is cancelled; `task.done` reports the same outcome as an
 
 - Width and height are multiples of 8 from 64 to 2048, and default to 512.
   Use the model's native size: 512x512 for SDXS and SD-Turbo, 1024x1024 for
-  the desktop models in the recipes. SDXS and SD-Turbo also work at 256. The runtime rounds the
-  size up to a multiple of 64 for these models, so a 200x136 request produces
+  the desktop models in the recipes. SDXS and SD-Turbo also work at 256.
+  The runtime rounds the size up to a multiple of 64 for these models, so a
+  200x136 request produces
   256x192; `GeneratedImage.width` and `height` report the real size.
 - `steps` defaults to 20 and `guidanceScale` to 7, which suit undistilled
   SD 1.x and 2.x models; set the model's own, as in the recipes. A guidance
