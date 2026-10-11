@@ -111,6 +111,25 @@ void main() {
       await expectLater(derive(), throwsStateError);
     },
   );
+  test('nested Git paths stay portable across host separators', () async {
+    final nested = File(p.join(root.path, 'nested', 'source.dart'));
+    nested.parent.createSync();
+    nested.writeAsStringSync('nested source');
+    inventory = 'nested/source.dart\u0000';
+    expect(
+      (await derive()).binding['source_snapshot_sha256'],
+      matches(r'^[a-f0-9]{64}$'),
+    );
+    for (final escaped in [
+      'C:/source.dart',
+      'C:source.dart',
+      '//server/share/file',
+      r'nested\source.dart',
+    ]) {
+      inventory = '$escaped\u0000';
+      await expectLater(derive(), throwsStateError);
+    }
+  });
   test('source links cannot replace tracked files', () async {
     File(p.join(root.path, 'source.dart')).deleteSync();
     File(p.join(root.path, 'target')).writeAsStringSync('target');
@@ -265,7 +284,16 @@ void main() {
     expect(environment.containsKey('internal_diagnostic'), false);
   });
   test('source-byte mutation during build removes incomplete output', () async {
-    await expectLater(build(mutate: true), throwsStateError);
+    await expectLater(
+      build(mutate: true),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'source bytes guard',
+          'Diagnostic source bytes changed during the build',
+        ),
+      ),
+    );
     expect(Directory(p.join(root.path, 'out')).existsSync(), false);
   });
 }

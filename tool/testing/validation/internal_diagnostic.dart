@@ -50,9 +50,12 @@ deriveInternalDiagnosticContract(
   final inventory = <String, dynamic>{};
   final resolvedRoot = Directory(root).resolveSymbolicLinksSync();
   for (final relative in paths) {
-    if (p.isAbsolute(relative) ||
-        p.normalize(relative) != relative ||
-        relative.startsWith('..') ||
+    // Git emits POSIX paths even when the build host uses Windows separators.
+    if (p.posix.isAbsolute(relative) ||
+        p.windows.rootPrefix(relative).isNotEmpty ||
+        p.posix.normalize(relative) != relative ||
+        relative == '..' ||
+        relative.startsWith('../') ||
         relative.contains('\\')) {
       throw StateError('Invalid diagnostic source path');
     }
