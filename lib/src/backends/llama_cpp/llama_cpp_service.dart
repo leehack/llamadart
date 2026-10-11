@@ -7303,7 +7303,9 @@ class LlamaCppService {
 
   /// Persists the KV-cache state of [contextHandle] to [path] together
   /// with the producing token sequence so a later [stateLoadFile] can
-  /// resume inference without paying the prompt-eval cost again.
+  /// reuse matching prompt KV. Live logits and sampler/RNG state are not
+  /// persisted; exact-prompt reuse re-evaluates the final token and can differ
+  /// from full-prompt evaluation.
   ///
   /// Wraps `llama_state_save_file`. Returns true on success.
   bool stateSaveFile(int contextHandle, String path, List<int> tokens) {

@@ -2449,9 +2449,15 @@ class LlamaEngine {
 
   /// Persists the KV-cache state of the loaded model to [path] together
   /// with [tokens] — the token sequence the current state was produced
-  /// from. A later [stateLoadFile] call rebuilds the same in-memory
-  /// state without re-evaluating the prompt, which is the difference
-  /// between a 30-second resume on phone CPUs and an instant one.
+  /// from. A later [stateLoadFile] call restores the KV cache so native
+  /// text inference can reuse a matching prompt prefix.
+  ///
+  /// This API does not guarantee an exact generation checkpoint. On native
+  /// llama.cpp, live logits and sampler/RNG state are not saved. This backend
+  /// re-evaluates the final token when
+  /// resuming the exact saved prompt with prefix reuse enabled. Scores and
+  /// continuation may differ from evaluating the full prompt because the
+  /// evaluation batch shape changes.
   ///
   /// File format is whatever llama.cpp emits — opaque, not portable
   /// across builds, and tied to the same model used at save time.
@@ -2477,7 +2483,14 @@ class LlamaEngine {
   /// separately (e.g. on disk), since [ChatSession.addMessage] takes
   /// [LlamaChatMessage] objects, not raw token ids. The returned token
   /// list is exposed mainly for diagnostics and for callers driving the
-  /// engine at the raw prompt level.
+  /// engine at the raw prompt level. The saved token list must correspond to
+  /// the evaluated state. Native llama.cpp does not restore live logits or
+  /// sampler/RNG state.
+  ///
+  /// On native llama.cpp, set `reusePromptPrefix: false` on the subsequent
+  /// [scoreNextToken] or [GenerationParams] to explicitly evaluate the full
+  /// prompt instead of reusing restored KV. This pays the prompt-evaluation
+  /// cost again and is not an exact sampler-resume guarantee.
   Future<StateLoadResult> stateLoadFile(
     String path, {
     required int tokenCapacity,

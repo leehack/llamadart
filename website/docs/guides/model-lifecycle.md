@@ -324,6 +324,17 @@ Important caveats:
 - `stateLoadFile(...)` restores native KV-cache state only. It does not rebuild
   `ChatSession` message history; persist and reconstruct chat messages
   separately when using the high-level chat API.
+- State persistence is not an exact generation checkpoint. Native llama.cpp
+  state files do not save live logits or sampler/RNG state. When prefix reuse
+  resumes the exact saved prompt, the final token is evaluated again to obtain
+  logits. That one-token evaluation can produce different scores and
+  continuation from evaluating the full prompt
+  ([#1003](https://github.com/leehack/llamadart/issues/1003)).
+- To explicitly evaluate the full prompt on native llama.cpp, pass
+  `reusePromptPrefix: false` to the next `scoreNextToken(...)` call or to its
+  `GenerationParams`. This pays the prompt-evaluation cost again; it does not
+  restore a sampler's random state. Setting batch sizes to one matched one
+  tested CPU/model configuration, but is not a general fidelity guarantee.
 - Pass a `tokenCapacity` large enough for the saved prompt token sequence. The
   current context size is usually a safe default.
 

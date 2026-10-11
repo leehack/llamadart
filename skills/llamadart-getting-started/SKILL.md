@@ -42,6 +42,12 @@ Linux and web. Full docs: https://llamadart.leehack.com
   `engine.runtime` names the runtime and `await engine.capabilities` reports
   every option it applies; gate features on these, never on the file
   extension or `getBackendName()` text.
+- KV-state save/load is not an exact generation checkpoint. On native
+  llama.cpp, an exact restored prompt with prefix reuse re-evaluates its final
+  token; scores and continuation may differ from full-prompt evaluation. Live
+  logits and sampler/RNG state are not restored. If the caller explicitly
+  chooses full prompt evaluation, use `reusePromptPrefix: false`; do not promise
+  exact resume or silently replace KV reuse with full prompt evaluation.
 - Name the model with `ModelSource.parse(...)` (`hf://owner/repo/file.gguf`,
   an HTTP(S) URL, or a local path) and pass `params:` (`ModelParams`),
   `download:` (`ModelLoadOptions`) and `onProgress:` to `LlamaEngine.load` or

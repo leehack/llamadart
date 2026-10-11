@@ -924,7 +924,10 @@ class StateLoadResult {
 /// that produced it. Loading restores the native KV cache and returns
 /// the saved token sequence; subsequent inference can skip prompt
 /// evaluation when callers re-issue a prompt with the restored token
-/// prefix and prompt-prefix reuse enabled.
+/// prefix and prompt-prefix reuse enabled. This API does not guarantee an
+/// exact logits, continuation or sampler/RNG checkpoint. Native
+/// llama.cpp re-evaluates the final token for an exact saved-prompt match;
+/// that batch shape can produce different scores from full-prompt evaluation.
 abstract class BackendStatePersistence {
   /// Writes the KV cache state of [contextHandle] together with the
   /// token sequence in [tokens] to [path]. The file format is the one

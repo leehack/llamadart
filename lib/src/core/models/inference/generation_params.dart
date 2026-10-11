@@ -937,8 +937,11 @@ class GenerationParams {
   /// context to reduce prompt ingestion latency.
   ///
   /// This optimization applies to native text-only generation.
-  /// Exact full-prompt replays are conservatively re-ingested to preserve
-  /// deterministic parity.
+  /// Exact full-prompt replays of an in-process cache are conservatively
+  /// re-ingested. After loading a KV state file, native llama.cpp instead
+  /// re-evaluates the final token on an exact match; scores and continuation
+  /// can differ from full-prompt evaluation. Set this to false to explicitly
+  /// evaluate the full prompt again, trading away prefix reuse.
   final bool reusePromptPrefix;
 
   /// Native worker chunk flush threshold by token pieces.

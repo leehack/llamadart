@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Clarify that native KV-state restoration does not guarantee identical next-token scores or continuation.
+
 - Portable validation launchers can use captured native logs for required GPU qualification.
 
 - Adopt native runtime `v0.6.0-2` and image runtime `v0.2.0-3` for cooperative application shutdown.
