@@ -20,6 +20,7 @@ Future<void> main(List<String> args) async {
       'out',
       'run-id',
       'environment-file',
+      'native-log',
     });
     final assets =
         options['assets'] ??
@@ -27,7 +28,8 @@ Future<void> main(List<String> args) async {
     if (options.containsKey('help')) {
       stdout.writeln(
         'llamadart-validate --profile <id> [--model <verified-file>] '
-        '[--out <new-directory>] [--cache <directory>] [--assets <directory>]\n'
+        '[--out <new-directory>] [--cache <directory>] [--assets <directory>] '
+        '[--native-log <captured-stderr-path>]\n'
         '--list lists bundled profiles. --profile-file loads an explicit locked manifest.',
       );
       return;
@@ -42,6 +44,11 @@ Future<void> main(List<String> args) async {
       }
       return;
     }
+    // The caller redirects native stderr before launching this process.
+    // Reject a missing or invalid capture before any model work begins.
+    if (options['native-log'] case final path?) {
+      File(path).readAsStringSync();
+    }
     requireValidationRuntimeEnvironment();
     final launchDirectory = Directory.current.path;
     // Resolve caller paths before anchoring runtime discovery in the bundle.
@@ -52,6 +59,7 @@ Future<void> main(List<String> args) async {
       'cache',
       'out',
       'environment-file',
+      'native-log',
     ]) {
       if (options[name] != null) options[name] = p.absolute(options[name]!);
     }
@@ -172,7 +180,11 @@ Future<void> main(List<String> args) async {
       rethrow;
     } finally {
       journal.close();
-      final report = writeReports(directory);
+      await stderr.flush();
+      final report = writeRunReports(
+        directory,
+        nativeLogPath: options['native-log'],
+      );
       stdout.writeln(
         'REPORT ${p.join(directory.absolute.path, 'summary.html')}',
       );
@@ -183,3 +195,16 @@ Future<void> main(List<String> args) async {
     exitCode = 1;
   }
 }
+
+/// Writes the launcher report using the same captured native log as the reporter.
+/// An absent option retains the existing qualification rules; an unreadable or
+/// invalid UTF-8 capture throws instead of silently dropping accelerator proof.
+ValidationReport writeRunReports(
+  Directory directory, {
+  String? nativeLogPath,
+}) => writeReports(
+  directory,
+  nativeLog: nativeLogPath == null
+      ? null
+      : File(nativeLogPath).readAsStringSync(),
+);

@@ -94,3 +94,9 @@ Thinking-budget controls and tool-bearing batching remain separate planned work.
 Native C API controls do not execute these public feature cases. Catalogs 1–3
 retain their original fixtures and unimplemented obligations on import. No
 existing device/model run is upgraded by this implementation.
+
+For portable GGUF GPU runs, pass `--native-log <captured-stderr-path>` to the
+validation launcher and redirect stderr to that path before starting it. The
+launcher uses those bytes for the same placement checks as the standalone
+reporter. Missing or invalid UTF-8 captures fail; supplying a log never waives
+failed cases, missing records or runtime identity requirements.
