@@ -638,7 +638,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           executable: 'dart',
           arguments: const [
             'test',
-            '--run-skipped',
+            '--configuration',
+            'test/image_generation_smoke.yaml',
             '-t',
             'local-only',
             'test/image_generation_e2e_test.dart',

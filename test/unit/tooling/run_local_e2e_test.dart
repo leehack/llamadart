@@ -875,11 +875,50 @@ void main() {
           "cd /repo/example/basic_app && LLAMADART_SDXS_MODEL="
           "models/sdxs-512-tinySDdistilled_Q8_0.gguf "
           "LLAMADART_IMAGE_OUTPUT_DIR=/repo/build/image-generation-smoke "
-          "dart test --run-skipped -t local-only "
+          "dart test --configuration test/image_generation_smoke.yaml -t local-only "
           "test/image_generation_e2e_test.dart",
         ),
       );
+      expect(result.stdout, isNot(contains('--run-skipped')));
     });
+
+    test(
+      'image smoke configuration preserves unavailable-case skips',
+      () async {
+        final directory = Directory.systemTemp.createTempSync(
+          'image-smoke-skip-',
+        );
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final fixture = File('${directory.path}/skip_control_test.dart');
+        fixture.writeAsStringSync("""
+@Tags(['local-only'])
+library;
+import 'package:test/test.dart';
+void main() {
+  test('available image control', () => expect(1, 1));
+  test('unavailable image control', () => fail('skip was overridden'),
+      skip: 'Unavailable model negative control');
+}
+""");
+        final result = await Process.run(Platform.resolvedExecutable, [
+          'test',
+          '--configuration',
+          'example/basic_app/test/image_generation_smoke.yaml',
+          '-t',
+          'local-only',
+          '-r',
+          'expanded',
+          fixture.path,
+        ]);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(result.stdout, contains('Unavailable model negative control'));
+        expect(result.stdout, contains('+1 ~1: All tests passed!'));
+      },
+    );
 
     test('dry-runs the image exit teardown in the opted-in example, and '
         'requires its model', () async {

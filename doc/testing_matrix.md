@@ -366,6 +366,11 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-gpu-layers 0
 ```
 
+The image scenario selects its dedicated test configuration instead of
+`--run-skipped`: it admits the `local-only` suite while preserving platform and
+unavailable-model skips. The default test configuration continues to skip
+heavy local checks.
+
 The first-image warm-up comparison applies to the loaded GPU backend. It uses
 two distinct short SDXS/CLIP prompts with the same padded encoder shape and
 identical sampling, dimensions and seed, so both measured requests miss the
