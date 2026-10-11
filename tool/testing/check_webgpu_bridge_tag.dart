@@ -845,11 +845,13 @@ const List<String> _selfPaths = <String>[
   'test/unit/tooling/check_webgpu_bridge_tag_test.dart',
 ];
 
-/// Files that record past releases, where an old tag is correct. The current
-/// release-notes claims in these files remain explicit [releaseNotesPins].
+/// Files that record past releases or frozen runtime emissions, where an old
+/// tag is correct. Current release-notes claims remain [releaseNotesPins].
 const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
   'website/docs/changelog/recent-releases.md',
+  'packages/llamadart_validation/test/fixtures/windows_native_log/chat.events.jsonl',
+  'packages/llamadart_validation/test/fixtures/windows_native_log/tiny.events.jsonl',
 ];
 
 /// Frozen documentation snapshots.

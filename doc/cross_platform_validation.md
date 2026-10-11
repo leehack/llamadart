@@ -541,7 +541,10 @@ Run outside the repository:
 ```sh
 bin/llamadart-validate --profile tiny-gguf-cpu --environment-file environment.json --out results
 bin/llamadart-report results
-# Explicit GGUF accelerator evidence can be derived from that run's native log:
+# Give the launcher its redirected native stderr so its exit code includes
+# the same required accelerator proof as the subsequent reporter:
+bin/llamadart-validate --profile tiny-gguf-cuda --environment-file environment.json --out results --native-log native.stderr.log 2>native.stderr.log
+# Explicit GGUF accelerator evidence can also be derived after execution:
 bin/llamadart-report results --native-log results/stderr.log
 ```
 

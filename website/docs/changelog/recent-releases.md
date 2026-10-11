@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Portable validation launchers can use captured native logs for required GPU qualification.
+
 - Adopt native runtime `v0.6.0-2` and image runtime `v0.2.0-3` for cooperative application shutdown.
 
 - Shut down the Linux chat app’s Flutter engines before process exit, including active model work.
