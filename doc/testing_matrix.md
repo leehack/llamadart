@@ -306,6 +306,7 @@ dart run tool/testing/run_local_e2e.dart \
 dart run tool/testing/run_local_e2e.dart --scenario image-generation-smoke \
   --model-path /path/to/sdxs-512-tinySDdistilled_Q8_0.gguf
 
+
 # Runs the 24 Laya 0.3.5 fixture rows: exact token ids and markers, raw
 # marker logits within LLAMADART_DECISION_LOGIT_TOLERANCE (default 0.25), and
 # probabilities, confidence, act probability and noul within
@@ -364,6 +365,23 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-warmups 1 \
   --benchmark-gpu-layers 0
 ```
+
+The image scenario selects its dedicated test configuration instead of
+`--run-skipped`: it admits the `local-only` suite while preserving platform and
+unavailable-model skips. The default test configuration continues to skip
+heavy local checks.
+
+The first-image warm-up comparison applies to the loaded GPU backend. It uses
+two distinct short SDXS/CLIP prompts with the same padded encoder shape and
+identical sampling, dimensions and seed, so both measured requests miss the
+conditioning cache. Repeating one prompt would compare uncached conditioning
+with a cache hit; see the pinned stable-diffusion.cpp
+[conditioning cache](https://github.com/leejet/stable-diffusion.cpp/blob/3f8527a46c54ecf4cb4ed6003da8e8982283c73c/src/conditioning/conditioning_cache.h).
+The original `first < second * 2 + 250ms` budget is unchanged. CPU/BLAS warm-up
+validates state and performs no GPU compile, so it has no GPU latency assertion;
+other image-generation smoke checks still run on those backends. Durable fake
+pipeline/cache controls run in the normal VM suite; real weight/device timings
+remain this opt-in scenario and do not imply physical-device qualification.
 
 Use a non-recurrent target for speculative benchmark cases that reserve
 rollback slots. Native recurrent/hybrid models reject nonzero

@@ -1,0 +1,5 @@
+# Used only by the opt-in image-generation-smoke scenario. The default
+# dart_test.yaml still skips local-only tests; this selection admits the suite
+# while preserving each test's platform and unavailable-model skip.
+tags:
+  local-only: {}
