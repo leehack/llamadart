@@ -187,6 +187,9 @@ void main() {
       '${isolated.path}/packages/llamadart_validation/lib/src',
     )..createSync(recursive: true);
     for (final name in [
+      'manifest.dart',
+      'case_catalog.dart',
+      'decision_catalog.dart',
       'runtime_environment.dart',
       'runtime_environment_io.dart',
       'runtime_environment_stub.dart',
