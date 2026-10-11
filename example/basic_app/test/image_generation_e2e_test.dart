@@ -13,6 +13,8 @@ import 'package:llamadart/src/backends/stable_diffusion/stable_diffusion_memory.
 import 'package:llamadart/src/core/image/image_generation_driver.dart';
 import 'package:test/test.dart';
 
+import 'fixtures/image_warmup_comparison.dart';
+
 // Real image generation through the stable_diffusion runtime this example
 // opts into. Set LLAMADART_SDXS_MODEL, and optionally
 // LLAMADART_SD_TURBO_MODEL, LLAMADART_TAESD, LLAMADART_SDXL_LIGHTNING_MODEL,
@@ -62,30 +64,28 @@ void main() {
       _sdxs(ModelSource.path(sdxsPath!)),
     );
     addTearDown(engine.dispose);
-    const request = ImageGenerationRequest(
-      prompt: 'a red fox in autumn leaves',
-      width: 256,
-      height: 256,
-      steps: 1,
-      guidanceScale: 1,
-      seed: 42,
+    final backendName = (await engine.capabilities).backendName!;
+    final timings = await measureImageWarmUp(
+      backendName: backendName,
+      warmUp: () => engine.warmUp(width: 256, height: 256, guidanceScale: 1),
+      generate: (request) async =>
+          (await engine.generateImage(request)).elapsed,
     );
-
-    final warmUp = Stopwatch()..start();
-    await engine.warmUp(width: 256, height: 256, guidanceScale: 1);
-    warmUp.stop();
-    final first = (await engine.generateImage(request)).elapsed;
-    final second = (await engine.generateImage(request)).elapsed;
-
+    if (timings == null) {
+      print('warm-up on $backendName: CPU validation/no-op; GPU timing N/A');
+      return;
+    }
     print(
-      'warm-up on ${(await engine.capabilities).backendName}: '
-      '${warmUp.elapsedMilliseconds} ms; first image '
-      '${first.inMilliseconds} ms; second ${second.inMilliseconds} ms',
+      'warm-up on $backendName: ${timings.warmUp.inMilliseconds} ms; '
+      'first uncached image ${timings.first.inMilliseconds} ms; '
+      'second uncached ${timings.second.inMilliseconds} ms',
     );
-    // Without a warm-up the first image pays the pipeline compile: 0.6 s
-    // against 0.12 s on an M4 Max run with MTL_SHADER_CACHE_SIZE=0 (no
-    // Metal shader cache), and 12 to 45 s on a cold Vulkan driver cache.
-    expect(first, lessThan(second * 2 + const Duration(milliseconds: 250)));
+    // Both prompts miss the conditioning cache with the same padded CLIP
+    // shape. Without warm-up the first also pays the GPU pipeline compile.
+    expect(
+      timings.first,
+      lessThan(timings.second * 2 + const Duration(milliseconds: 250)),
+    );
   }, skip: sdxsPath == null ? 'Set LLAMADART_SDXS_MODEL' : false);
 
   test('a rejected split checkpoint names the roles it lacks', () async {
