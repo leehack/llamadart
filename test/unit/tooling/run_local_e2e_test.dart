@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:test/test.dart';
 
@@ -882,15 +883,13 @@ void main() {
       expect(result.stdout, isNot(contains('--run-skipped')));
     });
 
-    test(
-      'image smoke configuration preserves unavailable-case skips',
-      () async {
-        final directory = Directory.systemTemp.createTempSync(
-          'image-smoke-skip-',
-        );
-        addTearDown(() => directory.deleteSync(recursive: true));
-        final fixture = File('${directory.path}/skip_control_test.dart');
-        fixture.writeAsStringSync("""
+    test('image smoke configuration preserves unavailable-case skips', () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'image-smoke-skip-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final fixture = File('${directory.path}/skip_control_test.dart');
+      fixture.writeAsStringSync("""
 @Tags(['local-only'])
 library;
 import 'package:test/test.dart';
@@ -900,25 +899,52 @@ void main() {
       skip: 'Unavailable model negative control');
 }
 """);
-        final result = await Process.run(Platform.resolvedExecutable, [
-          'test',
-          '--configuration',
-          'example/basic_app/test/image_generation_smoke.yaml',
-          '-t',
-          'local-only',
-          '-r',
-          'expanded',
-          fixture.path,
-        ]);
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(result.stdout, contains('Unavailable model negative control'));
-        expect(result.stdout, contains('+1 ~1: All tests passed!'));
-      },
-    );
+      // Resolve only package:test in the scratch package. A nested root
+      // `dart test` re-bundles native assets held open by the parent on Windows.
+      final testLibrary = (await Isolate.resolvePackageUri(
+        Uri.parse('package:test/test.dart'),
+      ))!;
+      final testPubspec = File.fromUri(
+        testLibrary.resolve('../pubspec.yaml'),
+      ).readAsStringSync();
+      final testVersion = RegExp(
+        r'^version: ([^\s]+)$',
+        multiLine: true,
+      ).firstMatch(testPubspec)!.group(1)!;
+      File('${directory.path}/pubspec.yaml').writeAsStringSync("""
+name: image_smoke_skip_control
+environment:
+  sdk: ^3.10.7
+dev_dependencies:
+  test: $testVersion
+""");
+      final prepared = await Process.run(Platform.resolvedExecutable, [
+        'pub',
+        'get',
+        '--offline',
+      ], workingDirectory: directory.path);
+      expect(
+        prepared.exitCode,
+        0,
+        reason: '${prepared.stdout}\n${prepared.stderr}',
+      );
+      final configuration = File(
+        'example/basic_app/test/image_generation_smoke.yaml',
+      ).absolute.path;
+      final result = await Process.run(Platform.resolvedExecutable, [
+        'test',
+        '--configuration',
+        configuration,
+        '-t',
+        'local-only',
+        '-r',
+        'expanded',
+        fixture.path,
+      ], workingDirectory: directory.path);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('Unavailable model negative control'));
+      expect(result.stdout, contains('+1 ~1: All tests passed!'));
+    });
 
     test('dry-runs the image exit teardown in the opted-in example, and '
         'requires its model', () async {
