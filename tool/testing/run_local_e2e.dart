@@ -239,6 +239,43 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'android-perfetto-capability',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Build model-free Android trace probe and run evidence negatives; no cloud run.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: context.python,
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'tool/testing/validation/android_perfetto',
+            '-p',
+            'test_*.py',
+          ],
+          description: 'Trace receipt, producer and CPU/idle control negatives',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.environment['GRADLE_BIN'] ?? 'gradle',
+          arguments: const [
+            '--offline',
+            '--no-daemon',
+            '-p',
+            'tool/testing/validation/android_perfetto',
+            'app:testDebugUnitTest',
+            'app:assembleDebug',
+            'app:assembleDebugAndroidTest',
+          ],
+          description: 'Cached SDK model-free app/test APK build',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'validation-harness',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

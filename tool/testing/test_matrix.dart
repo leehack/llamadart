@@ -45,6 +45,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'CI workflow or impact selection changes; see doc/ci_selection.md.',
   ),
   TestMatrixRow(
+    id: 'android-perfetto-capability',
+    tier: 'platform',
+    mode: 'opt-in; model-free Android build and bounded physical-device probe',
+    covers:
+        'registered render-stage discovery, fresh trace transport and CPU/idle '
+        'controls; never model GPU placement',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'android-perfetto-capability; bounded cloud procedure in '
+        'doc/android_perfetto_capability.md',
+    useWhen:
+        'Android trace capability or evidence validation changes. Real trace '
+        'processor regression and exact APK identity are required for cloud qualification.',
+  ),
+  TestMatrixRow(
     id: 'validation-harness',
     tier: 'targeted',
     mode: 'CI + local; model-free',

@@ -1531,3 +1531,11 @@ The [tracking diagnosis](https://github.com/leehack/llamadart/issues/514#issueco
 records source/model/settings and attribution limits. Gemma3 LiteRT issue #513
 remains a distinct investigation; this CPU GGUF control does not qualify other
 models, runtime backends or devices.
+
+## Android trace collection capability
+
+The maintained [model-free Perfetto probe](android_perfetto_capability.md)
+collects registered producer descriptors and a fresh trace with CPU/idle
+controls on Android/API 34+. Use its separate A6-capability row, exact reviewed
+APK source and digest evidence, bounded cloud reservation and no retry. It
+qualifies trace collection only; GPU model placement remains unqualified.

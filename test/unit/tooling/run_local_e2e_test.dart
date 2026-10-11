@@ -57,6 +57,35 @@ void main() {
       expect(result.stdout, contains('Web smoke'));
     });
 
+    test(
+      'Android Perfetto plan checks evidence before an offline model-free build',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'android-perfetto-capability',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        final commands = result.stdout
+            .split('\n')
+            .where((line) => line.startsWith('  cd '))
+            .toList();
+        expect(commands, hasLength(2));
+        expect(commands.first, contains('python3 -m unittest discover'));
+        expect(
+          commands.first,
+          contains('tool/testing/validation/android_perfetto'),
+        );
+        expect(commands.last, contains('--offline --no-daemon'));
+        expect(commands.last, contains('app:testDebugUnitTest'));
+        expect(commands.last, contains('app:assembleDebugAndroidTest'));
+        expect(result.stdout, isNot(contains('gcloud firebase')));
+        expect(result.stdout, isNot(contains('--model-path is required')));
+        expect(result.stdout, isNot(contains('--device is required')));
+      },
+    );
+
     test('builds the GBNF validator before the grammar test uses it', () async {
       final result = await runLocalE2e(const [
         '--scenario',
