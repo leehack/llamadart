@@ -19,15 +19,21 @@ public class CaptureProtocolTest {
 
     @Test public void fixedTransportWaitsForSourcesAndFiniteExitWithoutSignals() {
         String start = CaptureProtocol.startScript(NONCE, "duration_ms: 15000");
-        assertTrue(start.contains("--background-wait --txt -c -"));
+        assertTrue(start.contains("| perfetto --background-wait --txt -c -"));
+        assertFalse(start.contains("<<"));
+        assertTrue(start.contains("/data/misc/perfetto-traces/"));
         assertTrue(start.contains("code=$?; if [ $code -eq 0 ]"));
         assertFalse(start.contains("--notify-fd"));
         String completion = CaptureProtocol.completedTraceScript(NONCE, 12345);
-        assertTrue(completion.contains("kill -0 12345"));
+        assertTrue(completion.contains("test ! -d /proc/12345"));
+        assertTrue(start.contains("test -d /proc/\"$pid\""));
+        assertFalse(completion.contains("kill"));
         assertFalse(completion.contains("kill -TERM"));
         assertFalse(completion.contains("kill -INT"));
         assertTrue(completion.contains("19 20; do"));
-        assertTrue(CaptureProtocol.cleanupCommand(NONCE).endsWith(NONCE + ".stderr"));
+        assertTrue(CaptureProtocol.cleanupCommand(NONCE).endsWith(NONCE + ".trace"));
+        assertFalse(start.contains(".pid"));
+        assertFalse(start.contains(".stderr"));
     }
 
     @Test public void shellReceivesScriptOnStdinAndAcknowledgesOnlySuccessfulStart() throws Exception {
@@ -35,7 +41,7 @@ public class CaptureProtocolTest {
         Path executable = directory.resolve("perfetto");
         try {
             String fake = "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = -o ]; then shift; out=$1; fi; shift; done\n"
-                + "config=$(cat); [ \"$config\" = 'duration_ms: 15000' ] || exit 2\n"
+                + "config=$(cat); [ \"$config\" = \"duration_ms: 15000 # 'quoted'\" ] || exit 2\n"
                 + "printf TRACE > \"$out\"\nprintf '12345\\n'\nexit ${MOCK_EXIT:-0}\n";
             Files.write(executable, fake.getBytes(StandardCharsets.UTF_8));
             assertTrue(executable.toFile().setExecutable(true));
@@ -45,8 +51,9 @@ public class CaptureProtocolTest {
                 builder.environment().put("PATH", directory + ":" + System.getenv("PATH"));
                 builder.environment().put("MOCK_EXIT", code);
                 java.lang.Process process = builder.start();
-                process.getOutputStream().write(CaptureProtocol.startScript(nonce, "duration_ms: 15000")
-                    .replace("/data/local/tmp/", directory + "/").getBytes(StandardCharsets.UTF_8));
+                process.getOutputStream().write(CaptureProtocol.startScript(nonce, "duration_ms: 15000 # 'quoted'")
+                    .replace("/data/misc/perfetto-traces/", directory + "/")
+                    .replace("test -d /proc/\"$pid\"", "test -d " + directory).getBytes(StandardCharsets.UTF_8));
                 process.getOutputStream().close();
                 byte[] acknowledgment = process.getInputStream().readAllBytes();
                 assertEquals(0, process.waitFor());

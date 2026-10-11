@@ -123,10 +123,25 @@ LiteRT runtime's GPU qualification procedure before proposing that experiment.
 The foreground launcher uses Perfetto v49-compatible `--background-wait` and
 requires its successful all-data-sources-started acknowledgment before submitting
 the judged controls. Global Android `Trace.isEnabled()` alone is insufficient.
-The daemon writes only UUID-scoped finite scratch files; collection waits for its
-normal finite-config exit before reading the trace, then removes those files. No
+Config and acknowledgment travel through actual shell pipes. Android mksh
+heredocs use temporary regular files in `shell_data_file` storage, which the
+Perfetto SELinux domain cannot read. Inherited shell-created PID/stderr files
+are also prohibited across that domain boundary. The daemon creates only a
+UUID-scoped trace under `/data/misc/perfetto-traces`; collection waits for its
+normal finite-config exit by observing the acknowledged PID’s `/proc` directory,
+reads the trace, and removes that file. Startup first requires that same PID to
+be visible. Shell `kill -0` is unsuitable because SELinux can deny even a
+non-signaling permission check against the Perfetto process. The app saves
+config, startup acknowledgment and stderr before validating the acknowledgment,
+so a failed session remains diagnosable after cleanup. No
 termination signal, fallback startup delay, or automatic capture retry is used.
 The receipt binds acknowledgment time/PID before the CPU marker, and the verifier
 still requires both complete CPU and idle controls from the parsed trace.
 See the [official background tracing procedure](https://perfetto.dev/docs/learning-more/tracing-in-background)
 and [v49 implementation](https://github.com/google/perfetto/blob/v49.0/src/perfetto_cmd/perfetto_cmd.cc).
+
+The opt-in instrumentation suite also rejects a deliberately malformed config
+and verifies that config, acknowledgment and stderr remain in app-owned storage
+after scratch cleanup. A bounded provider row may target only
+`PerfettoCapabilityTest#collectModelFreeTrace`; its one-case provider contract
+must match that explicit target. Local Android validation runs both tests.

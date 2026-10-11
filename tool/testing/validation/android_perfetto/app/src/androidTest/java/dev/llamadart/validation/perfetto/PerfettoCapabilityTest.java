@@ -67,6 +67,7 @@ public class PerfettoCapabilityTest {
         save(directory, "config.pbtxt", config.getBytes(StandardCharsets.UTF_8));
 
         ShellResult trace;
+        byte[] startupErrors = new byte[0];
         int capturePid = 0;
         long captureAcknowledged = 0;
         boolean markersEnabled = false;
@@ -77,9 +78,8 @@ public class PerfettoCapabilityTest {
         long idleStarted = 0;
         long idleEnded = 0;
         try {
-            ShellResult acknowledgment = command(instrumentation, "sh",
-                CaptureProtocol.startScript(nonce, config).getBytes(StandardCharsets.UTF_8), 35000, 1024);
-            save(directory, "capture-start-ack.txt", acknowledgment.stdout);
+            ShellResult acknowledgment = startCapture(instrumentation, directory, nonce, config);
+            startupErrors = acknowledgment.stderr;
             capturePid = CaptureProtocol.startedPid(acknowledgment.stdout);
             captureAcknowledged = SystemClock.elapsedRealtimeNanos();
             markersEnabled = Trace.isEnabled();
@@ -106,8 +106,7 @@ public class PerfettoCapabilityTest {
             }
             ShellResult payload = command(instrumentation,
                 "sh", CaptureProtocol.completedTraceScript(nonce, capturePid).getBytes(StandardCharsets.UTF_8), 25000, ProbeConfig.MAX_TRACE_BYTES);
-            ShellResult diagnostics = command(instrumentation, CaptureProtocol.stderrCommand(nonce), null, 5000, 1024 * 1024);
-            trace = new ShellResult(payload.stdout, diagnostics.stdout);
+            trace = new ShellResult(payload.stdout, joined(startupErrors, payload.stderr));
         } finally {
             command(instrumentation, CaptureProtocol.cleanupCommand(nonce), null, 5000, 1024);
         }
@@ -155,6 +154,46 @@ public class PerfettoCapabilityTest {
         // The offline checker must find both real markers and parse the trace.
     }
 
+    @Test(timeout = 45000)
+    public void malformedConfigPreservesDiagnosticsAfterCleanup() throws Exception {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        assertEquals("Probe requires an explicit opt-in", "true",
+            InstrumentationRegistry.getArguments().getString("perfettoProbe"));
+        assertTrue("executeShellCommandRwe needs Android API 34+", Build.VERSION.SDK_INT >= 34);
+        String nonce = UUID.randomUUID().toString();
+        File directory = new File(instrumentation.getTargetContext().getExternalFilesDir(null),
+            "perfetto_failure_control/" + nonce);
+        assertTrue("Fresh failure-control directory required", directory.mkdirs());
+        String config = "duration_ms: invalid_number\n";
+        ShellResult acknowledgment;
+        try {
+            acknowledgment = startCapture(instrumentation, directory, nonce, config);
+            try {
+                CaptureProtocol.startedPid(acknowledgment.stdout);
+                fail("Malformed config was acknowledged");
+            } catch (IllegalStateException expected) {
+                assertArrayEquals("READY:ERROR\n".getBytes(StandardCharsets.UTF_8), acknowledgment.stdout);
+                assertTrue("Perfetto must explain config rejection", acknowledgment.stderr.length > 0);
+            }
+        } finally {
+            command(instrumentation, CaptureProtocol.cleanupCommand(nonce), null, 5000, 1024);
+        }
+        assertEquals(config, new String(readSaved(directory, "config.pbtxt", 1024), StandardCharsets.UTF_8));
+        assertArrayEquals(acknowledgment.stdout, readSaved(directory, "capture-start-ack.txt", 1024));
+        assertArrayEquals(acknowledgment.stderr, readSaved(directory, "capture.stderr.txt", 1024 * 1024));
+    }
+
+    private static ShellResult startCapture(Instrumentation instrumentation, File directory,
+            String nonce, String config) throws Exception {
+        save(directory, "config.pbtxt", config.getBytes(StandardCharsets.UTF_8));
+        ShellResult acknowledgment = command(instrumentation, "sh",
+            CaptureProtocol.startScript(nonce, config).getBytes(StandardCharsets.UTF_8), 35000, 1024);
+        // Persist before the caller validates and before shell scratch cleanup.
+        save(directory, "capture-start-ack.txt", acknowledgment.stdout);
+        save(directory, "capture.stderr.txt", acknowledgment.stderr);
+        return acknowledgment;
+    }
+
     private static ShellResult command(Instrumentation instrumentation, String command, byte[] stdin,
             int timeoutMs, int stdoutLimit) throws Exception {
         ParcelFileDescriptor[] descriptors = instrumentation.getUiAutomation().executeShellCommandRwe(command);
@@ -173,6 +212,18 @@ public class PerfettoCapabilityTest {
         } finally {
             readers.shutdownNow();
         }
+    }
+
+    private static byte[] readSaved(File directory, String name, int limit) throws Exception {
+        try (InputStream input = new FileInputStream(new File(directory, name))) {
+            return read(input, limit);
+        }
+    }
+
+    private static byte[] joined(byte[]... inputs) throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        for (byte[] input : inputs) output.write(input);
+        return output.toByteArray();
     }
 
     private static byte[] read(InputStream input, int limit) throws Exception {
