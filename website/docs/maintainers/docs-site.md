@@ -84,6 +84,18 @@ with pub when the core version changes.
 `./tool/docs/build_site.sh` validates that example and runs `jaspr build`, then `tool/finalize_site.dart`,
 which writes `route.html` files, `404.html` and `sitemap.xml` and fails on any
 broken internal link or anchor, then indexes search with Pagefind (via `npx`).
+
+If another local service uses Jaspr's default build port (normally 8080), select
+a free port for static generation:
+
+```bash
+./tool/docs/build_site.sh --port 43831
+```
+
+The override applies only to the temporary Jaspr build server. All example,
+link and search-index checks still run. `--port` accepts decimal integers from
+1 to 65535 without leading zeros; `--help` prints usage without starting a build.
+
 Preview the result as GitHub Pages serves it:
 
 ```bash
