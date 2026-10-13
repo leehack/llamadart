@@ -89,12 +89,13 @@ def receipt(pid):
             raise RuntimeError('fixture reader setup failure')
         host.threading.Thread.start = reject_start
     if mode in ('slow-receipt', 'exited-slow-receipt', 'stopped-receipt'):
-        time.sleep(0.15)
+        time.sleep(1.5 if mode == 'slow-receipt' else 0.15)
     if mode in ('exited-slow-receipt', 'stopped-receipt'):
         # Deterministically reach the terminal predicate after the empty-output
         # child exits; do not depend on reader-thread scheduling for this case.
         host.threading.Thread.start = lambda thread: thread.run()
-sys.argv = [str(spec.origin), '0.1' if mode in ('slow-receipt', 'exited-slow-receipt') else '4', sys.executable, '-c', source]
+seconds = {'slow-receipt': '1.0', 'exited-slow-receipt': '0.1'}.get(mode, '4')
+sys.argv = [str(spec.origin), seconds, sys.executable, '-c', source]
 try:
     sys.exit(host.main(None if mode == 'default' else receipt))
 except Exception as error:
@@ -167,7 +168,10 @@ except Exception as error:
         self.assert_child_retired()
 
     def test_receipt_setup_time_is_charged_to_deadline(self):
-        self.launch('slow-receipt', self.sleeping_child().replace('sleep(0.7)', 'sleep(0.18)'))
+        # A 1.0 s deadline, a 1.5 s receipt and a marker at 1.8 s: charging
+        # setup stops the child about 0.3 s early, and not charging it would
+        # stop it 0.7 s late. Wide enough for a loaded host either way.
+        self.launch('slow-receipt', self.sleeping_child().replace('sleep(0.7)', 'sleep(1.8)'))
         status, output, error = self.complete()
         self.assertEqual((status, output, error), (124, b'', b''))
         self.assert_child_retired()
