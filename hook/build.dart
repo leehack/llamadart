@@ -264,6 +264,8 @@ void main(List<String> args) async {
         return;
       }
     }
+    final hadLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
+    final consumerWarnings = <String>[];
     selectedRuntimes = selectConsumerNativeRuntimes(
       packageGraph: _resolvedPackageGraph(input),
       hookPackage: _packageName,
@@ -275,8 +277,16 @@ void main(List<String> args) async {
       ),
       isAppleTarget: _isAppleTarget(code.targetOS),
       dependency: output.dependencies.add,
-      warn: log.warning,
+      warn: consumerWarnings.add,
     );
+    final droppedLiteRtLm =
+        hadLiteRtLm && !selectedRuntimes.contains(nativeRuntimeLiteRtLm);
+    for (final warning in consumerWarnings) {
+      log.warning(warning);
+      // A successful build shows no hook log records; hook stderr is relayed
+      // like the stable_diffusion skip above.
+      if (droppedLiteRtLm) stderr.writeln('warning: llamadart: $warning');
+    }
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '

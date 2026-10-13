@@ -82,7 +82,9 @@ hooks:
 ```
 
 Unset, `llamadart_native_runtimes` bundles `llama_cpp` and `litert_lm`. A list
-replaces those defaults, so it names every runtime the app loads:
+replaces those defaults, so it names every runtime the app loads. Beside
+Flutter Edge AI an implied `litert_lm` is left out; see
+[Alongside Flutter Edge AI](../platforms/native-build-hooks#alongside-flutter-edge-ai).
 
 | The app loads | `llamadart_native_runtimes` |
 | --- | --- |

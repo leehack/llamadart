@@ -408,6 +408,28 @@ void main() {
     expect(log, contains(endsWith('Selected native runtimes: llama_cpp.')));
   });
 
+  test(
+    'relays the implied LiteRT-LM drop beside Flutter Edge AI to stderr',
+    () async {
+      final layout = await flutterEdgeAiWorkspace();
+      addTearDown(layout.delete);
+      late final HookRun run;
+      final stderrLines = await _captureStderr(() async {
+        run = await runCodeBuildHook(
+          hookMain: build_hook.main,
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          layout: layout,
+          userDefines: layout.userDefines(),
+        );
+      });
+      final dropped = run.warnings.singleWhere(
+        (warning) => warning.startsWith('Leaving the LiteRT-LM runtime out'),
+      );
+      expect(stderrLines, ['warning: llamadart: $dropped']);
+    },
+  );
+
   test('Linux bundles the Vulkan archive with default backends', () async {
     await testCodeBuildHook(
       mainMethod: build_hook.main,

@@ -373,6 +373,53 @@ void main() {
       });
     }
 
+    test('naming only litert_lm beside $_edgeAiLlama keeps it', () async {
+      final layout = await HooksRunnerLayout.create(
+        roots: ['app'],
+        dependencies: {
+          'app': [_edgeAiLlama],
+          _edgeAiLlama: ['llamadart'],
+          'llamadart': [],
+        },
+      );
+      addTearDown(layout.delete);
+      final run = await _runLinuxHook(
+        layout: layout,
+        defines: {
+          'llamadart_native_runtimes': ['litert_lm'],
+        },
+      );
+      expect(run.assets.values, unorderedEquals(_linuxLiteRtLibraries));
+      expect(run.warnings, isEmpty);
+    });
+
+    test('naming only litert_lm beside $_edgeAiLiteRtLm fails', () async {
+      final layout = await HooksRunnerLayout.create(
+        roots: ['app'],
+        dependencies: {
+          'app': ['llamadart', _edgeAiLiteRtLm],
+          _edgeAiLiteRtLm: [],
+          'llamadart': [],
+        },
+      );
+      addTearDown(layout.delete);
+      await expectLater(
+        _runLinuxHook(
+          layout: layout,
+          defines: {
+            'llamadart_native_runtimes': ['litert_lm'],
+          },
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('Conflicting LiteRT-LM runtimes'),
+          ),
+        ),
+      );
+    });
+
     test(
       'only LiteRT-LM assets follow the resolved graph',
       () => expectOnlyLiteRtLmFollowsResolvedGraph(
