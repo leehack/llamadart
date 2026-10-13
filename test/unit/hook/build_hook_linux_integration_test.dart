@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -237,6 +238,80 @@ void main() {
       );
     },
   );
+
+  for (final usesConnector in [true, false]) {
+    test(
+      'workspace settings follow actual app dependency graph: $usesConnector',
+      () async {
+        final workspace = await Directory.systemTemp.createTemp(
+          'edge-workspace-',
+        );
+        addTearDown(() => workspace.delete(recursive: true));
+        final rootSpec = File.fromUri(workspace.uri.resolve('pubspec.yaml'));
+        await rootSpec.writeAsString(
+          'name: workspace\nworkspace: [app, unused]\n',
+        );
+        final app = Directory.fromUri(workspace.uri.resolve('app/'));
+        await app.create();
+        final appSpec = File.fromUri(app.uri.resolve('pubspec.yaml'));
+        await appSpec.writeAsString(
+          'name: app\ndependencies:\n  ${usesConnector ? 'flutter_edge_ai_llama' : 'llamadart'}: any\n',
+        );
+        final config = File.fromUri(
+          workspace.uri.resolve('.dart_tool/package_config.json'),
+        );
+        await config.parent.create();
+        await config.writeAsString(
+          jsonEncode({
+            'packages': [
+              {'name': 'flutter_edge_ai_litertlm', 'rootUri': '../unused'},
+            ],
+          }),
+        );
+        final output = Directory.fromUri(
+          app.uri.resolve('.dart_tool/hooks_runner/shared/llamadart/build/'),
+        );
+        await output.create(recursive: true);
+        await testCodeBuildHook(
+          mainMethod: (arguments) async {
+            final input = File(arguments.single.substring('--config='.length));
+            final json =
+                jsonDecode(await input.readAsString()) as Map<String, dynamic>;
+            json['out_dir_shared'] = output.path;
+            await input.writeAsString(jsonEncode(json));
+            await Function.apply(build_hook.main, [arguments]);
+          },
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          userDefines: PackageUserDefines(
+            workspacePubspec: PackageUserDefinesSource(
+              defines: {},
+              basePath: rootSpec.uri,
+            ),
+          ),
+          check: (_, output) {
+            final names = output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map(
+                  (asset) =>
+                      path.basename(asset.asCodeAsset.file!.toFilePath()),
+                )
+                .toSet();
+            expect(names, contains('libllamadart.so'));
+            if (usesConnector) {
+              expect(
+                names.intersection(_linuxLiteRtLibraries.toSet()),
+                isEmpty,
+              );
+            } else {
+              expect(names, containsAll(_linuxLiteRtLibraries));
+            }
+            expect(output.dependencies, contains(appSpec.uri));
+          },
+        );
+      },
+    );
+  }
 
   test('build hook preserves historical linux mtmd SONAME alias', () async {
     await testCodeBuildHook(

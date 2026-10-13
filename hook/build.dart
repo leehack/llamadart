@@ -272,7 +272,7 @@ void main(List<String> args) async {
       );
     }
     selectedRuntimes = selectConsumerNativeRuntimes(
-      consumerRoot: _consumerPackageRoot(input),
+      consumerRoot: _runtimeConsumerPackageRoot(input),
       selectedRuntimes: selectedRuntimes,
       explicitLiteRtLm:
           appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
@@ -798,12 +798,27 @@ void _validateAppleCompanion(
   }
 }
 
+Directory? _runtimeConsumerPackageRoot(BuildInput input) {
+  // Workspace hook settings may come from a parent pubspec. The hook output
+  // identifies the app being built, whose closure determines runtime ownership.
+  final fromOutput = _consumerPackageRootFromOutput(input);
+  if (fromOutput != null &&
+      File.fromUri(fromOutput.uri.resolve('pubspec.yaml')).existsSync()) {
+    return fromOutput;
+  }
+  return _consumerPackageRoot(input);
+}
+
 Directory? _consumerPackageRoot(BuildInput input) {
   final fromUserDefines = _consumerPackageRootFromUserDefines(input);
   if (fromUserDefines != null) {
     return fromUserDefines;
   }
 
+  return _consumerPackageRootFromOutput(input);
+}
+
+Directory? _consumerPackageRootFromOutput(BuildInput input) {
   final sharedOutputPath = path.normalize(
     input.outputDirectoryShared.toFilePath(),
   );
