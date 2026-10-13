@@ -9,6 +9,7 @@ import 'package:llamadart/src/core/image/png_encoder.dart';
 import 'package:path/path.dart' as p;
 
 import '../integration_test/support/image_evidence.dart';
+import 'evidence_png_fixture.dart';
 
 const _commit = 'dfc58e7998bd751a9084bfa36d9ab9a90ba6d963';
 Uint8List _png(int width, int height, {int value = 0}) => encodePng(
@@ -16,6 +17,9 @@ Uint8List _png(int width, int height, {int value = 0}) => encodePng(
   height: height,
   channels: 3,
   pixels: Uint8List.fromList(List.filled(width * height * 3, value)),
+);
+Matcher _rejects(String detail) => throwsA(
+  isA<FormatException>().having((e) => e.message, 'message', contains(detail)),
 );
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +92,117 @@ void main() {
     } finally {
       image.dispose();
       picture.dispose();
+    }
+  });
+  test(
+    'accepts a real Skia 16-bit PNG only when deep samples are allowed',
+    () async {
+      final samples = Float32List(8 * 12 * 4)..fillRange(0, 8 * 12 * 4, 0.5);
+      final buffer = await ui.ImmutableBuffer.fromUint8List(
+        samples.buffer.asUint8List(),
+      );
+      final descriptor = ui.ImageDescriptor.raw(
+        buffer,
+        width: 8,
+        height: 12,
+        pixelFormat: ui.PixelFormat.rgbaFloat32,
+      );
+      final codec = await descriptor.instantiateCodec();
+      final image = (await codec.getNextFrame()).image;
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        final png = data!.buffer.asUint8List();
+        expect(png[24], 16);
+        expect(inspectEvidencePng(png, allowSixteenBit: true), {
+          'width': 8,
+          'height': 12,
+        });
+        expect(
+          () => inspectEvidencePng(png),
+          _rejects('8x12, bit depth 16, colour type 6'),
+        );
+      } finally {
+        image.dispose();
+        codec.dispose();
+        descriptor.dispose();
+        buffer.dispose();
+      }
+    },
+  );
+  test('writes and rechecks a 16-bit screen capture', () async {
+    final result = await writeImageEvidence(
+      directory: directory,
+      generatedPng: _png(512, 512),
+      screenPng: evidencePngFixture(width: 800, height: 1400),
+      metadata: {'seed': 42, 'width': 512, 'height': 512},
+    );
+    expect(verifyImageEvidence(directory), result);
+    final screen =
+        (result['artifacts'] as Map)['image_generation_screen.png'] as Map;
+    expect(screen['width'], 800);
+    expect(screen['height'], 1400);
+  });
+  test('rejects a 16-bit generated image and names the artifact', () async {
+    await expectLater(
+      writeImageEvidence(
+        directory: directory,
+        generatedPng: evidencePngFixture(width: 512, height: 512),
+        screenPng: _png(8, 12),
+        metadata: {'seed': 42, 'width': 512, 'height': 512},
+      ),
+      _rejects(
+        'image_generation_e2e.png: Unsupported evidence PNG format: 512x512, '
+        'bit depth 16, colour type 6, compression 0, filter 0, interlace 0',
+      ),
+    );
+  });
+  test('names an unsupported screen capture and its header', () async {
+    await expectLater(
+      writeImageEvidence(
+        directory: directory,
+        generatedPng: _png(512, 512),
+        screenPng: evidencePngFixture(width: 8, height: 12, interlace: 1),
+        metadata: {'seed': 42, 'width': 512, 'height': 512},
+      ),
+      _rejects(
+        'image_generation_screen.png: Unsupported evidence PNG format: 8x12, '
+        'bit depth 16, colour type 6, compression 0, filter 0, interlace 1',
+      ),
+    );
+  });
+  test('rejects malformed 16-bit PNGs', () {
+    final png = evidencePngFixture(width: 8, height: 12);
+    Map<String, int> inspect(Uint8List bytes) =>
+        inspectEvidencePng(bytes, allowSixteenBit: true);
+    expect(inspect(png), {'width': 8, 'height': 12});
+    expect(
+      () => inspect(evidencePngFixture(width: 8, height: 12, rowBytes: 8 * 4)),
+      _rejects('does not match dimensions'),
+    );
+    expect(
+      () => inspect(evidencePngFixture(width: 8, height: 12, rowBytes: 8 * 16)),
+      _rejects('exceeds dimensions'),
+    );
+    expect(
+      () => inspect(png.sublist(0, png.length - 12)),
+      _rejects('Incomplete PNG'),
+    );
+    expect(
+      () => inspect(Uint8List.fromList(png)..[png.length - 20] ^= 1),
+      _rejects('Invalid PNG chunk CRC'),
+    );
+    for (final (bitDepth, colorType) in [(4, 0), (8, 3), (16, 3), (32, 6)]) {
+      expect(
+        () => inspect(
+          evidencePngFixture(
+            width: 8,
+            height: 12,
+            bitDepth: bitDepth,
+            colorType: colorType,
+          ),
+        ),
+        _rejects('bit depth $bitDepth, colour type $colorType'),
+      );
     }
   });
   test('rejects a missing screenshot instead of log-only evidence', () async {

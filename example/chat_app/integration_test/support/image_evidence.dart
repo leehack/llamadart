@@ -14,7 +14,12 @@ const _artifactNames = [
 
 /// Validates the non-interlaced 8-bit PNGs emitted by the image encoder/Skia.
 /// Checks every chunk CRC, dimensions and decompressed scanline structure.
-Map<String, int> inspectEvidencePng(Uint8List bytes) {
+/// [allowSixteenBit] also accepts the 16-bit samples Skia writes when the
+/// snapshot texture is deeper than 8 bits per channel.
+Map<String, int> inspectEvidencePng(
+  Uint8List bytes, {
+  bool allowSixteenBit = false,
+}) {
   const signature = [137, 80, 78, 71, 13, 10, 26, 10];
   if (bytes.length < 33 ||
       List.generate(8, (i) => bytes[i] != signature[i]).any((v) => v)) {
@@ -25,6 +30,7 @@ Map<String, int> inspectEvidencePng(Uint8List bytes) {
   var width = 0;
   var height = 0;
   var channels = 0;
+  var bitDepth = 0;
   var ended = false;
   final compressed = BytesBuilder(copy: false);
   while (offset + 12 <= bytes.length) {
@@ -45,6 +51,7 @@ Map<String, int> inspectEvidencePng(Uint8List bytes) {
       }
       width = data.getUint32(offset + 8);
       height = data.getUint32(offset + 12);
+      bitDepth = bytes[offset + 16];
       channels = switch (bytes[offset + 17]) {
         0 => 1,
         2 => 3,
@@ -56,12 +63,17 @@ Map<String, int> inspectEvidencePng(Uint8List bytes) {
           height < 1 ||
           width > 4096 ||
           height > 4096 ||
-          bytes[offset + 16] != 8 ||
+          !(bitDepth == 8 || allowSixteenBit && bitDepth == 16) ||
           channels == 0 ||
           bytes[offset + 18] != 0 ||
           bytes[offset + 19] != 0 ||
           bytes[offset + 20] != 0) {
-        throw const FormatException('Unsupported evidence PNG format');
+        throw FormatException(
+          'Unsupported evidence PNG format: ${width}x$height, bit depth '
+          '$bitDepth, colour type ${bytes[offset + 17]}, compression '
+          '${bytes[offset + 18]}, filter ${bytes[offset + 19]}, interlace '
+          '${bytes[offset + 20]}',
+        );
       }
     } else if (type == 'IDAT') {
       compressed.add(bytes.sublist(offset + 8, offset + 8 + length));
@@ -79,7 +91,7 @@ Map<String, int> inspectEvidencePng(Uint8List bytes) {
   if (!ended || compressed.length == 0) {
     throw const FormatException('Incomplete PNG');
   }
-  final stride = width * channels + 1;
+  final stride = width * channels * (bitDepth ~/ 8) + 1;
   final scanlines = _ScanlineSink(stride, height);
   final decoder = ZLibDecoder().startChunkedConversion(scanlines);
   decoder.add(compressed.takeBytes());
@@ -132,6 +144,20 @@ int _crc32(Uint8List bytes, int start, int end) {
   return crc ^ 0xffffffff;
 }
 
+/// Names the artifact in any rejection. Only the screen capture may be 16-bit:
+/// Impeller snapshots a wide-gamut surface (Display P3 iPhone or Mac) into a
+/// 10-bit texture, which the engine's PNG encoder stores as 16-bit RGBA.
+Map<String, int> _inspectArtifact(String name, Uint8List bytes) {
+  try {
+    return inspectEvidencePng(
+      bytes,
+      allowSixteenBit: name == _artifactNames.last,
+    );
+  } on FormatException catch (error) {
+    throw FormatException('$name: ${error.message}');
+  }
+}
+
 /// Writes both PNGs and a final receipt, then verifies the actual saved bytes.
 /// A run has its own directory so an earlier capture cannot stand in for it.
 Future<Map<String, dynamic>> writeImageEvidence({
@@ -145,8 +171,8 @@ Future<Map<String, dynamic>> writeImageEvidence({
   if (receipt.existsSync()) await receipt.delete();
   final artifacts = <String, dynamic>{};
   for (final entry in [generatedPng, screenPng].asMap().entries) {
-    final dimensions = inspectEvidencePng(entry.value);
     final name = _artifactNames[entry.key];
+    final dimensions = _inspectArtifact(name, entry.value);
     await File(
       p.join(directory.path, name),
     ).writeAsBytes(entry.value, flush: true);
@@ -231,7 +257,7 @@ Map<String, dynamic> verifyImageEvidence(
       );
     }
     final bytes = file.readAsBytesSync();
-    final dimensions = inspectEvidencePng(bytes);
+    final dimensions = _inspectArtifact(name, bytes);
     if (expected['bytes'] != bytes.length ||
         expected['sha256'] != sha256.convert(bytes).toString() ||
         expected['width'] != dimensions['width'] ||

@@ -12,6 +12,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../../example/chat_app/integration_test/support/image_evidence.dart';
+import '../../../example/chat_app/test/evidence_png_fixture.dart';
 // Use the same maintained lock as the production verifier.
 // ignore: avoid_relative_lib_imports
 import '../../../example/chat_app/lib/models/image_model_profile.dart';
@@ -31,13 +32,13 @@ void main() {
     channels: 3,
     pixels: Uint8List(width * height * 3),
   );
-  Future<void> prepare() async {
+  Future<void> prepare({Uint8List? screenPng}) async {
     final profile = ImageModelProfile.sdxs;
     final uri = Uri.parse(profile.modelSource.url);
     await writeImageEvidence(
       directory: directory,
       generatedPng: png(512, 512),
-      screenPng: png(8, 12),
+      screenPng: screenPng ?? png(8, 12),
       metadata: {
         'source_commit': _commit,
         'source_dirty': false,
@@ -113,6 +114,39 @@ void main() {
     test('CLI rejects $name', () async {
       await prepare();
       update(mutate);
+      expect((await run()).exitCode, 1);
+    });
+  }
+  test('CLI verifies a 16-bit screen capture', () async {
+    await prepare(screenPng: evidencePngFixture(width: 8, height: 12));
+    final result = await run();
+    expect(result.exitCode, 0, reason: result.stderr.toString());
+  });
+  for (final (name, artifact, replacement) in [
+    (
+      '16-bit generated PNG',
+      'image_generation_e2e.png',
+      evidencePngFixture(width: 512, height: 512),
+    ),
+    (
+      'interlaced 16-bit screen capture',
+      'image_generation_screen.png',
+      evidencePngFixture(width: 8, height: 12, interlace: 1),
+    ),
+    (
+      '16-bit screen capture with 8-bit scanlines',
+      'image_generation_screen.png',
+      evidencePngFixture(width: 8, height: 12, rowBytes: 8 * 4),
+    ),
+  ]) {
+    test('CLI rejects $name with recomputed manifest identity', () async {
+      await prepare();
+      File(p.join(directory.path, artifact)).writeAsBytesSync(replacement);
+      update((data) {
+        (data['artifacts'] as Map)[artifact]
+          ..['bytes'] = replacement.length
+          ..['sha256'] = sha256.convert(replacement).toString();
+      });
       expect((await run()).exitCode, 1);
     });
   }
